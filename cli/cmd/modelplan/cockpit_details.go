@@ -159,6 +159,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			}
 		}
 	}
+	if appserver.CockpitForecastEnabled(ctx) {
+		result.Forecasts = wire.ProjectForecasts(view.Projection, func(ref string) bool { return byRef[ref] != nil }, now)
+	}
 	sort.Slice(result.Alerts, func(i, j int) bool {
 		a, b := result.Alerts[i], result.Alerts[j]
 		if a.Source != b.Source {

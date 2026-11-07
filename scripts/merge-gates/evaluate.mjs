@@ -11,7 +11,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
-import { CONTEXT, FAILURE, description, evaluateGroup, evaluatePr, feed, parseDesignConf, staleOverlap } from "./rules.mjs";
+import { CONTEXT, FAILURE, description, evaluateGroup, evaluatePr, feed, parseDesignConf } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -87,16 +87,7 @@ async function evaluateGroupAndPost(groupSha) {
     if (pulls.length !== 1) return post(groupSha, { state: FAILURE, why: `no single open PR has head ${p[1].slice(0, 8)}` });
     const { result } = await prResult(pulls[0].number);
     if (result.head !== p[1]) return post(groupSha, { state: FAILURE, why: `#${pulls[0].number} head moved` });
-    // Checks outside the queue saw only the PR head (merged with an older main). If the head already contains
-    // this step's base, they saw exactly this content; otherwise apply the stale-base guard to what the base
-    // gained since the head forked. (Tree equality alone is not enough: a later revert on main can hide a
-    // change the PR run did see.)
-    let overlap = [];
-    if (!G.isAncestor(cwd, p[0], p[1])) {
-      const fork = G.mergeBase(cwd, p[1], p[0]);
-      overlap = fork ? staleOverlap(G.changedPaths(cwd, fork, p[1]), G.changedPaths(cwd, fork, p[0])) : ["(no merge base)"];
-    }
-    steps.unshift({ pr: pulls[0].number, prResult: result, mergeProof, overlap });
+    steps.unshift({ pr: pulls[0].number, prResult: result, mergeProof });
     c = p[0];
   }
   if (!G.isAncestor(cwd, c, MAIN)) return post(groupSha, { state: FAILURE, why: "group does not start on main within 10 PRs" });

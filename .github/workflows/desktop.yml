@@ -6,6 +6,8 @@ on:
   pull_request:
     paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml"]
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
     inputs:
       mac_ci_probe:
@@ -17,6 +19,10 @@ on:
         type: choice
         options: [cli, gui]
         default: cli
+      owner_test:
+        description: Owner test build - package with the cockpit entry open (release packages keep it closed)
+        type: boolean
+        default: false
       gui:
         description: Run the GUI-native job on the single GUI test machine (the coordinator's dispatch queue owns its order)
         type: boolean
@@ -28,8 +34,43 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Merge queue only: the queue is what tests "PR + latest main", because a PR no longer has to merge
+  # main first. merge_group has no paths filter, so this job applies the pull_request list above: a
+  # group that adds nothing under those paths, or whose tree is the PR head's tree (the head already
+  # contains the base and its own run tested exactly this), skips the jobs below. The GUI leg never
+  # runs here. trusted-mac.yml has no merge_group route to the owner's Mac pool, so native-headless
+  # uses a hosted Mac here.
+  queue-scope:
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: .github
+      - id: scope
+        env:
+          BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_PATHS: ^(desktop/|codex/ui/|codex/lib/|codex/cli-pin\.json$|cli/internal/snapshot/|cli/internal/digest/|cli/internal/desktopcontract/|cli/internal/contracttest/|schema/|testdata/contract-v1/|\.github/workflows/desktop\.yml$)
+        run: |
+          set -eu
+          read -r _ p1 p2 extra <<<"$(git rev-list --parents -n 1 HEAD) x"
+          if [ "$p1" = "$BASE" ] && [ "$extra" = x ] && git merge-base --is-ancestor "$BASE" "$p2" \
+            && [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$p2^{tree}")" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "PR head $p2 contains the queue base: reusing its checks"
+          elif git diff --no-renames --name-only -z "$BASE" HEAD | grep -qzE "$QUEUE_PATHS"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "group changes desktop paths: running checks on the group commit"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "group changes no desktop path"
+          fi
+
   app:
-    if: ${{ !inputs.mac_ci_probe }}
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -53,7 +94,8 @@ jobs:
           grep -q '"edition": "community"' app/dist/build-edition.json
           cmp app/dist/app.css app/style.css
   shell:
-    if: ${{ !inputs.mac_ci_probe }}
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # The Rust shell on Linux (a supported Tauri target): format, unit tests, a debug build.
     runs-on: ubuntu-latest
     defaults:
@@ -79,7 +121,8 @@ jobs:
       - working-directory: desktop/src-tauri
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
   native-partition:
-    if: ${{ !inputs.mac_ci_probe }}
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # Static rules for the GUI/headless split of the native XCTest suite, on Linux, before any Mac
     # job: a class may run on the ordinary Mac runner only if its source uses no window server.
     runs-on: ubuntu-latest
@@ -93,7 +136,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -106,6 +150,10 @@ jobs:
           # Build the exact PR head, not the synthetic merge commit: the artifact name, BUILD.txt and
           # the bundle's ModelPlanPublicSource must all name the tree that was actually built.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        if: ${{ inputs.owner_test }}
+        with:
+          node-version: "24"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -132,7 +180,9 @@ jobs:
       - name: Fetch the current plugin CLI pin for the unverified smoke build
         run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/smoke-cli-archives"
       - name: Package the actual Apple silicon Community app with unverified consent identity
-        run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/smoke-cli-archives" "$RUNNER_TEMP/smoke-neutral-build" --unverified
+        env:
+          PACKAGE_MODE: ${{ inputs.owner_test && '--owner-test' || '--unverified' }}
+        run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/smoke-cli-archives" "$RUNNER_TEMP/smoke-neutral-build" "$PACKAGE_MODE"
       - name: Require the bundled helper to be the plugin pin it was packaged from
         run: python3 desktop/native/tools/distribution/check_cli_pin_consistency.py --app "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" --pin codex/cli-pin.json
       - name: Assert packaged production wiring (known baseline failures remain red)
@@ -162,7 +212,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: native-app-unverified-${{ github.event.pull_request.head.sha || github.sha }}
+          # preflight.py: native-app-test-<sha> is the owner test flavour (cockpit entry open, PF-08).
+          name: native-app-${{ inputs.owner_test && 'test' || 'unverified' }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/native-app/
           if-no-files-found: warn
           retention-days: 3
@@ -195,7 +246,8 @@ jobs:
 
   native-headless:
     name: native-headless (macos-latest)
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
     with:
       task: native-headless
