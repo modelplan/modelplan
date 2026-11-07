@@ -105,16 +105,14 @@ func awaitingFirstRead(s *accountSnap) bool {
 
 // accountFailureWait is how long the recorded failure holds the next read back.
 func accountFailureWait(s *accountSnap) time.Duration {
-	if s == nil {
-		return firstReadRetries[0]
-	}
-	if s.Status != "ok" && s.FirstFailures > 0 && s.FirstFailures <= len(firstReadRetries) {
+	if s != nil && s.Status != "ok" && s.FirstFailures > 0 && s.FirstFailures <= len(firstReadRetries) {
 		return firstReadRetries[s.FirstFailures-1]
 	}
 	return accountRetryAfter
 }
 
 // CodexFailureWait is the scheduler's wait after a failed read: the budget the failure left.
+// A failure that recorded nothing keeps the ordinary wait.
 func CodexFailureWait(cache string) time.Duration { return accountFailureWait(loadAccount(cache)) }
 
 func accountPath(cache string) string { return filepath.Join(cache, "observed", "codex-account.json") }
