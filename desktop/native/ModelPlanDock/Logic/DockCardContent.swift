@@ -5,8 +5,12 @@ public struct DockCardRow:Equatable,Sendable {
     public enum Kind:Equatable,Sendable {case quota,extraQuota,reserve,statistic,notice}
     public let id:String,kind:Kind,label:String,value:String,detail:String
     public let remainingFraction:Double?,tone:DockQuotaStatus
-    public init(id:String,kind:Kind,label:String,value:String,detail:String="",remainingFraction:Double?=nil,tone:DockQuotaStatus = .unknown){
-        self.id=id;self.kind=kind;self.label=label;self.value=value;self.detail=detail;self.remainingFraction=remainingFraction;self.tone=tone
+    /// The window the ring shows: lit row and ink label (face.css .selected-window).
+    public let emphasised:Bool
+    /// A notice's state pill: 已预告 / 已确认.
+    public let pill:String
+    public init(id:String,kind:Kind,label:String,value:String,detail:String="",remainingFraction:Double?=nil,tone:DockQuotaStatus = .unknown,emphasised:Bool=false,pill:String=""){
+        self.id=id;self.kind=kind;self.label=label;self.value=value;self.detail=detail;self.remainingFraction=remainingFraction;self.tone=tone;self.emphasised=emphasised;self.pill=pill
     }
 }
 public struct DockCardLink:Equatable,Sendable {
@@ -32,14 +36,14 @@ public struct DockCardContent:Equatable,Sendable {
 
 public enum DockCardProjection {
     /// Reuse the canonical Dock quota truth/readout rules. Other facts/copy come from the validated owner.
-    public static func content(input:DockInstrumentInput,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",actionLabel:String="",redBelow:Double=25,at now:Date)throws->DockCardContent{
+    public static func content(input:DockInstrumentInput,selectedWindowID:String?=nil,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",actionLabel:String="",redBelow:Double=25,at now:Date)throws->DockCardContent{
         _=try DockInstrumentProjection.evaluate(input,now:now,redBelow:redBelow)
         var rows=[DockCardRow]()
         for window in input.windows{
             var scoped=input,cardWindow=window;cardWindow.isGeneral=true
             scoped.windows=[cardWindow];scoped.selectedWindowID=window.id
             let reading=try DockInstrumentProjection.evaluate(scoped,now:now,redBelow:redBelow)
-            rows.append(.init(id:"quota:"+window.id,kind:window.isGeneral && (window.period == .fiveHour || window.period == .week || window.period == .month) ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},tone:reading.status))
+            rows.append(.init(id:"quota:"+window.id,kind:window.isGeneral && (window.period == .fiveHour || window.period == .week || window.period == .month) ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},tone:reading.status,emphasised:window.id == selectedWindowID))
         }
         let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:rows+additionalRows,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,actionLabel:actionLabel)
         try result.validate();return result

@@ -22,6 +22,8 @@ public enum QuotaWidgetCardMaterial {
     public static let ink = RGBA(0xe9edf0)
     public static let muted = RGBA(0x87939e)
     public static let ghost = RGBA(0xffffff, alpha: 0x0c)
+    /// The selected window's row (face.css .selected-window #ffffff08).
+    public static let rowHighlight = RGBA(0xffffff, alpha: 0x08)
     public static let normal = RGBA(0x5ad9ba)
     public static let warning = RGBA(0xeac17b)
     public static let critical = RGBA(0xef4444)

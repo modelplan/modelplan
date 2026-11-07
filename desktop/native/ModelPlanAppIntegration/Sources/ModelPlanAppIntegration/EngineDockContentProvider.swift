@@ -169,9 +169,6 @@ public enum EngineDeadlineFacts {
                 }
             }
             var reserve:[DockCardRow]=[]
-            if !hasWindowSources {
-                reserve.append(.init(id:"source",kind:.statistic,label:english ? "Source":"来源",value:sourceName(account.route)))
-            }
             let memberEvents=events.filter { event in
                 event.rowID == member.rowID && event.publishedAt <= context.now && context.now < event.expiresAt &&
                 (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
@@ -194,8 +191,9 @@ public enum EngineDeadlineFacts {
             passSignals.append(signal)
             if let event = preferred {
                 reserve.append(.init(id: "reset-event:" + event.id + ":" + event.status, kind: .notice,
-                    label: resetEventTitle(event, restarted: signal.reset?.restartedReading == true), value: "",
-                    detail: english ? "The announcement does not mean your account has reset." : "公告不等于你的账户已重置"))
+                    label: "↺ " + (english ? "Extra reset" : "额外重置"), value: resetEventTitle(event, restarted: signal.reset?.restartedReading == true),
+                    detail: english ? "A notice is not your reset" : "公告不等于你的账户已重置",
+                    pill: event.status == "confirmed" ? (english ? "Confirmed" : "已确认") : (english ? "Announced" : "已预告")))
             }
             let resetCount = resetCountRow(member, now: context.now)
             if let resetCount { reserve.append(resetCount.row) }
@@ -216,7 +214,7 @@ public enum EngineDeadlineFacts {
                     case .fallback(let value, _): number=String(value)
                     case .missing,.invalid: number=nil
                     }
-                    if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:number,detail:reserveDetail())) }
+                    if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:number+(english ? " credits":" 点数"),detail:reserveDetail())) }
                 case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:M5CreditsDisplayFormat.moneyText(balance,english:english),detail:reserveDetail(english ? "Currency not reported":"未报告币种")))
                 default:
                     let unit=M5CreditsDisplayFormat.Unit(identifier:credits.unit)
@@ -229,6 +227,7 @@ public enum EngineDeadlineFacts {
                     }
                 }
             }
+            reserve.append(todayRow(account))
             let cardState: DockCardReadingState
             if row.consent != .allowed && row.consent != .implicit && row.consent != .notRequired {
                 cardState = .error
@@ -288,6 +287,16 @@ public enum EngineDeadlineFacts {
         memberInstability = passInstability; signals = passSignals
         return .init(content: content, deadline: passDeadline, verifiedWindows: passWindows)
     }
+    /// card.js: today's tokens, rate and running sessions; an unknown figure stays --.
+    private func todayRow(_ account: RowsAccount) -> DockCardRow {
+        let today = account.today
+        func tokens(_ n: Int64) -> String {
+            n < 1000 ? String(n) : n < 1_000_000 ? "\(Int((Double(n) / 1000).rounded()))k" : String(format: "%.1fM", Double(n) / 1_000_000)
+        }
+        var parts = [today?.observedOutputTokens.map(tokens) ?? "--", today?.generationTps.map { "\(Int($0.rounded())) t/s" } ?? "-- t/s"]
+        if let running = today?.runningSessions, running > 0 { parts.append(english ? "\(running) running" : "\(running) 个运行中") }
+        return .init(id: "today", kind: .statistic, label: english ? "Today" : "今日", value: parts.joined(separator: " · "))
+    }
     private func resetEventTitle(_ event: EngineResetEvent, restarted: Bool) -> String {
         if event.status == "confirmed" {
             if restarted { return english ? "Reset confirmed" : "重置已确认" }
@@ -319,9 +328,7 @@ public enum EngineDeadlineFacts {
               account.valueState == .current || account.valueState == .retained,
               let facts = account.resetCards, facts.state == .complete || facts.state == .partial,
               facts.count != nil || facts.earliestExpiresAt != nil else { return nil }
-        let title = facts.count.map { count in
-            english ? (count == 1 ? "1 reset" : "\(count) resets") : "重置 \(count) 次"
-        } ?? (english ? "Resets" : "重置")
+        let title = facts.count.map { "↺\($0)" } ?? "↺"
         var details: [String] = []
         if facts.state == .partial { details.append(english ? "Reported subset" : "已报告部分") }
         if facts.truncated { details.append(english ? "Details truncated" : "明细已截断") }
@@ -330,7 +337,7 @@ public enum EngineDeadlineFacts {
             (date(account.freshUntil).map { now >= $0 } ?? false) {
             details.append(english ? "Last known reading" : "上次读数")
         }
-        return (.init(id: "reset-count", kind: .reserve, label: title, value: "", detail: details.joined(separator: " · ")),
+        return (.init(id: "reset-count", kind: .reserve, label: english ? "Reserve" : "储备", value: title, detail: details.joined(separator: " · ")),
                 date(facts.earliestExpiresAt))
     }
 
