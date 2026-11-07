@@ -464,3 +464,57 @@ func TestKeychainGrantKeepsProviderBackoffAfterCanceledCredential(t *testing.T) 
 		t.Fatal("a canceled credential made the provider back-off bypassable", paths)
 	}
 }
+
+// A cache written before localBackoff existed has no proof its failure was local, so the
+// deadline stands even though the entry looks like a credential failure.
+func TestKeychainGrantKeepsDeadlineWithoutRecordedProvenance(t *testing.T) {
+	p := claudeTestPaths(t)
+	status := 200
+	paths := []string{}
+	claudeTestServer(t, &status, &paths)
+	g := p.ReaderAccess.Grants["claude"]
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	g.Profiles = []ReaderProfile{{Root: root}}
+	g.Keychain, g.KeychainPriorGrant = true, true
+	outcome, valid := "canceled", claudeCredentialJSON(t, "synthetic-access-token", claudeTestNow.Add(48*time.Hour))
+	g.Credential = func(context.Context) ([]byte, string) {
+		if outcome != "" {
+			return nil, outcome
+		}
+		return append([]byte(nil), valid...), ""
+	}
+	p.ReaderAccess.Grants["claude"] = g
+	if err := RefreshNative(context.Background(), p, claudeTestNow); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := loadReaderState(p.Cache, "claude")
+	if !s.LocalBackoff || s.Failures == 0 {
+		t.Fatalf("fixture needs a recorded local failure: %+v", s)
+	}
+	file := readerPath(p.Cache, "claude")
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy map[string]any
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacy, "localBackoff")
+	raw, _ = json.Marshal(legacy)
+	if err := os.WriteFile(file, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outcome = ""
+	if err := KeychainGrantRead(context.Background(), p, "claude", claudeTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 0 {
+		t.Fatal("a cache without provenance skipped its deadline", paths)
+	}
+}

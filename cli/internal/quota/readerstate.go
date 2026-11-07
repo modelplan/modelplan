@@ -103,11 +103,12 @@ type readerState struct {
 	NextAttemptAt      time.Time              `json:"nextAttemptAt"`
 	IntervalMinutes    int                    `json:"intervalMinutes"`
 	Failures           int                    `json:"failures"`
-	// ProviderBackoff: the latest read reached the provider and failed. A later credential
-	// outcome overlays the entry, so this is kept apart from it.
-	ProviderBackoff bool          `json:"providerBackoff,omitempty"`
-	NextProfile     int           `json:"nextProfile"`
-	Entries         []readerEntry `json:"entries"`
+	// LocalBackoff: the latest read stopped at the credential, before any provider request.
+	// A later credential outcome overlays the entry, so this is kept apart from it, and a
+	// cache without it keeps its deadline: only recorded proof waives a back-off.
+	LocalBackoff bool          `json:"localBackoff,omitempty"`
+	NextProfile  int           `json:"nextProfile"`
+	Entries      []readerEntry `json:"entries"`
 }
 type readerContext struct {
 	Paths      Paths
@@ -350,7 +351,7 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 		s.GenerationDiscards = kept
 	}
 	s.clearPending(profileKey)
-	s.ProviderBackoff = e.Status != "ok" && !credentialStageFailure(e)
+	s.LocalBackoff = e.Status != "ok" && credentialStageFailure(e)
 	if e.Status != "ok" {
 		if !out.Invalidate {
 			e.Account, e.Metadata, e.Admission = previous.Account, previous.Metadata, previous.Admission
