@@ -468,3 +468,26 @@ func TestCodexRuntimeNeverMergesUnverifiedOrDifferentAccount(t *testing.T) {
 		}
 	}
 }
+
+// A brief hold on the consent lock must not lose a finished reading: the failed save used
+// to leave no snapshot and pushed the next read out by the failure wait.
+func TestRefreshKeepsTheReadingThroughABriefConsentLock(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	bin, _ := fakeCodex(t, acctResponse)
+	state, _ := consent.Current()
+	held, done := make(chan struct{}), make(chan error, 1)
+	go func() {
+		done <- consent.Publish(state.Fence(), func() error { close(held); time.Sleep(700 * time.Millisecond); return nil })
+	}()
+	<-held
+	if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
+		t.Fatalf("a brief consent lock lost the reading: %v", err)
+	}
+	if s := loadAccount(cache); s == nil || s.Status != "ok" {
+		t.Fatalf("snapshot = %+v", s)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
