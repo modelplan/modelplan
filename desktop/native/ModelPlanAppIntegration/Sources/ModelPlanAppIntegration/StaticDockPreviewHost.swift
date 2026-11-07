@@ -291,6 +291,7 @@ struct DockHelpInteraction: Equatable {
     @_spi(DockResourceChecks) public var workingEffectsDidConfigureForChecks: (() -> Void)?
     @_spi(DockResourceChecks) public var workingEffectRotationPeriodsForChecks: [String:Double] { workingDriver?.rotationPeriods ?? [:] }
     @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
+    @_spi(DockResourceChecks) public var workingEffectCycleSeconds: [String: Double] { workingDriver?.cycleSeconds ?? [:] }
     @_spi(DockResourceChecks) public func seekWorkingEffectsForChecks(_ seconds: Double) { workingDriver?.seekForCapture(seconds) }
     private let sliverParameters: DockSliverParameters
     private let currentDate: @MainActor () -> Date
@@ -1007,13 +1008,15 @@ struct DockHelpInteraction: Equatable {
         installWorkingEffects(pool: pool, provider: provider, systemReduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
     }
     @_spi(DockResourceChecks) public func installWorkingEffectsForChecks(pool: EffectResourcePool, provider: any EffectFrameProvider,
-                                                                          systemReduceMotion: @escaping () -> Bool) {
-        installWorkingEffects(pool: pool, provider: provider, systemReduceMotion: systemReduceMotion)
+                                                                          systemReduceMotion: @escaping () -> Bool,
+                                                                          onBattery: @escaping () -> Bool = { false }) {
+        installWorkingEffects(pool: pool, provider: provider, systemReduceMotion: systemReduceMotion, onBattery: onBattery)
     }
-    private func installWorkingEffects(pool: EffectResourcePool, provider: any EffectFrameProvider, systemReduceMotion: @escaping () -> Bool) {
+    private func installWorkingEffects(pool: EffectResourcePool, provider: any EffectFrameProvider, systemReduceMotion: @escaping () -> Bool,
+                                       onBattery: @escaping () -> Bool = DockPowerSource.onBattery) {
         guard !retired else { return }
         workingInstallationError = nil
-        workingDriver?.stop(); workingDriver = DockWorkingEffects(pool: pool, systemReduceMotion: systemReduceMotion)
+        workingDriver?.stop(); workingDriver = DockWorkingEffects(pool: pool, systemReduceMotion: systemReduceMotion, onBattery: onBattery)
         workingFrameProvider = provider; inputGeneration &+= 1; rebuild()
     }
     func recordWorkingEffectFailure(_ error: Error) { workingInstallationError = error; lastWorkingEffectError = error }

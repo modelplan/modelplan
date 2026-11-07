@@ -77,12 +77,13 @@ private actor ActivityJourneyEngine: EngineClient {
         root["projection"] = projection; root["sequence"] = sequence
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
     }
-    private func entry(_ rows: WireRowsSnapshot, root: URL, systemReduceMotion: @escaping () -> Bool = { false }) throws -> EngineDockMenuApplication {
+    private func entry(_ rows: WireRowsSnapshot, root: URL, systemReduceMotion: @escaping () -> Bool = { false },
+                       onBattery: @escaping () -> Bool = { false }) throws -> EngineDockMenuApplication {
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"), applicationVersion: "activity-test", allowedEnvironment: [:]),
             settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"]), createsNativePanels: false,
             makeClient: { _, store in ActivityJourneyEngine(store: store, rows: rows) }, activateSettings: {})
         // Keep the production batch-013 frame source; inject only the OS motion preference.
-        app.composition.dock.installWorkingEffectsForChecks(pool: EffectResourcePool(), provider: try T2FlameFrameProvider.bundled(), systemReduceMotion: systemReduceMotion)
+        app.composition.dock.installWorkingEffectsForChecks(pool: EffectResourcePool(), provider: try T2FlameFrameProvider.bundled(), systemReduceMotion: systemReduceMotion, onBattery: onBattery)
         return app
     }
     private func wait(_ condition: @escaping @MainActor () -> Bool) async throws {
@@ -128,6 +129,29 @@ private actor ActivityJourneyEngine: EngineClient {
         await app.prepare()
         app.updateSystemAccessibility(.init())
         XCTAssertTrue(rotations.isEmpty)
+        await app.composition.stop()
+    }
+    /// MOT-2.3-10 on the activity path: flames lit by real rows step at half rate on battery.
+    func testNormalEntryFlamesFromActivityThrottleOnBattery() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("activity-battery-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var battery = true
+        let app = try entry(fixture(phase: nil, sequence: 1), root: root, onBattery: { battery })
+        try await app.foundationStore.update { $0.autoHide = false }
+        await app.prepare(); app.updateSystemAccessibility(.init())
+        await app.composition.start(); app.allowDockPresentation()
+        let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
+        let host = app.composition.dock
+        try await engine.publish(fixture(phase: "tool", sequence: 2))
+        try await wait { host.animatingWorkingEffectIDs == [self.first] }
+        XCTAssertEqual(host.workingEffectCycleSeconds[first], 2, "on battery the flames step at half rate")
+        try await engine.publish(fixture(phase: nil, sequence: 3))
+        try await wait { host.activeWorkingEffectIDs.isEmpty }
+        battery = false
+        try await engine.publish(fixture(phase: "tool", sequence: 4))
+        try await wait { host.animatingWorkingEffectIDs == [self.first] }
+        XCTAssertEqual(host.workingEffectCycleSeconds[first], 1, "on AC the flames return to full rate")
         await app.composition.stop()
     }
     func testNormalEntryLifecycleSleepAndLockWithdrawWorkingEffects() async throws {
