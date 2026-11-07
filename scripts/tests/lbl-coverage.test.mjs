@@ -21,7 +21,8 @@ const swiftForms = [
   [new RegExp(`\\bcopy\\(\\s*${quoted}\\s*,\\s*${quoted}\\s*\\)`, "g"), 2, 1],
   // Catalogue rows: .init(.key, title en, title zh, subtitle en, subtitle zh)
   [new RegExp(`\\.init\\(\\.\\w+\\s*,\\s*${quoted}\\s*,\\s*${quoted}`, "g"), 1, 2],
-  [new RegExp(`\\.init\\(\\.\\w+\\s*,\\s*"[^"\\n]*"\\s*,\\s*"[^"\\n]*"\\s*,\\s*${quoted}\\s*,\\s*${quoted}`, "g"), 1, 2],
+  // The titles may be expressions, as in the login row.
+  [new RegExp(`\\.init\\(\\.\\w+\\s*,\\s*[^,\\n]+,\\s*[^,\\n]+,\\s*${quoted}\\s*,\\s*${quoted}`, "g"), 1, 2],
   [new RegExp(`\\b(?:english|isEnglish)\\s*\\?\\s*${quoted}\\s*:\\s*${quoted}`, "g"), 1, 2],
   [new RegExp(`\\b(?:zh|chinese|isChinese)\\s*\\?\\s*${quoted}\\s*:\\s*${quoted}`, "g"), 2, 1],
   [new RegExp(`==\\s*\\.chinese\\s*\\?\\s*${quoted}\\s*:\\s*${quoted}`, "g"), 2, 1],
@@ -33,12 +34,13 @@ const webForms = [
   [new RegExp(`===?\\s*'en'\\s*\\?\\s*${single}\\s*:\\s*${single}`, "g"), 1, 2],
   [new RegExp(`\\b(?:en|english)\\s*\\?\\s*${single}\\s*:\\s*${single}`, "g"), 1, 2],
 ];
-function collect(rel, text, forms) {
+function collect(rel, text, forms, into = pairs) {
   for (const [pattern, enAt, zhAt] of forms) {
     for (const m of text.matchAll(pattern)) {
-      if (!cjk.test(m[zhAt]) && !cjk.test(m[enAt])) continue;
+      // Most forms also match non-text calls, so a pair needs Chinese on a side. SettingsText is always text.
+      if (!cjk.test(m[zhAt]) && !cjk.test(m[enAt]) && !m[0].startsWith("SettingsText(")) continue;
       const line = text.slice(0, m.index).split("\n").length;
-      pairs.push({ en: m[enAt], zh: m[zhAt], at: `${rel}:${line}` });
+      into.push({ en: m[enAt], zh: m[zhAt], at: `${rel}:${line}` });
     }
   }
 }
@@ -94,7 +96,7 @@ test("LBL-2.2-06 string length budgets", todo("LBL-2.2-06"), () => {
 
 const englishTokensAllowed = ["ALERT", "MCP", "Codex", "GLM", "ZCode", "Z.ai", "OpenCode", "Cursor", "Copilot",
   "Qwen", "Kimi", "Kiro", "Grok", "MiniMax", "Gemini", "Claude", "Antigravity", "Amp", "Droid", "token", "Token",
-  "API", "JSON", "CLI", "3D", "Esc", "Escape", "macOS", "MIT"];
+  "API", "JSON", "CLI", "3D", "Esc", "Escape", "macOS", "Mac", "MIT"];
 const englishPhrasesAllowed = ["Claude Code", "ModelPlan", "Model Plan", "Intel"];
 test("LBL-2.2-07 no English inside the Chinese UI except ALERT, model names and units", todo("LBL-2.2-07"), () => {
   const bad = [];
@@ -157,10 +159,21 @@ test("LBL-2.2-14 public reset wording, full and narrow", todo("LBL-2.2-14"), () 
 });
 
 const internalWords = ["source scope", "read here", "observation", "fixture", "envelope", "未报告单位", "读数可用", "在设置检查读取权限", "正在显示保留的旧读数在允许时刷新"];
+const internalHits = (list) => list.flatMap((p) => internalWords.filter((w) => p.en.toLowerCase().includes(w) || p.zh.includes(w)).map((w) => `${w} (${p.at})`));
 test("LBL-2.2-15 avoid internal words in UI", todo("LBL-2.2-15"), () => {
-  const bad = [];
-  for (const p of pairs) for (const w of internalWords) if (p.en.includes(w) || p.zh.includes(w)) bad.push(`${w} (${p.at})`);
-  assert.deepEqual(bad, []);
+  assert.deepEqual(internalHits(pairs), []);
+});
+
+// The scanner itself: each of these once passed unseen.
+test("the scanner sees a missing language, an expression title and any case", () => {
+  const seen = [];
+  collect("control", `SettingsText("Synthetic missing Chinese", "")
+SettingsText("", "缺少英文")
+.init(.login,LoginSetting.title.english,LoginSetting.title.chinese,"A fixture line","合成行")
+SettingsText("Observation details", "合成读取说明")`, swiftForms, seen);
+  assert.equal(seen.filter((p) => !p.en || !p.zh).length, 2);
+  assert.ok(seen.some((p) => p.en === "A fixture line"));
+  assert.deepEqual(internalHits(seen).map((hit) => hit.split(" ")[0]), ["observation", "fixture"]);
 });
 
 test("LBL-2.2-16 ALERT stays English on the lamp face in both languages", todo("LBL-2.2-16"), () => {

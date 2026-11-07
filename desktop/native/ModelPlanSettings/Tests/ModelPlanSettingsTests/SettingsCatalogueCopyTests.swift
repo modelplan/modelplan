@@ -15,7 +15,7 @@ final class SettingsCatalogueCopyTests: XCTestCase {
         XCTAssertEqual(try row(.resetHints).subtitle.chinese, "重置首次提示及打开驾驶舱、额度挂件展开的提示预算。")
         XCTAssertEqual(try row(.reset).subtitle.chinese, "读取到重置时通知。")
         XCTAssertEqual(try row(.expiring).title.english, "Resets expiring")
-        XCTAssertEqual(try row(.expiring).title.chinese, "重置即将到期")
+        XCTAssertEqual(try row(.expiring).title.chinese, "额外重置即将过期")
         XCTAssertEqual(try row(.expiring).subtitle.chinese, "已过期的重置不再重新显示。")
         XCTAssertFalse(try row(.source).subtitle.chinese.contains("采集器"))
         XCTAssertFalse(try row(.diagnostics).subtitle.chinese.contains("读取器ID"))
