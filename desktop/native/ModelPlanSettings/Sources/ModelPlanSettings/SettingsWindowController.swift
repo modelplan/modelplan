@@ -285,7 +285,7 @@ enum SettingsWords {
         }
         // Accessibility appearance names are matching-only, not constructible (NSAppearance.h).
         // AppKit resolves the system contrast variant; semantic inks are re-resolved on workspace changes.
-        let desiredAppearance: NSAppearance.Name? = editor.context.v1NormalEntry ? .darkAqua : snapshot.preferences.theme == .system ? nil : effective.darkAppearance ? .darkAqua : .aqua
+        let desiredAppearance: NSAppearance.Name? = editor.context.v1NormalEntry || snapshot.preferences.theme == .system ? nil : effective.darkAppearance ? .darkAqua : .aqua
         if window?.appearance?.name != desiredAppearance { window?.appearance = desiredAppearance.flatMap(NSAppearance.init(named:)) }
         glass.isHidden = effective.reduceTransparency
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -95,7 +95,10 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
         guard current == request, canPresent() else { return }
         if case .userInitiated = origin { activate() }
         guard current == request, canPresent() else { return }
-        surface.show(paneID: paneID)
+        let destination: String?
+        if paneID == nil, case .userInitiated = origin { destination = "general" }
+        else { destination = paneID }
+        surface.show(paneID: destination)
     }
 
     /// Lifecycle loss retires pending requests; resumption never opens Settings without a new user action.
