@@ -23,6 +23,13 @@
       "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
       "betaOnly": false
     },
+    "logo-deepseek": {
+      "path": "Marks/deepseek.svg",
+      "sha256": "357e144b8f2a169a0edb8eb4ef6472c9a6d4b5b8aa945561a61b09bed133e38d",
+      "bytes": 3629,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
     "logo-kimi": {
       "path": "Marks/kimi.svg",
       "sha256": "3821ae593eebce6940992f56e2fee3f55a08bbbba78713303c23ea714d44c5f9",
