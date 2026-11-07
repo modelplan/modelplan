@@ -41,3 +41,13 @@ export function currentSample() {
   }
   return value;
 }
+// The porthole flicker (owner D39/D-H) is the one continuous decoration; c-porthole-still.spec.mjs owns its
+// gates (active, open, Reduce Motion) and counts it there. Specs about other motion see the page without it.
+export async function excludePortholeFlicker(page){
+  await page.addInitScript(()=>{
+    const own=Document.prototype.getAnimations;
+    Document.prototype.getAnimations=function(){return own.call(this).filter(a=>!a.effect?.target?.closest?.('.ck-still'));};
+    const style=window.getComputedStyle;
+    window.getComputedStyle=function(element,pseudo){const s=style.call(window,element,pseudo);return element?.closest?.('.ck-still')?new Proxy(s,{get:(t,k)=>k==='animationIterationCount'?'1':Reflect.get(t,k)}):s;};
+  });
+}

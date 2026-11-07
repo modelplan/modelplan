@@ -46,6 +46,22 @@ if (official) {
   const assets=resolve(repo,'desktop/official-visuals');
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
+  // The CSP forbids fetch, so the porthole still's placement table ships as a module carrying the
+  // default public fleet's four projections (src/porthole-still.ts). Derived from the reserved pack,
+  // it carries the pack's licence; the community edition gets null below.
+  const pack=JSON.parse(await readFile(resolve(assets,'runtime/porthole-stills/manifest.json'),'utf8'));
+  const fleet=pack.projections.find(p=>p.id===pack.defaultProjectionId)?.models.map(m=>m.id).join();
+  if(!fleet)throw Error('Porthole default projection missing');
+  const layer=l=>l&&{left:l.left,top:l.top,width:l.width,height:l.height,file:l.file};
+  const stills={base:'runtime/porthole-stills/',projections:[]};
+  for(const theme of ['night','day'])for(const layout of [890,640]){
+    const matches=pack.projections.filter(p=>p.theme===theme&&p.layout===layout&&p.models.map(m=>m.id).join()===fleet);
+    if(matches.length!==1)throw Error(`Porthole default fleet needs exactly one ${theme} ${layout} projection`);
+    const p=matches[0];
+    stills.projections.push({id:p.id,theme,layout,width:p.width,height:p.height,background:p.background,
+      models:p.models.map(m=>({id:m.id,nozzle:m.nozzle??{x:m.root.x,y:(m.flame??m.body).top},body:layer(m.body),flame:layer(m.flame),halo:layer(m.halo)}))});
+  }
+  await writeFile(resolve(output,'src/porthole-stills-data.js'),'// SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0\nexport default '+JSON.stringify(stills)+';\n');
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
   const strip=resolve(assets,'cockpit/strip'),stripCss=await readFile(resolve(strip,'strip.css'));
   if(createHash('sha256').update(stripCss).digest('hex')!=='812160e61c6ae795a6ddb15fa65106ccfb35422ee94ed4e2207e321e834d2deb')throw Error('Unapproved cockpit strip stylesheet');
@@ -66,6 +82,7 @@ if (official) {
   notices.push('Official appearance/artwork: LicenseRef-ModelPlan-Visuals-1.0; see VISUAL-LICENSE.md.','Fonts: OFL-1.1; see fonts/*/OFL.txt and fonts/README.md.');
 } else {
   notices.push('Community edition excludes reserved artwork.');
+  await writeFile(resolve(output,'src/porthole-stills-data.js'),'// SPDX-License-Identifier: MIT\nexport default null;\n');
 }
 await writeFile(resolve(output,'cockpit.css'),css);
 await cp(resolve(repo,'LICENSE'),resolve(output,'LICENSE.txt'));
