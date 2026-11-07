@@ -31,16 +31,12 @@ final class T2GeometryTests: XCTestCase {
                     XCTAssertEqual(geometry.outline.count, 962)
                     XCTAssertEqual(geometry.outlineLocal.count, 962)
                     XCTAssertEqual(geometry.shown.map(\.id) + geometry.overflow.map(\.id), rows.map(\.id))
-                    // The first ring has no arc sag: it sits halfway across the face's free depth.
-                    let half = (diameter + 24 * diameter / 52) / 2
                     if edge == .right {
-                        XCTAssertEqual(geometry.stations[0].prototypeCentre.x,
+                        XCTAssertEqual(geometry.stations[0].centre.x,
                             1470 - (diameter / 2 + 14 * diameter / 52), accuracy: 0.000001)
-                        XCTAssertEqual(geometry.stations[0].centre.x, 1470 - half, accuracy: 0.000001)
                     } else {
-                        XCTAssertEqual(geometry.stations[0].prototypeCentre.y,
+                        XCTAssertEqual(geometry.stations[0].centre.y,
                             956 - (diameter / 2 + 14 * diameter / 52), accuracy: 0.000001)
-                        XCTAssertEqual(geometry.stations[0].centre.y, 956 - half, accuracy: 0.000001)
                     }
                     XCTAssertEqual(geometry.buttonOverhang, 0.4, accuracy: 1.0 / 4096)
                     XCTAssertEqual(geometry.clockRadius, diameter / 2 + 3 * diameter / 52)

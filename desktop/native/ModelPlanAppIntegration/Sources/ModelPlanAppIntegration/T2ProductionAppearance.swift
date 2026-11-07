@@ -7,7 +7,7 @@ import ModelPlanDockResources
 import ModelPlanSettings
 
 /// D-6: the ignition cap's art, loaded once from the verified store for its hover and press poses.
-final class T2IgnitionArt: @unchecked Sendable {
+@MainActor final class T2IgnitionArt {
     let idle: CGImage, pressed: CGImage, inner: CGImage, guardRing: CGImage
     private init?() {
         guard let records = try? T2BundledArtwork.records().mapValues({ DockResourceFile(path: $0.path, sha256: $0.sha256, bytes: $0.bytes) }),
@@ -53,7 +53,7 @@ final class T2IgnitionArt: @unchecked Sendable {
             // the resulting local geometry at the saved anchor.
             // The top edge mirrors the bottom-edge layout (A-1106-4): the ignition sits at the same end.
             let input = T2GeometryInput(coordinates: coords, diameter: preferences.size.nozzleDiameter,
-                showsPercentages: preferences.showPercentages, ignitionAtEnd: !vertical)
+                showsPercentages: preferences.showPercentages, ignitionAtEnd: !vertical, centresRings: view.centresRings)
             let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
             let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages,
                                           zaiMarkEnabled: view.zaiMarkEnabled)
