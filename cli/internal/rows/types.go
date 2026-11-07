@@ -87,19 +87,28 @@ type ResetCardSource struct {
 }
 
 type Account struct {
-	ResetCards       *ResetCards `json:"resetCards,omitempty" null:"forbidden"`
-	RefreshNotBefore **time.Time `json:"refreshNotBefore,omitempty" null:"coalesced"`
-	Route            Route       `json:"route"`
-	SubscriptionRef  *string     `json:"subscriptionRef" null:"coalesced"`
-	AccountLocator   *string     `json:"accountLocator" null:"coalesced"`
-	Plan             Plan        `json:"plan"`
-	Beta             bool        `json:"beta"`
-	Credits          *Credits    `json:"credits" null:"coalesced"`
-	ValueState       ValueState  `json:"valueState"`
-	ObservedAt       *time.Time  `json:"observedAt" null:"coalesced"`
-	FreshUntil       *time.Time  `json:"freshUntil" null:"coalesced"`
-	LastFailure      *Failure    `json:"lastFailure" null:"coalesced"`
-	Windows          []Window    `json:"windows"`
+	Today            *AccountToday `json:"today,omitempty" null:"forbidden"`
+	ResetCards       *ResetCards   `json:"resetCards,omitempty" null:"forbidden"`
+	RefreshNotBefore **time.Time   `json:"refreshNotBefore,omitempty" null:"coalesced"`
+	Route            Route         `json:"route"`
+	SubscriptionRef  *string       `json:"subscriptionRef" null:"coalesced"`
+	AccountLocator   *string       `json:"accountLocator" null:"coalesced"`
+	Plan             Plan          `json:"plan"`
+	Beta             bool          `json:"beta"`
+	Credits          *Credits      `json:"credits" null:"coalesced"`
+	ValueState       ValueState    `json:"valueState"`
+	ObservedAt       *time.Time    `json:"observedAt" null:"coalesced"`
+	FreshUntil       *time.Time    `json:"freshUntil" null:"coalesced"`
+	LastFailure      *Failure      `json:"lastFailure" null:"coalesced"`
+	Windows          []Window      `json:"windows"`
+}
+
+// AccountToday contains only observed values; omission means unknown.
+type AccountToday struct {
+	ObservedOutputTokens *int64            `json:"observedOutputTokens,omitempty" null:"forbidden" schema:"minimum=1"`
+	GenerationTps        *float64          `json:"generationTps,omitempty" null:"forbidden" schema:"minimum=0"`
+	RunningSessions      *int              `json:"runningSessions,omitempty" null:"forbidden" schema:"minimum=1"`
+	BindingBasis         TodayBindingBasis `json:"bindingBasis"`
 }
 
 type Plan struct {

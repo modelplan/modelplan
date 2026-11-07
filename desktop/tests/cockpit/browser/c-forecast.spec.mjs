@@ -6,14 +6,16 @@ import {visualFixture} from '../visual-fixture.mjs';
 
 const NOW=Date.parse('2026-11-04T12:00:00Z'),iso=minutes=>new Date(NOW+minutes*60000).toISOString();
 async function open(page,data,locale='en') {
- await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.addInitScript(()=>{window.posted=[];window.webkit={messageHandlers:{cockpit:{postMessage(m){window.posted.push(m);}}}};});
  await page.clock.setFixedTime(new Date(NOW));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
+ return {send,receive};
 }
+const lastDeadline=page=>page.evaluate(()=>window.posted.map(m=>typeof m==='string'?JSON.parse(m):m).filter(m=>m.type==='nextDeadline').at(-1)?.deadlineUnixMs);
 // One member at 60% left with a reset in 5 h; every other window is left comfortably above the line.
 function fixture(forecast={}) {
  const data=visualFixture().data,row=data.projection.rows[0],account=row.accounts[0],w=account.windows[0];
@@ -71,4 +73,17 @@ test('D38 a retained reading never forecasts',async({page})=>{
  const {data,account}=fixture();account.valueState='retained';
  await open(page,data);
  await expect(lamp(page)).not.toHaveClass(/\bamber\b/);
+});
+
+// macrev2-631-1: a passed run-out needs a repaint at that moment, not at the next reading.
+test('D38 the page asks for a tick at the run-out, and the amber clears there with no new reading',async({page})=>{
+ const {data,w}=fixture({runsOutAt:iso(20)});w.validUntil=iso(60);
+ const {send,receive}=await open(page,data);
+ await expect(lamp(page)).toHaveClass(/\bamber\b/);
+ expect(await lastDeadline(page)).toBe(String(NOW+20*60000));
+ await page.clock.setFixedTime(new Date(NOW+20*60000));
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+20*60000),reason:'deadline'}))).toBe(true);
+ await expect(lamp(page)).not.toHaveClass(/\bamber\b/);
+ await expect(page.locator('.qcell').filter({hasText:'out ~'})).toHaveCount(0);
+ expect(Number(await lastDeadline(page))).toBeGreaterThan(NOW+20*60000);
 });

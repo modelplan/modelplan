@@ -279,3 +279,16 @@ An absent deadline means the member-refresh capability or live grant is absent;
 `null` means the grant exists but the deadline or account binding is unknown.
 A timestamp in the past means the reader is already due. Every request still
 rechecks the provider-wide floor, backoff, budget, and current consent.
+
+`accountTodayV1` permits an optional `today` object on rows accounts in
+`rows/subscribe`, `rows/changed`, and `cockpit/query`. Each positive
+`observedOutputTokens` is an output-token count for the current local day;
+`generationTps` is eligible output tokens per second across at least five
+samples; `runningSessions` is a count of bound, currently running local
+sessions. Missing properties mean unknown; explicit null is forbidden, and
+zero is not synthesized. `bindingBasis` is `source-wide-current-binding` for
+totals from a uniquely bound current source, which does not prove historical
+account ownership, or `session-binding` when only an explicitly bound live
+session count is known. Unverified, stale, ambiguous, revoked or unrecorded
+data stay absent. Existing clients do not receive the field without the
+capability. These are local observed facts, not provider billing totals.

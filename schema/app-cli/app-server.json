@@ -114,6 +114,16 @@
             }
           ]
         },
+        "today": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccountToday"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "valueState": {
           "enum": [
             "current",
@@ -141,6 +151,55 @@
         "freshUntil",
         "lastFailure",
         "windows"
+      ],
+      "type": "object"
+    },
+    "AccountToday": {
+      "additionalProperties": false,
+      "properties": {
+        "bindingBasis": {
+          "enum": [
+            "source-wide-current-binding",
+            "session-binding"
+          ],
+          "type": "string"
+        },
+        "generationTps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
+        },
+        "observedOutputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 1
+        },
+        "runningSessions": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 1
+        }
+      },
+      "required": [
+        "bindingBasis"
       ],
       "type": "object"
     },
