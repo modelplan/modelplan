@@ -604,8 +604,8 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(text("row.source.value", in: dock.card), "已有登录")
     }
 
-    /// DOCK-3.8-07 / V-18: the card's reset time uses the glossary relative format in both languages.
-    func testNormalCardResetTimeUsesTheGlossaryRelativeFormat() async throws {
+    /// DOCK-3.8-07 / D40: the card's reset time uses the prototype's compact form in both languages.
+    func testNormalCardResetTimeUsesTheCompactPrototypeFormat() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-copy-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
@@ -624,10 +624,10 @@ actor EntrySyntheticClient: EngineClient {
             return try XCTUnwrap(content.rows.first { $0.id == "quota:weekly:604800:main:main" }?.detail)
         }
         let english = try weekly()
-        XCTAssertTrue(english.hasPrefix("resets in 2h 14m"), english)
+        XCTAssertTrue(english.hasPrefix("resets 2h14"), english)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         let chinese = try weekly()
-        XCTAssertTrue(chinese.hasPrefix("2 小时 14 分后重置"), chinese)
+        XCTAssertTrue(chinese.hasPrefix("2h14 后重置"), chinese)
     }
 
     /// G3-06 residual (DOCK-3.8-08): a money balance without a currency is grouped with at
@@ -1219,7 +1219,7 @@ actor EntrySyntheticClient: EngineClient {
         await surface.waitForShow()
         XCTAssertEqual(surface.pane, "diagnostics")
         let id = "aaaaaaaaaaaaaaaa"
-        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account · Account 1")
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account")
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · over 30 days ago")
         let dockView = app.composition.dock.dockView
         let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
@@ -1234,7 +1234,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(store.snapshot.rows?.sequence, before, "no new engine delivery")
         XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the hovered card")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
-        XCTAssertEqual(card.name, "合成账户 · 账号 1")
+        XCTAssertEqual(card.name, "合成账户")
         XCTAssertEqual(card.stateLabel, "过期 · 超过 30 天前", "The stale badge follows the Chinese prototype while preserving the original observation age")
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("合成账户"))
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)

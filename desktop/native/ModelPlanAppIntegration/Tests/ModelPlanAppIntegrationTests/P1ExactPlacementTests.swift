@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ImageIO
 import XCTest
 @_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
@@ -287,6 +288,106 @@ private actor P1SyntheticEngine: EngineClient {
         }
     }
 
+    /// G3-30: ring centres sit across the face depth exactly where the prototype puts them.
+    /// Oracle values come from the prototype's geometry.js (right edge, percentages on), not from
+    /// the native port: ring centre to the screen edge per station, and ring centre to the face's
+    /// inner edge = (D/2 + 3s + 7s + D/2 + 14s) - (D/2 + 14s) = D/2 + 10s = 36 x D/52.
+    /// Prototype: clients/official-visuals/dock-aftview-integration/geometry.js:67-69,119,120-125.
+    /// The pixel scan reads the inner edge from the resting raster, so a renderer offset is caught too.
+    /// Writes 2x PNGs of the expanded widget (dock-visual/g3-30) as CI evidence.
+    func testG330RingCentresSitAcrossTheFaceLikeThePrototype() async throws {
+        let oracle: [SettingsSize: [Int: [CGFloat]]] = [
+            .small: [1: [27.69], 3: [27.69, 29.73, 28.36], 5: [27.69, 29.94, 30.78, 30.22, 28.24]],
+            .medium: [1: [33.85], 3: [33.85, 36.33, 34.66], 5: [33.85, 36.60, 37.62, 36.93, 34.52]],
+            .large: [1: [40.00], 3: [40.00, 42.94, 40.96], 5: [40.00, 43.25, 44.47, 43.65, 40.79]]
+        ]
+        let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.temporaryDirectory
+        let output = root.appendingPathComponent("dock-instrument-checks/dock-visual/g3-30", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        func png(_ image: CGImage, _ name: String) {
+            guard let writer = CGImageDestinationCreateWithURL(output.appendingPathComponent(name + ".png") as CFURL, "public.png" as CFString, 1, nil) else { return }
+            CGImageDestinationAddImage(writer, image, nil); CGImageDestinationFinalize(writer)
+        }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var report = [String]()
+        for count in [1, 3, 5] {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+            var projection = try XCTUnwrap(json["projection"] as? [String: Any])
+            var row = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
+            let template = try XCTUnwrap((row["accounts"] as? [[String: Any]])?.first)
+            row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock", "menu", "settings"]
+            row["expiresAt"] = "2099-01-01T00:00:00Z"
+            row["accounts"] = (0..<count).map { index -> [String: Any] in
+                var account = template
+                account["subscriptionRef"] = String(repeating: String(index + 1), count: 16)
+                account["valueState"] = "current"; account["freshUntil"] = "2099-01-01T00:00:00Z"
+                return account
+            }
+            projection["rows"] = [row]; json["projection"] = projection
+            let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+            for size in SettingsSize.allCases {
+                let profile = FileManager.default.temporaryDirectory.appendingPathComponent("p1-g330r-" + UUID().uuidString)
+                addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+                let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+                _ = try await store.update { p in
+                    p.showDock = true; p.autoHide = false; p.dockEdge = .right; p.size = size; p.showPercentages = true
+                    for _ in 0..<16 { p.onboarding.next() }
+                }
+                let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795), backingScale: 2)
+                let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+                    dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
+                    makeClient: { _, target in P1SyntheticEngine(store: target, rows: rows) }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
+                protect(app)
+                await app.prepare()
+                app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+                let view = app.composition.dock.dockView
+                for _ in 0..<1000 {
+                    if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == count { break }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                let label = "\(size.rawValue)-\(count)"
+                let skin = try XCTUnwrap(view.presentedSkinForChecks, label)
+                let image = try XCTUnwrap(view.presentedImageForChecks, label)
+                png(image, "resting-right-\(label)")
+                // The whole expanded view (face plus the transparent hover canvas), drawn by AppKit.
+                if view.bounds.width > 0, let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * 2), pixelsHigh: Int(view.bounds.height * 2),
+                       bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) {
+                    rep.size = view.bounds.size; view.cacheDisplay(in: view.bounds, to: rep)
+                    if let full = rep.cgImage { png(full, "expanded-view-right-\(label)") }
+                }
+                let d = size.nozzleDiameter, unit = d / 52
+                let stations = skin.stations.filter { $0.subscriptionID != nil }.sorted { $0.centre.y < $1.centre.y }
+                let expected = try XCTUnwrap(oracle[size]?[count])
+                XCTAssertEqual(stations.count, count, label)
+                // The resting raster covers the skin bounds; rows run top-down.
+                let pixels = CGFloat(image.width) / skin.bounds.width
+                let rgba = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+                rgba.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                let bytes = try XCTUnwrap(rgba.data).assumingMemoryBound(to: UInt8.self)
+                for (index, station) in stations.enumerated() where index < expected.count {
+                    let depth = skin.bounds.maxX - station.centre.x
+                    let y = Int(((station.centre.y - skin.bounds.minY) * pixels).rounded(.down))
+                    // Start just inside the clock dots (radius 28.2 x D/52) so nozzle art never ends the scan.
+                    var x = Int(((station.centre.x - 30 * unit - skin.bounds.minX) * pixels).rounded(.down))
+                    while x > 0, bytes[(y * image.width + x) * 4 + 3] >= 128 { x -= 1 }
+                    let innerEdge = skin.bounds.minX + CGFloat(x + 1) / pixels
+                    let inward = station.centre.x - innerEdge
+                    report.append("\(label) ring\(index) diameter \(station.diameter) centre-to-screen-edge \(depth) centre-to-inner-edge \(inward) y \(station.centre.y) pitch-prev \(index > 0 ? station.centre.y - stations[index - 1].centre.y : 0)")
+                    XCTAssertEqual(depth, expected[index], accuracy: 0.5, "\(label) ring \(index): centre to screen edge (prototype \(expected[index]))")
+                    XCTAssertEqual(inward, 36 * unit, accuracy: 1.0, "\(label) ring \(index): centre to the face's inner edge")
+                    // The card measures its gap from the painted clock ring (prototype card.js:154-163).
+                    let cardRing = try XCTUnwrap(view.cardRingAnchor(try XCTUnwrap(station.subscriptionID)))
+                    XCTAssertEqual(cardRing.width, 2 * (26 + 2.2 + 0.75) * unit, accuracy: 0.05, "\(label) card ring")
+                }
+                await app.stopLifecycle(); app.composition.dock.close()
+            }
+        }
+        try report.joined(separator: "\n").write(to: output.appendingPathComponent("g3-30-rings.txt"), atomically: true, encoding: .utf8)
+        print(report.joined(separator: "\n"))
+    }
+
     /// MENU-12: an actually open widget menu protects the widget; when AppKit ends tracking without
     /// the close callback, the flag clears anyway, so it never blocks the collapse.
     func testMENU12OpenMenuProtectsAndAStaleFlagClears() async throws {
@@ -464,4 +565,179 @@ private actor P1SyntheticEngine: EngineClient {
         await app.stopLifecycle(); host.close()
     }
 
+}
+
+// G3-30 colour and G3-32 ring marks, both through the normal entry (EngineRowsEntry + settings store).
+extension P1ExactPlacementTests {
+    private struct Station { let id: String; let vendorKey: String; let name: String; let accounts: Int }
+
+    private func synthetic(_ stations: [Station]) throws -> WireRowsSnapshot {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(json["projection"] as? [String: Any])
+        let template = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
+        let account = try XCTUnwrap((template["accounts"] as? [[String: Any]])?.first)
+        var serial = 0
+        projection["rows"] = stations.enumerated().map { order, station -> [String: Any] in
+            var row = template
+            row["id"] = station.id; row["order"] = order + 1; row["vendorKey"] = station.vendorKey
+            row["name"] = ["en": station.name, "zh": station.name]
+            row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock", "menu", "settings"]
+            row["expiresAt"] = "2099-01-01T00:00:00Z"
+            row["accounts"] = (0..<station.accounts).map { _ -> [String: Any] in
+                serial += 1
+                var copy = account
+                copy["subscriptionRef"] = String(format: "%016x", serial)
+                copy["valueState"] = "current"; copy["freshUntil"] = "2099-01-01T00:00:00Z"
+                return copy
+            }
+            return row
+        }
+        json["projection"] = projection
+        return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    private func launch(_ rows: WireRowsSnapshot, size: SettingsSize, percentages: Bool, stations: Int, tag: String) async throws -> (EngineDockMenuApplication, DockInstrumentView) {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("p1-\(tag)-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        _ = try await store.update { p in
+            p.showDock = true; p.autoHide = false; p.dockEdge = .right; p.size = size; p.showPercentages = percentages
+            for _ in 0..<16 { p.onboarding.next() }
+        }
+        let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795), backingScale: 2)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
+            makeClient: { _, target in P1SyntheticEngine(store: target, rows: rows) }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
+        protect(app)
+        await app.prepare()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        let view = app.composition.dock.dockView
+        for _ in 0..<1000 {
+            if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == stations { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return (app, view)
+    }
+
+    private func visualOutput(_ name: String) throws -> URL {
+        let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.temporaryDirectory
+        let output = root.appendingPathComponent("dock-instrument-checks/dock-visual/\(name)", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        return output
+    }
+
+    /// G3-30 colour: the face matches the prototype per depth band, within 3 levels per channel.
+    /// Reference values are measured from the prototype's own captures (design-handoffs/
+    /// dock-aftview-integration/shots/after-right-{4,7}-dark.png and after-right-7-light.png, 52 pt,
+    /// right edge, 2x): mean sRGB over face-only rows, banded by depth from the screen edge as a
+    /// fraction of the face's free depth (D + 24 x D/52; geometry.js:68,119). The prototype face is
+    /// opaque, so light and dark wallpapers give the same bands (they agree within 1.5 levels).
+    /// The gradient is laid out over the free depth, so the same bands apply at S and M.
+    /// Before this fix the native face measured 16-20 levels brighter in every band.
+    func testG330FaceColourMatchesThePrototypePerDepthBand() async throws {
+        let reference: [[Double]] = [[12.8, 17.3, 24.8], [14.7, 22.9, 30.9], [20.3, 28.9, 37.0], [25.0, 34.3, 41.8]]
+        let output = try visualOutput("g3-30-colour")
+        let rows = try synthetic((1...4).map { Station(id: "colour\($0)", vendorKey: "claude", name: "Claude \($0)", accounts: 1) })
+        var report = [String]()
+        for size in SettingsSize.allCases {
+            let (app, view) = try await launch(rows, size: size, percentages: false, stations: 4, tag: "g330c")
+            let label = size.rawValue
+            let skin = try XCTUnwrap(view.presentedSkinForChecks, label)
+            let image = try XCTUnwrap(view.presentedImageForChecks, label)
+            if let writer = CGImageDestinationCreateWithURL(output.appendingPathComponent("after-right-\(label)-4.png") as CFURL, "public.png" as CFString, 1, nil) {
+                CGImageDestinationAddImage(writer, image, nil); CGImageDestinationFinalize(writer)
+            }
+            let pixels = CGFloat(image.width) / skin.bounds.width
+            let rgba = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+            rgba.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            let bytes = try XCTUnwrap(rgba.data).assumingMemoryBound(to: UInt8.self)
+            let d = size.nozzleDiameter, freeDepth = d + 24 * d / 52
+            let stations = skin.stations.filter { $0.subscriptionID != nil }.sorted { $0.centre.y < $1.centre.y }
+            XCTAssertEqual(stations.count, 4, label)
+            // Face-only rows: +-3 pt about the midpoint between neighbouring rings.
+            var sampleRows = [Int]()
+            for (a, b) in zip(stations, stations.dropFirst()) {
+                let mid = (a.centre.y + b.centre.y) / 2
+                let low = Int(((mid - 3 - skin.bounds.minY) * pixels).rounded()), high = Int(((mid + 3 - skin.bounds.minY) * pixels).rounded())
+                sampleRows += Array(low...high)
+            }
+            var sums = Array(repeating: [0.0, 0.0, 0.0, 0.0], count: reference.count)
+            for y in sampleRows where y >= 0 && y < image.height {
+                for x in 0..<image.width {
+                    let depth = skin.bounds.maxX - (skin.bounds.minX + (CGFloat(x) + 0.5) / pixels)
+                    let band = Int((depth / freeDepth * 10).rounded(.down))
+                    guard band >= 0, band < reference.count else { continue }
+                    let p = (y * image.width + x) * 4
+                    guard bytes[p + 3] == 255 else { continue }
+                    for c in 0..<3 { sums[band][c] += Double(bytes[p + c]) }
+                    sums[band][3] += 1
+                }
+            }
+            for (band, sum) in sums.enumerated() {
+                let count = try XCTUnwrap(sum[3] > 0 ? sum[3] : nil, "\(label) band \(band) sampled")
+                let mean = (0..<3).map { sum[$0] / count }
+                let error = (0..<3).map { abs(mean[$0] - reference[band][$0]) }
+                report.append(String(format: "%@ band %d (depth %.0f-%.0f%%) native %.1f,%.1f,%.1f prototype %.1f,%.1f,%.1f max error %.1f",
+                                     label, band, Double(band) * 10, Double(band + 1) * 10, mean[0], mean[1], mean[2],
+                                     reference[band][0], reference[band][1], reference[band][2], error.max() ?? 0))
+                XCTAssertLessThanOrEqual(error.max() ?? 99, 3, "\(label) band \(band): native \(mean) vs prototype \(reference[band])")
+            }
+            await app.stopLifecycle(); app.composition.dock.close()
+        }
+        try report.joined(separator: "\n").write(to: output.appendingPathComponent("g3-30-colour.txt"), atomically: true, encoding: .utf8)
+        print(report.joined(separator: "\n"))
+    }
+
+    /// G3-32: a ring shows the vendor's checked mark; without one, its initials fit the face.
+    /// Build 7 showed "ini" (Gemini) and "k B" clipped by the ring: the whole name was drawn
+    /// into the 0.27 x D glyph box.
+    func testG332NoRingLabelIsClippedForAnyKnownVendor() async throws {
+        let marked: Set<String> = ["openai", "claude", "cursor", "copilot", "kimi", "opencode", "deepseek", "gemini", "grok", "x", "qwen", "kiro",
+            "minimax", "xiaomi", "antigravity", "amp", "droid", "zai", "zhipu"]
+        XCTAssertEqual(["Gemini", "Grok", "GLM", "Z.ai", "智谱清言", "Work Bench B", "Grok · 2"].map(DockVendorFallback.mark), ["Ge", "Gr", "GL", "Za", "智谱", "Wo", "Gr"])
+        let vendors: [(String, String)] = [("openai", "Codex"), ("claude", "Claude"), ("cursor", "Cursor"), ("copilot", "Copilot"),
+            ("kimi", "Kimi"), ("opencode", "OpenCode"), ("gemini", "Gemini"), ("grok", "Grok"), ("qwen", "Qwen"), ("kiro", "Kiro"),
+            ("minimax", "MiniMax"), ("antigravity", "Antigravity"), ("amp", "Amp"), ("zai", "Z.ai"), ("zhipu", "智谱清言"),
+            ("deepseek", "DeepSeek"), ("x", "X"), ("xiaomi", "Xiaomi"), ("droid", "Droid"), ("unknown-vendor", "Work Bench B")]
+        let output = try visualOutput("g3-32")
+        for size in SettingsSize.allCases {
+            for batch in stride(from: 0, to: vendors.count, by: 4) {
+                let slice = Array(vendors[batch..<min(batch + 4, vendors.count)])
+                // The last vendor of each batch has a second account, so its ring is named "<name> · 2".
+                let stations = slice.enumerated().map { index, vendor in
+                    Station(id: "v\(batch + index)", vendorKey: vendor.0, name: vendor.1, accounts: index == slice.count - 1 ? 2 : 1)
+                }
+                let expected = stations.reduce(0) { $0 + $1.accounts }
+                let (app, view) = try await launch(try synthetic(stations), size: size, percentages: false, stations: expected, tag: "g332")
+                let label = "\(size.rawValue) batch \(batch)"
+                let skin = try XCTUnwrap(view.presentedSkinForChecks, label)
+                let glyphBox = try XCTUnwrap(skin.stations.first { $0.subscriptionID != nil }?.glyphRect, label)
+                let metrics = view.presentedTextMetricsForChecks
+                let readings = view.presentedReadingsForChecks
+                if let image = view.presentedImageForChecks, let writer = CGImageDestinationCreateWithURL(output.appendingPathComponent("rings-\(size.rawValue)-\(batch).png") as CFURL, "public.png" as CFString, 1, nil) {
+                    CGImageDestinationAddImage(writer, image, nil); CGImageDestinationFinalize(writer)
+                }
+                XCTAssertEqual(readings.count, expected, label)
+                for reading in readings.values {
+                    let mark = DockVendorFallback.mark(reading.name)
+                    if let key = reading.vendorResourceKey, marked.contains(key) || (view.zaiMarkEnabled && ["zai", "zhipu", "glm"].contains(key)) {
+                        XCTAssertFalse(metrics.contains { $0.text == reading.name }, "\(label) \(key) shows its mark, not its name")
+                        continue
+                    }
+                    XCTAssertLessThanOrEqual(mark.count, 2, "\(label) \(reading.name)")
+                    let drawn = metrics.filter { $0.text == mark }
+                    XCTAssertFalse(drawn.isEmpty, "\(label) \(reading.name): fallback \(mark) is drawn")
+                    for metric in drawn {
+                        XCTAssertLessThanOrEqual(CGFloat(metric.advance), glyphBox.width + 0.01, "\(label) \(reading.name): \(mark) fits the ring face width")
+                        XCTAssertLessThanOrEqual(metric.ascent + metric.descent, glyphBox.height + 0.01, "\(label) \(reading.name): \(mark) fits the ring face height")
+                    }
+                    XCTAssertFalse(metrics.contains { $0.text == reading.name && reading.name.count > 2 }, "\(label) the full name \(reading.name) is never drawn in the ring")
+                }
+                await app.stopLifecycle(); app.composition.dock.close()
+            }
+        }
+    }
 }

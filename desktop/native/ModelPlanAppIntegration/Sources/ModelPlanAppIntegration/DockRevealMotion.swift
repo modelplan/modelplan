@@ -107,8 +107,8 @@ enum DockRevealMotion {
 /// Prototype: clients/official-visuals/dock-aftview-integration/face-view.js:23-25, face.css:136-137.
 @MainActor final class DockSnapPreview {
     private final class OutlineView: NSView {
-        var path: CGPath?, stroke: NSColor = .white, lineWidth: CGFloat = 1, flipped = true
-        override var isFlipped: Bool { flipped }
+        var path: CGPath?, stroke: NSColor = .white, lineWidth: CGFloat = 1, drawsFlipped = true
+        override var isFlipped: Bool { drawsFlipped }
         override func draw(_ dirtyRect: NSRect) {
             NSColor.clear.setFill(); bounds.fill(using: .copy)
             guard let path, let context = NSGraphicsContext.current?.cgContext else { return }
@@ -130,7 +130,7 @@ enum DockRevealMotion {
             return value
         }()
         panel = preview
-        outline.path = path; outline.flipped = flipped; outline.stroke = stroke; outline.lineWidth = lineWidth
+        outline.path = path; outline.drawsFlipped = flipped; outline.stroke = stroke; outline.lineWidth = lineWidth
         outline.frame = CGRect(origin: .zero, size: frame.size); outline.needsDisplay = true
         if preview.contentView !== outline { preview.contentView = outline }
         preview.level = level

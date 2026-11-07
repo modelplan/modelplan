@@ -54,6 +54,16 @@ public struct DockInstrumentSkin: Codable, Sendable {
         self.stations=stations;self.palette=palette;self.text=text;self.aliasText=aliasText
     }
 }
+/// G3-32: a vendor without a checked mark shows the first two letters of its display name, so
+/// vendors sharing an initial stay apart (Ge, Gr, GL), sized to the ring face.
+public enum DockVendorFallback {
+    public static func mark(_ name: String) -> String {
+        // A duplicate-account tag (" · 2") is an account detail, not the vendor's identity.
+        let base = name.components(separatedBy: " · ").first ?? name
+        let letters = base.filter { $0.isLetter || $0.isNumber }.prefix(2)
+        return letters.isEmpty ? "?" : letters.prefix(1).uppercased() + letters.dropFirst()
+    }
+}
 public struct DockGlyphMetric: Sendable {public let text:String,font:String;public let advance:Double,ascent:CGFloat,descent:CGFloat;public let runFonts:[String]}
 public struct DockRenderResult {public let image:CGImage;public let backgroundImage:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool}
 
@@ -148,7 +158,16 @@ public struct DockNozzlePose: Equatable, Sendable {
         }
         guard let backgroundImage = cachedBackground ?? c.makeImage() else { throw DockArtworkError.invalidManifest }
         var metrics=[DockGlyphMetric]()
-        func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor) throws {
+        func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor,fit:Bool = false) throws {
+            var recipe = recipe
+            if fit, !value.isEmpty, recipe.size.isFinite, (1...128).contains(recipe.size), rect.width > 0, rect.height > 0 {
+                // G3-32: a fallback mark is shrunk to sit inside its box, never clipped by it.
+                let probe = CTLineCreateWithAttributedString(NSAttributedString(string: value, attributes: [
+                    NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateUIFontForLanguage(.system, recipe.size, nil)!]))
+                var a: CGFloat = 0, d: CGFloat = 0, l: CGFloat = 0
+                let w = CGFloat(CTLineGetTypographicBounds(probe, &a, &d, &l))
+                if w > 0, a + d > 0 { recipe.size = max(1, (recipe.size * min(1, rect.width * 0.92 / w, rect.height / (a + d)) * 100).rounded(.down) / 100) }
+            }
             guard recipe.language.map({!$0.isEmpty && $0.utf8.count<=64}) ?? true, value.utf8.count<=1024,recipe.size.isFinite,(1...128).contains(recipe.size),rect.width>0,rect.height>0 else{throw DockArtworkError.invalidManifest}
             let font:CTFont
             if let id=recipe.fontResource {
@@ -290,7 +309,7 @@ public struct DockNozzlePose: Equatable, Sendable {
                     guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
                     c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect,fitVisibleGlyph:true)
                 } else if station.fallbackVendorName == true {
-                    try text(reading.name, station.glyphRect, skin.aliasText, try ink("text"))
+                    try text(DockVendorFallback.mark(reading.name), station.glyphRect, skin.aliasText, try ink("text"), fit: true)
                 }
                 }
                 if reading.timeLeftFraction != nil {

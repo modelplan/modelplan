@@ -531,7 +531,7 @@ private actor S4RowsClient: EngineClient {
         try require(input.windows.filter{["model","review","unknown"].contains($0.id)}.allSatisfy{!$0.isGeneral},"scoped, special and unknown limits must stay out of general windows")
         try require(input.windows.first(where:{$0.id.hasSuffix("month")})?.period == .month,"monthly role must survive")
         guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"normal card missing") }
-        try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("resets in ") == true,"card must carry the reported relative reset")
+        try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("resets ") == true,"card must carry the reported relative reset")
         try require(card.rows.contains{$0.id == "quota:extra" && $0.kind == .extraQuota && $0.value == "1%"},"extra quota belongs in the card only")
         let afterReset=Date(timeIntervalSince1970:4_102_444_800) // 2100-01-01
         let expired=try entry.composition.dock.cardContent(for:input.id,at:afterReset)
@@ -600,7 +600,8 @@ private actor S4RowsClient: EngineClient {
         let content=entry.composition.presentedContent
         try require(content.snapshot.inputs.map(\.id) == ["0123456789abcdef","fedcba9876543210"],"two account members must have their verified display keys")
         try require(content.snapshot.inputs.allSatisfy{$0.windows.count == 1},"one account's windows must not be duplicated into its neighbour")
-        try require(content.snapshot.inputs.map(\.name) == ["synthetic · Account 1","synthetic · Account 2"],"each duplicate-account nozzle needs its tag")
+        // D40 / DOCK-3.5-01: the first of a shared name stays plain, the next is " · 2".
+        try require(content.snapshot.inputs.map(\.name) == ["synthetic","synthetic · 2"],"each duplicate-account nozzle needs its tag")
         try require(content.snapshot.subscriptions.map(\.id) == ["0123456789abcdef","fedcba9876543210"],"Settings catalogue must use the same member keys")
         guard let firstCard=try entry.composition.dock.cardContent(for:"0123456789abcdef"),
               let secondCard=try entry.composition.dock.cardContent(for:"fedcba9876543210") else { throw Failure(description:"normal Dock must expose the actual member card content") }
@@ -608,6 +609,10 @@ private actor S4RowsClient: EngineClient {
         try require(firstCard.sourceAndAge.hasPrefix("Local history · "),"card header must use the admitted window source, even when the account route differs")
         try require(firstCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"first card needs its own rounded credits")
         try require(secondCard.rows.contains{$0.kind == .reserve && $0.value == "7"},"second card needs its own reported credits")
+        try require(firstCard.name == "synthetic" && secondCard.name == "synthetic · 2","duplicate cards are told apart by number without an alias")
+        try await store.update { $0.subscriptionSettings["fedcba9876543210"] = SubscriptionSetting(alias:"Work") };await entry.prepare()
+        try require(try entry.composition.dock.cardContent(for:"fedcba9876543210")?.name == "synthetic · Work","a duplicate with an alias shows the alias instead of the number")
+        try require(try entry.composition.dock.cardContent(for:"0123456789abcdef")?.name == "synthetic","the alias belongs to its own subscription only")
         try require(!secondCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"source totals must not leak across members")
         var old=SettingsPreferences();old.subscriptionSettings["codex"] = .init(alias:"Wrong shared alias",percentagePin:.fiveHour)
         old.subscriptions = .init(order:["codex"],hiddenIDs:["codex"])
@@ -675,7 +680,7 @@ private actor S4RowsClient: EngineClient {
         defer { entry.composition.dock.close() }
         let inputs=entry.composition.presentedContent.snapshot.inputs
         try require(inputs.map(\.id) == ["0123456789abcdef","codex#saved_login_api#1","codex#saved_login_api#2","codex#runtime_rpc"],"colliding unbound members need separate CLI-order keys, counting only the colliding members")
-        try require(inputs.map(\.name) == ["synthetic · Account 1","synthetic · Account 2","synthetic · Account 3","synthetic · Account 4"],"every nozzle must retain its duplicate-account tag")
+        try require(inputs.map(\.name) == ["synthetic","synthetic · 2","synthetic · 3","synthetic · 4"],"every nozzle must retain its duplicate-account tag")
         try require(inputs.compactMap(\.duplicateAccountTag) == [1,2,3,4],"official appearance must receive structured duplicate tags without parsing names")
         let readings=try inputs.map { try DockInstrumentProjection.evaluate($0,now:Date()) }
         try require(readings.map(\.remainingPercent) == [70,nil,nil,40],"colliding unbound nozzles must remain visible with values withheld; independently proved members keep their own values")
@@ -774,9 +779,11 @@ private actor S4RowsClient: EngineClient {
             let expectedBalanceLabels = language == .chinese ? ["余额", "储备", "点数"] : ["Balance", "Reserve", "Credits"]
             try require(balanceLabels == expectedBalanceLabels,"wire units must map to localized balance facts without inventing a currency")
             if language == .chinese {
-                try require(!visible.joined().unicodeScalars.contains{(65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value))},"Chinese projection must not leak raw English unit or fallback text")
+                // D40: the card's compact reset time ("3h18", "5d20h", "45m") is the prototype's form in both languages.
+                let prose = visible.joined().replacingOccurrences(of: #"\d+(d\d+h|h\d{2}|m)"#, with: "", options: .regularExpression)
+                try require(!prose.unicodeScalars.contains{(65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value))},"Chinese projection must not leak raw English unit or fallback text")
                 try require(!visible.joined().contains("观测"),"reading age must use user-facing glossary copy")
-                try require(content.snapshot.inputs.first?.name == "合成工具 · 账号 1","duplicate member copy must use the account term consistently")
+                try require(content.snapshot.inputs.map(\.name).prefix(2) == ["合成工具","合成工具 · 2"],"duplicate member copy is numbered the same way in Chinese")
                 try require(cards.allSatisfy{$0.rows.first(where:{$0.kind == .quota})?.label == "5小时"},"the short quota row must use the glossary label")
             } else {
                 try require(!visible.joined().unicodeScalars.contains{(0x3400...0x9FFF).contains(Int($0.value))},"English projection must not retain Chinese strings after language change")

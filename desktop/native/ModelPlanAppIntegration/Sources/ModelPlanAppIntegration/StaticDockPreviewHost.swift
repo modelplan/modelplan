@@ -1397,6 +1397,8 @@ struct DockHelpInteraction: Equatable {
         }
         guard let panel else { publishPlacementObservation(nil); return }
         let previousState = panel.isVisible ? presentedSurfaceState : nil
+        // Record now: AppKit can re-enter present() while this one orders the panel in.
+        presentedSurfaceState = value.state
         let motionEdge = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
         let reduceMotion = application?.effective.reduceMotion ?? true
         // D-9 collapse: the last expanded image fades out sliding toward the edge, in its own
@@ -1879,7 +1881,8 @@ struct DockHelpInteraction: Equatable {
     public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
         let now=date ?? currentDate()
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
-        let projected = memberSafePreferences.applying(to: input)
+        var projected = memberSafePreferences.applying(to: input)
+        projected.name = projected.duplicateDisplayName
         let row = model?.presentationRows[id]
         let selected = row?.windowObservations == nil ? nil :
             try DockInstrumentProjection.evaluate(projected, now: now, redBelow: effectiveRedBelow).selectedWindowID
@@ -1955,11 +1958,12 @@ struct DockHelpInteraction: Equatable {
         guard let cardPanel, let panelFrame = panel?.frame,
               let screen = topology(of: sampleEnvironment()).display(edge.presentation?.placement?.displayID) else { dismissCard(); return }
         let view = interactionView
-        guard let local = view.interactionAnchor(id), let window = view.window else { dismissCard(); return }
+        guard let local = view.cardRingAnchor(id), let window = view.window else { dismissCard(); return }
         let anchor = window.convertToScreen(view.convert(local, to: nil))
+        let hull = view.registeredHullBounds.map { window.convertToScreen(view.convert($0, to: nil)) }
         let actualEdge = edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)
-        guard let frame = HostCardPlacement.place(anchor: anchor, size: card.frame.size,
-                                                  available: screen.visibleFrame, edge: actualEdge) else {
+        guard let frame = HostCardPlacement.place(ring: anchor, hull: hull, unit: preferences.size.nozzleDiameter / 52,
+                                                  size: card.frame.size, available: screen.visibleFrame, edge: actualEdge) else {
             dismissCard(); return
         }
         // The plate plus its pointer arrow toward the ring (prototype card.js place()).

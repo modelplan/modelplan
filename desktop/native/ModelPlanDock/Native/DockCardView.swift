@@ -77,6 +77,8 @@ import CryptoKit
         }
     }
 }
+/// Rows lay out top-down like the card itself.
+@MainActor private final class DockCardRowView:NSView { override var isFlipped:Bool{true} }
 @MainActor public final class DockCardView:NSView {
     public var onEnter:((String,UInt64)->Void)?,onDismiss:(()->Void)?,onOpenURL:((URL)->Void)?
     public var permitsAction:((String,UInt64)->Bool)?
@@ -184,7 +186,7 @@ import CryptoKit
             if index>0{rowY+=style.rowGap}
             let rowID="row."+row.id
             usedRows.insert(rowID)
-            let rowView=rowViews[rowID] ?? NSView();rowViews[rowID]=rowView;place(rowView,in:self)
+            let rowView=rowViews[rowID] ?? DockCardRowView();rowViews[rowID]=rowView;place(rowView,in:self)
             rowView.setAccessibilityElement(true);rowView.setAccessibilityRole(.group)
             rowView.setAccessibilityLabel([row.label,row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "))
             let l=label(rowID+".label",row.label,font:readoutSmall,color:style.muted);place(l,in:rowView)

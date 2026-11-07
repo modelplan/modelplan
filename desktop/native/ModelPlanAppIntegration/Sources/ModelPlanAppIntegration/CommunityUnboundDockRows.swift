@@ -106,13 +106,16 @@ public struct DockContentRow: Sendable {
         let seconds=reset.timeIntervalSince(now)
         guard seconds.isFinite,seconds < Double(Int.max/60) else { return "--" }
         guard seconds > 0 else { return english ? "Reset time passed":"已过重置时间" }
-        let minutes=Int(ceil(seconds/60)),days=minutes/1440,hours=(minutes%1440)/60,rest=minutes%60
-        let value:String
-        // Glossary relative format (V-18): "2 小时 14 分后重置" / "resets in 2h 14m".
-        if days > 0 { value=english ? "\(days)d \(hours)h":"\(days) 天 \(hours) 小时" }
-        else if hours > 0 { value=english ? "\(hours)h \(rest)m":"\(hours) 小时 \(rest) 分" }
-        else { value=english ? "\(rest)m":"\(rest) 分" }
-        return english ? "resets in "+value:value+"后重置"
+        // D40: the card's compact form, so it fits the 85 pt column: "18m", "3h18", "5d20h";
+        // "5d20h 后重置" / "resets 5d20h". Prototype: opus-r7/src/rocket-r1/window-time.js:6
+        // (duration, imported as dhm by card.js:46) and strings/card.js:13 (card.resetIn).
+        let minutes=Int(ceil(seconds/60))
+        return english ? "resets "+compactDuration(minutes):compactDuration(minutes)+" 后重置"
+    }
+    static func compactDuration(_ minutes:Int) -> String {
+        if minutes < 60 { return "\(minutes)m" }
+        if minutes < 1440 { return "\(minutes/60)h"+String(format:"%02d",minutes%60) }
+        return "\(minutes/1440)d\(minutes%1440/60)h"
     }
     public func sourceAndAge(at now: Date) -> String {
         CommunityObservationAge.text(observedAt: originalObservedAt, now: now)
