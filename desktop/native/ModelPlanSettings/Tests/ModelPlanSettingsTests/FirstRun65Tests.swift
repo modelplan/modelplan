@@ -8,6 +8,11 @@ final class FirstRun65Tests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }; return dir.appendingPathComponent("preferences.json")
     }
+    func testFirstRunPublicRecommendationIsLocalized() throws {
+        let page = try FirstRunPage(preferences: SettingsPreferences(), context: SettingsPageContext())
+        XCTAssertEqual(page.publicRecommendation.value(.english), "Recommendations use public data.")
+        XCTAssertEqual(page.publicRecommendation.value(.chinese), "推荐基于公开数据。")
+    }
     func testV1ExplorationRequiresARealHelpMap() throws {
         let preferences = SettingsPreferences()
         var context = SettingsPageContext()

@@ -108,6 +108,54 @@
           "leg": "headless",
           "reason": "needs both canonical cockpit editions built first"
         },
+        "G1SettingsJourneys/testG1_SET_9_04_NativeLoginItemOperation": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: native SMAppService operations and denial require a separately admitted system test"
+        },
+        "G1SettingsJourneys/testG1_SET_9_06_RealShortcutOperationAndPersistence": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: global shortcut input and resulting host actions require an admitted GUI session"
+        },
+        "G1SettingsJourneys/testG1_SET_9_10_DockNumbersAndEventPresentation": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: actual widget values, event dots, per-member pin and relaunch remain unverified"
+        },
+        "G1SettingsJourneys/testG1_SET_9_11_DockPositionAndDisplayBehaviour": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: multi-display placement and actual fullscreen/capture behaviour require an admitted GUI session"
+        },
+        "G1SettingsJourneys/testG1_SET_9_12_CaptureVisibilityPersists": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: actual widget sharing state and relaunch require an admitted GUI session"
+        },
+        "G1SettingsJourneys/testG1_SET_9_13_SubscriptionOrderChangesAndReset": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: three-member drag, arrow actions, engine-column order and relaunch are not yet exercised"
+        },
+        "G1SettingsJourneys/testG1_SET_9_15_AppearanceAndAccessibilityApplyLive": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: theme and accessibility effects on all open surfaces and relaunch remain unverified"
+        },
+        "G1SettingsJourneys/testG1_SET_9_17_OneReaderConsentModel": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: synthetic engine consent grant/revoke and Settings relaunch are not yet exercised"
+        },
+        "G1SettingsJourneys/testG1_SET_9_18_NotificationKindsDispatch": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: notification authorization and matching/nonmatching delivery require an admitted system test"
+        },
+        "G1SettingsJourneys/testG1_SET_9_24_SettingsDiagramMotionAndReduceMotion": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: actual hover, focus, value-change timing and Reduce Motion require controlled GUI input"
+        },
+        "G1SettingsJourneys/testG1_SET_9_27_SettingsPersistAcrossRestart": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: one actual edit per pane, relaunch and all downstream consumers remain unverified"
+        },
+        "G1SettingsJourneys/testG1_SET_9_28_SignedBuildNoticeApplicability": {
+          "leg": "gui",
+          "reason": "G1 partial journey; deferred: signed/unsigned packaged build comparison requires separately authorized signed artifacts"
+        },
         "S1GalleryTests/testProduceOffscreenGallery": {
           "leg": "headless",
           "reason": "gallery producer runs only with MODELPLAN_S1_GOLDEN_DIR and MODELPLAN_S1_GALLERY_DIR"
