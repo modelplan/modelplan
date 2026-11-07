@@ -68,6 +68,10 @@ func (s *RefreshScheduler) plan(paths quota.Paths, scope string, now time.Time) 
 	return quota.PlanScopeRefresh(paths, scope, now)
 }
 
+// readerBusyRetry: another process, such as a plugin hook, held the reader lock past the
+// two-second wait. The failure back-off is for reads that ran.
+const readerBusyRetry = 15 * time.Second
+
 func NewRefreshScheduler(ctx context.Context, config RefreshConfig) *RefreshScheduler {
 	ctx, cancel := context.WithCancel(ctx)
 	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), scheduled: map[string]refreshJob{}, wake: make(chan struct{}, 1), pending: map[string]time.Time{}, credentialWait: map[string]bool{}, autoDone: make(chan struct{}), autoWake: make(chan struct{}, 1), autoNext: map[string]time.Time{}, autoReason: map[string]wire.MemberRefreshReason{}}
@@ -402,7 +406,11 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	attempted = true
 	err = s.config.Run(ctx, paths, job.scope, started)
 	outcome, reason := refreshNotAttempted, refreshUnavailable
-	if err != nil {
+	// Lost to another reader before reading anything: nothing failed, so try again soon.
+	busy := errors.Is(err, consent.ErrReaderBusy) || errors.Is(err, consent.ErrBusy)
+	if busy {
+		outcome, reason = refreshDeferred, refreshBudget
+	} else if err != nil {
 		outcome = refreshFailed
 	} else if job.scope == consent.ScopeCodexLocalHistory {
 		outcome, reason = refreshSucceeded, refreshCompleted
@@ -421,6 +429,9 @@ func (s *RefreshScheduler) run(job refreshJob) {
 		if job.scope == consent.ScopeCodexRuntimeUsage {
 			wait = 30 * time.Minute
 		}
+	}
+	if busy {
+		wait = readerBusyRetry
 	}
 	if stampOfFence(consent.Capture().Fence()) == job.stamp {
 		s.mu.Lock()

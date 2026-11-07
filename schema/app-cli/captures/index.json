@@ -590,6 +590,55 @@
       ]
     },
     {
+      "file": "WireCockpitCycle.json",
+      "type": "WireCockpitCycle",
+      "optional": [],
+      "required": [
+        "startedAt",
+        "resetsAt",
+        "points",
+        "hadDrop",
+        "spent"
+      ]
+    },
+    {
+      "file": "WireCockpitCycleGroup.json",
+      "type": "WireCockpitCycleGroup",
+      "optional": [],
+      "required": [
+        "subscriptionRef",
+        "kind",
+        "attribution",
+        "cycles"
+      ]
+    },
+    {
+      "file": "WireCockpitCycleShare.json",
+      "type": "WireCockpitCycleShare",
+      "optional": [
+        {
+          "field": "model",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "fast",
+        "points"
+      ]
+    },
+    {
       "file": "WireCockpitData.json",
       "type": "WireCockpitData",
       "optional": [
@@ -719,7 +768,8 @@
         "tools",
         "daily",
         "hourly",
-        "projects"
+        "projects",
+        "cycles"
       ]
     },
     {
