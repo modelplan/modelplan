@@ -82,6 +82,28 @@ func freshAppHome(t *testing.T) (home, cache string) {
 	return home, cache
 }
 
+// seedAppCodexReading gives the cockpit a current subscription to answer for. The publication
+// state stays absent.
+func seedAppCodexReading(t *testing.T, home string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	state, err := consent.EnsureStore(consent.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	reading := map[string]any{"schemaVersion": 1, "status": "ok", "observedAt": now, "admission": state.CaptureStamp(consent.ScopeCodexRuntimeUsage), "windows": []any{map[string]any{"kind": "weekly", "usedPercent": 25, "remainingPercent": 75, "windowMinutes": 10080, "resetsAt": now.Add(time.Hour), "observedAt": now}}}
+	path := filepath.Join(home, "cache", "observed", "codex-account.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, publicationJSON(t, reading), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func buildAppBinary(t *testing.T) string {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "modelplan")
@@ -144,22 +166,7 @@ func TestAppServerFreshHomeFetchesPublicationWithoutConsent(t *testing.T) {
 // rows event it already refreshes on brings the faders.
 func TestAppServerCockpitFillsWhenPublicationArrives(t *testing.T) {
 	home, _ := freshAppHome(t)
-	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	state, err := consent.EnsureStore(consent.Path())
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC().Truncate(time.Second)
-	reading := map[string]any{"schemaVersion": 1, "status": "ok", "observedAt": now, "admission": state.CaptureStamp(consent.ScopeCodexRuntimeUsage), "windows": []any{map[string]any{"kind": "weekly", "usedPercent": 25, "remainingPercent": 75, "windowMinutes": 10080, "resetsAt": now.Add(time.Hour), "observedAt": now}}}
-	path := filepath.Join(home, "cache", "observed", "codex-account.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, publicationJSON(t, reading), 0600); err != nil {
-		t.Fatal(err)
-	}
+	seedAppCodexReading(t, home)
 	f := newPublicationFixture(t, func(doc map[string]json.RawMessage) {
 		var data map[string]json.RawMessage
 		if err := json.Unmarshal(doc["data"], &data); err != nil {
@@ -221,7 +228,8 @@ func appRowsChanged(p *queryBinary) bool {
 // A host that cannot be reached leaves the engine answering, with the unavailable state, and
 // reports nothing on the protocol's stderr (startQueryBinaryCaps fails the test if it does).
 func TestAppServerUnreachableHostKeepsServing(t *testing.T) {
-	_, cache := freshAppHome(t)
+	home, cache := freshAppHome(t)
+	seedAppCodexReading(t, home)
 	t.Setenv("MODELPLAN_BASE", "http://127.0.0.1:1")
 	p := startQueryBinaryCaps(t, buildAppBinary(t), []string{"rows", "cockpit", "cockpitDetailsV1", "publication"})
 	deadline := time.Now().Add(10 * time.Second)
