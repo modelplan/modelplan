@@ -14,6 +14,16 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
 
 /// B06 instrument surface only. Window dispatch, menus/cards, autohide and movement belong to later owners.
 /// Its local alpha hit-test is NOT proof that a transparent NSWindow forwards the original cross-app click.
+/// G3-11: the grip's hover and focus inks, from the prototype's `.dk-cap` rules (rocket.css:30,53):
+/// a 1 px warm ring at 60 %, a 10 px glow at 33 %, the warmer face, and the gold keyboard outline.
+enum DockGripInk {
+    private static func ink(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat) -> CGColor { CGColor(srgbRed: r / 255, green: g / 255, blue: b / 255, alpha: a) }
+    static let ring = ink(0xdf, 0x60, 0x4c, 0x99 / 255)
+    static let glow = ink(0xdf, 0x60, 0x4c, 0x55 / 255)
+    static let warmFace = ink(0x3d, 0x3a, 0x36, 0.5)
+    static let keyboardFocus = ink(0xd4, 0xb9, 0x94, 1)
+}
+
 @MainActor public final class DockInstrumentView:NSView {
     public var requestedNozzleDiameter: CGFloat?
     public private(set) var appliedGeometryScale: CGFloat = 1
@@ -73,6 +83,10 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     private var hoveredGripIndex: Int?
     private var gripOutline: CAShapeLayer?
+    private var gripFocusRing: CAShapeLayer?
+    @_spi(DockResourceChecks) public var gripRingInkForChecks: CGColor? { gripOutline?.strokeColor }
+    @_spi(DockResourceChecks) public var gripGlowInkForChecks: CGColor? { gripOutline?.shadowColor }
+    @_spi(DockResourceChecks) public var gripFocusInkForChecks: CGColor? { gripFocusRing?.strokeColor }
     @_spi(DockResourceChecks) public var emphasizedGripFrameForChecks: CGRect? { gripOutline?.path?.boundingBox }
 
     public func registerGripRects(_ rects: [CGRect], art: [CGRect]? = nil) {
@@ -95,6 +109,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         guard let index = focusedGripIndex ?? hoveredGripIndex, registeredGripRects.indices.contains(index) else {
             gripOutline?.removeFromSuperlayer()
             gripOutline = nil
+            gripFocusRing?.removeFromSuperlayer()
+            gripFocusRing = nil
             return
         }
         let outline = gripOutline ?? CAShapeLayer()
@@ -102,12 +118,28 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         CATransaction.setDisableActions(true)
         outline.frame = bounds
         let art = registeredGripArtRects.indices.contains(index) ? registeredGripArtRects[index] : registeredGripRects[index]
-        outline.path = CGPath(roundedRect: art, cornerWidth: 3, cornerHeight: 3, transform: nil)
-        outline.fillColor = NSColor.clear.cgColor
-        outline.strokeColor = NSColor.systemOrange.cgColor
-        outline.lineWidth = 2
+        let path = CGPath(roundedRect: art, cornerWidth: min(art.width, art.height) / 2, cornerHeight: min(art.width, art.height) / 2, transform: nil)
+        outline.path = path
+        outline.fillColor = DockGripInk.warmFace
+        outline.strokeColor = DockGripInk.ring
+        outline.lineWidth = 1
+        outline.shadowPath = path; outline.shadowColor = DockGripInk.glow
+        outline.shadowOpacity = 1; outline.shadowRadius = 5; outline.shadowOffset = .zero
         if outline.superlayer == nil { layer?.addSublayer(outline) }
         gripOutline = outline
+        if focusedGripIndex == index {
+            let ring = gripFocusRing ?? CAShapeLayer()
+            ring.frame = bounds
+            ring.path = CGPath(rect: registeredGripRects[index].insetBy(dx: -3, dy: -3).intersection(bounds.insetBy(dx: 1, dy: 1)), transform: nil)
+            ring.fillColor = NSColor.clear.cgColor
+            ring.strokeColor = DockGripInk.keyboardFocus
+            ring.lineWidth = 2
+            if ring.superlayer == nil { layer?.addSublayer(ring) }
+            gripFocusRing = ring
+        } else {
+            gripFocusRing?.removeFromSuperlayer()
+            gripFocusRing = nil
+        }
         CATransaction.commit()
     }
     public var interactionProjectionAvailable: Bool { !community && !failed && skin != nil }
