@@ -69,6 +69,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
 {
   /// DOCK-3.1-26: a short press opens with this fade.
   static let openFade: TimeInterval = 0.18
+  /// D49: the widget stays at `.floating` while the cockpit is open, and the cockpit opens over it.
+  /// A widget being dragged rises to `.statusBar`, above this.
+  public static let panelLevel = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
   private let bundle: VerifiedCockpitBundle
   private var appearance: CockpitAppearance
   private let shellSession: CockpitShellSession
@@ -257,7 +260,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     view.allowsBackForwardNavigationGestures = false
     let panel = CockpitPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
     panel.isOpaque = false; panel.backgroundColor = .clear
-    panel.hasShadow = false; panel.level = .floating; panel.hidesOnDeactivate = false
+    panel.hasShadow = false; panel.level = Self.panelLevel; panel.hidesOnDeactivate = false
     panel.appearance = NSAppearance(named: .darkAqua)
     panel.title = "ModelPlan"
     panel.isReleasedWhenClosed = false
