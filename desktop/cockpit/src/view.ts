@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import type { WireCockpitData } from '../generated/wire.js';
+import {websiteAction} from './website-link.js';
 import type { Appearance,CockpitView,LiveAppearance,ShellState,PageAction } from './bridge.js';
 import {effectiveRedBelow} from './threshold.js';
 import { mountPrototypeHelp } from './prototype-help.js';
@@ -65,6 +66,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  }
  const bilingual=(e:HTMLElement,en:string,zh:string)=>{e.dataset.en=en;e.dataset.zh=zh;return e;};
  frame.settings.onclick=e=>{if(e.isTrusted)action('openSettings');};
+ // A website link never navigates the page: native opens the typed page it names, on a real press only.
+ root.addEventListener('click',e=>{const link=(e.target as Element).closest?.<HTMLAnchorElement>('a.website-link');if(!link)return;e.preventDefault();const target=websiteAction(link.href);if(e.isTrusted&&target)action('openWebsite',target);});
  const stop=()=>frame.lamp.classList.remove('state-pulse');
  const settled=()=>{if(!frame.lamp.getAnimations().some(a=>a.playState==='running'))stop();};
  frame.lamp.addEventListener('animationend',settled);frame.lamp.addEventListener('animationcancel',settled);

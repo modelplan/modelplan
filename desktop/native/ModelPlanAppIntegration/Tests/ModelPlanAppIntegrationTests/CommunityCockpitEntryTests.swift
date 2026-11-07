@@ -367,6 +367,30 @@ final class CommunityCockpitEntryTests:XCTestCase {
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
 
+    /// CKP-MFD-24: a website link from the page opens the typed public address, built natively.
+    @MainActor func testWebsiteLinkFromThePageOpensTheTypedPublicAddress() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-website-link-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        var opened:[URL]=[]
+        owner.openWebsite = { opened.append($0) }
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        for (name,value) in [("plans","openai"),("effort","gpt-6.1-sol"),("methodology","effort-ladder")] {
+            page.onIntent?(.openWebsite(try XCTUnwrap(CockpitWebsiteLink(page:name,value:value))))
+        }
+        XCTAssertEqual(opened.map(\.absoluteString),["https://modelplan.ai/plans?seller=openai","https://modelplan.ai/effort?model=gpt-6.1-sol","https://modelplan.ai/methodology#effort-ladder"])
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
     /// SET-9-19: the committed setting reaches the appearance the page is given.
     @MainActor func testProjectNamesSettingReachesTheCockpitAppearance() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-project-names-"+UUID().uuidString)

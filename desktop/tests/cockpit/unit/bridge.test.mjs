@@ -75,6 +75,12 @@ test('same-floor invalidation and a new session cannot revive old deliveries',()
   assert.equal(f.bridge.clear(f.send('clear',{viewRevision:'6'}),source),false);
   assert.equal(f.bridge.receive(f.send('display',{viewRevision:'5',sessionId:pageId,data:capture()}),source),true);
 });
+test('openWebsite carries a typed page and value, never a URL (CKP-MFD-24)',()=>{
+  const f=fixture();
+  for(const bad of [undefined,'plans','plans/','/openai','home/x','plans/a b','plans/a?b=1','https://evil.example/x','plans/'+'x'.repeat(65)])assert.equal(f.bridge.action('openWebsite',bad),false,String(bad));
+  assert.equal(f.bridge.action('openWebsite','methodology/effort-ladder'),true);
+  const last=f.events.at(-1);assert.equal(last.action,'openWebsite');assert.equal(last.page,'methodology');assert.equal(last.value,'effort-ladder');assert.equal(last.url,undefined);
+});
 test('only fixed actions are emitted, history is limited to currently displayed rows',()=>{
   const f=fixture();assert.equal(f.bridge.action('openURL'),false);assert.equal(f.bridge.action('chooseSetup','x'),false);
   assert.equal(f.bridge.action('openHistory','unknown'),false);assert.equal(f.bridge.action('openSettings'),true);
