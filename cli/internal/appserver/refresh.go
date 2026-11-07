@@ -27,9 +27,9 @@ type RefreshConfig struct {
 	Offline, ReadOnly bool
 	Changed           func()
 	CredentialRequest func(CredentialNeed) (string, error)
-	// Observe records what the local logs show: sessions, speed and quota history. The app has
-	// no other trigger for this; the CLI's own commands do it themselves.
-	Observe func(quota.Paths, time.Time)
+	// Observe records what the local logs show: sessions and speed. It runs every 30 seconds, so
+	// it reads only local logs and ModelPlan's own cache: no provider request, no credential.
+	Observe func(time.Time)
 	Now     func() time.Time
 	Plan    func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)
 }

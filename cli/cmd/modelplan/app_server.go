@@ -74,7 +74,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	broker := &appserver.CredentialBroker{PathsFor: rawPaths, Offline: options.Offline, ReadOnly: options.ReadOnly}
 	paths := broker.Paths
 	shared, err := appserver.NewSharedBackend(appserver.SharedConfig{
-		Activity:         appActivity(st.Dir, rawPaths),
+		Activity:         appActivity(st.Dir),
 		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.Load(st); return d, err },
 		Detect:           detectTools, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
 		Cleanup: func(scope string, forget bool) error {

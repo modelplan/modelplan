@@ -30,13 +30,18 @@ func ProductionPaths(cache, version string) Paths {
 
 // ProductionPathsWithAdmission shares the command's permission input with every
 // cache reader. ReaderGrant.StillValid and Publish deliberately remain live.
+// CodexHome: where Codex keeps its session logs. Finding it reads nothing.
+func CodexHome() string {
+	if codex := os.Getenv("CODEX_HOME"); codex != "" {
+		return codex
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".codex")
+}
+
 func ProductionPathsWithAdmission(cache, version string, admission consent.Admission) Paths {
 	home, _ := os.UserHomeDir()
-	codex := os.Getenv("CODEX_HOME")
-	if codex == "" {
-		codex = filepath.Join(home, ".codex")
-	}
-	p := Paths{Admission: &admission, CLIVersion: version, Cache: cache, CodexHome: codex,
+	p := Paths{Admission: &admission, CLIVersion: version, Cache: cache, CodexHome: CodexHome(),
 		LocalFile:       filepath.Join(home, ".config", "modelplan", "local.json"),
 		CodexBarFile:    filepath.Join(home, ".config", "modelplan", "codexbar.json"),
 		ConnectionsFile: filepath.Join(home, ".config", "modelplan", "connections.json"),

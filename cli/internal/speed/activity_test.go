@@ -118,15 +118,10 @@ func TestActivityPartialMalformedAndCachedTail(t *testing.T) {
 	}
 }
 
-func TestZCodeOverlappingTurnsAndHostOnlyConfig(t *testing.T) {
+func TestZCodeOverlappingTurns(t *testing.T) {
 	now := time.Now().UTC()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "z.jsonl")
-	config := filepath.Join(dir, "config.json")
-	os.WriteFile(config, []byte(`{"providers":{"one":{"baseURL":"https://api.z.ai/api/anthropic","apiKey":"PRIVATE-KEY-CANARY"}}}`), 0600)
-	if !ZCodeActivityHost(config) {
-		t.Fatal("configured Z.ai host not recognized")
-	}
 	line := func(event, turn string) string {
 		return fmt.Sprintf("{\"timestamp\":%q,\"event\":%q,\"sessionId\":\"synthetic\",\"turnId\":%q}\n", now.Format(time.RFC3339Nano), event, turn)
 	}
@@ -145,10 +140,6 @@ func TestZCodeOverlappingTurnsAndHostOnlyConfig(t *testing.T) {
 	got = o.Observe(context.Background(), logs, nil, now)
 	if len(got) != 1 || got[0].Phase != "finished" {
 		t.Fatalf("both ended: %+v", got)
-	}
-	os.WriteFile(config, []byte(`{"baseURL":"https://z.ai.evil.invalid","apiKey":"PRIVATE-KEY-CANARY"}`), 0600)
-	if ZCodeActivityHost(config) {
-		t.Fatal("lookalike host accepted")
 	}
 }
 

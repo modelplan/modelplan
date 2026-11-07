@@ -13,9 +13,9 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
-// This observer lives in the existing app-server, not in the UI or an extra
-// child. Discovery/configuration happens only for currently admitted local scopes.
-func appActivity(cache string, paths func(consent.Admission) quota.Paths) func(context.Context, consent.Admission, time.Time) []rows.ActivityInput {
+// This observer lives in the existing app-server, not in the UI or an extra child. It runs every
+// two seconds, so it opens session logs and ModelPlan's own cache only, never a credential file.
+func appActivity(cache string) func(context.Context, consent.Admission, time.Time) []rows.ActivityInput {
 	observer := speed.NewActivityObserver()
 	return func(ctx context.Context, a consent.Admission, now time.Time) []rows.ActivityInput {
 		if speed.Off() {
@@ -23,7 +23,7 @@ func appActivity(cache string, paths func(consent.Admission) quota.Paths) func(c
 			return nil
 		}
 		home, _ := os.UserHomeDir()
-		claude, codex, zcode := "", "", ""
+		claude, codex, zcode, zcodeRef := "", "", "", ""
 		if a.State().AllowsScope(consent.ScopeClaudeLocalHistory, a.Mode()) {
 			claude = os.Getenv("CLAUDE_CONFIG_DIR")
 			if claude == "" {
@@ -31,12 +31,13 @@ func appActivity(cache string, paths func(consent.Admission) quota.Paths) func(c
 			}
 		}
 		if a.State().AllowsScope(consent.ScopeCodexLocalHistory, a.Mode()) {
-			codex = paths(a).CodexHome
+			codex = quota.CodexHome()
 		}
+		// ZCode's ledger has no account. Its one configured key does, and that reading also proves
+		// ZCode points at Z.ai, so nothing needs to open ZCode's own settings here.
 		if a.State().AllowsScope(consent.ScopeZaiLocalHistory, a.Mode()) {
-			candidate := filepath.Join(home, ".zcode")
-			if speed.ZCodeActivityHost(filepath.Join(candidate, "cli", "config.json")) {
-				zcode = candidate
+			if zcodeRef = quota.ZCodeSubscription(cache); zcodeRef != "" {
+				zcode = filepath.Join(home, ".zcode")
 			}
 		}
 		logs := speed.ActivityLogs(claude, codex, zcode, now)
@@ -47,6 +48,9 @@ func appActivity(cache string, paths func(consent.Admission) quota.Paths) func(c
 		values := observer.Observe(ctx, logs, bindings, now)
 		out := []rows.ActivityInput{}
 		for _, v := range values {
+			if v.Source == "zcode" && !v.RecordAt.Before(a.State().Scopes[consent.ScopeZaiLocalHistory].At) {
+				v.SubscriptionRef = zcodeRef
+			}
 			if v.SubscriptionRef == "" {
 				continue
 			}

@@ -6,25 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 )
-
-func writeLegacyConsent(t *testing.T, tools string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(consent.Path()), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	body := `{"schemaVersion":1,"privacy":"automatic","generation":3,"tools":{` + tools + `}}`
-	if err := os.WriteFile(consent.Path(), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-const legacyAt = `"consentTextVersion":2,"at":"2026-10-20T00:00:00Z"`
 
 // The real profile's shape: a schema-1 bare GLM allow from before ZCode's route. It is not
 // a choice of another source, so ZCode's own Coding Plan key is read.

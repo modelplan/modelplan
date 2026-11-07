@@ -6,9 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"net/url"
 	"os"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -181,13 +179,13 @@ func (v *interrupted) UnmarshalJSON(b []byte) error {
 }
 
 type activityLine struct {
-	Interrupted bool `json:"-"`
-	Type      string `json:"type"`
-	Timestamp string `json:"timestamp"`
-	Event     string `json:"event"`
-	Session   string `json:"sessionId"`
-	Turn      string `json:"turnId"`
-	Context   struct {
+	Interrupted bool   `json:"-"`
+	Type        string `json:"type"`
+	Timestamp   string `json:"timestamp"`
+	Event       string `json:"event"`
+	Session     string `json:"sessionId"`
+	Turn        string `json:"turnId"`
+	Context     struct {
 		Session string `json:"sessionId"`
 		Turn    string `json:"turnId"`
 	} `json:"context"`
@@ -361,45 +359,6 @@ func readActivityTail(log LiveLog, fi os.FileInfo, now time.Time) ([]SessionActi
 		out = append(out, v)
 	}
 	return out, nil
-}
-
-var baseURLField = regexp.MustCompile(`"(?:baseURL|base_url)"\s*:\s*"([^"\\]*)"`)
-
-// ZCodeActivityHost extracts base-URL values only; keys, headers and other
-// configuration values are never deserialized, retained, logged or exported.
-func ZCodeActivityHost(path string) bool {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.Mode().IsRegular() || fi.Size() > 256<<10 {
-		return false
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, 256<<10))
-	if err != nil {
-		return false
-	}
-	defer clear(b)
-	if !json.Valid(b) {
-		return false
-	}
-	matches := baseURLField.FindAllSubmatch(b, -1)
-	if len(matches) == 0 {
-		return false
-	}
-	for _, m := range matches {
-		u, err := url.Parse(string(m[1]))
-		if err != nil || u.Scheme != "https" || u.User != nil {
-			return false
-		}
-		host := strings.ToLower(u.Hostname())
-		if host != "z.ai" && !strings.HasSuffix(host, ".z.ai") && host != "bigmodel.cn" && !strings.HasSuffix(host, ".bigmodel.cn") {
-			return false
-		}
-	}
-	return true
 }
 
 // ExistingActivityBindings deliberately excludes Live's historical source-level

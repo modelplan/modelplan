@@ -188,6 +188,16 @@ func CodexSubscription(cache string, now time.Time) string {
 	return s.SubscriptionRef
 }
 
+// ZCodeSubscription: the account of the Coding Plan key ZCode is configured with, as the last
+// successful reading recorded it. Cache only; "" when ZCode has no such reading.
+func ZCodeSubscription(cache string) string {
+	s := loadZaiConfigState(cache)
+	if s.Good == nil || IdentityOff() {
+		return ""
+	}
+	return s.Good.SubscriptionRef
+}
+
 func ClaudeSubscription(cache string) string {
 	b, status := readBounded(snapshotPath(cache), 64<<10)
 	var s ccSnapshot

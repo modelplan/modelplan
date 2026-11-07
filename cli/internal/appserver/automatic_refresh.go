@@ -113,7 +113,7 @@ func (s *RefreshScheduler) automatic() {
 			idle := len(s.pending) == 0
 			s.mu.Unlock()
 			if idle && !now.Before(nextObserve) {
-				s.config.Observe(s.paths(admission), now)
+				s.config.Observe(now)
 				nextObserve = now.Add(observeEvery)
 				if s.config.Changed != nil {
 					s.config.Changed()

@@ -23,22 +23,34 @@ func observeQuotaHistory(st *store.Store, report quota.Report, now time.Time) {
 	reportWrite(report, func() error { return history.Observe(st.Dir, report, now) })
 }
 
-// observeForApp is what `desktop` does on each read, for the app-server's scheduler. Without it
-// the app shows sessions, rates and Today totals only while a plugin hook happens to feed them.
-func observeForApp(st *store.Store) func(quota.Paths, time.Time) {
-	return func(paths quota.Paths, now time.Time) {
-		report := quota.ReadPermitted(paths, now)
-		observeQuotaHistory(st, report, now)
-		observeCodexSpeed(st, now)
-		observeClaudeSpeed(st, paths, now)
+// observeForApp feeds the app-server's sessions, rates and project labels, which otherwise appear
+// only while a plugin hook runs. It runs every 30 seconds, so it must stay off the readers: session
+// logs and ModelPlan's own cache only (TestObserveForAppStaysOffReaders).
+func observeForApp(st *store.Store) func(time.Time) {
+	return func(now time.Time) {
+		codex := quota.CodexHome()
+		observeCodexHomeSpeed(st, codex, now)
+		observeClaudeSpeed(st, codex, now)
 		observeAgents(st, now)
-		observeLiveSessions(st, paths, report, now)
+		observeLiveLogs(st, codex, cachedSubscriptions(st, now), now)
 	}
+}
+
+// cachedSubscriptions: the accounts the last completed reads recorded for the tools with session logs.
+func cachedSubscriptions(st *store.Store, now time.Time) map[string]string {
+	refs := map[string]string{}
+	if ref := quota.ClaudeSubscription(st.Dir); ref != "" {
+		refs["claude-code"] = ref
+	}
+	if ref := quota.CodexSubscription(st.Dir, now); ref != "" {
+		refs["codex"] = ref
+	}
+	return refs
 }
 
 // observeClaudeSpeed measures the active Claude Code logs, which the plugin hook does on each
 // turn. Without the plugin, nothing else records their sessions, project labels or Today totals.
-func observeClaudeSpeed(st *store.Store, paths quota.Paths, now time.Time) {
+func observeClaudeSpeed(st *store.Store, codexHome string, now time.Time) {
 	if !consent.Allowed("claude", consent.Local) {
 		return
 	}
@@ -47,7 +59,7 @@ func observeClaudeSpeed(st *store.Store, paths quota.Paths, now time.Time) {
 	if claude == "" {
 		claude = filepath.Join(home, ".claude")
 	}
-	for _, log := range speed.ActiveLogs(claude, paths.CodexHome, now) {
+	for _, log := range speed.ActiveLogs(claude, codexHome, now) {
 		if log.Source != "claude-code" || log.Sidechain {
 			continue
 		}

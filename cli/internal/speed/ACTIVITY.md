@@ -11,17 +11,16 @@ recognized event uses a separately marked 30-second write-time fallback.
 
 Claude and Codex use their existing history roots. ZCode uses `cli/log` JSONL
 lifecycle events (`turn.started`, `turn.completed`, `turn.failed`) and turn IDs,
-so completing one overlapping turn cannot finish another. The bounded config
-reader extracts only base-URL values and checks the exact Z.ai/BigModel domain
-or a subdomain; it does not deserialize keys or other configuration values.
+so completing one overlapping turn cannot finish another. No ZCode settings file is
+opened here: ZCode is watched only when ModelPlan's cache holds a successful reading
+of its configured Coding Plan key, and its activity binds to that key's account.
 All raw buffers are transient, never logged or placed in the verdict cache.
 The sole content inspection is a fixed Claude interruption-prefix comparison.
 
 Format provenance: the vendor's public feedback reports document JSONL lifecycle
-events and the config baseURL field:
+events:
 [lifecycle](https://github.com/zai-org/feedback/issues/568),
-[failure](https://github.com/zai-org/feedback/issues/1234),
-[configuration](https://github.com/zai-org/feedback/issues/744).
+[failure](https://github.com/zai-org/feedback/issues/1234).
 The parser and fixtures here are independently written; no upstream code or
 transcript content is copied.
 
@@ -31,9 +30,9 @@ The app-server records both itself every 30 seconds, so no plugin hook is needed
 a brand-new session can take up to that long to light. `refs[source]` is not session provenance:
 the legacy fallback now disappears when multiple different accounts share a
 source, and the new observer excludes that fallback entirely. Missing or
-conflicting session bindings remain unbound. In particular the existing ZCode
-DB observer currently records no subscription reference; a base-URL host alone
-does not resolve that identity gap. No provider-wide animation is substituted.
+conflicting session bindings remain unbound. The ZCode DB observer records no
+subscription reference, so ZCode binds through its one configured key instead. No
+provider-wide animation is substituted.
 
 Rows carry optional per-account activity with session/account references,
 binding verification, phase, original record time and expiry. Publication uses

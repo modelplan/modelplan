@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
+	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/quota"
 )
 
 // The real app-server, with no plugin hook and no CLI command, on a recent Claude Code session
@@ -104,6 +106,12 @@ func TestAppServerSessionActivityReachesTheAccountRow(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "session.jsonl"), []byte(log), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	waitForActivity(t, binary, "claude", "tool")
+}
+
+// waitForActivity starts the real app-server and waits for verified activity on that tool's account.
+func waitForActivity(t *testing.T, binary, tool, phase string) {
+	t.Helper()
 	c := startQueryBinaryCaps(t, binary, []string{"rows"})
 	deadline := time.Now().Add(25 * time.Second)
 	var last json.RawMessage
@@ -116,9 +124,9 @@ func TestAppServerSessionActivityReachesTheAccountRow(t *testing.T) {
 		}
 		for _, row := range snapshot.Data.Projection.Rows {
 			for _, account := range row.Accounts {
-				if row.ID == "claude" && len(account.Activity) > 0 {
+				if row.ID == tool && len(account.Activity) > 0 {
 					activity := account.Activity[0]
-					if !activity.BindingVerified || string(activity.Phase) != "tool" || account.SubscriptionRef == nil || activity.SubscriptionRef != *account.SubscriptionRef {
+					if !activity.BindingVerified || string(activity.Phase) != phase || account.SubscriptionRef == nil || activity.SubscriptionRef != *account.SubscriptionRef {
 						t.Fatalf("activity = %+v", activity)
 					}
 					return
@@ -127,5 +135,91 @@ func TestAppServerSessionActivityReachesTheAccountRow(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	t.Fatalf("no activity reached the Claude row: %s", last)
+	t.Fatalf("no activity reached the %s row: %s", tool, last)
+}
+
+func buildObserverBinary(t *testing.T) string {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "modelplan")
+	if raw, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v %s", err, raw)
+	}
+	return binary
+}
+
+func writeObserved(t *testing.T, path string, value any) {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Codex: the recorded account reading plus a rollout waiting for a tool.
+func TestAppServerCodexActivityReachesTheAccountRow(t *testing.T) {
+	home := setupQueryHome(t)
+	binary := buildObserverBinary(t)
+	now := time.Now().UTC()
+	state, _ := consent.Current()
+	used := 30.0
+	writeObserved(t, filepath.Join(home, "cache", "observed", "codex-account.json"), map[string]any{
+		"admission": state.CaptureStamp(consent.ScopeCodexRuntimeUsage), "schemaVersion": 1, "observedAt": now, "status": "ok",
+		"subscriptionRef": "0123456789abcdef",
+		"windows":         []map[string]any{{"kind": "five_hour", "windowMinutes": 300, "usedPercent": used, "resetsAt": now.Add(time.Hour), "observedAt": now}},
+	})
+	rollout := filepath.Join(home, ".codex", "sessions", "2026", "11", "07", "rollout-synthetic.jsonl")
+	if err := os.MkdirAll(filepath.Dir(rollout), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Format(time.RFC3339Nano)
+	lines := fmt.Sprintf(`{"timestamp":%[1]q,"type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":%[1]q,"type":"turn_context","payload":{"model":"gpt-5.5","effort":"high"}}
+{"timestamp":%[1]q,"type":"response_item","payload":{"type":"function_call"}}
+`, at)
+	if err := os.WriteFile(rollout, []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForActivity(t, binary, "codex", "tool")
+}
+
+// ZCode: its ledger has no account, so a turn binds to the configured key's recorded reading.
+func TestAppServerZCodeActivityReachesTheAccountRow(t *testing.T) {
+	home := setupQueryHome(t)
+	t.Setenv("MODELPLAN_CODEX_ACCOUNT", "off")
+	providers := filepath.Join(home, ".zcode", "v2", "provider_config.json")
+	if err := os.MkdirAll(filepath.Dir(providers), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	config := `{"schemaVersion":1,"config":{"providerConfigRules":{"providerRules":[{"providerId":"glm-plan","templateId":"zai-api","enabled":true,"config":{"access":{"type":"zhipu-coding-plan-api-key","apiKey":"synthetic-canary"}}}]},"modelConfigRules":{"providerModelRules":[],"manualProviderModelRules":[]},"defaultModelSelection":{"providerId":"glm-plan","modelId":"glm-5"}}}`
+	if err := os.WriteFile(providers, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	binary := buildObserverBinary(t)
+	cache := filepath.Join(home, "cache")
+	grant, ok := quota.ProductionPathsWithAdmission(cache, version, consent.Capture()).ReaderAccessGrant("zai")
+	if !ok || grant.ConfigSource == nil {
+		t.Skip("ZCode route not admitted by this profile")
+	}
+	now := time.Now().UTC()
+	used := 25.0
+	good := map[string]any{"admission": grant.Admission, "provider": "zai", "source": "api", "status": "ok", "observedAt": now, "subscriptionRef": "fedcba9876543210",
+		"windows": []map[string]any{{"kind": "five_hour", "windowMinutes": 300, "usedPercent": used, "resetsAt": now.Add(time.Hour), "observedAt": now}}}
+	writeObserved(t, filepath.Join(cache, "observed", "zai-config-v1.json"), map[string]any{"schemaVersion": 1, "attemptAt": now, "nextAt": now.Add(time.Hour), "availability": "ok",
+		"loginGeneration": grant.Generation, "goodGeneration": grant.Generation, "lastGood": good})
+	writeObserved(t, filepath.Join(cache, "observed", "native.json"), map[string]any{"schemaVersion": 1, "observedAt": now, "providers": []any{good}})
+	log := filepath.Join(home, ".zcode", "cli", "log", "synthetic.jsonl")
+	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := os.WriteFile(log, []byte(fmt.Sprintf(`{"timestamp":%q,"event":"turn.started","sessionId":"synthetic","turnId":"a"}`+"\n", at)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForActivity(t, binary, "zai", "model")
 }
