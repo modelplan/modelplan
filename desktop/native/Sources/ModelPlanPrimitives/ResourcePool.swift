@@ -212,7 +212,7 @@ public struct EffectFrameRequest: Hashable, Sendable {
     }
     public func seekForCapture(_ phase: Double) {
         guard phase.isFinite, let entry else { return }
-        let value = max(0, phase.truncatingRemainder(dividingBy: 1))
+        let value = max(0, phase.truncatingRemainder(dividingBy: cycleSeconds) / cycleSeconds)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.removeAnimation(forKey: "stepped-images"); isAnimating = false
         layer.contents = entry.images[min(EffectResourcePool.poses - 1, Int(value * Double(EffectResourcePool.poses)))]
