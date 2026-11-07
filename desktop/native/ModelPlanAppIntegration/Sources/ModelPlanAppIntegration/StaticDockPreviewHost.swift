@@ -850,8 +850,6 @@ struct DockHelpInteraction: Equatable {
     /// R64 D-9: the surface state last put on screen, so a sliver <-> expanded change can animate.
     private var presentedSurfaceState: DockSurfaceState?
     private let collapseGhost = DockCollapseGhost()
-    private let snapPreview = DockSnapPreview()
-    var snapPreviewFrameForChecks: CGRect? { snapPreview.frameForChecks }
     var collapseAnimatingForChecks: Bool { collapseGhost.animatingForChecks }
     private(set) var revealAnimationsForChecks = 0
     var containerAnimationsForChecks: [String: CAAnimation] {
@@ -1467,7 +1465,7 @@ struct DockHelpInteraction: Equatable {
         bindBackgroundMovement(value)
         guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
         guard permitted, !retired, let frame = value.paintedFrame else {
-            attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop(); snapPreview.hide()
+            attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop()
             panel?.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel == nil {
@@ -1488,7 +1486,6 @@ struct DockHelpInteraction: Equatable {
             collapseGhost.play(snapshotOf: container, frame: panel.frame, level: panel.level, edge: motionEdge, reduceMotion: reduceMotion)
         } else if value.state == .expanded { collapseGhost.stop() }
         panel.level = value.moving ? .statusBar : .floating
-        updateSnapPreview(value)
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = panelCollectionBehavior
         let content: NSView
@@ -1507,7 +1504,7 @@ struct DockHelpInteraction: Equatable {
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
             catch { pointerSurface.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return }
-        case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop(); snapPreview.hide(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
+        case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
         bindPointerInput(value, content: content)
@@ -2095,20 +2092,6 @@ struct DockHelpInteraction: Equatable {
             }
         }
     }
-    /// M-2: outline the snap destination while the carried widget is off it.
-    private func updateSnapPreview(_ value: DockEdgePresentation) {
-        guard value.moving, value.state == .expanded, let placement = value.placement, let carried = value.carriedFrame,
-              abs(carried.minX - placement.frame.minX) + abs(carried.minY - placement.frame.minY) > 1 else { snapPreview.hide(); return }
-        let view = edgeViews[placement.edge]
-        let size = placement.frame.size
-        let path = view?.registeredMoveOutlinePath
-            ?? placement.layout.hoverRects.first.map { CGPath(roundedRect: $0, cornerWidth: 6, cornerHeight: 6, transform: nil) }
-            ?? CGPath(rect: CGRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5), transform: nil)
-        let stroke = QuotaWidgetSnapPreviewMaterial.stroke
-        snapPreview.show(path: path, flipped: view?.isFlipped ?? true, frame: placement.frame,
-                         stroke: NSColor(srgbRed: stroke.red, green: stroke.green, blue: stroke.blue, alpha: stroke.alpha),
-                         lineWidth: QuotaWidgetSnapPreviewMaterial.lineWidth, level: .statusBar)
-    }
     /// Esc on a keyboard-focused ring closes its open card; the ring keeps the focus and the
     /// card stays closed until focus or hover moves to another ring.
     private func closeHeldCard() -> Bool {
@@ -2149,7 +2132,7 @@ struct DockHelpInteraction: Equatable {
         dockView.dispose(); alternateViews.forEach { $0.dispose() }; sliver.dispose(); card.dispose()
         edgeViews = [:]; edgeGeometries = [:]; appearanceDisplay = nil
         overflowTray.dispose(); overflowPanel?.orderOut(nil); overflowPanel = nil
-        collapseGhost.stop(); snapPreview.hide(); panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
+        collapseGhost.stop(); panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         reportVisibility(false); visibilityChanged = nil
         showConsole = nil; showSettings = nil; requestAutoCollapse=nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
     }
