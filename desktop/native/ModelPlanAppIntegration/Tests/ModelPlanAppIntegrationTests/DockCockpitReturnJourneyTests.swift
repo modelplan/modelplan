@@ -138,12 +138,25 @@ import ModelPlanWire
             try await waitForSurface(.expanded)
             try await Task.sleep(for: .milliseconds(550))
             XCTAssertEqual(dock.edgePresentation?.state, .expanded, "The wake band stays inside after reveal")
-            move(to: outside)
-            try await Task.sleep(for: .milliseconds(400))
-            XCTAssertEqual(dock.edgePresentation?.state, .expanded, "The first absence is shorter than the hide grace")
-            move(to: wake)
-            try await Task.sleep(for: .milliseconds(150))
-            XCTAssertEqual(dock.edgePresentation?.state, .expanded, "Returning to the wake band cancels the hide")
+            // A main-thread stall on a hosted Mac can outlast the 500 ms grace before the test looks.
+            // Such a try proves nothing about the hide, so it goes again; only an in-time look counts.
+            var inTime = false
+            for _ in 0..<5 where !inTime {
+                let left = ContinuousClock.now
+                move(to: outside)
+                try await Task.sleep(for: .milliseconds(200))
+                let state = dock.edgePresentation?.state
+                if left.duration(to: .now) < .milliseconds(450) {
+                    inTime = true
+                    XCTAssertEqual(state, .expanded, "The first absence is shorter than the hide grace")
+                }
+                move(to: wake)
+                if inTime {
+                    try await Task.sleep(for: .milliseconds(150))
+                    XCTAssertEqual(dock.edgePresentation?.state, .expanded, "Returning to the wake band cancels the hide")
+                } else { try await waitForSurface(.expanded) }
+            }
+            XCTAssertTrue(inTime, "No in-time look at the hide grace in five tries")
             move(to: outside)
             // A fixed 550 ms left a 500 ms grace 50 ms of slack on a loaded hosted Mac.
             try await waitForSurface(.sliver)

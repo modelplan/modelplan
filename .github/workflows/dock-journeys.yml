@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   journeys:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-15
     timeout-minutes: 45
     env:
