@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {readFileSync} from 'node:fs';
-import {commands,pageId,appearance,shell,sample} from '../fixture.mjs';
+import {commands,pageId,appearance,shell,sample,excludePortholeFlicker} from '../fixture.mjs';
+test.beforeEach(async({page})=>excludePortholeFlicker(page));
 const start='2026-10-29T12:00:00Z',at='2026-10-29T12:02:00Z',week='2026-10-29T12:20:00Z';
 function dataFor(details=false){
  const data=sample(),projection=JSON.parse(readFileSync(new URL('../../../../schema/app-cli/captures/rows-model-scope.json',import.meta.url)));delete projection.consentGeneration;data.projection=projection;const row=projection.rows[0],a=row.accounts[0],w=a.windows[0];delete w.modelScope;row.expiresAt=at;a.valueState='current';a.lastFailure=null;a.observedAt=start;a.freshUntil=week;
