@@ -581,6 +581,7 @@ extension P1ExactPlacementTests {
         projection["rows"] = stations.enumerated().map { order, station -> [String: Any] in
             var row = template
             row["id"] = station.id; row["order"] = order + 1; row["vendorKey"] = station.vendorKey
+            if station.vendorKey.isEmpty { row.removeValue(forKey: "vendorKey") }
             row["name"] = ["en": station.name, "zh": station.name]
             row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock", "menu", "settings"]
             row["expiresAt"] = "2099-01-01T00:00:00Z"
@@ -754,6 +755,15 @@ extension P1ExactPlacementTests {
         try await settled("the readout disappears") { !view.presentedTextMetricsForChecks.contains { $0.text == "20%" } }
         try await settings.commit(.showPercentages(true))
         try await settled("the readout returns") { view.presentedTextMetricsForChecks.contains { $0.text == "20%" } }
+    }
+
+    /// D42: catalogue rows such as Gemini carry no vendor key; the tool ID names their mark.
+    func testARowWithoutAVendorKeyShowsTheMarkForItsToolID() async throws {
+        let rows = try synthetic([Station(id: "gemini", vendorKey: "", name: "Gemini CLI", accounts: 1)])
+        let (app, view) = try await launch(rows, size: .medium, percentages: false, stations: 1, tag: "nokey")
+        XCTAssertEqual(view.presentedReadingsForChecks.values.first?.vendorResourceKey, "gemini")
+        XCTAssertFalse(view.presentedTextMetricsForChecks.contains { $0.text == "Ge" }, "the mark is drawn, not the fallback")
+        await app.stopLifecycle(); app.composition.dock.close()
     }
 
     /// G3-32: a ring shows the vendor's checked mark; without one, its initials fit the face.
