@@ -232,7 +232,7 @@ public enum SettingsCatalogue {
         .init(.motion,"Reduce motion","减少动态效果","Follow accessibility settings or always reduce motion.","跟随辅助功能设置或始终减少动态。"),
         .init(.transparency,"Reduce transparency","减少透明度","Follow accessibility settings or use solid surfaces.","跟随辅助功能设置或使用不透明表面。"),
         .init(.percentageMode,"Percentage basis","百分比含义","Show remaining or used quota.","显示剩余或已用额度。"),
-        .init(.showPercentages,"Show percentages","显示百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
+        .init(.showPercentages,"Quota widget percentages","挂件额度百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
         .init(.percentagePin,"Percentage window","百分比窗口","Select the tightest, 5-hour or weekly window per subscription.","为每个订阅选择最紧的、5小时或每周窗口。"),
         .init(.redBelow,"Critical threshold","变红阈值","Red at remaining quota ≤ the threshold, even when displaying used quota.","剩余额度 ≤ 阈值时变红，即使显示已用额度也一样。"),
         .init(.sliverAlert,"Sliver alert color","细条提示色","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
@@ -387,7 +387,7 @@ public enum SettingsCatalogue {
         case .percentageMode: return choices(p.percentageMode)
         case .showPercentages: return .toggle(p.showPercentages)
         case .percentagePin: return perSub(options: PercentagePin.allCases.map(\.rawValue)) { (p.subscriptionSettings[$0.id]?.percentagePin ?? .auto).rawValue }
-        case .redBelow: return .choice(String(p.redBelow), options: [10,16,20,25].map(String.init))
+        case .redBelow: return .choice(String(p.effectiveRedBelow), options: SettingsPreferences.redBelowChoices.map(String.init))
         case .sliverAlert: return .toggle(p.sliverAlert)
         case .showDock: return .toggle(p.showDock)
         case .autoHide: return .toggle(p.autoHide)

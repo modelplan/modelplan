@@ -518,7 +518,8 @@ actor EntrySyntheticClient: EngineClient {
             return root.subviews.lazy.compactMap { text($0, named: name) }.first
         }
         XCTAssertEqual(text(dock.card, named: "source"), "Local history · 37m ago")
-        XCTAssertTrue(text(dock.card, named: "row.quota:session:18000:main:main.detail")?.contains("Local history · 37m ago") == true)
+        // The header names the selected window's source and age; only a row that differs repeats it.
+        XCTAssertFalse(text(dock.card, named: "row.quota:session:18000:main:main.detail")?.contains("Local history") == true)
         XCTAssertTrue(text(dock.card, named: "row.quota:weekly:604800:main:main.detail")?.contains("Tool runtime · 11m ago") == true)
         XCTAssertTrue(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("Unknown source · Reading time unknown") == true)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
@@ -596,10 +597,9 @@ actor EntrySyntheticClient: EngineClient {
         await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: legacy.projection.invalidRowCount))
         try open(restricted)
         XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 24h ago")
-        XCTAssertEqual(text("row.source.value", in: dock.card), "Saved sign-in")
+        XCTAssertNil(text("row.source.value", in: dock.card), "provenance lives in the header (card.js cd-h), not a second row")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(text("source", in: dock.card), "已有登录 · 24小时前")
-        XCTAssertEqual(text("row.source.value", in: dock.card), "已有登录")
     }
 
     /// DOCK-3.8-07 / D40: the card's reset time uses the prototype's compact form in both languages.
@@ -645,10 +645,11 @@ actor EntrySyntheticClient: EngineClient {
         let id = "aaaaaaaaaaaaaaaa", dock = app.composition.dock
         func balance() throws -> DockCardRow {
             let content = try XCTUnwrap(try dock.cardContent(for: id, at: wall))
-            return try XCTUnwrap(content.rows.first { $0.id == "credits" })
+            return try XCTUnwrap(content.rows.first { $0.id == "reserve" })
         }
         XCTAssertEqual(try balance().label, "Balance")
         XCTAssertEqual(try balance().value, "14,207.86")
+        XCTAssertEqual(try balance().detail, "Currency not reported")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try balance().label, "余额")
         XCTAssertEqual(try balance().value, "14,207.86")
@@ -732,7 +733,7 @@ actor EntrySyntheticClient: EngineClient {
             let name = try XCTUnwrap(field(dock.card, id: "row.reserve.label"))
             let value = try XCTUnwrap(field(dock.card, id: "row.reserve.value"))
             try assertVisible(name, text: title)
-            try assertVisible(value, text: "19,614")
+            try assertVisible(value, text: "↺1 · 19,614")
             XCTAssertLessThanOrEqual(dock.card.convert(name.bounds, from: name).maxX,
                 dock.card.convert(value.bounds, from: value).minX)
         }
@@ -858,11 +859,14 @@ actor EntrySyntheticClient: EngineClient {
             (root as? NSTextField).map { [$0.stringValue] } ?? root.subviews.flatMap(text)
         }
         XCTAssertTrue(text(dock.card).contains("Reset 17:00 announced"))
-        XCTAssertTrue(text(dock.card).contains("2 resets · expire in 30h"))
+        // card.js:79-81: the count leads the one reserve line, its earliest expiry on the right.
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺2") })
+        XCTAssertTrue(text(dock.card).contains("exp in 30h"))
         // DOCK-3.8-11: the announced reset is its own section: the title spans the readout window in reset blue.
         func fields(_ root: NSView) -> [NSTextField] { ((root as? NSTextField).map { [$0] } ?? []) + root.subviews.flatMap(fields) }
         let resetTitle = try XCTUnwrap(fields(dock.card).first { $0.accessibilityIdentifier().hasPrefix("dock.card.text.row.reset-event:") && $0.accessibilityIdentifier().hasSuffix(".label") })
-        XCTAssertGreaterThan(resetTitle.frame.width, 200, "the reset title is not squeezed into the label column")
+        // The state pill shares the title's line (dock.css .cd-ev), so the title is the notice width less the pill.
+        XCTAssertGreaterThan(resetTitle.frame.width, 150, "the reset title is not squeezed into the label column")
         let ink = try XCTUnwrap(resetTitle.textColor?.usingColorSpace(.sRGB))
         XCTAssertEqual(ink.blueComponent, 1, accuracy: 0.02); XCTAssertEqual(ink.redComponent * 255, 0x9f, accuracy: 3)
         let content = try XCTUnwrap(dock.cardContent(for: id, at: wall))
@@ -887,7 +891,8 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(opened.count, 1)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertTrue(text(dock.card).contains("预告 17:00 重置"))
-        XCTAssertTrue(text(dock.card).contains("重置 2 次 · 30 小时后到期"))
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺2") })
+        XCTAssertTrue(text(dock.card).contains("30h 后到期"))
         let chinese = try XCTUnwrap(dock.cardContent(for: id, at: wall))
         XCTAssertEqual(chinese.links.map(\.url.absoluteString), [aihotURL, officialURL, originalURL, publicationURL])
         XCTAssertEqual(chinese.links.map(\.label), ["AIHot", "官方来源", "原文", "来源"])
@@ -913,12 +918,13 @@ actor EntrySyntheticClient: EngineClient {
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         try await render(Self.rows(weekly: 75, sequence: 9, resetCardClock: wall, resetConfirmed: true,
             resetFacts: .init(count: 1, expiresIn: 12 * 60, retainedPartial: true)))
-        XCTAssertTrue(text(dock.card).contains("1 reset · expire in 12m"))
-        XCTAssertTrue(text(dock.card).contains("Reported subset · Details truncated · Last known reading"))
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺1") })
+        XCTAssertTrue(text(dock.card).contains("exp in 12m · Reported subset · Details truncated · Last known reading"))
         try await render(Self.rows(weekly: 75, sequence: 10, resetCardClock: wall, resetConfirmed: true,
             resetFacts: .init(count: 1, expiresIn: -60, restarted: true)))
         XCTAssertTrue(text(dock.card).contains("Reset confirmed"))
-        XCTAssertTrue(text(dock.card).contains("1 reset · expired"))
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺1") })
+        XCTAssertTrue(text(dock.card).contains("expired"))
         let confirmedAction = try XCTUnwrap(dock.card.onOpenURL)
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: delivery, nextFloor: nil)))
         XCTAssertTrue(dock.card.isHidden)

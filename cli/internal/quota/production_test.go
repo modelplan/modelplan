@@ -69,6 +69,14 @@ func TestProductionManagedAdmission(t *testing.T) {
 			t.Setenv("MODELPLAN_READERS", "")
 			cache := t.TempDir()
 			paths := func() Paths { return ProductionPaths(cache, "1.0.0") }
+			if provider == "claude" {
+				// D27 (G3-19): Claude Code's saved login is on by default; the
+				// no-read-before-consent checks below run after a recorded refusal.
+				if !NativeDue(paths(), at) {
+					t.Fatal("default-on Claude saved login not due on a fresh profile")
+				}
+				productionConsent(t, provider, false)
+			}
 			if NativeDue(paths(), at) {
 				t.Fatal("reader due before consent")
 			}

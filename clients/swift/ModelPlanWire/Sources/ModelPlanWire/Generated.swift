@@ -2657,7 +2657,7 @@ public struct WireCockpitQueryParams: Codable, Sendable {
         try c.encodeIfPresent(`redBelow`, forKey: .`redBelow`)
     }
     private func validate() throws {
-        if let value = `redBelow`, ![10, 16, 20, 25].contains(value) { throw WireDecodeError.invalidBound }
+        if let value = `redBelow`, ![10, 15, 20, 25, 30, 40].contains(value) { throw WireDecodeError.invalidBound }
     }
 }
 

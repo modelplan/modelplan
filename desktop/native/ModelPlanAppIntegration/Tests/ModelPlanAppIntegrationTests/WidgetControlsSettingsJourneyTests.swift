@@ -23,11 +23,11 @@ import ModelPlanSettings
             return try XCTUnwrap(try SettingsCatalogue.rows(preferences: preferences, context: settings.editor.context).first { $0.key == key }, "\(key)")
         }
         for key in SettingsPageContext.widgetConsumedKeys { XCTAssertEqual(try row(key).availability, .available, "\(key)") }
-        try await settings.commit(.redBelow(16))
-        for _ in 0..<200 where app.composition.dock.currentMenuBarPreferences?.redBelow != 16 {
+        try await settings.commit(.redBelow(15))
+        for _ in 0..<200 where app.composition.dock.currentMenuBarPreferences?.redBelow != 15 {
             try await Task.sleep(for: .milliseconds(10))
         }
-        XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.redBelow, 16, "the committed threshold did not reach the widget")
+        XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.redBelow, 15, "the committed threshold did not reach the widget")
         await app.composition.stop()
     }
 }

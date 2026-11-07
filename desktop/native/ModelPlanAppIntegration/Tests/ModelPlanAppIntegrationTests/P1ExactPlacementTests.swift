@@ -220,6 +220,27 @@ private actor P1SyntheticEngine: EngineClient {
         let (red, green, blue) = (sum[0] / count, sum[1] / count, sum[2] / count)
         XCTAssertGreaterThan(red, 150, "The ignition cap must read red, not dark: rgb(\(red), \(green), \(blue))")
         XCTAssertGreaterThan(red, 2 * green); XCTAssertGreaterThan(red, 2 * blue)
+        // G3-04: no square behind the round control. The button paints nothing, and across each corner of
+        // the guard's square box the face continues unbroken.
+        XCTAssertTrue(button.isTransparent); XCTAssertFalse(button.isBordered)
+        XCTAssertLessThan(button.layer?.backgroundColor?.alpha ?? 0, 0.01)
+        let box = try XCTUnwrap(skin.fixedLayers.first { $0.resource.contains("recessed-guard") }).rect.offsetBy(dx: -origin.x, dy: -origin.y)
+        let whole = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+            bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+        whole.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let pixels = try XCTUnwrap(whole.data).assumingMemoryBound(to: UInt8.self)
+        func pixel(_ point: CGPoint) -> [Int] {
+            let x = Int(point.x * scale), y = Int(point.y * scale), at = (y * image.width + x) * 4
+            return (0..<4).map { Int(pixels[at + $0]) }
+        }
+        let bounds = CGRect(x: 0, y: 0, width: skin.bounds.width, height: skin.bounds.height).insetBy(dx: 1, dy: 1)
+        for (corner, outward) in [(CGPoint(x: box.minX, y: box.minY), CGPoint(x: -1, y: -1)), (CGPoint(x: box.maxX, y: box.minY), CGPoint(x: 1, y: -1)),
+                                  (CGPoint(x: box.minX, y: box.maxY), CGPoint(x: -1, y: 1)), (CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: 1, y: 1))] {
+            let inside = CGPoint(x: corner.x - outward.x, y: corner.y - outward.y), outside = CGPoint(x: corner.x + outward.x, y: corner.y + outward.y)
+            guard bounds.contains(inside), bounds.contains(outside), pixel(inside)[3] == 255, pixel(outside)[3] == 255 else { continue }
+            for (a, b) in zip(pixel(inside), pixel(outside)) { XCTAssertLessThan(abs(a - b), 24, "a step at the guard corner \(corner)") }
+        }
         await app.stopLifecycle(); app.composition.dock.close()
     }
 
@@ -741,7 +762,7 @@ extension P1ExactPlacementTests {
             }
             return count
         }
-        // The default threshold (25) makes 20% red; 16 makes the same reading amber; back to red.
+        // The default threshold (25) makes 20% red; 15 makes the same reading amber; back to red.
         XCTAssertEqual(try reading().status, .critical)
         XCTAssertEqual(try reading().outer?.status, .critical)
         let red = try ringRedPixels()
@@ -749,7 +770,7 @@ extension P1ExactPlacementTests {
             CGImageDestinationAddImage(writer, image, nil); CGImageDestinationFinalize(writer)
         }
         XCTAssertGreaterThan(red, 0, "the ring paints its red band at 20% with the default threshold")
-        try await settings.commit(.redBelow(16))
+        try await settings.commit(.redBelow(15))
         try await settled("the ring leaves red") { (try? reading().outer?.status) == .warning }
         XCTAssertEqual(try reading().status, .warning)
         XCTAssertEqual(try ringRedPixels(), 0, "no red band above the committed threshold")
