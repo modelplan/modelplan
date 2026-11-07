@@ -36,12 +36,26 @@ import ModelPlanSettings
         let binary = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"])
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary))
         _ = NSApplication.shared
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let environment = ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".config/modelplan"), withIntermediateDirectories: true)
+        // As the other real-CLI journeys do: the read-only server does not create the consent store.
+        let seed = Process()
+        seed.executableURL = URL(fileURLWithPath: binary)
+        seed.arguments = ["consent", "init", "--json"]
+        seed.environment = environment
+        seed.standardInput = FileHandle.nullDevice
+        seed.standardOutput = FileHandle.nullDevice
+        seed.standardError = FileHandle.nullDevice
+        try seed.run()
+        let seedDeadline = ContinuousClock.now + .seconds(5)
+        while seed.isRunning && ContinuousClock.now < seedDeadline { try await Task.sleep(for: .milliseconds(10)) }
+        if seed.isRunning { seed.terminate(); throw CocoaError(.executableLoad) }
+        XCTAssertEqual(seed.terminationStatus, 0, "Seed only the temporary consent store")
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         if let edit { _ = try await store.update { edit(&$0) } }
         EngineRowsEntry.nativeJourneyProfile = root
         return EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: binary),
-            applicationVersion: "dock-native-journey", allowedEnvironment: ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin", "LANG": "C"],
+            applicationVersion: "dock-native-journey", allowedEnvironment: environment,
             offline: true, readOnly: true), settingsStore: store, createsNativePanels: true,
             dockEnvironment: topology.read, activateSettings: {})
     }
