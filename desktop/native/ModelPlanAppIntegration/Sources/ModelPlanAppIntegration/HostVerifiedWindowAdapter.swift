@@ -133,6 +133,7 @@ enum HostVerifiedWindowError: Error, Equatable {
                     admitted ? observations.filter { provenIDs.contains($0.key) || $0.value.verifiedRetained } : [:]
                 },
                 cardReadingState: unproved ? .error : (admitted || row.cardReadingState == .loading ? row.cardReadingState : .error))
+            rows[input.id]?.actionLabel = row.actionLabel
         }
         let snapshot = CommunityDockSnapshot(inputs: inputs, subscriptions: original.subscriptions,
             presentationRows: rows, unavailableReason: original.unavailableReason,

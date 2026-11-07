@@ -246,6 +246,8 @@ struct DockHelpInteraction: Equatable {
     private var application: SettingsApplication?
     public var currentMenuBarPreferences: SettingsPreferences? { (retired || retiring) ? nil : application?.snapshot.preferences }
     public var menuBarPreferencesChanged: (() -> Void)?
+    /// D41: the owner runs the card's local action; this host holds no consent state.
+    public var cardActionRequested: ((String) -> Void)?
     /// Composition invalidates its retained provider and deadline before close returns.
     var onWillRetire: (() -> Void)?
     /// Screen-coordinate anchors exist only while the actual Dock panel is visible.
@@ -1904,6 +1906,7 @@ struct DockHelpInteraction: Equatable {
                 links: currentCardSourceLinks(for: id, at: now),
                 enterLabel: (cardUsesSettings(id) ? EngineRowsText.contextSettings : EngineRowsText.cockpitAction).value(preferences.language),
                 dismissLabel: EngineRowsText.contextClose.value(preferences.language),
+                actionLabel: row?.actionLabel ?? "",
                 redBelow: effectiveRedBelow, at: now)
     }
     private func cardUsesSettings(_ id: String) -> Bool {
@@ -1940,6 +1943,7 @@ struct DockHelpInteraction: Equatable {
             if let controller = self.interactionController, controller.isActive { controller.dismissCard() }
             self.dismissCard()
         }
+        card.onAction = { [weak self] id in self?.cardActionRequested?(id) }
         card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
         let unavailable = !cardUsesSettings(id) && !cockpitEntryEnabled
         var style = Self.prototypeCardStyle

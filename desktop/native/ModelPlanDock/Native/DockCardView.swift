@@ -80,7 +80,7 @@ import CryptoKit
 /// Rows lay out top-down like the card itself.
 @MainActor private final class DockCardRowView:NSView { override var isFlipped:Bool{true} }
 @MainActor public final class DockCardView:NSView {
-    public var onEnter:((String,UInt64)->Void)?,onDismiss:(()->Void)?,onOpenURL:((URL)->Void)?
+    public var onEnter:((String,UInt64)->Void)?,onDismiss:(()->Void)?,onOpenURL:((URL)->Void)?,onAction:((String)->Void)?
     public var permitsAction:((String,UInt64)->Bool)?
     public var onFocusChange:(()->Void)?
     private var content:DockCardContent?,generation:UInt64=0,style=DockCardStyle()
@@ -296,6 +296,12 @@ import CryptoKit
             }
             y+=lineHeight
         }
+        // D41: an action this subscription needs now, independent of the footer buttons.
+        if !value.actionLabel.isEmpty{
+            let action=button("action",value.actionLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onAction?(value.subscriptionID)}
+            y+=6;place(action,in:self);let s=action.fittingSize
+            action.frame=CGRect(x:style.padding,y:y,width:min(ceil(s.width),inner),height:ceil(s.height));y+=ceil(s.height)
+        }
         if style.showsActions{
             let enter=button("enter",value.enterLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onEnter?(value.subscriptionID,value.revision)}
             enter.isEnabled = enterDisabledReason == nil;enter.setAccessibilityHelp(enterDisabledReason)
@@ -345,5 +351,5 @@ import CryptoKit
             }
         }
     }
-    public func dispose(){generation &+= 1;clear();setAccessibilityElement(false);onEnter=nil;onDismiss=nil;onOpenURL=nil;onFocusChange=nil;permitsAction=nil}
+    public func dispose(){generation &+= 1;clear();setAccessibilityElement(false);onEnter=nil;onDismiss=nil;onOpenURL=nil;onAction=nil;onFocusChange=nil;permitsAction=nil}
 }

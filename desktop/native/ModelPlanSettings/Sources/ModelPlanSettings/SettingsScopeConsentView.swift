@@ -124,6 +124,15 @@ import ModelPlanWire
                     "ModelPlan 会读取本机 " + zh.joined(separator: "、") + " 的用量。可在 设置 › 数据与隐私 中关闭。")
         label(text, secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.notice")
+        guard controller.asksForKeychainOnFirstRun else { return }
+        gap()
+        label(.init("Claude Code keeps its login in the Keychain. Reading its quota needs your permission once: macOS will ask, please choose \"Always Allow\".",
+                    "Claude Code 的登录保存在钥匙串里。读取额度需要你允许一次，macOS 会弹出询问，请选\u{201C}始终允许\u{201D}。"), secondary: true)
+        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.keychain")
+        line([keychainAllowButton(), synchronousButton(.init("Later", "以后再说"), id: "scope.keychain.later") { [weak self] in self?.controller.chooseKeychainLater() }])
+    }
+    private func keychainAllowButton() -> ScopeConsentButton {
+        button(.init("Allow reading", "允许读取"), id: "scope.keychain.allow", enabled: controller.canMutate) { [weak self] in await self?.controller.allowKeychain() }
     }
     private func toolName(_ tool: String) -> SettingsText {
         let name = ["gemini": "Gemini", "cursor": "Cursor", "codex": "Codex", "claude": "Claude Code",
@@ -139,6 +148,11 @@ import ModelPlanWire
         wrappingLabels = []
         if firstRun { renderFirstRunNotice(); return }
         label(.init("Reading permissions", "读取权限"), heading: true)
+        if controller.needsKeychainAccess {
+            label(.init("Keychain access needed to read Claude Code", "需要允许读取钥匙串"))
+            arrangedSubviews.last?.setAccessibilityIdentifier("scope.keychain.needed")
+            line([keychainAllowButton()])
+        }
         switch controller.notice {
         case .none: break
         case .outcomeUnknown: label(.init("The change outcome is unknown. Check current permissions before trying again.", "这次变更结果未知，请先检查当前权限，再决定是否重试。"))

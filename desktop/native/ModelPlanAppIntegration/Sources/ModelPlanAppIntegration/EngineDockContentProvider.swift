@@ -254,10 +254,13 @@ public enum EngineDeadlineFacts {
                                                  observedAt: observed, verifiedRetained: verifiedRetained)
                 }
                 : nil
-            reasons[member.id] = .init(input: input, reason: text(message.0.text),
+            // D41: one plain sentence and one button, whatever the Keychain outcome was.
+            let needsKeychain = row.id == "claude" && row.state == .needsKeychain
+            reasons[member.id] = .init(input: input, reason: needsKeychain ? (english ? "Keychain access needed" : "需要允许读取钥匙串") : text(message.0.text),
                 nextStep: message.1.map { text($0.text) } ?? "",
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
                 sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,resetCountExpiry:resetCount?.expiry,links: preferred.map(resetEventLinks) ?? [],windowObservations:observations,cardReadingState:cardState)
+            if needsKeychain { reasons[member.id]?.actionLabel = english ? "Allow reading" : "允许读取" }
         }
         let status: String
         switch value.status {

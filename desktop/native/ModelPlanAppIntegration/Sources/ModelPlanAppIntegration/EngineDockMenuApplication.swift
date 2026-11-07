@@ -310,6 +310,7 @@ struct StatusNoticePresentation {
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
+        composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
         if notificationAuthorizationService != nil && observedAuthorization != .unavailable {
             context.unavailableControls.removeValue(forKey: .notificationConsent)
