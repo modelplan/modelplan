@@ -295,6 +295,9 @@ struct DockHelpInteraction: Equatable {
     public private(set) var lastWorkingEffectError: Error?
     @_spi(DockResourceChecks) public var activeWorkingEffectIDs: Set<String> { workingDriver?.activeIDs ?? [] }
     @_spi(DockResourceChecks) public var rotatingWorkingEffectIDs: Set<String> { workingDriver?.rotatingIDs ?? [] }
+    /// Observe real CA installation before a detached offscreen tree is flushed.
+    @_spi(DockResourceChecks) public var workingEffectsDidConfigureForChecks: (() -> Void)?
+    @_spi(DockResourceChecks) public var workingEffectRotationPeriodsForChecks: [String:Double] { workingDriver?.rotationPeriods ?? [:] }
     @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
     @_spi(DockResourceChecks) public var workingEffectCycleSeconds: [String: Double] { workingDriver?.cycleSeconds ?? [:] }
     @_spi(DockResourceChecks) public func seekWorkingEffectsForChecks(_ seconds: Double) { workingDriver?.seekForCapture(seconds) }
@@ -1231,6 +1234,7 @@ struct DockHelpInteraction: Equatable {
                                      rotation: DockEffectRotation(period: 1), provider: { _ in provider })
             } catch { driver.stop(); lastWorkingEffectError = error }
         } else { workingDriver?.stop() }
+        workingEffectsDidConfigureForChecks?()
         publishAttention()
         model = next
         if appearanceFallback || (rows.isEmpty && appearance == nil) {
@@ -2147,6 +2151,7 @@ struct DockHelpInteraction: Equatable {
         edge.onPresent = nil; edge.onCommittedPlacement = nil
         onPlacementObserved = nil
         dockView.onNeedsFreshPresentation = nil
+        workingEffectsDidConfigureForChecks=nil
         dockView.dispose(); alternateViews.forEach { $0.dispose() }; sliver.dispose(); card.dispose()
         edgeViews = [:]; edgeGeometries = [:]; appearanceDisplay = nil
         overflowTray.dispose(); overflowPanel?.orderOut(nil); overflowPanel = nil

@@ -34,7 +34,7 @@ import XCTest
         XCTAssertEqual(view.frame.width, 304)
         let window = try XCTUnwrap(view.readoutWindowForChecks)
         XCTAssertEqual(window.minX, 11); XCTAssertEqual(window.minY, 50); XCTAssertEqual(window.width, 282); XCTAssertEqual(window.height, 75)
-        XCTAssertEqual(view.frame.height - window.maxY, 29, "The empty events band and the plate padding")
+        XCTAssertEqual(view.frame.height - window.maxY, 10, "Only the plate padding: the owner removed the empty events band")
         let rows = try ["quota:weekly", "reserve", "today"].map { try XCTUnwrap(view.rowFrameForChecks($0)) }
         XCTAssertEqual(rows.map { $0.minY - window.minY }, [7, 28, 49])
         XCTAssertEqual(rows.map(\.height), [19, 19, 19])

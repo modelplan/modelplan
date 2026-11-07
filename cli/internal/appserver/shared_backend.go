@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
@@ -24,7 +25,9 @@ import (
 // SharedConfig adapts the existing production constructors. It owns no parallel
 // consent store, route catalogue, reader implementation or publication policy.
 type SharedConfig struct {
-	now               func() time.Time
+	now func() time.Time
+	// Activity is an admitted, cache-only observer, independent of quota refresh/rate.
+	Activity          func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
 	ResetPublication  func() (*digest.Digest, error)
 	Detect            func() detect.Report
 	Paths             func(consent.Admission) quota.Paths
@@ -40,9 +43,13 @@ func (b *SharedBackend) now() time.Time {
 }
 
 type SharedBackend struct {
-	config  SharedConfig
-	changes chan struct{}
-	once    sync.Once
+	activityMu    sync.Mutex
+	activity      []rows.ActivityInput
+	activityStamp Stamp
+	activityBusy  atomic.Bool
+	config        SharedConfig
+	changes       chan struct{}
+	once          sync.Once
 	// Bound by the constructor before Serve. Credentials remain in the
 	// scheduler's one-use memory callback and are never persisted here.
 	CredentialSink  CredentialReceiver
@@ -142,6 +149,9 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	in.ReadOnly = b.config.ReadOnly
 	in.Offline = b.config.Offline
 	in.IdentityOff = quota.IdentityOff()
+	if !changed {
+		in.Activities = b.activityFor(stampOf(admission.Fence()))
+	}
 	for _, tool := range detection.Tools {
 		id := rows.CanonicalTool(tool.ProviderID)
 		detected[id] = tool.Detected
@@ -429,6 +439,26 @@ func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFil
 
 func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 	b.once.Do(func() {
+		if b.config.Activity != nil {
+			go func() {
+				ticker := time.NewTicker(2 * time.Second)
+				defer ticker.Stop()
+				launch := func(at time.Time) {
+					if b.activityBusy.CompareAndSwap(false, true) {
+						go func() { defer b.activityBusy.Store(false); b.observeActivity(ctx, at) }()
+					}
+				}
+				launch(time.Now())
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case at := <-ticker.C:
+						launch(at)
+					}
+				}
+			}()
+		}
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
@@ -480,6 +510,36 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 		}()
 	})
 	return b.changes
+}
+
+func (b *SharedBackend) observeActivity(ctx context.Context, now time.Time) {
+	admission := consent.Capture()
+	stamp := stampOf(admission.Fence())
+	values := b.config.Activity(ctx, admission, now)
+	if ctx.Err() != nil {
+		return
+	}
+	current := consent.Capture()
+	if current.Fence() != admission.Fence() {
+		values = nil
+		stamp = stampOf(current.Fence())
+	}
+	b.activityMu.Lock()
+	changed := b.activityStamp != stamp || !reflect.DeepEqual(b.activity, values)
+	b.activity = values
+	b.activityStamp = stamp
+	b.activityMu.Unlock()
+	if changed {
+		b.Notify()
+	}
+}
+func (b *SharedBackend) activityFor(stamp Stamp) []rows.ActivityInput {
+	b.activityMu.Lock()
+	defer b.activityMu.Unlock()
+	if stamp != b.activityStamp {
+		return nil
+	}
+	return append([]rows.ActivityInput(nil), b.activity...)
 }
 
 // Notify coalesces a completed shared reader operation into a fresh snapshot.

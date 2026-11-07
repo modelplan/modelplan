@@ -169,6 +169,11 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 			l.Sessions[i].ProjectLabel, changed = "", true
 		}
 	}
+	for i := range l.Live {
+		if !labels && l.Live[i].ProjectLabel != "" {
+			l.Live[i].ProjectLabel, changed = "", true
+		}
+	}
 	if !f(&l) && !created && !changed {
 		return nil
 	}
