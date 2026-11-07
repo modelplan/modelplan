@@ -158,7 +158,7 @@ test("LBL-2.2-14 public reset wording, full and narrow", todo("LBL-2.2-14"), () 
   assert.ok(zh.some((s) => s.includes("已重置")), "confirmed-reset wording (已重置) missing");
 });
 
-const internalWords = ["source scope", "read here", "observation", "fixture", "envelope", "未报告单位", "读数可用", "在设置检查读取权限", "正在显示保留的旧读数在允许时刷新"];
+const internalWords = ["source scope", "read here", "observation", "fixture", "envelope", "观测", "未报告单位", "读数可用", "在设置检查读取权限", "正在显示保留的旧读数在允许时刷新"];
 const internalHits = (list) => list.flatMap((p) => internalWords.filter((w) => p.en.toLowerCase().includes(w) || p.zh.includes(w)).map((w) => `${w} (${p.at})`));
 test("LBL-2.2-15 avoid internal words in UI", todo("LBL-2.2-15"), () => {
   assert.deepEqual(internalHits(pairs), []);
@@ -170,10 +170,11 @@ test("the scanner sees a missing language, an expression title and any case", ()
   collect("control", `SettingsText("Synthetic missing Chinese", "")
 SettingsText("", "缺少英文")
 .init(.login,LoginSetting.title.english,LoginSetting.title.chinese,"A fixture line","合成行")
-SettingsText("Observation details", "合成读取说明")`, swiftForms, seen);
+SettingsText("Observation details", "合成读取说明")
+SettingsText("Plain words", "尚未观测")`, swiftForms, seen);
   assert.equal(seen.filter((p) => !p.en || !p.zh).length, 2);
   assert.ok(seen.some((p) => p.en === "A fixture line"));
-  assert.deepEqual(internalHits(seen).map((hit) => hit.split(" ")[0]), ["observation", "fixture"]);
+  assert.deepEqual(internalHits(seen).map((hit) => hit.split(" ")[0]), ["observation", "观测", "fixture"]);
 });
 
 test("LBL-2.2-16 ALERT stays English on the lamp face in both languages", todo("LBL-2.2-16"), () => {
