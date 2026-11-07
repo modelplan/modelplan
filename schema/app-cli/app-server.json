@@ -4007,6 +4007,20 @@
     "RowsProjection": {
       "additionalProperties": false,
       "properties": {
+        "forecasts": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/CockpitForecast"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxItems": 128
+        },
         "resetEvents": {
           "items": {
             "$ref": "#/$defs/ResetEvent"

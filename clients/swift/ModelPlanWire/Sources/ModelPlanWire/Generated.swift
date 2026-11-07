@@ -4589,18 +4589,21 @@ public struct WireRequest: Codable, Sendable, CustomStringConvertible, CustomDeb
 
 public struct WireRowsProjection: Codable, Sendable {
     public let `resetEvents`: [RowsResetEvent]?
+    public let `forecasts`: [WireCockpitForecast]?
     public let `rowsVersion`: Int
     public let `rows`: [RowsRow]
     public let `rowsSummary`: RowsRowsSummary
     public var invalidRowCount: Int { `rows`.filter { $0.invalid }.count }
     private enum CodingKeys: String, CodingKey {
         case `resetEvents`
+        case `forecasts`
         case `rowsVersion`
         case `rows`
         case `rowsSummary`
     }
-    public init(`resetEvents`: [RowsResetEvent]? = nil, `rowsVersion`: Int, `rows`: [RowsRow], `rowsSummary`: RowsRowsSummary) throws {
+    public init(`resetEvents`: [RowsResetEvent]? = nil, `forecasts`: [WireCockpitForecast]? = nil, `rowsVersion`: Int, `rows`: [RowsRow], `rowsSummary`: RowsRowsSummary) throws {
         self.`resetEvents` = `resetEvents`
+        self.`forecasts` = `forecasts`
         self.`rowsVersion` = `rowsVersion`
         self.`rows` = `rows`
         self.`rowsSummary` = `rowsSummary`
@@ -4610,6 +4613,8 @@ public struct WireRowsProjection: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         if c.contains(.`resetEvents`), try c.decodeNil(forKey: .`resetEvents`) { throw WireDecodeError.invalidIdentity }
         self.`resetEvents` = try c.decodeIfPresent([RowsResetEvent].self, forKey: .`resetEvents`)
+        if c.contains(.`forecasts`), try c.decodeNil(forKey: .`forecasts`) { throw WireDecodeError.invalidIdentity }
+        self.`forecasts` = try? c.decodeIfPresent([WireCockpitForecast].self, forKey: .`forecasts`)
         self.`rowsVersion` = try c.decode(Int.self, forKey: .`rowsVersion`)
         var rowElements = try c.nestedUnkeyedContainer(forKey: .`rows`)
         var decodedRows: [RowsRow] = []
@@ -4625,6 +4630,7 @@ public struct WireRowsProjection: Codable, Sendable {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(`resetEvents`, forKey: .`resetEvents`)
+        try c.encodeIfPresent(`forecasts`, forKey: .`forecasts`)
         try c.encode(`rowsVersion`, forKey: .`rowsVersion`)
         try c.encode(`rows`, forKey: .`rows`)
         try c.encode(`rowsSummary`, forKey: .`rowsSummary`)
