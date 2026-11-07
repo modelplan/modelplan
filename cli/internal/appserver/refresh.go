@@ -27,6 +27,11 @@ type RefreshConfig struct {
 	Offline, ReadOnly bool
 	Changed           func()
 	CredentialRequest func(CredentialNeed) (string, error)
+	// CredentialHold reports an explicit operation for the provider that is open or reading, and
+	// when the quiet time after it ends. A saved-login read must not take that read's lock or
+	// make a second credential read: an automatic read waits out the quiet time, and a requested
+	// one waits only for the operation.
+	CredentialHold func(string) (active bool, until time.Time)
 	// Observe records what the local logs show: sessions and speed. It runs every 30 seconds, so
 	// it reads only local logs and ModelPlan's own cache: no provider request, no credential.
 	Observe func(time.Time)
@@ -38,6 +43,7 @@ type refreshJob struct {
 	scope, key string
 	stamp      Stamp
 	member     *wire.RefreshMember
+	automatic  bool
 }
 type RefreshScheduler struct {
 	credentialWait map[string]bool
@@ -74,6 +80,9 @@ func (s *RefreshScheduler) plan(paths quota.Paths, scope string, now time.Time) 
 // readerBusyRetry: another process, such as a plugin hook, held the reader lock past the
 // two-second wait. The failure back-off is for reads that ran.
 const readerBusyRetry = 15 * time.Second
+
+// credentialHoldPoll spaces a requested read's checks; an operation ends within its own timeout.
+const credentialHoldPoll = 100 * time.Millisecond
 
 // observeEvery matches the live session window closely enough for a current rate.
 const observeEvery = 30 * time.Second
@@ -155,6 +164,9 @@ func (s *RefreshScheduler) Handler() Handler {
 	}}
 }
 func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestParams) ([]wire.RefreshScheduled, Stamp, error) {
+	return s.request(ctx, p, false)
+}
+func (s *RefreshScheduler) request(ctx context.Context, p wire.RefreshRequestParams, automatic bool) ([]wire.RefreshScheduled, Stamp, error) {
 	if ctx.Err() != nil {
 		return nil, Stamp{}, ctx.Err()
 	}
@@ -243,7 +255,7 @@ func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestPar
 					if !plan.At.After(now) {
 						s.pending[key] = now.Add(5 * time.Minute)
 					}
-					s.scheduled[key] = refreshJob{scope: scope, key: key, stamp: stamp, at: plan.At}
+					s.scheduled[key] = refreshJob{scope: scope, key: key, stamp: stamp, at: plan.At, automatic: automatic}
 					enqueued = true
 					s.signal()
 				}
@@ -324,6 +336,7 @@ func (s *RefreshScheduler) work() {
 func (s *RefreshScheduler) run(job refreshJob) {
 	keepPending := false
 	attempted := false
+	held := false
 	defer func() {
 		if !keepPending {
 			currentFence := stampOfFence(consent.Capture().Fence()) == job.stamp
@@ -335,7 +348,7 @@ func (s *RefreshScheduler) run(job refreshJob) {
 			// replacement, admitted after a credential wait expired. Its
 			// pending guard belongs to it, not to the completing job.
 			if _, replaced := s.scheduled[job.key]; !replaced {
-				if !attempted && currentFence {
+				if !attempted && !held && currentFence {
 					s.autoNext[job.key] = s.now().Add(10 * time.Minute)
 					s.autoReason[job.key] = wire.MemberRefreshBudget
 				}
@@ -394,6 +407,29 @@ func (s *RefreshScheduler) run(job refreshJob) {
 		s.mu.Unlock()
 		keepPending = true
 		return
+	}
+	if job.scope == consent.ScopeClaudeAccountUsageSavedLogin && s.config.CredentialHold != nil {
+		active, until := s.config.CredentialHold("claude")
+		if job.automatic && (active || until.After(s.now())) {
+			if !until.After(s.now()) {
+				until = s.now().Add(readerBusyRetry)
+			}
+			s.mu.Lock()
+			s.autoNext[job.key] = until
+			s.mu.Unlock()
+			held = true
+			return
+		}
+		if active {
+			job.at = s.now().Add(credentialHoldPoll)
+			s.mu.Lock()
+			s.pending[job.key] = job.at
+			s.scheduled[job.key] = job
+			s.signal()
+			s.mu.Unlock()
+			keepPending = true
+			return
+		}
 	}
 	if !credentialBound && s.needsCredential(paths, job.scope) {
 		if s.config.CredentialRequest != nil {

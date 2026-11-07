@@ -71,6 +71,8 @@ type Server struct {
 	stop                                            context.CancelFunc
 	started                                         time.Time
 	credentials                                     map[string]*credentialOperation
+	credentialReads                                 map[string]int
+	credentialReadEnded                             map[string]time.Time
 }
 
 func New(config Config) *Server {
