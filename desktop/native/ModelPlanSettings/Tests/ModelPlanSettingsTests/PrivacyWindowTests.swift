@@ -73,6 +73,26 @@ import XCTest
         XCTAssertEqual(clipboard.writes.count, 1, "retired copy control must not write again")
         controller.close()
     }
+    func testSET_9_21CopyDiagnosticsKeepsOnlyAllowedFields() async throws {
+        let editor = try await editor(), clipboard = Clipboard()
+        try await editor.store.update { $0.subscriptionSettings["account-canary@example.invalid"] = .init(alias: "project-canary") }
+        var context = editor.context
+        context.about = .init(appVersion: "1.2.3+token-canary", cliVersion: "/private/credential-canary")
+        context.about.macOSVersion = "26.5.2"
+        context.about.enabledReaders = [.codex]
+        context.about.recentErrorCodes = [.permissionDenied, .stale]
+        editor.update(context: context)
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() }, clipboard: clipboard)
+        defer { controller.close() }
+        await controller.prepare(); controller.selectPane("diagnostics")
+        let copy = try XCTUnwrap(controller.actionControl(key: .diagnostics))
+        XCTAssertTrue(copy.sendAction(copy.action, to: copy.target))
+        let payload = try XCTUnwrap(clipboard.writes.last)
+        XCTAssertEqual(payload, "app=1.2.3\ncli=unknown\nmacOS=26.5.2\nreaders=codex\nerrors=permissionDenied,stale")
+        for secret in ["token-canary", "/private", "credential-canary", "account-canary", "project-canary"] {
+            XCTAssertFalse(payload.contains(secret), "diagnostics included a private canary: \(secret)")
+        }
+    }
     func testAliasWarningClearsOnCancelOrRestoreAndPreservesClipboardErrors() async throws {
         let editor = try await editor(), clipboard = Clipboard(); clipboard.accepted = false
         var context = editor.context; context.subscriptions = [.init(id: "sample", name: .init("Sample", "示例"))]
