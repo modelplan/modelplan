@@ -36,6 +36,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		return result, err
 	}
 	result.Publication = selectCockpitPublication(published, view.Projection)
+	if appserver.CockpitModelsEnabled(ctx) {
+		result.PublishedModels = allCockpitModels(published)
+	}
 	now := time.Now()
 	redBelow := admission.RedBelow
 	if redBelow == 0 {

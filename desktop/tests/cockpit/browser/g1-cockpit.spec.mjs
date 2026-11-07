@@ -26,9 +26,9 @@ test('CKP-ENG-02 one or two subscriptions keep three engine columns',async({page
  }
 });
 
-test('CKP-ENG-14 shared threshold includes the exact 41, 40, 26, 25 and zero boundaries',async({page})=>{
+test('CKP-ENG-14 shared threshold includes the exact 51, 50, 26, 25 and zero boundaries (D22)',async({page})=>{
  const data=visualFixture().data,extra=structuredClone(data.projection.rows[0]);extra.id='synthetic-fifth';extra.accounts[0].subscriptionRef=null;extra.accounts[0].accountLocator=null;data.projection.rows.push(extra);
- for(const [i,row] of data.projection.rows.entries())for(const window of row.accounts[0].windows)window.remainingPercent=[41,40,26,25,0][i];
+ for(const [i,row] of data.projection.rows.entries())for(const window of row.accounts[0].windows)window.remainingPercent=[51,50,26,25,0][i];
  await open(page,data);
  const cells=page.locator('.eng-cols .ec[data-col] .qcell[data-row="first"]');await expect(cells).toHaveCount(5);
  for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(cells.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));

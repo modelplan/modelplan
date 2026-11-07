@@ -238,6 +238,48 @@ final class CommunityCockpitEntryTests:XCTestCase {
         await client.stop()
     }
 
+    /// D-A: the page's openField action reaches the panel through the production console, with public model data only.
+    @MainActor func testOpenFieldIntentOpensThePanelWithPublicModelsAndHideClosesIt() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-field-"+UUID().uuidString)
+        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let html=Data("<!doctype html><title>synthetic field</title>".utf8)
+        for name in ["index.html","field.html"] { try html.write(to:root.appendingPathComponent(name)) }
+        let manifest=try JSONSerialization.data(withJSONObject:["schemaVersion":1,"edition":"community","interfaceOnly":true,
+            "files":["index.html":VerifiedCockpitBundle.digest(html),"field.html":VerifiedCockpitBundle.digest(html)]])
+        try manifest.write(to:root.appendingPathComponent("bundle-manifest.json"))
+        let support=FileManager.default.temporaryDirectory.appendingPathComponent("u11-field-support-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:support)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:support)
+        let client=RouteClient()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        owner.verifiedBundle=try VerifiedCockpitBundle(root:root,manifestSHA256:VerifiedCockpitBundle.digest(manifest))
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.wantsVisible=true
+        surface.handle(.openField)
+        XCTAssertFalse(surface.fieldIsOpen,"No published models, no field")
+        var capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent()
+        while !FileManager.default.fileExists(atPath:capture.appendingPathComponent("schema/app-cli/captures").path) { capture.deleteLastPathComponent() }
+        capture=capture.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        var data=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
+        var details=try XCTUnwrap(data["details"] as? [String:Any])
+        details["publishedModels"]=[["id":"synthetic-model","name":"Synthetic","developerId":"openai","recommended":"medium",
+            "efforts":[["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]]]]
+        data["details"]=details
+        let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+        let context=EngineDeliveryContext(sessionID:"s-field",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await composition.store.consume(.connection(.ready(context)));await composition.store.consume(.context(context))
+        await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:wire),delivery:context))))
+        let payload=try XCTUnwrap(surface.fieldPayload())
+        XCTAssertTrue(payload.contains("synthetic-model"));XCTAssertFalse(payload.contains("subscriptionRef"),"Only public model data crosses")
+        surface.handle(.openField)
+        XCTAssertTrue(surface.fieldIsOpen)
+        surface.hide()
+        XCTAssertFalse(surface.fieldIsOpen,"Closing the cockpit closes the field")
+        await composition.stop()
+    }
+
     /// MOT-2.3-04: Settings Reduce Motion reaches the page at open and when it changes. The normal entry's
     /// settings fan-out into `applySettings` is covered by NormalEntrySettingsJourneyTests.
     @MainActor func testReduceMotionSettingReachesTheCockpitAtOpenAndOnChange() async throws {

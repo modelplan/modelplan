@@ -42,6 +42,9 @@ type CockpitDetails struct {
 	SessionCoverage string                       `json:"sessionCoverage"`
 	ResetEvents     []rows.ResetEvent            `json:"resetEvents" schema:"maxItems=64"`
 	Alerts          []CockpitAlert               `json:"alerts" schema:"maxItems=128"`
+	// PublishedModels is present only for a client that negotiated cockpitModelsV1: public
+	// data of every published model, in publication order, with no personal selection.
+	PublishedModels []CockpitPublicationModel `json:"publishedModels,omitempty" schema:"maxItems=256" null:"forbidden"`
 	// Forecasts is present only for a client that negotiated cockpitForecastV1.
 	Forecasts []CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
 }

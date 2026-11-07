@@ -677,6 +677,14 @@
           "nullPolicy": "forbidden"
         },
         {
+          "field": "publishedModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "forecasts",
           "omission": true,
           "null": false,
