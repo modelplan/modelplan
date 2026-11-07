@@ -27,8 +27,8 @@ public enum QuotaWidgetCardGeometry {
     public static let rowMinimumHeight: CGFloat = 19
     public static let rowVerticalMargin: CGFloat = 2
     public static let rowOutset: CGFloat = 4
-    /// The prototype's empty events area under the readout.
-    public static let readoutBottomGap: CGFloat = 19
+    /// Owner 11-07: no empty band under the readout, although the prototype leaves 19 for events.
+    public static let readoutBottomGap: CGFloat = 0
     public static let barSegments = 10
     public static let barHeight: CGFloat = 7
     public static let barSegmentGap: CGFloat = 1.5

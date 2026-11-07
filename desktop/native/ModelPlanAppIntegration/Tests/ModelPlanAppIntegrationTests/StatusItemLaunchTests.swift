@@ -31,6 +31,25 @@ import XCTest
         XCTAssertFalse(app.handleStatusClick(try click(.leftMouseUp, on: button)), "an unpaired mouse-up is not a click")
     }
 
+    /// MENU-07 at the entry: the cockpit opens from the icon's own frame, on release however long the press,
+    /// and each later click reaches the same console, which toggles it.
+    func testMENU_07ClickOpensBelowTheIconQuickOnlyAndAgainToggles() async throws {
+        let console = StatusClickConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting), window = try XCTUnwrap(button.window)
+        XCTAssertEqual(app.cockpitAnchor, window.convertToScreen(button.convert(button.bounds, to: nil)), "the anchor is the icon itself")
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+        try await Task.sleep(for: .milliseconds(700)) // longer than a hold would need: there is no hold in v1
+        XCTAssertEqual(console.shows, 0, "holding does nothing")
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        XCTAssertEqual(console.shows, 1)
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        XCTAssertEqual(console.shows, 2, "the second click reaches the console, which owns the toggle")
+    }
+
     /// D44: these clicks are left to AppKit, which shows the attached menu; sending them would start real tracking.
     func testRightAndControlClickKeepTheMenu() async throws {
         let console = StatusClickConsole()
