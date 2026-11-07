@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -321,4 +322,118 @@ func TestCredentialHoldKeepsAutomaticReadsOffAndDelaysRequestedOnes(t *testing.T
 	case <-time.After(time.Second):
 		t.Fatal("requested read did not run after the operation")
 	}
+}
+
+func TestHeldAutomaticReadIsReportedDeferred(t *testing.T) {
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic",
+			Credential: func(context.Context) ([]byte, string) { return nil, "unavailable" },
+			Profiles:   []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		CredentialHold: func(string) (bool, time.Time) { return true, time.Time{} },
+		Run:            func(context.Context, quota.Paths, string, time.Time) error { return nil },
+	})
+	defer scheduler.Close()
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	if result, _, err := scheduler.request(context.Background(), params, true); err != nil || result[0].DisabledReason != nil {
+		t.Fatal("automatic read was not scheduled", result, err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		decisions := scheduler.Decisions()
+		if len(decisions) > 0 {
+			last := decisions[len(decisions)-1]
+			if last.Outcome != wire.RefreshDecisionOutcome(refreshDeferred) || last.Reason != wire.RefreshDecisionReason(refreshInFlight) {
+				t.Fatalf("held read reported as %+v", last)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no decision for the held read")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func heldReadScheduler(t *testing.T, hold func(string) (bool, time.Time), plan func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)) (*RefreshScheduler, chan struct{}) {
+	t.Helper()
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic",
+			Credential: func(context.Context) ([]byte, string) { return nil, "unavailable" },
+			Profiles:   []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	ran := make(chan struct{}, 2)
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Plan: plan, CredentialHold: hold,
+		Run: func(context.Context, quota.Paths, string, time.Time) error {
+			ran <- struct{}{}
+			return nil
+		},
+	})
+	t.Cleanup(scheduler.Close)
+	return scheduler, ran
+}
+
+func expectRead(t *testing.T, ran chan struct{}) {
+	t.Helper()
+	select {
+	case <-ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the requested read was lost to a held automatic one")
+	}
+}
+
+// A refresh the user asks for while an automatic job holds the provider's slot must not vanish
+// with that job when it is held.
+func TestRequestedRefreshSurvivesAutomaticJobInTheQueue(t *testing.T) {
+	at := time.Now().Add(150 * time.Millisecond)
+	scheduler, ran := heldReadScheduler(t, func(string) (bool, time.Time) { return false, time.Now().Add(time.Minute) },
+		func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error) {
+			return quota.ScopeRefreshPlan{Provider: "claude", At: at, BudgetKnown: true, Admitted: true}, nil
+		})
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	if _, _, err := scheduler.request(context.Background(), params, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := scheduler.Request(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+	expectRead(t, ran)
+}
+
+func TestRequestedRefreshSurvivesAutomaticJobBeingHeld(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	scheduler, ran := heldReadScheduler(t, func(string) (bool, time.Time) {
+		once.Do(func() { close(entered); <-release })
+		return false, time.Now().Add(time.Minute)
+	}, nil)
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	if _, _, err := scheduler.request(context.Background(), params, true); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	if _, _, err := scheduler.Request(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	expectRead(t, ran)
 }
