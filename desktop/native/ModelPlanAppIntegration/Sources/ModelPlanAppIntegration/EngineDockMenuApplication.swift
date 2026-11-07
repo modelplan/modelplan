@@ -279,6 +279,10 @@ import ModelPlanMenuVerification
         }
         // SET-9-18: the reset and official kinds are usable once delivery is wired.
         if composition.notificationDeliveryAvailable { context.observeNotificationDelivery(true) }
+        // Dock, card and menu bar all read these through `applying(to:)` and `presentedSubscriptionIDs`.
+        for key in [SettingKey.percentagePin, .order, .visible, .alias] {
+            context.unavailableControls.removeValue(forKey: key)
+        }
         settings.update(context: context)
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
