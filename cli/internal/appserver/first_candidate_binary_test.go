@@ -235,8 +235,12 @@ func TestRealBinaryRefreshSharedBudgetAndDeferrals(t *testing.T) {
 			if err := os.MkdirAll(binDir, 0700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink(runtimeHost, filepath.Join(binDir, "codex")); err != nil {
-				t.Fatal(err)
+			// Codex's runtime is read by default (owner decision 2026-11-06), so a scope
+			// that is not Codex's runs without a Codex runtime present.
+			if test.scope == consent.ScopeCodexRuntimeUsage {
+				if err := os.Symlink(runtimeHost, filepath.Join(binDir, "codex")); err != nil {
+					t.Fatal(err)
+				}
 			}
 			trace := filepath.Join(home, "runtime.jsonl")
 			budgetPath := filepath.Join(home, "cache", "observed", "reader-attempts", "codex.json")
