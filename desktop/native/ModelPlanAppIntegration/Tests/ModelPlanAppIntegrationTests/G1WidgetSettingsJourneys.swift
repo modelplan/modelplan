@@ -54,15 +54,28 @@ private actor G1RowsClient: EngineClient {
     }
 }
 
+@MainActor private final class G1VisibilityScheduler: DockEdgeScheduling {
+    var deadline: TimeInterval?
+    var action: (@MainActor () -> Void)?
+    func arm(at deadline: TimeInterval, _ action: @escaping @MainActor () -> Void) { self.deadline = deadline; self.action = action }
+    func cancel() { deadline = nil; action = nil }
+    func fire(upTo elapsed: TimeInterval) {
+        if let deadline, deadline <= elapsed { let next = action; cancel(); next?() }
+    }
+}
+
 @MainActor private final class G1Clock: DockEdgeScheduling {
     var elapsed: TimeInterval = 0
     var deadline: TimeInterval?
     var action: (@MainActor () -> Void)?
     func arm(at deadline: TimeInterval, _ action: @escaping @MainActor () -> Void) { self.deadline = deadline; self.action = action }
     func cancel() { deadline = nil; action = nil }
+    // The Dock's visibility machine has its own scheduler, separate from quota freshness.
+    let visibility = G1VisibilityScheduler()
     func advance(_ seconds: TimeInterval) {
         elapsed += seconds
         if let deadline, deadline <= elapsed { let next = action; cancel(); next?() }
+        visibility.fire(upTo: elapsed)
     }
 }
 
@@ -145,6 +158,10 @@ private actor G1RowsClient: EngineClient {
             deadlineNow: { now.addingTimeInterval(clock?.elapsed ?? 0) },
             deadlineElapsed: clock.map { clock in { clock.elapsed } }, deadlineScheduling: clock,
             makeClient: { _, store in G1RowsClient(store: store, rows: fixture) }, activateSettings: {})
+        #if DEBUG
+        // Install after make and before prepare so the Dock's visibility dwell follows the same synthetic clock.
+        if let clock { EngineRowsEntry.installDockVisibilityTimingForChecks(on: app, clock: { clock.elapsed }, scheduler: clock.visibility) }
+        #endif
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         return app
     }
