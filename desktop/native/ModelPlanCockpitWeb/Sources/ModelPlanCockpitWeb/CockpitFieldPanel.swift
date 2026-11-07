@@ -40,7 +40,7 @@ import WebKit
     let proxy = FieldMessageProxy(); proxy.owner = self; self.proxy = proxy
     config.userContentController.add(proxy, name: "field")
     let size = NSSize(width: 900, height: 640)
-    let screen = NSScreen.screens.first { anchor.map { rect in $0.frame.intersects(rect) } ?? false } ?? NSScreen.main
+    let screen = anchor.flatMap { rect in NSScreen.screens.first { $0.frame.intersects(rect) } } ?? NSScreen.main
     let visible = screen?.visibleFrame ?? NSRect(origin: .zero, size: size)
     let origin = NSPoint(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2)
     let panel = FieldWindow(contentRect: NSRect(origin: origin, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
