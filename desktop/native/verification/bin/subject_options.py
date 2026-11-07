@@ -10,14 +10,21 @@ the candidate's engine reads but never widen it:
                              default consent to these tool IDs; never widens it) and, unless codex
                              is listed, MODELPLAN_CODEX_ACCOUNT=off. `zcode` is accepted as the
                              brief name of the `zai` consent tool and recorded as such.
-  subjectEnv: {KEY: value}   extra keys from ALLOWED only, e.g. {"MODELPLAN_HISTORY": "off"}
+  subjectEnv: {KEY: value}   extra keys from ALLOWED only, e.g. {"MODELPLAN_HISTORY": "off"};
+                             a reader list has this one spelling, `readers`
   backup: "product"          real profile only: product_backup.py around the subject
 
 Every inherited MODELPLAN_* variable is removed from a real-profile environment (names recorded),
 so only these reviewed values reach the candidate. Values here are switches and tool IDs, never
 secrets, so the run manifest records them in full.
+
+These variables reach the app process, and a packaged app hands its engine only the keys in its
+launch-environment contract (schema/app-cli/child-environment.json). `engine_delivery` therefore
+refuses, before spawn, any app-zip run whose app would drop one: a restriction that is recorded
+must be a restriction the engine received.
 """
 import re
+from pathlib import Path
 
 TOOL = re.compile(r'[a-z][a-z0-9-]{0,47}\Z')
 ALIASES = {'zcode': 'zai'}  # brief names -> consent tool IDs (cli/internal/consent)
@@ -30,7 +37,6 @@ ALLOWED = {
     'MODELPLAN_CODEX_ACCOUNT': ('off',),
     'MODELPLAN_HISTORY': ('off',),
     'MODELPLAN_CODEXBAR': ('off',),
-    VERIFY_READERS: None,  # a validated comma list of tool IDs
 }
 BACKUPS = ('product',)
 
@@ -79,15 +85,12 @@ def check_env(extra):
     if not isinstance(extra, dict):
         raise ValueError('subjectEnv must be an object')
     for key, value in extra.items():
+        if key == VERIFY_READERS:
+            raise ValueError(f'subjectEnv key not allowed: {key}; use readers, which also checks the engine')
         if key not in ALLOWED:
             raise ValueError(f'subjectEnv key not allowed: {key}')
-        allowed = ALLOWED[key]
-        if allowed is None:
-            parse_readers(value)  # same validation as `readers`
-            if not isinstance(value, str) or value != ','.join(parse_readers(value)[1]):
-                raise ValueError(f'{key} must be a normalised comma list of tool IDs')
-        elif value not in allowed:
-            raise ValueError(f'subjectEnv {key} must be one of {", ".join(allowed)}')
+        if value not in ALLOWED[key]:
+            raise ValueError(f'subjectEnv {key} must be one of {", ".join(ALLOWED[key])}')
     return dict(extra)
 
 
@@ -113,8 +116,7 @@ def validate(config):
         path = config.get('backupDir')
         if not isinstance(path, str) or not path.startswith('/'):
             raise ValueError('backup product needs an absolute backupDir')
-    mode = parse_readers(config.get('readers'))[0]
-    if mode == 'list' and config.get('subjectKind', 'binary') != 'app-zip':
+    if VERIFY_READERS in subject_overrides(config) and config.get('subjectKind', 'binary') != 'app-zip':
         raise ValueError('a reader list needs an app-zip subject (its bundled engine is checked)')
     manifest = config.get('runManifestPath')
     if manifest is not None and (not isinstance(manifest, str) or not manifest.startswith('/')):
@@ -146,15 +148,40 @@ def merge_flags(config, **flags):
     return out
 
 
-def engine_honours_readers(app):
-    """The candidate's bundled engine (Contents/Helpers/modelplan) knows MODELPLAN_VERIFY_READERS."""
-    helper = app / 'Contents' / 'Helpers' / 'modelplan'
-    if helper.is_symlink() or not helper.is_file():
+def contains(path, marker):
+    """Streamed byte search of one regular file; a symlink or a missing file holds nothing."""
+    path = Path(path)
+    if path.is_symlink() or not path.is_file():
         return False
     tail = b''
-    with helper.open('rb') as stream:
+    with path.open('rb') as stream:
         for block in iter(lambda: stream.read(1 << 20), b''):
-            if ENGINE_MARKER in tail + block:
+            if marker in tail + block:
                 return True
-            tail = block[-len(ENGINE_MARKER):]
+            tail = block[-len(marker):]
     return False
+
+
+def engine_honours_readers(app):
+    """The candidate's bundled engine (Contents/Helpers/modelplan) knows MODELPLAN_VERIFY_READERS."""
+    return contains(app / 'Contents' / 'Helpers' / 'modelplan', ENGINE_MARKER)
+
+
+def engine_delivery(kind, bundle, overrides):
+    """How `overrides` reach the engine, or ValueError when they would not (checked before spawn).
+
+    A binary subject receives them itself. An app-zip subject filters its engine's environment
+    through WireChildEnvironment.allowedKeys, a set compiled into the main executable as plain
+    strings, so a key absent from that executable never reaches the engine.
+    """
+    if not overrides:
+        return None
+    if kind != 'app-zip':
+        return 'subject-process'
+    missing = [key for key in sorted(overrides) if not contains(bundle['exe'], key.encode())]
+    if missing:
+        raise ValueError(f'candidate app does not forward {", ".join(missing)} to its engine; '
+                         'use a build whose launch contract lists them, or drop the restriction')
+    if VERIFY_READERS in overrides and not engine_honours_readers(bundle['app']):
+        raise ValueError('candidate engine does not honour MODELPLAN_VERIFY_READERS; use readers off|passive')
+    return 'app-forwarded'

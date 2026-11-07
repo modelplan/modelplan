@@ -77,6 +77,8 @@ class ReaderOptionTests(unittest.TestCase):
                              ({'profile': 'real', 'backup': 'product'}, 'absolute backupDir'),
                              ({'profile': 'real', 'backup': 'all', 'backupDir': '/b'}, 'backup must be product'),
                              ({'readers': ['codex']}, 'app-zip'),
+                             ({'profile': 'real', 'subjectEnv': {'MODELPLAN_VERIFY_READERS': 'codex'}}, 'use readers'),
+                             ({'subjectKind': 'app-zip', 'subjectEnv': {'MODELPLAN_VERIFY_READERS': 'codex'}}, 'use readers'),
                              ({'runManifestPath': 'rel'}, 'runManifestPath')):
             with self.assertRaisesRegex(ValueError, message):
                 subject_options.validate(bad)
@@ -97,6 +99,34 @@ class ReaderOptionTests(unittest.TestCase):
             self.assertTrue(subject_options.engine_honours_readers(app))
             helper.write_bytes(b'MODELPLAN_READERS only')
             self.assertFalse(subject_options.engine_honours_readers(app))
+
+    def test_app_zip_keys_must_be_forwarded_by_the_app(self):
+        with tempfile.TemporaryDirectory() as raw:
+            app = Path(raw) / 'A.app'; exe = app / 'Contents' / 'MacOS' / 'A'; exe.parent.mkdir(parents=True)
+            bundle = dict(app=app, exe=exe)
+            off = subject_options.reader_env('off')
+            exe.write_bytes(b'HOME\0PATH\0')  # a build from before the contract change
+            with self.assertRaisesRegex(ValueError, 'does not forward MODELPLAN_CODEX_ACCOUNT, MODELPLAN_READERS'):
+                subject_options.engine_delivery('app-zip', bundle, off)
+            exe.write_bytes(b'MODELPLAN_READERS\0')  # one key of two is still a refusal
+            with self.assertRaisesRegex(ValueError, 'does not forward MODELPLAN_CODEX_ACCOUNT to'):
+                subject_options.engine_delivery('app-zip', bundle, off)
+            exe.write_bytes(b'MODELPLAN_READERS\0MODELPLAN_CODEX_ACCOUNT\0')
+            self.assertEqual(subject_options.engine_delivery('app-zip', bundle, off), 'app-forwarded')
+            with self.assertRaisesRegex(ValueError, 'does not forward MODELPLAN_HISTORY'):
+                subject_options.engine_delivery('app-zip', bundle, {'MODELPLAN_HISTORY': 'off'})
+            self.assertEqual(subject_options.engine_delivery('binary', None, off), 'subject-process')
+            self.assertIsNone(subject_options.engine_delivery('app-zip', bundle, {}))
+
+    def test_every_reader_switch_is_in_the_app_engine_contract(self):
+        """The keys `readers` can set are the keys the app forwards, in the JSON and the generated Swift."""
+        root = Path(__file__).resolve().parents[4]
+        keys = json.loads((root / 'schema/app-cli/child-environment.json').read_text())['allowedKeys']
+        swift = (root / 'clients/swift/ModelPlanWire/Sources/ModelPlanWire/Generated.swift').read_text()
+        switches = {*subject_options.reader_env('off'), *subject_options.reader_env('passive'), *subject_options.reader_env('zai')}
+        self.assertEqual(sorted(k for k in keys if k.startswith('MODELPLAN_')), sorted(switches))
+        for key in switches:
+            self.assertIn(f'"{key}"', swift)
 
 
 def build_home(root):
@@ -252,6 +282,7 @@ class LaunchBackupTests(unittest.TestCase):
         self.assertEqual(manifest['restore']['runChanges']['changed'], ['.config/modelplan/consent.json'])
         self.assertEqual(manifest['environment']['subjectEnv'], {'MODELPLAN_CODEX_ACCOUNT': 'off', 'MODELPLAN_READERS': 'off'})
         self.assertEqual(manifest['environment']['strippedEnvKeys'], ['MODELPLAN_CACHE'])
+        self.assertEqual(manifest['environment']['engineDelivery'], 'subject-process')
         self.assertEqual(manifest['backup']['roots']['.config/modelplan/consent.json'], 'file')
 
     def test_reader_list_needs_an_engine_that_knows_it(self):
@@ -262,13 +293,60 @@ class LaunchBackupTests(unittest.TestCase):
                                        subjectKind='app-zip', readers=['codex', 'zcode'])))
         app = self.root / 'A.app'; (app / 'Contents' / 'Helpers').mkdir(parents=True)
         (app / 'Contents' / 'Helpers' / 'modelplan').write_bytes(b'old engine')
+        exe = app / 'x'; exe.write_bytes(b'MODELPLAN_VERIFY_READERS\0MODELPLAN_CODEX_ACCOUNT\0')
         with mock.patch.dict(os.environ, {'HOME': str(self.home)}), \
                 mock.patch.object(launch, 'load_and_admit', side_effect=lambda x: x), \
-                mock.patch.object(launch, 'extract_app', return_value=dict(app=app, exe=app / 'x', evidence={})), \
+                mock.patch.object(launch, 'extract_app', return_value=dict(app=app, exe=exe, evidence={})), \
                 mock.patch.object(launch.subprocess, 'Popen') as popen, \
                 self.assertRaisesRegex(ValueError, 'does not honour MODELPLAN_VERIFY_READERS'):
             launch.main(['--config', str(cfg), '--execute'])
         popen.assert_not_called()
+
+    def app_zip_run(self, exe_bytes, *flags, **fields):
+        """launch.main on an app-zip subject; returns the Popen mock and the run manifest path."""
+        cfg = self.root / 'run.json'
+        binary = self.root / 'subject'; binary.write_bytes(b'x')
+        manifest_path = self.root / 'run-manifest.json'
+        cfg.write_text(json.dumps(dict(profile='real', syntheticTmp=str(self.root / 'tmp'), argv=[str(binary)],
+                                       binarySHA256=hashlib.sha256(b'x').hexdigest(), subjectPidPath=str(self.root / 'pid'),
+                                       subjectKind='app-zip', runManifestPath=str(manifest_path), **fields)))
+        app = self.root / 'A.app'; (app / 'Contents' / 'Helpers').mkdir(parents=True)
+        (app / 'Contents' / 'Helpers' / 'modelplan').write_bytes(b'engine')
+        exe = app / 'x'; exe.write_bytes(exe_bytes)
+        with mock.patch.dict(os.environ, {'HOME': str(self.home)}), \
+                mock.patch.object(launch, 'load_and_admit', side_effect=lambda x: x), \
+                mock.patch.object(launch, 'mark_launching', return_value={}), \
+                mock.patch.object(launch, 'extract_app', return_value=dict(app=app, exe=exe, evidence={})), \
+                mock.patch.object(launch.subprocess, 'Popen', side_effect=RuntimeError('stop here')) as popen:
+            try:
+                launch.main(['--config', str(cfg), '--execute', *flags])
+            finally:
+                self.popen = popen
+        return manifest_path
+
+    def test_app_that_drops_the_keys_is_refused_before_spawn_and_records_nothing(self):
+        with self.assertRaisesRegex(ValueError, 'does not forward MODELPLAN_CODEX_ACCOUNT, MODELPLAN_READERS'):
+            self.app_zip_run(b'old contract', '--readers', 'off')
+        self.popen.assert_not_called()
+        self.assertFalse((self.root / 'run-manifest.json').exists())
+
+    def test_app_that_forwards_the_keys_runs_and_records_the_delivery(self):
+        with self.assertRaisesRegex(RuntimeError, 'stop here'):
+            self.app_zip_run(b'MODELPLAN_READERS\0MODELPLAN_CODEX_ACCOUNT\0', '--readers', 'off')
+        self.assertEqual(self.popen.call_args.kwargs['env']['MODELPLAN_READERS'], 'off')
+        manifest = json.loads((self.root / 'run-manifest.json').read_text())
+        self.assertEqual(manifest['environment']['engineDelivery'], 'app-forwarded')
+
+    def test_reader_list_cannot_enter_through_subject_env(self):
+        with self.assertRaisesRegex(ValueError, 'use readers'):
+            self.app_zip_run(b'MODELPLAN_VERIFY_READERS\0', subjectEnv={'MODELPLAN_VERIFY_READERS': 'codex'})
+        self.popen.assert_not_called()
+
+    def test_run_without_restrictions_needs_no_forwarding(self):
+        with self.assertRaisesRegex(RuntimeError, 'stop here'):
+            self.app_zip_run(b'old contract')
+        manifest = json.loads((self.root / 'run-manifest.json').read_text())
+        self.assertIsNone(manifest['environment']['engineDelivery'])
 
 
 class BookingIdentityTests(unittest.TestCase):

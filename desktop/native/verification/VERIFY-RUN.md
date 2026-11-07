@@ -170,10 +170,23 @@ python3 desktop/native/verification/bin/launch.py --config RUN.json --execute --
   `MODELPLAN_CODEX_ACCOUNT=off` unless `codex` is listed. A list needs `subjectKind: app-zip`, and
   launch.py refuses it unless the candidate's bundled engine (`Contents/Helpers/modelplan`)
   contains `MODELPLAN_VERIFY_READERS`: an older engine would ignore the list and read every
-  consented tool. The consent file is never edited.
+  consented tool. No released engine contains it yet (the engine side is a separate PR), so today
+  a list always stops at this refusal. The consent file is never edited.
 - `subjectEnv`: extra restricting keys only, each with fixed values: `MODELPLAN_READERS`
-  (`off`/`passive`), `MODELPLAN_CODEX_ACCOUNT`, `MODELPLAN_HISTORY`, `MODELPLAN_CODEXBAR` (`off`),
-  `MODELPLAN_VERIFY_READERS` (normalised list). Anything else is refused at contract time.
+  (`off`/`passive`), `MODELPLAN_CODEX_ACCOUNT`, `MODELPLAN_HISTORY`, `MODELPLAN_CODEXBAR` (`off`).
+  Anything else is refused at contract time, including `MODELPLAN_VERIFY_READERS`: a reader list
+  is written only as `readers`, so the checks above always apply to it.
+- Reaching the engine: these variables are set on the subject process. A binary subject receives
+  them itself (`engineDelivery: subject-process` in the run manifest). A packaged app passes its
+  engine only the keys in `schema/app-cli/child-environment.json`, so for `app-zip` launch.py
+  refuses the run before spawn unless every key is in the app's main executable
+  (`engineDelivery: app-forwarded`). The contract lists `MODELPLAN_READERS`,
+  `MODELPLAN_CODEX_ACCOUNT` and `MODELPLAN_VERIFY_READERS`. Builds made before that contract
+  change refuse every restriction, including `--readers off`: rebuild the candidate. On any build,
+  `MODELPLAN_HISTORY` and `MODELPLAN_CODEXBAR` are refused for `app-zip`, because the app does not
+  forward them (a `MODELPLAN_CODEXBAR` value can name a binary to run). The check reads strings in
+  the binaries; it proves the app forwards a key and the engine knows it, not what the engine then
+  does with it.
 - A real-profile environment drops every inherited `MODELPLAN_*` variable (for example a stray
   `MODELPLAN_CACHE`) before these are added; the names dropped are recorded. Synthetic runs keep
   the minimal environment plus these keys.

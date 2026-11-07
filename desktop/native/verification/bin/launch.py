@@ -76,11 +76,9 @@ def main(argv=None):
     kind=c.get('subjectKind','binary')
     if kind=='app-zip':bundle=extract_app(c,binary,tmp) # both modes: verified, extracted under run scratch
     else:bundle=make_bundle(c,binary,tmp) if mode=='launchservices' else None
-    if env_manifest['readerIDs']:
-        # An engine that does not know the list would ignore it and read every consented tool.
-        if not (bundle and subject_options.engine_honours_readers(bundle['app'])):
-            raise ValueError('candidate engine does not honour MODELPLAN_VERIFY_READERS; use readers off|passive')
-        env_manifest['engineHonoursReaders']=True
+    # A restriction the engine never receives must not run, or be recorded as if it applied.
+    env_manifest['engineDelivery']=subject_options.engine_delivery(kind,bundle,env_manifest['subjectEnv'])
+    if subject_options.VERIFY_READERS in env_manifest['subjectEnv']:env_manifest['engineHonoursReaders']=True
     manifest=RUN['manifest']=dict(schemaVersion=1,runID=c.get('lease',{}).get('runID'),epoch=c.get('lease',{}).get('epoch'),profile=profile,
                                   home=str(home),launchMode=mode,environment=env_manifest,backup=None,restore=None)
     if c.get('backup')=='product':
