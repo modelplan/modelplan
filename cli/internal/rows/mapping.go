@@ -110,6 +110,7 @@ var signalCodes = map[signalKey]Code{
 	{SignalBlocked, "off"}:                              CodePrivacyBlocked,
 	{SignalBlocked, "privacy_blocked"}:                  CodePrivacyBlocked,
 	{SignalBlocked, "reader-privacy"}:                   CodePrivacyBlocked,
+	{SignalBlocked, "consent-newer"}:                    CodePrivacyBlocked,
 	{SignalBlocked, "catalogue-off"}:                    CodeCatalogueOff,
 	{SignalBlocked, "no-native-reader"}:                 CodeNoReader,
 	{SignalBlocked, "no-key"}:                           CodeKeyMissing,

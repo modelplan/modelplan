@@ -216,6 +216,36 @@ extension CoordinatorTests {
     coordinator.close();XCTAssertTrue(page.discarded)
     await coordinator.shutdown()
   }
+  /// CKP-ENTRY-04: reopening the same day keeps the scope; the first open on a later day returns to All.
+  @MainActor func testScopeLastsForTheDayAndReturnsToAllTheNextDay() async throws {
+    var pages:[PageProbe]=[]
+    let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
+    let noon=try XCTUnwrap(Calendar.current.date(from:DateComponents(year:2026,month:11,day:6,hour:12)))
+    var now=noon
+    coordinator.currentDate = { now }
+    let client=HeldClient();coordinator.bind(client:client)
+    let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+    await coordinator.consume(.context(delivery));coordinator.open()
+    for _ in 0..<100 { if await client.requests==1 { break };await Task.yield() }
+    let data=try JSONDecoder().decode(WireCockpitData.self,from:Data(contentsOf:XCTUnwrap(Bundle.module.url(forResource:"cockpit",withExtension:"json",subdirectory:"Fixtures"))))
+    await coordinator.consume(.response(requestID:.string("scope-day"),.cockpit(.init(envelope:try .init(sessionId:delivery.sessionID,storeEpoch:delivery.floor.storeEpoch,consentGeneration:1,data:data),delivery:delivery))))
+    let first=try XCTUnwrap(pages.last)
+    first.onIntent?(.scopeSelect("0123456789abcdef"));XCTAssertEqual(coordinator.selectedScope,"0123456789abcdef")
+    await client.complete();await coordinator.joinCurrentQueryForVerification()
+    coordinator.close()
+    now=noon.addingTimeInterval(6*3600);coordinator.open()
+    XCTAssertEqual(coordinator.selectedScope,"0123456789abcdef","Later the same day keeps the scope")
+    XCTAssertEqual(pages.last?.scopeUpdates.first?.0,"0123456789abcdef")
+    for _ in 0..<100 { if await client.requests==2 { break };await Task.yield() }
+    await client.complete();await coordinator.joinCurrentQueryForVerification()
+    coordinator.close()
+    now=noon.addingTimeInterval(24*3600);coordinator.open()
+    XCTAssertEqual(coordinator.selectedScope,"all","The next day starts at All")
+    XCTAssertEqual(pages.last?.scopeUpdates.first?.0,"all")
+    for _ in 0..<100 { if await client.requests==3 { break };await Task.yield() }
+    await client.complete();await coordinator.joinCurrentQueryForVerification()
+    await coordinator.shutdown();await client.stop()
+  }
   @MainActor func testScopeIsValidatedRetainedOnReopenAndClearedAtPrivacyBarrier() async throws {
     var pages:[PageProbe]=[]
     let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
