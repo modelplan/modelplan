@@ -79,12 +79,13 @@ public struct DockContentRow: Sendable {
             if seconds.isFinite, seconds < Double(Int.max) {
                 if seconds <= 0 { expiryText = english ? "expired" : "已到期" }
                 else {
-                    let duration = Self.compactDuration(Int(ceil(seconds / 60)))
+                    let duration = Self.expiryDuration(Int(ceil(seconds / 60)))
                     expiryText = english ? "exp in " + duration : duration + " 后到期"
                 }
             }
         }
-        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: english ? "Reserve" : "储备",
+        // The prototype has no money row: a money balance keeps its own name on the one line.
+        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: credits?.label ?? (english ? "Reserve" : "储备"),
             value: [count?.value ?? "", credits?.value ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
             detail: [expiryText, count?.detail ?? "", credits?.detail ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
         var placed = false
@@ -121,6 +122,11 @@ public struct DockContentRow: Sendable {
         // (duration, imported as dhm by card.js:46) and strings/card.js:13 (card.resetIn).
         let minutes=Int(ceil(seconds/60))
         return english ? "resets "+compactDuration(minutes):compactDuration(minutes)+" 后重置"
+    }
+    /// card.js expiryDuration: an expiry under two days stays in hours, "30h", "30h05".
+    static func expiryDuration(_ minutes:Int) -> String {
+        guard minutes >= 60, minutes < 48*60 else { return compactDuration(minutes) }
+        return "\(minutes/60)h"+(minutes%60 == 0 ? "":String(format:"%02d",minutes%60))
     }
     static func compactDuration(_ minutes:Int) -> String {
         if minutes < 60 { return "\(minutes)m" }
