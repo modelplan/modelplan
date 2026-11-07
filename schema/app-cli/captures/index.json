@@ -629,6 +629,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "dailyFrom",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -637,7 +645,10 @@
         "coverage",
         "subscriptions",
         "models",
-        "tools"
+        "tools",
+        "daily",
+        "hourly",
+        "projects"
       ]
     },
     {
@@ -689,6 +700,15 @@
         "outputTokens",
         "observedRequests",
         "eligibleRequests"
+      ]
+    },
+    {
+      "file": "WireCockpitProjectRanking.json",
+      "type": "WireCockpitProjectRanking",
+      "optional": [],
+      "required": [
+        "recent7d",
+        "recent30d"
       ]
     },
     {
@@ -794,6 +814,41 @@
       ]
     },
     {
+      "file": "WireCockpitRankedProject.json",
+      "type": "WireCockpitRankedProject",
+      "optional": [
+        {
+          "field": "label",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "model",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "ref",
+        "observedOutputTokens",
+        "share"
+      ]
+    },
+    {
       "file": "WireCockpitResetCount.json",
       "type": "WireCockpitResetCount",
       "optional": [
@@ -861,6 +916,16 @@
         "model",
         "lastObservedAt",
         "state"
+      ]
+    },
+    {
+      "file": "WireCockpitSourceBucket.json",
+      "type": "WireCockpitSourceBucket",
+      "optional": [],
+      "required": [
+        "at",
+        "source",
+        "observedOutputTokens"
       ]
     },
     {

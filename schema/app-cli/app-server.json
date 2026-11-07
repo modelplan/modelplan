@@ -419,8 +419,35 @@
         "coverage": {
           "type": "string"
         },
+        "daily": {
+          "items": {
+            "$ref": "#/$defs/CockpitSourceBucket"
+          },
+          "maxItems": 728,
+          "type": "array"
+        },
+        "dailyFrom": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hourly": {
+          "items": {
+            "$ref": "#/$defs/CockpitSourceBucket"
+          },
+          "maxItems": 192,
+          "type": "array"
+        },
         "models": {
           "$ref": "#/$defs/CockpitEntityRanking"
+        },
+        "projects": {
+          "$ref": "#/$defs/CockpitProjectRanking"
         },
         "recordingSince": {
           "anyOf": [
@@ -464,7 +491,11 @@
         "recordingSince",
         "subscriptions",
         "models",
-        "tools"
+        "tools",
+        "dailyFrom",
+        "daily",
+        "hourly",
+        "projects"
       ],
       "type": "object"
     },
@@ -540,6 +571,30 @@
         "generationTps",
         "observedRequests",
         "eligibleRequests"
+      ],
+      "type": "object"
+    },
+    "CockpitProjectRanking": {
+      "additionalProperties": false,
+      "properties": {
+        "recent30d": {
+          "items": {
+            "$ref": "#/$defs/CockpitRankedProject"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "recent7d": {
+          "items": {
+            "$ref": "#/$defs/CockpitRankedProject"
+          },
+          "maxItems": 10,
+          "type": "array"
+        }
+      },
+      "required": [
+        "recent7d",
+        "recent30d"
       ],
       "type": "object"
     },
@@ -734,6 +789,60 @@
       ],
       "type": "object"
     },
+    "CockpitRankedProject": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "ref": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "share": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ref",
+        "label",
+        "model",
+        "effort",
+        "observedOutputTokens",
+        "share"
+      ],
+      "type": "object"
+    },
     "CockpitResetCount": {
       "additionalProperties": false,
       "properties": {
@@ -843,6 +952,27 @@
         "lastObservedAt",
         "state",
         "rate"
+      ],
+      "type": "object"
+    },
+    "CockpitSourceBucket": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "source",
+        "observedOutputTokens"
       ],
       "type": "object"
     },

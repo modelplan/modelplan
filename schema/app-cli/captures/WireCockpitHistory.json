@@ -91,5 +91,42 @@
         }
       ]
     }
+  },
+  "dailyFrom": "synthetic",
+  "daily": [
+    {
+      "at": "synthetic",
+      "source": "synthetic",
+      "observedOutputTokens": 1
+    }
+  ],
+  "hourly": [
+    {
+      "at": "synthetic",
+      "source": "synthetic",
+      "observedOutputTokens": 1
+    }
+  ],
+  "projects": {
+    "recent7d": [
+      {
+        "ref": "synthetic",
+        "label": "synthetic",
+        "model": "synthetic",
+        "effort": "synthetic",
+        "observedOutputTokens": 1,
+        "share": 42.5
+      }
+    ],
+    "recent30d": [
+      {
+        "ref": "synthetic",
+        "label": "synthetic",
+        "model": "synthetic",
+        "effort": "synthetic",
+        "observedOutputTokens": 1,
+        "share": 42.5
+      }
+    ]
   }
 }
