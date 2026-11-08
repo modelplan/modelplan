@@ -1110,19 +1110,23 @@ func spendHook(stdout io.Writer, style render.Style, st *store.Store, harness, s
 	}
 	paths := quotaPaths(st)
 	if harness == "claude-code" {
+		paths.CodexHome = "" // as on a prompt; Codex is read only when a warning is due
 		paths.ClaudeSession = session
 		model = "" // as on a prompt: the status line's reading for this session
 	} else {
+		// A Codex subagent is a thread of its own and its hook input names no agent: its log does.
+		if quota.CodexBackgroundThread(paths.CodexHome, session) {
+			return 0
+		}
 		paths.CodexThread = session
 	}
 	report := quota.ReadPermitted(paths, now)
 	acct := threadAccount(report, harness, model)
-	state := advise.Load(st.Dir)
-	ns := state.SpendNotices(session, acct, now)
+	ns := advise.ClaimSpendNotices(st.Dir, session, acct, now, time.Until(deadline))
 	if len(ns) == 0 {
 		return 0
 	}
-	other := advise.OtherPlanWithRoom(report, harness, now)
+	other := otherPlanWithRoom(st, report, harness, now)
 	for i := range ns {
 		ns[i].Other = other
 	}
@@ -1136,7 +1140,6 @@ func spendHook(stdout io.Writer, style render.Style, st *store.Store, harness, s
 		"hookSpecificOutput": map[string]any{"hookEventName": "PreToolUse", "additionalContext": style.SpendNotice(ns, cheaper, true)},
 	})
 	fmt.Fprintln(stdout, string(b))
-	saveAdviceStateUntil(state, st.Dir, now, deadline)
 	return 0
 }
 

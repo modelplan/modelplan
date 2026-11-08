@@ -2,6 +2,8 @@ package advise
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -144,6 +146,38 @@ func (s *State) SpendNotices(thread string, a *quota.Account, now time.Time) []Q
 		q.Spend++
 		s.Quotas[thread] = q
 		s.changed = true
+	}
+	return out
+}
+
+// ClaimSpendNotices decides and records the spend warnings in one step under the state lock:
+// Claude Code runs the hooks of spawns started together in parallel, and each must see what
+// the others claimed. When the lock stays busy for wait, or the record cannot be written,
+// nothing is said, so a warning is never repeated.
+func ClaimSpendNotices(cache, thread string, a *quota.Account, now time.Time, wait time.Duration) []QuotaNotice {
+	if !noticeAccount(thread, a) {
+		return nil
+	}
+	if wait < 0 {
+		wait = 0
+	} else if wait > stateLockWait {
+		wait = stateLockWait
+	}
+	if os.MkdirAll(filepath.Dir(path(cache)), 0o700) != nil {
+		return nil
+	}
+	unlock, err := lockState(path(cache), wait)
+	if err != nil {
+		return nil
+	}
+	defer unlock()
+	s := Load(cache)
+	out := s.SpendNotices(thread, a, now)
+	if !s.changed {
+		return out
+	}
+	if s.saveLocked(cache, now) != nil {
+		return nil
 	}
 	return out
 }

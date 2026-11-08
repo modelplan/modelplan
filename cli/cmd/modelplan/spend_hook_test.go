@@ -3,7 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -59,7 +63,7 @@ func TestSpendWarningOnSubagentSpawn(t *testing.T) {
 			if u, m := h.spawn("thread", "agent-1", "", now); u != "" || m != "" {
 				t.Fatalf("subagent warned: %q %q", u, m)
 			}
-			want := "Spawning subagents with low quota: Weekly quota: 8% left, resets in 3h."
+			want := "Quota is low for spawning subagents. Weekly quota: 8% left, resets in 3h."
 			u, m := h.spawn("thread", "", "", now)
 			if u != want || !strings.HasPrefix(m, want) {
 				t.Fatalf("warning:\nuser  %q\nmodel %q", u, m)
@@ -104,7 +108,7 @@ func TestSpendWarningCapPerThread(t *testing.T) {
 		reset := now.Add(time.Duration(i+1) * 24 * time.Hour)
 		h.reading("codex", now, hookWindow("weekly", 15, reset))
 		if u, _ := h.spawn("thread", "", "", now); u != "" {
-			if !strings.HasPrefix(u, "额度偏低时派子代理：每周额度：剩余15%") {
+			if !strings.HasPrefix(u, "派子代理前注意额度。每周额度：剩余15%") {
 				t.Fatalf("zh warning: %q", u)
 			}
 			sent++
@@ -112,5 +116,51 @@ func TestSpendWarningCapPerThread(t *testing.T) {
 	}
 	if sent != 3 {
 		t.Fatalf("sent %d spend warnings, want 3", sent)
+	}
+}
+
+// Claude Code runs the hooks of spawns started in one turn in parallel: they warn once between them.
+func TestSpendWarningParallelSpawnsWarnOnce(t *testing.T) {
+	h := newQuotaHookTest(t, "claude-code", "en")
+	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	h.reading("claude-code", now, hookWindow("weekly", 8, now.Add(3*time.Hour)))
+	var wg sync.WaitGroup
+	var warned atomic.Int32
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if u, _ := h.spawn("thread", "", "", now); u != "" {
+				warned.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := warned.Load(); n != 1 {
+		t.Fatalf("%d of 10 parallel spawns warned, want 1", n)
+	}
+}
+
+// A Codex subagent is a thread of its own; its hook input names no agent, its log does.
+func TestSpendWarningSilentInCodexSubagentThread(t *testing.T) {
+	h := newQuotaHookTest(t, "codex", "en")
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	h.reading("codex", now, hookWindow("weekly", 8, now.Add(3*time.Hour)))
+	day := filepath.Join(codexHome, "sessions", "2026", "10", "24")
+	if err := os.MkdirAll(day, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	thread := "019a0000-0000-7000-8000-00000000c41d"
+	meta := `{"type":"session_meta","payload":{"id":"` + thread + `","source":{"subagent":"review"}}}` + "\n"
+	if err := os.WriteFile(filepath.Join(day, "rollout-2026-10-24T11-59-00-"+thread+".jsonl"), []byte(meta), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if u, m := h.spawn(thread, "", "", now); u != "" || m != "" {
+		t.Fatalf("Codex subagent thread warned: %q %q", u, m)
+	}
+	if u, _ := h.spawn("019a0000-0000-7000-8000-0000000000aa", "", "", now); u == "" {
+		t.Fatal("the user's own thread (no log found) was not warned")
 	}
 }

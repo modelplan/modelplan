@@ -41,7 +41,11 @@ func TestOtherPlanWithRoom(t *testing.T) {
 		{"below 30%", acct("codex", "normal", win("weekly", 29, now, time.Hour))},
 		{"tight", acct("codex", "conserve", win("weekly", 80, now, time.Hour))},
 		{"exhausted", acct("codex", "exhausted", win("weekly", 80, now, time.Hour))},
-		{"stale account", func() quota.Account { a := acct("codex", "normal", win("weekly", 80, now, time.Hour)); a.Stale = true; return a }()},
+		{"stale account", func() quota.Account {
+			a := acct("codex", "normal", win("weekly", 80, now, time.Hour))
+			a.Stale = true
+			return a
+		}()},
 		{"old reading", acct("codex", "normal", win("weekly", 80, now.Add(-61*time.Minute), time.Hour))},
 		{"reset passed", acct("codex", "normal", win("weekly", 80, now.Add(-time.Minute), -time.Minute))},
 		{"no windows", acct("codex", "unknown")},
