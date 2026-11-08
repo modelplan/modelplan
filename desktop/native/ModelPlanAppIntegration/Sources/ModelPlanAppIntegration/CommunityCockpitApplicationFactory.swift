@@ -169,13 +169,15 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         case .system:theme=NSApplication.shared.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
         }
         appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
-            redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames)
+            redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,
+            size:CockpitSize(snapshot.preferences.cockpitSize))
         if let applied { appearance=cockpitAppearance(applied) }
     }
     func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
         let e=value.effective
         return .init(theme:appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
-            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames)
+            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames,
+            size:CockpitSize(e.cockpitSize))
     }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL
@@ -354,6 +356,19 @@ struct CockpitUnavailableNotice {
                 if fallback == nil { fallback=EngineRowsConsole(composition:composition) };fallback?.show()
             default:break
             }
+        }
+    }
+}
+
+/// Settings "Cockpit size" (CKP-SHELL-07) to the cockpit window's size: the same five choices.
+extension CockpitSize {
+    init(_ value: SettingsCockpitSize) {
+        switch value {
+        case .automatic: self = .automatic
+        case .percent80: self = .percent80
+        case .percent85: self = .percent85
+        case .percent90: self = .percent90
+        case .percent100: self = .percent100
         }
     }
 }

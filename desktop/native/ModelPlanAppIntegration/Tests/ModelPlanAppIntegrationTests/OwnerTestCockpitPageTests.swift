@@ -5,6 +5,11 @@ import XCTest
 import CryptoKit
 import WebKit
 import ModelPlanCockpitWeb
+import ModelPlanSettings
+import ModelPlanEngineClient
+import ModelPlanEngineStore
+import ModelPlanDock
+import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
 /// Owner D39/D-E (#611 Q1/Q2): an owner test package must actually load the cockpit page, not only enable the menu item.
@@ -254,10 +259,11 @@ extension CommunityCockpitEntryTests {
             if box == nil { try await Task.sleep(for: .milliseconds(50)) }
         }
         let rects = try XCTUnwrap(box, "the strip must be painted")
-        let content = try XCTUnwrap(window.contentView), height = content.bounds.height
-        XCTAssertTrue(content.hitTest(content.convert(CGPoint(x: rects["brandX"]!, y: height - rects["brandY"]!), to: content.superview)) === region,
+        // D60: the cockpit is drawn at 85 % by default; page points map onto the window by the layout scale.
+        let content = try XCTUnwrap(window.contentView), height = content.bounds.height, k = page.verificationLayout?.scale ?? 1
+        XCTAssertTrue(content.hitTest(content.convert(CGPoint(x: rects["brandX"]! * k, y: height - rects["brandY"]! * k), to: content.superview)) === region,
                       "a press on the free strip reaches the drag region")
-        XCTAssertFalse(content.hitTest(content.convert(CGPoint(x: rects["shutterX"]!, y: height - rects["shutterY"]!), to: content.superview)) === region,
+        XCTAssertFalse(content.hitTest(content.convert(CGPoint(x: rects["shutterX"]! * k, y: height - rects["shutterY"]! * k), to: content.superview)) === region,
                        "the shutter keeps its own input")
         XCTAssertEqual(page.verificationShellState?.attached, true)
         let start = window.frame
@@ -272,6 +278,233 @@ extension CommunityCockpitEntryTests {
         XCTAssertEqual(page.verificationShellState?.attached, false, "the drag detaches the cockpit")
         XCTAssertLessThan(window.frame.minX, start.minX, "and moves it")
         XCTAssertEqual(window.frame.size, start.size, "the same cockpit, not a resized one")
+    }
+
+    /// D66 on the real page and panel: Auto draws 85 % on an Air-width screen and 100 % when the same cockpit is placed
+    /// on an external display, and back; the page zoom follows.
+    @MainActor func testD66AutoSizeFollowsTheScreenTheCockpitOpensOn() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("d66-" + UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+        let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+        let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+        let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+        defer { page.discard() }
+        let air = CGRect(x: 0, y: 0, width: 1470, height: 919), external = CGRect(x: 0, y: 0, width: 2560, height: 1415)
+        page.verificationPlacement = (usable: air, anchor: CGRect(x: 1100, y: air.maxY, width: 28, height: 24))
+        page.open()
+        let window = try XCTUnwrap(page.window), web = try XCTUnwrap(page.verificationWebView)
+        for (screen, expected) in [(air, CGFloat(0.85)), (external, 1), (air, 0.85)] {
+            page.verificationPlacement = (usable: screen, anchor: CGRect(x: 1100, y: screen.maxY, width: 28, height: 24))
+            XCTAssertEqual(page.verificationLayout?.scale, expected, "\(Int(screen.width)) pt wide")
+            XCTAssertEqual(window.frame.width, 636 * expected, accuracy: 1)
+            XCTAssertEqual(web.pageZoom, expected, accuracy: 1e-6)
+            XCTAssertEqual(page.verificationShellState?.tier, .tall)
+        }
+    }
+
+    /// CKP-SHELL-07 / D66 through the normal entry (re-review of #712): the Settings "Cockpit size" a person commits
+    /// reaches the real cockpit. The setting goes through the settings store and SettingsApplicationCoordinator into the
+    /// console's applySettings, the page is opened by the coordinator, and the drawn scale and page zoom follow it, at
+    /// open and live when the setting changes on an open cockpit.
+    @MainActor func testCockpitSizeSettingReachesTheRealCockpitAtOpenAndLive() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("size-setting-" + UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+        _ = try await settings.update { $0.cockpitSize = .percent90 }
+        var applied: [SettingsApplication] = []
+        let settingsApp = SettingsApplicationCoordinator(store: settings) { applied.append($0) }
+        await settingsApp.reload()
+        let client = RouteClient(); await client.suspendCockpit()
+        let composition = EngineDockMenuComposition(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:]), createsNativePanels: false, makeClient: { _, _ in client })
+        let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+        // An Air-width screen: Auto would draw 85 %, so 90 % and 100 % can only come from the setting.
+        let air = CGRect(x: 0, y: 0, width: 1470, height: 919)
+        var page: CockpitWindowController?
+        let coordinator = EngineCockpitCoordinator { context in
+            let made = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+            made.verificationPlacement = (usable: air, anchor: CGRect(x: 1100, y: air.maxY, width: 28, height: 24))
+            page = made; return made
+        }
+        coordinator.bind(client: client); owner.coordinator = coordinator
+        let surface = SharedEngineCockpitConsole(owner: owner, composition: composition, isForeground: { true }, activate: {})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let sessionID = UUID()
+        await coordinator.consume(.context(EngineDeliveryContext(sessionID: "s-" + sessionID.uuidString.lowercased(), floor: .init(storeEpoch: "synthetic-owner-test", generation: 1), revision: 1)))
+        surface.show()
+        for _ in 0..<500 where page?.window == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let opened = try XCTUnwrap(page, "the coordinator opens the real page")
+        let window = try XCTUnwrap(opened.window), web = try XCTUnwrap(opened.verificationWebView)
+        XCTAssertEqual(opened.verificationLayout?.scale, 0.9, "the committed 90 % draws the cockpit at 90 %, not Auto's 85 %")
+        XCTAssertEqual(window.frame.width, 636 * 0.9, accuracy: 1)
+        XCTAssertEqual(web.pageZoom, 0.9, accuracy: 1e-6)
+        // Live: a change on the open cockpit redraws it without reopening.
+        _ = try await settings.update { $0.cockpitSize = .percent100 }
+        await settingsApp.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertTrue(page === opened, "the same page, not a new one")
+        XCTAssertEqual(opened.verificationLayout?.scale, 1, "100 % applies to the open cockpit")
+        XCTAssertEqual(window.frame.width, 636, accuracy: 1)
+        XCTAssertEqual(web.pageZoom, 1, accuracy: 1e-6)
+        _ = try await settings.update { $0.cockpitSize = .automatic }
+        await settingsApp.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertEqual(opened.verificationLayout?.scale, 0.85, "back to Auto: 85 % on this screen")
+        surface.hide(); await coordinator.shutdown(); await composition.stop()
+    }
+
+    /// G3-53 / CKP-PORT-09 on the real page and panel: a real click on the porthole shutter closes and reopens it
+    /// at both heights, and the page draws the closed cap. Owner Build 12: "开关窗也没效果".
+    @MainActor func testG3_53ShutterClickClosesAndReopensTheRealCockpit() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        for (name, usable, tier, closedRoot) in [("short", CGRect(x: 0, y: 0, width: 1440, height: 680), CockpitShellState.Tier.compact, CGFloat(609)),
+                                                  ("full", CGRect(x: 0, y: 0, width: 1680, height: 1026), .tall, 691)] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-53-" + UUID().uuidString).resolvingSymlinksInPath()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+            let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+            let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+            let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+            defer { page.discard() }
+            page.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.maxX - 340, y: usable.maxY, width: 28, height: 24))
+            NSApp.activate(ignoringOtherApps: true)
+            page.open()
+            let window = try XCTUnwrap(page.window), web = try XCTUnwrap(page.verificationWebView)
+            window.makeKeyAndOrderFront(nil)
+            func pageValue(_ script: String) async -> [String: Any]? { (try? await web.evaluateJavaScript(script)) as? [String: Any] }
+            let probe = "(()=>{const s=document.querySelector('[data-shutter]'),c=document.querySelector('.ck');if(!s||!c||!document.documentElement.dataset.profile)return null;const r=s.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,disabled:s.disabled,pressed:s.getAttribute('aria-pressed'),active:document.getElementById('cockpit').dataset.active,root:c.getBoundingClientRect().height}})()"
+            var state: [String: Any]?
+            var deadline = ContinuousClock.now + .seconds(30)
+            while ContinuousClock.now < deadline {
+                state = await pageValue(probe)
+                if state?["active"] as? String == "true" { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let before = try XCTUnwrap(state, "\(name): the page must be painted")
+            // A real click needs what the owner has: an active app with the cockpit as key window. Hosted CI runners
+            // cannot activate an app; there the page stays inactive by design, so this runs on the GUI Mac only.
+            guard NSApp.isActive, window.isKeyWindow else {
+                throw XCTSkip("G3-53 needs an active app and key cockpit window (GUI Mac); this runner has app active \(NSApp.isActive), key \(window.isKeyWindow)")
+            }
+            XCTAssertEqual(page.verificationShellState?.tier, tier, name)
+            XCTAssertEqual(before["active"] as? String, "true", "\(name): the shown, key cockpit is active (window key \(window.isKeyWindow), app active \(NSApp.isActive))")
+            XCTAssertEqual(before["disabled"] as? Bool, false, "\(name): the shutter is enabled")
+            let scale = page.verificationLayout?.scale ?? 1
+            var target = before
+            func click() throws {
+                let content = try XCTUnwrap(window.contentView), h = content.bounds.height
+                let p = content.convert(CGPoint(x: (target["x"] as! Double) * scale, y: h - (target["y"] as! Double) * scale), to: nil)
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    window.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)))
+                }
+            }
+            for (closed, expectedRoot) in [(true, closedRoot), (false, tier == .tall ? 877 : 627)] {
+                try click()
+                deadline = ContinuousClock.now + .seconds(10)
+                while ContinuousClock.now < deadline, (page.verificationShellState?.profile == .closed) != closed { try await Task.sleep(for: .milliseconds(50)) }
+                XCTAssertEqual(page.verificationShellState?.profile, closed ? .closed : .open, "\(name): the click reaches the native shell")
+                XCTAssertEqual(page.verificationRootHeight, expectedRoot, name)
+                deadline = ContinuousClock.now + .seconds(10)
+                var drawn: [String: Any]?
+                while ContinuousClock.now < deadline {
+                    drawn = await pageValue(probe)
+                    if drawn?["pressed"] as? String == String(closed) { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                XCTAssertEqual(drawn?["pressed"] as? String, String(closed), "\(name): the page shows the shutter \(closed ? "closed" : "open")")
+                XCTAssertEqual(drawn?["root"] as? Double ?? 0, Double(expectedRoot), accuracy: 0.5, "\(name): the page root follows")
+                if let drawn { target = drawn }
+            }
+        }
+    }
+
+    /// CKP-SHELL-07 / owner D51, C-02, C-03 on the real page and panel: an Air shows the full cockpit with its flame
+    /// reserve, scaled as one page (WebKit page zoom, not a bitmap), with the strip and shutter still hit where drawn.
+    /// Covers 1470x956 with the Dock at the bottom, the lowest full scale (75 %) and a live switch to 80 %.
+    @MainActor func testD51ScaledFullCockpitKeepsCrispTextAndHitTargets() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let cases: [(String, CGRect, CockpitSize?, CGFloat)] = [
+            ("1470x956, Dock at the bottom (default 85 %)", CGRect(x: 0, y: 70, width: 1470, height: 849), nil, 0.85),
+            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 690), nil, 684 / 911),
+            ("80 % chosen live", CGRect(x: 0, y: 0, width: 1680, height: 1026), .percent80, 0.8),
+        ]
+        for (name, usable, live, expected) in cases {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("d51-" + UUID().uuidString).resolvingSymlinksInPath()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+            let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+            let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+            let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+            defer { page.discard() }
+            page.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.maxX - 340, y: usable.maxY, width: 28, height: 24))
+            page.open()
+            let window = try XCTUnwrap(page.window), region = try XCTUnwrap(page.verificationDragRegion), web = try XCTUnwrap(page.verificationWebView)
+            if let live { page.updateAppearance(.init(theme: .night, locale: .en, profile: .full, size: live)) }
+            var box: [String: Double]?
+            let deadline = ContinuousClock.now + .seconds(30)
+            while box == nil, ContinuousClock.now < deadline {
+                let script = "(()=>{const b=document.querySelector('.ck-head .ck-brand'),s=document.querySelector('[data-shutter]'),c=document.querySelector('.ck');if(!b||!s||!c||!document.documentElement.dataset.profile)return null;const r=b.getBoundingClientRect(),t=s.getBoundingClientRect();return {brandX:r.x+r.width/2,brandY:r.y+r.height/2,shutterX:t.x+t.width/2,shutterY:t.y+t.height/2,width:innerWidth,height:innerHeight,root:c.getBoundingClientRect().height,rootBottom:c.getBoundingClientRect().bottom}})()"
+                box = (try? await web.evaluateJavaScript(script)) as? [String: Double]
+                if box == nil { try await Task.sleep(for: .milliseconds(50)) }
+            }
+            let painted = try XCTUnwrap(box, "\(name): the page must be painted")
+            let layout = try XCTUnwrap(page.verificationLayout), scale = layout.scale
+            XCTAssertEqual(scale, expected, accuracy: 1e-6, name)
+            XCTAssertEqual(page.verificationShellState?.tier, .tall, "\(name): the full cockpit, never the short one")
+            XCTAssertEqual(painted["root"]!, 877, accuracy: 0.5, "\(name): the full root")
+            // The whole canvas, root plus the flame reserve, is laid out at 636 CSS px and fits the window.
+            XCTAssertEqual(painted["width"]!, 636, accuracy: 1, name)
+            XCTAssertEqual(painted["height"]!, 911, accuracy: 1, name)
+            XCTAssertEqual(painted["height"]! - painted["rootBottom"]!, 34, accuracy: 1, "\(name): the flame reserve is inside the window")
+            // The window server places borderless panels on whole points.
+            XCTAssertEqual(window.frame.width, 636 * scale, accuracy: 1, name)
+            XCTAssertEqual(window.frame.height, 911 * scale, accuracy: 1, name)
+            // Placement on the requested screen (the hosted runner's real display is smaller, so the window
+            // server may move the panel; its size is what the test can hold it to).
+            XCTAssertEqual(layout.frame.maxY, usable.maxY - 6, accuracy: 1e-6, name)
+            XCTAssertGreaterThanOrEqual(layout.frame.minY, usable.minY - 1e-6, name)
+            // Crisp: WebKit draws the page at the final size; no view scales a bitmap of it.
+            XCTAssertEqual(web.pageZoom, scale, accuracy: 1e-6, name)
+            let content = try XCTUnwrap(window.contentView)
+            XCTAssertEqual(content.bounds.size.width, window.frame.width, accuracy: 1, name)
+            XCTAssertEqual(web.frame.size.width, window.frame.width, accuracy: 1, name)
+            // Hit targets: page points map by the scale onto the window, and land where they are drawn.
+            let height = content.bounds.height
+            func hit(_ x: Double, _ y: Double) -> NSView? {
+                content.hitTest(content.convert(CGPoint(x: x * scale, y: height - y * scale), to: content.superview))
+            }
+            XCTAssertTrue(hit(painted["brandX"]!, painted["brandY"]!) === region, "\(name): a press on the free strip reaches the drag region")
+            let shutter = hit(painted["shutterX"]!, painted["shutterY"]!)
+            XCTAssertFalse(shutter === region, "\(name): the shutter keeps its own input")
+            XCTAssertTrue(shutter?.isDescendant(of: web) == true, "\(name): the shutter press reaches the page")
+        }
     }
     #endif
 }
