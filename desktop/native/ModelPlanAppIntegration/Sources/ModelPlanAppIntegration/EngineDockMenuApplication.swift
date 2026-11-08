@@ -68,8 +68,6 @@ struct StatusNoticePresentation {
     private var showFeedback: ShowQuotaWidgetOutcome?, hideFeedback: ShowQuotaWidgetOutcome?
     private var autoCollapseFailed = false
     /// True only for a sealed owner-test package; a release package never offers or applies these.
-    var ownerTestOptions: Bool
-    private static let ringsCentredKey = "ModelPlanOwnerTestRingsCentred"
     private var memberRefreshInFlight = Set<String>()
     private var unavailableMemberRefreshes = Set<String>()
     public var memberRefreshAdapter: (any DockMemberRefreshAdapting)? {
@@ -117,6 +115,7 @@ struct StatusNoticePresentation {
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
     /// Injection point for opening System Settings; the normal entry uses NSWorkspace.
     public var openSystemSettings: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Every public link from a menu or Settings leaves through here; tests read the URL instead of a browser.
     public var openPublicURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Injection point for the cache action; the normal entry clears the app's own folder.
     public var clearAppCache: () -> Void = { EngineAppCache.clearCurrentApp() }
@@ -144,7 +143,6 @@ struct StatusNoticePresentation {
         self.scopeBinding = EngineScopeConsentBinding(composition: composition)
         self.foundationStore = settingsStore
         self.appBundleURL = bundleURL
-        self.ownerTestOptions = CommunityConsentBundleIdentity.matchesOwnerTest(bundle: bundleURL)
         self.cockpitEntryEnabled = cockpitEntryEnabled ?? (Bundle(url: bundleURL)?.object(forInfoDictionaryKey: "ModelPlanCockpitEntryEnabled") as? Bool ?? false)
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
         let contextSource = EngineSettingsContext(bundle: bundleURL, executable: configuration.executableURL)
@@ -294,6 +292,11 @@ struct StatusNoticePresentation {
         if let value = composition.latestSettings { console?.applySettings(value) }
         console?.show()
     }
+    /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
+    /// entry (menu item, ignition, shortcut, reopening the app) only ever opens.
+    func toggleConsole() {
+        if let console, console.isShowing { console.requestClose() } else { showConsole() }
+    }
     /// OS accessibility changes are presentation facts, never saved user choices.
     func updateSystemAccessibility(_ observed: SettingsEnvironment) {
         guard !terminating else { return }
@@ -327,7 +330,6 @@ struct StatusNoticePresentation {
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
-        if ownerTestOptions { composition.dock.ringsCentred = UserDefaults.standard.bool(forKey: Self.ringsCentredKey) }
         composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
         context.loginServiceObserved = true
         context.notificationServiceObserved = true
@@ -613,7 +615,7 @@ struct StatusNoticePresentation {
         }
     }
 
-    /// D44: a plain left click opens the cockpit. The menu stays attached to the status item, so
+    /// D44: a plain left click opens the cockpit, and closes it again while it is open (G3-40). The menu stays attached to the status item, so
     /// right-click, control-click, keyboard and accessibility presses show it natively, and so does
     /// a left click while the cockpit cannot open. Command stays free for dragging the icon.
     func handleStatusClick(_ event: NSEvent) -> Bool {
@@ -621,7 +623,7 @@ struct StatusNoticePresentation {
         if event.type == .leftMouseUp {
             guard statusPressPending else { return false }
             statusPressPending = false
-            if onStatusItem { showConsole() }
+            if onStatusItem { toggleConsole() }
             return true
         }
         guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
@@ -698,11 +700,10 @@ struct StatusNoticePresentation {
                   action: showAvailability == .ready ? { [weak self] in Task { @MainActor [weak self] in await self?.setDockShown(!widgetShown) } } : nil),
             .init(title: nil),
             .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
-            .init(title: label("Website", "网站"), action: { NSWorkspace.shared.open(SettingsPublicLink.website.url) }),
-            .init(title: label("Methodology", "方法论"), action: { NSWorkspace.shared.open(SettingsPublicLink.methodology.url) }),
-            .init(title: label("Privacy", "隐私"), action: { NSWorkspace.shared.open(SettingsPublicLink.privacy.url) }),
+            .init(title: label("Website", "网站"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.website.url) }),
+            .init(title: label("Methodology", "方法论"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.methodology.url) }),
+            .init(title: label("Privacy", "隐私"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.privacy.url) }),
         ]
-        if let item = ownerTestRingItem(language) { menuItems.append(item) }
         let admitted = composition.presentedContent.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
         let content = composition.provider.dockContent
@@ -845,19 +846,6 @@ struct StatusNoticePresentation {
         case .failed, .unavailable: return SettingsText("Could not change Show Quota Widget. Check Settings and try again.", "无法更改「显示额度挂件」，请检查设置后重试。").value(language)
         case .ready, nil: return nil
         }
-    }
-    /// Owner test option: flip the ring position and see it at once. Off is the prototype position.
-    func ownerTestRingItem(_ language: SettingsLanguage) -> DockMenuPresentationItem? {
-        guard ownerTestOptions else { return nil }
-        let on = composition.dock.ringsCentred
-        return .init(title: SettingsText("Test option: centre the quota ring", "测试选项：额度圈居中").value(language),
-                     accessibilityID: "status.test.ringsCentred", checked: on, action: { [weak self] in self?.setRingsCentred(!on) })
-    }
-    func setRingsCentred(_ on: Bool) {
-        guard ownerTestOptions else { return }
-        UserDefaults.standard.set(on, forKey: Self.ringsCentredKey)
-        composition.dock.ringsCentred = on
-        renderMenu()
     }
     /// G3-28: the same stored setting as Settings' auto-collapse switch, through the same bounded
     /// path as Show, so a hint-ledger write cannot drop the choice. A failure shows in the status menu.

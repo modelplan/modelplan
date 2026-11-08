@@ -24,12 +24,13 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"b33820eb00de25e4d37ccbca073441bf53cd9f7b3eb8b96d0ccba5e04ca09495",
-        "official":"feffab2e0df3927b4c1dc4ebd3f5d93f67d9d8215c8bfdc061da178ba92ef7d0",
+        "community":"b831b95491a2ef7c1cc941a593acb1bfe635f7d1a9f14ee479fa637d32b8837f",
+        "official":"6f2803e6f1135f483d909c6e30f560ac29312053c4dfebcd96031c3c4a8af01c",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
+    static var verificationConsoleNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -49,6 +50,7 @@ import ModelPlanDock
         }
         #if MODELPLAN_TEST_ONLY_SPI
         let verificationFactory = verificationPageFactory
+        let verificationNotice = verificationConsoleNotice
         #endif
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
@@ -64,11 +66,16 @@ import ModelPlanDock
                 owner.coordinator=coordinator
                 let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
+                coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
+                coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
                 if let makeConsole { return makeConsole(composition) }
                 #if MODELPLAN_TEST_ONLY_SPI
+                if let verificationNotice {
+                    return SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{ true },activate:{},requestNotice:verificationNotice)
+                }
                 if verificationFactory != nil {
                     return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
                 }
@@ -76,6 +83,7 @@ import ModelPlanDock
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
+        if application.cockpitEntryEnabled { owner.prepare() }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         return application
     }
@@ -86,30 +94,72 @@ import ModelPlanDock
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
-    var pageFailure: (() -> Void)?
+    /// The one way a cockpit website link leaves the app; tests read the URL instead of a browser.
+    var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
+    var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
     var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
-    func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
-        guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL,
-              CommunityConsentBundleIdentity.matches(bundle:bundle) || CommunityConsentBundleIdentity.matchesOwnerTest(bundle:bundle)
+    /// G3-42: hashing the helper and every bundle file took the main thread on each click. The app's identity and
+    /// bundle are checked once per launch, away from the click; every served file is still checked again as it loads.
+    /// A click before this finishes checks on the spot, and a failure here is reported by that click.
+    func prepare() {
+        guard verifiedBundle == nil, preparation == nil else { return }
+        let bundle=self.bundle,pins=CommunityCockpitApplicationFactory.manifestPins
+        let work=Task.detached(priority:.utility) { try? Self.admit(bundle:bundle,pins:pins) }
+        preparation=work
+        Task { @MainActor [weak self] in
+            let verified=await work.value
+            guard let self else { return }
+            preparation=nil
+            if verifiedBundle == nil { verifiedBundle=verified }
+        }
+    }
+    private var preparation: Task<VerifiedCockpitBundle?,Never>?
+    nonisolated private static func admit(bundle: URL,pins: [String:String]) throws -> VerifiedCockpitBundle {
+        guard CommunityConsentBundleIdentity.matches(bundle:bundle) || CommunityConsentBundleIdentity.matchesOwnerTest(bundle:bundle)
         else { throw CockpitBridgeError.unavailable }
         let editionURL=bundle.appendingPathComponent("Contents/Resources/build-edition.json")
         var edition="community"
         if let data=try? Data(contentsOf:editionURL),data.count<=1024,
            let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],value["edition"] as? String == "official" { edition="official" }
-        let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
-            manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
+        guard let pin=pins[edition] else { throw CockpitBridgeError.unavailable }
+        return try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
+            manifestSHA256:pin,allowOfficial:edition == "official")
+    }
+    func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
+        guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL
+        else { throw CockpitBridgeError.unavailable }
+        let verified=try verifiedBundle ?? Self.admit(bundle:bundle,pins:CommunityCockpitApplicationFactory.manifestPins)
         verifiedBundle=verified
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
-        page.onFailure = { [weak self] _ in self?.pageFailure?() }
+        page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
         #endif
         return page
+    }
+}
+
+/// D64: the cockpit scope and its local day in one small file beside the settings. A consent or store change removes it.
+@MainActor final class FileCockpitScopeMemory: CockpitScopeMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> (key: String, day: String)? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let key = value["scope"] as? String, let day = value["day"] as? String else { return nil }
+        return (key, day)
+    }
+    func save(_ value: (key: String, day: String)?) {
+        guard let value else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": value.key, "day": value.day], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
     }
 }
 
@@ -139,8 +189,8 @@ struct CockpitUnavailableNotice {
          requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)? = nil) {
         self.owner=owner;self.composition=composition
         self.isForeground=isForeground;self.activate=activate;self.requestNotice=requestNotice
-        owner.coordinator?.onUnavailable = { [weak self] in self?.unavailable() }
-        owner.pageFailure = { [weak self] in self?.unavailable() }
+        owner.coordinator?.onUnavailable = { [weak self] reason in self?.unavailable(path:reason.path) }
+        owner.pageFailure = { [weak self] failure in self?.unavailable(path:"page."+failure.rawValue) }
         let onOpened = owner.coordinator?.onOpened
         owner.coordinator?.onOpened = { [weak self] in
             self?.pageOpened = true
@@ -151,7 +201,6 @@ struct CockpitUnavailableNotice {
             self.wantsVisible = false
             self.fieldPanel?.close()
             self.pageOpened = false
-            self.composition.dock.setCockpitPresentationBlocked(false)
         }
     }
     /// Public model data only: the launch field never receives personal readings. The official page is
@@ -171,8 +220,9 @@ struct CockpitUnavailableNotice {
         guard wantsVisible else { return }
         switch intent {
         case .chooseSetup,.openSettings:owner.settings?()
-        case .openHistory:unavailable(history:true)
+        case .openHistory:unavailable(path:"intent.openHistory",history:true)
         case .openField:openField()
+        case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
         case .detach,.putBack,.shutterToggle,.scopeSelect:
             // The page owns shell controls; the coordinator validates and
@@ -199,7 +249,7 @@ struct CockpitUnavailableNotice {
     func show() {
         wantsVisible=true
         guard showTask == nil else { return }
-        composition.dock.setCockpitPresentationBlocked(true)
+        composition.dock.prepareForCockpit()
         showTask=Task { @MainActor [weak self] in
             guard let self else { return }
             let snapshot=await owner.settingsStore.snapshot()
@@ -217,9 +267,13 @@ struct CockpitUnavailableNotice {
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
             owner.coordinator?.open()
-            if !pageOpened { composition.dock.setCockpitPresentationBlocked(false) }
             showTask = nil
         }
+    }
+    var isShowing: Bool { wantsVisible }
+    /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
+    func requestClose() {
+        if pageOpened { owner.coordinator?.requestClose() } else { hide() }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
@@ -229,12 +283,13 @@ struct CockpitUnavailableNotice {
         fieldPanel?.close()
         owner.coordinator?.close()
         pageOpened = false
-        composition.dock.setCockpitPresentationBlocked(false)
         fallback?.hide()
     }
-    private func unavailable(history:Bool=false) {
-        guard wantsVisible else { return }
+    private func unavailable(path:String,history:Bool=false) {
         let initiatedInForeground=isForeground()
+        // A failure in the background or after a close shows nothing, so the log is all there is.
+        CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened)")
+        guard wantsVisible else { return }
         let notice=CockpitUnavailableNotice(history:history)
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }

@@ -162,7 +162,7 @@ import ModelPlanCommunityHost
                 currentUsageMessage = .init(reason.english, reason.chinese)
                 currentUsageNextStep = .forReason(reason.category)
             } else {
-                currentUsageMessage = .init("Current readings are available.", "当前读数可用。")
+                currentUsageMessage = .init("Current readings are available.", "已读到当前用量。")
                 currentUsageNextStep = nil
             }
         }

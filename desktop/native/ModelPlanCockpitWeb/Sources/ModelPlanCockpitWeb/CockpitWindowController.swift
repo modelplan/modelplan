@@ -69,6 +69,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
 {
   /// DOCK-3.1-26: a short press opens with this fade.
   static let openFade: TimeInterval = 0.18
+  /// D49: the widget stays at `.floating` while the cockpit is open, and the cockpit opens over it.
+  /// A widget being dragged rises to `.statusBar`, above this.
+  public static let panelLevel = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+  /// Windows the open cockpit brings up (the enlarged field, the Help overlay) sit above it.
+  public static let aboveCockpitLevel = NSWindow.Level(rawValue: panelLevel.rawValue + 1)
+  /// The drag snap guide shares the cockpit's level so it can be ordered just below the cockpit.
+  public static let snapGuideLevel = panelLevel
   private let bundle: VerifiedCockpitBundle
   private var appearance: CockpitAppearance
   private let shellSession: CockpitShellSession
@@ -171,6 +178,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     } catch { fail() }
   }
   private var lastVisibility: CockpitVisibility?
+  private var openedAt: TimeInterval?
   private var clearWaiter: CheckedContinuation<Void, Never>?
   private var deadline: Task<Void, Never>?
   private var ending = false
@@ -230,6 +238,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   required init?(coder: NSCoder) { nil }
   public func open() {
     closeTask?.cancel(); closeTask = nil
+    if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
     guard web == nil, !bridge.disposed else {
       window?.alphaValue = 1
       window?.makeKeyAndOrderFront(nil)
@@ -260,7 +269,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     view.allowsBackForwardNavigationGestures = false
     let panel = CockpitPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
     panel.isOpaque = false; panel.backgroundColor = .clear
-    panel.hasShadow = false; panel.level = .floating; panel.hidesOnDeactivate = false
+    panel.hasShadow = false; panel.level = Self.panelLevel; panel.hidesOnDeactivate = false
     panel.appearance = NSAppearance(named: .darkAqua)
     panel.title = "ModelPlan"
     panel.isReleasedWhenClosed = false
@@ -666,7 +675,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = false
       panel.ignoresMouseEvents = true; panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
       let view = NSView(frame: .init(origin: .zero, size: frame.size)); view.wantsLayer = true
-      view.layer = CAShapeLayer(); panel.contentView = view; panel.level = .floating; snapGuide = panel
+      view.layer = CAShapeLayer(); panel.contentView = view; panel.level = Self.snapGuideLevel; snapGuide = panel
     }
     snapGuide?.setFrame(frame, display: false)
     if let shape = snapGuide?.contentView?.layer as? CAShapeLayer {
@@ -732,8 +741,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       self?.discard()
     }
   }
-  private func fail(_ failure: CockpitWindowFailure = .localEncoding) {
+  private func fail(_ failure: CockpitWindowFailure = .localEncoding, at site: StaticString = #function, line: UInt = #line) {
     guard !ending else { return }
+    let age = openedAt.map { Int((ProcessInfo.processInfo.systemUptime - $0) * 1_000) }
+    CockpitFailureLog.record("page-failure failure=\(failure.rawValue) at=\(site):\(line) ageMs=\(age.map(String.init) ?? "none") "
+      + "ready=\(bridge.ready) visible=\(visibilityFence.isConfirmedVisible) rendered=\(freshnessHasRendered) "
+      + "displayPending=\(bridge.hasPendingDisplay) occluded=\(lastVisibility?.occluded.description ?? "unknown")")
     onFailure?(failure)
     discard()
   }
