@@ -132,16 +132,17 @@ test('v2 readiness, strict live appearance and native shell state',()=>{
 });
 test('shell actions are gated by native state and visibility',()=>{
   const f=fixture();
-  assert.equal(f.bridge.action('putBack'),false);
+  assert.equal(f.bridge.action('detach'),false);assert.equal(f.bridge.action('putBack'),false);
   assert.equal(f.bridge.receive(f.send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'}),source),true);
-  assert.equal(f.bridge.action('detach'),true);assert.equal(f.bridge.action('putBack'),false);
+  assert.equal(f.bridge.action('detach'),false);assert.equal(f.bridge.action('putBack'),false);
   assert.equal(f.bridge.action('close'),true);assert.equal(f.bridge.action('shutterToggle'),true);
   assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:false,forcedClosed:true,tier:'compact',scope:'all'}),source),true);
-  assert.equal(f.bridge.action('detach'),false);assert.equal(f.bridge.action('putBack'),true);assert.equal(f.bridge.action('shutterToggle'),false);
+  assert.equal(f.bridge.action('detach'),false);assert.equal(f.bridge.action('putBack'),false);assert.equal(f.bridge.action('shutterToggle'),false);
   assert.equal(f.bridge.action('close','extra'),false);
   assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:true}),source),true);
-  assert.equal(f.bridge.action('putBack'),false);
-  assert.deepEqual(f.events.filter(e=>e.type==='action').map(e=>e.action),['detach','close','shutterToggle','putBack']);
+  assert.equal(f.bridge.action('close'),false);
+  // G3-54: the retired detach and put-back actions never reach the host, whatever the shell state.
+  assert.deepEqual(f.events.filter(e=>e.type==='action').map(e=>e.action),['close','shutterToggle']);
 });
 
 test('ready capabilities are present when DOM readiness follows load',()=>{

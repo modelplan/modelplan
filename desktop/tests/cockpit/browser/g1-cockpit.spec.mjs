@@ -45,13 +45,31 @@ test('CKP-STRIP-04 ALERT stays English while its accessible label localizes',asy
 });
 
 test('CKP-STRIP-07 Option opens and dismisses the help map without a help key',async({page})=>{
- const {send,receive}=await open(page);const map=page.locator('#help-map'),detach=page.locator('[data-detach]');
- await expect(page.locator('[data-help],button[aria-label="Help"]')).toHaveCount(0);const before=await detach.boundingBox();
- await page.keyboard.down('Alt');await expect(map).toBeVisible();await expect(map.locator('[data-target="[data-detach]"]')).toContainText('Detach');
- const otherLabels=()=>map.locator('.an:not([data-target="[data-detach]"])').evaluateAll(nodes=>nodes.map(n=>({target:n.dataset.target,x:n.getBoundingClientRect().x,y:n.getBoundingClientRect().y})));
- const labelsBefore=await otherLabels();expect(await detach.boundingBox()).toEqual(before);await page.keyboard.up('Alt');await expect(map).toBeHidden();
+ const {send,receive}=await open(page);const map=page.locator('#help-map');
+ await expect(page.locator('[data-help],button[aria-label="Help"]')).toHaveCount(0);
+ await page.keyboard.down('Alt');await expect(map).toBeVisible();await expect(map.locator('[data-target="[data-detach]"]')).toHaveCount(0);await page.keyboard.up('Alt');await expect(map).toBeHidden();
  expect(await receive(send('shell',{...shell,attached:false}))).toBe(true);
- await page.keyboard.down('Alt');await expect(map.locator('[data-target="[data-detach]"]')).toContainText('Put back');expect(await otherLabels()).toEqual(labelsBefore);await page.keyboard.up('Alt');await expect(map).toBeHidden();
+ await page.keyboard.down('Alt');await expect(map).toBeVisible();await expect(map.locator('[data-target="[data-detach]"]')).toHaveCount(0);await page.keyboard.up('Alt');await expect(map).toBeHidden();
+});
+
+test('G3-54 collapsed and expanded cockpit have no detach control',async({page})=>{
+ const {send,receive}=await open(page);
+ const none=async()=>{
+  await expect(page.locator('[data-detach],.detach-glyph,.detach-toggle')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:/^(Detach|Put back|分离|放回)$/})).toHaveCount(0);
+ };
+ await none();
+ expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);await none();
+ expect(await receive(send('shell',{...shell,attached:false}))).toBe(true);await none();
+ expect(await receive(send('shell',{...shell,profile:'closed',attached:false}))).toBe(true);await none();
+});
+
+test('G3-55 right-click on the cockpit raises no browser context menu',async({page})=>{
+ await open(page);
+ for(const selector of ['.ck-head','.ck-port','body']){
+  const prevented=await page.locator(selector).first().evaluate(el=>{const e=new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2});el.dispatchEvent(e);return e.defaultPrevented;});
+  expect(prevented,selector).toBe(true);
+ }
 });
 
 test('CKP-STRIP-08 record strip has five or three lines including the collapsed profile',async({page})=>{
@@ -135,14 +153,14 @@ test('CKP-ENG-09 reserve uses reported reset counts and credits, not a public co
  for(const [value,expected] of [[0.2,'<1'],[0,'0']]){detail.credits.balance=value;expect(await receive(send('display',{data}))).toBe(true);await expect(col.locator('.qrv-p')).toHaveText(expected);}
 });
 
-test('CKP-SHELL-03 gear, detach and close share a strip key geometry and order',async({page})=>{
- await open(page);const controls=await Promise.all(['[data-settings]','[data-detach]','[data-close]'].map(s=>page.locator(s).boundingBox()));
- expect(controls.every(Boolean)).toBe(true);expect(controls[0].x).toBeLessThan(controls[1].x);expect(controls[1].x).toBeLessThan(controls[2].x);
+test('CKP-SHELL-03 gear and close share a strip key geometry and order',async({page})=>{
+ await open(page);const controls=await Promise.all(['[data-settings]','[data-close]'].map(s=>page.locator(s).boundingBox()));
+ expect(controls.every(Boolean)).toBe(true);expect(controls[0].x).toBeLessThan(controls[1].x);
  for(const r of controls.slice(1)){expect(r.width).toBeCloseTo(controls[0].width,0);expect(r.height).toBeCloseTo(controls[0].height,0);}
 });
 
 test('CKP-STRIP-01 cockpit strip exposes one ordered row of its required controls',async({page})=>{
- await open(page);const selectors=['.ck-brand','[data-shutter]','[data-caution]','[data-settings]','[data-detach]','[data-close]'];const rects=[];
+ await open(page);const selectors=['.ck-brand','[data-shutter]','[data-caution]','[data-settings]','[data-close]'];const rects=[];
  for(const selector of selectors){const element=page.locator('.ck-head '+selector);await expect(element).toBeVisible();rects.push(await element.boundingBox());}
  for(let i=1;i<rects.length;i++)expect(rects[i].x).toBeGreaterThan(rects[i-1].x);
  expect(Math.max(...rects.map(r=>r.y))-Math.min(...rects.map(r=>r.y))).toBeLessThan(26);

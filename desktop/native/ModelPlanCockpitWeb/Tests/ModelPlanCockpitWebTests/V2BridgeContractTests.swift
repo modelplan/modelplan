@@ -106,7 +106,7 @@ final class V2BridgeContractTests: XCTestCase {
         XCTAssertThrowsError(try value.setShell(.init(closed: false, attached: true, forcedClosed: false, tier: .tall)))
     }
     func testOnlyContractShellActionsAreAdmittedAndVisibilityStillGatesThem() throws {
-        let actions: [(String, CockpitIntent)] = [("openField",.openField),("close",.close),("detach",.detach),("putBack",.putBack),("shutterToggle",.shutterToggle)]
+        let actions: [(String, CockpitIntent)] = [("openField",.openField),("close",.close),("shutterToggle",.shutterToggle)]
         for (action, expected) in actions {
             let value = try state(), load = try value.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
             _ = try value.accept(encode(receipt(load)), source: source)
@@ -116,7 +116,7 @@ final class V2BridgeContractTests: XCTestCase {
             _ = try value.setVisibility(.init(visible: true, occluded: false, key: true))
             XCTAssertEqual(try value.accept(encode(object), source: source), .action(expected))
         }
-        for action in ["toggleAttachment","toggleShutter","navigate"] {
+        for action in ["detach","putBack","toggleAttachment","toggleShutter","navigate"] {
             let value = try state(), load = try value.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
             _ = try value.accept(encode(receipt(load)), source: source)
             _ = try value.setVisibility(.init(visible: true, occluded: false, key: true))
