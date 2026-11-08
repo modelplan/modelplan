@@ -229,19 +229,19 @@ import ModelPlanWire
                          "读取 Claude Code 保存在凭据文件或钥匙串里的登录，以及本机历史记录。")
         case "codex":
             base = .init("Asks Codex's own app server for usage with the sign-in Codex saved, and reads its local history.",
-                         "通过 Codex 自带的 app-server，用它已保存的登录查询用量，并读取本机历史记录。")
+                         "通过 Codex 自带的后台服务，用它已保存的登录查询用量，并读取本机历史记录。")
         case "cursor":
             base = .init("Reads the sign-in Cursor saved in its local database, and its local history.",
                          "读取 Cursor 本地数据库里保存的登录，以及本机历史记录。")
         case "grok":
             base = .init("Reads the sign-in Grok saved in ~/.grok, and its local history.",
-                         "读取 Grok 保存在 ~/.grok 里的登录，以及本机历史记录。")
+                         "读取 Grok 保存在本机的登录，以及本机历史记录。")
         case "kiro":
             base = .init("Asks the Kiro CLI for usage with the sign-in Kiro saved. ModelPlan does not read or keep Kiro's credentials.",
                          "调用 Kiro CLI 查询用量，沿用它已保存的登录。ModelPlan 不读取也不保存 Kiro 的凭据。")
         case "zai":
             base = .init("Reads the GLM Coding Plan key you saved in ZCode, and its local history.",
-                         "读取你在 ZCode 里保存的 GLM Coding Plan 密钥，以及本机历史记录。")
+                         "读取你在 ZCode 里保存的 GLM 编程套餐密钥，以及本机历史记录。")
         default:
             var english: [String] = [], chinese: [String] = []
             let routes = Set(tool.routes.map(\.rawValue))
