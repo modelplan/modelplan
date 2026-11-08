@@ -1407,6 +1407,63 @@ actor EntrySyntheticClient: EngineClient {
         assertStatus("")
     }
 
+    /// Build 13 owner review (ledger: none): with the pointer on the menu-bar item the "0%" kept turning into "0".
+    /// Every refresh re-set the title, image and position, and the reset dot was then placed from the button's
+    /// previous bounds, so it landed on the "%" and moved back on the next refresh. A refresh that changes nothing
+    /// now writes nothing, and the dot's place does not depend on the bounds the button happens to hold.
+    func testMenuBarItemDoesNotJumpWhenAnUnchangedReadingIsRefreshed() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-stable-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let fixture = try Self.rows(weekly: 15)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.tightest))
+
+        final class CountingButton: NSButton {
+            var titleWrites = 0, imageWrites = 0, positionWrites = 0
+            override var title: String { didSet { titleWrites += 1 } }
+            override var image: NSImage? { didSet { imageWrites += 1 } }
+            override var imagePosition: NSControl.ImagePosition { didSet { positionWrites += 1 } }
+        }
+        let button = CountingButton()
+        let icon = NSImage(size: .init(width: 16, height: 16))
+        EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+        app.applyStatusContent(to: button, detail: "detail")
+        XCTAssertEqual(button.title, "15%")
+        let (title, image, position) = (button.titleWrites, button.imageWrites, button.positionWrites)
+        for _ in 0..<3 {
+            EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+            app.applyStatusContent(to: button, detail: "detail")
+        }
+        XCTAssertEqual(button.titleWrites, title, "an unchanged title is not written again")
+        XCTAssertEqual(button.imageWrites, image, "an unchanged image is not replaced")
+        XCTAssertEqual(button.positionWrites, position, "an unchanged image position is not written again")
+        XCTAssertEqual(button.title, "15%")
+    }
+
+    /// The reset dot stays on the icon's top right whatever size the button still holds from before a refresh.
+    func testResetDotStaysOnTheIconWhateverBoundsTheButtonHolds() throws {
+        let button = NSButton(frame: .zero)
+        EngineDockMenuApplication.configureStatusButton(button, image: NSImage(size: .init(width: 16, height: 16)), barThickness: 22)
+        button.title = "0%"; button.imagePosition = .imageLeading
+        let dot = DockNoticeIndicatorView(frame: .zero)
+        var placed = [CGFloat]()
+        for width: CGFloat in [14, 48, 96, 240] { // stale: narrower than the content, about right, then much wider
+            button.frame = NSRect(x: 0, y: 0, width: width, height: 22)
+            dot.attach(to: button)
+            placed.append(dot.frame.minX)
+        }
+        XCTAssertEqual(Set(placed.map { ($0 * 2).rounded() }).count, 1, "the dot does not move with the button's bounds: \(placed)")
+        let content = NSRect(x: 0, y: 0, width: ceil(try XCTUnwrap(button.cell).cellSize.width), height: 22)
+        XCTAssertLessThan(dot.frame.maxX, content.maxX - 8, "the dot never sits on the percentage")
+    }
+
     func testV17ExpiredOnlyReadingLeavesAnIconWithoutRevocation() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-expiry-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
