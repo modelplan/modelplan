@@ -27,6 +27,11 @@ on:
         description: Run the GUI-native job on the single GUI test machine (the coordinator's dispatch queue owns its order)
         type: boolean
         default: false
+      gui_pool:
+        description: Where the GUI-native job runs (default follows the MAC_CI_GUI_POOL variable)
+        type: choice
+        options: [default, hosted, owner-mac]
+        default: default
 permissions:
   contents: read
 concurrency:
@@ -132,6 +137,36 @@ jobs:
       - run: python3 -m unittest discover -s desktop/native/tools/ci -p 'test_*.py' -v
       - run: python3 desktop/native/tools/ci/native_test_partition.py check
 
+  cockpit-pins:
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    # Cockpit admission pins are never committed (D69): they are generated from the canonical build wherever the
+    # App is compiled (package-neutral.sh, U11 native). On every PR head, main push and merge-queue group, build
+    # both editions twice from this tree, require byte-identical output, check the reserved-visuals register, and
+    # generate the pins the App would be compiled with. U11 native compiles and runs the App with them on PRs.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Pin generator and checker
+        run: |
+          python3 -B -m unittest discover -s desktop/native/verification/tests -p 'test_bundle_pin_guard.py' -v
+          python3 -B -m unittest discover -s desktop/native/ModelPlanCockpitWeb -p 'test_*.py' -v
+      - name: Build both editions, generate their pins, rebuild from scratch and require the same pins
+        run: |
+          npm ci --prefix desktop/cockpit --ignore-scripts
+          npm run build --prefix desktop/cockpit
+          npm run build:official --prefix desktop/cockpit
+          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --write
+          rm -rf desktop/cockpit/.tmp
+          npm run build --prefix desktop/cockpit
+          npm run build:official --prefix desktop/cockpit
+          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --check
+          test -z "$(git status --porcelain)"
+
   app-smoke:
     permissions:
       contents: read
@@ -233,29 +268,55 @@ jobs:
     # coordinator's ci-dispatch sends at most one such run at a time, highest priority first) or on a
     # non-draft PR that carries the gui-ci label; pushes and ordinary pull_request events skip it.
     # native-headless and the hosted app-smoke job still cover every push and ready PR head.
-    if: ${{ !inputs.mac_ci_probe && ((github.event_name == 'workflow_dispatch' && inputs.gui) || (github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'gui-ci'))) }}
+    if: ${{ (!inputs.mac_ci_probe && ((github.event_name == 'workflow_dispatch' && inputs.gui) || (github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'gui-ci')))) && !(inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
     strategy:
       fail-fast: false
       matrix:
         os:
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@0c86af351dd4417399682fdd5cc213189b91987d
     with:
       task: native
       os: ${{ matrix.os }}
+
+  native-hosted:
+    name: native-hosted (${{ matrix.os }})
+    # The GUI leg minus the ownerGui classes on hosted macos-15 (owner D62, 11-08), which has a real WindowServer
+    # session, so several PRs' GUI legs run in parallel instead of queueing for the one GUI Mac. Selected by
+    # MAC_CI_GUI_POOL=hosted or a gui_pool=hosted dispatch; same triggers as the job above.
+    if: ${{ (!inputs.mac_ci_probe && ((github.event_name == 'workflow_dispatch' && inputs.gui) || (github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'gui-ci')))) && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+        - macos-15
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@0c86af351dd4417399682fdd5cc213189b91987d
+    with:
+      task: native-hosted-gui
+      os: ${{ matrix.os }}
+
+  native-owner-gui:
+    name: native-owner-gui (macos-latest)
+    # The ownerGui classes of native-test-partition.json (they cannot finish on a hosted Mac) on the owner's GUI Mac,
+    # paired with native-hosted above: together they are exactly the GUI leg.
+    if: ${{ (!inputs.mac_ci_probe && ((github.event_name == 'workflow_dispatch' && inputs.gui) || (github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'gui-ci')))) && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@0c86af351dd4417399682fdd5cc213189b91987d
+    with:
+      task: native-owner-gui
+      os: macos-latest
 
   native-headless:
     name: native-headless (macos-latest)
     needs: queue-scope
     if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@0c86af351dd4417399682fdd5cc213189b91987d
     with:
       task: native-headless
       os: macos-latest
 
   runner-probe:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mac_ci_probe && github.actor_id == '11829005' }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@0c86af351dd4417399682fdd5cc213189b91987d
     with:
       task: ${{ inputs.mac_ci_probe_mode == 'gui' && 'gui-probe' || 'probe' }}
       os: macos-latest

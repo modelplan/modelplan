@@ -33,6 +33,8 @@ public struct StaticDockGeometry {
     public var noticeUnit: CGFloat = 1
     /// Normalized along-axis member pitch ranges registered by the active appearance.
     public var quotaPitchRanges: [String: ClosedRange<Double>] = [:]
+    /// The same pitches before clamping to the strip: the sliver glow is laid out over the whole pitch (G3-51).
+    public var quotaPitchSpans: [String: ClosedRange<Double>] = [:]
     var hoverStations: [String: DockHoverStation] = [:]
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
@@ -245,6 +247,7 @@ struct DockHelpInteraction: Equatable {
     private var attentionWasExpanded = false
     private var locateLayer: CAShapeLayer?
     private var pendingUserReveal = false
+    private var pendingRevealHighlights = true
     private var locateTask: Task<Void, Never>?
     private var locating = false
     /// G3-12: a requested Help map is drawn over the expanded widget, so the widget stays
@@ -257,6 +260,46 @@ struct DockHelpInteraction: Equatable {
                 self.edge.refresh()
             }
         }
+    }
+    /// D56 Find Quota Widget: while the spotlight runs the widget stays expanded, may show over a
+    /// full-screen app on the current Space, and offers no hint. Releasing it lets the normal
+    /// auto-collapse rules apply again.
+    var spotlightHold = false {
+        didSet {
+            guard spotlightHold != oldValue, !retired else { return }
+            for window in [panel, cardPanel, overflowPanel] { window?.collectionBehavior = panelCollectionBehavior }
+            if spotlightHold { dismissCard() }
+            Task { @MainActor [weak self] in
+                guard let self, !self.retired else { return }
+                self.edge.refresh()
+            }
+        }
+    }
+    /// Where the expanded widget is on screen now, and the whole display it is on; nil while it
+    /// is collapsed, hidden or withdrawn. The hull comes from the registered outline, not the panel.
+    var spotlightTarget: QuotaWidgetSpotlightTarget? {
+        guard permitted, !retired, !retiring, preferences.showDock, let presentation = edge.presentation,
+              presentation.state == .expanded, let frame = presentation.paintedFrame,
+              let placement = presentation.placement,
+              !createsNativePanels || panel?.isVisible == true,
+              let display = topology(of: sampleEnvironment()).display(placement.displayID) else { return nil }
+        var widget = frame
+        do {
+            let view = edgeViews[placement.edge] ?? dockView
+            let local = view.registeredMoveOutlinePath?.boundingBox ?? view.bounds
+            let global: CGRect
+            if createsNativePanels, let window = view.window, window === panel {
+                global = window.convertToScreen(view.convert(local, to: nil))
+            } else {
+                // Detached checks: the view sits at the container origin, which fills the painted frame.
+                let y = view.isFlipped ? view.bounds.height - local.maxY : local.minY
+                global = CGRect(x: frame.minX + view.frame.minX + local.minX, y: frame.minY + view.frame.minY + y,
+                                width: local.width, height: local.height)
+            }
+            let clipped = global.intersection(frame)
+            if !clipped.isNull, !clipped.isEmpty { widget = clipped }
+        }
+        return .init(widget: widget, display: display.frame, displayID: placement.displayID)
     }
     /// Presentation is allowed by the lifecycle, so a Show request can make the widget visible now.
     var canPresentForHelp: Bool { permitted && !retired && !retiring }
@@ -464,7 +507,7 @@ struct DockHelpInteraction: Equatable {
     public static let consumedSettingKeys: Set<SettingKey> = [.magnification, .showPercentages, .sliverAlert, .fullscreen, .redBelow]
     private var preferences = SettingsPreferences()
     private var panelCollectionBehavior: NSWindow.CollectionBehavior {
-        preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
+        preferences.showOverFullscreen || spotlightHold ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
     }
     private var effectiveRedBelow: Double { Double(application?.effective.redBelow ?? SettingsPreferences().redBelow) }
     private var memberSafePreferences: SettingsPreferences {
@@ -790,6 +833,7 @@ struct DockHelpInteraction: Equatable {
         style.verticalPadding = QuotaWidgetCardGeometry.plateVerticalPadding
         style.plateRadius = QuotaWidgetCardGeometry.plateRadius
         style.brandSize = QuotaWidgetCardGeometry.headingIconSize
+        style.brandMarkSize = cardMarkSize
         style.headerGap = QuotaWidgetCardGeometry.headingGap
         style.headerBottomGap = QuotaWidgetCardGeometry.headingBottomGap
         style.headerMinimumHeight = QuotaWidgetCardGeometry.headingMinimumHeight; style.labelLift = QuotaWidgetCardGeometry.rowLabelLift
@@ -830,7 +874,7 @@ struct DockHelpInteraction: Equatable {
         return value
     }
     private static var cardStores: [Bool: DockArtworkStore] = [:]
-    private static func cardResourceStore(zaiMarkEnabled: Bool) -> DockArtworkStore? {
+    static func cardResourceStore(zaiMarkEnabled: Bool) -> DockArtworkStore? {
         if let store = cardStores[zaiMarkEnabled] { return store }
         guard let data = try? DockThirdPartyResources.manifestData(zaiMarkEnabled: zaiMarkEnabled),
               let manifest = try? JSONDecoder().decode(DockResourceManifest.self, from: data),
@@ -843,18 +887,36 @@ struct DockHelpInteraction: Equatable {
     private func cardBrandImage(_ id: String) -> NSImage? {
         let view = interactionView
         guard let key = view.presentedReadingsForChecks[id]?.vendorResourceKey,
-              let resource = view.presentedSkinForChecks?.stations.first(where: { $0.subscriptionID == id })?.glyphs[key],
-              let store = Self.cardResourceStore(zaiMarkEnabled: view.zaiMarkEnabled),
-              let image = try? store.image(resource, maximumPixelSize: 64) else { return nil }
-        let size = QuotaWidgetCardGeometry.headingIconSize
-        return NSImage(cgImage: image, size: NSSize(width: size, height: size))
+              let resource = view.presentedSkinForChecks?.stations.first(where: { $0.subscriptionID == id })?.glyphs[key] else { return nil }
+        return Self.cardMark(resource, zaiMarkEnabled: view.zaiMarkEnabled)
     }
+    /// G3-50 (owner 11-08: the prototype's card mark is itself the wrong size): the mark is cropped to
+    /// its visible glyph, as the ring does (#397), so a mark that keeps clear space in its file (OpenAI
+    /// fills about half of its viewBox) is not drawn smaller than the others. The card then sizes every
+    /// mark to the title's height (`DockCardStyle.brandMarkSize`).
+    static func cardMark(_ resource: String, zaiMarkEnabled: Bool) -> NSImage? {
+        let side = cardMarkSize
+        guard let store = cardResourceStore(zaiMarkEnabled: zaiMarkEnabled),
+              let glyph = try? store.fittedGlyph(resource, targetPixelSize: Int((side * 3).rounded(.up))),
+              glyph.width > 0, glyph.height > 0 else { return nil }
+        let k = side / CGFloat(max(glyph.width, glyph.height))
+        return NSImage(cgImage: glyph, size: NSSize(width: CGFloat(glyph.width) * k, height: CGFloat(glyph.height) * k))
+    }
+    /// The visible mark's longest side: the card title's line height.
+    static var cardMarkSize: CGFloat { DockCardStyle.titleMarkSize(nameFontSize: QuotaWidgetCardMaterial.nameFontSize) }
     public let dockView = DockInstrumentView(frame: .zero)
     private let sliver = DockSliverView(frame: .zero)
     private let empty = StaticDockStatusLabel(wrappingLabelWithString: "")
     let card = DockCardView(frame: .zero)
     private let cardChrome = NSView(frame: .zero), cardArrow = HostCardArrowView(frame: .zero)
     /// The card's pointer arrow polygon in screen coordinates while a native card panel is shown.
+    /// The card plate's screen frame while a native card panel is shown.
+    var cardPlateForChecks: CGRect? {
+        guard let window = card.window, !card.isHidden, window.isVisible else { return nil }
+        return window.convertToScreen(card.convert(card.bounds, to: nil))
+    }
+    /// The card panel's content (plate plus arrow) for evidence captures.
+    var cardChromeForChecks: NSView? { card.window == nil ? nil : cardChrome }
     var cardArrowForChecks: [CGPoint]? {
         guard let window = cardArrow.window, !cardArrow.isHidden, cardArrow.points.count == 3 else { return nil }
         return cardArrow.points.map { window.convertPoint(toScreen: cardArrow.convert($0, to: nil)) }
@@ -920,6 +982,13 @@ struct DockHelpInteraction: Equatable {
             return self.acceptsInstrumentAction(from: self.dockView, source: source)
         }
         dockView.onEscape = { [weak self] in self?.closeHeldCard() ?? false }
+        for view in [dockView] + alternateViews {
+            // G3-50: a shown card follows its ring when hover magnification moves it.
+            view.onNozzlePosesChanged = { [weak self, weak view] in
+                guard let self, let view, view === self.interactionView else { return }
+                self.refreshCardPlacement()
+            }
+        }
         sliver.onReveal = { [weak self] in self?.edge.reveal() }
         connectEdge()
         let refresh: () -> Void = { [weak self] in
@@ -1348,7 +1417,7 @@ struct DockHelpInteraction: Equatable {
         presence.enabled = preferences.showDock; presence.autoHide = preferences.autoHide
         presence.lifecycleActive = permitted && !retired
         presence.allowedOverFullscreen = native.presence.allowedOverFullscreen || preferences.showOverFullscreen
-        presence.menuActuallyOpen = menuOpen; presence.locating = locating || helpMapHold
+        presence.menuActuallyOpen = menuOpen; presence.locating = locating || helpMapHold || spotlightHold
         presence.cardFocused = cardHasKeyboardFocus || interactionView.keyboardTargetID != nil
         // Preview does not claim to detect another app's fullscreen state or activate another Space.
         var auxiliary = cardPanel?.isVisible == true ? cardPanel?.frame : (!createsNativePanels ? native.cardFrame : nil)
@@ -1787,7 +1856,8 @@ struct DockHelpInteraction: Equatable {
             let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to:input),now:now,redBelow:effectiveRedBelow)
             let status = reading?.status ?? .unknown
             let role:DockQuotaStatus? = status == .warning || status == .critical ? status:nil
-            return .init(subscriptionID:id,remainingPercent:reading?.remainingPercent,quotaRole:role,ink:role.map(ink),from:pitch.lowerBound,through:pitch.upperBound)
+            return .init(subscriptionID:id,remainingPercent:reading?.remainingPercent,quotaRole:role,ink:role.map(ink),from:pitch.lowerBound,through:pitch.upperBound,
+                         span:presentationGeometry.quotaPitchSpans[id])
         }
     }
     /// Uses the same bounded view preparation in native presentation and no-window checks.
@@ -1907,9 +1977,10 @@ struct DockHelpInteraction: Equatable {
         dismissCard()
     }
 
-    func revealForUser() {
+    /// `highlight: false` is the Find Quota Widget reveal: its spotlight draws the ring instead.
+    func revealForUser(highlight: Bool = true) {
         guard !retired, preferences.showDock else { return }
-        pendingUserReveal = true
+        pendingUserReveal = true; pendingRevealHighlights = highlight
         fulfillUserReveal()
     }
 
@@ -1923,6 +1994,8 @@ struct DockHelpInteraction: Equatable {
             locating = false; edge.refresh(); return
         }
         pendingUserReveal = false
+        // The spotlight's own hold keeps the widget expanded; the accent ring is Show's alone.
+        guard pendingRevealHighlights else { locating = false; return }
         let path = view.registeredMoveOutlinePath ?? CGPath(roundedRect: view.bounds.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 6, cornerHeight: 6, transform: nil)
         let mark = CAShapeLayer(); mark.name = "dock.locate-highlight"; mark.frame = view.bounds; mark.path = path
         mark.fillColor = NSColor.clear.cgColor; mark.strokeColor = NSColor.controlAccentColor.cgColor
@@ -1981,12 +2054,22 @@ struct DockHelpInteraction: Equatable {
                 sourceAndAge: row?.cardSourceAndAge(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? [:],
-                additionalRows: model?.presentationRows[id]?.cardAdditionalRows(at: now, english: preferences.language == .english) ?? [],
+                additionalRows: (model?.presentationRows[id]?.cardAdditionalRows(at: now, english: preferences.language == .english) ?? [])
+                    + Self.usedUpRows(projected, at: now, language: preferences.language),
                 links: currentCardSourceLinks(for: id, at: now),
                 enterLabel: (cardUsesSettings(id) ? EngineRowsText.contextSettings : EngineRowsText.cockpitAction).value(preferences.language),
                 dismissLabel: EngineRowsText.contextClose.value(preferences.language),
                 actionLabel: row?.actionLabel ?? "",
                 redBelow: effectiveRedBelow, at: now)
+    }
+    /// D65: one plain line per general window at 0 % (shown numbers only), under the readout.
+    static func usedUpRows(_ input: DockInstrumentInput, at now: Date, language: SettingsLanguage) -> [DockCardRow] {
+        input.windows.filter(\.isGeneral).compactMap { window in
+            guard DockInstrumentProjection.admittedRemaining(window, in: input, now: now) == 0 else { return nil }
+            let minutes = window.resetsAt.flatMap { $0 > now ? Int(($0.timeIntervalSince(now) / 60).rounded(.up)) : nil }
+            let text = EngineRowsText.quotaUsedUp(period: window.period, label: window.label, resetMinutes: minutes).value(language)
+            return DockCardRow(id: "usedUp:" + window.id, kind: .event, label: "", value: text, tone: .critical)
+        }
     }
     private func cardUsesSettings(_ id: String) -> Bool {
         purpose == .production || model?.presentationRows[id] != nil
@@ -2039,6 +2122,16 @@ struct DockHelpInteraction: Equatable {
         interactionView.setHotNozzle(id, glow: CGColor(srgbRed: glow.red, green: glow.green, blue: glow.blue, alpha: glow.alpha),
                                      blur: QuotaWidgetCardMaterial.hotGlowBlur)
         guard createsNativePanels else { return }
+        placeCardPanel(id)
+    }
+    /// Re-places a shown native card from its ring as painted now (prototype card.js refreshCardPlacement).
+    private func refreshCardPlacement() {
+        guard createsNativePanels, permitted, !retired, !card.isHidden, let id = cardID,
+              cardPanel?.isVisible == true else { return }
+        placeCardPanel(id)
+    }
+    private func placeCardPanel(_ id: String) {
+        let style = Self.prototypeCardStyle // the arrow takes the plate's fill and seam
         if cardPanel == nil {
             let panel = makePanel(); cardPanel = panel
             // The plate's drop shadow (prototype face.css:52 0 8px 24px #0007) comes from the window server.
