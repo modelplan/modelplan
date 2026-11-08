@@ -21,6 +21,7 @@ import {relativeMoment,tok,until} from '../study/rocket-r1/mfd-pages/fmt.js';
 import {tune} from '../study/rocket-r1/mfd-pages/tune.js';
 import {where} from '../study/rocket-r1/mfd-pages/where.js';
 import {shortLabel} from '../study/rocket-r1/short-label.js';
+import {compareSpeedTiers} from './speed-tiers.js';
 import {comparison,compareKeys,compareView,type CompareArgs} from '../study/rocket-r1/mfd-pages/views.js';
 import '../study/rocket-r1/strings/mfd.js';
 type Locale='en'|'zh-CN';
@@ -59,9 +60,9 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const faders=input.faders.slice(0,100).flatMap((v,i)=>{const f=record(v),rec=effort(f?.rec);if(!f||!rec||!Array.isArray(f.e))return [];const rows=f.e.slice(0,5).flatMap(v=>{if(!Array.isArray(v))return [];const label=effort(v[0]),ability=number(v[1]),cost=number(v[2]);return !label?[]:[[label,ability,cost,number(v[3])]];});if(!rows.some(r=>r[0]===rec))return [];
    const live=Array.isArray(details.liveSessions)?details.liveSessions.slice(0,500).flatMap(v=>{const x=record(v),ref=x&&(typeof x.sessionRef==='string'?x.sessionRef:typeof x.ref==='string'?x.ref:null);return x&&ref?[{ref,value:x}]:[]}):[];
    const sessions=Array.isArray(f.sessions)?f.sessions.slice(0,6).flatMap(v=>{const x=record(v),match=x&&typeof x.ref==='string'?live.find(y=>y.ref===x.ref):null;if(!x||!match)return [];const observed=match.value,bound=typeof x.sub==='string'&&typeof observed.subscriptionRef==='string'&&x.sub===observed.subscriptionRef&&accountIds.has(x.sub);return [{sub:bound?accountIds.get(x.sub as string)??'':'',account:bound?safeText(x.account):'',tool:safeText(observed.tool||observed.source),project:safeText(observed.projectLabel||observed.project),effort:effort(observed.effort),fast:typeof observed.fast==='boolean'?observed.fast:null,lastObservedAt:typeof observed.lastObservedAt==='string'?observed.lastObservedAt:typeof observed.lastAt==='string'?observed.lastAt:null,running:false,startedMin:null,endedMin:null}];}):[];
-   const current=sessions[0]?.effort??null,fast=sessions[0]?.fast??null,tier=record(f.tier),speed=number(tier?.speed),cost=number(tier?.cost),otherEntries:Record<string,number>={};for(const x of sessions.slice(1))if(x.effort)otherEntries[x.effort]=(otherEntries[x.effort]??0)+1;
+   const current=sessions[0]?.effort??null,fast=sessions[0]?.fast??null,tier=record(f.tier),speed=number(tier?.speed),cost=number(tier?.cost),harness=safeText(tier?.harness),otherEntries:Record<string,number>={};for(const x of sessions.slice(1))if(x.effort)otherEntries[x.effort]=(otherEntries[x.effort]??0)+1;
    const links=Array.isArray(f.accounts)?f.accounts.flatMap(v=>typeof v==='string'&&accountIds.has(v)?[accountIds.get(v)!]:[]):[];
-   return [{id:'model'+i,sourceId:safeText(f.id),name:safeText(f.name)||safeText(f.short),short:safeText(f.name)?shortLabel(safeText(f.name)):safeText(f.short),rec,e:rows,pinned:pins.includes(safeText(f.id))||(f.pinned===true&&!unpinned.has(safeText(f.id))),live:sessions.length>0,current,currentFast:fast===true,others:otherEntries,tier:fast!==null&&speed!==null&&cost!==null?{speed,cost}:null,accounts:links,sessions}];});const rank=new Map(pins.map((id,i)=>[id,i]));faders.sort((a,b)=>(rank.get(a.sourceId)??Infinity)-(rank.get(b.sourceId)??Infinity));return {accounts,faders};
+   return [{id:'model'+i,sourceId:safeText(f.id),name:safeText(f.name)||safeText(f.short),short:safeText(f.name)?shortLabel(safeText(f.name)):safeText(f.short),rec,e:rows,pinned:pins.includes(safeText(f.id))||(f.pinned===true&&!unpinned.has(safeText(f.id))),live:sessions.length>0,current,currentFast:fast===true,others:otherEntries,tier:speed!==null&&harness?{harness,speed,cost,...(tier?.taskTimeUnknown===true?{taskTimeUnknown:true as const}:{})}:null,accounts:links,sessions}];});const rank=new Map(pins.map((id,i)=>[id,i]));faders.sort((a,b)=>(rank.get(a.sourceId)??Infinity)-(rank.get(b.sourceId)??Infinity));return {accounts,faders};
  }
  type Channel={id:string;current:string|null;base:string;currentFast:boolean};
  function openCompare(c:Channel,trial?:string,fast?:boolean){
@@ -196,7 +197,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // The comparison card on the screen and its own bottom keys (mfd.js screen/renderMfd with VIEWS.compare).
  function paintCompare(d:ReturnType<typeof publicData>,ui:Record<string,unknown>){
   const f=faderInput().faders.find(x=>x.id===compare!.modelId);if(!f){compare=null;return false;}
-  const model={id:f.id,name:f.name,short:f.short||f.name,rec:f.rec,e:f.e,pool:null},view={models:[model],speedTiers:{},sessionRanking:[],accounts:[],now:d.now};
+  const fast=compareSpeedTiers(f,f.tier),model={id:f.id,name:f.name,short:f.short||f.name,rec:f.rec,e:f.e,pool:fast.pool},view={models:[model],speedTiers:fast.speedTiers,sessionRanking:[],accounts:[],now:d.now};
   const args:CompareArgs={modelId:f.id,current:compare!.current,...(compare!.trial?{trial:compare!.trial}:{}),...(compare!.fast!==undefined?{fast:compare!.fast}:{}),currentFast:compare!.currentFast};
   const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=comparison(view,{...ui,scope:null,fill:cmpFill?{cmp:cmpFill}:{}},args);};
   bar.classList.add('dark');for(const {b} of buttons){b.classList.remove('on');b.setAttribute('aria-pressed','false');}
