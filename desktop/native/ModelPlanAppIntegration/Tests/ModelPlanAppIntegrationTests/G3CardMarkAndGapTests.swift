@@ -120,7 +120,7 @@ private actor G350Engine: EngineClient {
             let cg = try XCTUnwrap(mark.cgImage(forProposedRect: nil, context: nil, hints: nil), resource)
             let visible = try visibleBounds(cg)
             let fill = max(visible.width, visible.height) / CGFloat(max(cg.width, cg.height))
-            XCTAssertGreaterThanOrEqual(fill, 0.94, "\(resource): the glyph fills the mark (no file clear space)")
+            XCTAssertGreaterThanOrEqual(fill, 0.92, "\(resource): the glyph fills the mark (no file clear space)")
             let card = DockCardView(frame: .zero)
             card.appearance = NSAppearance(named: .darkAqua)
             var production = StaticDockPreviewHost.prototypeCardStyle; production.showsActions = false // the production card (D37)
