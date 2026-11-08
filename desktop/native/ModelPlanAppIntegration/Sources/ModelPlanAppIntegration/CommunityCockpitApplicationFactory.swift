@@ -195,7 +195,7 @@ struct CockpitUnavailableNotice {
         let e=value.effective
         return .init(theme:owner.appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
             reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames,
-            size:CockpitSize(rawValue:e.cockpitSize.rawValue) ?? .automatic)
+            size:CockpitSize(rawValue:e.cockpitSize.rawValue) ?? .standard)
     }
     func show() {
         wantsVisible=true
@@ -214,7 +214,7 @@ struct CockpitUnavailableNotice {
             }
             owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
                 redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,
-                size:CockpitSize(rawValue:snapshot.preferences.cockpitSize.rawValue) ?? .automatic)
+                size:CockpitSize(rawValue:snapshot.preferences.cockpitSize.rawValue) ?? .standard)
             if let appliedSettings { owner.appearance=cockpitAppearance(appliedSettings) }
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()

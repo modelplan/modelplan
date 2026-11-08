@@ -27,7 +27,7 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertFalse(fitting.forcedClosed)
         XCTAssertEqual(try fit(917).shellState(attached: false).tier, .tall)
     }
-    func placed(width: CGFloat, height: CGFloat, bar: CGFloat, macDock: CGFloat = 0, closed: Bool = false, size: CockpitSize = .automatic) throws -> CockpitShellLayout {
+    func placed(width: CGFloat, height: CGFloat, bar: CGFloat, macDock: CGFloat = 0, closed: Bool = false, size: CockpitSize = .standard) throws -> CockpitShellLayout {
         try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: macDock, width: width, height: height - bar - macDock),
             anchor: .init(x: width - 200, y: height - bar, width: 28, height: bar), shutterClosed: closed, size: size))
     }
@@ -38,22 +38,24 @@ final class ShellLayoutTests: XCTestCase {
         // The same Air at "More Space".
         XCTAssertEqual(try placed(width: 1680, height: 1050, bar: 24).profile, .full)
         // 13-inch notched Air: 919 pt usable fits unless the macOS Dock takes the bottom edge.
-        let notched = try placed(width: 1470, height: 956, bar: 37)
+        let notched = try placed(width: 1470, height: 956, bar: 37, size: .percent100)
         XCTAssertEqual(notched.profile, .full); XCTAssertEqual(notched.scale, 1)
         XCTAssertEqual(notched.frame.height, 911); XCTAssertEqual(notched.frame.minY, 2)
         XCTAssertEqual(try placed(width: 1470, height: 956, bar: 37, macDock: 70).profile, .full)
     }
-    /// CKP-SHELL-07 / owner D51: every MacBook Air shows the full cockpit with its base flames, scaled uniformly
-    /// to the room below the menu bar icon. The macOS Dock at the bottom is about 70 pt at its default size.
+    /// CKP-SHELL-07 / owner D51, D60: every MacBook Air shows the full cockpit with its base flames at the default
+    /// 85 %, or smaller when the room below the menu bar icon is too short. The macOS Dock at the bottom is about
+    /// 70 pt at its default size. Each case also states what 100 % would fit to.
     func testD51EveryAirShowsTheFullCockpitWithItsFlames() throws {
-        let cases: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
-            // width, height, menu bar, Dock, expected scale = (usable - 6) / (877 root + 34 flame reserve)
-            (1440, 900, 24, 0, 870 / 911), (1440, 900, 24, 70, 800 / 911),
-            (1470, 956, 37, 0, 1), (1470, 956, 37, 70, 843 / 911),
-            // The largest Dock (128 pt tiles, about 140 pt) on the smallest Air is still full.
-            (1440, 900, 24, 140, 730 / 911),
+        let cases: [(CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)] = [
+            // width, height, menu bar, Dock, default scale, largest fit = (usable - 6) / (877 root + 34 flame reserve)
+            (1440, 900, 24, 0, 0.85, 870 / 911), (1440, 900, 24, 70, 0.85, 800 / 911),
+            (1470, 956, 37, 0, 0.85, 1), (1470, 956, 37, 70, 0.85, 843 / 911),
+            // The largest Dock (128 pt tiles, about 140 pt) on the smallest Air is still full, below 85 %.
+            (1440, 900, 24, 140, 730 / 911, 730 / 911),
         ]
-        for (width, height, bar, dock, expected) in cases {
+        for (width, height, bar, dock, expected, largest) in cases {
+            XCTAssertEqual(try placed(width: width, height: height, bar: bar, macDock: dock, size: .percent100).scale, largest, accuracy: 1e-9)
             let value = try placed(width: width, height: height, bar: bar, macDock: dock)
             let label = "\(Int(width))x\(Int(height)), Dock \(Int(dock))"
             XCTAssertEqual(value.profile, .full, label); XCTAssertEqual(value.rootHeight, 877, label)
@@ -76,25 +78,27 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(closed.frame.maxY, open.frame.maxY)
         XCTAssertEqual(closed.frame.height, (691 + 34) * open.scale, accuracy: 1e-9)
     }
-    /// D51: below 75 % the short version shows, at 100 % when it fits, as before.
+    /// D51: below 75 % the short version shows, at the chosen size when it fits (D60: 85 % by default).
     func testD51ShortVersionOnlyBelowTheReadableScale() throws {
         let floor = try fit(689)
-        XCTAssertEqual(floor.profile, .compact); XCTAssertEqual(floor.rootHeight, 627); XCTAssertEqual(floor.scale, 1)
+        XCTAssertEqual(floor.profile, .compact); XCTAssertEqual(floor.rootHeight, 627); XCTAssertEqual(floor.scale, 0.85)
         let lowest = try fit(690)
         XCTAssertEqual(lowest.profile, .full); XCTAssertEqual(lowest.scale, 684 / 911, accuracy: 1e-9)
     }
-    /// D51 Settings "Cockpit size": a fixed size is used when it fits, otherwise Automatic for that screen.
-    func testD51FixedSizesFallBackToAutomaticWhenTheyDoNotFit() throws {
-        let tall = try placed(width: 1680, height: 1050, bar: 24)
-        for size in [CockpitSize.percent100, .percent90, .percent80] {
+    /// D51/D60 Settings "Cockpit size" 80 / 85 (default) / 90 / 100 %: drawn at that size when it fits, otherwise
+    /// smaller to fit the screen.
+    func testD60SizesFitOrShrinkToTheScreen() throws {
+        XCTAssertEqual(CockpitSize.standard, .percent85)
+        for size in CockpitSize.allCases {
             let value = try placed(width: 1680, height: 1050, bar: 24, size: size)
-            XCTAssertEqual(value.scale, size.fixedScale); XCTAssertFalse(value.sizeFellBack); XCTAssertEqual(value.profile, .full)
-            XCTAssertEqual(value.frame.maxY, tall.frame.maxY)
+            XCTAssertEqual(value.scale, size.scale); XCTAssertFalse(value.sizeFellBack); XCTAssertEqual(value.profile, .full)
+            XCTAssertEqual(value.frame.maxY, 1050 - 24 - 6)
         }
-        XCTAssertEqual(tall.scale, 1); XCTAssertFalse(tall.sizeFellBack)
-        // 1440x900 with the Dock at the bottom: 80 % fits (729 of 800 pt), 90 % (820) and 100 % do not.
-        let eighty = try placed(width: 1440, height: 900, bar: 24, macDock: 70, size: .percent80)
-        XCTAssertEqual(eighty.scale, 0.8); XCTAssertFalse(eighty.sizeFellBack)
+        // 1440x900 with the Dock at the bottom: 80 % and 85 % fit (729 and 774 of 800 pt), 90 % and 100 % draw at 87.8 %.
+        for size in [CockpitSize.percent80, .percent85] {
+            let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70, size: size)
+            XCTAssertEqual(value.scale, size.scale); XCTAssertFalse(value.sizeFellBack)
+        }
         for size in [CockpitSize.percent90, .percent100] {
             let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70, size: size)
             XCTAssertTrue(value.sizeFellBack); XCTAssertEqual(value.scale, 800 / 911, accuracy: 1e-9); XCTAssertEqual(value.profile, .full)

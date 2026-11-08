@@ -141,10 +141,11 @@ extension CommunityCockpitEntryTests {
             if box == nil { try await Task.sleep(for: .milliseconds(50)) }
         }
         let rects = try XCTUnwrap(box, "the strip must be painted")
-        let content = try XCTUnwrap(window.contentView), height = content.bounds.height
-        XCTAssertTrue(content.hitTest(content.convert(CGPoint(x: rects["brandX"]!, y: height - rects["brandY"]!), to: content.superview)) === region,
+        // D60: the cockpit is drawn at 85 % by default; page points map onto the window by the layout scale.
+        let content = try XCTUnwrap(window.contentView), height = content.bounds.height, k = page.verificationLayout?.scale ?? 1
+        XCTAssertTrue(content.hitTest(content.convert(CGPoint(x: rects["brandX"]! * k, y: height - rects["brandY"]! * k), to: content.superview)) === region,
                       "a press on the free strip reaches the drag region")
-        XCTAssertFalse(content.hitTest(content.convert(CGPoint(x: rects["shutterX"]!, y: height - rects["shutterY"]!), to: content.superview)) === region,
+        XCTAssertFalse(content.hitTest(content.convert(CGPoint(x: rects["shutterX"]! * k, y: height - rects["shutterY"]! * k), to: content.superview)) === region,
                        "the shutter keeps its own input")
         XCTAssertEqual(page.verificationShellState?.attached, true)
         let start = window.frame
@@ -244,7 +245,7 @@ extension CommunityCockpitEntryTests {
             throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
         }
         let cases: [(String, CGRect, CockpitSize?, CGFloat)] = [
-            ("1470x956, Dock at the bottom", CGRect(x: 0, y: 70, width: 1470, height: 849), nil, 843 / 911),
+            ("1470x956, Dock at the bottom (default 85 %)", CGRect(x: 0, y: 70, width: 1470, height: 849), nil, 0.85),
             ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 690), nil, 684 / 911),
             ("80 % chosen live", CGRect(x: 0, y: 0, width: 1680, height: 1026), .percent80, 0.8),
         ]

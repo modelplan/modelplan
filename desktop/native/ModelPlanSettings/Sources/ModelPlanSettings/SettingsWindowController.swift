@@ -35,12 +35,11 @@ enum SettingsWords {
         case "en": pair = ("English", "英语")
         case "hold": pair = ("Hold to ignite", "按住点火")
         case "quick": pair = ("Always quick", "始终快速打开")
-        case "automatic": pair = ("Automatic", "自动")
         default: pair = (raw, raw)
         }
         if key == .dockDisplay && raw == "primary" { return text("Primary display", "主显示器", language) }
         if key == .dockPosition, let fraction = Double(raw) { return String(format: "%.1f %%", fraction * 100) }
-        if key == .redBelow || (key == .cockpitSize && raw != "automatic") { return raw + " %" }
+        if key == .redBelow || key == .cockpitSize { return raw + " %" }
         if key == .reveal || key == .countdown { return raw + " ms" }
         return text(pair.0, pair.1, language)
     }

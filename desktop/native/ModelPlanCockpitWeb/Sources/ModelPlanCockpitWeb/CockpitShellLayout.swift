@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 
-/// Settings "Cockpit size" (owner D51). Automatic fits the whole cockpit to the screen; a fixed size
-/// that does not fit a screen uses Automatic there.
+/// Settings "Cockpit size" (owner D51, D60). The cockpit is drawn at this size, the study layout scaled as one
+/// page; on a screen too short for it, smaller, down to the readable floor. 85 % is the default (D60, option A).
 public enum CockpitSize: String, CaseIterable, Sendable {
-    case automatic, percent100 = "100", percent90 = "90", percent80 = "80"
-    public var fixedScale: CGFloat? {
-        switch self { case .automatic: return nil; case .percent100: return 1; case .percent90: return 0.9; case .percent80: return 0.8 }
+    case percent80 = "80", percent85 = "85", percent90 = "90", percent100 = "100"
+    public static let standard = CockpitSize.percent85
+    public var scale: CGFloat {
+        switch self { case .percent80: return 0.8; case .percent85: return 0.85; case .percent90: return 0.9; case .percent100: return 1 }
     }
 }
 
@@ -27,9 +28,9 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public let scale: CGFloat
     public let rootHeight: CGFloat
     public let frame: CGRect
-    /// A fixed Settings size did not fit this screen, so Automatic was used.
+    /// The chosen size did not fit this screen, so the cockpit is drawn smaller.
     public let sizeFellBack: Bool
-    public static func fit(usable: CGRect, anchor: CGRect, shutterClosed: Bool, size: CockpitSize = .automatic) -> Self? {
+    public static func fit(usable: CGRect, anchor: CGRect, shutterClosed: Bool, size: CockpitSize = .standard) -> Self? {
         guard !usable.isNull, !usable.isInfinite, usable.width.isFinite, usable.height.isFinite, usable.width > 0, usable.height > 40,
               usable.origin.x.isFinite, usable.origin.y.isFinite,
               anchor.origin.x.isFinite, anchor.origin.y.isFinite else { return nil }
@@ -37,21 +38,17 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let top = min(usable.maxY, anchor.minY) - 6
         let available = top - usable.minY
         guard available > 0 else { return nil }
-        func fitting(_ root: CGFloat) -> CGFloat { min(1, usable.width / Self.width, available / (root + Self.baseReserve)) }
-        var profile = CockpitAppearance.Profile.full, forcedClosed = false, fellBack = false
-        var scale: CGFloat
-        if let fixed = size.fixedScale, fixed * Self.width <= usable.width, fixed * (877 + Self.baseReserve) <= available {
-            scale = fixed
-        } else {
-            fellBack = size.fixedScale != nil
-            scale = fitting(877)
-            if scale < Self.minimumFullScale {
-                // The short version, as before D51: open when its root fits, otherwise forced closed.
-                profile = .compact
-                forcedClosed = usable.height - 6 - Self.baseReserve < 627
-                scale = fitting(forcedClosed ? 609 : 627)
-            }
+        // The chosen size, or less when the screen is too short or narrow for it.
+        func fitting(_ root: CGFloat) -> CGFloat { min(size.scale, usable.width / Self.width, available / (root + Self.baseReserve)) }
+        var profile = CockpitAppearance.Profile.full, forcedClosed = false
+        var scale = fitting(877)
+        if scale < Self.minimumFullScale {
+            // The short version, as before D51: open when its root fits, otherwise forced closed.
+            profile = .compact
+            forcedClosed = usable.height - 6 - Self.baseReserve < 627
+            scale = fitting(forcedClosed ? 609 : 627)
         }
+        let fellBack = scale < size.scale
         let closed = shutterClosed || forcedClosed
         let height: CGFloat = profile == .full ? (closed ? 691 : 877) : (closed ? 609 : 627)
         // The scale follows the open root, so closing the shutter never resizes the strip or the canopy.
