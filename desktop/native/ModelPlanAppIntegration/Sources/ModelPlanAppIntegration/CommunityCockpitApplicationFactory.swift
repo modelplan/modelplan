@@ -24,8 +24,8 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"6304b1014f15c17d0b5fba176e57e5db09ef0da3af41b0f2d1fc70f2768469db",
-        "official":"b23c0a10e8d978a8d91d80fadde853bfcb333bb62564e8c8c8ca41690b45413b",
+        "community":"91cfad69c2a40efe18126f79329b758eb4976aaf280e049ca1a92ca7233c45b8",
+        "official":"7842bac9c77e1aecf3c4a28494b0cf555b9bea75acd5c42c24084e8dc4794ae4",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -73,6 +73,8 @@ import ModelPlanDock
                 #endif
                 let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
+                coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
+                coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
@@ -181,6 +183,25 @@ import ModelPlanDock
         CommunityCockpitApplicationFactory.verificationPage?(page)
         #endif
         return page
+    }
+}
+
+/// D64: the cockpit scope and its local day in one small file beside the settings. A consent or store change removes it.
+@MainActor final class FileCockpitScopeMemory: CockpitScopeMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> (key: String, day: String)? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let key = value["scope"] as? String, let day = value["day"] as? String else { return nil }
+        return (key, day)
+    }
+    func save(_ value: (key: String, day: String)?) {
+        guard let value else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": value.key, "day": value.day], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
     }
 }
 

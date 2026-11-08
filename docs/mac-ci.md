@@ -55,6 +55,13 @@ to validate the runner without changing the general switch or launching all
 product checks. Acceptance must verify the assigned runner identity and the
 probe result; an online status alone is insufficient.
 
+## Test build walkthrough
+
+`test-build-walkthrough.yml` is a separate manual workflow on a hosted `macos-15`: it never uses the
+pinned reusable workflow or the dedicated group. It walks a packaged owner test app with synthetic
+data and uploads screenshots and a manifest. See
+[WALKTHROUGH.md](../desktop/native/verification/walkthrough/WALKTHROUGH.md).
+
 ## Merge queue
 
 A PR does not have to merge `main` before it lands. The queue builds "PR + latest
