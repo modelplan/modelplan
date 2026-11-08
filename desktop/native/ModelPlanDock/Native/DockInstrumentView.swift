@@ -44,8 +44,6 @@ enum DockGripInk {
     @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }
     /// Skin-space origin of the view's local coordinates (the hover viewport when one is reserved).
     @_spi(DockResourceChecks) public var layoutOriginForChecks: CGPoint { layoutOrigin }
-    /// Set only by the owner-test option; the appearance reads it when it lays out the rings.
-    public var centresRings = false
     @_spi(DockResourceChecks) public var presentedImageForChecks: CGImage? { failed || community ? nil : image }
     /// G3-32: the text runs of the last full render (fallback marks, readouts, aliases).
     @_spi(DockResourceChecks) public private(set) var presentedTextMetricsForChecks: [DockGlyphMetric] = []
@@ -161,12 +159,20 @@ enum DockGripInk {
     /// The painted clock ring (dot circle plus its back stroke) the card measures its gap and
     /// arrow from, not the smaller nozzle box. View-local points; the nozzle box where no
     /// official skin is shown. Prototype: opus-r7/src/rocket-r1/card.js:154-163 (renderedRing).
+    /// G3-50: the ring as painted now, so a hover-magnified ring (its pose: scaled and moved inward)
+    /// keeps the card's gap and the arrow's 2 pt, as the prototype measures the transformed ring
+    /// (card.js refreshCardPlacement after each magnification write).
     public func cardRingAnchor(_ id: String) -> CGRect? {
         guard !community, !failed, let s = skin?.stations.first(where: { $0.subscriptionID == id }) else { return stationRect(id) }
-        let radius = max(s.diameter / 2, s.clock.radius + s.clock.backWidth / 2)
-        return CGRect(x: s.centre.x - radius - layoutOrigin.x, y: s.centre.y - radius - layoutOrigin.y,
+        var radius = max(s.diameter / 2, s.clock.radius + s.clock.backWidth / 2), centre = s.centre
+        if let pose = nozzlePosesForChecks[id], pose.scale.isFinite, pose.scale > 0, pose.offset.x.isFinite, pose.offset.y.isFinite {
+            radius *= pose.scale; centre.x += pose.offset.x; centre.y += pose.offset.y
+        }
+        return CGRect(x: centre.x - radius - layoutOrigin.x, y: centre.y - radius - layoutOrigin.y,
                       width: 2 * radius, height: 2 * radius)
     }
+    /// Called after the painted nozzle poses change, so a shown card can follow its ring.
+    public var onNozzlePosesChanged: (() -> Void)?
     /// Registered visible reading geometry for the Help-map owner, in view-local points.
     public func helpReadoutAnchor(_ id: String) -> CGRect? {
         guard !community, !failed, let skin, readings[id] != nil,
@@ -498,7 +504,7 @@ enum DockGripInk {
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
@@ -553,6 +559,7 @@ enum DockGripInk {
         }
         CATransaction.commit()
         needsDisplay = true
+        onNozzlePosesChanged?()
     }
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.

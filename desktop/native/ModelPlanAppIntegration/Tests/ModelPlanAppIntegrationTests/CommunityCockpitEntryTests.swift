@@ -193,16 +193,23 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertNil(app.composition.store.snapshot.rows)
         await app.composition.stop()
     }
+    /// The manifest pins are generated at build time from the canonical build (check-bundle-pins.py) into a
+    /// gitignored Swift file; U11 native builds and generates before it compiles this test. Without them
+    /// the factory has no pins, so it admits no cockpit page at all.
     @MainActor func testProductionPinsAdmitCanonicalBundles() async throws {
+        guard !CommunityCockpitApplicationFactory.manifestPins.isEmpty else {
+            throw XCTSkip("Built without generated cockpit pins (check-bundle-pins.py)")
+        }
+        XCTAssertEqual(Set(CommunityCockpitApplicationFactory.manifestPins.keys), ["community", "official"])
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
             if FileManager.default.fileExists(atPath: repo.appendingPathComponent("desktop/cockpit/build.mjs").path) { break }
             repo.deleteLastPathComponent()
         }
         let builds = repo.appendingPathComponent("desktop/cockpit/.tmp")
-        guard FileManager.default.fileExists(atPath: builds.appendingPathComponent("community/bundle-manifest.json").path),
-              FileManager.default.fileExists(atPath: builds.appendingPathComponent("official/bundle-manifest.json").path)
-        else { throw XCTSkip("Build both canonical cockpit editions before running the admission check") }
+        // The generated pins exist only after both editions were built, so a missing build is a failure here.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: builds.appendingPathComponent("community/bundle-manifest.json").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: builds.appendingPathComponent("official/bundle-manifest.json").path))
         for edition in ["community", "official"] {
             let pin = try XCTUnwrap(CommunityCockpitApplicationFactory.manifestPins[edition])
             let bundle = try VerifiedCockpitBundle(root: builds.appendingPathComponent(edition), manifestSHA256: pin, allowOfficial: edition == "official")
@@ -380,6 +387,17 @@ final class CommunityCockpitEntryTests:XCTestCase {
     }
 
     /// glm-660-3: the cockpit's own close button ends in the page's onClosed, not in `hide()`; the field panel closes with it.
+    /// D49 review (#695): the widget stays at `.floating` under the cockpit, and every window the cockpit
+    /// brings up is not hidden behind it. The snap guide shares its level so it can sit just below it.
+    @MainActor func testD49WindowsAroundTheCockpitStackInOrder() {
+        let cockpit = CockpitWindowController.panelLevel.rawValue
+        XCTAssertGreaterThan(cockpit, NSWindow.Level.floating.rawValue, "the cockpit opens above the widget")
+        XCTAssertLessThan(cockpit, NSWindow.Level.statusBar.rawValue, "a widget being dragged still rises above it")
+        XCTAssertGreaterThan(CockpitFieldPanel.level.rawValue, cockpit, "the launch field opens above the cockpit")
+        XCTAssertGreaterThan(DockHelpPresenter.overlayLevel.rawValue, cockpit, "Help draws above the cockpit")
+        XCTAssertEqual(CockpitWindowController.snapGuideLevel.rawValue, cockpit, "the snap guide orders just below the cockpit")
+    }
+
     @MainActor func testTheCockpitsOwnCloseAlsoClosesTheField() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-field-close-"+UUID().uuidString)
         try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
@@ -420,6 +438,36 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertTrue(surface.fieldIsOpen)
         page.discard()
         XCTAssertFalse(surface.fieldIsOpen,"The cockpit's own close closes the field")
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
+    /// G3-40 / MENU-07: the production console behind the icon. The toggle goes through the page's close,
+    /// a close during the wait for a page cancels the open, and the console can open again afterwards.
+    @MainActor func testG3_40ConsoleToggleClosesThePageAndOpensAgain() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-toggle-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        let sessionID=UUID(),sink=ClearSink();var made=0
+        let coordinator=EngineCockpitCoordinator { _ in made+=1;return ClearingPage(try .init(sessionID:sessionID,storeEpoch:"synthetic",generation:1),sink:sink) }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        let context=EngineDeliveryContext(sessionID:"s-"+sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context))
+        XCTAssertFalse(surface.isShowing)
+        surface.show();XCTAssertTrue(surface.isShowing)
+        surface.requestClose();XCTAssertFalse(surface.isShowing,"A close before the page exists cancels the open")
+        try await Task.sleep(for:.milliseconds(50));XCTAssertEqual(made,0)
+        surface.show()
+        for _ in 0..<200 where made==0 { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertEqual(made,1);XCTAssertTrue(surface.isShowing)
+        surface.requestClose()
+        XCTAssertFalse(surface.isShowing,"The second click closes the open page")
+        surface.show()
+        for _ in 0..<200 where made==1 { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertEqual(made,2,"The next click opens a new page");XCTAssertTrue(surface.isShowing)
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
 

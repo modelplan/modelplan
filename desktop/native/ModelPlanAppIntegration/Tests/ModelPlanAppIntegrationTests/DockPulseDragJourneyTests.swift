@@ -240,13 +240,13 @@ import ModelPlanShell
             UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": mode])
             for releasing in [false, true] {
                 let topology = DragTopology()
-                var clock = 0.0, cockpitClosed = true
+                var clock = 0.0, widgetEnabled = true
                 let original = DockEdgePreference(displayID: topology.a.id)
                 let controller = DockEdgeController(preference: original, clock: { clock },
                     scheduler: DragSchedule(), read: {
                         var sample = topology.read()
                         sample.presence.autoHide = false
-                        sample.presence.cockpitClosed = cockpitClosed
+                        sample.presence.enabled = widgetEnabled
                         sample.layouts = sample.displays.flatMap { display in
                             DockEdgeGeometry.allowedEdges.map { edge in
                                 DockEdgeLayout(displayID: display.id, edge: edge, expandedSize: CGSize(width: 80, height: 160),
@@ -272,12 +272,12 @@ import ModelPlanShell
 
                 // A new sample can observe suppression during destination preparation,
                 // before the next normal visibility event is delivered.
-                controller.prepareDragDisplay = { _ in cockpitClosed = false }
+                controller.prepareDragDisplay = { _ in widgetEnabled = false }
                 let target = CGPoint(x: topology.b.frame.midX, y: topology.b.frame.midY)
                 if releasing { controller.endBackgroundMove(global: target) }
                 else { controller.updateBackgroundMove(global: target) }
 
-                XCTAssertEqual(controller.presentation?.state, .suppressed(.cockpit))
+                XCTAssertEqual(controller.presentation?.state, .suppressed(.userHidden))
                 XCTAssertFalse(controller.isBackgroundPressed)
                 XCTAssertTrue(presents.allSatisfy { $0.paintedFrame == nil }, "Suppression must not flash a carried or resting frame")
                 XCTAssertTrue(commits.isEmpty, "A newly blocked release must not save")
