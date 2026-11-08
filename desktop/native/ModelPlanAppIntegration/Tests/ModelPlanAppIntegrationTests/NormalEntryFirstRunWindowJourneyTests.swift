@@ -79,6 +79,7 @@ import ModelPlanWire
         XCTAssertTrue(first.scopeConsentEntry.controller.isOnByDefault("codex.local_history"))
         XCTAssertFalse(first.scopeConsentEntry.controller.isOnByDefault("cursor.browser_session"), "browser sessions ask when first needed")
         // Settings lists the same reader as on, with an on switch; turning it off is a confirmed revoke.
+        first.scopeConsentEntry.view.setPathDetailsExpanded(true) // the per-path rows sit behind a disclosure
         let settingsViews = descendants(first.scopeConsentEntry.view)
         let settingsSwitch = try XCTUnwrap(settingsViews.first { $0.accessibilityIdentifier() == "scope.allow.codex.local_history" } as? NSButton)
         XCTAssertEqual(settingsSwitch.state, .on, "a default-on reader shows on in Settings")
