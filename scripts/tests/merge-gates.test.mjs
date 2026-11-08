@@ -506,4 +506,15 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
     .map((f) => /^name:\s*(.+)$/m.exec(readFileSync(join(dir, f), "utf8"))?.[1].trim()));
   const listed = /workflows:\n((?:\s+- .+\n)+)/.exec(gates)[1].split("\n").map((l) => l.replace(/^\s+- /, "").trim()).filter(Boolean);
   for (const n of listed) assert.ok(names.has(n), `workflow_run lists unknown workflow '${n}'`);
+  // The probe skips new-head events, so the workflows that always run on them must re-evaluate the head.
+  for (const [file, name] of [["ci.yml", "ci"], ["repo-checks.yml", "repo checks"]]) {
+    const text = readFileSync(join(dir, file), "utf8");
+    assert.ok(listed.includes(name), `merge-gates must re-evaluate when ${name} completes`);
+    const types = /^  pull_request:\n(?:    #.*\n)*    types: \[(.*)\]$/m.exec(text)?.[1].split(/,\s*/) ?? [];
+    for (const t of ["opened", "synchronize", "reopened", "ready_for_review"]) assert.ok(types.includes(t), `${file} must run on ${t}`);
+    assert.doesNotMatch(/^  pull_request:\n(?:    .*\n)*/m.exec(text)[0], /paths:/, `${file} must run for every PR`);
+  }
+  // A run skipped by the job's `if:` must not cancel a live evaluation: the concurrency group sits on the job.
+  assert.doesNotMatch(gates, /^concurrency:/m);
+  assert.match(gates, /^    concurrency:\n      group: merge-gates-/m);
 });
