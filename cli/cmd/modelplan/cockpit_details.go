@@ -245,6 +245,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		}
 		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
 	}
+	if appserver.CockpitSessionsEnabled(ctx) {
+		result.RecentSessions = cockpitRecentSessions(perf.Ledger.Sessions, allowed, sourceScope, byRef, labels, view.PublicModels, now)
+	}
 	inUse := map[string]bool{}
 	for _, session := range result.Sessions {
 		inUse[session.Model] = true

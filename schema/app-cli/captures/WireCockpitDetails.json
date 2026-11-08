@@ -142,5 +142,16 @@
       "basis": "recent-rate",
       "observedAt": "2026-10-29T12:00:00.123456789Z"
     }
+  ],
+  "recentSessions": [
+    {
+      "sessionRef": "0123456789abcdef",
+      "source": "synthetic",
+      "subscriptionRef": "0123456789abcdef",
+      "model": "synthetic",
+      "effort": "synthetic",
+      "projectLabel": "synthetic",
+      "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
+    }
   ]
 }

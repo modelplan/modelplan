@@ -87,6 +87,14 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const member=x.subscriptionRef?members.find(m=>m.key===x.subscriptionRef):undefined;
    return [{ref:x.sessionRef,sub:member?ids.get(member.key)??null:null,tool:x.source,model:x.model,effort:x.effort,fast:false,project:x.projectLabel??'--',running:x.state==='running',startedAt:null,endedAt:null,lastAt:at,tokens:null}];});
  }
+ // D63: the 7-day time view adds the recorded sessions (cockpitSessionsV1) that are not live now. Each shows its last
+ // sighting only: no end time, title or token count.
+ function recentSeen(members:ReturnType<typeof cockpitMembers>,ids:Map<string,string>,live:ReadonlySet<string>){
+  const detail=data?.details;if(!detail?.recentSessions||detail.sessionCoverage!=='local-last-seen')return [];
+  return detail.recentSessions.slice(0,200).flatMap(x=>{const at=Date.parse(x.lastObservedAt);if(!Number.isFinite(at)||live.has(x.sessionRef))return [];
+   const member=x.subscriptionRef?members.find(m=>m.key===x.subscriptionRef):undefined;
+   return [{ref:x.sessionRef,sub:member?ids.get(member.key)??null:null,tool:x.source,model:x.model,effort:x.effort,fast:false,project:x.projectLabel??'--',running:false,startedAt:null,endedAt:null,lastAt:at,tokens:null}];});
+ }
  function publicData(now=renderedNow){
   const members=data?cockpitMembers(data):[],ids=new Map(members.map((m,i)=>[m.key,'member'+i]));
   const colours:Readonly<Record<string,string>>={openai:'#6aa8ff',claude:'#ff9a6a',cursor:'#eef2f6',copilot:'#c08cff',kimi:'#ff8fcf',glm:'#8f7dff',opencode:'#b5d65a'};
@@ -97,7 +105,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text})=>({level,text}));
   // Public model data for the frontier (owner D39/D-B): the shared selection for this scope, ten at most.
   const published=publishedFleet(data,scope,now);
-  return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),sessionRanking:lastSeen(members,ids),models:published,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published},empty:accounts.length===0,ids,members};
+  return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),sessionRanking:(()=>{const live=lastSeen(members,ids);return [...live,...recentSeen(members,ids,new Set(live.map(x=>x.ref)))];})(),models:published,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published},empty:accounts.length===0,ids,members};
  }
  function paint(keepFaders=false,now?:number){
   if(now!==undefined)renderedNow=now;

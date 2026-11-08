@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 09bec3aa8af975dfb325f5aac54073f413c79d23f71c790d54b23920897427f4
+// Schema SHA-256: 73555d87e37c7036f3ecf61906acca31bc281df7247eb207dde9d536ae5f2703
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -89,6 +89,7 @@ export type WireCockpitDetails = {
   readonly "forecasts"?: ReadonlyArray<WireCockpitForecast>;
   readonly "publication"?: WireCockpitPublication | null;
   readonly "publishedModels"?: ReadonlyArray<WireCockpitPublicationModel>;
+  readonly "recentSessions"?: ReadonlyArray<WireCockpitRecentSession>;
   readonly "resetEvents": ReadonlyArray<WireResetEvent>;
   readonly "sessionCoverage": string;
   readonly "sessions": ReadonlyArray<WireCockpitSession>;
@@ -197,6 +198,16 @@ export type WireCockpitRankedProject = {
   readonly "observedOutputTokens": number;
   readonly "ref": string;
   readonly "share": number;
+};
+
+export type WireCockpitRecentSession = {
+  readonly "effort": string | null;
+  readonly "lastObservedAt": string;
+  readonly "model": string;
+  readonly "projectLabel": string | null;
+  readonly "sessionRef": string;
+  readonly "source": string;
+  readonly "subscriptionRef": string | null;
 };
 
 export type WireCockpitResetCount = {
@@ -898,6 +909,13 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "maxItems": 256,
         "type": "array"
       },
+      "recentSessions": {
+        "items": {
+          "$ref": "#/$defs/CockpitRecentSession"
+        },
+        "maxItems": 200,
+        "type": "array"
+      },
       "resetEvents": {
         "items": {
           "$ref": "#/$defs/ResetEvent"
@@ -1490,6 +1508,68 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "effort",
       "observedOutputTokens",
       "share"
+    ],
+    "type": "object"
+  },
+  "CockpitRecentSession": {
+    "additionalProperties": false,
+    "properties": {
+      "effort": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "lastObservedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "model": {
+        "type": "string"
+      },
+      "projectLabel": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sessionRef": {
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$",
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "subscriptionRef": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$"
+      }
+    },
+    "required": [
+      "sessionRef",
+      "source",
+      "subscriptionRef",
+      "model",
+      "effort",
+      "projectLabel",
+      "lastObservedAt"
     ],
     "type": "object"
   },

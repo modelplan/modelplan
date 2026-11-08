@@ -712,6 +712,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "forbidden"
+        },
+        {
+          "field": "recentSessions",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -996,6 +1004,42 @@
         "ref",
         "observedOutputTokens",
         "share"
+      ]
+    },
+    {
+      "file": "WireCockpitRecentSession.json",
+      "type": "WireCockpitRecentSession",
+      "optional": [
+        {
+          "field": "subscriptionRef",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectLabel",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "sessionRef",
+        "source",
+        "model",
+        "lastObservedAt"
       ]
     },
     {

@@ -537,6 +537,13 @@
           "maxItems": 256,
           "type": "array"
         },
+        "recentSessions": {
+          "items": {
+            "$ref": "#/$defs/CockpitRecentSession"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
         "resetEvents": {
           "items": {
             "$ref": "#/$defs/ResetEvent"
@@ -1129,6 +1136,68 @@
         "effort",
         "observedOutputTokens",
         "share"
+      ],
+      "type": "object"
+    },
+    "CockpitRecentSession": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastObservedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "projectLabel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$"
+        }
+      },
+      "required": [
+        "sessionRef",
+        "source",
+        "subscriptionRef",
+        "model",
+        "effort",
+        "projectLabel",
+        "lastObservedAt"
       ],
       "type": "object"
     },

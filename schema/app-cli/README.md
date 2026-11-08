@@ -269,6 +269,14 @@ Clients can declare `cockpitModelsV1`, together with `cockpitDetailsV1`, to rece
 order, for the launch field and the frontier. `details.publication` keeps its
 three-model lineup. Without the capability the field is omitted.
 
+Clients can declare `cockpitSessionsV1`, together with `cockpitDetailsV1`, to receive
+`details.recentSessions`: the sessions this device recorded with a last sighting within the past
+seven days, newest first, at most 200, from admitted sources only. Each has its reference, source,
+published model ID (or `unknown`), the effort reported on its last recorded day, the project label
+while project labels are on, a subscription only under a verified binding, and `lastObservedAt`,
+which is a last sighting, never an end time. There are no titles or token counts. Without the
+capability the field is omitted.
+
 Clients can declare `cockpitHistoryV1` to receive `history` from `cockpit/query`:
 7/30-day sums per subscription and source, model and tool rankings, `daily` (last
 182 local days from `dailyFrom`) and `hourly` (last 48 local hours) buckets per

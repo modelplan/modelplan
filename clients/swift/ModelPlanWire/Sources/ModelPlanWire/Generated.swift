@@ -2134,6 +2134,7 @@ public struct WireCockpitDetails: Codable, Sendable {
     public let `alerts`: [WireCockpitAlert]
     public let `publishedModels`: [WireCockpitPublicationModel]?
     public let `forecasts`: [WireCockpitForecast]?
+    public let `recentSessions`: [WireCockpitRecentSession]?
     private enum CodingKeys: String, CodingKey {
         case `publication`
         case `version`
@@ -2145,8 +2146,9 @@ public struct WireCockpitDetails: Codable, Sendable {
         case `alerts`
         case `publishedModels`
         case `forecasts`
+        case `recentSessions`
     }
-    public init(`publication`: WireCockpitPublication? = nil, `version`: Int, `sources`: [String], `subscriptions`: [WireCockpitSubscriptionDetails], `sessions`: [WireCockpitSession], `sessionCoverage`: String, `resetEvents`: [RowsResetEvent], `alerts`: [WireCockpitAlert], `publishedModels`: [WireCockpitPublicationModel]? = nil, `forecasts`: [WireCockpitForecast]? = nil) throws {
+    public init(`publication`: WireCockpitPublication? = nil, `version`: Int, `sources`: [String], `subscriptions`: [WireCockpitSubscriptionDetails], `sessions`: [WireCockpitSession], `sessionCoverage`: String, `resetEvents`: [RowsResetEvent], `alerts`: [WireCockpitAlert], `publishedModels`: [WireCockpitPublicationModel]? = nil, `forecasts`: [WireCockpitForecast]? = nil, `recentSessions`: [WireCockpitRecentSession]? = nil) throws {
         self.`publication` = `publication`
         self.`version` = `version`
         self.`sources` = `sources`
@@ -2157,6 +2159,7 @@ public struct WireCockpitDetails: Codable, Sendable {
         self.`alerts` = `alerts`
         self.`publishedModels` = `publishedModels`
         self.`forecasts` = `forecasts`
+        self.`recentSessions` = `recentSessions`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -2174,6 +2177,8 @@ public struct WireCockpitDetails: Codable, Sendable {
         self.`publishedModels` = try c.decodeIfPresent([WireCockpitPublicationModel].self, forKey: .`publishedModels`)
         if c.contains(.`forecasts`), try c.decodeNil(forKey: .`forecasts`) { throw WireDecodeError.invalidIdentity }
         self.`forecasts` = try c.decodeIfPresent([WireCockpitForecast].self, forKey: .`forecasts`)
+        if c.contains(.`recentSessions`), try c.decodeNil(forKey: .`recentSessions`) { throw WireDecodeError.invalidIdentity }
+        self.`recentSessions` = try c.decodeIfPresent([WireCockpitRecentSession].self, forKey: .`recentSessions`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -2189,6 +2194,7 @@ public struct WireCockpitDetails: Codable, Sendable {
         try c.encode(`alerts`, forKey: .`alerts`)
         try c.encodeIfPresent(`publishedModels`, forKey: .`publishedModels`)
         try c.encodeIfPresent(`forecasts`, forKey: .`forecasts`)
+        try c.encodeIfPresent(`recentSessions`, forKey: .`recentSessions`)
     }
     private func validate() throws {
         guard `version` >= 1 else { throw WireDecodeError.invalidBound }
@@ -2750,6 +2756,61 @@ public struct WireCockpitRankedProject: Codable, Sendable {
         try c.encode(`share`, forKey: .`share`)
     }
     private func validate() throws {
+    }
+}
+
+public struct WireCockpitRecentSession: Codable, Sendable {
+    public let `sessionRef`: String
+    public let `source`: String
+    public let `subscriptionRef`: String?
+    public let `model`: String
+    public let `effort`: String?
+    public let `projectLabel`: String?
+    public let `lastObservedAt`: WireTimestamp
+    private enum CodingKeys: String, CodingKey {
+        case `sessionRef`
+        case `source`
+        case `subscriptionRef`
+        case `model`
+        case `effort`
+        case `projectLabel`
+        case `lastObservedAt`
+    }
+    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp) throws {
+        self.`sessionRef` = `sessionRef`
+        self.`source` = `source`
+        self.`subscriptionRef` = `subscriptionRef`
+        self.`model` = `model`
+        self.`effort` = `effort`
+        self.`projectLabel` = `projectLabel`
+        self.`lastObservedAt` = `lastObservedAt`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`sessionRef` = try c.decode(String.self, forKey: .`sessionRef`)
+        self.`source` = try c.decode(String.self, forKey: .`source`)
+        self.`subscriptionRef` = try c.decodeIfPresent(String.self, forKey: .`subscriptionRef`)
+        self.`model` = try c.decode(String.self, forKey: .`model`)
+        self.`effort` = try c.decodeIfPresent(String.self, forKey: .`effort`)
+        self.`projectLabel` = try c.decodeIfPresent(String.self, forKey: .`projectLabel`)
+        self.`lastObservedAt` = try c.decode(WireTimestamp.self, forKey: .`lastObservedAt`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`sessionRef`, forKey: .`sessionRef`)
+        try c.encode(`source`, forKey: .`source`)
+        try c.encode(`subscriptionRef`, forKey: .`subscriptionRef`)
+        try c.encode(`model`, forKey: .`model`)
+        try c.encode(`effort`, forKey: .`effort`)
+        try c.encode(`projectLabel`, forKey: .`projectLabel`)
+        try c.encode(`lastObservedAt`, forKey: .`lastObservedAt`)
+    }
+    private func validate() throws {
+        try WireValidation.reference(`sessionRef`)
+        if let value = `subscriptionRef` { try WireValidation.reference(value) }
     }
 }
 

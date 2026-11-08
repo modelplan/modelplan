@@ -101,10 +101,20 @@ extension CommunityCockpitEntryTests {
              "startedAt": at(-10), "lastAt": at(last), "running": running,
              "grantEpoch": ["storeEpoch": epoch, "revokedGeneration": 0]]
         }
-        let ledger: [String: Any] = ["schemaVersion": 1, "since": at(-3600), "rows": [], "live": [
+        // D63: recorded sessions for the 7-day view (cockpitSessionsV1); an unadmitted source stays out.
+        func recorded(_ ref: String, source: String, last: Double) -> [String: Any] {
+            ["ref": ref, "key": "synthetic-" + ref, "source": source, "firstAt": at(last - 600), "lastAt": at(last),
+             "days": [["day": "2026-11-01", "model": "unverified-synthetic-alias", "effortStatus": "reported", "effort": "high", "observedRequests": 1, "observedOutputTokens": 10]],
+             "grantEpoch": ["storeEpoch": epoch, "revokedGeneration": 0]]
+        }
+        let ledger: [String: Any] = ["schemaVersion": 1, "since": at(-9 * 86400), "rows": [], "live": [
             record("1111111111111111", source: "codex", running: true, last: -1),
             record("2222222222222222", source: "codex", running: false, last: -3),
             record("3333333333333333", source: "claude-code", running: true, last: -1)
+        ], "sessions": [
+            recorded("4444444444444444", source: "codex", last: -2 * 86400),
+            recorded("5555555555555555", source: "codex", last: -8 * 86400),
+            recorded("6666666666666666", source: "claude-code", last: -3600)
         ]]
         try JSONSerialization.data(withJSONObject: ledger).write(to: cache.appendingPathComponent("perf.json"))
 
@@ -134,6 +144,9 @@ extension CommunityCockpitEntryTests {
             XCTAssertEqual(details.sessions.map(\.state), ["running", "idle"])
             XCTAssertEqual(details.sessions.map(\.model), ["unknown", "unknown"])
             XCTAssertTrue(details.sessions.allSatisfy { $0.rate == nil })
+            XCTAssertEqual(details.recentSessions?.map(\.sessionRef), ["4444444444444444"],
+                           "The negotiated 7-day list carries only admitted sessions seen within seven days")
+            XCTAssertEqual(details.recentSessions?.first?.effort, "high")
             await app.composition.stop()
             XCTAssertTrue(surface.cleared, "The normal engine stop must clear the page")
             XCTAssertNil(surface.details)

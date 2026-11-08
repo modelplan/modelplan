@@ -47,6 +47,22 @@ type CockpitDetails struct {
 	PublishedModels []CockpitPublicationModel `json:"publishedModels,omitempty" schema:"maxItems=256" null:"forbidden"`
 	// Forecasts is present only for a client that negotiated cockpitForecastV1.
 	Forecasts []CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
+	// RecentSessions is present only for a client that negotiated cockpitSessionsV1: the sessions this
+	// device last observed within the past seven days, newest first. LastObservedAt is a last sighting,
+	// never an end time; there are no titles or token counts.
+	RecentSessions []CockpitRecentSession `json:"recentSessions,omitempty" schema:"maxItems=200" null:"forbidden"`
+}
+
+// CockpitRecentSession is one recorded session. Model is a published model ID or "unknown";
+// SubscriptionRef is set only under a binding the cockpit already verified.
+type CockpitRecentSession struct {
+	SessionRef      string    `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Source          string    `json:"source"`
+	SubscriptionRef *string   `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
+	Model           string    `json:"model"`
+	Effort          *string   `json:"effort" null:"coalesced"`
+	ProjectLabel    *string   `json:"projectLabel" null:"coalesced"`
+	LastObservedAt  time.Time `json:"lastObservedAt"`
 }
 
 // CockpitForecast is the engine's outlook for one current window. RunsOutAt is
