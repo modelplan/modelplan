@@ -41,21 +41,36 @@ function seenEfforts(models:readonly HudModel[]) {
  for(const m of models){const row=m.latestEffort?m.e.find(r=>r[0].toLowerCase()===m.latestEffort!.toLowerCase()):undefined;if(row)seen.set(m.id,row);}
  return seen;
 }
-/** One point per model at ★: log cost from the cheapest ★, linear ability. */
-export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,readonly [string,number,number,number]>,width:number,height:number,label:string) {
+/** One point per model at ★: log cost relative to the cheapest ★, linear ability, as the study's hud-selection/chart.js
+ * draws it (axis corner, "Ability ↑" and "Cost ×" captions, rank numbers on the first three points). No names inside. */
+export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,readonly [string,number,number,number]>,width:number,height:number,label:string,captions:{ability:string;cost:string}={ability:'Ability',cost:'Cost'}) {
  const root=svg('svg',{class:'hud-mini',viewBox:`0 0 ${width} ${height}`,width,height,role:'img','aria-label':label});
- const stars=models.filter(m=>m.sel[2]>0);if(!stars.length)return root;
- const all=[...stars.map(m=>m.sel),...seen.values()].filter(r=>r[2]>0),pad=5;
- const low=Math.min(...all.map(r=>Math.log10(r[2]))),span=Math.max(...all.map(r=>Math.log10(r[2])))-low||1;
- const bottom=Math.min(...all.map(r=>r[1])),rise=Math.max(...all.map(r=>r[1]))-bottom||1;
- const X=(r:readonly [string,number,number,number])=>pad+(Math.log10(r[2])-low)/span*(width-2*pad),Y=(r:readonly [string,number,number,number])=>height-pad-(r[1]-bottom)/rise*(height-2*pad);
- const front:FieldModel[]=[];let best=-Infinity;for(const m of [...stars].sort((a,b)=>a.sel[2]-b.sel[2]))if(m.sel[1]>best){front.push(m);best=m.sel[1];}
- const leaders=new Set(front.map(m=>m.id));
- root.append(svg('polyline',{class:'hud-front',points:front.map(m=>`${X(m.sel).toFixed(1)},${Y(m.sel).toFixed(1)}`).join(' ')}));
- for(const m of stars){
-  const row=seen.get(m.id);
-  if(row&&row!==m.sel&&row[0]!==m.sel[0]&&row[2]>0){root.append(svg('line',{class:'hud-link',x1:X(m.sel).toFixed(1),y1:Y(m.sel).toFixed(1),x2:X(row).toFixed(1),y2:Y(row).toFixed(1)}),svg('circle',{class:'hud-cur',cx:X(row).toFixed(1),cy:Y(row).toFixed(1),r:2.2}));}
-  root.append(svg('circle',{class:'hud-dot'+(leaders.has(m.id)?'':' dominated'),cx:X(m.sel).toFixed(1),cy:Y(m.sel).toFixed(1),r:2.6,'data-hud-model':m.id,'data-hud-name':m.name}));
+ type Row=readonly [string,number,number,number];
+ const valid=(r:Row|undefined):r is Row=>!!r&&Number.isFinite(r[1])&&r[2]>0;
+ const points=models.flatMap((m,i)=>{if(!valid(m.sel))return [];const row=seen.get(m.id),c=row&&row!==m.sel&&row[0]!==m.sel[0]&&valid(row)?row:null;return [{m,i,r:m.sel,c}];});
+ if(!points.length)return root;
+ const base=Math.min(...points.map(p=>p.r[2])),values=points.flatMap(p=>p.c?[p.r,p.c]:[p.r]);
+ const lx0=Math.min(0,...values.map(r=>Math.log2(r[2]/base))),lx1=Math.max(1,Math.ceil(Math.max(...values.map(r=>Math.log2(r[2]/base)))));
+ const a0=Math.floor((Math.min(...values.map(r=>r[1]))-4)/5)*5,a1=Math.ceil((Math.max(...values.map(r=>r[1]))+4)/5)*5;
+ const L=8,R=9,T=6,B=12,X=(r:Row)=>L+(Math.log2(r[2]/base)-lx0)/(lx1-lx0)*(width-L-R),Y=(r:Row)=>T+(a1-r[1])/(a1-a0)*(height-T-B);
+ const f=(v:number)=>v.toFixed(1);
+ root.append(svg('path',{class:'hud-axis',d:`M${L} ${T}V${height-B}H${width-R}`}));
+ const ability=svg('text',{class:'hud-axis-label',x:1,y:height-1});ability.textContent=captions.ability+' ↑';
+ const cost=svg('text',{class:'hud-axis-label',x:width-1,y:height-1,'text-anchor':'end'});cost.textContent=captions.cost+' ×';
+ root.append(ability,cost);
+ const front:typeof points=[];for(const p of [...points].sort((a,b)=>a.r[2]-b.r[2]||b.r[1]-a.r[1]))if(!front.length||p.r[1]>front.at(-1)!.r[1])front.push(p);
+ const leaders=new Set(front.map(p=>p.m.id));
+ root.append(svg('polyline',{class:'hud-front',points:front.map(p=>`${f(X(p.r))},${f(Y(p.r))}`).join(' ')}));
+ const placed:[number,number][]=[];
+ for(const p of points){
+  if(p.c)root.append(svg('line',{class:'hud-link',x1:f(X(p.r)),y1:f(Y(p.r)),x2:f(X(p.c)),y2:f(Y(p.c))}),svg('circle',{class:'hud-cur',cx:f(X(p.c)),cy:f(Y(p.c)),r:2.2}));
+  root.append(svg('circle',{class:'hud-dot'+(leaders.has(p.m.id)?'':' dominated'),cx:f(X(p.r)),cy:f(Y(p.r)),r:2.6,'data-hud-model':p.m.id,'data-hud-name':p.m.name}));
+  if(p.i>=3)continue;
+  // The rank sits beside its point, in the first free spot that stays inside the chart (chart.js ranks()).
+  const x=X(p.r),y=Y(p.r),spots:[number,number][]=[[x+5,y-3],[x+5,y+9],[x-10,y-3],[x-10,y+9]];
+  const spot=spots.find(([a,b])=>a>=0&&a+9<width&&b>=9&&b<height-B+3&&!placed.some(([c,d])=>Math.abs(c-a)<9&&Math.abs(d-b)<10))??[Math.max(1,Math.min(width-10,x+4)),Math.max(9,y-3)];
+  placed.push(spot);
+  const rank=svg('text',{class:'hud-rank'+(leaders.has(p.m.id)?'':' dominated'),x:f(spot[0]),y:f(spot[1])});rank.textContent=String(p.i+1);root.append(rank);
  }
  return root;
 }
@@ -64,7 +79,7 @@ export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,co
  host.replaceChildren();host.hidden=!!options.closed||!rows.length;host.classList.toggle('hud-b',!compact);host.classList.toggle('hud-strip',compact);if(host.hidden)return;
  host.setAttribute('role','group');host.setAttribute('aria-label',locale==='en'?'Published models':'已发布模型');
  // G3-48: the compact strip follows the study at 640 (86x30 chart, then three 10 px rows), not three columns.
- const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),compact?86:162,compact?30:77,locale==='en'?'Ability against cost at each recommended effort':'各推荐档位的能力与成本'));host.append(chart);
+ const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),compact?86:162,compact?30:77,locale==='en'?'Ability against cost at each recommended effort':'各推荐档位的能力与成本',locale==='en'?{ability:'Ability',cost:'Cost'}:{ability:'能力',cost:'成本'}));host.append(chart);
  const list=document.createElement('div');list.className='hud-list';
  for(const [i,m] of rows.entries()){
   const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(!compact&&m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;
