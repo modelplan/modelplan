@@ -77,6 +77,8 @@ public struct CockpitVisibility: Equatable, Sendable {
 public enum CockpitIntent: Equatable, Sendable {
   case chooseSetup, openSettings, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
+  /// D63: open the enlarged field focused on the rocket with this published display name (resolved by the host).
+  case openFieldAt(String)
   case scopeSelect(String)
   case openWebsite(CockpitWebsiteLink)
 }
@@ -451,7 +453,8 @@ public final class CockpitBridgeState {
       if let earlyDisplay, sequence <= earlyDisplay.sequence { throw CockpitBridgeError.invalidMessage }
       let action = m["action"] as? String
       let history = action == "openHistory", scope = action == "scopeSelect", website = action == "openWebsite"
-      let extra:Set<String> = history ? ["action","tool"] : scope ? ["action","key"] : website ? ["action","page","value"] : ["action"]
+      let focusedField = action == "openField" && m["key"] != nil
+      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ["action"]
       guard Set(m.keys) == base.union(extra), ready, !blocked,
         visibility.active
       else { throw CockpitBridgeError.invalidMessage }
@@ -470,7 +473,12 @@ public final class CockpitBridgeState {
       case "detach": intent = .detach
       case "putBack": intent = .putBack
       case "shutterToggle": intent = .shutterToggle
-      case "openField": intent = .openField
+      case "openField":
+        if focusedField {
+          guard let key = m["key"] as? String, (1...64).contains(key.count),
+            !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw CockpitBridgeError.invalidMessage }
+          intent = .openFieldAt(key)
+        } else { intent = .openField }
       case "openHistory":
         guard let tool = m["tool"] as? String, historyTools.contains(tool),
           earlyDisplay.map({ pending[$0.requestID]?.tools.contains(tool) == true }) ?? true else {
