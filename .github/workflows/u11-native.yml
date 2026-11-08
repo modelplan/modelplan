@@ -8,8 +8,6 @@ on:
       - 'desktop/native/verification/**'
       - 'clients/swift/ModelPlanEngineClient/**'
       - 'clients/swift/ModelPlanWire/**'
-      # The cockpit pins are generated from this build, so a cockpit change alone needs the native proof.
-      - 'desktop/cockpit/**'
       - '.github/workflows/u11-native.yml'
   push:
     branches: [main]
@@ -19,8 +17,6 @@ on:
       - 'desktop/native/verification/**'
       - 'clients/swift/ModelPlanEngineClient/**'
       - 'clients/swift/ModelPlanWire/**'
-      # The cockpit pins are generated from this build, so a cockpit change alone needs the native proof.
-      - 'desktop/cockpit/**'
       - '.github/workflows/u11-native.yml'
 permissions:
   contents: read
