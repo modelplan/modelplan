@@ -79,18 +79,90 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 #cockpit .website-link:hover,#cockpit .website-link:focus-visible{color:var(--lcd-ink)}
 #cockpit .sp-h .website-link{margin-left:auto;flex:none}
 
-/* The enlarged launch field's own page (src/field-page.ts). */
-body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
-#field{display:grid;grid-template-rows:36px minmax(0,1fr) 120px;height:100vh}
-.field-bar{display:flex;align-items:center;gap:8px;padding:0 10px}
-.field-bar .field-count{margin-left:auto;font-size:11px}
-.field-bar .field-website{border:0;background:none;padding:0 4px;color:#d4b994;font:inherit;font-size:10px;cursor:pointer}
-.field-bar .field-website:hover{text-decoration:underline}
-.field-bar .field-website:focus-visible{outline:1px solid #f6d38a;outline-offset:2px}
-.field-stage{position:relative;min-height:0;overflow:hidden}
-.field-stage .nogl{padding:16px;font-size:12px}
-.field-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:2px 10px;padding:6px 10px;overflow:auto;font-size:11px}
-.field-row{display:flex;align-items:center;gap:6px}
+/* The enlarged launch field's own page (src/field-page.ts): a transparent composition on the desktop (task 91 round 5).
+   A frosted card at the left; the scene at the right, masked by the feathered c01 silhouette (src/field-shape.ts). */
+html:has(body.field-page),body.field-page{background:transparent}
+body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
+/* The scene's plates and ticks use the prototype's LCD and silk faces (rocket.css .ov-porthole .wb-plates), whose
+   variables live on #cockpit and #overlay in the prototype; the field page's root carries the same values. */
+#field{position:relative;height:100vh;--field-card-top:max(20px,calc((100vh - 664px)/2));
+ --f-silk:'DM Sans','PingFang SC','Noto Sans SC',system-ui,sans-serif;--f-lcd:'JetBrains Mono','PingFang SC','Noto Sans SC',ui-monospace,monospace;
+ --text:var(--lcd-ink);--muted:var(--lcd-muted);--gold:var(--gold-lcd);font:11px/1.3 var(--f-silk)}
+.field-card{position:absolute;left:0;top:50%;transform:translateY(-50%);width:430px;height:min(664px,calc(100% - 40px));box-sizing:border-box;display:flex;flex-direction:column;min-height:0;padding:11px;border:1px solid #ffffff24;border-radius:12px;background:linear-gradient(145deg,#101723c9,#101217b8);box-shadow:0 12px 28px #0003;backdrop-filter:blur(18px) saturate(1.1);-webkit-backdrop-filter:blur(18px) saturate(1.1);color:#fff3df;z-index:6;overflow:hidden}
+.field-stage{position:absolute;left:458px;right:0;top:50%;transform:translateY(-50%);aspect-ratio:1000/650;max-height:100%;overflow:hidden;background:transparent;mask-image:var(--field-mask);-webkit-mask-image:var(--field-mask);mask-size:100% 100%;-webkit-mask-size:100% 100%;mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat}
+.field-stage .nogl{padding:16px;font-size:12px;position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.field-close{position:absolute;left:438px;top:calc(var(--field-card-top) - 8px);width:24px;height:24px;padding:0;border:0;border-radius:50%;background:#14151799;color:#e9eaeb;font-size:21px;line-height:1;cursor:pointer;z-index:7}
+.field-close:focus-visible{outline:1px solid #f6d38a;outline-offset:2px}
+/* Item 6: the frosted model-picker card (study website-updates/fleet.js + style.css rounds 4-5 and the website's
+   homepage components it imports, scoped here; Field Manrope / Field Share Tech Mono are the bundled Manrope and
+   Share Tech Mono). */
+#field{--sp-font-lcd:'Share Tech Mono','JetBrains Mono',ui-monospace,monospace;--sp-font-mono:'JetBrains Mono',ui-monospace,monospace;
+ --sp-font-display:Manrope,'PingFang SC','Noto Sans SC',system-ui,sans-serif;--sp-font-body:'DM Sans','PingFang SC','Noto Sans SC',system-ui,sans-serif;
+ --sp-lcd-dim:rgba(255,201,138,.55);--sp-flame:#d4b994;--sp-tag-beaten:#c6a26918;--card-radius:12px;--card-surface:#1c1d1f;--card-recess:inset 0 1px 0 #060708,0 1px 0 #ffffff24}
+#field[data-picker=folded] .field-stage{left:0}
+.field-card{font-family:var(--sp-font-body);font-size:13px;line-height:1.4;-webkit-font-smoothing:antialiased}
+.field-card[hidden]{display:none}
+.field-card button{font:inherit;background:none;color:inherit;border:0;cursor:pointer}
+.field-card button:disabled{cursor:not-allowed;opacity:.4}
+.website-fleet-tools{position:absolute;left:0;top:var(--field-card-top);z-index:6;font:12px var(--sp-font-body)}
+.website-fleet-tools>button{display:flex;gap:12px;padding:9px 12px;background:#202124;border:1px solid #d4b99466;border-radius:8px;color:#fff3df;font:inherit;cursor:pointer}
+.website-fleet-tools>button[hidden]{display:none}
+.website-fleet-tools b{font-weight:500;color:#f6d38a}
+.field-picker-controls{display:flex;align-items:center;gap:8px;flex:none;min-height:34px}
+.field-presets{display:flex;align-items:center;gap:3px;flex:none}
+.field-presets button{font-size:11px;line-height:16px;white-space:nowrap;padding:7px 8px;border-radius:7px;color:#a2a4a8;border:1px solid #ffffff14!important}
+.field-presets button[aria-pressed=true]{background:#d4b9941c;border-color:#d4b9948c!important;color:#fff3df}
+.field-search{display:flex;align-items:center;gap:5px;flex:1;min-width:0;padding:6px 7px;border:1px solid #ffffff18;border-radius:7px;background:#05080f;color:#a2a4a8;height:32px;box-sizing:border-box}
+.field-search>span{font-size:18px;line-height:16px}
+.field-search input{min-width:0;width:100%;border:0;background:none;color:#fff3df;font:11px var(--sp-font-body);outline:0;-webkit-appearance:none;appearance:none}
+.field-search:focus-within{border-color:#d4b99488}
+.field-which-title{display:flex;align-items:center;gap:9px;flex:none;margin-top:12px;padding:0 2px 5px;color:var(--sp-lcd-dim);font:9px var(--sp-font-lcd);letter-spacing:.12em}
+.field-which-title small{font:10px var(--sp-font-body);letter-spacing:0;color:#a2a4a8}
+.field-which-title button{margin-left:auto;font-size:18px;line-height:16px;padding:0 4px;color:#a2a4a8}
+.field-frontier{height:180px;flex:none;margin-bottom:7px;min-width:0}
+.field-frontier svg{display:block;width:100%;height:180px;overflow:visible}
+.field-frontier text{font-family:var(--sp-font-lcd)}
+.field-frontier .lcd-dim{fill:rgba(255,201,138,.55);font-size:10.5px}
+.field-frontier .name{fill:#fff3df;font:600 11.5px Manrope,'PingFang SC',sans-serif}
+.field-frontier .lcd-val{fill:rgba(255,201,138,.75);font-size:10.5px}
+.field-frontier .sp-which-dot{cursor:pointer}
+.field-frontier .sp-which-dot:focus-visible{outline:none}.field-frontier .sp-which-dot:focus-visible circle{stroke:var(--sp-flame)}
+.field-chart-empty{padding:45px 10px;margin:0;text-align:center;color:#a2a4a8;font-size:12px}
+.field-roster-heading{display:flex;justify-content:space-between;align-items:center;flex:none;padding:8px 3px 9px;border-top:1px solid #ffffff12;color:#a2a4a8;font-size:10px}
+.field-roster-heading>b{color:#f6d38a;font-size:11px;font-weight:500}
+.field-model-list{flex:1;min-height:0;overflow:auto;padding:0 5px 0 0;margin:0;display:grid;gap:8px;align-content:start;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}
+.field-model-row{display:block;min-width:0;padding:8px 10px;border-radius:10px;background:#1c1d1f;box-shadow:inset 0 1px 0 #060708,0 1px 0 #ffffff18;transition:background .15s}
+.field-model-row:hover{background:rgba(255,255,255,.075)}
+.field-model-row.on{background:#ffffff0c;box-shadow:inset 0 0 0 1px #d4b99488}
+.field-model-row.dominated .sp-cr-name,.field-model-row.dominated .sp-cr-bars{opacity:.62}
+.field-row-top{display:flex;align-items:center;gap:7px}
+.field-model-focus.sp-cr-name{display:flex;flex:1;align-items:center;gap:8px;min-width:0;text-align:left;padding:0;white-space:normal;color:#fff3df;font:600 13px Manrope,'PingFang SC',sans-serif}
+.field-card .sp-tile{flex:none;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;overflow:hidden;background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+.field-card .sp-tile img{width:72%;height:72%;object-fit:contain}
+.field-card .sp-tile b{font:800 10px Manrope,sans-serif}
+.field-full-name{display:flex;flex:1;min-width:0;flex-direction:column;gap:1px}
+.field-vendor-name{display:block;color:#c7b9a4;font:10.5px var(--sp-font-body);white-space:normal}
+.field-full-name>b{display:block;font:600 12.5px/1.3 var(--sp-font-display);white-space:normal}
+.field-model-focus.sp-cr-name em{font:11px var(--sp-font-lcd);font-style:normal;color:#f6d38a;white-space:nowrap;flex:none}
+.field-launch-lamp{width:23px;height:23px;flex:none;display:grid;place-items:center;border:1px solid #ffffff40!important;border-radius:50%;color:#a2a4a8!important;background:#070c16!important;font-size:13px!important;padding:0}
+.field-launch-lamp[aria-pressed=true]{color:#1d1e21!important;background:#f6d38a!important;border-color:#f6d38a!important;box-shadow:0 0 7px #f6d38a26}
+.field-model-row .sp-cr-tags{display:flex;gap:5px;align-items:center;justify-content:flex-start;margin:4px 0 5px;padding-left:30px;min-height:0}
+.field-model-row .sp-cr-tags:empty{display:none}
+.field-model-row .sp-cr-tags i{font:500 9px Manrope,'PingFang SC',sans-serif;font-style:normal;padding:0 5px;border-radius:4px;line-height:15px;white-space:nowrap}
+.field-model-row .sp-cr-tags i.tag-dominated{color:#d4b994;background:#d4b99414}
+.field-model-row .sp-cr-bars{display:grid;grid-template-columns:36px 1fr 42px;gap:4px 9px;align-items:center;padding-left:30px;margin-top:4px;font:400 10px var(--sp-font-lcd);color:var(--sp-lcd-dim)}
+.field-model-row .sp-cr-bars i{height:5px;border-radius:3px;display:block}
+.field-model-row .sp-cr-bars i.a{background:linear-gradient(90deg,rgba(255,201,138,.3),#ffc98a);box-shadow:0 0 6px rgba(255,170,90,.45)}
+.field-model-row .sp-cr-bars i.c{background:linear-gradient(90deg,#bca1844d,#dfb47d);box-shadow:0 0 6px #dfb47d33}
+.field-model-row .sp-cr-bars b{font-size:10px;letter-spacing:-.5px;font-weight:400;color:#fff3df;text-align:right}
+.field-group-label{margin:0;padding:8px 4px 1px;color:#a2a4a8;font:9px var(--sp-font-mono);letter-spacing:.1em}
+.field-empty{padding:16px;margin:0;color:#a2a4a8;font-size:12px}
+.website-fleet-picker>footer{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;flex:none;margin-top:8px;padding:9px 2px 0;border-top:1px solid #ffffff18;font:10px var(--sp-font-body);color:#a2a4a8}
+.website-fleet-picker>footer button{padding:0;color:#e9eaeb;font-size:11px}
+.website-fleet-picker>footer .field-website{color:#d4b994;font-size:10px}
+.website-fleet-picker>footer .field-website:hover{text-decoration:underline}
+.website-fleet-picker>footer small{width:100%;font-size:9px;color:#a2a4a8}
+.field-card button:focus-visible,.website-fleet-tools button:focus-visible{outline:1px solid #f6d38a;outline-offset:2px}
 /* Axis labels in screen-space lanes (src/field-axes.ts; prototype study style.css task 91 rounds 4-5). Unplaced ticks stay hidden
    so the scene's own overlapping projection never flashes before the first layout. */
 .field-stage .tick3.field-axis-placed{transform:var(--field-axis-position)!important;translate:none!important;opacity:var(--field-axis-opacity)!important;transition:none!important;background:#03060a;border-radius:2px;padding:2px 4px;text-shadow:none;color:#e9edf0}
