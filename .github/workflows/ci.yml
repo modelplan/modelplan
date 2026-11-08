@@ -77,13 +77,16 @@ jobs:
       - name: Codex plugin on Node 22
         working-directory: codex
         run: npm ci --ignore-scripts && npm test && npm run build
+      - name: The Node 22 bundle and its notices are committed as built
+        run: git diff --exit-code -- codex/server.bundle.mjs codex/THIRD-PARTY-NOTICES.md
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
       - name: Codex plugin on Node 24
         working-directory: codex
         run: npm ci --ignore-scripts && npm test && npm run build
-      - name: The bundle and its notices are committed as built
+      - name: The Node 24 bundle and its notices are committed as built
+        if: ${{ !cancelled() }}
         run: git diff --exit-code -- codex/server.bundle.mjs codex/THIRD-PARTY-NOTICES.md
   # The small Linux checks in one job (they were mac-scope, claude-code on Linux, data and skill). Each check
   # step runs even when an earlier one failed, so one run reports every failure.
