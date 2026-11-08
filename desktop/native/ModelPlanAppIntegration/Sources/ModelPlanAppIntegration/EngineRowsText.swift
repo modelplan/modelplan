@@ -22,8 +22,38 @@ enum EngineRowsText {
     static let quit = SettingsText("Quit ModelPlan", "退出 ModelPlan")
     static let about = SettingsText("About ModelPlan", "关于 ModelPlan")
     /// G3-22: macOS hides status items behind the notch when the menu bar is full.
-    static let statusItemHidden = SettingsText("The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right.",
-                                               "菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。")
+    /// G3-52 (owner 11-08): the hidden icon cannot be dragged, so the notice says how to make room
+    /// and where the Cockpit and Settings are meanwhile. The widget menu keeps one short line; the
+    /// steps are in Settings.
+    static let statusItemHiddenMenu = SettingsText("The menu bar is full and the ModelPlan icon is hidden. Settings shows how to fix it.",
+                                                   "菜单栏已满，ModelPlan 图标被挡住了。设置里有解决办法。")
+    /// The steps, worded for this Mac: macOS 26 and later list every menu bar icon in
+    /// System Settings > Menu Bar; macOS 15 can only hide its own items, in Control Center.
+    static func statusItemHidden(macOSMajor: Int, cockpit: Bool, shortcut: String?) -> SettingsText {
+        let room: SettingsText = macOSMajor >= 26
+            ? SettingsText("To make room, turn some icons off in System Settings > Menu Bar, or hold ⌘ and drag system icons off the menu bar.",
+                           "腾出位置：在「系统设置 › 菜单栏」里关掉一些图标，或按住 ⌘ 把系统图标拖出菜单栏。")
+            : SettingsText("To make room, hold ⌘ and drag system icons off the menu bar, set some items to Don't Show in Menu Bar in System Settings > Control Center, or quit apps whose icons you don't need.",
+                           "腾出位置：按住 ⌘ 把系统图标拖出菜单栏，在「系统设置 › 控制中心」里把一些项目设为「不在菜单栏中显示」，或退出不需要图标的应用。")
+        let reach: SettingsText
+        if cockpit, let shortcut {
+            reach = SettingsText("Until then, click the Ignition on the Quota Widget or press \(shortcut) to open the Cockpit, and right-click the Quota Widget for Settings.",
+                                 "在此之前，点额度挂件上的点火钮或按 \(shortcut) 打开驾驶舱，右键点额度挂件可打开设置。")
+        } else if cockpit {
+            reach = SettingsText("Until then, click the Ignition on the Quota Widget to open the Cockpit, and right-click the Quota Widget for Settings.",
+                                 "在此之前，点额度挂件上的点火钮打开驾驶舱，右键点额度挂件可打开设置。")
+        } else {
+            reach = SettingsText("Until then, right-click the Quota Widget for Settings.", "在此之前，右键点额度挂件可打开设置。")
+        }
+        return SettingsText("The menu bar is full, so macOS hides the ModelPlan icon. " + room.english + " " + reach.english,
+                            "菜单栏已满，macOS 把 ModelPlan 图标藏起来了。" + room.chinese + reach.chinese)
+    }
+    /// A chord as Settings shows it (⌃⌥⇧⌘ then the key).
+    static func chordLabel(_ chord: ShortcutChord) -> String? {
+        guard !chord.isUnassigned, chord.isValid else { return nil }
+        let symbols: [(ShortcutChord.Modifier, String)] = [(.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘")]
+        return symbols.filter { chord.modifiers.contains($0.0) }.map(\.1).joined() + chord.key
+    }
     static let waiting = SettingsText("Waiting for readings", "等待读数")
     static let paused = SettingsText("Readings paused", "读数已暂停")
     static let readingServiceUnavailable = SettingsText(

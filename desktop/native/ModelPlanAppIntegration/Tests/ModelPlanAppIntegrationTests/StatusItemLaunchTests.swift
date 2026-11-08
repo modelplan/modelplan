@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
+import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
 /// G3-22: the menu bar item must never be blank. Uses the window server (status bar), so GUI leg.
@@ -130,15 +131,82 @@ import XCTest
         }
         var visible = false
         app.statusItemVisibility = { visible }
+        app.macOSMajorVersion = { 26 }
         app.checkStatusItemVisibility()
-        let notice = "The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right."
+        // G3-52: the covered icon cannot be dragged; the menu points to Settings, which has the steps.
+        let notice = "The menu bar is full and the ModelPlan icon is hidden. Settings shows how to fix it."
         let menu = app.composition.dock.menu().items
         XCTAssertEqual(menu.first?.title, notice); XCTAssertFalse(menu.first?.isEnabled ?? true)
-        XCTAssertEqual(app.settingsHost.application.editor.context.statusItemNotice?.chinese, "菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。")
+        XCTAssertEqual(app.settingsHost.application.editor.context.statusItemNotice?.chinese,
+                       "菜单栏已满，macOS 把 ModelPlan 图标藏起来了。腾出位置：在「系统设置 › 菜单栏」里关掉一些图标，或按住 ⌘ 把系统图标拖出菜单栏。在此之前，右键点额度挂件可打开设置。")
         visible = true
         app.checkStatusItemVisibility()
         XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice }, "the notice clears once the icon is visible")
         XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
+    }
+
+    /// G3-52 (owner 11-08): the "menu bar full" notice was right but told the user to drag an icon
+    /// they cannot see. It now says how to make room on this macOS version and where the Cockpit and
+    /// Settings are meanwhile. This checks the wording per version and per build, and that each named
+    /// way in works with the status item covered: the widget's Ignition and its right-click menu
+    /// (Open Cockpit, Settings…) and the Cockpit shortcut.
+    func testG352HiddenIconNoticeNamesWaysInThatWorkWhileTheIconIsHidden() async throws {
+        XCTAssertEqual(EngineRowsText.statusItemHidden(macOSMajor: 26, cockpit: true, shortcut: "⌥⌘M").english,
+                       "The menu bar is full, so macOS hides the ModelPlan icon. To make room, turn some icons off in System Settings > Menu Bar, or hold ⌘ and drag system icons off the menu bar. Until then, click the Ignition on the Quota Widget or press ⌥⌘M to open the Cockpit, and right-click the Quota Widget for Settings.")
+        XCTAssertEqual(EngineRowsText.statusItemHidden(macOSMajor: 26, cockpit: true, shortcut: nil).chinese,
+                       "菜单栏已满，macOS 把 ModelPlan 图标藏起来了。腾出位置：在「系统设置 › 菜单栏」里关掉一些图标，或按住 ⌘ 把系统图标拖出菜单栏。在此之前，点额度挂件上的点火钮打开驾驶舱，右键点额度挂件可打开设置。")
+        let sequoia = EngineRowsText.statusItemHidden(macOSMajor: 15, cockpit: true, shortcut: nil)
+        XCTAssertTrue(sequoia.english.contains("System Settings > Control Center"), sequoia.english)
+        XCTAssertFalse(sequoia.english.contains("System Settings > Menu Bar"), "macOS 15 has no Menu Bar pane")
+        XCTAssertTrue(sequoia.chinese.contains("「系统设置 › 控制中心」"), sequoia.chinese)
+        for text in [sequoia, EngineRowsText.statusItemHidden(macOSMajor: 26, cockpit: false, shortcut: nil)] {
+            XCTAssertFalse(text.english.contains("drag it"), "never ask to drag the hidden icon")
+            XCTAssertFalse(text.chinese.contains("把它拖"), "never ask to drag the hidden icon")
+        }
+        XCTAssertFalse(EngineRowsText.statusItemHidden(macOSMajor: 26, cockpit: false, shortcut: nil).english.contains("Cockpit"),
+                       "a build without the Cockpit entry does not offer it")
+        XCTAssertEqual(EngineRowsText.chordLabel(ShortcutChord("M", modifiers: [.command, .option])), "⌥⌘M")
+        XCTAssertNil(EngineRowsText.chordLabel(.unassigned))
+
+        let console = StatusClickConsole()
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-hidden-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        _ = try await store.update { p in p.openShortcut = ShortcutChord("M", modifiers: [.command, .option]) }
+        let surface = StatusHiddenSettingsSurface()
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
+                                       settingsStore: store, createsNativePanels: false, cockpitEntryEnabled: true, dockEnvironment: normalEntryTestEnvironment,
+                                       makeSettingsSurface: { _ in surface }, makeConsole: { _ in console }, activateSettings: {})
+        let shortcuts = StatusHiddenShortcuts()
+        app.shortcutRegistrar = shortcuts
+        await app.prepare()
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.allowDockPresentation()
+        app.installStatusItem(); app.renderMenu()
+        app.statusItemVisibility = { false }
+        app.macOSMajorVersion = { 26 }
+        app.checkStatusItemVisibility()
+        XCTAssertTrue(app.statusItemHidden)
+        XCTAssertEqual(app.settingsHost.application.editor.context.statusItemNotice,
+                       EngineRowsText.statusItemHidden(macOSMajor: 26, cockpit: true, shortcut: "⌥⌘M"))
+
+        let dock = app.composition.dock
+        _ = dock.perform(NSSelectorFromString("openConsole"))
+        XCTAssertEqual(console.shows, 1, "the Ignition opens the Cockpit with the icon covered")
+        let menu = dock.menu()
+        let open = try XCTUnwrap(menu.items.firstIndex { $0.title == "Open Cockpit" })
+        XCTAssertTrue(menu.items[open].isEnabled)
+        menu.performActionForItem(at: open)
+        XCTAssertEqual(console.shows, 2, "the widget menu opens the Cockpit with the icon covered")
+        let settingsIndex = try XCTUnwrap(menu.items.firstIndex { $0.accessibilityIdentifier() == "dock.menu.settings" })
+        XCTAssertTrue(menu.items[settingsIndex].isEnabled)
+        menu.performActionForItem(at: settingsIndex)
+        for _ in 0..<200 where surface.shows == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(surface.shows, 1, "the widget menu opens Settings with the icon covered")
+        XCTAssertEqual(shortcuts.registered[.openCockpit], ShortcutChord("M", modifiers: [.command, .option]))
+        shortcuts.onPress?(.openCockpit)
+        XCTAssertEqual(console.shows, 3, "the Cockpit shortcut works with the icon covered")
     }
 
     func testMissingTemplateImageFallsBackToAVisibleTitle() async throws {
@@ -172,4 +240,18 @@ import XCTest
         }
         XCTAssertNil(CommunityMenuBarResources.packagedBundleURL(main: try XCTUnwrap(Bundle(url: root))), "Outside an .app the build bundle is used")
     }
+}
+
+@MainActor private final class StatusHiddenSettingsSurface: SettingsWindowSurface {
+    var shows = 0
+    func prepare() async {}
+    func show(paneID: String?) { shows += 1 }
+    func hide() {}
+}
+
+@MainActor private final class StatusHiddenShortcuts: EngineShortcutRegistering {
+    var onPress: ((ShortcutAction) -> Void)?
+    var registered: [ShortcutAction: ShortcutChord] = [:]
+    func register(_ chord: ShortcutChord, action: ShortcutAction) -> ShortcutRegistration { registered[action] = chord; return .registered }
+    func unregisterAll() { registered = [:] }
 }

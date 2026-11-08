@@ -1,0 +1,1 @@
+When a full menu bar hides the ModelPlan icon, Settings now says how to make room on your macOS version (System Settings > Menu Bar on macOS 26, Control Center on macOS 15) and how to reach the Cockpit and Settings meanwhile, instead of asking you to drag the icon you cannot see.
