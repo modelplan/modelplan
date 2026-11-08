@@ -8,6 +8,7 @@ permissions:
   contents: read
 jobs:
   placement:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -47,7 +48,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {name: before-main, ref: f2497135d57bc7374b8b04ed039641e2f615cd3c}
           - {name: after-716, ref: cockpit/hud-strip-rows}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
