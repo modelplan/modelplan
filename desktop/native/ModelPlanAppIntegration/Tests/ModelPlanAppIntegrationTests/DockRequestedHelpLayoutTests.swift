@@ -135,6 +135,8 @@ import ModelPlanSettings
                 try assertMapTextFits(input, "cockpit \(language) \(profile)")
             }
         }
+    }
+
     /// G3-12 in a packaged run: Help from the status menu, the widget on the left edge of a 1920×1080
     /// display, the status item at the top right. These anchors and readings are that run's.
     func testStatusMenuHelpMapResolvesEveryLabel() throws {
