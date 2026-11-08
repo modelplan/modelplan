@@ -195,6 +195,11 @@ extension CommunityCockpitEntryTests {
                 try await Task.sleep(for: .milliseconds(50))
             }
             let before = try XCTUnwrap(state, "\(name): the page must be painted")
+            // A real click needs what the owner has: an active app with the cockpit as key window. Hosted CI runners
+            // cannot activate an app; there the page stays inactive by design, so this runs on the GUI Mac only.
+            guard NSApp.isActive, window.isKeyWindow else {
+                throw XCTSkip("G3-53 needs an active app and key cockpit window (GUI Mac); this runner has app active \(NSApp.isActive), key \(window.isKeyWindow)")
+            }
             XCTAssertEqual(page.verificationShellState?.tier, tier, name)
             XCTAssertEqual(before["active"] as? String, "true", "\(name): the shown, key cockpit is active (window key \(window.isKeyWindow), app active \(NSApp.isActive))")
             XCTAssertEqual(before["disabled"] as? Bool, false, "\(name): the shutter is enabled")
