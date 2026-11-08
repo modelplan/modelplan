@@ -65,14 +65,15 @@ private actor S04SyntheticClient: EngineClient {
             makeClient: { _, engineStore in S04SyntheticClient(store: engineStore, rows: rows) }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         defer { app.composition.dock.close() }
-        for _ in 0..<200 where liveHintLayers().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        // The widget takes about three seconds to settle on a hosted Mac.
+        for _ in 0..<1000 where liveHintLayers().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
         // #529 supplies the real visible-widget anchor, so the first hint must now appear.
         let first = try XCTUnwrap(liveHintLayers().first, "The first hint must appear on the real visible widget")
         let firstCard = try XCTUnwrap(first.input?.firstUse)
         XCTAssertEqual(liveHintLayers().count, 1)
         XCTAssertEqual(firstCard.anchorID, "dock.findWidget")
         first.onAction?(.dismissHint(offerID: firstCard.offerID, reason: .explicitButton))
-        for _ in 0..<200 where !liveHintLayers().contains(where: { $0.input?.firstUse?.anchorID == "dock.ringRefresh" }) {
+        for _ in 0..<1000 where !liveHintLayers().contains(where: { $0.input?.firstUse?.anchorID == "dock.ringRefresh" }) {
             try await Task.sleep(for: .milliseconds(10))
         }
         let second = try XCTUnwrap(liveHintLayers().first { $0.input?.firstUse?.anchorID == "dock.ringRefresh" })
@@ -122,7 +123,7 @@ private actor S04SyntheticClient: EngineClient {
     }
 
     /// Normal entry on real panels with the real display topology; only the pointer is supplied.
-    private func journeyApplication(_ name: String, pointer: @escaping @MainActor () -> CGPoint?) async throws -> (EngineDockMenuApplication, URL) {
+    private func journeyApplication(_ name: String, onboarded: Bool = false, pointer: @escaping @MainActor () -> CGPoint?) async throws -> (EngineDockMenuApplication, URL) {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent(name + "-" + UUID().uuidString)
         EngineRowsEntry.nativeJourneyProfile = profile
@@ -135,6 +136,7 @@ private actor S04SyntheticClient: EngineClient {
         projection["rows"] = records; root["projection"] = projection
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        if onboarded { _ = try await store.update { preferences in preferences.onboarding.next(in: .task65) } }
         let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: true,
             dockEnvironment: {
@@ -182,7 +184,7 @@ private actor S04SyntheticClient: EngineClient {
     /// dismissal returns the request to the status item (focus return). Before the fix the
     /// coordinator was built without the status request, so no dismissal ever reached it.
     func testG312StatusHelpMapDismissalReturnsToTheStatusItem() async throws {
-        let (app, profile) = try await journeyApplication("g312-focus", pointer: { nil })
+        let (app, profile) = try await journeyApplication("g312-focus", onboarded: true, pointer: { nil })
         defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
         defer { app.composition.dock.close() }
         let dock = app.composition.dock

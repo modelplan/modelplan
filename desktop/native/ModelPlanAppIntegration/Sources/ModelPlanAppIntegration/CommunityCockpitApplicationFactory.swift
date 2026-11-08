@@ -180,7 +180,6 @@ struct CockpitUnavailableNotice {
             self.wantsVisible = false
             self.fieldPanel?.close()
             self.pageOpened = false
-            self.composition.dock.setCockpitPresentationBlocked(false)
         }
     }
     /// Public model data only: the launch field never receives personal readings. The official page is
@@ -229,7 +228,7 @@ struct CockpitUnavailableNotice {
     func show() {
         wantsVisible=true
         guard showTask == nil else { return }
-        composition.dock.setCockpitPresentationBlocked(true)
+        composition.dock.prepareForCockpit()
         showTask=Task { @MainActor [weak self] in
             guard let self else { return }
             let snapshot=await owner.settingsStore.snapshot()
@@ -247,9 +246,13 @@ struct CockpitUnavailableNotice {
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
             owner.coordinator?.open()
-            if !pageOpened { composition.dock.setCockpitPresentationBlocked(false) }
             showTask = nil
         }
+    }
+    var isShowing: Bool { wantsVisible }
+    /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
+    func requestClose() {
+        if pageOpened { owner.coordinator?.requestClose() } else { hide() }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
@@ -259,7 +262,6 @@ struct CockpitUnavailableNotice {
         fieldPanel?.close()
         owner.coordinator?.close()
         pageOpened = false
-        composition.dock.setCockpitPresentationBlocked(false)
         fallback?.hide()
     }
     private func unavailable(path:String,history:Bool=false) {

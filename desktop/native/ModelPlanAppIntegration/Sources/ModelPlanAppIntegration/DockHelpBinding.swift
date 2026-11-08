@@ -58,21 +58,34 @@ public struct DockHelpSurface: Equatable {
         presenter.hide(offerID: offerID)
     }
 
+    /// The widget republishes its layout on most refreshes, a few times a second while it settles,
+    /// and its anchors move as rows arrive. A shown hint follows them; ending it would also spend it.
+    /// Only a new reveal, a drag or a lost anchor ends it.
+    private static func keepsHint(_ kind: FirstUseHintKind, from old: DockHelpSurface?, to new: DockHelpSurface?) -> Bool {
+        guard let old, let new else { return false }
+        return old.revealID == new.revealID && new.visible && !new.dragging && new.anchors[kind] != nil
+    }
+
     /// The composition supplies the complete current context, including cockpit/map state.
     /// It must call this on actual visibility, drag, layout and retirement transitions.
     public func update(_ next: DockHelpSurface?, context: HintContext, host: HintExecutionHost) throws {
         guard !retired else { return }
         generation &+= 1; let token = generation
-        let changed = surface != next
+        let changed = surface != next, previous = surface
         if changed {
             host.cancelDwell(.ignition); host.cancelDwell(.drag)
             if let kind = host.hints.visible?.offer.kind,
-               kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || kind == .widgetOff || (kind == .pinned && host.hints.context.cockpitOpen == nil) {
+               kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || kind == .widgetOff || (kind == .pinned && host.hints.context.cockpitOpen == nil),
+               !Self.keepsHint(kind, from: previous, to: next) {
                 host.dismiss()
             }
             guard generation == token, !retired else { return }
         }
         surface = next
+        // A hint that survived the change stays shown on the surface that replaced its own.
+        if changed, let previous, let next {
+            for (id, value) in shown where value == previous { shown[id] = next }
+        }
         let visible = next.map { $0.visible && isCurrent($0) } ?? false
         guard generation == token, !retired, surface == next else { return }
         let reveal = visible ? next?.revealID : nil

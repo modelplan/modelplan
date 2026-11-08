@@ -135,6 +135,27 @@ import ModelPlanSettings
                 try assertMapTextFits(input, "cockpit \(language) \(profile)")
             }
         }
+    /// G3-12 in a packaged run: Help from the status menu, the widget on the left edge of a 1920×1080
+    /// display, the status item at the top right. These anchors and readings are that run's.
+    func testStatusMenuHelpMapResolvesEveryLabel() throws {
+        let recipe = NeutralHelpUIRecipeProvider()
+        let anchors: [DockRequestedHelpAnchor] = [
+            .init(id: "status.menu", region: .sliver, rect: CGRect(x: 1641, y: 1, width: 64, height: 22), visible: true,
+                  caption: "Right-click the menu bar icon and choose Show Quota Widget."),
+            .init(id: "dock.ignition", region: .ignition, rect: CGRect(x: 9.3, y: 212.9, width: 28.8, height: 28.8), visible: true),
+            .init(id: "dock.rings.a", region: .rings, rect: CGRect(x: 12.7, y: 257.1, width: 42.3, height: 42.3), visible: true),
+            .init(id: "dock.nozzle.a", region: .nozzle, rect: CGRect(x: 11.8, y: 256.2, width: 44, height: 44), visible: true),
+            .init(id: "dock.number.a", region: .number, rect: CGRect(x: 10.2, y: 305.3, width: 47.4, height: 13.5), visible: true),
+            .init(id: "dock.grip.0", region: .dockMove, rect: CGRect(x: 9, y: 527.6, width: 37.2, height: 25.4), visible: true),
+        ]
+        let readings = [CGRect(x: 10.2, y: 305.3, width: 47.4, height: 13.5), CGRect(x: 13, y: 374.6, width: 47.4, height: 13.5),
+                        CGRect(x: 13.2, y: 444, width: 47.4, height: 13.5), CGRect(x: 10.9, y: 513.3, width: 47.4, height: 13.5)]
+        let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: CGSize(width: 1920, height: 1080),
+            language: .english, anchors: anchors, blocked: readings, recipe: recipe))
+        let result = recipe.presentation(for: input)
+        XCTAssertNotNil(result.mapHeader)
+        XCTAssertEqual(result.unresolvedMapIDs, [], "header \(String(describing: result.mapHeader)) labels \(result.mapLabels.map { "\($0.id) \($0.frame) leader \($0.leader.count)" })")
+        XCTAssertTrue(result.mapLabels.contains { $0.anchorID == "status.menu" })
     }
 
     func testLabelsEveryVisibleAnchorAndOmitsHiddenAnchors() throws {

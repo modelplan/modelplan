@@ -11,6 +11,15 @@ import XCTest
     func hide() {}
 }
 
+@MainActor private final class TogglingStatusConsole: EngineRowsConsoleSurface {
+    var shows = 0, closes = 0, hides = 0
+    private(set) var isShowing = false
+    func show() { shows += 1; isShowing = true }
+    func render() {}
+    func hide() { hides += 1; isShowing = false }
+    func requestClose() { closes += 1; isShowing = false }
+}
+
 @MainActor final class StatusItemLaunchTests: XCTestCase {
     private func click(_ type: NSEvent.EventType, on button: NSButton, flags: NSEvent.ModifierFlags = []) throws -> NSEvent {
         try XCTUnwrap(NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: flags, timestamp: 0,
@@ -48,6 +57,29 @@ import XCTest
         XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
         XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
         XCTAssertEqual(console.shows, 2, "the second click reaches the console, which owns the toggle")
+    }
+
+    /// G3-40 / MENU-07: a click on the icon while the cockpit is open closes it, through the user close so
+    /// its fade and saved position hold; the next click opens it again. Other entries only ever open.
+    func testG3_40SecondClickOnTheIconClosesAndThirdReopens() async throws {
+        let console = TogglingStatusConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        func press() throws {
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        }
+        try press()
+        XCTAssertEqual(console.shows, 1); XCTAssertTrue(console.isShowing)
+        try press()
+        XCTAssertEqual(console.closes, 1, "the second click closes"); XCTAssertEqual(console.shows, 1)
+        XCTAssertEqual(console.hides, 0, "a user close, not the immediate teardown"); XCTAssertFalse(console.isShowing)
+        try press()
+        XCTAssertEqual(console.shows, 2, "the third click opens again"); XCTAssertTrue(console.isShowing)
+        app.showConsole()
+        XCTAssertEqual(console.shows, 3); XCTAssertEqual(console.closes, 1, "the Open Cockpit entries never close")
     }
 
     /// D44: these clicks are left to AppKit, which shows the attached menu; sending them would start real tracking.
