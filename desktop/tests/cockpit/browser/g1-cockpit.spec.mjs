@@ -240,7 +240,8 @@ test('CKP-MFD-04 the built page keys follow one read-only internal page registry
 
 test('CKP-MOT-05 day appearance lightens cockpit metal while LCDs remain dark',async({page})=>{
  const {send,receive}=await open(page),read=()=>page.evaluate(()=>{const get=q=>getComputedStyle(document.querySelector(q)).backgroundImage;return {hull:get('.ck-shell'),key:get('.ek-all'),engine:get('.eng-lcd'),screen:get('.mfd-screen')};});const night=await read();expect(await receive(send('appearance',{...appearance,theme:'day'}))).toBe(true);const day=await read();await expect(page.locator('.ck-port')).toBeVisible();await expect(page.locator('.dk-fad')).toBeVisible();
- const components=s=>[...s.matchAll(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/g)].map(m=>m.slice(1).map(Number));const luminance=s=>components(s).flat().reduce((a,b)=>a+b,0)/Math.max(1,components(s).flat().length);expect(luminance(day.hull)).toBeGreaterThan(luminance(night.hull));expect(luminance(day.key)).toBeGreaterThan(luminance(night.key));for(const lcd of [day.engine,day.screen]){expect(components(lcd).length).toBeGreaterThan(0);expect(Math.max(...components(lcd).flat())).toBeLessThan(32);}
+ const components=s=>[...s.matchAll(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/g)].map(m=>m.slice(1).map(Number));const luminance=s=>components(s).flat().reduce((a,b)=>a+b,0)/Math.max(1,components(s).flat().length);// The plain plate (CKP-SHELL-25) eases its metal over 0.4 s, so wait for the settled day metal.
+ await expect.poll(async()=>luminance((await read()).hull)).toBeGreaterThan(luminance(night.hull));expect(luminance(day.key)).toBeGreaterThan(luminance(night.key));for(const lcd of [day.engine,day.screen]){expect(components(lcd).length).toBeGreaterThan(0);expect(Math.max(...components(lcd).flat())).toBeLessThan(32);}
 });
 
 test('CKP-ENG-01 five and six subscription columns show names in user order',async({page})=>{
