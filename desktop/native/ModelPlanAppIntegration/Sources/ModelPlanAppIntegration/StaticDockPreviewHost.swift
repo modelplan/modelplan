@@ -2093,6 +2093,7 @@ struct DockHelpInteraction: Equatable {
         placeCardPanel(id)
     }
     private func placeCardPanel(_ id: String) {
+        let style = Self.prototypeCardStyle // the arrow takes the plate's fill and seam
         if cardPanel == nil {
             let panel = makePanel(); cardPanel = panel
             // The plate's drop shadow (prototype face.css:52 0 8px 24px #0007) comes from the window server.
