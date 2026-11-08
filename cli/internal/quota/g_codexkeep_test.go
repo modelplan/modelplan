@@ -86,6 +86,7 @@ func TestFailedRefreshAfterAccountKeepKeepsNothing(t *testing.T) {
 		t.Fatalf("accounts %+v", r.Accounts)
 	}
 	// A retained reading that ages past accountKeep after the failure also drops out.
+	cache = t.TempDir()
 	goodAccount(t, cache, acctNow)
 	if err := RefreshCodexAccount(context.Background(), cache, failingCodex(t), acctNow.Add(10*time.Minute)); err == nil {
 		t.Fatal("a failing Codex reported success")
