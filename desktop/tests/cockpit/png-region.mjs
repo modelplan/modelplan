@@ -18,3 +18,9 @@ export function luminance(png) {
  const mean=values.reduce((s,v)=>s+v,0)/Math.max(1,values.length),sd=Math.sqrt(values.reduce((s,v)=>s+(v-mean)**2,0)/Math.max(1,values.length));
  return {mean,sd,count:values.length};
 }
+// Mean colour, mean luminance and luminance percentiles over opaque pixels (alpha >= 200).
+export function stats(png) {
+ const l=[],sum=[0,0,0];for(let y=0;y<png.height;y++)for(let x=0;x<png.width;x++){const [r,g,b,a]=png.pixel(x,y);if(a>=200){sum[0]+=r;sum[1]+=g;sum[2]+=b;l.push(0.2126*r+0.7152*g+0.0722*b);}}
+ l.sort((a,b)=>a-b);const n=Math.max(1,l.length),pct=q=>l[Math.min(l.length-1,Math.floor(q*(l.length-1)))]??0;
+ return {rgb:sum.map(v=>v/n),mean:l.reduce((s,v)=>s+v,0)/n,p50:pct(0.5),p97:pct(0.97),count:l.length};
+}

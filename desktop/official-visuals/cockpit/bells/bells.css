@@ -13,12 +13,12 @@
 .ck-base .bz .bz-line{background-image:url('./assets/bells/bell-silver-2x.png');filter:saturate(.12) brightness(.78)}
 /* D68 (owner 2026-11-08): a bell that is not working loses its sheen and sits at the colour of the r3 hull bottom
    (the aft plate above it, measured in the page); only a working bell keeps the lit gunmetal and its mouth light. */
-.ck-base .bz:not(.work) .bz-line{filter:saturate(.12) contrast(.45) brightness(.26)}
+.ck-base .bz:not(.work) .bz-line{filter:saturate(.12) contrast(.45) brightness(.52)}
 /* Empty bays: the black/graphite bell, quietly dimmed, unfiltered by the gunmetal transfer. */
 .ck-base .bz-empty .bz-line{filter:brightness(.9)}
 .ck-base .bz-glow{display:none}
 .ck[data-active="true"] .ck-base .bz.work:hover .bz-line{filter:saturate(.12) brightness(.95)}
-.ck[data-active="true"] .ck-base .bz:not(.work):hover .bz-line{filter:saturate(.12) contrast(.45) brightness(.36)}
+.ck[data-active="true"] .ck-base .bz:not(.work):hover .bz-line{filter:saturate(.12) contrast(.45) brightness(.64)}
 /* Working (CKP-ENG-17/18): one soft glow fills the inner mouth from the opening down, whiter at the core, fading
    about 3 px past the outer lower rim, in the quota-status colour; no plume body. Geometry measured on the study:
    it starts at bell width x 0.0557, spans the inner mouth (bell width x 0.9033) x 1.08, and runs 5 px past the
