@@ -11,7 +11,7 @@ import ModelPlanCockpitWeb
 /// as the bundled helper with both pins, the canonical official page in Resources/Cockpit, the entry flag and the
 /// owner-test marker. The release shape is the same bundle without the marker; its page must be refused.
 extension CommunityCockpitEntryTests {
-    private static func repoRoot() -> URL {
+    static func repoRoot() -> URL {
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 where !FileManager.default.fileExists(atPath: repo.appendingPathComponent("desktop/cockpit/build.mjs").path) {
             repo.deleteLastPathComponent()
@@ -19,7 +19,7 @@ extension CommunityCockpitEntryTests {
         return repo
     }
 
-    private static func ownerTestShapedApp(at root: URL, helper: URL, ownerTest: Bool, official: URL) throws -> URL {
+    static func ownerTestShapedApp(at root: URL, helper: URL, ownerTest: Bool, official: URL) throws -> URL {
         let app = root.appendingPathComponent("ModelPlan Community.app"), contents = app.appendingPathComponent("Contents")
         let fm = FileManager.default
         for dir in ["MacOS", "Helpers", "Resources"] {
