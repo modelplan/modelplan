@@ -238,7 +238,7 @@ import ModelPlanWire
                          "读取 Grok 保存在本机的登录，以及本机历史记录。")
         case "kiro":
             base = .init("Asks the Kiro CLI for usage with the sign-in Kiro saved. ModelPlan does not read or keep Kiro's credentials.",
-                         "调用 Kiro CLI 查询用量，沿用它已保存的登录。ModelPlan 不读取也不保存 Kiro 的凭据。")
+                         "调用 Kiro 命令行工具查询用量，沿用它已保存的登录。ModelPlan 不读取也不保存 Kiro 的凭据。")
         case "zai":
             base = .init("Reads the GLM Coding Plan key you saved in ZCode, and its local history.",
                          "读取你在 ZCode 里保存的 GLM 编程套餐密钥，以及本机历史记录。")
@@ -247,7 +247,7 @@ import ModelPlanWire
             let routes = Set(tool.routes.map(\.rawValue))
             if routes.contains("saved_login_api") { english.append("the sign-in it saved on this Mac"); chinese.append("它在本机保存的登录") }
             if routes.contains("runtime_rpc") { english.append("usage from its own runtime"); chinese.append("它自带运行时提供的用量") }
-            if routes.contains("api_key_api") { english.append("the API key you configured for it"); chinese.append("你为它配置的 API 密钥") }
+            if routes.contains("api_key_api") { english.append("the API key you configured for it"); chinese.append("你为它配置的接口密钥") }
             if routes.contains("local_log") || routes.contains("local_sqlite") { english.append("its local history"); chinese.append("本机历史记录") }
             base = english.isEmpty ? .init("Reads its usage on this Mac.", "读取它在本机的用量。")
                 : .init("Reads " + english.joined(separator: " and ") + ".", "读取" + chinese.joined(separator: "和") + "。")
