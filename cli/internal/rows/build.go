@@ -308,7 +308,31 @@ func buildCandidate(in Input, c *candidate) Row {
 		latchInput.Now = *row.ExpiresAt
 		row.StateAfterExpiry = &ExpiryState{State: latch.State, Reason: Reason{Code: latch.Code, Text: latch.Text}, NextStep: nextStep(latchInput, c, latch)}
 	}
+	if row.Kind == KindTool && unreadable(row) {
+		// G3-38 (owner decision D76): a detected subscription with no reading and no way to get
+		// one from ModelPlan has no ring. Settings and the menu still list it with the reason.
+		surfaces := row.Surfaces[:0:0]
+		for _, s := range row.Surfaces {
+			if s != SurfaceDock {
+				surfaces = append(surfaces, s)
+			}
+		}
+		row.Surfaces = surfaces
+	}
 	return row
+}
+
+// unreadable: the row holds no value and its state says nothing is being read. A pending row
+// (first read under way, or reader busy) is not here: it will have a reading shortly.
+func unreadable(row Row) bool {
+	if hasValue(row.Accounts) {
+		return false
+	}
+	switch row.State {
+	case StateOff, StateNeedsAction, StateNeedsConsent, StateUnsupported, StateNeedsKeychain, StateFailed:
+		return true
+	}
+	return false
 }
 
 func profileFailure(p ProfileState) Code {
