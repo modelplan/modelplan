@@ -215,6 +215,15 @@ class Steps(unittest.TestCase):
         walk.op_when({"op": "when", "present": "ax:gone", "then": [{"op": "click", "target": "ax:gone"}]})
         self.assertEqual([c for c in host.calls if c[0] == "click"], [("click", 4.0, 4.0)])
 
+    def test_when_on_reads_the_checkbox_value(self):
+        tree = {"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "on", "value": "1", "frame": [1, 1, 2, 2]},
+                                                                  {"id": "off", "value": "0", "frame": [5, 5, 2, 2]}]}]}
+        host = FakeHost(tree)
+        walk = walker(host, self.out, [])
+        walk.op_when({"op": "when", "on": "ax:off", "then": [{"op": "click", "target": "ax:off"}]})
+        walk.op_when({"op": "when", "on": "ax:on", "then": [{"op": "click", "target": "ax:on"}]})
+        self.assertEqual([c for c in host.calls if c[0] == "click"], [("click", 2.0, 2.0)])
+
     def test_await_absent_fails_when_the_target_stays(self):
         host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "looking", "frame": [1, 1, 2, 2]}]}]})
         walk = walker(host, self.out, [])

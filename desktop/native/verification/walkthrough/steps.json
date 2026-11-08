@@ -83,7 +83,7 @@
     {
       "id": "widget-found",
       "title": "Widget found and kept out",
-      "expected": "A fresh install starts with the widget collapsed (D56, build 14). Find Quota Widget in the status menu slides it out, and Auto-Collapse is turned off from the widget's own menu so the rest, card and size steps see the whole widget. A build without Find Quota Widget starts expanded and skips this.",
+      "expected": "A fresh install starts with the widget collapsed (D56, build 14). The walk turns Auto-Collapse off in Settings > Quota Widget (the widget's own menu cannot be reached while it is collapsed) and uses Find Quota Widget to bring it out, so the rest, card and size steps see the whole widget. A build without Find Quota Widget starts expanded and skips this.",
       "actions": [
         {
           "op": "key",
@@ -104,17 +104,49 @@
           "then": [
             {
               "op": "press",
-              "by": "id",
-              "value": "status.findQuotaWidget"
+              "by": "title",
+              "value": "Settings…"
             },
             {
               "op": "await",
-              "target": "ax^:dock.subscription.",
-              "timeout": 10
+              "target": "ax:settings.sidebar",
+              "timeout": 15
             },
             {
               "op": "click",
-              "target": "ax:dock.grip.0",
+              "target": "ax:settings.pane.dock"
+            },
+            {
+              "op": "await",
+              "target": "ax:settings.autoHide",
+              "timeout": 5
+            },
+            {
+              "op": "when",
+              "on": "ax:settings.autoHide",
+              "then": [
+                {
+                  "op": "press",
+                  "by": "id",
+                  "value": "settings.autoHide"
+                },
+                {
+                  "op": "wait",
+                  "seconds": 1.5
+                }
+              ]
+            },
+            {
+              "op": "click",
+              "target": "subrole:AXCloseButton"
+            },
+            {
+              "op": "wait",
+              "seconds": 1
+            },
+            {
+              "op": "click",
+              "target": "status-item",
               "button": "right"
             },
             {
@@ -124,7 +156,12 @@
             {
               "op": "press",
               "by": "id",
-              "value": "dock.menu.autoCollapse"
+              "value": "status.findQuotaWidget"
+            },
+            {
+              "op": "await",
+              "target": "ax^:dock.subscription.",
+              "timeout": 10
             }
           ]
         },

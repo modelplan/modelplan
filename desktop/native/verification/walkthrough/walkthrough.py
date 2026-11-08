@@ -61,6 +61,7 @@ def matcher(target):
         "value": lambda n: n.get("value") == value,
         "dom^": lambda n: str(n.get("dom", "")).startswith(value),
         "role": lambda n: n.get("role") == value,
+        "subrole": lambda n: n.get("subrole") == value,
     }
     if kind not in tests:
         raise WalkthroughError("unknown target " + target)
@@ -247,10 +248,16 @@ class Walkthrough:
             self.host.sleep(0.5)
 
     def op_when(self, action):
-        """Run nested actions only when a target is on screen ("present") or is not ("absent"), so one walk fits a
-        build with the flow and a build without it (the first-run chooser, a widget that starts collapsed)."""
-        target = action.get("present") or action.get("absent")
-        if (resolve(self.tree(), target) is not None) == ("present" in action):
+        """Run nested actions only when a target is on screen ("present"), is not ("absent"), or is a switched-on
+        checkbox ("on"), so one walk fits a build with the flow and a build without it (the first-run chooser, a
+        widget that starts collapsed)."""
+        if "on" in action:
+            node = resolve(self.tree(), action["on"])
+            hit = node is not None and str(node.get("value")) == "1"
+        else:
+            target = action.get("present") or action.get("absent")
+            hit = (resolve(self.tree(), target) is not None) == ("present" in action)
+        if hit:
             for nested in action["then"]:
                 getattr(self, "op_" + nested["op"])(nested)
 
