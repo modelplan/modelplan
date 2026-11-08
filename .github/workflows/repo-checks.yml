@@ -47,9 +47,10 @@ jobs:
           else
             echo "notices-mac=false" >> "$GITHUB_OUTPUT"
           fi
-          # notices: everything scripts/third-party-notices.py reads (sources under desktop/, cli/ and clients/,
+          # notices: everything scripts/third-party-notices.py reads (sources under desktop/, cli/ and clients/, the root
+          # go.work and go.work.sum that steer Go module resolution under cli/,
           # Swift manifests anywhere, LICENSES/, the release targets in release.yml, the script and its tests).
-          if git diff --name-only -z HEAD^1 HEAD | grep -qzE '^(desktop|cli|clients|LICENSES)/|(^|/)Package\.(swift|resolved)$|^\.github/workflows/(release|repo-checks)\.yml$|^scripts/third-party-notices\.py$|^scripts/tests/test_third_party_notices\.py$'; then
+          if git diff --name-only -z HEAD^1 HEAD | grep -qzE '^(desktop|cli|clients|LICENSES)/|^go\.work(\.sum)?$|(^|/)Package\.(swift|resolved)$|^\.github/workflows/(release|repo-checks)\.yml$|^scripts/third-party-notices\.py$|^scripts/tests/test_third_party_notices\.py$'; then
             echo "notices=true" >> "$GITHUB_OUTPUT"
           else
             echo "notices=false" >> "$GITHUB_OUTPUT"
