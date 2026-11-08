@@ -50,7 +50,7 @@ public struct DockTiming: Equatable, Sendable {
         setAccessibilityValue((trial ?? current).map(NSNumber.init(value:))); setAccessibilityMinValue(0); setAccessibilityMaxValue(max(0, efforts.count - 1))
         let trialName = trial == nil ? (chinese ? "未试选" : "none") : name(trial)
         setAccessibilityValueDescription(chinese ? "当前 \(name(current))；试选 \(trialName)；推荐 \(name(recommended))" : "Current \(name(current)); trial \(trialName); recommended \(name(recommended))")
-        setAccessibilityHelp(chinese ? "方向键试选；Escape 返回，不修改 Agent 设置。" : "Arrow keys try an effort; Escape returns. Agent settings are unchanged.")
+        setAccessibilityHelp(chinese ? "方向键试选；Escape 返回，不修改工具设置。" : "Arrow keys try an effort; Escape returns. Agent settings are unchanged.")
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
     public override func draw(_ dirtyRect: NSRect) {
