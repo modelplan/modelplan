@@ -36,6 +36,11 @@ label, so GUI jobs serialize without cancelling pending checks. Other jobs can
 use both ordinary `modelplan-mac` instances. This label is a routing capability,
 not permission to approve system prompts or access real user data.
 
+Since D62 (2026-11-08) every non-GUI task (`native-headless`, `transport`, `sequences`, `probe`, `u11-native`)
+asks for `modelplan-mac-nongui` instead of the plain `modelplan-mac`, and refuses to start on a runner whose
+name contains `gui`. The GUI Mac also carries `modelplan-mac`, so the plain label used to send headless jobs
+there while GUI jobs waited. Only the non-GUI Macs carry `modelplan-mac-nongui`.
+
 The native suite runs as two parallel legs. `task: native` keeps the GUI
 label and runs everything that may need a window server. `task: native-headless`
 uses the ordinary label and runs the app-integration XCTest classes listed in
