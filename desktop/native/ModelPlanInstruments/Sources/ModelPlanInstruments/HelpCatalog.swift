@@ -54,7 +54,7 @@ public struct HelpCatalog: Sendable {
             basis = copy("这里只练习本地操作，不会改变真实会话。", "This is a local practice preview that leaves real sessions unchanged.")
         case .ignition:
             title = copy("点火钮", "Ignition")
-            basis = copy("点按打开驾驶舱。", "Tap to open the Cockpit.") // D37: holding the ignition is v1.1
+            basis = copy("点按打开驾驶舱。", "Tap to open the Cockpit.") // C03, D59: in v1 a hold opens it the same way; hold-to-ignite is v1.1
         case .sliver:
             title = copy("细条", "Sliver")
             basis = copy("靠近这里稍停可显示额度挂件，右键可打开菜单。", "Rest near this edge to reveal the Quota Widget or right-click for its menu.")
