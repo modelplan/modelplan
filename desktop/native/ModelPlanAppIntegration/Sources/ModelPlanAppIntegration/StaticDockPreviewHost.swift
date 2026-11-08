@@ -253,6 +253,7 @@ struct DockHelpInteraction: Equatable {
     private var attentionWasExpanded = false
     private var locateLayer: CAShapeLayer?
     private var pendingUserReveal = false
+    private var pendingRevealHighlights = true
     private var cockpitPresentationBlocked = false
     private var locateTask: Task<Void, Never>?
     private var locating = false
@@ -266,6 +267,46 @@ struct DockHelpInteraction: Equatable {
                 self.edge.refresh()
             }
         }
+    }
+    /// D56 Find Quota Widget: while the spotlight runs the widget stays expanded, may show over a
+    /// full-screen app on the current Space, and offers no hint. Releasing it lets the normal
+    /// auto-collapse rules apply again.
+    var spotlightHold = false {
+        didSet {
+            guard spotlightHold != oldValue, !retired else { return }
+            for window in [panel, cardPanel, overflowPanel] { window?.collectionBehavior = panelCollectionBehavior }
+            if spotlightHold { dismissCard() }
+            Task { @MainActor [weak self] in
+                guard let self, !self.retired else { return }
+                self.edge.refresh()
+            }
+        }
+    }
+    /// Where the expanded widget is on screen now, and the whole display it is on; nil while it
+    /// is collapsed, hidden or withdrawn. The hull comes from the registered outline, not the panel.
+    var spotlightTarget: QuotaWidgetSpotlightTarget? {
+        guard permitted, !retired, !retiring, preferences.showDock, let presentation = edge.presentation,
+              presentation.state == .expanded, let frame = presentation.paintedFrame,
+              let placement = presentation.placement,
+              !createsNativePanels || panel?.isVisible == true,
+              let display = topology(of: sampleEnvironment()).display(placement.displayID) else { return nil }
+        var widget = frame
+        do {
+            let view = edgeViews[placement.edge] ?? dockView
+            let local = view.registeredMoveOutlinePath?.boundingBox ?? view.bounds
+            let global: CGRect
+            if createsNativePanels, let window = view.window, window === panel {
+                global = window.convertToScreen(view.convert(local, to: nil))
+            } else {
+                // Detached checks: the view sits at the container origin, which fills the painted frame.
+                let y = view.isFlipped ? view.bounds.height - local.maxY : local.minY
+                global = CGRect(x: frame.minX + view.frame.minX + local.minX, y: frame.minY + view.frame.minY + y,
+                                width: local.width, height: local.height)
+            }
+            let clipped = global.intersection(frame)
+            if !clipped.isNull, !clipped.isEmpty { widget = clipped }
+        }
+        return .init(widget: widget, display: display.frame, displayID: placement.displayID)
     }
     /// Presentation is allowed by the lifecycle and not blocked by the cockpit, so a Show
     /// request can make the widget visible now.
@@ -474,7 +515,7 @@ struct DockHelpInteraction: Equatable {
     public static let consumedSettingKeys: Set<SettingKey> = [.magnification, .showPercentages, .sliverAlert, .fullscreen, .redBelow]
     private var preferences = SettingsPreferences()
     private var panelCollectionBehavior: NSWindow.CollectionBehavior {
-        preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
+        preferences.showOverFullscreen || spotlightHold ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
     }
     private var effectiveRedBelow: Double { Double(application?.effective.redBelow ?? SettingsPreferences().redBelow) }
     private var memberSafePreferences: SettingsPreferences {
@@ -1359,7 +1400,7 @@ struct DockHelpInteraction: Equatable {
         presence.lifecycleActive = permitted && !retired
         presence.cockpitClosed = presence.cockpitClosed && !cockpitPresentationBlocked
         presence.allowedOverFullscreen = native.presence.allowedOverFullscreen || preferences.showOverFullscreen
-        presence.menuActuallyOpen = menuOpen; presence.locating = locating || helpMapHold
+        presence.menuActuallyOpen = menuOpen; presence.locating = locating || helpMapHold || spotlightHold
         presence.cardFocused = cardHasKeyboardFocus || interactionView.keyboardTargetID != nil
         // Preview does not claim to detect another app's fullscreen state or activate another Space.
         var auxiliary = cardPanel?.isVisible == true ? cardPanel?.frame : (!createsNativePanels ? native.cardFrame : nil)
@@ -1923,9 +1964,10 @@ struct DockHelpInteraction: Equatable {
         }
     }
 
-    func revealForUser() {
+    /// `highlight: false` is the Find Quota Widget reveal: its spotlight draws the ring instead.
+    func revealForUser(highlight: Bool = true) {
         guard !retired, preferences.showDock else { return }
-        pendingUserReveal = true
+        pendingUserReveal = true; pendingRevealHighlights = highlight
         fulfillUserReveal()
     }
 
@@ -1939,6 +1981,8 @@ struct DockHelpInteraction: Equatable {
             locating = false; edge.refresh(); return
         }
         pendingUserReveal = false
+        // The spotlight's own hold keeps the widget expanded; the accent ring is Show's alone.
+        guard pendingRevealHighlights else { locating = false; return }
         let path = view.registeredMoveOutlinePath ?? CGPath(roundedRect: view.bounds.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 6, cornerHeight: 6, transform: nil)
         let mark = CAShapeLayer(); mark.name = "dock.locate-highlight"; mark.frame = view.bounds; mark.path = path
         mark.fillColor = NSColor.clear.cgColor; mark.strokeColor = NSColor.controlAccentColor.cgColor

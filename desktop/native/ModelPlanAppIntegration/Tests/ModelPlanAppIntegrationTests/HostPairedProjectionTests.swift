@@ -1109,8 +1109,8 @@ actor EntrySyntheticClient: EngineClient {
         func items() throws -> [NSMenuItem] {
             try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
         }
-        let english = ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"]
-        let chinese = ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
+        let english = ["Refresh", "Show Quota Widget", "Find Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"]
+        let chinese = ["刷新", "显示额度挂件", "找到额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
         XCTAssertEqual(try items().map(\.title), english)
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try items().map(\.title), chinese)
