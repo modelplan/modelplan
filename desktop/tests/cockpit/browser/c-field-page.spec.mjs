@@ -52,3 +52,24 @@ test('D43 every vendor mark the scene asks for loads under the page CSP, close t
   ['openai-white.svg','claude-rounded.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
  for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
 });
+// QA 11-08: the enlarged field's axis labels overlapped (price ticks under the front-row caption, time ticks stacked).
+// Prototype field-picker-tags/axis-layout.js: screen-space lanes in the page; the scene's ticks and values are unchanged.
+const spread=(i,dev)=>({id:'s'+i,name:'Synthetic '+i,developerId:dev,recommended:'medium',efforts:[{effort:'low',label:'Low',star:false,ability:30+i*2,cost:.05*(i+1),time:20},{effort:'medium',label:'Med',star:true,ability:40+i*2,cost:.1*(i+1),time:30},{effort:'high',label:'High',star:false,ability:45+i*2,cost:.3*(i+1),time:60}]});
+test('QA 11-08 the axis labels of the enlarged field never overlap and stay inside the view',async({page})=>{
+ await page.setViewportSize({width:900,height:640});await open(page);
+ const devs=['openai','anthropic','zhipuai'];
+ await show(page,JSON.stringify({language:'en',reduceMotion:true,models:Array.from({length:10},(_,i)=>spread(i,devs[i%3])),mine:[],focus:null}));
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
+ await expect.poll(()=>page.locator('.tick3.field-axis-placed').count()).toBeGreaterThan(4);
+ await page.waitForTimeout(1500);
+ const {boxes,stage}=await page.evaluate(()=>{
+  const box=e=>{const r=e.getBoundingClientRect();return {text:e.textContent,x:r.x,y:r.y,r:r.right,b:r.bottom};};
+  return {stage:box(document.querySelector('.field-stage')),boxes:[...document.querySelectorAll('.tick3')].filter(e=>getComputedStyle(e).visibility!=='hidden'&&Number(getComputedStyle(e).opacity)>.02&&e.getBoundingClientRect().width>0).map(box)};
+ });
+ expect(boxes.length).toBeGreaterThan(4);
+ for(const a of boxes){
+  expect(a.x>=stage.x&&a.r<=stage.r&&a.y>=stage.y&&a.b<=stage.b,a.text+' inside').toBe(true);
+  for(const b of boxes)if(a!==b)expect(a.r<=b.x||b.r<=a.x||a.b<=b.y||b.b<=a.y,a.text+' / '+b.text).toBe(true);
+ }
+});
