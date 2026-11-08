@@ -70,8 +70,18 @@ test('CKP-PORT-08 a different current effort is a white dot linked to its ★',a
 });
 test('CKP-PORT-05 the compact profile is one strip of three',async({page})=>{
  await open(page,{tier:'compact'});
- await expect(page.locator('.hud.hud-strip .hp')).toHaveCount(3);await expect(page.locator('.hud-mini')).toHaveCount(0);
+ await expect(page.locator('.hud.hud-strip .hp')).toHaveCount(3);
  expect(await local(page)).toEqual([58,9,216,30]);
+});
+// G3-48: long published names overlapped their neighbours in three columns. The study's compact strip is an
+// 86x30 chart beside three stacked 10 px rows; each name stays inside its own row, before its ★ effort.
+test('G3-48 compact HUD names never overlap, however long',async({page})=>{
+ const named=(id,name)=>({...model(id,50,.2),name});
+ await open(page,{tier:'compact',published:[named('a','GPT-6 Astra Extended Context'),named('b','GPT-6.1 Terra'),named('c','GPT-6 Luna Preview Long Name')]});
+ const svg=await page.locator('.hud-strip svg.hud-mini').boundingBox();expect([svg.width,svg.height]).toEqual([86,30]);
+ const rows=await page.locator('.hud-strip .hp').evaluateAll(rows=>rows.map(r=>{const box=e=>e.getBoundingClientRect(),hud=r.closest('.hud').getBoundingClientRect(),row=box(r),name=box(r.querySelector('b')),rec=box(r.querySelector('.hp-rec'));return {top:row.top,bottom:row.bottom,nameRight:name.right,recLeft:rec.left,recRight:rec.right,hudRight:hud.right};}));
+ expect(rows).toHaveLength(3);
+ for(const [i,r] of rows.entries()){expect(r.nameRight).toBeLessThanOrEqual(r.recLeft);expect(r.recRight).toBeLessThanOrEqual(r.hudRight+0.5);if(i)expect(r.top).toBeGreaterThanOrEqual(rows[i-1].bottom);}
 });
 test('CKP-PORT-06 a row opens 档位 and Esc or Back returns to the page before',async({page})=>{
  await open(page);
