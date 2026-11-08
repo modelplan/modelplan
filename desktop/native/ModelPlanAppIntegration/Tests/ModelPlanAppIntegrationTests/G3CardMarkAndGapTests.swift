@@ -200,7 +200,8 @@ private actor G350Engine: EngineClient {
             let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: true, bundleURL: profile.appendingPathComponent("Synthetic.app"),
                 dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: pointer) },
                 deadlineNow: { [clock] in clock.wall }, deadlineElapsed: { [clock] in clock.elapsed },
-                makeClient: { _, target in G350Engine(store: target, rows: snapshot) }, makeSettingsSurface: { _ in G350NoWindowSurface() }, activateSettings: {})
+                makeClient: { _, target in G350Engine(store: target, rows: snapshot) }, makeSettingsSurface: { _ in G350NoWindowSurface() },
+                isolatedResetNotificationLedger: profile.appendingPathComponent("reset-notifications.json"), activateSettings: {})
             app.makeFirstRunSurface = { _ in G350NoWindowSurface() }
             app.makeFirstRunSurfaceWithConsent = { _, _ in G350NoWindowSurface() }
             await app.prepare()
