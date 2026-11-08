@@ -382,6 +382,19 @@ class CrashReportRedactionTests(unittest.TestCase):
             self.assertEqual([f.suffix for f in files], [".json"])
             self.assertNotIn("alice", files[0].read_text(encoding="utf-8"))
 
+    def test_spaced_and_non_ascii_names_leave_no_fragment(self):
+        for name in ("John Smith", "J\u00fcrgen M\u00fcller", "\u5f20\u4f1f"):
+            body = json.loads(self.sample().split("\n", 1)[1])
+            body["exception"]["type"] = "crash by " + name
+            body["threads"][1]["frames"][0]["symbol"] = "open %s.txt" % name
+            raw = "{}\n" + json.dumps(body)
+            out = w.redact_crash_report(raw, [name])
+            text = json.dumps(out, ensure_ascii=False) + json.dumps(out)
+            for part in [name] + name.split():
+                self.assertNotIn(part, text)
+            self.assertEqual(out["frames"][0]["image"], "ModelPlan")
+        self.assertNotIn("Smith", w.scrub_text("hello smith", ["John Smith"]))
+
     def test_unparseable_report_leaves_no_raw_text(self):
         self.assertIsNone(w.redact_crash_report("not json /Users/alice"))
 

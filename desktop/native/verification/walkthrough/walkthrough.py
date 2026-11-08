@@ -845,14 +845,37 @@ UUID_PATTERN = re.compile(r"\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A
 LONG_HEX_PATTERN = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
 
 
+def secret_tokens(secrets):
+    """Every known user or host name, whole and split on whitespace, longest first."""
+    found = set()
+    for secret in secrets:
+        secret = str(secret or "").strip()
+        if len(secret) > 1:
+            found.add(secret)
+        found.update(part for part in secret.split() if len(part) > 1)
+    return sorted(found, key=len, reverse=True)
+
+
 def scrub_text(text, secrets=()):
-    """Replace anything that names the runner: absolute paths, UUIDs, long hex ids, and known user or host names."""
+    """Replace anything that names the runner: absolute paths, UUIDs, long hex ids, and known user or host names
+    (the whole name and each whitespace-separated part, any script, any case)."""
     text = UUID_PATTERN.sub("<id>", str(text))
     text = PATH_PATTERN.sub("<path>", text)
     text = LONG_HEX_PATTERN.sub("<id>", text)
-    for secret in sorted({s for s in secrets if s and len(s) > 1}, key=len, reverse=True):
+    for secret in secret_tokens(secrets):
         text = re.sub(re.escape(secret), "<redacted>", text, flags=re.IGNORECASE)
     return text
+
+
+def scrub_value(value, secrets=()):
+    """Scrub every string in a JSON value before it is serialised, so no escaping can hide a name."""
+    if isinstance(value, str):
+        return scrub_text(value, secrets)
+    if isinstance(value, list):
+        return [scrub_value(v, secrets) for v in value]
+    if isinstance(value, dict):
+        return {k: scrub_value(v, secrets) for k, v in value.items()}
+    return value
 
 
 def redact_crash_report(raw, secrets=()):
@@ -888,7 +911,9 @@ def redact_crash_report(raw, secrets=()):
             "exceptionCodes": exception.get("codes"), "subtype": exception.get("subtype"),
             "terminationReason": (body.get("termination") or {}).get("indicator"),
             "crashedThreadName": thread.get("name") or thread.get("queue"), "frames": frames}
-    return json.loads(scrub_text(json.dumps(kept), secrets))
+    kept = scrub_value(kept, secrets)
+    # Second pass on the serialised text, unescaped, in case a name only appears across fields.
+    return json.loads(scrub_text(json.dumps(kept, ensure_ascii=False), secrets))
 
 
 def keep_crash_reports(home, names, out):
@@ -901,11 +926,11 @@ def keep_crash_reports(home, names, out):
     target = out / "crash-reports"
     target.mkdir(exist_ok=True)
     secrets = [home.name, os.environ.get("USER", ""), os.environ.get("LOGNAME", ""), socket.gethostname(),
-               socket.gethostname().split(".")[0]]
+               socket.gethostname().split(".")[0]]  # scrub_text also splits each on whitespace
     for name in names:
         raw = (home / "Library/Logs/DiagnosticReports" / name).read_text(encoding="utf-8", errors="replace")
         summary = redact_crash_report(raw, secrets) or {"unparsed": True}
-        (target / (Path(name).stem + ".redacted.json")).write_text(json.dumps(summary, indent=1, sort_keys=True), encoding="utf-8")
+        (target / (Path(name).stem + ".redacted.json")).write_text(json.dumps(summary, indent=1, sort_keys=True, ensure_ascii=False), encoding="utf-8")
 
 
 def reader_rows(report):
