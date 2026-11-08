@@ -161,6 +161,73 @@ extension CommunityCockpitEntryTests {
         XCTAssertEqual(window.frame.size, start.size, "the same cockpit, not a resized one")
     }
 
+    /// G3-53 / CKP-PORT-09 on the real page and panel: a real click on the porthole shutter closes and reopens it
+    /// at both heights, and the page draws the closed cap. Owner Build 12: "开关窗也没效果".
+    @MainActor func testG3_53ShutterClickClosesAndReopensTheRealCockpit() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        for (name, usable, tier, closedRoot) in [("short", CGRect(x: 0, y: 0, width: 1440, height: 680), CockpitShellState.Tier.compact, CGFloat(609)),
+                                                  ("full", CGRect(x: 0, y: 0, width: 1680, height: 1026), .tall, 691)] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-53-" + UUID().uuidString).resolvingSymlinksInPath()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+            let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+            let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+            let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+            defer { page.discard() }
+            page.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.maxX - 340, y: usable.maxY, width: 28, height: 24))
+            NSApp.activate(ignoringOtherApps: true)
+            page.open()
+            let window = try XCTUnwrap(page.window), web = try XCTUnwrap(page.verificationWebView)
+            window.makeKeyAndOrderFront(nil)
+            func pageValue(_ script: String) async -> [String: Any]? { (try? await web.evaluateJavaScript(script)) as? [String: Any] }
+            let probe = "(()=>{const s=document.querySelector('[data-shutter]'),c=document.querySelector('.ck');if(!s||!c||!document.documentElement.dataset.profile)return null;const r=s.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,disabled:s.disabled,pressed:s.getAttribute('aria-pressed'),active:document.getElementById('cockpit').dataset.active,root:c.getBoundingClientRect().height}})()"
+            var state: [String: Any]?
+            var deadline = ContinuousClock.now + .seconds(30)
+            while ContinuousClock.now < deadline {
+                state = await pageValue(probe)
+                if state?["active"] as? String == "true" { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let before = try XCTUnwrap(state, "\(name): the page must be painted")
+            XCTAssertEqual(page.verificationShellState?.tier, tier, name)
+            XCTAssertEqual(before["active"] as? String, "true", "\(name): the shown, key cockpit is active (window key \(window.isKeyWindow), app active \(NSApp.isActive))")
+            XCTAssertEqual(before["disabled"] as? Bool, false, "\(name): the shutter is enabled")
+            let scale = page.verificationLayout?.scale ?? 1
+            var target = before
+            func click() throws {
+                let content = try XCTUnwrap(window.contentView), h = content.bounds.height
+                let p = content.convert(CGPoint(x: (target["x"] as! Double) * scale, y: h - (target["y"] as! Double) * scale), to: nil)
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    window.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)))
+                }
+            }
+            for (closed, expectedRoot) in [(true, closedRoot), (false, tier == .tall ? 877 : 627)] {
+                try click()
+                deadline = ContinuousClock.now + .seconds(10)
+                while ContinuousClock.now < deadline, (page.verificationShellState?.profile == .closed) != closed { try await Task.sleep(for: .milliseconds(50)) }
+                XCTAssertEqual(page.verificationShellState?.profile, closed ? .closed : .open, "\(name): the click reaches the native shell")
+                XCTAssertEqual(page.verificationRootHeight, expectedRoot, name)
+                deadline = ContinuousClock.now + .seconds(10)
+                var drawn: [String: Any]?
+                while ContinuousClock.now < deadline {
+                    drawn = await pageValue(probe)
+                    if drawn?["pressed"] as? String == String(closed) { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                XCTAssertEqual(drawn?["pressed"] as? String, String(closed), "\(name): the page shows the shutter \(closed ? "closed" : "open")")
+                XCTAssertEqual(drawn?["root"] as? Double ?? 0, Double(expectedRoot), accuracy: 0.5, "\(name): the page root follows")
+                if let drawn { target = drawn }
+            }
+        }
+    }
+
     /// CKP-SHELL-07 / owner D51, C-02, C-03 on the real page and panel: an Air shows the full cockpit with its flame
     /// reserve, scaled as one page (WebKit page zoom, not a bitmap), with the strip and shutter still hit where drawn.
     /// Covers 1470x956 with the Dock at the bottom, the lowest full scale (75 %) and a live switch to 80 %.
