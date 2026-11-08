@@ -14,7 +14,10 @@ import XCTest
 @MainActor private final class TogglingStatusConsole: EngineRowsConsoleSurface {
     var shows = 0, closes = 0, hides = 0
     private(set) var isShowing = false
+    var onShowingChanged: (() -> Void)?
     func show() { shows += 1; isShowing = true }
+    /// The page closing by itself (its X key or an outside press).
+    func pageClosed() { isShowing = false; onShowingChanged?() }
     func render() {}
     func hide() { hides += 1; isShowing = false }
     func requestClose() { closes += 1; isShowing = false }
@@ -80,6 +83,32 @@ import XCTest
         XCTAssertEqual(console.shows, 2, "the third click opens again"); XCTAssertTrue(console.isShowing)
         app.showConsole()
         XCTAssertEqual(console.shows, 3); XCTAssertEqual(console.closes, 1, "the Open Cockpit entries never close")
+    }
+
+    /// G3-49: the icon's tooltip covered the porthole. It is withdrawn while the cockpit shows, and comes
+    /// back on every way the cockpit closes; the accessible help is never withdrawn.
+    func testG3_49IconTooltipIsWithdrawnWhileTheCockpitShows() async throws {
+        let console = TogglingStatusConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        let tooltip = try XCTUnwrap(button.toolTip, "the icon has a tooltip while the cockpit is closed")
+        func press() throws {
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        }
+        try press()
+        XCTAssertNil(button.toolTip, "no tooltip over the open cockpit")
+        XCTAssertEqual(button.accessibilityHelp(), tooltip)
+        app.renderMenu()
+        XCTAssertNil(button.toolTip, "a menu refresh does not bring it back while open")
+        try press()
+        XCTAssertEqual(button.toolTip, tooltip, "back after the icon closes the cockpit")
+        app.showConsole()
+        XCTAssertNil(button.toolTip)
+        console.pageClosed()
+        XCTAssertEqual(button.toolTip, tooltip, "back after the cockpit closes itself")
     }
 
     /// D44: these clicks are left to AppKit, which shows the attached menu; sending them would start real tracking.
