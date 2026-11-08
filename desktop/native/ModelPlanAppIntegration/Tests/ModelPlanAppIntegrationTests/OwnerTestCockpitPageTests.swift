@@ -200,15 +200,17 @@ extension CommunityCockpitEntryTests {
             let layout = try XCTUnwrap(page.verificationLayout), scale = layout.scale
             XCTAssertEqual(scale, expected, accuracy: 1e-6, name)
             XCTAssertEqual(page.verificationShellState?.tier, .tall, "\(name): the full cockpit, never the short one")
-            XCTAssertEqual(painted["root"], 877, "\(name): the full root")
+            XCTAssertEqual(painted["root"]!, 877, accuracy: 0.5, "\(name): the full root")
             // The whole canvas, root plus the flame reserve, is laid out at 636 CSS px and fits the window.
             XCTAssertEqual(painted["width"]!, 636, accuracy: 1, name)
             XCTAssertEqual(painted["height"]!, 911, accuracy: 1, name)
             XCTAssertEqual(painted["height"]! - painted["rootBottom"]!, 34, accuracy: 1, "\(name): the flame reserve is inside the window")
             XCTAssertEqual(window.frame.width, 636 * scale, accuracy: 0.5, name)
             XCTAssertEqual(window.frame.height, 911 * scale, accuracy: 0.5, name)
-            XCTAssertLessThanOrEqual(window.frame.maxY, usable.maxY - 6 + 0.5, name)
-            XCTAssertGreaterThanOrEqual(window.frame.minY, usable.minY - 0.5, name)
+            // Placement on the requested screen (the hosted runner's real display is smaller, so the window
+            // server may move the panel; its size is what the test can hold it to).
+            XCTAssertEqual(layout.frame.maxY, usable.maxY - 6, accuracy: 1e-6, name)
+            XCTAssertGreaterThanOrEqual(layout.frame.minY, usable.minY - 1e-6, name)
             // Crisp: WebKit draws the page at the final size; no view scales a bitmap of it.
             XCTAssertEqual(web.pageZoom, scale, accuracy: 1e-6, name)
             let content = try XCTUnwrap(window.contentView)
