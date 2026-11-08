@@ -8,3 +8,14 @@
 .ck-port .ck-field[data-still]{inset:calc(-12px - var(--bz,0px)) calc(-24px - var(--bz,0px)) calc(0px - var(--bz,0px));-webkit-mask:url('./runtime/canopy-c01/window-890-2x.png') center/100% 100% no-repeat;mask:url('./runtime/canopy-c01/window-890-2x.png') center/100% 100% no-repeat}
 [data-profile=compact] .ck-port .ck-field[data-still]{-webkit-mask-image:url('./runtime/canopy-c01/window-640-2x.png');mask-image:url('./runtime/canopy-c01/window-640-2x.png')}
 .ck-portrow::before,.ck-port::before{filter:saturate(.12) brightness(.78)}
+/* Comparison view static LCD backlights (study effort-backlights/comparison.css, Task 44/53): each fixed role column is
+   lit in its own colour (current white, try blue, ★ gold); a column equal to the current one is unlit. */
+:root{--cmp-gold:#f3e8d5}
+.dk-mfd .cmp .cmp-panel{--cmp-light:var(--lcd-ink);background:linear-gradient(90deg,var(--slot-deep) 0 2px,transparent 2px calc(100% - 2px),var(--slot-deep) calc(100% - 2px)),color-mix(in srgb,var(--cmp-light) 7%,var(--slot-deep));box-shadow:inset 3px 0 7px color-mix(in srgb,var(--cmp-light) 7%,transparent),inset -3px 0 7px color-mix(in srgb,var(--cmp-light) 7%,transparent)}
+.dk-mfd .cmp [data-light="gold"]{--cmp-light:var(--cmp-gold)}
+.dk-mfd .cmp [data-light="blue"]{--cmp-light:var(--blue)}
+.dk-mfd .cmp [data-light="dim"],.dk-mfd .cmp [data-light="off"]{--cmp-light:var(--lcd-muted);background:var(--slot-deep);box-shadow:none}
+.dk-mfd .cmp .cmp-panel,.dk-mfd .cmp .cmp-panel b,.dk-mfd .cmp .cmp-panel .cmp-role{color:var(--cmp-light)}
+.dk-mfd .cmp .cmp-panel .cmp-equal{color:#9ca7b0}
+.dk-mfd .cmp [data-light="off"] b,.dk-mfd .cmp [data-light="off"] .cmp-value{visibility:hidden}
+.dk-mfd .cmp .cmp-equal-star{font-size:10px;line-height:10px;color:var(--cmp-gold,var(--gold))}

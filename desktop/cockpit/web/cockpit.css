@@ -196,3 +196,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 #cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-n{color:var(--muted,#8a96a0)}
 .hud-axis{fill:none;stroke:#e9edf030;stroke-width:.7}.hud-axis-label{font:400 9px var(--f-silk);fill:#aab6bf}
 .hud-rank{font:500 9px var(--f-lcd);fill:#f3e8d5}.hud-rank.dominated{fill:#aab6bf}
+/* Owner D76: the Reserve hint floats over the page in the MFD tip style. */
+.mfd-tip.eng-hint{position:fixed;z-index:40}
+/* The comparison title never gives way to its note or links (current unknown made it "Compare …"). */
+.dk-mfd .cmp-h .mfd-title{flex:none}.dk-mfd .cmp-h .cmp-note{min-width:0;overflow:hidden;text-overflow:ellipsis}.dk-mfd .cmp-header-links{min-width:0;overflow:hidden}
