@@ -55,6 +55,24 @@ to validate the runner without changing the general switch or launching all
 product checks. Acceptance must verify the assigned runner identity and the
 probe result; an online status alone is insufficient.
 
+## Ordinary owner Macs for headless workflows
+
+`MAC_CI_NONGUI=enabled` (owner D62, 2026-11-08) moves the `u11-native` task of `trusted-mac.yml` to the
+owner's ordinary Macs. It routes to the label `modelplan-mac-nongui`, which only the non-GUI runners carry,
+so the GUI Mac is never selected; the job also refuses to start on a runner whose name contains `gui`.
+The owner gate is the same as above. Unset or any other value, or an outside actor, uses hosted `macos-15`,
+the oldest supported macOS. `U11 native cockpit` calls the task at a pinned commit, so enabling it needs
+that commit admitted by the runner group as well.
+
+On a reused Mac the job keeps everything it writes in its runner temp: `HOME`, `CFFIXED_USER_HOME`,
+`TMPDIR`, the XDG, Codex, Claude, ModelPlan, Go and npm caches are redirected there, the checkout keeps no
+credentials, and a final step removes `.tmp` and `node_modules` whatever the result. The runner empties its
+temp directory around each job, and the next checkout cleans the workspace.
+
+The packaged-app walkthrough (`test-build-walkthrough.yml`) stays hosted: it needs a logged-in window
+server, Accessibility and screen capture, and posts real pointer input, which an ordinary owner Mac either
+lacks or shares with the GUI Mac's session.
+
 ## Merge queue
 
 A PR does not have to merge `main` before it lands. The queue builds "PR + latest
