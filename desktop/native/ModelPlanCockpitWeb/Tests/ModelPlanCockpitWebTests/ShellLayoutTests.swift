@@ -104,6 +104,18 @@ final class ShellLayoutTests: XCTestCase {
             XCTAssertTrue(value.sizeFellBack); XCTAssertEqual(value.scale, 800 / 911, accuracy: 1e-9); XCTAssertEqual(value.profile, .full)
         }
     }
+    /// D60 + #713 review: placement uses the final scale (the 85 % default, not only the fit-to-screen scale),
+    /// so the window is the 85 % width where it is anchored and its right-edge clamp uses that width.
+    func testD60PlacementUsesTheFinalScaledWidth() throws {
+        let value = try placed(width: 1680, height: 1050, bar: 24)
+        XCTAssertEqual(value.scale, 0.85)
+        XCTAssertEqual(value.frame.width, 636 * 0.85, accuracy: 1e-9)
+        XCTAssertEqual(value.frame.midX, 1680 - 200 + 14, accuracy: 1e-9, "anchored on the icon at the scaled width")
+        let edge = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: 0, width: 1680, height: 1026),
+            anchor: .init(x: 1670, y: 1026, width: 28, height: 24), shutterClosed: false))
+        XCTAssertEqual(edge.frame.maxX, 1680, accuracy: 1e-9, "the right-edge clamp uses the scaled width")
+        XCTAssertEqual(edge.frame.width, 636 * 0.85, accuracy: 1e-9)
+    }
     /// D51: the drag region scales with the page so it stays on the strip at every size.
     func testD51DragRegionScalesWithThePage() throws {
         let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70)
