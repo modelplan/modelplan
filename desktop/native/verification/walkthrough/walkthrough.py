@@ -58,6 +58,8 @@ def matcher(target):
         "ax": lambda n: n.get("id") == value,
         "ax^": lambda n: str(n.get("id", "")).startswith(value),
         "label": lambda n: value in (n.get("label"), n.get("title")),
+        "label^": lambda n: str(n.get("label") or n.get("title") or "").startswith(value),
+        "label~": lambda n: value in str(n.get("label") or n.get("title") or ""),
         "value": lambda n: n.get("value") == value,
         "dom^": lambda n: str(n.get("dom", "")).startswith(value),
         "role": lambda n: n.get("role") == value,
@@ -246,6 +248,16 @@ class Walkthrough:
     def op_click(self, action):
         verb = "rightclick" if action.get("button") == "right" else "click"
         self.host.helper(verb, *centre(self.need(action["target"])["frame"]))
+
+    def op_clickFirst(self, action):
+        """Click the first of several targets that is on screen; the step fails when none is."""
+        tree = self.tree()
+        for target in action["targets"]:
+            node = resolve(tree, target)
+            if node is not None:
+                self.host.helper("click", *centre(node["frame"]))
+                return
+        raise WalkthroughError("none of the targets is on screen: " + ", ".join(action["targets"]))
 
     def op_hover(self, action):
         self.host.helper("move", *centre(self.need(action["target"])["frame"]), 0.5)

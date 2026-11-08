@@ -54,6 +54,13 @@ itself (see `publication-fresh-profile` below). That is the only network use, an
 | `walkthrough.py` | Runner, checks, manifest. Pure parts are tested in `tests/test_walkthrough.py` |
 | `walkthrough_input.swift` | Reads windows and accessibility for one PID, posts mouse and keys, measures a picture |
 
+## Feature journeys
+
+Steps named `j-*` walk the prototype's interaction journeys (tab scope, MFD pages, option keys, press a fader strip,
+return from a comparison, ALERT lamp, Esc order). They carry few hard checks on purpose: each step's `tree.json` is
+compared with the prototype journey by a separate feature checker (PASS / BROKEN / MISSING per feature). Targets accept
+`label^:` (starts with) and `label~:` (contains); `clickFirst` clicks the first of several targets that is on screen.
+
 ## Output
 
 `manifest.json` has `sourceSHA`, `artifact`, `host` (display, permissions and GPU; no user name) and:

@@ -927,6 +927,422 @@
       ]
     },
     {
+      "id": "j-tab-second",
+      "title": "Second subscription tab",
+      "expected": "Pressing the second tab lights it and scopes the table, faders and records to that subscription.",
+      "prototype": "feature journey (D75)",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:Codex · Shortcut key 1"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "on": "label:Codex · Shortcut key 1"
+        }
+      ],
+      "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "j-tab-all",
+      "title": "All tab again",
+      "expected": "The All key returns every subscription.",
+      "prototype": "feature journey (D75)",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:All · Shortcut key 0"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "on": "label:All · Shortcut key 0"
+        }
+      ],
+      "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "j-page-subscription",
+      "title": "MFD page Subscription",
+      "expected": "The Subscription page key lights and the page shows its own content.",
+      "prototype": "feature journey (D75)",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:Subscription"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "on": "label:Subscription"
+        }
+      ],
+      "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "j-page-effort",
+      "title": "MFD page Effort",
+      "expected": "The Effort page key lights and the page shows its own content.",
+      "prototype": "feature journey (D75)",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:Effort"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "on": "label:Effort"
+        }
+      ],
+      "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "j-page-breakdown",
+      "title": "MFD page Breakdown",
+      "expected": "The Breakdown page key lights and the page shows its own content.",
+      "prototype": "feature journey (D75)",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:Breakdown"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "on": "label:Breakdown"
+        }
+      ],
+      "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "j-opt-grid",
+      "title": "Overview option key Bars | Grid",
+      "expected": "Back on Overview, the Bars | Grid key switches the chart to the heatmap.",
+      "prototype": "feature journey (D75)",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:Overview"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        },
+        {
+          "op": "click",
+          "target": "label^:Bars | Grid"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label:ModelPlan Cockpit"
+        }
+      ],
+      "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "j-press-strip",
+      "title": "Press a fader name strip",
+      "expected": "Pressing a fader name strip opens that model's comparison on the MFD (Compare · model, Current, Try, Rec).",
+      "prototype": "feature journey (D75)",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:Overview"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        },
+        {
+          "op": "click",
+          "target": "label^:GPT-6 Astra: effort"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label:ModelPlan Cockpit"
+        }
+      ],
+      "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "j-compare-back",
+      "title": "Return from the comparison",
+      "expected": "The back key (or Back to Overview) ends the comparison and Overview lights again.",
+      "prototype": "feature journey (D75)",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "clickFirst",
+          "targets": [
+            "label~:Back to Overview",
+            "label^:‹",
+            "label^:Back"
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "on": "label:Overview"
+        }
+      ],
+      "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "j-alert-open",
+      "title": "ALERT lamp",
+      "expected": "Pressing the ALERT lamp opens the alert list on the MFD with a way back.",
+      "prototype": "feature journey (D75)",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label^:Alert"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label:ModelPlan Cockpit"
+        }
+      ],
+      "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "j-esc-compare",
+      "title": "Esc ends the comparison first",
+      "expected": "With a comparison open, Esc leaves the comparison and the cockpit stays open (CKP-SHELL-26).",
+      "prototype": "feature journey (D75)",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:Overview"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        },
+        {
+          "op": "click",
+          "target": "label^:GPT-6 Astra: effort"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label:ModelPlan Cockpit"
+        }
+      ],
+      "requirement": "D75 feature journeys"
+    },
+    {
       "id": "cockpit-toggle-close",
       "title": "Menu bar icon closes the cockpit",
       "expected": "A second left click on the menu bar icon closes the cockpit; the widget is there (G3-40).",

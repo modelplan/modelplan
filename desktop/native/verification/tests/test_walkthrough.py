@@ -73,6 +73,18 @@ class Targets(unittest.TestCase):
         self.assertEqual(w.resolve(self.TREE, "status-item")["frame"], [700, 0, 60, 24])
         self.assertEqual(w.resolve(self.TREE, "window-of:ax:a")["role"], "AXWindow")
 
+    def test_label_prefix_and_contains(self):
+        self.assertEqual(w.resolve(self.TREE, "label^:Clo")["id"], "a")
+        self.assertEqual(w.resolve(self.TREE, "label~:los")["id"], "a")
+        self.assertIsNone(w.resolve(self.TREE, "label^:los"))
+
+    def test_click_first_takes_the_first_target_on_screen_and_fails_when_none_is(self):
+        run = w.Walkthrough(FakeHost(tree=self.TREE), "App.app", "out", [], {}, (1000, 800))
+        run.op_clickFirst({"targets": ["label:Nope", "label:Close"]})
+        self.assertEqual(run.host.calls[-1][0], "click")
+        with self.assertRaises(w.WalkthroughError):
+            run.op_clickFirst({"targets": ["label:Nope"]})
+
     def test_a_closed_menu_item_exists_but_is_not_on_screen(self):
         self.assertIsNone(w.resolve(self.TREE, "ax:closed"))
         self.assertEqual(len(w.resolve_all(self.TREE, "ax:closed")), 1)
