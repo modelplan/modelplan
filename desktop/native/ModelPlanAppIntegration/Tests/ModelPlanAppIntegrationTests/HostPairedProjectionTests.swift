@@ -650,9 +650,12 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(try balance().label, "Balance")
         XCTAssertEqual(try balance().value, "↺1 · 14,207.86")
         XCTAssertEqual(try balance().detail, "expired · Currency not reported")
+        // Hover hint: a money balance is not "top-up credits".
+        XCTAssertEqual(try balance().hint, "↺ extra resets left · then balance")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try balance().label, "余额")
         XCTAssertEqual(try balance().value, "↺1 · 14,207.86")
+        XCTAssertEqual(try balance().hint, "↺ 剩余额外重置次数 · 之后是账户余额")
     }
 
     /// DOCK-3.6-18: an open card, including its scoped extra-quota rows, shows no native tooltip.

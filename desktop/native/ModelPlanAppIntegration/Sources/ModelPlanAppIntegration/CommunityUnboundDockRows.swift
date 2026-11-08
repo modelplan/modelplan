@@ -92,7 +92,7 @@ public struct DockContentRow: Sendable {
         let reserve = DockCardRow(id: "reserve", kind: .reserve, label: credits?.label ?? (english ? "Reserve" : "储备"),
             value: [count?.value ?? "", credits?.value ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
             detail: notes.joined(separator: " · "),
-            hint: Self.reserveHint(hasResets: count != nil, hasCredits: credits != nil, english: english))
+            hint: Self.reserveHint(hasResets: count != nil, hasCredits: credits != nil, isMoney: credits?.label == "Balance" || credits?.label == "余额", english: english))
         var placed = false
         return additionalRows.flatMap { row -> [DockCardRow] in
             guard row.id == "reset-count" || row.id == "credits" else { return [row] }
@@ -102,11 +102,13 @@ public struct DockContentRow: Sendable {
         }
     }
     /// What the reserve line's figures mean, in the card (the line shows only "↺1 · 3,903").
-    static func reserveHint(hasResets: Bool, hasCredits: Bool, english: Bool) -> String {
+    /// A money balance (the provider labels it "Balance"/"余额") is not top-up credits and says so.
+    static func reserveHint(hasResets: Bool, hasCredits: Bool, isMoney: Bool = false, english: Bool) -> String {
+        let credits = isMoney ? (english ? "balance" : "账户余额") : (english ? "top-up credits" : "充值点数")
         switch (hasResets, hasCredits) {
-        case (true, true): return english ? "↺ extra resets left · then top-up credits" : "↺ 剩余额外重置次数 · 之后是充值点数"
+        case (true, true): return english ? "↺ extra resets left · then " + credits : "↺ 剩余额外重置次数 · 之后是" + credits
         case (true, false): return english ? "↺ extra resets left" : "↺ 剩余额外重置次数"
-        case (false, true): return english ? "Top-up credits left" : "剩余充值点数"
+        case (false, true): return isMoney ? (english ? "Account balance left" : "剩余账户余额") : (english ? "Top-up credits left" : "剩余充值点数")
         case (false, false): return ""
         }
     }
