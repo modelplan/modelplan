@@ -162,6 +162,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			}
 		}
 	}
+	if appserver.CockpitPeaksEnabled(ctx) {
+		result.Peaks = cockpitPeaks(published, view, now)
+	}
 	if appserver.CockpitForecastEnabled(ctx) {
 		result.Forecasts = wire.ProjectForecasts(view.Projection, func(ref string) bool { return byRef[ref] != nil }, now)
 	}

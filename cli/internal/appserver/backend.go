@@ -192,6 +192,22 @@ func CockpitSessionsEnabled(ctx context.Context) bool {
 	return enabled
 }
 
+// CapabilityCockpitPeaksV1 opts in to the declared plans' peak-rate windows in the cockpit details
+// (details.peaks), for the alert list's peak-hours line.
+const CapabilityCockpitPeaksV1 = "cockpitPeaksV1"
+
+type cockpitPeaksContextKey struct{}
+
+func CockpitPeaksEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(cockpitPeaksContextKey{}).(bool)
+	return enabled
+}
+
+// WithCockpitPeaksForTest marks a context as negotiated for cockpitPeaksV1, for producer tests.
+func WithCockpitPeaksForTest(ctx context.Context) context.Context {
+	return context.WithValue(ctx, cockpitPeaksContextKey{}, true)
+}
+
 // WithCockpitSessionsForTest marks a context as negotiated for cockpitSessionsV1, for producer tests.
 func WithCockpitSessionsForTest(ctx context.Context) context.Context {
 	return context.WithValue(ctx, cockpitSessionsContextKey{}, true)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 73555d87e37c7036f3ecf61906acca31bc281df7247eb207dde9d536ae5f2703
+// Schema SHA-256: f9d4a5294a782bbc2b6b2fa65865a01f413ad16b294aa7a60412ac9369cee030
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -87,6 +87,7 @@ export type WireCockpitData = {
 export type WireCockpitDetails = {
   readonly "alerts": ReadonlyArray<WireCockpitAlert>;
   readonly "forecasts"?: ReadonlyArray<WireCockpitForecast>;
+  readonly "peaks"?: ReadonlyArray<WireCockpitPeak>;
   readonly "publication"?: WireCockpitPublication | null;
   readonly "publishedModels"?: ReadonlyArray<WireCockpitPublicationModel>;
   readonly "recentSessions"?: ReadonlyArray<WireCockpitRecentSession>;
@@ -145,6 +146,13 @@ export type WireCockpitHistorySums = {
   readonly "inputTokens": number | null;
   readonly "observedRequests": number;
   readonly "outputTokens": number;
+};
+
+export type WireCockpitPeak = {
+  readonly "endsAt": string | null;
+  readonly "rowId": string;
+  readonly "startsAt": string;
+  readonly "status": string;
 };
 
 export type WireCockpitProjectRanking = {
@@ -892,6 +900,13 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "maxItems": 128,
         "type": "array"
       },
+      "peaks": {
+        "items": {
+          "$ref": "#/$defs/CockpitPeak"
+        },
+        "maxItems": 32,
+        "type": "array"
+      },
       "publication": {
         "anyOf": [
           {
@@ -1237,6 +1252,41 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "generationTps",
       "observedRequests",
       "eligibleRequests"
+    ],
+    "type": "object"
+  },
+  "CockpitPeak": {
+    "additionalProperties": false,
+    "properties": {
+      "endsAt": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "rowId": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "startsAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "rowId",
+      "startsAt",
+      "endsAt",
+      "status"
     ],
     "type": "object"
   },
