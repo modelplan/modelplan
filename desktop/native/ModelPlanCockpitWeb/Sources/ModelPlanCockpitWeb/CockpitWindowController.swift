@@ -249,6 +249,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       configureVerification?(config)
     #endif
     let view = WKWebView(frame: .zero, configuration: config)
+    // Owner review 11-08 / CKP-SHELL-25: only the hull and canopy are drawn; the web view paints no backing of its
+    // own, so the clear panel shows the desktop around the transparent page.
+    view.setValue(false, forKey: "drawsBackground")
+    view.underPageBackgroundColor = .clear
     // The initial v2 load applies appearance and shell before a page can paint.
     view.isHidden = true
     view.navigationDelegate = self
