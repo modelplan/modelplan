@@ -231,6 +231,8 @@ For named status-menu actions and native arrival correlation, follow [StatusMenu
 
 Batch GUI runs (verification plan v2): `bin/preflight.py` (PF-01..PF-12, fail closed) and `bin/verify-run.py`, which chains the section 1 sequence per segment from a batch manifest and per-ID step files in `scenarios/`. Contract, step-file format and outputs: [VERIFY-RUN.md](VERIFY-RUN.md).
 
+For a cheap early look at a packaged owner test app on a hosted Mac, without booking, see [walkthrough/WALKTHROUGH.md](walkthrough/WALKTHROUGH.md).
+
 Non-GUI qualification:
 
 ```

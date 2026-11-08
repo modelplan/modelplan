@@ -203,6 +203,7 @@ public struct DockNozzlePose: Equatable, Sendable {
             c.translateBy(x:rect.midX-CGFloat(advance)/2,y:baseline);c.scaleBy(x:1,y:-1);c.textMatrix = .identity
             c.textPosition = .zero;CTLineDraw(line,c);c.restoreGState()
         }
+        func usedUp(_ arc:DockQuotaArc?) -> Bool { arc?.fraction == 0 }
         func ring(_ recipe:DockRingRecipe,_ arc:DockQuotaArc?,_ centre:CGPoint) throws {
             guard recipe.radius>0,recipe.width>0,recipe.radius.isFinite,recipe.width.isFinite,
                 recipe.opacity.isFinite,(0...1).contains(recipe.opacity),(0...1).contains(recipe.minimumVisibleFraction) else{throw DockArtworkError.invalidManifest}
@@ -215,7 +216,11 @@ public struct DockNozzlePose: Equatable, Sendable {
                 guard dash.count<=16,dash.allSatisfy({$0.isFinite && $0>0 && $0<=256}) else{throw DockArtworkError.invalidManifest}
                 c.setLineDash(phase:0,lengths:dash)
             }
-            c.setStrokeColor(try ink("track"));c.strokeEllipse(in:rect)
+            // D65: a used-up window (0 % remaining) draws its whole track in the skin's dark red, where the arc would be.
+            if usedUp(arc), let red = skin.palette["usedUpTrack"], red.valid {
+                c.setAlpha(1);c.setStrokeColor(red.cg)
+            } else { c.setStrokeColor(try ink("track")) }
+            c.strokeEllipse(in:rect)
             c.setLineDash(phase:0,lengths:[]);c.setAlpha(recipe.opacity)
             if let arc,let fraction=arc.fraction,fraction.isFinite,(0...1).contains(fraction),fraction>0 {
                 c.setStrokeColor(try ink(arc.status.rawValue));c.addArc(center:centre,radius:recipe.radius,startAngle:-.pi/2,
@@ -310,6 +315,17 @@ public struct DockNozzlePose: Equatable, Sendable {
                     c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect,fitVisibleGlyph:true)
                 } else if station.fallbackVendorName == true {
                     try text(DockVendorFallback.mark(reading.name), station.glyphRect, skin.aliasText, try ink("text"), fit: true)
+                }
+                // D65 option B (the prototype's used-up nozzle): a window at 0 % tints the face light red and dims
+                // the vendor mark. Skins without these inks (community) draw nothing extra.
+                if usedUp(reading.outer) || (reading.inner != nil && usedUp(reading.inner)) {
+                    if let face = skin.palette["usedUpFace"], face.valid {
+                        c.setFillColor(face.cg)
+                        c.fillEllipse(in:CGRect(x:station.centre.x-radius,y:station.centre.y-radius,width:2*radius,height:2*radius))
+                    }
+                    if let dim = skin.palette["usedUpMark"], dim.valid {
+                        c.setFillColor(dim.cg); c.fillEllipse(in:station.glyphRect.insetBy(dx:-1,dy:-1))
+                    }
                 }
                 }
                 if reading.timeLeftFraction != nil {
