@@ -259,6 +259,63 @@ extension CommunityCockpitEntryTests {
         }
     }
 
+    /// CKP-SHELL-07 / D66 through the normal entry (re-review of #712): the Settings "Cockpit size" a person commits
+    /// reaches the real cockpit. The setting goes through the settings store and SettingsApplicationCoordinator into the
+    /// console's applySettings, the page is opened by the coordinator, and the drawn scale and page zoom follow it, at
+    /// open and live when the setting changes on an open cockpit.
+    @MainActor func testCockpitSizeSettingReachesTheRealCockpitAtOpenAndLive() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("size-setting-" + UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+        _ = try await settings.update { $0.cockpitSize = .percent90 }
+        var applied: [SettingsApplication] = []
+        let settingsApp = SettingsApplicationCoordinator(store: settings) { applied.append($0) }
+        await settingsApp.reload()
+        let client = RouteClient(); await client.suspendCockpit()
+        let composition = EngineDockMenuComposition(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:]), createsNativePanels: false, makeClient: { _, _ in client })
+        let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+        // An Air-width screen: Auto would draw 85 %, so 90 % and 100 % can only come from the setting.
+        let air = CGRect(x: 0, y: 0, width: 1470, height: 919)
+        var page: CockpitWindowController?
+        let coordinator = EngineCockpitCoordinator { context in
+            let made = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+            made.verificationPlacement = (usable: air, anchor: CGRect(x: 1100, y: air.maxY, width: 28, height: 24))
+            page = made; return made
+        }
+        coordinator.bind(client: client); owner.coordinator = coordinator
+        let surface = SharedEngineCockpitConsole(owner: owner, composition: composition, isForeground: { true }, activate: {})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let sessionID = UUID()
+        await coordinator.consume(.context(EngineDeliveryContext(sessionID: "s-" + sessionID.uuidString.lowercased(), floor: .init(storeEpoch: "synthetic-owner-test", generation: 1), revision: 1)))
+        surface.show()
+        for _ in 0..<500 where page?.window == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let opened = try XCTUnwrap(page, "the coordinator opens the real page")
+        let window = try XCTUnwrap(opened.window), web = try XCTUnwrap(opened.verificationWebView)
+        XCTAssertEqual(opened.verificationLayout?.scale, 0.9, "the committed 90 % draws the cockpit at 90 %, not Auto's 85 %")
+        XCTAssertEqual(window.frame.width, 636 * 0.9, accuracy: 1)
+        XCTAssertEqual(web.pageZoom, 0.9, accuracy: 1e-6)
+        // Live: a change on the open cockpit redraws it without reopening.
+        _ = try await settings.update { $0.cockpitSize = .percent100 }
+        await settingsApp.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertTrue(page === opened, "the same page, not a new one")
+        XCTAssertEqual(opened.verificationLayout?.scale, 1, "100 % applies to the open cockpit")
+        XCTAssertEqual(window.frame.width, 636, accuracy: 1)
+        XCTAssertEqual(web.pageZoom, 1, accuracy: 1e-6)
+        _ = try await settings.update { $0.cockpitSize = .automatic }
+        await settingsApp.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertEqual(opened.verificationLayout?.scale, 0.85, "back to Auto: 85 % on this screen")
+        surface.hide(); await coordinator.shutdown(); await composition.stop()
+    }
+
     /// G3-53 / CKP-PORT-09 on the real page and panel: a real click on the porthole shutter closes and reopens it
     /// at both heights, and the page draws the closed cap. Owner Build 12: "开关窗也没效果".
     @MainActor func testG3_53ShutterClickClosesAndReopensTheRealCockpit() async throws {
