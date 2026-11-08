@@ -56,13 +56,13 @@ import WebKit
 
   /// The composition's bounds on a screen's visible frame (prototype floating-frame.js fieldFrame): 90% of the width
   /// within 960–1440 pt and 80% of the height within 600–900 pt, at least 16 pt from every edge, centred.
-  public static func frame(in visible: NSRect) -> NSRect {
+  nonisolated public static func frame(in visible: NSRect) -> NSRect {
     let width = min(visible.width - 32, min(1440, max(960, (visible.width * 0.9).rounded())))
     let height = min(visible.height - 32, min(900, max(600, (visible.height * 0.8).rounded())))
     return NSRect(x: visible.minX + (visible.width - width) / 2, y: visible.minY + (visible.height - height) / 2, width: width, height: height)
   }
   /// The page's card rect (CSS px from the top left, which are points at page zoom 1) in a bottom-left content view.
-  public static func cardFrame(x: Double, y: Double, width: Double, height: Double, in bounds: NSRect) -> NSRect {
+  nonisolated public static func cardFrame(x: Double, y: Double, width: Double, height: Double, in bounds: NSRect) -> NSRect {
     NSRect(x: x, y: bounds.height - y - height, width: width, height: height).intersection(bounds)
   }
   /// `payload` is the JSON the page's `show` takes: public model data and presentation only.
