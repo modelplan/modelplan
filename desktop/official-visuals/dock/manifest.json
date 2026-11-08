@@ -4,7 +4,7 @@
   "files": {
     "Package.swift": "1af7c5fbe4c08c9485275b6a37dedf822aacbac8f83c04a8d1412956d065f0d4",
     "README.md": "e796bda98d8473e3d49f56b76239c6c00c50f9e1d335fa20d1e9fba54ae99a31",
-    "RegressionBaselines/README.md": "1f824d784ff4c847c93662179af75316c4baed200e4d4d00b21de24b677f47f0",
+    "RegressionBaselines/README.md": "cc1c184158cf45595100f2401844d1af29afc26772d31f4697c4dbcf5e702525",
     "RegressionBaselines/fixtures.json": "d18463289ff11d69859b7e2c0dc1b695f6b8609c7f7d73b7b81d9531ad4775fe",
     "RegressionBaselines/native-00.png": "949c6d590182977ae54a5840e4d492a6adbb765560d4c9e4c8bdcba397ec9834",
     "RegressionBaselines/native-01.png": "e852345e844052f9dc7e58b0b03a9cdce91ad1a87932b12f876084460d1a0107",

@@ -282,15 +282,17 @@ private actor P1SyntheticEngine: EngineClient {
             let freeDepth = d + 24 * unit
             XCTAssertGreaterThanOrEqual(face.width, freeDepth - 0.5, "\(size) face depth")
             XCTAssertLessThanOrEqual(face.width, freeDepth + 8 * unit + 1.5, "\(size) face depth")
-            // Rings: the first ring's outer edge sits 14 x D/52 from the screen edge (arc adds at most 8 x D/52).
+            // Rings, D48 (owner): each ring sits halfway across the face, so its centre is
+            // (prototype depth + 36 x D/52) / 2 from the screen edge. The prototype's 14..22 x D/52
+            // edge gap becomes 12..16 x D/52 (first ring 12, the 8 x D/52 arc sagitta halved).
             let view = host.dockView
             let ids = host.interactionEnvironment().catalogue
             XCTAssertFalse(ids.isEmpty)
             for id in ids {
                 guard let ring = view.interactionAnchor(id) else { continue }
                 let gap = view.bounds.maxX - ring.maxX
-                XCTAssertGreaterThanOrEqual(gap, 14 * unit - 0.75, "\(size) \(id) ring to screen edge")
-                XCTAssertLessThanOrEqual(gap, 22 * unit + 0.75, "\(size) \(id) ring to screen edge")
+                XCTAssertGreaterThanOrEqual(gap, 12 * unit - 0.75, "\(size) \(id) ring to screen edge (D48)")
+                XCTAssertLessThanOrEqual(gap, 16 * unit + 0.75, "\(size) \(id) ring to screen edge (D48)")
             }
             // The resting raster is opaque in its edge-most column at a station: nothing transparent
             // (strip, wake band) separates the face from the screen edge.
@@ -310,6 +312,8 @@ private actor P1SyntheticEngine: EngineClient {
     }
 
     /// G3-30: ring centres sit across the face depth exactly where the prototype puts them.
+    /// D48 (owner, 2026-11-07) moved each ring to the middle of the face; the oracle stays the
+    /// prototype's and the assertions apply the D48 rule to it.
     /// Oracle values come from the prototype's geometry.js (right edge, percentages on), not from
     /// the native port: ring centre to the screen edge per station, and ring centre to the face's
     /// inner edge = (D/2 + 3s + 7s + D/2 + 14s) - (D/2 + 14s) = D/2 + 10s = 36 x D/52.
@@ -396,8 +400,11 @@ private actor P1SyntheticEngine: EngineClient {
                     let innerEdge = skin.bounds.minX + CGFloat(x + 1) / pixels
                     let inward = station.centre.x - innerEdge
                     report.append("\(label) ring\(index) diameter \(station.diameter) centre-to-screen-edge \(depth) centre-to-inner-edge \(inward) y \(station.centre.y) pitch-prev \(index > 0 ? station.centre.y - stations[index - 1].centre.y : 0)")
-                    XCTAssertEqual(depth, expected[index], accuracy: 0.5, "\(label) ring \(index): centre to screen edge (prototype \(expected[index]))")
-                    XCTAssertEqual(inward, 36 * unit, accuracy: 1.0, "\(label) ring \(index): centre to the face's inner edge")
+                    // D48 (owner): the ring sits halfway across the face. The prototype's face there is
+                    // its ring depth plus 36 x D/52 deep, so both distances become half of that.
+                    let centred = (expected[index] + 36 * unit) / 2
+                    XCTAssertEqual(depth, centred, accuracy: 0.5, "\(label) ring \(index): centre to screen edge (D48 \(centred); prototype \(expected[index]))")
+                    XCTAssertEqual(inward, centred, accuracy: 1.0, "\(label) ring \(index): centre to the face's inner edge (D48)")
                     // The card measures its gap from the painted clock ring (prototype card.js:154-163).
                     let cardRing = try XCTUnwrap(view.cardRingAnchor(try XCTUnwrap(station.subscriptionID)))
                     XCTAssertEqual(cardRing.width, 2 * (26 + 2.2 + 0.75) * unit, accuracy: 0.05, "\(label) card ring")
