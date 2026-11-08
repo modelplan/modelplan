@@ -164,7 +164,8 @@ import AppKit
         let headerFont=recipeProvider.font(for:.header);guard isCurrent(token) else { return }
         let captionFont=recipeProvider.font(for:.caption);guard isCurrent(token) else { return }
         let buttonFont=recipeProvider.font(for:.button);guard isCurrent(token) else { return }
-        let ink=Self.mapInk;guard isCurrent(token) else { return }
+        _=recipeProvider.primaryInk;guard isCurrent(token) else { return }
+        let ink=Self.mapInk
         let catalog=HelpMapCatalog(input.language)
         header.isHidden=result.mapHeader==nil;header.stringValue=catalog.metaphor+"\n"+catalog.dismissal
         header.font=headerFont;header.textColor=ink
