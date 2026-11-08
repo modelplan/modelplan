@@ -25,6 +25,10 @@ public struct CockpitShellLayout: Equatable, Sendable {
         return Self(profile: profile, shutterClosed: closed, forcedClosed: usable.height - 66 < 640, scale: scale, rootHeight: height,
                     frame: CGRect(x: x, y: top - size.height, width: size.width, height: size.height))
     }
+    /// G3-46: with no visible menu bar icon, open at the top-right of the screen, directly below the menu bar.
+    public static func hiddenIconAnchor(usable: CGRect) -> CGRect {
+        CGRect(x: usable.maxX, y: usable.maxY, width: 0, height: 0)
+    }
     /// G3-46 (owner D53): like other menu bar tools, the cockpit's visible left edge lines up with the menu
     /// bar icon's left edge. The 636 px raster has an 8 px transparent margin around the 620 px shell. When
     /// that would run past the right edge it shifts left just enough to stay on the screen.

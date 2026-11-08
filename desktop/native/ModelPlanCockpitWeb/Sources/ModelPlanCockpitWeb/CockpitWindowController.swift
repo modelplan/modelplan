@@ -594,7 +594,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     let requested = anchor()
     guard let screen = NSScreen.screens.first(where: { screen in requested.map { screen.frame.intersects($0) } ?? false }) ?? NSScreen.main else { return nil }
-    let icon = requested ?? CGRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.maxY, width: 0, height: 0)
+    let icon = requested ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
   private func applyLayout() {

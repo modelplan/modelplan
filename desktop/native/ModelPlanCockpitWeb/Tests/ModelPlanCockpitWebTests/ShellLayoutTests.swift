@@ -77,6 +77,9 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(tight.maxX, 1440, "near the right edge it shifts left only to stay on screen")
         XCTAssertEqual(tight.minX, 1440 - 636)
         XCTAssertEqual(try placed(804 + 8).minX, 804, "the last icon position that needs no shift")
+        let hidden = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: CockpitShellLayout.hiddenIconAnchor(usable: usable), shutterClosed: false)).frame
+        XCTAssertEqual(hidden.maxX, 1440, "a hidden icon opens the cockpit at the top-right")
+        XCTAssertEqual(hidden.maxY, 870, "directly below the menu bar")
     }
     @MainActor func testUpdatingOneArrangementDoesNotConsumeExtraMemorySlots() {
         let session = CockpitShellSession()
