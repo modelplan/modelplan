@@ -115,6 +115,10 @@
           "leg": "headless",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"
         },
+        "CommunityCockpitEntryTests/testNormalEntryKeepsTheScopeForTheDayAndStartsTheNextDayAtAll": {
+          "leg": "headless",
+          "reason": "needs the real synthetic-test CLI, which the native job does not build; U11 builds and supplies it"
+        },
         "CommunityCockpitEntryTests/testProductionPinsAdmitCanonicalBundles": {
           "leg": "headless",
           "reason": "needs both canonical cockpit editions built and their generated pins compiled in (MODELPLAN_COCKPIT_BUILD_PINS), which U11 native supplies"
