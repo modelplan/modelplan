@@ -44,15 +44,28 @@ for(const tier of ['tall','compact'])test(`G3-47 ${tier}: one bell per column in
  expect(v.bells.map(b=>b.cls)).toEqual(v.bells.map((_,i)=>i===0?'bz work':'bz idle'));
  expect(v.bells[0].label).toMatch(/working now · 120 t\/s/);
  const sheet=v.bells[0].sheet;
- expect(sheet.anim).toBe('none');expect(sheet.mask).toContain('assets/bells/mouth-plume-mask.png');
- expect(sheet.bottom).toBeLessThanOrEqual(v.rootBottom+34+0.5);
+ expect(sheet.anim).toBe('cockpit-mouth-shimmer');
+ // CKP-ENG-17: the light fills the mouth and fades about 3 px past the rim, no plume body.
+ expect(sheet.bottom).toBeLessThanOrEqual(v.bells[0].top+v.bells[0].h+3.5);
  expect(v.bells.slice(1).every(b=>b.sheet===null)).toBe(true);
 });
 
-test('G3-47 the flame is a still sheet: no new infinite motion under the motion policy',async({page})=>{
- const {send,receive}=await open(page);
- expect(await page.evaluate(()=>document.getAnimations().filter(a=>a.effect?.target?.closest?.('.ck-base')).length)).toBe(0);
- expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);
- await expect.poll(async()=>(await read(page)).bells.length).toBeGreaterThan(0);
+test('G3-47 the mouth shimmer stops under Reduce Motion, while hidden and with the shutter closed',async({page})=>{
+ const {send,receive}=await open(page,{reduceMotion:true});
  expect((await read(page)).bells[0].sheet.anim).toBe('none');
+ expect(await receive(send('appearance',{...appearance,reduceMotion:false}))).toBe(true);
+ await expect.poll(async()=>(await read(page)).bells[0].sheet.anim).toBe('cockpit-mouth-shimmer');
+ expect(await receive(send('visibility',{visible:false,occluded:true,key:false}))).toBe(true);
+ await expect.poll(async()=>(await read(page)).bells[0]?.sheet?.anim??'none').toBe('none');
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);
+ await expect.poll(async()=>(await read(page)).bells[0]?.sheet?.anim??'none').toBe('none');
+});
+
+test('G3-47 hovering a bell lights its column and shows its name (CKP-ENG-20)',async({page})=>{
+ await open(page);
+ const bell=page.locator('.ck-base .bz').first();await bell.hover();
+ await expect(bell.locator('.bz-tip')).toBeVisible();await expect(bell.locator('.bz-tip')).toContainText('working now');
+ expect(await page.locator('.ck-eng .ec.xhl').count()).toBe(1);
+ await page.mouse.move(5,5);expect(await page.locator('.ck-eng .ec.xhl').count()).toBe(0);
 });

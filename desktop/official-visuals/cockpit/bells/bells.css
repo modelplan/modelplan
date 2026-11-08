@@ -13,11 +13,8 @@
 .ck-base .bz-empty .bz-line{filter:brightness(.9)}
 .ck-base .bz-glow{display:none}
 .ck-base .bz:hover .bz-line{filter:brightness(1.2)}
-/* Working: the plume hangs from the bell's opening through the released mouth mask. Its canvas is
-   (bell width x 73.17/81) x 340/306 wide, rooted at bell width x 8.169105/81, and capped to the reserve left
-   below that root. It stands still at its middle pose: the study's .94/1/.97 pose cycle would be a third endless
-   animation, which the motion policy does not admit without the owner. */
-.ck-base .bz .bz-sheet{--root:calc(var(--bell-w) * 8.169105 / 81);top:var(--root);width:calc(var(--bell-w) * 73.17 / 81 * 340 / 306);
-  height:min(calc(var(--len) + var(--bell-h) - var(--root)),calc(34px - var(--root)));z-index:2;
-  -webkit-mask:url('./assets/bells/mouth-plume-mask.png') center top/100% 100% no-repeat;mask:url('./assets/bells/mouth-plume-mask.png') center top/100% 100% no-repeat}
-.ck-base .bz .bz-sheet::before{-webkit-mask-image:none;mask-image:none}
+/* Working (CKP-ENG-17/18): one soft glow fills the bell's inner mouth, brightest at the opening with a slightly
+   whiter core, fading about 3 px past the outer lower rim, in the quota-status colour. No plume body, cone, tip,
+   halo or second band; idle bells and empty bays emit nothing. */
+.ck-base .bz .bz-sheet{top:calc(var(--bell-h) * .42);width:calc(var(--bell-w) * .9);height:calc(var(--bell-h) * .58 + 3px);z-index:2}
+.ck-base .bz .bz-sheet::before{border-radius:50%;background:radial-gradient(ellipse 50% 70% at 50% 25%,color-mix(in srgb,var(--fuel) 55%,white) 0%,color-mix(in srgb,var(--fuel) 85%,transparent) 38%,color-mix(in srgb,var(--fuel) 35%,transparent) 70%,transparent 100%);-webkit-mask-image:none;mask-image:none}
