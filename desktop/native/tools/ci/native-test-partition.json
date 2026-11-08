@@ -100,7 +100,8 @@
         "U8ConsentJourneyTests"
       ],
       "ownerGui": [
-        "D41KeychainJourneyTests"
+        "D41KeychainJourneyTests",
+        "DockAccessibilityFrameTests"
       ],
       "allowedSkips": {
         "CommunityCockpitEntryTests/testG313RealCLIRecoversRetainedWeeklyCard": {
