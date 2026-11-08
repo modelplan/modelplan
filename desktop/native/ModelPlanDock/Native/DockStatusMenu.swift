@@ -127,8 +127,10 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         // them landed on the "%" and moved back on the next refresh (owner build 13: "0%" read "0").
         if !button.title.isEmpty, button.image != nil,
            button.imagePosition == .imageLeading || button.imagePosition == .imageLeft,
-           let cell = (button.cell?.copy() as? NSCell) {
-            // A detached copy lays the image out from the passed bounds alone, never from the button's current frame.
+           let cell = button.cell {
+            // Read-only on the real cell, never a copy: NSCell.copy() shares unretained internals (the image) with the button,
+            // and releasing the copy over-released the button's image (crash in the next renderMenu, build 14).
+            // The rect is computed from the width the content needs, not the button's current frame.
             let content = NSRect(x: bounds.minX, y: bounds.minY, width: ceil(cell.cellSize.width), height: bounds.height)
             let icon = cell.imageRect(forBounds: content)
             if !icon.isEmpty, icon.maxX - side >= bounds.minX, icon.maxX < content.maxX {

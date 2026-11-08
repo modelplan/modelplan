@@ -1419,6 +1419,31 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertLessThan(dot.frame.maxX, content.maxX - 8, "the dot never sits on the percentage")
     }
 
+    /// Build 14 crash: placing the reset dot from a copy of the button's cell over-released the button's image, and the
+    /// next render read a freed object. Percentage plus icon is rendered many times, each inside its own autorelease
+    /// pool so any over-release is paid back inside the loop; the image must stay the same object and readable.
+    func testRepeatedPercentPlusIconRendersDoNotOverReleaseTheButtonImage() throws {
+        let button = NSButton(frame: .zero)
+        let icon = NSImage(size: .init(width: 16, height: 16))
+        EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+        button.title = "15%"; button.imagePosition = .imageLeading
+        let dot = DockNoticeIndicatorView(frame: .zero)
+        let identity = ObjectIdentifier(try XCTUnwrap(button.image))
+        for round in 0..<500 {
+            autoreleasepool {
+                EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+                button.frame = NSRect(x: 0, y: 0, width: CGFloat(14 + round % 200), height: 22)
+                dot.attach(to: button)
+                _ = button.cell?.cellSize
+                button.display()
+            }
+        }
+        let after = try XCTUnwrap(button.image, "the image survives repeated renders")
+        XCTAssertEqual(ObjectIdentifier(after), identity, "an unchanged image keeps its identity")
+        XCTAssertEqual(after.size, NSSize(width: 16, height: 16))
+        XCTAssertTrue(after.isTemplate)
+    }
+
     func testV17ExpiredOnlyReadingLeavesAnIconWithoutRevocation() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-expiry-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
