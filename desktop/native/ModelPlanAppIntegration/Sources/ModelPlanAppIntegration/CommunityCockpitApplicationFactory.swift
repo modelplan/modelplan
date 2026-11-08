@@ -24,13 +24,17 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"eba23507931560d8172943e2882d71ac01f5f93fe51f3b4844af6a86e2ed4f77",
-        "official":"a34c77eb363917261d7bd48835e223f7ed6f545275068260164de7fb2da3c4e3",
+        "community":"62f98c345219f5d4e8844ece0f942ec612b21eecfe80ca21352ccb2ac0990ed2",
+        "official":"a52092b1901f7c8af8b92b5f1097bcea3f0626e03484b1750e8f81bbacc5261e",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
     static var verificationConsoleNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
+    /// The coordinator's prewarm and open steps, for timing tests.
+    public static var verificationCockpitTrace: ((String) -> Void)?
+    /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
+    static var verificationPrewarm = true
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -64,8 +68,13 @@ import ModelPlanDock
                     return try owner.makePage(context:context,executable:configuration.executableURL)
                 }
                 owner.coordinator=coordinator
+                #if MODELPLAN_TEST_ONLY_SPI
+                coordinator.verificationTrace = { CommunityCockpitApplicationFactory.verificationCockpitTrace?($0) }
+                #endif
                 let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
+                coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
+                coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
@@ -81,7 +90,16 @@ import ModelPlanDock
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
-        if application.cockpitEntryEnabled { owner.prepare() }
+        if application.cockpitEntryEnabled {
+            owner.prepare()
+            // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
+            #if MODELPLAN_TEST_ONLY_SPI
+            let prewarms = verificationFactory == nil && verificationPrewarm
+            #else
+            let prewarms = true
+            #endif
+            if prewarms { owner.startPrewarm(applied: { [weak application] in application?.composition.latestSettings }) }
+        }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         return application
     }
@@ -127,6 +145,32 @@ import ModelPlanDock
         return try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
             manifestSHA256:pin,allowOfficial:edition == "official")
     }
+    /// CKP-SHELL-20 (owner D50): the hidden page starts with the saved appearance, so the first frame
+    /// shown is already in the user's language and settings.
+    func startPrewarm(applied: @escaping @MainActor () -> SettingsApplication?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let snapshot = await settingsStore.snapshot()
+            if coordinator?.presented != true { adoptAppearance(snapshot, applied: applied()) }
+            coordinator?.prewarmEnabled = true
+        }
+    }
+    func adoptAppearance(_ snapshot: SettingsSnapshot, applied: SettingsApplication?) {
+        let theme:CockpitAppearance.Theme
+        switch snapshot.preferences.theme {
+        case .day:theme = .day
+        case .night:theme = .night
+        case .system:theme=NSApplication.shared.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
+        }
+        appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
+            redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames)
+        if let applied { appearance=cockpitAppearance(applied) }
+    }
+    func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
+        let e=value.effective
+        return .init(theme:appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
+            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames)
+    }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL
         else { throw CockpitBridgeError.unavailable }
@@ -139,6 +183,25 @@ import ModelPlanDock
         CommunityCockpitApplicationFactory.verificationPage?(page)
         #endif
         return page
+    }
+}
+
+/// D64: the cockpit scope and its local day in one small file beside the settings. A consent or store change removes it.
+@MainActor final class FileCockpitScopeMemory: CockpitScopeMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> (key: String, day: String)? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let key = value["scope"] as? String, let day = value["day"] as? String else { return nil }
+        return (key, day)
+    }
+    func save(_ value: (key: String, day: String)?) {
+        guard let value else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": value.key, "day": value.day], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
     }
 }
 
@@ -178,6 +241,7 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
             self.wantsVisible = false
+            self.onShowingChanged?()
             self.fieldPanel?.close()
             self.pageOpened = false
         }
@@ -189,12 +253,10 @@ struct CockpitUnavailableNotice {
     }
     private var fieldPanel:CockpitFieldPanel?
     var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
-    /// `focusName`: the published display name of a rocket clicked in the porthole still; an unknown name focuses nothing.
-    func fieldPayload(focusName:String?=nil) -> String? {
+    func fieldPayload() -> String? {
         guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
         let mine=details.publication?.models.map(\.id) ?? []
-        let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:focus)
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:nil)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -203,7 +265,6 @@ struct CockpitUnavailableNotice {
         case .chooseSetup,.openSettings:owner.settings?()
         case .openHistory:unavailable(path:"intent.openHistory",history:true)
         case .openField:openField()
-        case .openFieldAt(let name):openField(focusName:name)
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
         case .detach,.putBack,.shutterToggle,.scopeSelect:
@@ -212,40 +273,31 @@ struct CockpitUnavailableNotice {
             hide()
         }
     }
-    private func openField(focusName:String?=nil) {
-        guard let bundle=owner.verifiedBundle,let payload=fieldPayload(focusName:focusName) else { return }
+    private func openField() {
+        guard let bundle=owner.verifiedBundle,let payload=fieldPayload() else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
         fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
     func applySettings(_ value: SettingsApplication) {
         appliedSettings=value
-        owner.appearance=cockpitAppearance(value)
+        owner.appearance=owner.cockpitAppearance(value)
         owner.coordinator?.updateAppearance(owner.appearance)
-    }
-    private func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
-        let e=value.effective
-        return .init(theme:owner.appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
-            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames)
     }
     func show() {
         wantsVisible=true
         guard showTask == nil else { return }
+        // G3-42: open stages in the timing log are measured from here, before the settings hop.
+        CockpitTimingLog.markClick()
         composition.dock.prepareForCockpit()
         showTask=Task { @MainActor [weak self] in
             guard let self else { return }
             let snapshot=await owner.settingsStore.snapshot()
             guard !Task.isCancelled else { return }
             guard wantsVisible else { showTask = nil; return }
-            let theme:CockpitAppearance.Theme
-            switch snapshot.preferences.theme {
-            case .day:theme = .day
-            case .night:theme = .night
-            case .system:theme=NSApp.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
-            }
-            owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
-                redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames)
-            if let appliedSettings { owner.appearance=cockpitAppearance(appliedSettings) }
+            owner.adoptAppearance(snapshot,applied:appliedSettings)
+            // A prewarmed page was made before this open; it shows with the settings of this moment.
+            if owner.coordinator?.presented == false { owner.coordinator?.updateAppearance(owner.appearance) }
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
             owner.coordinator?.open()
@@ -253,6 +305,7 @@ struct CockpitUnavailableNotice {
         }
     }
     var isShowing: Bool { wantsVisible }
+    var onShowingChanged: (() -> Void)?
     /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
     func requestClose() {
         if pageOpened { owner.coordinator?.requestClose() } else { hide() }
@@ -260,6 +313,7 @@ struct CockpitUnavailableNotice {
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
         wantsVisible = false
+        onShowingChanged?()
         showTask?.cancel()
         showTask = nil
         fieldPanel?.close()
