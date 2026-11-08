@@ -126,3 +126,44 @@ test('G3-56 a fallback member (no verified subscription reference) is acknowledg
  const id=JSON.stringify([data.projection.rows[0].id+'#'+data.projection.rows[0].accounts[0].route,windows[0].id,'red']);
  o=await open(page,data,[id]);await expect(o.lamp).toHaveClass(flash);
 });
+
+// glm-766-2: a store/consent barrier (a clear that adopts another epoch or generation) makes the page forget what was
+// acknowledged before it; a session-only clear keeps it.
+test('G3-56 an epoch change forgets the acknowledged cautions, so the old store never comes back',async({page})=>{
+ const {data,windows}=zeroData();windows[0].remainingPercent=0;
+ const {send,receive,lamp}=await open(page,data);await expect(lamp).toHaveClass(flash);await pressed(page,lamp);
+ const before=(await posted(page)).length;expect(before).toBe(1);
+ const next={storeEpoch:'epoch-y',generation:'42'};
+ expect(await receive(send('clear',{...next,viewRevision:'4'}))).toBe(true);
+ expect(await receive(send('display',{...next,viewRevision:'4',data}))).toBe(true);
+ // The same caution in the new store is new again, and pressing reports only what was pressed after the barrier.
+ await expect(lamp).toHaveClass(flash);
+ for(const w of windows)w.remainingPercent=75;expect(await receive(send('display',{...next,viewRevision:'4',data}))).toBe(true);
+ await expect(lamp).not.toHaveClass(/\blit\b/);
+ for(const reports of (await posted(page)).slice(before))expect(reports).toEqual([]);
+});
+
+test('G3-56 a generation change alone also forgets them',async({page})=>{
+ const {data,windows}=zeroData();windows[0].remainingPercent=0;
+ const {send,receive,lamp}=await open(page,data);await pressed(page,lamp);
+ expect(await receive(send('clear',{generation:'42',viewRevision:'4'}))).toBe(true);
+ expect(await receive(send('display',{generation:'42',viewRevision:'4',data}))).toBe(true);
+ await expect(lamp).toHaveClass(flash);
+});
+
+test('G3-56 a clear that only changes the session keeps the acknowledged cautions',async({page})=>{
+ const {data,windows}=zeroData();windows[0].remainingPercent=0;
+ const {send,receive,lamp}=await open(page,data);await expect(lamp).toHaveClass(flash);await pressed(page,lamp);
+ const sid='11111111-1111-4111-8111-111111111111';
+ expect(await receive(send('clear',{sessionId:sid,viewRevision:'4'}))).toBe(true);
+ expect(await receive(send('display',{sessionId:sid,viewRevision:'4',data}))).toBe(true);
+ await expect(lamp).toHaveClass(/\blit\b/);await expect(lamp).not.toHaveClass(flash);
+});
+
+// glm-766-4: ids are bounded in UTF-8 bytes, like the host.
+test('G3-56 an id over 200 UTF-8 bytes is never persisted or accepted',async({page})=>{
+ const {data}=zeroData();const {send,receive}=await open(page,data);
+ const wide=JSON.stringify(['a'.repeat(16),'窗'.repeat(70),'red']);// 70 UTF-16 units, 210+ bytes
+ expect(wide.length).toBeLessThan(200);
+ expect(await page.evaluate(ids=>window.modelPlanCockpit.receive(ids),send('load',{appearance,shell,redBelow:25,ackedCautions:[wide]}))).toBe(false);
+});

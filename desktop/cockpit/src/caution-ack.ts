@@ -8,9 +8,12 @@
 import type {CautionItem} from './caution.js';
 
 const MAX=64;
+/** The host bounds an identity in UTF-8 bytes (BridgeState.swift), so the page counts bytes too. */
+export const MAX_ID_BYTES=200;
+export const withinIdBound=(id:string)=>new TextEncoder().encode(id).length<=MAX_ID_BYTES;
 // Only a verified subscription reference (16 hex) names the same account after a restart. A fallback member's identity
 // (`row#route#position`) holds for one session and could match another account later, so it is never kept or restored.
-const durableMember=(stable:string)=>{try{const p=JSON.parse(stable);return Array.isArray(p)&&typeof p[0]==='string'&&/^[a-f0-9]{16}$/.test(p[0]);}catch{return false;}};
+const durableMember=(stable:string)=>{try{const p=JSON.parse(stable);return withinIdBound(stable)&&Array.isArray(p)&&typeof p[0]==='string'&&/^[a-f0-9]{16}$/.test(p[0]);}catch{return false;}};
 const window_=(stable:string)=>{try{const p=JSON.parse(stable);return Array.isArray(p)&&p.length===3?JSON.stringify([p[0],p[1]]):null;}catch{return null;}};
 
 export interface CautionMemory {
@@ -20,11 +23,14 @@ export interface CautionMemory {
  acknowledge():string|null;
  /** Identities the host remembered from an earlier run. They count as acknowledged and are not reported back. */
  restore(ids:readonly string[]):void;
+ /** A store or consent barrier: everything acknowledged before it is forgotten, and nothing is reported for it. */
+ forget():void;
 }
 export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):CautionMemory {
  const acked=new Set<string>(),shown=new Set<string>();let current:string[]=[],newest:string|null=null;
  const report=()=>onChange([...acked].filter(durableMember).slice(-MAX));
  return {
+  forget(){acked.clear();shown.clear();current=[];newest=null;},
   restore(ids){for(const id of ids.slice(0,MAX))if(typeof id==='string'&&durableMember(id))acked.add(id);},
   update(items,read){
    const lit=items.filter(x=>x.level!=='blue').map(x=>x.stable);
