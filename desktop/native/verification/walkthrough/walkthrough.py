@@ -307,11 +307,20 @@ class Walkthrough:
         if action["want"] == "open":
             self.await_target(target, action.get("timeout", 25))
             return
-        deadline = self.host.now() + action.get("timeout", 5)
-        while resolve(self.tree(), target) is not None:
-            if self.host.now() >= deadline:
-                raise WalkthroughError("cockpit still open")
-            self.host.sleep(0.25)
+        # The icon closing the cockpit is its own step (cockpit-toggle-close); here the Close button backs it up.
+        for fallback in (None, "label:Close"):
+            if fallback is not None:
+                self.host.helper("key", "escape")
+                button = resolve(self.tree(), fallback)
+                if button is None:
+                    break
+                self.host.helper("click", *centre(button["frame"]))
+            deadline = self.host.now() + action.get("timeout", 5)
+            while resolve(self.tree(), target) is not None and self.host.now() < deadline:
+                self.host.sleep(0.25)
+            if resolve(self.tree(), target) is None:
+                return
+        raise WalkthroughError("cockpit still open")
 
     def op_closeShutter(self, _):
         shutter = self.need("label:Porthole shutter")

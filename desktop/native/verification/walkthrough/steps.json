@@ -660,7 +660,7 @@
     {
       "id": "cockpit-open",
       "title": "Cockpit open from a left click",
-      "expected": "Left click on the status item opens the cockpit (owner test build). The widget stays visible; the cockpit may cover it (D49).",
+      "expected": "Left click on the status item opens the cockpit (owner test build).",
       "prototype": "desktop/cockpit/study/rocket-r1",
       "actions": [
         {
@@ -697,12 +697,25 @@
         },
         {
           "nonblank": "label:ModelPlan Cockpit"
-        },
+        }
+      ],
+      "requirement": "G3-40, G3-42"
+    },
+    {
+      "id": "cockpit-widget-visible",
+      "title": "Widget stays with the cockpit open",
+      "expected": "With the cockpit open the widget is still there; the cockpit may cover it (D49, G3-41).",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [],
+      "shot": {},
+      "checks": [
         {
           "exists": "ax:dock.grip.0"
         }
       ],
-      "requirement": "G3-40, G3-41, G3-42"
+      "requirement": "G3-41"
     },
     {
       "id": "shutter-closed",
