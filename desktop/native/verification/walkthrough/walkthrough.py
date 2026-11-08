@@ -816,6 +816,17 @@ def crash_reports(home):
     return sorted(p.name for p in reports.glob(APP_EXECUTABLE + "*")) if reports.is_dir() else []
 
 
+def keep_crash_reports(home, names, out):
+    """Copy the app's crash reports next to the manifest: without them a crash on a hosted Mac leaves no trace.
+    The synthetic profile holds no account data; the report names only the runner's paths."""
+    if not names:
+        return
+    target = out / "crash-reports"
+    target.mkdir(exist_ok=True)
+    for name in names:
+        shutil.copy2(home / "Library/Logs/DiagnosticReports" / name, target / name)
+
+
 def reader_rows(report):
     return {row.get("provider"): row for row in report.get("readers", [])}
 
@@ -850,6 +861,7 @@ def run(args, host):
         checks.append(outcome("harness", False, {"error": "%s: %s" % (type(error).__name__, error)}))
     crashes = crash_reports(Path.home())
     checks.append(outcome("no-crash-report", not crashes, {"reports": crashes}))
+    keep_crash_reports(Path.home(), crashes, out)
     # The session user name stays out of a public artifact even when it is only "runner".
     host_facts = {k: v for k, v in facts.items() if k != "sessionUser"}
     manifest = {"schemaVersion": 1, "profile": "synthetic", "sourceSHA": info.get("ModelPlanPublicSource"),
