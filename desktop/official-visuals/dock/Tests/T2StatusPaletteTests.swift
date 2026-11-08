@@ -22,12 +22,29 @@ final class T2StatusPaletteTests: XCTestCase {
         }
     }
 
-    func testNoInkIsCloseToTheBrandReds() throws {
-        for (key, ink) in try palette() {
-            for brand in [(223.0, 96.0, 76.0), (187.0, 52.0, 44.0)] {
-                let distance = max(abs(ink.r - brand.0), abs(ink.g - brand.1), abs(ink.b - brand.2))
-                XCTAssertGreaterThan(distance, 20, "\(key) is too close to brand red")
-            }
-        }
+    /// D65 (owner): a window that is used up is painted red on purpose, as a status signal, so these inks may sit
+    /// near the brand reds. Nothing else may; add a key here only for an ink that carries a status.
+    static let statusInks: Set<String> = ["usedUpTrack", "usedUpFace", "usedUpMark"]
+
+    private func nearBrandRed(_ palette: [String: (r: Double, g: Double, b: Double)], allowing status: Set<String>) -> [String] {
+        palette.compactMap { key, ink in
+            guard !status.contains(key) else { return nil }
+            return [(223.0, 96.0, 76.0), (187.0, 52.0, 44.0)].contains { brand in
+                max(abs(ink.r - brand.0), abs(ink.g - brand.1), abs(ink.b - brand.2)) <= 20
+            } ? key : nil
+        }.sorted()
+    }
+
+    func testRuleCatchesANonStatusInkNearTheBrandReds() {
+        let probe: [String: (r: Double, g: Double, b: Double)] = [
+            "decor": (225, 98, 78), "usedUpFace": (223, 96, 76), "calm": (90, 217, 186)]
+        XCTAssertEqual(nearBrandRed(probe, allowing: Self.statusInks), ["decor"], "only the listed status inks may be red")
+        XCTAssertEqual(nearBrandRed(probe, allowing: []), ["decor", "usedUpFace"])
+    }
+
+    func testNoInkExceptTheListedStatusInksIsCloseToTheBrandReds() throws {
+        let inks = try palette()
+        XCTAssertTrue(Self.statusInks.isSubset(of: Set(inks.keys)), "every listed status ink exists in the skin")
+        XCTAssertEqual(nearBrandRed(inks, allowing: Self.statusInks), [], "an ink is too close to the brand reds")
     }
 }
