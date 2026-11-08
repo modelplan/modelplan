@@ -1,0 +1,1 @@
+A quota window that is used up now shows on the widget the way the prototype's empty nozzle does: the ring's track turns dark red, the nozzle face takes a light red tint and the vendor mark dims. Its card adds one plain line such as "5-hour quota used up · resets in 3h 18m".

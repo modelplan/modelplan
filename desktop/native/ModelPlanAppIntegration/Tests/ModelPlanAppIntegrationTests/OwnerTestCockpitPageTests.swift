@@ -11,7 +11,7 @@ import ModelPlanCockpitWeb
 /// as the bundled helper with both pins, the canonical official page in Resources/Cockpit, the entry flag and the
 /// owner-test marker. The release shape is the same bundle without the marker; its page must be refused.
 extension CommunityCockpitEntryTests {
-    private static func repoRoot() -> URL {
+    static func repoRoot() -> URL {
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 where !FileManager.default.fileExists(atPath: repo.appendingPathComponent("desktop/cockpit/build.mjs").path) {
             repo.deleteLastPathComponent()
@@ -19,7 +19,7 @@ extension CommunityCockpitEntryTests {
         return repo
     }
 
-    private static func ownerTestShapedApp(at root: URL, helper: URL, ownerTest: Bool, official: URL) throws -> URL {
+    static func ownerTestShapedApp(at root: URL, helper: URL, ownerTest: Bool, official: URL) throws -> URL {
         let app = root.appendingPathComponent("ModelPlan Community.app"), contents = app.appendingPathComponent("Contents")
         let fm = FileManager.default
         for dir in ["MacOS", "Helpers", "Resources"] {
@@ -78,8 +78,9 @@ extension CommunityCockpitEntryTests {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
               FileManager.default.isExecutableFile(atPath: path) else { throw XCTSkip("The real synthetic-test CLI is not available") }
         let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
-        guard FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
-            throw XCTSkip("Build the canonical official cockpit first")
+        guard FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path),
+              !CommunityCockpitApplicationFactory.manifestPins.isEmpty else { // pins exist only in a build that generated them
+            throw XCTSkip("Build the canonical official cockpit and generate its pins (check-bundle-pins.py) first")
         }
         for ownerTest in [true, false] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("owner-test-page-" + UUID().uuidString)
@@ -117,8 +118,9 @@ extension CommunityCockpitEntryTests {
     /// `prepare()` is safe too: it either finds the finished check or checks on the spot.
     @MainActor func testG3_42BundleIsCheckedOncePerLaunchAndServedFilesStayChecked() async throws {
         let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
-        guard FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
-            throw XCTSkip("Build the canonical official cockpit first")
+        guard FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path),
+              !CommunityCockpitApplicationFactory.manifestPins.isEmpty else { // pins exist only in a build that generated them
+            throw XCTSkip("Build the canonical official cockpit and generate its pins (check-bundle-pins.py) first")
         }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-42-once-" + UUID().uuidString).resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -148,7 +150,8 @@ extension CommunityCockpitEntryTests {
         let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
               FileManager.default.isExecutableFile(atPath: path),
-              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path),
+              !CommunityCockpitApplicationFactory.manifestPins.isEmpty else { // pins exist only in a build that generated them
             throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
         }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-42-" + UUID().uuidString).resolvingSymlinksInPath()

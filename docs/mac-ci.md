@@ -36,6 +36,11 @@ label, so GUI jobs serialize without cancelling pending checks. Other jobs can
 use both ordinary `modelplan-mac` instances. This label is a routing capability,
 not permission to approve system prompts or access real user data.
 
+Since D62 (2026-11-08) every non-GUI task (`native-headless`, `transport`, `sequences`, `probe`, `u11-native`)
+asks for `modelplan-mac-nongui` instead of the plain `modelplan-mac`, and refuses to start on a runner whose
+name contains `gui`. The GUI Mac also carries `modelplan-mac`, so the plain label used to send headless jobs
+there while GUI jobs waited. Only the non-GUI Macs carry `modelplan-mac-nongui`.
+
 The native suite runs as two parallel legs. `task: native` keeps the GUI
 label and runs everything that may need a window server. `task: native-headless`
 uses the ordinary label and runs the app-integration XCTest classes listed in
@@ -54,6 +59,41 @@ The desktop workflow's `mac_ci_probe=true` dispatch runs only a probe. Its
 to validate the runner without changing the general switch or launching all
 product checks. Acceptance must verify the assigned runner identity and the
 probe result; an online status alone is insufficient.
+
+## GUI leg on hosted Macs
+
+Hosted macOS runners have a real WindowServer session. `MAC_CI_GUI_POOL=hosted` (or a `desktop` dispatch with
+`gui_pool=hosted`) splits the GUI leg in two (owner D62, 2026-11-08): `native-hosted-gui` runs the
+`hosted-gui` leg on hosted `macos-15`, and `native-owner-gui` runs only the `ownerGui` classes of
+`native-test-partition.json` on the owner's GUI Mac. `native_test_partition.py` derives both from the same
+listed suite and verifies each, so together they are exactly the old GUI leg. A class goes on `ownerGui` when it
+cannot finish on a hosted Mac, for example because it waits for a Keychain or activation prompt that nobody
+answers there. Unset, the whole GUI leg runs on the GUI Mac as before.
+
+## Ordinary owner Macs for headless workflows
+
+`MAC_CI_NONGUI=enabled` (owner D62, 2026-11-08) moves the `u11-native` task of `trusted-mac.yml` to the
+owner's ordinary Macs. It routes to the label `modelplan-mac-nongui`, which only the non-GUI runners carry,
+so the GUI Mac is never selected; the job also refuses to start on a runner whose name contains `gui`.
+The owner gate is the same as above. Unset or any other value, or an outside actor, uses hosted `macos-15`,
+the oldest supported macOS. `U11 native cockpit` calls the task at a pinned commit, so enabling it needs
+that commit admitted by the runner group as well.
+
+On a reused Mac the job keeps everything it writes in its runner temp: `HOME`, `CFFIXED_USER_HOME`,
+`TMPDIR`, the XDG, Codex, Claude, ModelPlan, Go and npm caches are redirected there, the checkout keeps no
+credentials, and a final step removes `.tmp` and `node_modules` whatever the result. The runner empties its
+temp directory around each job, and the next checkout cleans the workspace.
+
+The packaged-app walkthrough (`test-build-walkthrough.yml`) stays hosted: it needs a logged-in window
+server, Accessibility and screen capture, and posts real pointer input, which an ordinary owner Mac either
+lacks or shares with the GUI Mac's session.
+
+## Test build walkthrough
+
+`test-build-walkthrough.yml` is a separate manual workflow on a hosted `macos-15`: it never uses the
+pinned reusable workflow or the dedicated group. It walks a packaged owner test app with synthetic
+data and uploads screenshots and a manifest. See
+[WALKTHROUGH.md](../desktop/native/verification/walkthrough/WALKTHROUGH.md).
 
 ## Merge queue
 
