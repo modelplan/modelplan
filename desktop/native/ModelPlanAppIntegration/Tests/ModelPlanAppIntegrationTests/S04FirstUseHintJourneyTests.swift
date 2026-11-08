@@ -204,5 +204,31 @@ private actor S04SyntheticClient: EngineClient {
         XCTAssertNil(mapLayer())
         await app.composition.stop()
     }
+
+    /// HINT-9-01 on real panels, normal entry: Help from the status menu draws the map, and every caption
+    /// and the header fit the text field that draws them (read-only: the drawn fields' own cells decide).
+    func testStatusHelpMapCaptionsFitTheFieldsThatDrawThem() async throws {
+        let (app, profile) = try await journeyApplication("hint-fit", onboarded: true, pointer: { nil })
+        defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock
+        for _ in 0..<300 where dock.currentDockHelpSurface == nil || !app.dockHelpInstalled { try await Task.sleep(for: .milliseconds(10)) }
+        let help = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Help…" })
+        _ = try XCTUnwrap(help.target as? NSObject).perform(try XCTUnwrap(help.action), with: help)
+        func mapLayer() -> HelpUILayerView? {
+            NSApplication.shared.windows.filter(\.isVisible).flatMap { $0.contentView.map(descendants) ?? [] }
+                .compactMap { $0 as? HelpUILayerView }.first { $0.presentation?.mapHeader != nil }
+        }
+        for _ in 0..<300 where mapLayer() == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let map = try XCTUnwrap(mapLayer(), "Help presents the map over the visible widget")
+        let fields = descendants(map).compactMap { $0 as? NSTextField }.filter { !$0.isHidden && !$0.stringValue.isEmpty }
+        XCTAssertGreaterThan(fields.count, 3, "the header and the captions are drawn")
+        for field in fields {
+            let needed = try XCTUnwrap(field.cell).cellSize(forBounds: CGRect(x: 0, y: 0, width: field.frame.width, height: 10_000)).height
+            XCTAssertLessThanOrEqual(needed, field.frame.height + 0.5, "caption clipped: \(field.stringValue)")
+        }
+        map.onAction?(.dismissMap(reason: .escape, returnFocusID: nil))
+        await app.composition.stop()
+    }
     #endif
 }
