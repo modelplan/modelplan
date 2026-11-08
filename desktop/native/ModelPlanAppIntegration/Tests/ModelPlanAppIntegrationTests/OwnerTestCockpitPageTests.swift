@@ -5,6 +5,11 @@ import XCTest
 import CryptoKit
 import WebKit
 import ModelPlanCockpitWeb
+import ModelPlanSettings
+import ModelPlanEngineClient
+import ModelPlanEngineStore
+import ModelPlanDock
+import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
 /// Owner D39/D-E (#611 Q1/Q2): an owner test package must actually load the cockpit page, not only enable the menu item.
