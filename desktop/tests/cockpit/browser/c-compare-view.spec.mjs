@@ -4,7 +4,7 @@
 // "‹ back" and the fast key. The built page through its normal bridge; synthetic profile only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
-import {build13Profile} from '../build13-fixture.mjs';
+import {build13Profile,SESSION_REF} from '../build13-fixture.mjs';
 
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 async function open(page,locale='en'){
@@ -89,4 +89,15 @@ test('CKP-MFD compare: the title stays whole when the current effort is unknown'
  const astra=page.locator('.fd-ch:not(.empty)').nth(1);await astra.locator('.fd-strip').click();
  const title=page.locator('.mfd-title');await expect(title).toHaveText('Compare · Astra');
  expect(await title.evaluate(e=>e.scrollWidth<=e.clientWidth+.5)).toBe(true);
+});
+
+test('CKP-FAD-10 CKP-MFD-21: a record-line click closes the comparison and the trial, and shows the session view',async({page})=>{
+ await open(page);
+ await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
+ await expect(page.locator('.mfd-page.pg-compare')).toBeVisible();
+ await expect(page.locator('.fd-indicator[data-state="try"]')).toHaveCount(1);
+ await page.locator(`.ck-tape .t-observed[data-session="${SESSION_REF}"]`).click();
+ await expect(page.locator('.mfd-page.pg-compare')).toHaveCount(0);
+ await expect(page.locator('.mfd-page.pg-where .ws-list .ws').first()).toBeVisible();
+ await expect(page.locator('.fd-indicator[data-state="try"]')).toHaveCount(0);
 });

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Which subscription a reported session belongs to, and each subscription's identity colour and mark: one place, so
 // the faders, the record strip, the MFD lists and the HUD agree (owner build 13: Codex sessions matched nothing).
-// A producer-verified subscriptionRef wins. Without one, a session joins the single subscription of its tool when
+// A producer-verified subscriptionRef wins, and when it names no member the session stays unbound. Without one, a session joins the single subscription of its tool when
 // there is exactly one; with two or more of the same tool it stays unbound, because nothing says which account ran it.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
@@ -21,7 +21,7 @@ export const memberColour=(m:{readonly row:{readonly vendorKey:string|null}}|nul
 
 /** The member a session belongs to, or null when that cannot be said. */
 export function sessionMember(members:readonly Member[],session:Pick<Session,'source'|'subscriptionRef'>):Member|null {
- if(session.subscriptionRef){const exact=members.find(m=>m.key===session.subscriptionRef);if(exact)return exact;}
+ if(session.subscriptionRef)return members.find(m=>m.key===session.subscriptionRef)??null;
  const tool=sessionTool(session.source);if(!tool)return null;
  const same=members.filter(m=>m.row.id===tool);
  return same.length===1?same[0]!:null;
