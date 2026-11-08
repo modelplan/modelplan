@@ -126,6 +126,9 @@ extension CommunityCockpitEntryTests {
         var closedFootprints: [UInt64] = []
         let cycles = 5, budget = 10.0, mebibyte = Double(1 << 20)
         for cycle in 1...cycles {
+            // The open part holds the only references to the page and its web view, so after it returns nothing
+            // in this test keeps them alive, as the coordinator keeps nothing after a close.
+            func openAndClose() async throws -> (open: Double, processes: BudgetProcesses) {
             let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-budget", generation: 1)
             let page = try owner.makePage(context: context, executable: helper)
             var ready = false
@@ -148,8 +151,11 @@ extension CommunityCockpitEntryTests {
             let processes = BudgetProcesses.of(web)
             XCTAssertNotNil(processes.web, "cycle \(cycle): the page's WebContent process is attributable")
             let open = try await processes.cpuPercent(over: 10)
-            let webPID = processes.web
             page.discard()
+            return (open, processes)
+            }
+            let (open, processes) = try await openAndClose()
+            let webPID = processes.web
             var ended = false
             let gone = ContinuousClock.now + .seconds(10)
             while !ended && ContinuousClock.now < gone {
