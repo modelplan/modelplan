@@ -193,16 +193,23 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertNil(app.composition.store.snapshot.rows)
         await app.composition.stop()
     }
+    /// The manifest pins are generated at build time from the canonical build (check-bundle-pins.py --write) and
+    /// compiled in with MODELPLAN_COCKPIT_BUILD_PINS; U11 native requires this test to run and pass. Without them
+    /// the factory has no pins, so it admits no cockpit page at all.
     @MainActor func testProductionPinsAdmitCanonicalBundles() async throws {
+        guard !CommunityCockpitApplicationFactory.manifestPins.isEmpty else {
+            throw XCTSkip("Built without generated cockpit pins (check-bundle-pins.py --write, -DMODELPLAN_COCKPIT_BUILD_PINS)")
+        }
+        XCTAssertEqual(Set(CommunityCockpitApplicationFactory.manifestPins.keys), ["community", "official"])
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
             if FileManager.default.fileExists(atPath: repo.appendingPathComponent("desktop/cockpit/build.mjs").path) { break }
             repo.deleteLastPathComponent()
         }
         let builds = repo.appendingPathComponent("desktop/cockpit/.tmp")
-        guard FileManager.default.fileExists(atPath: builds.appendingPathComponent("community/bundle-manifest.json").path),
-              FileManager.default.fileExists(atPath: builds.appendingPathComponent("official/bundle-manifest.json").path)
-        else { throw XCTSkip("Build both canonical cockpit editions before running the admission check") }
+        // The generated pins exist only after both editions were built, so a missing build is a failure here.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: builds.appendingPathComponent("community/bundle-manifest.json").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: builds.appendingPathComponent("official/bundle-manifest.json").path))
         for edition in ["community", "official"] {
             let pin = try XCTUnwrap(CommunityCockpitApplicationFactory.manifestPins[edition])
             let bundle = try VerifiedCockpitBundle(root: builds.appendingPathComponent(edition), manifestSHA256: pin, allowOfficial: edition == "official")

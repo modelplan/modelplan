@@ -117,7 +117,7 @@
         },
         "CommunityCockpitEntryTests/testProductionPinsAdmitCanonicalBundles": {
           "leg": "headless",
-          "reason": "needs both canonical cockpit editions built first"
+          "reason": "needs both canonical cockpit editions built and their generated pins compiled in (MODELPLAN_COCKPIT_BUILD_PINS), which U11 native supplies"
         },
         "S1GalleryTests/testProduceOffscreenGallery": {
           "leg": "headless",

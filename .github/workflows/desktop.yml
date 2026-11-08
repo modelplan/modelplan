@@ -132,6 +132,36 @@ jobs:
       - run: python3 -m unittest discover -s desktop/native/tools/ci -p 'test_*.py' -v
       - run: python3 desktop/native/tools/ci/native_test_partition.py check
 
+  cockpit-pins:
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    # Cockpit admission pins are never committed (D69): they are generated from the canonical build wherever the
+    # App is compiled (package-neutral.sh, U11 native). On every PR head, main push and merge-queue group, build
+    # both editions twice from this tree, require byte-identical output, check the reserved-visuals register, and
+    # generate the pins the App would be compiled with. U11 native compiles and runs the App with them on PRs.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Pin generator and checker
+        run: |
+          python3 -B -m unittest discover -s desktop/native/verification/tests -p 'test_bundle_pin_guard.py' -v
+          python3 -B -m unittest discover -s desktop/native/ModelPlanCockpitWeb -p 'test_*.py' -v
+      - name: Build both editions, generate their pins, rebuild from scratch and require the same pins
+        run: |
+          npm ci --prefix desktop/cockpit --ignore-scripts
+          npm run build --prefix desktop/cockpit
+          npm run build:official --prefix desktop/cockpit
+          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --write
+          rm -rf desktop/cockpit/.tmp
+          npm run build --prefix desktop/cockpit
+          npm run build:official --prefix desktop/cockpit
+          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py
+          test -z "$(git status --porcelain)"
+
   app-smoke:
     permissions:
       contents: read

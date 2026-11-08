@@ -23,10 +23,14 @@ import ModelPlanDock
 
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
-    public static let manifestPins = [
-        "community":"6304b1014f15c17d0b5fba176e57e5db09ef0da3af41b0f2d1fc70f2768469db",
-        "official":"b23c0a10e8d978a8d91d80fadde853bfcb333bb62564e8c8c8ca41690b45413b",
-    ]
+    /// The manifest SHA-256 of each canonical cockpit edition. Never committed: packaging and CI build the editions,
+    /// write CockpitBundlePins.generated.swift from those exact bytes (check-bundle-pins.py --write) and compile with
+    /// -DMODELPLAN_COCKPIT_BUILD_PINS. A build without them admits no cockpit page.
+    #if MODELPLAN_COCKPIT_BUILD_PINS
+    public static let manifestPins = CockpitBuildPins.manifest
+    #else
+    public static let manifestPins: [String: String] = [:]
+    #endif
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?

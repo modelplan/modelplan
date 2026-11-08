@@ -8,6 +8,8 @@ on:
       - 'desktop/native/verification/**'
       - 'clients/swift/ModelPlanEngineClient/**'
       - 'clients/swift/ModelPlanWire/**'
+      # The cockpit pins are generated from this build, so a cockpit change alone needs the native proof.
+      - 'desktop/cockpit/**'
       - '.github/workflows/u11-native.yml'
   push:
     branches: [main]
@@ -17,6 +19,8 @@ on:
       - 'desktop/native/verification/**'
       - 'clients/swift/ModelPlanEngineClient/**'
       - 'clients/swift/ModelPlanWire/**'
+      # The cockpit pins are generated from this build, so a cockpit change alone needs the native proof.
+      - 'desktop/cockpit/**'
       - '.github/workflows/u11-native.yml'
 permissions:
   contents: read
@@ -38,12 +42,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Canonical web/native pin regression (no GUI)
+      - name: Canonical web build and its generated native pins (no GUI)
         run: |
           npm ci --prefix desktop/cockpit --ignore-scripts
           npm test --prefix desktop/cockpit
           npm run build --prefix desktop/cockpit
           npm run build:official --prefix desktop/cockpit
+          # Pins are never committed: generate them from these exact bytes, then compile the App with them below.
+          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --write
           python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py
       - name: Build the actual public CLI
         working-directory: cli
@@ -68,9 +74,10 @@ jobs:
           # The test-only page seam needs MODELPLAN_TEST_ONLY_SPI; without it the real app-server details
           # journey is not compiled at all and would vanish silently.
           swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/u11-product-build --jobs 2 \
-            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter '(CommunityCockpitEntryTests|DockCodexRuntimeRealServerTests|QuotaWidgetCardPrototypeTests)' 2>&1 | tee .tmp/u11-product-tests.log
+            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI -Xswiftc -DMODELPLAN_COCKPIT_BUILD_PINS --filter '(CommunityCockpitEntryTests|DockCodexRuntimeRealServerTests|QuotaWidgetCardPrototypeTests)' 2>&1 | tee .tmp/u11-product-tests.log
           # Both real-CLI normal-entry journeys must have run and passed here (elsewhere they are allowed skips).
-          for test in testNormalEntryRejectsOutdatedCLI testNormalEntryReceivesCockpitDetailsFromRealAppServer testOwnerTestPackageLoadsTheRealCockpitPageAndReleaseShapeRefusesIt; do
+          # testProductionPinsAdmitCanonicalBundles: the App compiled with the generated pins admits exactly this build.
+          for test in testNormalEntryRejectsOutdatedCLI testNormalEntryReceivesCockpitDetailsFromRealAppServer testOwnerTestPackageLoadsTheRealCockpitPageAndReleaseShapeRefusesIt testProductionPinsAdmitCanonicalBundles; do
             grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.CommunityCockpitEntryTests $test\]' passed" .tmp/u11-product-tests.log \
               || { echo "::error::CommunityCockpitEntryTests/$test did not run and pass"; exit 1; }
           done
