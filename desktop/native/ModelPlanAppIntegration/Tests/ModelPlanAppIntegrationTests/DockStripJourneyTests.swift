@@ -51,7 +51,7 @@ private actor DockStripEngine: EngineClient {
     var displays = [DockDisplayArea(id: "primary", frame: .init(x: 0,y: 0,width: 1440,height: 900), visibleFrame: .init(x: 0,y: 80,width: 1440,height: 820))]
     var host: StaticDockPreviewHost { app.composition.dock }
     static func stamp(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
-    init(profile: URL? = nil, wall: Date? = nil, shortRemaining: [Int] = [41, 26, 0]) throws {
+    init(profile: URL? = nil, wall: Date? = nil, shortRemaining: [Int] = [41, 26, 0], weekly: [Int] = [70, 60, 50]) throws {
         root = profile ?? FileManager.default.temporaryDirectory.appendingPathComponent("dock-strip-" + UUID().uuidString)
         store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../..").standardizedFileURL
@@ -74,7 +74,7 @@ private actor DockStripEngine: EngineClient {
                 a["windows"] = [0,1].map { number -> [String: Any] in
                     var w = window; w["id"] = number == 0 ? "short" : "week"; w["role"] = number == 0 ? "session" : "weekly"
                     w["durationSeconds"] = number == 0 ? 18000 : 604800; w["limitKey"] = number == 0 ? "five_hour" : "weekly"; w["poolKey"] = "main"
-                    w["remainingPercent"] = number == 0 ? shortRemaining[index] : [70,60,50][index]
+                    w["remainingPercent"] = number == 0 ? shortRemaining[index] : weekly[index]
                     w["current"] = true; w["observedAt"] = Self.stamp(clock.wall.addingTimeInterval(-60)); w["validUntil"] = "2099-01-01T00:00:00Z"
                     w["resetsAt"] = Self.stamp(clock.wall.addingTimeInterval(number == 0 ? 8040 : 86400)); w["validUntil"] = w["resetsAt"]; w.removeValue(forKey:"modelScope")
                     return w
@@ -219,6 +219,36 @@ private actor DockStripEngine: EngineClient {
     /// ends and full ink from 40 % to 60 %, at opacity .4; the strip clips it. Checked pixel by pixel
     /// against the same strip with alerts off. Writes the strip with and without alerts (and an 8x
     /// enlargement side by side) to dock-visual/g3-51.
+    /// G3-51: the collapsed strip in the state the study renders with three members: one empty-ish member paints the
+    /// red pitch glow and a public reset announcement puts the hollow blue event dot on another member's station.
+    func testG351StripShowsTheGlowAndTheEventDotInOneState() async throws {
+        let fixture = try DockStripFixture(shortRemaining: [75, 9, 90], weekly: [90, 90, 90])
+        addTeardownBlock { @MainActor in await fixture.close() }
+        try await fixture.open(autoHide: true)
+        let size = try XCTUnwrap(fixture.host.edgePresentation?.placement).sliverFrame.size
+        let start = DockStripFixture.stamp(fixture.clock.wall.addingTimeInterval(-1))
+        let end = DockStripFixture.stamp(fixture.clock.wall.addingTimeInterval(3600))
+        var projection = try XCTUnwrap(fixture.raw["projection"] as? [String: Any])
+        projection["resetEvents"] = [[
+            "version": 1, "id": "synthetic-public-reset", "provider": "openai", "rowId": "codex",
+            "status": "announced", "planIds": ["pro"], "publishedAt": start, "expiresAt": end,
+            "schedule": ["precision": "window", "from": start, "through": end],
+            "source": ["kind": "publication", "publicationId": "synthetic"]
+        ]]
+        fixture.raw["projection"] = projection
+        try await fixture.publish()
+        let view = try fixture.host.prepareSliver(size: size, backingScale: 2)
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.quotaRole), [nil, .critical, nil])
+        XCTAssertFalse(view.noticeMarks.isEmpty, "the announced reset paints an event dot on the strip")
+        XCTAssertEqual(view.noticeMarks.first?.notice.key.kind, .resetAnnounced)
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
+        let out = root.appendingPathComponent("dock-instrument-checks/dock-visual/g3-51", isDirectory: true)
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: out.appendingPathComponent("after-strip-state3.png"))
+    }
+
     func testG351AlertPitchGlowsLikeThePrototype() async throws {
         let fixture = try DockStripFixture(shortRemaining: [51, 50, 0])
         addTeardownBlock { @MainActor in await fixture.close() }
