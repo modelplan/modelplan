@@ -61,8 +61,9 @@ final class BundleScheme: NSObject, WKURLSchemeHandler {
   ) { owner?.receive(message) }
 }
 
-/// No prewarm: construction creates state only; open() creates the sole web view.
-/// Each close discards the page. Production contains no private WebKit selectors.
+/// CKP-SHELL-20: construction creates state only. prewarm() builds the sole web view and loads the page in
+/// a panel that is never ordered front, with no data, focus or outside-press monitor; open() shows it, or
+/// builds it first. Each close discards the page. Production contains no private WebKit selectors.
 @MainActor
 public final class CockpitWindowController: NSWindowController, NSWindowDelegate,
   WKNavigationDelegate, WKUIDelegate
@@ -186,6 +187,29 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onRendered: (() -> Void)?
   public var onClosed: (() -> Void)?
+  /// Once per open, when the page is first confirmed visible. It replaces the hidden-display refresh then.
+  public var onShown: (() -> Void)?
+  private var shown = false, awaitingShown = false
+  /// The first visible paint of a WebKit process (its GPU and compositing start) took about 2.3 s on a
+  /// hosted runner even with the page loaded. A prewarmed page pays it in the background: the empty page is
+  /// ordered in at alpha 0, ignoring the mouse and never key, until two animation frames have painted, then
+  /// ordered out.
+  private var warmPainting = false
+  /// G3-42: every new page pays part of this, not only the process's first. In the packaged walkthrough a
+  /// page rebuilt after a close took 0.9 s from the click to its first visibility receipt and 1.3 s to data,
+  /// and the hosted test once 2.5 s, against 0.1 s and 0.5 s for the warm-painted first page. So every hidden
+  /// page is warm-painted. A warm paint that reaches its cap means this process does not paint at alpha 0,
+  /// and then none is tried again, so an invisible panel is not ordered in for six seconds after each close.
+  private static var warmPaintUnavailable = false
+  private var warmPaintEnd: Task<Void, Never>?
+  private var warmPaintStarted: TimeInterval?
+  /// G3-42 timing: render receipts logged since the last open, the first two only.
+  private var rendersSinceOpen = 2
+  #if MODELPLAN_TEST_ONLY_SPI
+  public var verificationWarmPainted: ((Bool) -> Void)?
+  /// Holds back the receipt of a hidden visibility state, as a busy WebKit process at launch does.
+  public var verificationHoldHiddenVisibilityReceipt = false
+  #endif
   public var onFailure: ((CockpitWindowFailure) -> Void)?
   public var onBridgeDiagnostic: ((CockpitBridgeDiagnostic) -> Void)?
   public private(set) var rejectedBridgeMessageCount: UInt64 = 0
@@ -235,15 +259,37 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     super.init(window: nil)
   }
   required init?(coder: NSCoder) { nil }
+  public func prewarm() {
+    guard web == nil, !bridge.disposed, !ending else { return }
+    build()
+  }
   public func open() {
     closeTask?.cancel(); closeTask = nil
     if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
-    guard web == nil, !bridge.disposed else {
-      window?.alphaValue = 1
-      window?.makeKeyAndOrderFront(nil)
+    if web == nil, !bridge.disposed, !ending { build() }
+    guard let panel = window else { return }
+    guard shown else {
+      shown = true; awaitingShown = true; rendersSinceOpen = 0
+      endWarmPaint(painted: false)
+      applyLayout()
+      installOutsideMonitors()
+      panel.alphaValue = appearance.reduceMotion ? 1 : 0
+      panel.makeKeyAndOrderFront(nil)
+      if !appearance.reduceMotion {
+        NSAnimationContext.runAnimationGroup { context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }
+      }
       lastVisibility = nil; visibilityChanged()
+      #if MODELPLAN_TEST_ONLY_SPI
+        if let web { verificationDidOpen?(web, panel) }
+      #endif
       return
     }
+    panel.alphaValue = 1
+    panel.makeKeyAndOrderFront(nil)
+    lastVisibility = nil; visibilityChanged()
+  }
+  private func build() {
+    if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
     let config = WKWebViewConfiguration()
     config.websiteDataStore = .nonPersistent()
     #if MODELPLAN_TEST_ONLY_SPI
@@ -314,19 +360,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     freshnessObservers.append((center, clock))
     applyLayout()
-    installOutsideMonitors()
     observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
       Task { @MainActor in self?.cancelDrag(); self?.applyLayout() }
     })
+    panel.alphaValue = 0
     view.load(URLRequest(url: pageURL))
-    panel.alphaValue = appearance.reduceMotion ? 1 : 0
-    panel.makeKeyAndOrderFront(nil)
-    if !appearance.reduceMotion {
-      NSAnimationContext.runAnimationGroup { context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }
-    }
-    #if MODELPLAN_TEST_ONLY_SPI
-      verificationDidOpen?(view, panel)
-    #endif
   }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {
     guard visibilityFence.isConfirmedVisible else {
@@ -421,6 +459,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         publishAppearance()
         visibilityChanged()
         onReady?()
+        if !shown { warmPaint() }
       case .cleared:
         deadline?.cancel()
         deadline = nil
@@ -448,6 +487,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           receiptWatchdog.cancel()
         }
         freshnessHasRendered = true
+        if shown, rendersSinceOpen < 2 {
+          rendersSinceOpen += 1
+          CockpitTimingLog.record("open rendered n=\(rendersSinceOpen) clickMs=\(CockpitTimingLog.sinceClick())")
+        }
         if let buffered = bridge.takeBufferedDeadline() { freshnessDriver.accept(deadline: buffered.value) }
         else if let id = bridge.currentDeadlineTrigger, bridge.isCurrentDisplay(id) { receiptWatchdog.wait(for: id) }
         if let reason = pendingFreshnessReason { sendFreshnessTick(reason) }
@@ -459,6 +502,43 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         receiptWatchdog.cancel(); freshnessDriver.accept(deadline: value)
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
       }
+  }
+  private func warmPaint() {
+    guard !Self.warmPaintUnavailable, let panel = window, let web, !shown, !ending, !warmPainting else { return }
+    warmPainting = true
+    warmPaintStarted = CockpitTimingLog.now
+    panel.ignoresMouseEvents = true
+    panel.alphaValue = 0
+    panel.orderFrontRegardless()
+    warmPaintEnd = Task { @MainActor [weak self] in
+      do { try await Task.sleep(for: .seconds(6)) } catch { return }
+      self?.endWarmPaint(painted: false)
+    }
+    // Resolves after the page has painted twice; a page WebKit still treats as hidden never resolves.
+    web.callAsyncJavaScript(
+      "await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(true))));return true",
+      arguments: [:], in: nil, in: .defaultClient
+    ) { [weak self] result in
+      Task { @MainActor in
+        guard let self, self.warmPainting else { return }
+        if case .success = result { self.endWarmPaint(painted: true) } else { self.endWarmPaint(painted: false) }
+      }
+    }
+  }
+  private func endWarmPaint(painted: Bool) {
+    warmPaintEnd?.cancel(); warmPaintEnd = nil
+    guard warmPainting else { return }
+    warmPainting = false
+    // Capped while still hidden: this process does not paint at alpha 0 (see warmPaintUnavailable). A click
+    // during the warm paint (painted false, shown) is not a cap.
+    if !painted, !shown { Self.warmPaintUnavailable = true }
+    CockpitTimingLog.record("prewarm warm-paint painted=\(painted) clicked=\(shown) ms=\(warmPaintStarted.map { CockpitTimingLog.ms(since: $0) } ?? -1)")
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationWarmPainted?(painted)
+    #endif
+    window?.ignoresMouseEvents = false
+    guard !shown, !ending else { return }
+    window?.orderOut(nil)
   }
   private func recordRejectedBridgeMessage() {
     if rejectedBridgeMessageCount < UInt64.max { rejectedBridgeMessageCount += 1 }
@@ -477,7 +557,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
 
   }
   private func visibilityChanged() {
-    guard !ending, closeTask == nil, let window, bridge.queryTicket != nil else { return }
+    // The alpha-0 warm paint is not a visible cockpit; the page keeps the hidden state it was given.
+    guard !ending, !warmPainting, closeTask == nil, let window, bridge.queryTicket != nil else { return }
     let value = CockpitVisibility(
       visible: window.isVisible && !window.isMiniaturized && !NSApp.isHidden,
       occluded: !window.occlusionState.contains(.visible), key: window.isKeyWindow && NSApp.isActive
@@ -496,18 +577,28 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     visibilityTimeout = Task { @MainActor [weak self] in
       do { try await Task.sleep(for: .seconds(2)) } catch { return }
       guard let self, !self.ending, self.visibilityFence.isPending(token) else { return }
+      // G3-42: a page that has not been shown shows nothing, so a late hidden-state receipt is not a failure.
+      // At launch the WebKit process can be busy past this deadline; failing here threw the prewarmed page
+      // away and built another. The fence stays pending, and the open sends a new state with its own deadline.
+      guard self.shown else { CockpitTimingLog.record("prewarm hidden-visibility-late"); return }
       self.fail(.visibilityReceiptTimeout)
     }
     do {
       send(try bridge.setVisibility(value), isCurrent: { [weak self] in self?.visibilityFence.isCurrent(token) == true }, onAccepted: { [weak self] in
         guard let self else { return }
+        #if MODELPLAN_TEST_ONLY_SPI
+        if self.verificationHoldHiddenVisibilityReceipt, !visible { return }
+        #endif
         self.visibilityTimeout?.cancel(); self.visibilityTimeout = nil
         if self.visibilityFence.confirm(token) {
           if self.appearanceGate.retry(visible: true, displayPending: self.bridge.hasPendingDisplay) { self.publishAppearance() }
           else { self.watchDeferredAppearance() }
           if let id = self.bridge.currentDisplayRequest, self.bridge.awaitsDisplayReceipt(id) { self.renderWatchdog.wait(for: id) }
           self.freshnessDriver.show()
-          if self.refreshAfterHiddenDisplay { self.refreshAfterHiddenDisplay = false; self.onReady?() }
+          if self.awaitingShown, let onShown = self.onShown {
+            self.awaitingShown = false; self.refreshAfterHiddenDisplay = false; onShown()
+          } else if self.refreshAfterHiddenDisplay { self.refreshAfterHiddenDisplay = false; self.onReady?() }
+          self.awaitingShown = false
         }
       })
     } catch { fail() }
@@ -601,7 +692,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     let requested = anchor()
     guard let screen = NSScreen.screens.first(where: { screen in requested.map { screen.frame.intersects($0) } ?? false }) ?? NSScreen.main else { return nil }
-    let icon = requested ?? CGRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.maxY, width: 0, height: 0)
+    let icon = requested ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
   private func applyLayout() {
@@ -748,6 +839,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func discard() {
     guard !ending else { return }
     ending = true
+    warmPaintEnd?.cancel(); warmPaintEnd = nil; warmPainting = false
     freshnessDriver.retire(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
     orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); appearanceWatchdog.cancel()
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
