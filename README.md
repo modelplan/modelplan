@@ -10,3 +10,5 @@ community line is plain metal per CKP-ENG-16.
 review-1108/ (owner review 11-08): before = base-bells 70136993, after = d21e8d15 (merges #717 c952621c).
 Real CLI vendor keys, two working subscriptions, page over a wallpaper-like backdrop to show what is transparent.
 Prototype comparisons (unpublished study) are on the shared disk only: handoffs/shared/cockpit-review-1108/.
+
+d68/ (owner D68): main = ff1b1264, after = base-bells 4e083815 (r3 hull plain plates, idle bells at the hull-bottom colour). Prototype comparisons on the shared disk only.
