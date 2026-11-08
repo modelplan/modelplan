@@ -49,14 +49,14 @@ test('the official porthole opens the field by click and keyboard',async({page})
 test('D43 every vendor mark the scene asks for loads under the page CSP, close to square',async({page})=>{
  await open(page);
  const sizes=await page.evaluate(async names=>Promise.all(names.map(name=>new Promise(done=>{const image=new Image();image.onload=()=>done([name,image.naturalWidth>0,Math.abs(image.naturalWidth/image.naturalHeight-1)<=.05]);image.onerror=()=>done([name,false,false]);image.src='./assets/brands/'+name;}))),
-  ['openai-white.svg','claude-rounded.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
+  ['openai-white.svg','claude-rounded.svg','claude.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
  for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
 });
 // Spike 11-08 / D63: the page cannot read Low Power Mode, so native passes it in the payload and on every change.
 // Low power renders on demand only with the scene's quiet motion (no camera sway or fly-ins): idle means no frames.
 test('D63 low power: the field mounts quiet, draws no frames while idle, and follows a live change',async({page})=>{
  await open(page);await show(page,payload(4,{reduceMotion:false,lowPower:true}));
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready')),{timeout:20000}).toBe(true);// the scene bundle can take a while on a busy software-GL box
  test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
  const stats=()=>page.evaluate(()=>window.modelPlanField.stats());
  await expect.poll(async()=>(await stats())?.quiet).toBe(true);
@@ -72,7 +72,7 @@ test('D63 low power: the field mounts quiet, draws no frames while idle, and fol
 });
 test('D63 Reduce Motion alone also keeps the scene quiet, and the payload without lowPower is not low power',async({page})=>{
  await open(page);await show(page,payload(4));
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready')),{timeout:20000}).toBe(true);// the scene bundle can take a while on a busy software-GL box
  test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
  await expect.poll(()=>page.evaluate(()=>window.modelPlanField.stats()?.quiet)).toBe(true);
  expect(await page.evaluate(()=>window.modelPlanField.stats().lowPower)).toBe(false);
@@ -161,10 +161,12 @@ test('CKP-PORT-11 the scene is masked by the silhouette; bare desktop and the fe
 // Prototype field-picker-tags/axis-layout.js: screen-space lanes in the page; the scene's ticks and values are unchanged.
 const spread=(i,dev)=>({id:'s'+i,name:'Synthetic '+i,developerId:dev,recommended:'medium',efforts:[{effort:'low',label:'Low',star:false,ability:30+i*2,cost:.05*(i+1),time:20},{effort:'medium',label:'Med',star:true,ability:40+i*2,cost:.1*(i+1),time:30},{effort:'high',label:'High',star:false,ability:45+i*2,cost:.3*(i+1),time:60}]});
 test('QA 11-08 the axis labels of the enlarged field never overlap and stay inside the view',async({page})=>{
- await page.setViewportSize({width:900,height:640});await open(page);
+ test.setTimeout(60000);
+ // The panel's composition on a 14-inch laptop (CockpitFieldPanel.frame): the scene sits right of the 430 px card.
+ await page.setViewportSize({width:1323,height:735});await open(page);
  const devs=['openai','anthropic','zhipuai'];
  await show(page,JSON.stringify({language:'en',reduceMotion:true,models:Array.from({length:10},(_,i)=>spread(i,devs[i%3])),mine:[],focus:null}));
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready')),{timeout:20000}).toBe(true);// the scene bundle can take a while on a busy software-GL box
  test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
  await expect.poll(()=>page.locator('.tick3.field-axis-placed').count()).toBeGreaterThan(4);
  await page.waitForTimeout(1500);
@@ -177,4 +179,20 @@ test('QA 11-08 the axis labels of the enlarged field never overlap and stay insi
   expect(a.x>=stage.x&&a.r<=stage.r&&a.y>=stage.y&&a.b<=stage.b,a.text+' inside').toBe(true);
   for(const b of boxes)if(a!==b)expect(a.r<=b.x||b.r<=a.x||a.b<=b.y||b.b<=a.y,a.text+' / '+b.text).toBe(true);
  }
+});
+// CKP-PORT-11 in the native panel: a transparent WKWebView cannot blur the desktop with backdrop-filter, so the page
+// reports where the frosted card is and the panel puts a behind-window blur there. The scene's plates use the
+// prototype's LCD face (rocket.css .ov-porthole .wb-plates .plate), whose variables live on #cockpit and #overlay.
+test('CKP-PORT-11 the page reports the frosted card rect to the native panel, and the plates have the LCD face',async({page})=>{
+ await page.addInitScript(()=>{window.posted=[];window.messages=[];window.webkit={messageHandlers:{field:{postMessage(m){window.messages.push(JSON.parse(m));window.posted.push(JSON.parse(m).type);}}}};});
+ await page.setViewportSize({width:1323,height:735});await page.goto('/field.html');await page.waitForFunction(()=>!!window.modelPlanField);await show(page,payload());
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ const card=await page.locator('.field-card').boundingBox();
+ await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='card').at(-1)??null)).toEqual({type:'card',x:card.x,y:card.y,width:card.width,height:card.height,radius:12});
+ await page.setViewportSize({width:1100,height:640});
+ const moved=await page.locator('.field-card').boundingBox();
+ await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='card').at(-1)?.y)).toBe(moved.y);
+ expect(await page.evaluate(()=>getComputedStyle(document.getElementById('field')).getPropertyValue('--f-lcd'))).toMatch(/JetBrains Mono/);
+ const plate=page.locator('.wb-plates .plate').first();
+ if(await plate.count())expect(await plate.evaluate(e=>getComputedStyle(e).fontFamily)).toMatch(/JetBrains Mono/);
 });

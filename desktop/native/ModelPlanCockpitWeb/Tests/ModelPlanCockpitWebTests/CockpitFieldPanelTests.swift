@@ -105,4 +105,24 @@ final class CockpitFieldPanelTests: XCTestCase {
     XCTAssertEqual(CockpitFieldPanel.frame(in: NSRect(x: 2000, y: 25, width: 2560, height: 1415)).size,
                    NSSize(width: 1440, height: 900))
   }
+  /// CKP-PORT-11 in the native panel: the frosted card blurs the desktop. A transparent web view cannot do that with
+  /// CSS, so the page reports its card and the panel puts a behind-window blur exactly there; junk is ignored.
+  @MainActor func testTheFrostedCardBlursTheDesktopWhereThePageSaysItIs() throws {
+    XCTAssertEqual(CockpitFieldPanel.cardFrame(x: 0, y: 35.5, width: 430, height: 664, in: NSRect(x: 0, y: 0, width: 1323, height: 735)),
+                   NSRect(x: 0, y: 35.5, width: 430, height: 664), "top-left page coordinates become bottom-left points")
+    XCTAssertEqual(CockpitFieldPanel.cardFrame(x: 0, y: 20, width: 430, height: 600, in: NSRect(x: 0, y: 0, width: 960, height: 700)),
+                   NSRect(x: 0, y: 80, width: 430, height: 600))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-card-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let panel = CockpitFieldPanel(bundle: try bundle(root))
+    panel.open(payload: "{}", near: nil)
+    defer { panel.close() }
+    XCTAssertNil(panel.cardBlurFrame, "no blur before the page has laid out its card")
+    panel.receive(#"{"type":"card","x":"left","y":0,"width":430,"height":664}"#)
+    XCTAssertNil(panel.cardBlurFrame, "a malformed rect is ignored")
+    panel.receive(#"{"type":"card","x":0,"y":20,"width":430,"height":500,"radius":12}"#)
+    let frame = try XCTUnwrap(panel.cardBlurFrame)
+    XCTAssertEqual(frame.size, NSSize(width: 430, height: 500))
+    XCTAssertEqual(frame.minX, 0)
+  }
 }
