@@ -287,6 +287,8 @@ struct CockpitUnavailableNotice {
     private func openField(focusName:String?=nil) {
         guard let bundle=owner.verifiedBundle else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
+        // CKP-PORT-13: the panel builds the modelplan.ai fleet address; the App opens it like every website link.
+        panel.onWebsite={ [owner] url in owner.openWebsite(url) }
         guard let payload=fieldPayload(lowPower:panel.isLowPower,focusName:focusName) else { return }
         fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
     }

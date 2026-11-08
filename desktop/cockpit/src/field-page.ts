@@ -2,29 +2,28 @@
 // The enlarged launch field: a page of its own in a separate native panel, official edition only. The reserved
 // scene loads with a dynamic import when the view opens, and the panel destroys this page on close, which
 // releases the WebGL context. The 180 s idle close and the outside-click close live in the native panel.
-// Low Power Mode (spike 11-08, D63): the page cannot read it, so native passes it in the payload and through `power`
-// on every change. Low power or Reduce Motion mounts the scene quiet; it always renders on demand only.
 // Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) for behaviour; the code is written here.
 import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
 
-interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly lowPower?:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null}
-interface Scene {update(models:readonly FieldModel[],focus:string|null,path?:boolean):void;renderFor?(ms:number):void;stats?():{frames?:number;scheduled?:boolean};dispose():void}
-export interface FieldStats {readonly lowPower:boolean;readonly quiet:boolean;readonly frames:number;readonly scheduled:boolean}
-declare global {interface Window {modelPlanField?:{show(raw:string):boolean;power(lowPower:boolean):boolean;stats():FieldStats|null;dispose():void}}}
+interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null}
+interface Scene {update(models:readonly FieldModel[],focus:string|null,path?:boolean):void;renderFor?(ms:number):void;dispose():void}
+declare global {interface Window {modelPlanField?:{show(raw:string):boolean;dispose():void}}}
 
-const words={en:{close:'Close',mine:'Mine',all:'All',search:'Search models',noGl:'The 3D view needs WebGL, which is not available here.',empty:'No published models yet.'},
- zh:{close:'关闭',mine:'我的',all:'全部',search:'搜索模型',noGl:'3D 视图需要 WebGL，当前不可用。',empty:'暂无已发布模型。'}} as const;
+const words={en:{website:'Full fleet on the website ↗',close:'Close',mine:'Mine',all:'All',search:'Search models',noGl:'The 3D view needs WebGL, which is not available here.',empty:'No published models yet.'},
+ zh:{website:'在网站上看完整舰队 ↗',close:'关闭',mine:'我的',all:'全部',search:'搜索模型',noGl:'3D 视图需要 WebGL，当前不可用。',empty:'暂无已发布模型。'}} as const;
 const post=(message:Record<string,unknown>)=>(window.webkit?.messageHandlers as Record<string,{postMessage(m:string):void}>|undefined)?.field?.postMessage(JSON.stringify(message));
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
 const webgl=()=>{try{return !!document.createElement('canvas').getContext('webgl2');}catch{return false;}};
 
 function mount(root:HTMLElement) {
- let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,reduceMotion=false,lowPower=false,quiet=false,launches=0;
+ let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false;
  const bar=el('header','field-bar'),stage=el('div','ov-porthole field-stage'),list=el('div','field-list');
  const close=el('button','field-close');close.type='button';close.onclick=()=>post({type:'close'});
  const mineKey=el('button','field-preset'),allKey=el('button','field-preset'),count=el('span','field-count');mineKey.type=allKey.type='button';
  const search=el('input','field-search');search.type='search';
- bar.append(mineKey,allKey,search,count,close);root.append(bar,stage,list);
+ // CKP-PORT-13: the page names the flown public IDs; native builds the modelplan.ai address and opens it.
+ const website=el('button','field-website');website.type='button';website.onclick=()=>post({type:'website',models:fleet().map(m=>m.id)});
+ bar.append(mineKey,allKey,search,count,website,close);root.append(bar,stage,list);
  const fleet=()=>fieldFleet(models,chosen);
  const refresh=()=>{
   const flown=fleet();if(focus===null||!flown.some(m=>m.id===focus))focus=flown[0]?.id??null;
@@ -39,42 +38,23 @@ function mount(root:HTMLElement) {
  const fallback=(text:string)=>{stage.replaceChildren(el('p','nogl',text));};
  for(const type of ['pointerdown','keydown','wheel'])root.addEventListener(type,()=>post({type:'activity'}),{passive:true});
  window.addEventListener('keydown',e=>{if(e.key==='Escape')post({type:'close'});});
-
- // Builds a fresh scene host and mounts the reserved scene into it; a newer launch or dispose wins. Disposing a scene
- // forces its context loss, and the scene reports that loss as a failure afterwards: only the current launch may fall back.
- async function launch() {
-  const w=words[language],launch=++launches;
-  const host=el('div','r1-field p2-field'),canvas=el('div','wb-canvas'),plates=el('div','wb-plates'),voyage=el('div','wb-voyage');
-  host.append(canvas,document.createElementNS('http://www.w3.org/2000/svg','svg'),plates,voyage);host.children[1]!.setAttribute('class','wb-leaders');stage.replaceChildren(host);
-  const url='../runtime/field-scene/cockpit-scene.bundle.js';
-  const {mountWorkbenchField}=await import(url) as {mountWorkbenchField(host:HTMLElement,options:Record<string,unknown>):Scene};
-  if(disposed||launch!==launches)return;
-  const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;quiet=reduceMotion||lowPower;
-  scene=mountWorkbenchField(host,{models:flown,focus,quiet,showPath:true,language,onDemand:true,noIntro:true,
-   onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{if(disposed||launch!==launches)return;scene=null;fallback(w.noGl);}});
-  scene.renderFor?.(1400);refresh();
- }
  return {
   async show(value:Show) {
    language=value.language;const w=words[language];document.documentElement.lang=language==='en'?'en':'zh-CN';
-   close.textContent='×';close.setAttribute('aria-label',w.close);mineKey.textContent=w.mine;allKey.textContent=w.all;search.placeholder=w.search;search.setAttribute('aria-label',w.search);
-   reduceMotion=value.reduceMotion;lowPower=value.lowPower===true;
+   website.textContent=w.website;close.textContent='×';close.setAttribute('aria-label',w.close);mineKey.textContent=w.mine;allKey.textContent=w.all;search.placeholder=w.search;search.setAttribute('aria-label',w.search);
    models=value.models.flatMap(m=>{const f=fieldModel(m);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
    chosen=new Set((mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT));
-   // A rocket clicked in the porthole joins the field (the last of a full fleet makes room) and takes the focus.
-   if(focus!==null&&!models.some(m=>m.id===focus))focus=null;
-   if(focus!==null&&!chosen.has(focus))chosen=new Set([...[...chosen].slice(0,FIELD_LIMIT-1),focus]);
    if(!models.length){fallback(w.empty);refresh();post({type:'ready'});return;}
    if(!webgl()){fallback(w.noGl);refresh();post({type:'ready'});return;}
-   await launch();post({type:'ready'});
-  },
-  /** A Low Power Mode change: remount the scene with the matching motion (one WebGL context at a time). */
-  power(next:boolean) {
-   if(next===lowPower||disposed)return;lowPower=next;
-   if(scene){scene.dispose();scene=null;void launch();}
-  },
-  stats():FieldStats|null {
-   const s=scene?.stats?.();return scene?{lowPower,quiet,frames:s?.frames??0,scheduled:!!s?.scheduled}:null;
+   const host=el('div','r1-field p2-field'),canvas=el('div','wb-canvas'),plates=el('div','wb-plates'),voyage=el('div','wb-voyage');
+   host.append(canvas,document.createElementNS('http://www.w3.org/2000/svg','svg'),plates,voyage);host.children[1]!.setAttribute('class','wb-leaders');stage.replaceChildren(host);
+   const url='../runtime/field-scene/cockpit-scene.bundle.js';
+   const {mountWorkbenchField}=await import(url) as {mountWorkbenchField(host:HTMLElement,options:Record<string,unknown>):Scene};
+   if(disposed)return;
+   const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;
+   scene=mountWorkbenchField(host,{models:flown,focus,quiet:value.reduceMotion,showPath:true,language,onDemand:true,noIntro:true,
+    onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{scene=null;fallback(w.noGl);}});
+   scene.renderFor?.(1400);refresh();post({type:'ready'});
   },
   dispose(){disposed=true;scene?.dispose();scene=null;root.replaceChildren();},
  };
@@ -84,8 +64,6 @@ if(root&&window.top===window){
  const page=mount(root);
  window.modelPlanField=Object.freeze({
   show(raw:string){try{void page.show(JSON.parse(raw) as Show).catch(()=>post({type:'failed'}));return true;}catch{return false;}},
-  power(lowPower:boolean){if(typeof lowPower!=='boolean')return false;page.power(lowPower);return true;},
-  stats(){return page.stats();},
   dispose(){page.dispose();delete window.modelPlanField;},
  });
  post({type:'loaded'});
