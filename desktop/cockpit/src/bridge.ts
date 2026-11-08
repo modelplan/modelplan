@@ -193,6 +193,12 @@ export class CockpitBridge {
       if(!this.hasDisplay||!tool||(tool!=='all'&&!this.scopeMembers.has(tool)))return false;
       this.emit('action',this.requestId(),{action,key:tool});return true;
     }
+    // D63: a click on a still rocket opens the field focused on it, by the published display name the still and the
+    // publication share. Native resolves the name against the published models and ignores anything else.
+    if(action==='openField'&&tool!==undefined) {
+      if(typeof tool!=='string'||!tool.trim()||tool.length>64)return false;
+      this.emit('action',this.requestId(),{action,key:tool});return true;
+    }
     if(action==='openWebsite') {
       const link=tool?websiteFields(tool):null;
       if(!link)return false;

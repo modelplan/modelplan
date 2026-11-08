@@ -10,7 +10,7 @@ const root=document.getElementById('cockpit');
 if(pageId&&origin&&root&&window.top===window) {
   let bridge:CockpitBridge;
   const view=mountCockpit(root,(action,tool)=>bridge.action(action,tool));
-  const field=root.querySelector<HTMLElement>('.ck-field');const still=field?mountPortholeStill(field,root,portholeStills,()=>bridge.action('openField')):null;
+  const field=root.querySelector<HTMLElement>('.ck-field');const still=field?mountPortholeStill(field,root,portholeStills,focus=>bridge.action('openField',focus)):null;
   const post=(message:string)=>window.webkit?.messageHandlers?.cockpit?.postMessage(message);
   bridge=new CockpitBridge(pageId,origin,post,view,()=>crypto.randomUUID());
   const source:BridgeSource=Object.freeze({origin,isMainFrame:true});
