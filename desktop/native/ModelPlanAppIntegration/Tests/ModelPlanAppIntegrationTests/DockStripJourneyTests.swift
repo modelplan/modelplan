@@ -121,7 +121,7 @@ private actor DockStripEngine: EngineClient {
         XCTAssertTrue(SettingsPreferences().sliverAlert)
         XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [51, 50, 0])
         XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.quotaRole), [nil, .warning, .critical])
-        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.opacity), [0, 0.18, 0.18])
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.opacity), [0, 0.4, 0.4]) // G3-51: prototype opacity .4
         XCTAssertTrue(view.accessibilityPerformPress())
         XCTAssertEqual(fixture.host.edgePresentation?.state, .expanded)
         _ = try fixture.host.prepareSliver(size: size)
@@ -211,5 +211,83 @@ private actor DockStripEngine: EngineClient {
         XCTAssertNil(cockpitOpened.menuNotice)
         XCTAssertEqual(cockpitOpened.dots, before.dots)
         XCTAssertEqual(cockpitOpened.segments, before.segments)
+    }
+
+    /// G3-51 (owner, build 12): an empty Codex quota barely showed on the collapsed strip. The prototype
+    /// paints each alarming member's pitch as a glow (clients/official-visuals/dock-aftview-integration/
+    /// face.css:125-130, .sl-segment): a gradient along the strip over the whole pitch, clear at both
+    /// ends and full ink from 40 % to 60 %, at opacity .4; the strip clips it. Checked pixel by pixel
+    /// against the same strip with alerts off. Writes the strip with and without alerts (and an 8x
+    /// enlargement side by side) to dock-visual/g3-51.
+    func testG351AlertPitchGlowsLikeThePrototype() async throws {
+        let fixture = try DockStripFixture(shortRemaining: [51, 50, 0])
+        addTeardownBlock { @MainActor in await fixture.close() }
+        try await fixture.open(autoHide: true)
+        XCTAssertEqual(fixture.host.edgePresentation?.state, .sliver)
+        let size = try XCTUnwrap(fixture.host.edgePresentation?.placement).sliverFrame.size
+        func capture(_ view: DockSliverView) throws -> NSBitmapImageRep {
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            return bitmap
+        }
+        let view = try fixture.host.prepareSliver(size: size, backingScale: 2)
+        let segments = view.quotaSegmentColorRolesForChecks
+        let critical = try XCTUnwrap(segments.first { $0.quotaRole == .critical })
+        let warning = try XCTUnwrap(segments.first { $0.quotaRole == .warning })
+        XCTAssertEqual(critical.opacity, 0.4); XCTAssertEqual(warning.opacity, 0.4)
+        XCTAssertEqual(critical.rgbaHex, "#EF4444FF", "--st-low"); XCTAssertEqual(warning.rgbaHex, "#EAC17BFF", "--st-mid")
+        XCTAssertLessThanOrEqual(critical.span.lowerBound, critical.from); XCTAssertGreaterThanOrEqual(critical.span.upperBound, critical.through)
+        let alerted = try capture(view)
+        _ = try await fixture.app.settingsHost.application.editor.commit(SettingsB20Edit.sliverAlert(false))
+        let neutralView = try fixture.host.prepareSliver(size: size, backingScale: 2)
+        XCTAssertTrue(neutralView.quotaSegmentColorRolesForChecks.allSatisfy { $0.quotaRole == nil })
+        let neutral = try capture(neutralView)
+        XCTAssertEqual(alerted.pixelsWide, neutral.pixelsWide); XCTAssertEqual(alerted.pixelsHigh, neutral.pixelsHigh)
+
+        let vertical = size.height > size.width
+        let length = Double(vertical ? alerted.pixelsHigh : alerted.pixelsWide)
+        func colour(_ bitmap: NSBitmapImageRep, along: Int) throws -> [Double] {
+            let cross = (vertical ? bitmap.pixelsWide : bitmap.pixelsHigh) / 2
+            let c = try XCTUnwrap((vertical ? bitmap.colorAt(x: cross, y: along) : bitmap.colorAt(x: along, y: cross))?.usingColorSpace(.sRGB))
+            return [c.redComponent, c.greenComponent, c.blueComponent].map(Double.init)
+        }
+        for (segment, ink) in [(critical, [239.0, 68, 68]), (warning, [234.0, 193, 123])] {
+            let span = segment.span, width = span.upperBound - span.lowerBound
+            var peak = 0.0
+            for step in 1..<40 {
+                let t = Double(step) / 40, position = span.lowerBound + t * width
+                // Whole pixels well inside the strip's share of the pitch only.
+                guard position > segment.from + 1 / length, position < segment.through - 1 / length else { continue }
+                let along = Int(position * length)
+                let centre = (Double(along) + 0.5) / length, k = (centre - span.lowerBound) / width
+                let weight = k < 0.4 ? k / 0.4 : (k <= 0.6 ? 1 : (1 - k) / 0.4)
+                let base = try colour(neutral, along: along), got = try colour(alerted, along: along)
+                for channel in 0..<3 {
+                    let expected = base[channel] * (1 - 0.4 * weight) + ink[channel] / 255 * 0.4 * weight
+                    XCTAssertEqual(got[channel], expected, accuracy: 4.0 / 255, "\(segment.quotaRole.map { "\($0)" } ?? "") t=\(t) channel \(channel)")
+                }
+                peak = max(peak, abs(got[0] - base[0]))
+            }
+            XCTAssertGreaterThan(peak, 0, "the pitch is painted")
+        }
+
+        let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
+        let out = root.appendingPathComponent("dock-instrument-checks/dock-visual/g3-51", isDirectory: true)
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        try XCTUnwrap(alerted.representation(using: .png, properties: [:])).write(to: out.appendingPathComponent("after-strip-alerts.png"))
+        try XCTUnwrap(neutral.representation(using: .png, properties: [:])).write(to: out.appendingPathComponent("strip-alerts-off.png"))
+        if let a = alerted.cgImage, let n = neutral.cgImage {
+            let zoom = 8, gap = 40, w = (a.width * zoom) * 2 + gap * 3, h = a.height * zoom + gap * 2
+            if w * h <= 40_000_000, let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                c.setFillColor(CGColor(srgbRed: 0.93, green: 0.94, blue: 0.95, alpha: 1)); c.fill(CGRect(x: 0, y: 0, width: w, height: h))
+                c.interpolationQuality = .none
+                c.draw(a, in: CGRect(x: gap, y: gap, width: a.width * zoom, height: a.height * zoom))
+                c.draw(n, in: CGRect(x: gap * 2 + a.width * zoom, y: gap, width: n.width * zoom, height: n.height * zoom))
+                if let image = c.makeImage(), let rep = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                    try rep.write(to: out.appendingPathComponent("after-strip-alerts-vs-off-8x.png"))
+                }
+            }
+        }
     }
 }
