@@ -251,24 +251,32 @@ private actor DockStripEngine: EngineClient {
             let c = try XCTUnwrap((vertical ? bitmap.colorAt(x: cross, y: along) : bitmap.colorAt(x: along, y: cross))?.usingColorSpace(.sRGB))
             return [c.redComponent, c.greenComponent, c.blueComponent].map(Double.init)
         }
+        // Colour management between the drawing and the bitmap makes absolute values drift a few levels, so the
+        // check is the gradient's shape (each sample's change over the plateau's change equals the prototype
+        // weight) and its strength (the plateau moves the strip about .4 of the way to the ink).
         for (segment, ink) in [(critical, [239.0, 68, 68]), (warning, [234.0, 193, 123])] {
             let span = segment.span, width = span.upperBound - span.lowerBound
-            var peak = 0.0
+            var samples = [(k: Double, delta: Double, reach: Double)]()
             for step in 1..<40 {
                 let t = Double(step) / 40, position = span.lowerBound + t * width
-                // Whole pixels well inside the strip's share of the pitch only.
                 guard position > segment.from + 1 / length, position < segment.through - 1 / length else { continue }
                 let along = Int(position * length)
-                let centre = (Double(along) + 0.5) / length, k = (centre - span.lowerBound) / width
-                let weight = k < 0.4 ? k / 0.4 : (k <= 0.6 ? 1 : (1 - k) / 0.4)
+                let k = ((Double(along) + 0.5) / length - span.lowerBound) / width
                 let base = try colour(neutral, along: along), got = try colour(alerted, along: along)
-                for channel in 0..<3 {
-                    let expected = base[channel] * (1 - 0.4 * weight) + ink[channel] / 255 * 0.4 * weight
-                    XCTAssertEqual(got[channel], expected, accuracy: 4.0 / 255, "\(segment.quotaRole.map { "\($0)" } ?? "") t=\(t) channel \(channel)")
-                }
-                peak = max(peak, abs(got[0] - base[0]))
+                samples.append((k, (0..<3).map { got[$0] - base[$0] }.map(abs).reduce(0, +),
+                                (0..<3).map { ink[$0] / 255 - base[$0] }.map(abs).reduce(0, +)))
             }
-            XCTAssertGreaterThan(peak, 0, "the pitch is painted")
+            let label = segment.quotaRole.map { "\($0)" } ?? ""
+            let plateau = samples.filter { (0.42...0.58).contains($0.k) }
+            XCTAssertFalse(plateau.isEmpty, label)
+            let peak = plateau.map(\.delta).reduce(0, +) / Double(max(1, plateau.count))
+            let strength = peak / (plateau.map(\.reach).reduce(0, +) / Double(max(1, plateau.count)))
+            XCTAssertGreaterThan(strength, 0.33, "\(label): the plateau is the prototype's .4 glow, not the old .18 tint")
+            XCTAssertLessThan(strength, 0.5, label)
+            for sample in samples {
+                let weight = sample.k < 0.4 ? sample.k / 0.4 : (sample.k <= 0.6 ? 1 : (1 - sample.k) / 0.4)
+                XCTAssertEqual(sample.delta / peak, weight, accuracy: 0.08, "\(label) k=\(sample.k)")
+            }
         }
 
         let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
