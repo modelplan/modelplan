@@ -34,7 +34,7 @@ enum EngineRowsText {
             ? SettingsText("To make room, turn some icons off in System Settings > Menu Bar, or hold ⌘ and drag system icons off the menu bar.",
                            "腾出位置：在「系统设置 › 菜单栏」里关掉一些图标，或按住 ⌘ 把系统图标拖出菜单栏。")
             : SettingsText("To make room, hold ⌘ and drag system icons off the menu bar, set some items to Don't Show in Menu Bar in System Settings > Control Center, or quit apps whose icons you don't need.",
-                           "腾出位置：按住 ⌘ 把系统图标拖出菜单栏，在「系统设置 › 控制中心」里把一些项目设为「不在菜单栏中显示」，或退出不需要图标的应用。")
+                           "腾出位置：按住 ⌘ 把系统图标拖出菜单栏，在「系统设置 › 控制中心」里把一些项目设为「不在菜单栏显示」，或退出不需要图标的应用。")
         // MENU-07b: the Cockpit opens from the widget's Ignition, from opening the app again, or a set shortcut.
         let reach: SettingsText
         if cockpit, let shortcut {
