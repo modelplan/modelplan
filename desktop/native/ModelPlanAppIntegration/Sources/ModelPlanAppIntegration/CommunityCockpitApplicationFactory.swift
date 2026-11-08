@@ -23,10 +23,10 @@ import ModelPlanDock
 
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
-    public static let manifestPins = [
-        "community":"a0222534b05550e8573f236f86c63732d650c6e50d5f16ed178d62cf393620da",
-        "official":"bf28ca53522d9e7b8e18c908fe3e0db3ef8e494827391d1df2933b77d7a7b2c6",
-    ]
+    /// The manifest SHA-256 of each canonical cockpit edition. Never committed: whoever compiles the App first builds
+    /// the editions and runs check-bundle-pins.py, which writes CockpitBundlePins.generated.swift from those exact
+    /// bytes. Without that file the App has no pins and admits no cockpit page.
+    public static let manifestPins = CockpitBuildPins.manifest
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
@@ -104,6 +104,12 @@ import ModelPlanDock
         return application
     }
 }
+
+/// Build-time cockpit pins. The gitignored CockpitBundlePins.generated.swift declares `manifest` on
+/// CockpitBuildPins itself, which takes precedence over this empty default; without it nothing is admitted.
+protocol CockpitBuildPinSource {}
+extension CockpitBuildPinSource { static var manifest: [String: String] { [:] } }
+enum CockpitBuildPins: CockpitBuildPinSource {}
 
 @MainActor final class CockpitConsoleOwner {
     let bundle: URL
