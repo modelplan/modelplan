@@ -1453,6 +1453,21 @@
       ],
       "actions": [
         {
+          "op": "when",
+          "absent": "ax:settings.size",
+          "then": [
+            {
+              "op": "click",
+              "target": "ax:settings.pane.dock"
+            },
+            {
+              "op": "await",
+              "target": "ax:settings.size",
+              "timeout": 5
+            }
+          ]
+        },
+        {
           "op": "press",
           "by": "id",
           "value": "settings.size"
@@ -1497,6 +1512,21 @@
       ],
       "actions": [
         {
+          "op": "when",
+          "absent": "ax:settings.size",
+          "then": [
+            {
+              "op": "click",
+              "target": "ax:settings.pane.dock"
+            },
+            {
+              "op": "await",
+              "target": "ax:settings.size",
+              "timeout": 5
+            }
+          ]
+        },
+        {
           "op": "press",
           "by": "id",
           "value": "settings.size"
@@ -1540,6 +1570,21 @@
         "settings-window"
       ],
       "actions": [
+        {
+          "op": "when",
+          "absent": "ax:settings.size",
+          "then": [
+            {
+              "op": "click",
+              "target": "ax:settings.pane.dock"
+            },
+            {
+              "op": "await",
+              "target": "ax:settings.size",
+              "timeout": 5
+            }
+          ]
+        },
         {
           "op": "press",
           "by": "id",
