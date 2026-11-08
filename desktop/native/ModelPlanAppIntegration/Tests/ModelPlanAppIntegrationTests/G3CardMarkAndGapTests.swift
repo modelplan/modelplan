@@ -157,6 +157,8 @@ private actor G350Engine: EngineClient {
         let template = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
         let account = try XCTUnwrap((template["accounts"] as? [[String: Any]])?.first)
         let observed = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-60))
+        // A believable weekly reset (3d5h away) so the card line reads like real data, not 72 years.
+        let weeklyReset = ISO8601DateFormatter().string(from: Date().addingTimeInterval(3 * 86400 + 5 * 3600 + 600))
         projection["rows"] = ids.enumerated().map { order, item -> [String: Any] in
             var row = template
             row["id"] = item.0; row["order"] = order + 1; row["vendorKey"] = item.1
@@ -169,7 +171,7 @@ private actor G350Engine: EngineClient {
             if var windows = copy["windows"] as? [[String: Any]], !windows.isEmpty {
                 windows[0]["remainingPercent"] = [0, 62, 76][order % 3]; windows[0]["role"] = "weekly"; windows[0]["durationSeconds"] = 604800
                 windows[0]["limitKey"] = "weekly"; windows[0]["poolKey"] = "main"; windows[0]["current"] = true; windows[0]["observedAt"] = observed
-                windows[0]["resetsAt"] = "2099-01-01T00:00:00Z"; windows[0]["validUntil"] = "2099-01-01T00:00:00Z"
+                windows[0]["resetsAt"] = weeklyReset; windows[0]["validUntil"] = "2099-01-01T00:00:00Z"
                 windows[0].removeValue(forKey: "modelScope")
                 copy["windows"] = [windows[0]]; copy["route"] = "runtime_rpc"; copy["observedAt"] = observed
             }
