@@ -2,7 +2,8 @@
 // Screen-space lanes for the enlarged field's axis labels (QA 11-08: they overlapped). The scene still projects its
 // ticks and values; this only moves the projected plates into rows on the page and hides any that would collide.
 // Price ticks share one row left to right, the two captions share the row below it, time ticks stack at the right.
-// Event driven: plate changes and resizes queue one frame, so it adds no frame loop of its own.
+// Event driven: it runs in the observers' own batched callbacks for plate changes and resizes, with no timer or frame
+// loop of its own (the page's no-scheduling rule; only the scene schedules frames). Its own writes settle in one pass.
 // Prototype: clients/official-visuals/study/field-picker-tags/axis-layout.js (task 91); the code is written here.
 
 /** The usable horizontal span at row `y` for a label `height` tall; the default is the view inset by 4 px. */
@@ -11,7 +12,7 @@ export const rectangleSpan:SafeSpan=width=>({left:4,right:width-4});
 
 export function layoutFieldAxes(host:HTMLElement,span:SafeSpan=rectangleSpan):()=>void {
  const found=host.querySelector<HTMLElement>('.wb-plates');if(!found)return()=>{};const plates:HTMLElement=found;
- let queued=0,disposed=false;
+ let disposed=false;
  const write=(el:HTMLElement,x:number,y:number,show=true)=>{
   el.classList.add('field-axis-placed');
   const values={'--field-axis-position':`translate(${Math.round(x)}px, ${Math.round(y)}px)`,'--field-axis-opacity':show?'1':'0'};
@@ -22,7 +23,7 @@ export function layoutFieldAxes(host:HTMLElement,span:SafeSpan=rectangleSpan):()
  const shown=(el:HTMLElement)=>Number(el.style.opacity||'1')>.02;
  const ticks=(kind:string)=>[...plates.querySelectorAll<HTMLElement>('.tick3.'+kind)].map(el=>({el,...point(el)}));
  function place() {
-  queued=0;if(disposed)return;
+  if(disposed)return;
   const W=host.clientWidth,H=host.clientHeight;if(!W||!H)return;
   const priceY=Math.round(H*.76),captionY=Math.round(H*.84),priceSpan=span(W,H,priceY,20);
   let edge=priceSpan.left;
@@ -42,9 +43,8 @@ export function layoutFieldAxes(host:HTMLElement,span:SafeSpan=rectangleSpan):()
   // The cost caption yields to the front-row caption when the row is too narrow for both.
   if(axis)write(axis,captions.right-axis.offsetWidth,captionY,shown(axis)&&(!lane||!shown(lane)||captions.left+lane.offsetWidth+8<=captions.right-axis.offsetWidth));
  }
- const schedule=()=>{if(!disposed&&!queued)queued=requestAnimationFrame(place);};
- const observer=new MutationObserver(schedule);
+ const observer=new MutationObserver(place);
  observer.observe(plates,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
- const resize=new ResizeObserver(schedule);resize.observe(host);schedule();
- return ()=>{disposed=true;observer.disconnect();resize.disconnect();cancelAnimationFrame(queued);};
+ const resize=new ResizeObserver(place);resize.observe(host);place();
+ return ()=>{disposed=true;observer.disconnect();resize.disconnect();};
 }
