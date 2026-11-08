@@ -10,26 +10,52 @@ export type StillLayer={left:number;top:number;width:number;height:number;file:s
 export type StillModel={id:string;name?:string;nozzle:{x:number;y:number};body?:StillLayer;flame?:StillLayer;halo?:StillLayer};
 export type StillProjection={id:string;theme:'night'|'day';layout:890|640;width:number;height:number;background:string;models:StillModel[]};
 export type StillPack={base:string;projections:StillProjection[]};
-export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:StillPack|null,enlarge?:()=>void):{dispose():void}|null{
+// A click within 28 px of a rocket's centre names that rocket (prototype hud-selection/still.js:hitStillRocket); nearest wins.
+export function stillRocketAt(field:HTMLElement,x:number,y:number,radius=28):string|null {
+  let nearest:string|null=null,best=radius*radius;
+  for(const e of field.querySelectorAll<HTMLElement>('.ck-still-body[data-model-name]')){
+    const r=e.getBoundingClientRect();if(!(r.width>0&&r.height>0))continue;
+    const inside=x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom,d=inside?0:(x-(r.left+r.width/2))**2+(y-(r.top+r.height/2))**2;
+    if(d<=best){best=d;nearest=e.dataset.modelName??null;}
+  }
+  return nearest;
+}
+export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:StillPack|null,enlarge?:(focus?:string)=>void):{dispose():void}|null{
   if(!pack?.projections.length)return null;
-  // The port opens the enlarged field by click, Enter or Space (the community edition has no field).
-  const port=field.parentElement,opener=new AbortController();
+  // The port opens the enlarged field by click, double-click, Enter, Space or its ⤢ key (the community edition has no
+  // field). A click on a rocket focuses that rocket. The second click of a double-click and the dblclick itself do not
+  // ask again (prototype porthole.js bindPorthole: "idempotent after the first click").
+  const port=field.parentElement,opener=new AbortController();let big:HTMLButtonElement|null=null;
   if(port&&enlarge){
    port.tabIndex=0;port.setAttribute('role','button');
-   const name=()=>port.setAttribute('aria-label',document.documentElement.lang==='en'?'Open the 3D view':'打开 3D 视图');name();
+   big=document.createElement('button');big.type='button';big.className='hud-x port-big';big.dataset.bigfield='';big.textContent='⤢';port.append(big);
+   const name=()=>{const en=document.documentElement.lang==='en';port.setAttribute('aria-label',en?'Open the 3D view':'打开 3D 视图');
+    big?.setAttribute('aria-label',en?'Open the 3D launch field · Or click anywhere on the field':'打开 3D 发射场 · 点击视野也可以打开');};name();
    port.addEventListener('focus',name,{signal:opener.signal});
+   big.addEventListener('focus',name,{signal:opener.signal});
+   big.addEventListener('click',e=>{e.stopPropagation();if(e.isTrusted&&e.detail<2)enlarge();},{signal:opener.signal});
+   big.addEventListener('dblclick',e=>e.stopPropagation(),{signal:opener.signal});
    // The HUD lives inside the port and has its own actions; they must not open the field too.
    // A HUD click repaints the rows before it bubbles here, so the event's path is read, not the detached target.
    const inHud=(e:Event)=>e.composedPath().some(n=>n instanceof Element&&n.classList.contains('hud'));
-   port.addEventListener('click',e=>{if(e.isTrusted&&!inHud(e))enlarge();},{signal:opener.signal});
-   port.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!inHud(e)){e.preventDefault();enlarge();}},{signal:opener.signal});
+   port.addEventListener('click',e=>{if(!e.isTrusted||inHud(e)||e.detail>1)return;const rocket=stillRocketAt(field,e.clientX,e.clientY);if(rocket)enlarge(rocket);else enlarge();},{signal:opener.signal});
+   port.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!inHud(e)&&e.target!==big){e.preventDefault();enlarge();}},{signal:opener.signal});
   }
   // A HUD row lights its rocket by published display name, the one key the still's roster and the publication share.
   const lit=(event:Event)=>{const name=(event as CustomEvent<string|null>).detail;for(const e of field.querySelectorAll<HTMLElement>('[data-model-name]'))e.classList.toggle('ck-hot',e.dataset.modelName===name);};
   cockpit.addEventListener('hud-hover',lit,{signal:opener.signal});
   const host=document.createElement('div');host.className='ck-still';host.setAttribute('aria-hidden','true');field.prepend(host);
   const base=new URL(pack.base,document.baseURI).href;let painted='';
+  // Prototype placeBigKey: 22 px, 40 px in from the right and 36 px down at night (12 px on a short port); by day it
+  // sits 17 px in, just under the canopy arch (border-radius 38% / 18%).
+  const placeBig=()=>{
+    if(!big||!port)return;const W=port.clientWidth,H=port.clientHeight,size=22;if(!W||!H)return;
+    let right=40,top=H<80?12:36;
+    if(document.documentElement.dataset.theme==='day'){right=17;const rx=.38*W,ry=.18*H,dx=Math.max(0,rx-right);top=Math.ceil(ry*(1-Math.sqrt(Math.max(0,1-(dx/rx)**2))))+3;}
+    Object.assign(big.style,{right:right+'px',top:top+'px',width:size+'px',height:size+'px',display:'grid',placeItems:'center',zIndex:'3'});
+  };
   const paint=()=>{
+    placeBig();
     const theme=document.documentElement.dataset.theme==='day'?'day':'night',layout=cockpit.dataset.layout==='640'?640:890;
     const frame=pack.projections.find(p=>p.theme===theme&&p.layout===layout);
     const port=field.parentElement??field,W=port.clientWidth,H=port.clientHeight;
@@ -61,5 +87,5 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   const attributes=new MutationObserver(paint);
   attributes.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   attributes.observe(cockpit,{attributes:true,attributeFilter:['data-layout']});
-  return {dispose(){opener.abort();if(port&&enlarge){port.removeAttribute('tabindex');port.removeAttribute('role');port.removeAttribute('aria-label');}resize.disconnect();attributes.disconnect();host.remove();delete field.dataset.still;}};
+  return {dispose(){opener.abort();big?.remove();if(port&&enlarge){port.removeAttribute('tabindex');port.removeAttribute('role');port.removeAttribute('aria-label');}resize.disconnect();attributes.disconnect();host.remove();delete field.dataset.still;}};
 }

@@ -52,3 +52,39 @@ test('D43 every vendor mark the scene asks for loads under the page CSP, close t
   ['openai-white.svg','claude-rounded.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
  for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
 });
+// D63 / CKP-PORT-11/12: the ⤢ key, a double-click and a click on a still rocket open the field; a rocket focuses it.
+// Prototype rocket-r1/porthole.js placeBigKey / bindPorthole (task 91); hud-selection/still.js hitStillRocket (28 px).
+async function openCockpit(page,theme='night') {
+ await page.addInitScript(()=>{window.posted=[];window.webkit={messageHandlers:{cockpit:{postMessage(m){window.posted.push(typeof m==='string'?JSON.parse(m):m);}}}};});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance:{...appearance,theme},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
+}
+const opens=page=>page.evaluate(()=>window.posted.filter(m=>m.type==='action'&&m.action==='openField').map(m=>m.payload?.key??m.key??null));
+test('D63 the ⤢ key opens the field, with a label that says the field itself also opens it',async({page})=>{
+ await openCockpit(page);
+ const key=page.locator('.ck-port [data-bigfield]');await expect(key).toBeVisible();await expect(key).toHaveText('⤢');
+ await expect(key).toHaveAttribute('aria-label','Open the 3D launch field · Or click anywhere on the field');
+ expect(await key.evaluate(e=>{const s=getComputedStyle(e);return [s.right,s.top,s.width,s.height];})).toEqual(['40px','36px','22px','22px']);
+ await key.click();expect(await opens(page)).toEqual([null]);
+});
+test('D63 a double-click on the field opens it once',async({page})=>{
+ await openCockpit(page);
+ const port=await page.locator('.ck-port').boundingBox();
+ await page.mouse.dblclick(port.x+12,port.y+port.height-12);
+ expect(await opens(page)).toEqual([null]);
+});
+test('D63 a click on a rocket in the still opens the field focused on that rocket',async({page})=>{
+ await openCockpit(page);
+ const rocket=await page.locator('.ck-still-body[data-model-name]').evaluateAll(es=>{const e=es.find(e=>{const r=e.getBoundingClientRect(),p=document.querySelector('.ck-port').getBoundingClientRect(),hud=document.querySelector('.hud')?.getBoundingClientRect();const x=r.x+r.width/2,y=r.y+r.height/2;return r.width>0&&x>p.x&&x<p.right&&y>p.y&&y<p.bottom&&!(hud&&x>=hud.x&&x<=hud.right&&y>=hud.y&&y<=hud.bottom)&&document.elementFromPoint(x,y)?.closest('.ck-port')&&!document.elementFromPoint(x,y)?.closest('.hud,[data-bigfield]');});const r=e.getBoundingClientRect();return {name:e.dataset.modelName,x:r.x+r.width/2,y:r.y+r.height/2};});
+ await page.mouse.click(rocket.x,rocket.y);
+ expect(await opens(page)).toEqual([rocket.name]);
+});
+test('D63 a focused rocket outside my models joins the field and takes the focus',async({page})=>{
+ await open(page);await show(page,payload(12,{focus:'m7'}));
+ await expect(page.locator('.field-count')).toHaveText('3/10');
+ await expect(page.locator('.field-row',{hasText:'Synthetic 7'}).locator('input')).toBeChecked();
+});

@@ -189,10 +189,12 @@ struct CockpitUnavailableNotice {
     }
     private var fieldPanel:CockpitFieldPanel?
     var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
-    func fieldPayload() -> String? {
+    /// `focusName`: the published display name of a rocket clicked in the porthole still; an unknown name focuses nothing.
+    func fieldPayload(focusName:String?=nil) -> String? {
         guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
         let mine=details.publication?.models.map(\.id) ?? []
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:nil)
+        let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:focus)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -201,6 +203,7 @@ struct CockpitUnavailableNotice {
         case .chooseSetup,.openSettings:owner.settings?()
         case .openHistory:unavailable(path:"intent.openHistory",history:true)
         case .openField:openField()
+        case .openFieldAt(let name):openField(focusName:name)
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
         case .detach,.putBack,.shutterToggle,.scopeSelect:
@@ -209,8 +212,8 @@ struct CockpitUnavailableNotice {
             hide()
         }
     }
-    private func openField() {
-        guard let bundle=owner.verifiedBundle,let payload=fieldPayload() else { return }
+    private func openField(focusName:String?=nil) {
+        guard let bundle=owner.verifiedBundle,let payload=fieldPayload(focusName:focusName) else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
         fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
     }
