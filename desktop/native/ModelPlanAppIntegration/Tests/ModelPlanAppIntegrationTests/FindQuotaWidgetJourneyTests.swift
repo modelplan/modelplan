@@ -100,12 +100,13 @@ private actor D56SyntheticEngine: EngineClient {
         return app
     }
 
-    private func start(_ app: EngineDockMenuApplication, reduceMotion: Bool = false) async throws {
+    private func start(_ app: EngineDockMenuApplication, reduceMotion: Bool = false, presented: Bool = true) async throws {
         app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(),
                            displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
         try await wait { !app.lifecyclePaused }
         var environment = SettingsEnvironment(); environment.reduceMotion = reduceMotion
         app.updateSystemAccessibility(environment)
+        guard presented else { return }
         try await wait { app.composition.dock.edgePresentation?.paintedFrame != nil }
     }
 
@@ -213,7 +214,8 @@ private actor D56SyntheticEngine: EngineClient {
 
     func testD56FindTurnsAHiddenWidgetOn() async throws {
         let app = try await make(profile()) { $0.showDock = false }
-        try await start(app)
+        try await start(app, presented: false)
+        try await wait { app.composition.dock.edgePresentation?.state == .suppressed(.userHidden) }
         XCTAssertEqual(app.composition.dock.edgePresentation?.state, .suppressed(.userHidden))
         try await chooseFind(app)
         try await wait { app.spotlight.phase == .shown }
