@@ -227,6 +227,22 @@ final class QuotaWidgetSpotlightView: NSView {
     override func layout() { super.layout(); layoutLayers() }
     override var frame: NSRect { didSet { layoutLayers() } }
     var dimAlphaForChecks: CGFloat { dim.fillColor.flatMap { NSColor(cgColor: $0)?.alphaComponent } ?? 0 }
+    /// What is drawn, for checks: the dim layer, the hole it cuts and the ring around it.
+    struct DrawnForChecks {
+        let dimAlpha: CGFloat, ringWidth: CGFloat, ringAlpha: CGFloat, ringIsWhite: Bool
+        let glowRadius: CGFloat, glowOpacity: Float, ringBounds: CGRect?
+        let ringContainsHoleCentre: Bool, dimContainsHoleCentre: Bool, dimContainsCorner: Bool
+    }
+    var drawnForChecks: DrawnForChecks {
+        let ringColor = ring.strokeColor.flatMap { NSColor(cgColor: $0)?.usingColorSpace(.deviceRGB) }
+        let centre = CGPoint(x: hole.midX, y: hole.midY)
+        return .init(dimAlpha: dimAlphaForChecks, ringWidth: ring.lineWidth, ringAlpha: ringColor?.alphaComponent ?? 0,
+                     ringIsWhite: ringColor.map { $0.redComponent == 1 && $0.greenComponent == 1 && $0.blueComponent == 1 } ?? false,
+                     glowRadius: ring.shadowRadius, glowOpacity: ring.shadowOpacity, ringBounds: ring.path?.boundingBox,
+                     ringContainsHoleCentre: ring.path?.contains(centre) ?? false,
+                     dimContainsHoleCentre: dim.path?.contains(centre, using: .evenOdd) ?? false,
+                     dimContainsCorner: dim.path?.contains(CGPoint(x: 1, y: 1), using: .evenOdd) ?? false)
+    }
     private func layoutLayers() {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         dim.frame = bounds; ring.frame = bounds

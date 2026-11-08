@@ -160,6 +160,35 @@ private actor D56SyntheticEngine: EngineClient {
         XCTAssertEqual(relaunched.composition.dock.edgePresentation?.state, .expanded, "a kept 'off' never collapses")
     }
 
+    // MARK: DOCK-3.6-20 values
+
+    func testD56DimHoleAndRingMatchTheDecidedValues() {
+        let target = QuotaWidgetSpotlightTarget(widget: CGRect(x: 1_300, y: 300, width: 64, height: 320),
+                                                display: CGRect(x: 0, y: 0, width: 1_440, height: 900), displayID: "primary")
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.dimAlpha, 0.4)
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.holePadding, 8)
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.holeCornerRadius, 12)
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.ringWidth, 2)
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.ringAlpha, 0.9)
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.ringGlowRadius, 10)
+        let hole = QuotaWidgetSpotlightStyle.hole(for: target)
+        XCTAssertEqual(hole, CGRect(x: 1_292, y: 292, width: 80, height: 336), "8 pt around the widget")
+        // A widget at the display edge keeps its hole on that display.
+        let edge = QuotaWidgetSpotlightTarget(widget: CGRect(x: 1_376, y: 300, width: 64, height: 320), display: target.display, displayID: "primary")
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.hole(for: edge).maxX, 1_440)
+
+        let view = QuotaWidgetSpotlightView(frame: CGRect(origin: .zero, size: target.display.size))
+        view.hole = hole
+        let drawn = view.drawnForChecks
+        XCTAssertEqual(drawn.dimAlpha, 0.4, accuracy: 0.001)
+        XCTAssertFalse(drawn.dimContainsHoleCentre, "the hole is undimmed")
+        XCTAssertTrue(drawn.dimContainsCorner, "the rest of the display is dimmed")
+        XCTAssertEqual(drawn.ringWidth, 2); XCTAssertTrue(drawn.ringIsWhite)
+        XCTAssertEqual(drawn.ringAlpha, 0.9, accuracy: 0.001)
+        XCTAssertEqual(drawn.glowRadius, 10); XCTAssertGreaterThan(drawn.glowOpacity, 0)
+        XCTAssertEqual(drawn.ringBounds, hole, "the ring runs along the hole's edge")
+    }
+
     // MARK: Find Quota Widget
 
     func testD56StatusMenuFindsTheCollapsedWidgetThenItCollapsesAgain() async throws {
