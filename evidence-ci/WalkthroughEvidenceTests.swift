@@ -47,7 +47,7 @@ import ModelPlanCockpitWeb
             page = controller
             if let screen = NSScreen.main {
                 let usable = screen.visibleFrame
-                controller.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.maxX - 260, y: usable.maxY, width: 22, height: 22))
+                controller.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.minX + 300, y: usable.maxY, width: 22, height: 22))
             }
         }
         defer { CommunityCockpitApplicationFactory.verificationPage = nil }
