@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanCockpitWeb
 import ModelPlanInstruments
 import ModelPlanSettings
 
@@ -266,9 +267,11 @@ import ModelPlanSettings
         if let deactivateObserver { NotificationCenter.default.removeObserver(deactivateObserver); self.deactivateObserver = nil }
     }
 
+    static let overlayLevel = CockpitWindowController.aboveCockpitLevel
     private func makePanel() -> NSPanel {
         let window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        window.isFloatingPanel = true; window.level = .floating; window.isOpaque = false
+        // D49: Help can be asked for while the cockpit is open, so it draws above it.
+        window.isFloatingPanel = true; window.level = Self.overlayLevel; window.isOpaque = false
         window.backgroundColor = .clear; window.hasShadow = false; window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
         return window

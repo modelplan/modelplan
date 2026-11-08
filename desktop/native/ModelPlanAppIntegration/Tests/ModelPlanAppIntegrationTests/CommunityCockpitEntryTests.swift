@@ -380,6 +380,17 @@ final class CommunityCockpitEntryTests:XCTestCase {
     }
 
     /// glm-660-3: the cockpit's own close button ends in the page's onClosed, not in `hide()`; the field panel closes with it.
+    /// D49 review (#695): the widget stays at `.floating` under the cockpit, and every window the cockpit
+    /// brings up is not hidden behind it. The snap guide shares its level so it can sit just below it.
+    @MainActor func testD49WindowsAroundTheCockpitStackInOrder() {
+        let cockpit = CockpitWindowController.panelLevel.rawValue
+        XCTAssertGreaterThan(cockpit, NSWindow.Level.floating.rawValue, "the cockpit opens above the widget")
+        XCTAssertLessThan(cockpit, NSWindow.Level.statusBar.rawValue, "a widget being dragged still rises above it")
+        XCTAssertGreaterThan(CockpitFieldPanel.level.rawValue, cockpit, "the launch field opens above the cockpit")
+        XCTAssertGreaterThan(DockHelpPresenter.overlayLevel.rawValue, cockpit, "Help draws above the cockpit")
+        XCTAssertEqual(CockpitWindowController.snapGuideLevel.rawValue, cockpit, "the snap guide orders just below the cockpit")
+    }
+
     @MainActor func testTheCockpitsOwnCloseAlsoClosesTheField() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-field-close-"+UUID().uuidString)
         try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
