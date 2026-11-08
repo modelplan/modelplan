@@ -60,7 +60,8 @@
         "ConsentCoreQ2Tests",
         "ConsentHostDisplayTests",
         "DockCodexRuntimeRealServerTests",
-        "DockHoverExplanationTests", "DockInteractionHostPortTests",
+        "DockHoverExplanationTests",
+        "DockInteractionHostPortTests",
         "DockLiveFollowerTests",
         "DockMotionPolicyTests",
         "DockPlacementGeometryTests",
@@ -97,6 +98,10 @@
         "SubscriptionCatalogueOwnershipTests",
         "T2MaterialSeamTests",
         "U8ConsentJourneyTests"
+      ],
+      "ownerGui": [
+        "D41KeychainJourneyTests",
+        "DockAccessibilityFrameTests"
       ],
       "allowedSkips": {
         "CommunityCockpitEntryTests/testCockpitStaysWithinItsCPUAndMemoryBudgetOpenAndClosed": {
