@@ -248,12 +248,12 @@ class Walkthrough:
             self.host.sleep(0.5)
 
     def op_when(self, action):
-        """Run nested actions only when a target is on screen ("present"), is not ("absent"), or is a switched-on
-        checkbox ("on"), so one walk fits a build with the flow and a build without it (the first-run chooser, a
-        widget that starts collapsed)."""
-        if "on" in action:
-            node = resolve(self.tree(), action["on"])
-            hit = node is not None and str(node.get("value")) == "1"
+        """Run nested actions only when a target is on screen ("present"), is not ("absent"), or shows a value
+        ("equals": {"target", "value"}), so one walk fits a build with the flow and a build without it (the
+        first-run chooser, a widget that starts collapsed)."""
+        if "equals" in action:
+            node = resolve(self.tree(), action["equals"]["target"])
+            hit = node is not None and str(node.get("value")) == action["equals"]["value"]
         else:
             target = action.get("present") or action.get("absent")
             hit = (resolve(self.tree(), target) is not None) == ("present" in action)

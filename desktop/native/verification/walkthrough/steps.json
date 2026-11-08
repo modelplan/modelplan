@@ -123,7 +123,6 @@
             },
             {
               "op": "when",
-              "on": "ax:settings.autoHide",
               "then": [
                 {
                   "op": "press",
@@ -132,9 +131,22 @@
                 },
                 {
                   "op": "wait",
+                  "seconds": 0.6
+                },
+                {
+                  "op": "press",
+                  "by": "title",
+                  "value": "Off"
+                },
+                {
+                  "op": "wait",
                   "seconds": 1.5
                 }
-              ]
+              ],
+              "equals": {
+                "target": "ax:settings.autoHide",
+                "value": "On"
+              }
             },
             {
               "op": "click",
@@ -181,6 +193,9 @@
       "checks": [
         {
           "exists": "ax^:dock.subscription."
+        },
+        {
+          "absent": "ax:settings.sidebar"
         }
       ]
     },
