@@ -1236,7 +1236,7 @@
     {
       "id": "air-1470x956",
       "title": "Cockpit at 1470x956, Dock at the bottom",
-      "expected": "On a 1470x956 screen (MacBook Air M2/M3 default) the full cockpit fits between the menu bar and the Dock (G3-39). Skipped where the host offers no such mode.",
+      "expected": "On a 1470x956 screen (MacBook Air M2/M3 default) the full cockpit fits between the menu bar and the Dock (G3-39). Hosted Macs offer no 1470x956, so the walk uses 1280x960: nearly the same height, which is what decides the fit.",
       "actions": [
         {
           "op": "toggleCockpit",
@@ -1247,6 +1247,12 @@
           "size": [
             1470,
             956
+          ],
+          "fallback": [
+            [
+              1280,
+              960
+            ]
           ]
         },
         {
@@ -1307,6 +1313,42 @@
         },
         {
           "exists": "ax:dock.grip.0"
+        }
+      ]
+    },
+    {
+      "id": "settings-window",
+      "title": "Settings window",
+      "expected": "The cockpit's Settings button opens the Settings window on its first page; the visual comparison reads its window shot.",
+      "actions": [
+        {
+          "op": "toggleCockpit",
+          "want": "open"
+        },
+        {
+          "op": "click",
+          "target": "label:Settings"
+        },
+        {
+          "op": "await",
+          "target": "ax:settings.sidebar",
+          "timeout": 15
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:settings.sidebar",
+        "window": "window-of:ax:settings.sidebar"
+      },
+      "checks": [
+        {
+          "exists": "ax:settings.sidebar"
         }
       ]
     }
