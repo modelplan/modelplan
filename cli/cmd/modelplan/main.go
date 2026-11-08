@@ -1297,13 +1297,21 @@ func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, 
 }
 
 func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time) {
-	if speed.Off() || !consent.Allowed("claude", consent.Local) || !consent.Allowed("codex", consent.Local) {
+	// Each harness's logs are read under its own grant: a Codex-only user still gets live Codex sessions (owner
+	// build 13), and Claude Code's logs stay unread without its grant. An empty home disables that root.
+	claudeAllowed, codexAllowed := consent.Allowed("claude", consent.Local), consent.Allowed("codex", consent.Local)
+	if speed.Off() || !claudeAllowed && !codexAllowed {
 		return
 	}
-	home, _ := os.UserHomeDir()
-	claude := os.Getenv("CLAUDE_CONFIG_DIR")
-	if claude == "" {
-		claude = filepath.Join(home, ".claude")
+	claude := ""
+	if claudeAllowed {
+		home, _ := os.UserHomeDir()
+		if claude = os.Getenv("CLAUDE_CONFIG_DIR"); claude == "" {
+			claude = filepath.Join(home, ".claude")
+		}
+	}
+	if !codexAllowed {
+		codexHome = ""
 	}
 	reportWrite(report, func() error {
 		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, codexHome, now), projectLabels(), refs, now)
