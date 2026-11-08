@@ -66,6 +66,9 @@ private actor LifecycleEngine: EngineClient {
     func hide() { hides += 1 }
 }
 
+/// glm-690-1: counts the real entry's `activateSettings` calls, the seam the first-run flow activates through.
+@MainActor private final class ActivationCounter { var value = 0 }
+
 @MainActor final class EngineLifecycleNormalEntryTests: XCTestCase {
     func testFirstRunWaitsForFreshRowsAndWithdrawsOnPause() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-gate-" + UUID().uuidString)
@@ -73,7 +76,8 @@ private actor LifecycleEngine: EngineClient {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
         var client: LifecycleEngine?
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"]), createsNativePanels: false, makeClient: { _, store in let value = LifecycleEngine(store: store, rows: fixture); client = value; return value }, activateSettings: {})
+        let activations = ActivationCounter()
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"]), createsNativePanels: false, makeClient: { _, store in let value = LifecycleEngine(store: store, rows: fixture); client = value; return value }, activateSettings: { activations.value += 1 })
         let surface = LifecycleFirstRunProbe(); app.makeFirstRunSurfaceWithConsent = { _, _ in surface }
         await app.prepare(); let engine = try XCTUnwrap(client)
         app.setActivityPaused(true)
@@ -84,6 +88,7 @@ private actor LifecycleEngine: EngineClient {
         app.setActivityPaused(false)
         for _ in 0..<1000 { if surface.shows > 0 { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(surface.shows, 1, "First run resumes only after current rows")
+        XCTAssertEqual(activations.value, 1, "G3-37: the launch's first presentation brings the app to the front through the real entry")
         workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
         XCTAssertTrue(app.lifecyclePaused); XCTAssertGreaterThan(surface.hides, 0, "Pause withdraws an already visible first run")
         await app.restoreFirstRunIfNeeded(); XCTAssertEqual(surface.shows, 1)
@@ -93,9 +98,11 @@ private actor LifecycleEngine: EngineClient {
         try await engine.publishFresh()
         for _ in 0..<1000 { if surface.shows >= 2 { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(surface.shows, 2)
+        XCTAssertEqual(activations.value, 1, "A re-show after wake takes no focus")
         try app.settingsHost.application.editor.request(.previewFirstRun)
         for _ in 0..<1000 { if surface.shows >= 3 { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(surface.shows, 3, "Explicit navigation remains available after resumption")
+        XCTAssertEqual(activations.value, 2, "An explicit open still activates")
         await app.stopLifecycle()
     }
 
@@ -230,12 +237,10 @@ private actor LifecycleEngine: EngineClient {
             visibleFrame: CGRect(x: 1512, y: -300, width: 2560, height: 1415))
         var joined = false
         var fullscreen = false
-        var cockpitClosed = true
         var pointer = CGPoint(x: 750, y: 450)
         func read() -> DockEdgeEnvironment {
             var presence = DockPresence()
             presence.allowedOverFullscreen = !fullscreen
-            presence.cockpitClosed = cockpitClosed
             return .init(displays: joined ? [primary, neighbour] : [primary], layouts: [],
                          primaryDisplayID: primary.id, pointer: pointer, presence: presence)
         }
@@ -741,7 +746,7 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertNil(app.notificationAuthorizationService)
     }
 
-    func testD14ShowQueuesWhileSystemOrCockpitBlocks() async throws {
+    func testD14ShowQueuesWhileSystemBlocks() async throws {
         let topology = Topology()
         let app = try await make(profile(), topology: topology) {
             $0.showDock = false
@@ -770,11 +775,10 @@ private actor LifecycleEngine: EngineClient {
                            unblock: { workspace.post(name: NSWorkspace.didWakeNotification, object: nil) })
         try await exercise(block: { workspace.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil) },
                            unblock: { workspace.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil) })
-        try await exercise(block: { topology.cockpitClosed = false; app.composition.dock.refreshPresence() },
-                           unblock: { topology.cockpitClosed = true; app.composition.dock.refreshPresence() })
     }
 
-    func testDockWaitsForTheCockpitOpenAttemptAndRestoresAfterFailure() async throws {
+    /// D49: the widget does not take part in opening the cockpit, so an open that fails leaves it untouched.
+    func testD49WidgetStaysThroughAFailedCockpitOpen() async throws {
         let root = profile()
         let app = try await make(root, topology: Topology()) { $0.theme = .night }
         _ = start(app)
@@ -785,13 +789,30 @@ private actor LifecycleEngine: EngineClient {
             isForeground: { false }, activate: {})
         defer { console.hide() }
         console.show()
-        XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame, "Opening the cockpit blocks presentation immediately")
+        XCTAssertEqual(app.composition.dock.edgePresentation?.paintedFrame, saved, "Opening leaves the widget painted")
         console.hide()
         XCTAssertEqual(try expanded(app).frame, saved)
         console.show()
-        XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
         try await wait { console.showTask == nil }
-        XCTAssertEqual(try expanded(app).frame, saved, "An unavailable cockpit releases the presentation gate")
+        XCTAssertEqual(try expanded(app).frame, saved)
+    }
+
+    /// D49: real widget size against the fixed cockpit frame. Reports the overlap per screen and icon
+    /// position for the owner; asserts only that the numbers stay computable from the shipped layouts.
+    func testD49GeometryReportOnSmallScreens() async throws {
+        let app = try await make(profile(), topology: Topology()) { $0.theme = .night }
+        _ = start(app)
+        let size = try expanded(app).frame.size
+        let screens: [(String, CGFloat, CGFloat, CGFloat)] = [
+            ("1280x800", 1280, 800, 24), ("1440x900", 1440, 900, 24), ("1470x956 notch", 1470, 956, 37), ("1680x1050", 1680, 1050, 24)]
+        for (name, width, height, bar) in screens { for dock: CGFloat in [0, 70] { for iconFromRight: CGFloat in [60, 200, 340, 480] {
+            let usable = CGRect(x: 0, y: dock, width: width, height: height - bar - dock)
+            let anchor = CGRect(x: width - iconFromRight, y: height - bar, width: 28, height: bar)
+            let widget = CGRect(x: usable.maxX - size.width, y: usable.midY - size.height / 2, width: size.width, height: size.height)
+            let fit = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: anchor, shutterClosed: false))
+            let overlap = fit.frame.intersection(widget)
+            print("D49-GEOMETRY \(name) macDock=\(dock) iconFromRight=\(iconFromRight) widget=\(widget) cockpit=\(fit.frame) profile=\(fit.profile) overlap=\(overlap.isNull ? "none" : "\(overlap.width)x\(overlap.height)")")
+        }}}
     }
 
     func testD18NormalEntryExposesBilingualControlLabels() async throws {

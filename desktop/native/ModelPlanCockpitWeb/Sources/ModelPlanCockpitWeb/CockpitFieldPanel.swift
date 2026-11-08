@@ -16,6 +16,8 @@ import WebKit
 /// wide. Nothing exists until it opens, and closing destroys the page, which releases its WebGL context.
 /// Closes on ×, Esc, a click outside (the panel loses key) or `idleSeconds` without interaction.
 @MainActor public final class CockpitFieldPanel: NSObject, NSWindowDelegate {
+  /// D49: the field opens from the cockpit, which sits above `.floating`, so it opens above the cockpit.
+  public static let level = CockpitWindowController.aboveCockpitLevel
   public static let defaultIdleSeconds: TimeInterval = 180
   private let bundle: VerifiedCockpitBundle
   private let idleSeconds: TimeInterval
@@ -44,7 +46,7 @@ import WebKit
     let visible = screen?.visibleFrame ?? NSRect(origin: .zero, size: size)
     let origin = NSPoint(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2)
     let panel = FieldWindow(contentRect: NSRect(origin: origin, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
-    panel.isReleasedWhenClosed = false; panel.level = .floating; panel.hasShadow = true
+    panel.isReleasedWhenClosed = false; panel.level = Self.level; panel.hasShadow = true
     panel.backgroundColor = .black; panel.appearance = NSAppearance(named: .darkAqua); panel.delegate = self
     let view = WKWebView(frame: NSRect(origin: .zero, size: size), configuration: config)
     view.autoresizingMask = [.width, .height]; view.allowsBackForwardNavigationGestures = false
