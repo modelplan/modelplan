@@ -55,7 +55,7 @@ import ModelPlanWire
 extension CommunityCockpitEntryTests {
     /// CKP-ENTRY-04 (C-35): through the normal entry and the real app-server, a scope chosen in the cockpit is
     /// still selected when it is opened again later that day, and the first open on the next day starts at All.
-    /// The day comes from the app's own clock, which the test controls.
+    /// D64: the same holds across quitting and reopening the app that day. The day comes from the app's own clock.
     @MainActor func testNormalEntryKeepsTheScopeForTheDayAndStartsTheNextDayAtAll() async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
               FileManager.default.isExecutableFile(atPath: path) else {
@@ -118,12 +118,17 @@ extension CommunityCockpitEntryTests {
         // The app's clock: noon today, moved only by the test.
         let noon = try XCTUnwrap(Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()))
         var wall = noon
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: home, preferredLanguages: ["en"])
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-scope-day",
-            allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: settings,
-            createsNativePanels: false, cockpitEntryEnabled: true, deadlineNow: { wall })
-        await app.prepare()
-        await app.composition.start()
+        // Each launch is a new app on the same profile, as after quitting and reopening it (D64).
+        func launch() async throws -> (EngineDockMenuApplication, SettingsStore) {
+            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: home, preferredLanguages: ["en"])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-scope-day",
+                allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: settings,
+                createsNativePanels: false, cockpitEntryEnabled: true, deadlineNow: { wall })
+            await app.prepare()
+            await app.composition.start()
+            return (app, settings)
+        }
+        var (app, settings) = try await launch()
 
         func openAndWaitForData() async throws -> ScopeDayPage {
             let before = pages.count
@@ -157,11 +162,35 @@ extension CommunityCockpitEntryTests {
             XCTAssertEqual(later.scopes.last, key, "The fresh response keeps the remembered scope")
             close(later)
 
+            // D64: quit and reopen the app the same day; the scope comes back.
+            XCTAssertTrue(FileManager.default.fileExists(atPath: settings.directory.appendingPathComponent("cockpit-scope.json").path),
+                          "The chosen scope is kept beside the settings")
+            await app.composition.stop()
+            wall = noon.addingTimeInterval(6.5 * 3600)
+            (app, settings) = try await launch()
+            let relaunched = try await openAndWaitForData()
+            XCTAssertEqual(relaunched.scopes.first, key, "Reopened the same day after quitting, the scope is remembered")
+            XCTAssertEqual(relaunched.scopes.last, key, "The fresh response keeps the restored scope")
+            close(relaunched)
+
             wall = noon.addingTimeInterval(24 * 3600)
             let nextDay = try await openAndWaitForData()
             XCTAssertEqual(nextDay.scopes.first, "all", "The first open on the next day starts at All")
             XCTAssertEqual(nextDay.scopes.last, "all")
             close(nextDay)
+
+            // D64: a launch on a later day ignores the scope saved on an earlier one.
+            await app.composition.stop()
+            wall = noon
+            (app, settings) = try await launch()
+            let earlier = try await openAndWaitForData()
+            earlier.onIntent?(.scopeSelect(key)); close(earlier)
+            await app.composition.stop()
+            wall = noon.addingTimeInterval(25 * 3600)
+            (app, settings) = try await launch()
+            let laterDay = try await openAndWaitForData()
+            XCTAssertEqual(laterDay.scopes.first, "all", "A restart on a later day starts at All")
+            close(laterDay)
             await app.composition.stop()
         } catch {
             await app.composition.stop()

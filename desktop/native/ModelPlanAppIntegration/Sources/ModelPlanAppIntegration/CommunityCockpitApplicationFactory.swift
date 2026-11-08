@@ -67,6 +67,7 @@ import ModelPlanDock
                 let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
                 coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
+                coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
@@ -140,6 +141,25 @@ import ModelPlanDock
         CommunityCockpitApplicationFactory.verificationPage?(page)
         #endif
         return page
+    }
+}
+
+/// D64: the cockpit scope and its local day in one small file beside the settings. A consent or store change removes it.
+@MainActor final class FileCockpitScopeMemory: CockpitScopeMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> (key: String, day: String)? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let key = value["scope"] as? String, let day = value["day"] as? String else { return nil }
+        return (key, day)
+    }
+    func save(_ value: (key: String, day: String)?) {
+        guard let value else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": value.key, "day": value.day], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
     }
 }
 

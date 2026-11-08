@@ -23,6 +23,12 @@ public extension CockpitPageSurface {
 }
 extension CockpitWindowController: CockpitPageSurface {}
 
+/// D64: where the app keeps the cockpit scope and the local day it was chosen, so it outlives a restart that day.
+@MainActor public protocol CockpitScopeMemory: AnyObject {
+  func load() -> (key: String, day: String)?
+  func save(_ value: (key: String, day: String)?)
+}
+
 private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked Sendable {
   @MainActor weak var owner: EngineCockpitCoordinator?
   @MainActor init(_ owner: EngineCockpitCoordinator) { self.owner = owner }
@@ -48,6 +54,20 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// The clock that decides that day. The app sets its own clock here, so the day follows the clock its
   /// other deadlines use.
   public var currentDate: @MainActor () -> Date = { Date() }
+  /// D64: set after `currentDate`. A saved scope from today is restored; any other day is ignored. A numbered
+  /// (positional) fallback is never kept, and a restored scope is still checked against each reply.
+  public var scopeMemory: (any CockpitScopeMemory)? {
+    didSet {
+      guard let saved = scopeMemory?.load(), Self.persistable(saved.key), saved.day == dayKey(currentDate()) else { return }
+      selectedScope = saved.key; scopeDay = calendarDay(currentDate())
+    }
+  }
+  private static func persistable(_ key: String) -> Bool {
+    key != "all" && CockpitMemberScopes.isValidKey(key) && !CockpitMemberScopes.isIndexedFallback(key)
+  }
+  private func dayKey(_ date: Date) -> String {
+    let d = calendarDay(date); return String(format: "%04d-%02d-%02d", d.year ?? 0, d.month ?? 0, d.day ?? 0)
+  }
   private var scopeMembers = Set<String>()
   private var request: Task<Void, Never>?
   private var requestToken: UUID?
@@ -141,7 +161,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func receiveIntent(_ intent:CockpitIntent) {
     if case .scopeSelect(let key)=intent {
       guard delivery != nil,scopeMembers.contains(key) else { return }
-      selectedScope=key; scopeDay=calendarDay(currentDate()); page?.updateScope(key); return
+      selectedScope=key; scopeDay=calendarDay(currentDate()); page?.updateScope(key)
+      scopeMemory?.save(Self.persistable(key) ? (key, dayKey(currentDate())) : nil); return
     }
     onIntent?(intent)
   }
@@ -203,7 +224,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func adopt(_ next: EngineDeliveryContext) async {
     guard delivery != next else { return }
     cancelQuery()
-    if delivery?.sessionID != next.sessionID || delivery?.floor != next.floor { selectedScope="all" }
+    // A restored scope (D64) waits for the first context; a change of session or floor after that returns to All.
+    if let previous = delivery, previous.sessionID != next.sessionID || previous.floor != next.floor { selectedScope="all" }
     scopeMembers.removeAll()
     delivery = next
     do {
@@ -218,8 +240,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   }
   public func consume(_ event: EngineClientEvent) async {
     switch event {
-    case .clearPrivateViews:
+    case .clearPrivateViews(let invalidation):
       cancelQuery()
+      // A consent or store change forgets the saved scope; an engine stop (the app quitting) keeps it for today.
+      if invalidation.reason == .generationAdvanced || invalidation.reason == .epochChanged { scopeMemory?.save(nil) }
       delivery = nil; selectedScope="all"; scopeMembers.removeAll()
       // Do not adopt a guessed session from nextFloor. The subsequent
       // admitted context event supplies the complete authoritative identity.
