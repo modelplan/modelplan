@@ -42,10 +42,10 @@ import ModelPlanWire
     private(set) var closed = false
     func discard() { closed = true; bridge.dispose(); onClosed?() }
 
-    /// The engine key of the first displayed subscription, as the page names it: its verified reference,
+    /// The engine key of the first displayed subscription (a tool row with no account is skipped), as the page names it: its verified reference,
     /// otherwise its row and route.
     var firstMemberKey: String? {
-        guard let data, let row = data.projection.rows.first, let account = row.accounts.first else { return nil }
+        guard let data, let row = data.projection.rows.first(where: { !$0.accounts.isEmpty }), let account = row.accounts.first else { return nil }
         let verified = Set(data.subscriptions.map(\.subscriptionRef))
         if let ref = account.subscriptionRef, verified.contains(ref) { return ref }
         return row.id + "#" + account.route.rawValue
@@ -146,8 +146,6 @@ extension CommunityCockpitEntryTests {
         do {
             let first = try await openAndWaitForData()
             XCTAssertEqual(first.scopes.first, "all", "A fresh app opens at All")
-            let rows = first.data?.projection.rows ?? []
-            print("SCOPE-DAY rows=\(rows.map { "\($0.id):\($0.accounts.count)" }) subscriptions=\(first.data?.subscriptions.count ?? -1)")
             let key = try XCTUnwrap(first.firstMemberKey, "The real response must list the synthetic subscription")
             first.onIntent?(.scopeSelect(key))
             XCTAssertEqual(first.scopes.last, key, "The selected engine key scopes the open page")
