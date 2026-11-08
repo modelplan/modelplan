@@ -196,14 +196,6 @@ struct DockHelpInteraction: Equatable {
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
-    /// Owner test builds only (EngineDockMenuApplication gates it): rings centred in the face.
-    var ringsCentred = false {
-        didSet {
-            guard oldValue != ringsCentred else { return }
-            for view in [dockView] + alternateViews { view.centresRings = ringsCentred }
-            inputGeneration &+= 1; rebuild()
-        }
-    }
     private func installIgnitionArt() {
         let side = dockView.presentedSkinForChecks?.fixedLayers.first { $0.resource.contains("recessed-guard") }?.rect.width ?? 0
         consoleButton.installArt(side > 0 ? T2IgnitionArt.shared : nil, guardSide: side)
