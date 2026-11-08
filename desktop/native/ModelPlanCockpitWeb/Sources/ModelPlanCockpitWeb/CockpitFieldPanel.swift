@@ -27,6 +27,8 @@ import WebKit
   private var payload: String?
   private var idle: Timer?
   public var onClosed: (() -> Void)?
+  /// CKP-PORT-13: opens the website's fleet view; the host decides how (the default browser).
+  public var onWebsite: (@MainActor (URL) -> Void)?
   public private(set) var isOpen = false
   public init(bundle: VerifiedCockpitBundle, idleSeconds: TimeInterval = CockpitFieldPanel.defaultIdleSeconds) {
     self.bundle = bundle; self.idleSeconds = idleSeconds
@@ -75,16 +77,29 @@ import WebKit
     }
   }
   /// The page reports only these fixed events; anything else is ignored.
-  fileprivate func receive(_ body: Any) {
+  func receive(_ body: Any) {
     guard isOpen, let raw = body as? String, let data = raw.data(using: .utf8),
           let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let type = message["type"] as? String else { return }
     switch type {
     case "loaded": deliver()
     case "activity": renewIdle()
+    case "website":
+      if let models = message["models"] as? [String], let url = Self.fleetURL(models: models) { onWebsite?(url) }
     case "close", "failed": close()
     default: break
     }
+  }
+  /// The website's fleet view for these public model IDs (the site's `focus` query: `[\w:.-]{1,96}`, comma separated).
+  /// The page never sends an address; anything else is refused.
+  public static func fleetURL(models: [String]) -> URL? {
+    let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_:.-")
+    guard (1...10).contains(models.count),
+      models.allSatisfy({ (1...96).contains($0.count) && $0.allSatisfy(allowed.contains) }) else { return nil }
+    var parts = URLComponents()
+    parts.scheme = "https"; parts.host = "modelplan.ai"; parts.path = "/"
+    parts.queryItems = [URLQueryItem(name: "focus", value: models.joined(separator: ","))]
+    return parts.url
   }
   private func deliver() {
     guard let payload, let encoded = try? JSONEncoder().encode(payload),

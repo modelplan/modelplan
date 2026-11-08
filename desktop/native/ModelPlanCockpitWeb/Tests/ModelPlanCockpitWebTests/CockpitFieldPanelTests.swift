@@ -39,4 +39,29 @@ final class CockpitFieldPanelTests: XCTestCase {
     panel.close()
     XCTAssertEqual(closed, 2)
   }
+  /// CKP-PORT-13 (D63): the page names public model IDs; native builds the only address it may open.
+  func testFleetAddressIsBuiltFromPublicIDsOnly() {
+    XCTAssertEqual(CockpitFieldPanel.fleetURL(models: ["sol-6.1", "auto:anthropic:ccb37fec2677f068"])?.absoluteString,
+                   "https://modelplan.ai/?focus=sol-6.1,auto:anthropic:ccb37fec2677f068")
+    XCTAssertNil(CockpitFieldPanel.fleetURL(models: []))
+    XCTAssertNil(CockpitFieldPanel.fleetURL(models: Array(repeating: "m", count: 11)), "the field flies ten at most")
+    for bad in ["a b", "a/b", "a?b", "a&focus=x", "https://evil.example", String(repeating: "x", count: 97), ""] {
+      XCTAssertNil(CockpitFieldPanel.fleetURL(models: ["ok", bad]), bad)
+    }
+  }
+  @MainActor func testTheWebsiteMessageOpensTheFleetAddressAndNothingElse() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-website-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let panel = CockpitFieldPanel(bundle: try bundle(root))
+    var opened: [URL] = []
+    panel.onWebsite = { opened.append($0) }
+    panel.receive(#"{"type":"website","models":["a"]}"#)
+    XCTAssertTrue(opened.isEmpty, "A closed panel opens nothing")
+    panel.open(payload: "{}", near: nil)
+    panel.receive(#"{"type":"website","models":["sol-6.1","glm"]}"#)
+    panel.receive(#"{"type":"website","models":["a b"]}"#)
+    panel.receive(#"{"type":"website","url":"https://evil.example"}"#)
+    XCTAssertEqual(opened.map(\.absoluteString), ["https://modelplan.ai/?focus=sol-6.1,glm"])
+    panel.close()
+  }
 }
