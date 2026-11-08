@@ -363,7 +363,7 @@ import CryptoKit
         setAccessibilityElement(true);needsDisplay=true
     }
     /// The mark's frame in its slot: aspect-fitted to `mark` points (the whole slot when nil), centred.
-    static func brandMarkFrame(slot:CGRect,image:CGSize,mark:CGFloat?)->CGRect{
+    public static func brandMarkFrame(slot:CGRect,image:CGSize,mark:CGFloat?)->CGRect{
         let side=min(mark ?? slot.width,slot.width,slot.height)
         guard image.width>0,image.height>0,image.width.isFinite,image.height.isFinite else{return slot}
         let k=side/max(image.width,image.height),w=image.width*k,h=image.height*k
