@@ -63,7 +63,7 @@ func TestSpendWarningOnSubagentSpawn(t *testing.T) {
 			if u, m := h.spawn("thread", "agent-1", "", now); u != "" || m != "" {
 				t.Fatalf("subagent warned: %q %q", u, m)
 			}
-			want := "Quota is low for spawning subagents. Weekly quota: 8% left, resets in 3h."
+			want := "Quota is tight; keep an eye on usage when spawning subagents. Weekly quota: 8% left, resets in 3h."
 			u, m := h.spawn("thread", "", "", now)
 			if u != want || !strings.HasPrefix(m, want) {
 				t.Fatalf("warning:\nuser  %q\nmodel %q", u, m)
@@ -108,7 +108,7 @@ func TestSpendWarningCapPerThread(t *testing.T) {
 		reset := now.Add(time.Duration(i+1) * 24 * time.Hour)
 		h.reading("codex", now, hookWindow("weekly", 15, reset))
 		if u, _ := h.spawn("thread", "", "", now); u != "" {
-			if !strings.HasPrefix(u, "派子代理前注意额度。每周额度：剩余15%") {
+			if !strings.HasPrefix(u, "额度偏紧，派子代理时可以留意一下用量。每周额度：剩余15%") {
 				t.Fatalf("zh warning: %q", u)
 			}
 			sent++

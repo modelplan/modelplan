@@ -63,12 +63,12 @@ func TestSpendNoticeAndOtherPlan(t *testing.T) {
 		user, model, line string
 	}{
 		{Style{T: EN},
-			"Quota is low for spawning subagents. Weekly quota: 8% left, resets in 3h; Codex still has 60% of its weekly quota left, resets in 2d.",
-			"Quota is low for spawning subagents. Weekly quota: 8% left, resets in 3h; Codex still has 60% of its weekly quota left, resets in 2d. For subagents that do not need this model, Claude Sonnet 5.5 High scores as well at ×0.55 the cost (+0.3 pts).",
+			"Quota is tight; keep an eye on usage when spawning subagents. Weekly quota: 8% left, resets in 3h; Codex still has 60% of its weekly quota left, resets in 2d.",
+			"Quota is tight; keep an eye on usage when spawning subagents. Weekly quota: 8% left, resets in 3h; Codex still has 60% of its weekly quota left, resets in 2d. For subagents that do not need this model, Claude Sonnet 5.5 High scores as well at ×0.55 the cost (+0.3 pts); use it if the task allows.",
 			"Weekly quota: 8% left, resets in 3h; Codex still has 60% of its weekly quota left, resets in 2d. Claude Sonnet 5.5 High scores as well at ×0.55 the cost (+0.3 pts)."},
 		{Style{T: ZH},
-			"派子代理前注意额度。每周额度：剩余8%，3时后重置；Codex 每周额度还剩60%，2天后重置。",
-			"派子代理前注意额度。每周额度：剩余8%，3时后重置；Codex 每周额度还剩60%，2天后重置。不需要当前模型的子代理可以用 Claude Sonnet 5.5 High，能力相当，成本 ×0.55（+0.3 分）。",
+			"额度偏紧，派子代理时可以留意一下用量。每周额度：剩余8%，3时后重置；Codex 每周额度还剩60%，2天后重置。",
+			"额度偏紧，派子代理时可以留意一下用量。每周额度：剩余8%，3时后重置；Codex 每周额度还剩60%，2天后重置。不需要当前模型的子代理，任务允许时可以改用 Claude Sonnet 5.5 High，能力相当，成本 ×0.55（+0.3 分）。",
 			"每周额度：剩余8%，3时后重置；Codex 每周额度还剩60%，2天后重置。Claude Sonnet 5.5 High 能力相当，成本 ×0.55（+0.3 分）。"},
 	} {
 		if got := c.s.SpendNotice(n, nil, false); got != c.user {

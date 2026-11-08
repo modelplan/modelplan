@@ -89,15 +89,15 @@ func (s Style) SpendNotice(ns []advise.QuotaNotice, cheaper *advise.Step, forMod
 	}
 	x := strings.Join(lines, " ")
 	if s.T == EN {
-		x = "Quota is low for spawning subagents. " + x
+		x = "Quota is tight; keep an eye on usage when spawning subagents. " + x
 		if forModel && cheaper != nil && cheaper.CostRatio != nil {
-			x += fmt.Sprintf(" For subagents that do not need this model, %s %s scores as well at ×%.2f the cost%s.", cheaper.ModelName, cheaper.Label, *cheaper.CostRatio, pts(cheaper.AbilityDelta, " (%+.1f pts)"))
+			x += fmt.Sprintf(" For subagents that do not need this model, %s %s scores as well at ×%.2f the cost%s; use it if the task allows.", cheaper.ModelName, cheaper.Label, *cheaper.CostRatio, pts(cheaper.AbilityDelta, " (%+.1f pts)"))
 		}
 		return x
 	}
-	x = "派子代理前注意额度。" + x
+	x = "额度偏紧，派子代理时可以留意一下用量。" + x
 	if forModel && cheaper != nil && cheaper.CostRatio != nil {
-		x += fmt.Sprintf("不需要当前模型的子代理可以用 %s %s，能力相当，成本 ×%.2f%s。", cheaper.ModelName, cheaper.Label, *cheaper.CostRatio, pts(cheaper.AbilityDelta, "（%+.1f 分）"))
+		x += fmt.Sprintf("不需要当前模型的子代理，任务允许时可以改用 %s %s，能力相当，成本 ×%.2f%s。", cheaper.ModelName, cheaper.Label, *cheaper.CostRatio, pts(cheaper.AbilityDelta, "（%+.1f 分）"))
 	}
 	return x
 }
