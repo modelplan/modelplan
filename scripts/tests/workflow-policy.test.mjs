@@ -185,3 +185,25 @@ test("v1 install guide matches the supported package and update policy", async (
   assert.match(guide, /no automatic updates/i);
   assert.match(guide, /no update feed/i);
 });
+
+test("U11 may use the ordinary owner Macs, never the GUI Mac, with the same owner gate and a hosted macos-15 fallback (D62)", () => {
+  const route = TRUSTED_MAC_ROUTE;
+  const branch = /\(inputs\.task == 'u11-native' && inputs\.os == 'macos-15' && vars\.MAC_CI_NONGUI == 'enabled' && (.*?)\) && fromJSON\('(\[[^\]]*\])'\)/.exec(route);
+  assert.ok(branch, "the non-GUI branch is selected by the MAC_CI_NONGUI variable");
+  assert.deepEqual(JSON.parse(branch[2]), ["self-hosted", "macOS", "ARM64", "modelplan-mac-nongui"], "only the non-GUI label, which the GUI Mac does not carry");
+  for (const gate of ["github.actor_id == '11829005'", "github.triggering_actor == 'guanbear'", "github.event.pull_request.head.repo.full_name == github.repository",
+    "!github.event.pull_request.draft", "startsWith(github.ref, 'refs/heads/')"]) assert.ok(branch[1].includes(gate), gate);
+  assert.ok(route.includes("inputs.os == 'macos-15' && 'macos-15'"), "hosted fallback keeps macos-15, the oldest supported macOS");
+  // The GUI branch still needs inputs.os == 'macos-latest', which the U11 caller never passes.
+  const caller = fs.readFileSync(new URL("../../.github/workflows/u11-native.yml", import.meta.url), "utf8");
+  assert.match(caller, /uses: modelplan\/modelplan\/\.github\/workflows\/trusted-mac\.yml@[0-9a-f]{40}\n/);
+  assert.match(caller, /task: u11-native\n/);
+  assert.match(caller, /os: macos-15\n/);
+  assert.doesNotMatch(caller, /runs-on:/);
+  const reusable = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  const job = reusable.split("\n  u11-native:\n")[1].split("\n  probe:\n")[0];
+  assert.match(job, /\*gui\*\) echo "::error::/, "the job refuses a GUI runner even if a label is misassigned");
+  assert.match(job, /persist-credentials: false/);
+  assert.match(job, /echo "HOME=\$base\/home"/, "home and caches live in the job's runner temp");
+  assert.match(job, /if: always\(\)\n\s+shell: bash\n\s+run: rm -rf -- \.tmp/);
+});

@@ -26,61 +26,10 @@ concurrency:
 
 jobs:
   native:
+    # Runs in the pinned trusted-mac.yml (docs/mac-ci.md): the ordinary owner Macs with MAC_CI_NONGUI=enabled,
+    # hosted macos-15 otherwise.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: macos-15
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: cli/go.mod
-          cache: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Canonical web/native pin regression (no GUI)
-        run: |
-          npm ci --prefix desktop/cockpit --ignore-scripts
-          npm test --prefix desktop/cockpit
-          npm run build --prefix desktop/cockpit
-          npm run build:official --prefix desktop/cockpit
-          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py
-      - name: Build the actual public CLI
-        working-directory: cli
-        run: |
-          mkdir -p ../.tmp
-          go build -o ../.tmp/u11-cli ./cmd/modelplan
-      - name: Native protocol, bundle and actual EngineClient regressions (no GUI)
-        env:
-          MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/.tmp/u11-cli
-        run: swift test --package-path desktop/native/ModelPlanCockpitWeb --scratch-path .tmp/u11-native-build --jobs 2
-      - name: Compile production without test SPI
-        run: swift build --package-path desktop/native/ModelPlanCockpitWeb --scratch-path .tmp/u11-release-build --configuration release --jobs 2
-      - name: Compile wired verification host (not execution)
-        run: swift build --package-path desktop/native/verification --scratch-path .tmp/u11-host-build --jobs 2 -Xswiftc -DMODELPLAN_TEST_ONLY_SPI
-      - name: Compile actual product and guard its Dock/menu cockpit action (no windows)
-        env:
-          MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/.tmp/u11-cli
-          MODELPLAN_U11_TEST_REQUIRED: "1"
-        shell: bash
-        run: |
-          set -o pipefail
-          # The test-only page seam needs MODELPLAN_TEST_ONLY_SPI; without it the real app-server details
-          # journey is not compiled at all and would vanish silently.
-          swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/u11-product-build --jobs 2 \
-            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter '(CommunityCockpitEntryTests|DockCodexRuntimeRealServerTests|QuotaWidgetCardPrototypeTests)' 2>&1 | tee .tmp/u11-product-tests.log
-          # Both real-CLI normal-entry journeys must have run and passed here (elsewhere they are allowed skips).
-          for test in testNormalEntryRejectsOutdatedCLI testNormalEntryReceivesCockpitDetailsFromRealAppServer testOwnerTestPackageLoadsTheRealCockpitPageAndReleaseShapeRefusesIt; do
-            grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.CommunityCockpitEntryTests $test\]' passed" .tmp/u11-product-tests.log \
-              || { echo "::error::CommunityCockpitEntryTests/$test did not run and pass"; exit 1; }
-          done
-          # G3-13: the runtime card journey needs the real CLI, so this is the only leg that runs it.
-          grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.DockCodexRuntimeRealServerTests testSameRuntimeMemberUpdatesTheOpenCard\]' passed" .tmp/u11-product-tests.log \
-            || { echo "::error::DockCodexRuntimeRealServerTests/testSameRuntimeMemberUpdatesTheOpenCard did not run and pass"; exit 1; }
-          # The card's readout font must draw on the oldest supported macOS, which this runner is.
-          grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.QuotaWidgetCardPrototypeTests testReadoutValuesAreActuallyDrawn\]' passed" .tmp/u11-product-tests.log \
-            || { echo "::error::QuotaWidgetCardPrototypeTests/testReadoutValuesAreActuallyDrawn did not run and pass"; exit 1; }
-      - name: Public numerical receipt privacy
-        run: python3 -m unittest discover -s desktop/native/verification/tests -p 'test_public_receipts.py'
-      - name: Source policy
-        run: node scripts/check-source-policy.mjs
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@43a76f7739355b4a4f1237c972a394e422e75052
+    with:
+      task: u11-native
+      os: macos-15
