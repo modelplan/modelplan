@@ -81,6 +81,12 @@ test('openWebsite carries a typed page and value, never a URL (CKP-MFD-24)',()=>
   assert.equal(f.bridge.action('openWebsite','methodology/effort-ladder'),true);
   const last=f.events.at(-1);assert.equal(last.action,'openWebsite');assert.equal(last.page,'methodology');assert.equal(last.value,'effort-ladder');assert.equal(last.url,undefined);
 });
+test('D63 openField may name the clicked rocket by its published display name, nothing else',()=>{
+  const f=fixture();
+  assert.equal(f.bridge.action('openField'),true);let last=f.events.at(-1);assert.equal(last.action,'openField');assert.equal(last.key,undefined);
+  for(const bad of ['',' ','x'.repeat(65),42])assert.equal(f.bridge.action('openField',bad),false,String(bad));
+  assert.equal(f.bridge.action('openField','Synthetic 5.5'),true);last=f.events.at(-1);assert.equal(last.action,'openField');assert.equal(last.key,'Synthetic 5.5');
+});
 test('only fixed actions are emitted, history is limited to currently displayed rows',()=>{
   const f=fixture();assert.equal(f.bridge.action('openURL'),false);assert.equal(f.bridge.action('chooseSetup','x'),false);
   assert.equal(f.bridge.action('openHistory','unknown'),false);assert.equal(f.bridge.action('openSettings'),true);

@@ -125,5 +125,17 @@ final class V2BridgeContractTests: XCTestCase {
             XCTAssertThrowsError(try value.accept(encode(object), source: source))
         }
     }
+    /// D63: a click on a still rocket opens the field focused on it, named by its published display name (1–64 characters).
+    func testOpenFieldMayNameTheClickedRocket() throws {
+        for (key, expected) in [("Synthetic 5.5", CockpitIntent.openFieldAt("Synthetic 5.5")), ("", nil), ("   ", nil), (String(repeating: "x", count: 65), nil)] as [(String, CockpitIntent?)] {
+            let value = try state(), load = try value.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+            _ = try value.accept(encode(receipt(load)), source: source)
+            _ = try value.setVisibility(.init(visible: true, occluded: false, key: true))
+            var object = try receipt(load, version: nil, capabilities: nil)
+            object["type"] = "action"; object["action"] = "openField"; object["key"] = key; object["sequence"] = "2"; object["requestId"] = UUID().uuidString
+            if let expected { XCTAssertEqual(try value.accept(encode(object), source: source), .action(expected)) }
+            else { XCTAssertThrowsError(try value.accept(encode(object), source: source), key) }
+        }
+    }
 
 }
