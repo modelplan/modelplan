@@ -21,7 +21,7 @@ test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the
   const after=getComputedStyle(sh,'::after');
   return {shellBg:c.backgroundImage,shellShadow:c.boxShadow,boosters:[...document.querySelectorAll('.ck-booster')].map(b=>getComputedStyle(b).display),
    wall:el('.ck-shell .hull-upper'),crown:{...el('.ck-shell .hull-crown'),height:Math.round(document.querySelector('.ck-shell .hull-crown').getBoundingClientRect().height),filter:getComputedStyle(document.querySelector('.ck-shell .hull-crown')).filter},hidden:['.hull-crown','.hull-cone','.hull-lower','.hull-record'].map(s=>getComputedStyle(document.querySelector('.ck-shell '+s)).display),
-   aft:after.backgroundImage,strip:getComputedStyle(document.querySelector('.ck-head'),'::before').clipPath,body:getComputedStyle(sh,'::before').clipPath,cap:(q=>q.backgroundImage+' '+q.backgroundColor)(getComputedStyle(document.querySelector('.s6-closed-cap'))),all:[...document.querySelectorAll('#cockpit *')].flatMap(e=>[getComputedStyle(e).backgroundImage,getComputedStyle(e,'::before').backgroundImage,getComputedStyle(e,'::after').backgroundImage]).join(' ')};});
+   aft:after.backgroundImage,headTop:Math.round(document.querySelector('.ck-head').getBoundingClientRect().top-ck.top),tapeGap:Math.round(ck.bottom-document.querySelector('.ck-tape').getBoundingClientRect().bottom),strip:getComputedStyle(document.querySelector('.ck-head'),'::before').clipPath,body:getComputedStyle(sh,'::before').clipPath,cap:(q=>q.backgroundImage+' '+q.backgroundColor)(getComputedStyle(document.querySelector('.s6-closed-cap'))),all:[...document.querySelectorAll('#cockpit *')].flatMap(e=>[getComputedStyle(e).backgroundImage,getComputedStyle(e,'::before').backgroundImage,getComputedStyle(e,'::after').backgroundImage]).join(' ')};});
  const plate=tier==='tall'?890:640;
  expect(v.shellBg).toBe('none');expect(v.shellShadow).toBe('none');expect(v.boosters).toEqual(['none','none']);
  // Closed (owner D72): the study's 16 px cap slab sits 14 px down, 620 wide, in the shared gunmetal tone; open, the
@@ -33,6 +33,9 @@ test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the
   expect(v.cap).toBe('none rgba(0, 0, 0, 0)');
   // The dark body meets the slab's foot (30 px), as in the study: no transparent band between slab and strip.
   expect(v.body).toMatch(/^inset\(30px /);
+  // The slab saves the study's 6 px (cap 16 + 2 px first row): the strip sits at 39 px and the record panel ends
+  // 22 px above the bottom, on the aft plate's edge, not over it.
+  expect([v.headTop,v.tapeGap]).toEqual([39,22]);
   expect(v.hidden.slice(1)).toEqual(['none','none','none']);
  }else expect(v.hidden).toEqual(['none','none','none','none']);
  expect(v.wall).toMatchObject({display:'block',top:wallTop,bottom:22,left:-8,width:636});
