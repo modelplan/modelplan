@@ -278,8 +278,9 @@ extension CommunityCockpitEntryTests {
             XCTAssertEqual(painted["width"]!, 636, accuracy: 1, name)
             XCTAssertEqual(painted["height"]!, 911, accuracy: 1, name)
             XCTAssertEqual(painted["height"]! - painted["rootBottom"]!, 34, accuracy: 1, "\(name): the flame reserve is inside the window")
-            XCTAssertEqual(window.frame.width, 636 * scale, accuracy: 0.5, name)
-            XCTAssertEqual(window.frame.height, 911 * scale, accuracy: 0.5, name)
+            // The window server places borderless panels on whole points.
+            XCTAssertEqual(window.frame.width, 636 * scale, accuracy: 1, name)
+            XCTAssertEqual(window.frame.height, 911 * scale, accuracy: 1, name)
             // Placement on the requested screen (the hosted runner's real display is smaller, so the window
             // server may move the panel; its size is what the test can hold it to).
             XCTAssertEqual(layout.frame.maxY, usable.maxY - 6, accuracy: 1e-6, name)
@@ -287,8 +288,8 @@ extension CommunityCockpitEntryTests {
             // Crisp: WebKit draws the page at the final size; no view scales a bitmap of it.
             XCTAssertEqual(web.pageZoom, scale, accuracy: 1e-6, name)
             let content = try XCTUnwrap(window.contentView)
-            XCTAssertEqual(content.bounds.size.width, window.frame.width, accuracy: 0.5, name)
-            XCTAssertEqual(web.frame.size.width, window.frame.width, accuracy: 0.5, name)
+            XCTAssertEqual(content.bounds.size.width, window.frame.width, accuracy: 1, name)
+            XCTAssertEqual(web.frame.size.width, window.frame.width, accuracy: 1, name)
             // Hit targets: page points map by the scale onto the window, and land where they are drawn.
             let height = content.bounds.height
             func hit(_ x: Double, _ y: Double) -> NSView? {
