@@ -150,6 +150,19 @@ private actor G350Engine: EngineClient {
         try report.joined(separator: "\n").write(to: out.appendingPathComponent("marks.txt"), atomically: true, encoding: .utf8)
     }
 
+    /// Build 13 owner review (ledger: none): the mark sat below the name because it was centred on the whole title
+    /// block, which grows by the plan line. It sits on the name's line, as the prototype's header does.
+    func testCardMarkSitsOnTheNameLineNotTheTitleBlock() throws {
+        let mark = try XCTUnwrap(StaticDockPreviewHost.cardMark("logo-openai", zaiMarkEnabled: false))
+        let card = DockCardView(frame: .zero)
+        var production = StaticDockPreviewHost.prototypeCardStyle; production.showsActions = false
+        try card.apply(content("Codex"), style: production, brandImage: mark) // "Pro" plan line below the name
+        let frame = try XCTUnwrap(card.brandMarkFrameForChecks)
+        let name = try XCTUnwrap(card.nameFrameForChecks)
+        XCTAssertEqual(frame.midY, name.midY, accuracy: 1.0, "the mark is centred on the name's line")
+        card.dispose()
+    }
+
     private func rows(_ ids: [(String, String)]) throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
