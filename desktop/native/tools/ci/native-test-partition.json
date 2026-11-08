@@ -60,7 +60,8 @@
         "ConsentCoreQ2Tests",
         "ConsentHostDisplayTests",
         "DockCodexRuntimeRealServerTests",
-        "DockHoverExplanationTests", "DockInteractionHostPortTests",
+        "DockHoverExplanationTests",
+        "DockInteractionHostPortTests",
         "DockLiveFollowerTests",
         "DockMotionPolicyTests",
         "DockPlacementGeometryTests",
@@ -98,7 +99,15 @@
         "T2MaterialSeamTests",
         "U8ConsentJourneyTests"
       ],
+      "ownerGui": [
+        "D41KeychainJourneyTests",
+        "DockAccessibilityFrameTests"
+      ],
       "allowedSkips": {
+        "CommunityCockpitEntryTests/testCockpitStaysWithinItsCPUAndMemoryBudgetOpenAndClosed": {
+          "leg": "headless",
+          "reason": "needs the canonical official cockpit build and MODELPLAN_TEST_ONLY_SPI, which U11 native supplies"
+        },
         "CommunityCockpitEntryTests/testG313RealCLIRecoversRetainedWeeklyCard": {
           "leg": "headless",
           "reason": "requires the synthetic real CLI supplied and required by the U11 workflow"
@@ -110,6 +119,10 @@
         "CommunityCockpitEntryTests/testNormalEntryReceivesCockpitDetailsFromRealAppServer": {
           "leg": "headless",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"
+        },
+        "CommunityCockpitEntryTests/testNormalEntryKeepsTheScopeForTheDayAndStartsTheNextDayAtAll": {
+          "leg": "headless",
+          "reason": "needs the real synthetic-test CLI, which the native job does not build; U11 builds and supplies it"
         },
         "CommunityCockpitEntryTests/testProductionPinsAdmitCanonicalBundles": {
           "leg": "headless",

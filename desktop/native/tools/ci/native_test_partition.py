@@ -23,7 +23,9 @@ import sys
 from pathlib import Path
 
 MANIFEST = Path(__file__).with_name("native-test-partition.json")
-LEGS = ("gui", "headless")
+LEGS = ("gui", "headless", "hosted-gui", "owner-gui")
+# D62: the GUI share splits further into "hosted-gui" (a hosted Mac's real WindowServer session) and
+# "owner-gui" (the manifest's ownerGui classes, which need the owner's GUI Mac). gui = hosted-gui + owner-gui.
 CLASS_RE = re.compile(r"\bclass\s+(\w+)\s*:\s*XCTestCase\b")
 CASE_RE = re.compile(r"Test Case '-\[(\w+)\.(\w+) (\w+)\]' (passed|failed|skipped)")
 
@@ -103,6 +105,14 @@ def check(root: Path, manifest: dict) -> list[str]:
             if re.search(r"^\s*#if\b", text, flags=re.M):
                 errors.append(f"{key}: headless class {name} is conditionally compiled; it would vanish from the listed suite")
             errors += [f"{key}: {name} ({file.relative_to(root)}): {p}" for p in file_problems(text, manifest)]
+        owner = pkg.get("ownerGui", [])
+        if owner != sorted(owner) or len(set(owner)) != len(owner):
+            errors.append(f"{key}: keep the ownerGui list sorted and unique")
+        for name in owner:
+            if name in headless:
+                errors.append(f"{key}: {name} is both headless and ownerGui")
+            if name not in classes:
+                errors.append(f"{key}: ownerGui class {name} has no XCTestCase declaration")
         for test_id, rule in pkg.get("allowedSkips", {}).items():
             name = test_id.split("/")[0]
             if name not in classes:
@@ -143,9 +153,25 @@ def plan(pkg: dict, listed: list[str], leg: str) -> tuple[list[str], list[str], 
     if not expected_headless or not expected_gui:
         raise PartitionError("both legs must run at least one test")
     args = [a for s in pkg.get("preexistingSkip", []) for a in ("--skip", s)]
-    args += ["--filter", selector] if leg == "headless" else ["--skip", selector]
     summary = {"suite": len(suite), "gui": len(expected_gui), "headless": len(expected_headless)}
-    return args, (expected_headless if leg == "headless" else expected_gui), summary
+    if leg in ("headless", "gui"):
+        args += ["--filter", selector] if leg == "headless" else ["--skip", selector]
+        return args, (expected_headless if leg == "headless" else expected_gui), summary
+    owner = pkg.get("ownerGui", [])
+    if not owner:
+        if leg == "owner-gui":
+            raise PartitionError("the manifest names no ownerGui classes")
+        return args + ["--skip", selector], expected_gui, summary
+    missing = [n for n in owner if f"{module}.{n}" not in present]
+    if missing:
+        raise PartitionError("ownerGui classes absent from the listed suite: " + ", ".join(missing))
+    owner_selector = class_regex(module, owner)
+    expected_owner = [i for i in expected_gui if re.search(owner_selector, i)]
+    expected_hosted = [i for i in expected_gui if not re.search(owner_selector, i)]
+    summary = {**summary, "hosted-gui": len(expected_hosted), "owner-gui": len(expected_owner)}
+    if leg == "owner-gui":
+        return args + ["--filter", owner_selector], expected_owner, summary
+    return args + ["--skip", selector, "--skip", owner_selector], expected_hosted, summary
 
 
 def verify(pkg: dict, expected: list[str], log: str, leg: str) -> list[str]:
@@ -166,7 +192,7 @@ def verify(pkg: dict, expected: list[str], log: str, leg: str) -> list[str]:
             errors.append(f"failed: {test_id}")
         if status == "skipped":
             rule = allowed.get(test_id.split(".", 1)[1])
-            if not rule or rule["leg"] != leg:
+            if not rule or rule["leg"] != ("gui" if leg in ("hosted-gui", "owner-gui") else leg):
                 errors.append(f"skipped without an allowed-skip entry for the {leg} leg: {test_id}")
     return errors
 
