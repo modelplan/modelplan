@@ -5,8 +5,8 @@ import {visualFixture} from '../visual-fixture.mjs';
 
 // Owner D73 (2026-11-08): a working subscription also gets a flame from its bell, on top of the mouth glow. The
 // reference is the study's task 66 plume (bells.css @ 9f881788) at about half its height and faint (owner 10-26:
-// "一半都够了 ... 隐约有一点就好了"): it starts 3.5 px into the mouth, spans the inner mouth (bell width x 0.9033),
-// is min((34 - 3.5) / 2, len x 0.8) px long, is masked by the released mouth-plume-mask.png, and is coloured by the
+// "一半都够了 ... 隐约有一点就好了"): it starts at the mouth (bell width x 0.05574), spans the inner mouth (bell width
+// x 0.9033), is min((34 - top) / 2, len x 0.8) px long, is masked by the released mouth-plume-mask.png, and is coloured by the
 // subscription's quota state (--fuel) like the glow. It steps with the study's timing (--fd, steps(1,end),
 // alternate), is still under Reduce Motion, and stops while hidden or with the shutter closed. Idle bells and
 // empty slots have no flame.
@@ -38,10 +38,12 @@ test('D73 a working bell has a faint half-height flame on top of its mouth glow;
  expect(rest.every(b=>b.plume===null)).toBe(true);
  const {bell,plume,fd}=work[0];
  expect(plume.display).toBe('block');
- expect(plume.top-bell.top).toBeCloseTo(3.5,0);
+ // Measured on the study as composed (task 66 CSS at half): top 6.7, width 108.4, height 13.6 for a 120 px bell.
+ const top=bell.w*.05574;
+ expect(plume.top-bell.top).toBeCloseTo(top,0);
  expect(plume.w).toBeCloseTo(bell.w*.9033,0);
  // 120 t/s -> len 24: half of the study's min(30.5, 38.4) = 15.25.
- expect(plume.h).toBeCloseTo((34-3.5)/2,0);
+ expect(plume.h).toBeCloseTo(Math.min((34-top)/2,24*.8),0);
  expect(plume.mask).toContain('assets/bells/mouth-plume-mask.png');
  expect(plume.paint).toMatch(/gradient/);
  // Faint (owner 10-26): the paint is held at half strength whatever the flicker step.
