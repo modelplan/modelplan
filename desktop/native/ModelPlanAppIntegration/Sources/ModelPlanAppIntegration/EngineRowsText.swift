@@ -40,4 +40,5 @@ extension EngineRowsText {
     static let sizeMedium = SettingsText("Medium", "中")
     static let sizeLarge = SettingsText("Large", "大")
     static let help = SettingsText("Help", "说明")
+    static let closeWindow = SettingsText("Close Window", "关闭窗口")
 }

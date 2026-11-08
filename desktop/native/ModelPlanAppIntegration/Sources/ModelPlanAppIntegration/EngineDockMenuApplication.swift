@@ -41,6 +41,7 @@ struct StatusNoticePresentation {
         item.keyEquivalent = ""
         return item
     }()
+    private let applicationCloseItem = NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
     private let applicationQuitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     private(set) lazy var applicationMenu: NSMenu = {
         let root = NSMenu()
@@ -48,7 +49,7 @@ struct StatusNoticePresentation {
         let submenu = NSMenu()
         submenu.autoenablesItems = false
         submenu.addItem(applicationSettingsItem)
-        submenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
+        submenu.addItem(applicationCloseItem)
         submenu.addItem(.separator())
         submenu.addItem(applicationQuitItem)
         application.submenu = submenu
@@ -695,6 +696,7 @@ struct StatusNoticePresentation {
         applicationSettingsItem.isEnabled = available && !terminating
         applicationSettingsItem.keyEquivalent = applicationSettingsItem.isEnabled ? "," : ""
         applicationQuitItem.title = quitTitle
+        applicationCloseItem.title = EngineRowsText.closeWindow.value(language)
         let showAvailability = ShowQuotaWidgetRequest.availability(paused: terminating,
             loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight)
         // Owner HIG decision (11-06): one checkable item with a constant title. The checkmark

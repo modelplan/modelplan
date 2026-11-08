@@ -114,6 +114,9 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
         if case .userInitiated = origin { activate() }
         guard current == request, canPresent() else { return }
         surface.show(paneID: paneID)
+        // The first activation ran while the app was still an accessory; once Settings has made it a regular app
+        // (menu bar, Dock icon) activate again on the next turn so the menu bar and window really come forward.
+        if case .userInitiated = origin { await Task.yield(); guard current == request else { return }; activate() }
     }
 
     /// Lifecycle loss retires pending requests; resumption never opens Settings without a new user action.

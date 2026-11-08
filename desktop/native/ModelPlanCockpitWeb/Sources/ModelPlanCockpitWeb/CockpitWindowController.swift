@@ -717,9 +717,21 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// Context menu "Reset position": a dragged-out cockpit goes back under the menu bar icon.
   public func resetPosition() { snapHome() }
-  /// Context menu "Help": shows the page's Option help map (Esc or a click dismisses it).
+  /// Context menu "Help": shows the page's Option help map (Esc or a click dismisses it). The page shows
+  /// it only while it is the key window, so a cockpit that is not key is made key first and the page is
+  /// given a moment to learn it.
   public func showHelpMap() {
-    guard bridge.ready, let web else { return }
+    guard bridge.ready, web != nil, let window else { return }
+    if window.isKeyWindow { dispatchHelpMap(); return }
+    window.makeKeyAndOrderFront(nil)
+    Task { @MainActor [weak self] in
+      for _ in 0..<10 where self?.window?.isKeyWindow != true { try? await Task.sleep(for: .milliseconds(30)) }
+      try? await Task.sleep(for: .milliseconds(150)) // visibility reaches the page by message
+      self?.dispatchHelpMap()
+    }
+  }
+  private func dispatchHelpMap() {
+    guard !ending, bridge.ready, let web else { return }
     web.callAsyncJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Alt'}))", arguments: [:], in: nil, in: .page, completionHandler: nil)
   }
   /// Returns a dragged-out cockpit to the menu bar anchor (drag snap, or Reset position).
