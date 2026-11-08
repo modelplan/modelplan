@@ -63,6 +63,26 @@ import XCTest
         XCTAssertEqual(editor.snapshot?.preferences.theme, .night)
         controller.close()
     }
+    /// Build 13 owner review (ledger: none): "Request sent to the app" stayed under the heading until the next edit.
+    /// A confirmation line clears itself once it has been shown for a few seconds.
+    func testRequestFeedbackClearsItself() async throws {
+        let editor = SettingsEditor(store: try store())
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare()
+        let saved = SettingsWindowController.feedbackDuration
+        SettingsWindowController.feedbackDuration = .milliseconds(60)
+        addTeardownBlock { SettingsWindowController.feedbackDuration = saved }
+        func statusField() throws -> NSTextField {
+            func walk(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(walk) }
+            return try XCTUnwrap(walk(try XCTUnwrap(controller.window?.contentView)).first { $0.accessibilityIdentifier() == "settings.status" } as? NSTextField)
+        }
+        controller.showFeedback(.requested)
+        XCTAssertFalse(try statusField().isHidden)
+        XCTAssertFalse(try statusField().stringValue.isEmpty, "the confirmation shows first")
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertTrue(try statusField().stringValue.isEmpty, "and clears itself")
+    }
+
     func testReplacedSubscriptionPopupCannotCommitForStillPresentID() async throws {
         var context = SettingsPageContext()
         context.subscriptions = [.init(id: "sample", name: .init("Sample", "示例"))]

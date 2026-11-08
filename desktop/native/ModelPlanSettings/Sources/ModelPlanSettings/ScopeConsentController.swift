@@ -345,6 +345,23 @@ public struct FirstRunTool: Sendable, Equatable {
         let states = entry.scopes.compactMap { id in facts?.scopes.first { $0.scope == id }?.state }
         return !states.allSatisfy { $0 == .denied }
     }
+    /// Settings: a tool reads when every standard path of it is read (explicitly allowed or on by default).
+    public func isToolReading(_ tool: String) -> Bool {
+        guard let entry = firstRunTools.first(where: { $0.tool == tool }), entry.canRead else { return false }
+        return entry.scopes.allSatisfy { isReading($0) }
+    }
+    /// Settings: turn a whole tool on or off with one confirmed choice (the same grant the first-run Done sends).
+    @discardableResult public func requestToolChoice(_ tool: String, on: Bool) -> ScopeConsentConfirmation? {
+        guard canMutate, let facts, let entry = firstRunTools.first(where: { $0.tool == tool && $0.canRead }) else { return nil }
+        var allow: [String] = [], deny: [String] = []
+        for id in entry.scopes {
+            guard let scope = facts.scopes.first(where: { $0.scope == id }) else { continue }
+            if on { if scope.state != .allowed { allow.append(id) } } else if scope.state != .denied { deny.append(id) }
+        }
+        guard !allow.isEmpty || !deny.isEmpty else { return nil }
+        let value = ScopeConsentConfirmation(id: UUID(), intent: .init(mutation: .choose(allow: allow, deny: deny, keychain: [])))
+        phase = .confirmation(value); changed(); return value
+    }
     public func chooseFirstRunTool(_ tool: String, chosen: Bool) {
         guard canMutate, firstRunTools.contains(where: { $0.tool == tool && $0.canRead }) else { return }
         firstRunToolChoices[tool] = chosen; changed()

@@ -145,6 +145,35 @@ private actor G345Engine: EngineClient {
         XCTAssertFalse(views(try find("scope.firstRun.row.zai", in: window, as: NSView.self)).compactMap { ($0 as? NSTextField)?.stringValue }.contains("ZC"))
     }
 
+    /// Build 13 owner review (ledger: none): Settings listed every reading path of every tool, so Codex appeared
+    /// twice, each with three buttons and a leftover status line. It follows the first-run list instead: one row per
+    /// tool with its mark, what is read and why a tool is not read; paths and saved permissions are behind a disclosure.
+    func testSettingsListsOneRowPerToolLikeTheFirstRunList() async throws {
+        let (app, _) = try await launch(locale: "en-US")
+        let settings = app.scopeConsentEntry.view
+        let controller = app.scopeConsentEntry.controller
+        func ids(prefix: String) -> [String] { views(settings).compactMap { $0 as? NSButton }.map { $0.accessibilityIdentifier() }.filter { $0.hasPrefix(prefix) } }
+        XCTAssertEqual(ids(prefix: "scope.settings.tool."), ["scope.settings.tool.claude", "scope.settings.tool.codex", "scope.settings.tool.cursor", "scope.settings.tool.zai"],
+                       "every detected tool once, Codex included")
+        XCTAssertEqual(ids(prefix: "scope.revoke.") + ids(prefix: "scope.forget.") + ids(prefix: "scope.allow."), [], "no per-path buttons until the paths are shown")
+        for tool in ["claude", "codex", "cursor", "zai"] {
+            XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "scope.mark." + tool }, "\(tool) has its mark")
+        }
+        let box = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.codex" } as? NSButton)
+        XCTAssertEqual(box.state, .on, "a default-on tool shows on")
+        XCTAssertTrue(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.status.zai" } as? NSTextField).stringValue.contains("nothing is read"))
+        // Turning a tool off is one confirmed choice for all of its paths.
+        XCTAssertNotNil(controller.requestToolChoice("codex", on: false)) // what the box sends when pressed
+        guard case .confirmation(let confirmation) = controller.phase else { return XCTFail("a tool toggle asks for confirmation") }
+        XCTAssertEqual(confirmation.intent.denyIDs, ["codex.local_history", "codex.runtime_usage"])
+        XCTAssertEqual(views(settings).compactMap { ($0 as? NSTextField)?.stringValue }.filter { $0 == "Codex" }.count, 1, "the confirmation names the tool once")
+        controller.cancelConfirmation()
+        // The paths and their saved-permission buttons are still reachable.
+        XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "scope.details.toggle" })
+        settings.setPathDetailsExpanded(true)
+        XCTAssertFalse(ids(prefix: "scope.revoke.").isEmpty, "the disclosure shows the paths")
+    }
+
     func testFirstRunListsDetectedToolsAndDoneSendsTheChoices() async throws {
         let (app, engine) = try await launch(locale: "en-US")
         let window = try await firstRun(app)
@@ -207,6 +236,7 @@ private actor G345Engine: EngineClient {
         XCTAssertTrue(try text("scope.firstRun.status.claude", in: window).hasPrefix("未登录"))
         XCTAssertTrue(try text("scope.firstRun.reads.claude", in: window).contains("钥匙串"))
         // Settings > Data & Privacy states the same reason on the tool's paths (G3-38 A).
+        app.scopeConsentEntry.view.setPathDetailsExpanded(true) // the per-path rows sit behind a disclosure
         let settings = views(app.scopeConsentEntry.view)
         let status = try XCTUnwrap(settings.first { $0.accessibilityIdentifier() == "scope.status.claude.account_usage.saved_login" } as? NSTextField)
         XCTAssertTrue(status.stringValue.hasPrefix("未登录 Claude Code"), status.stringValue)
