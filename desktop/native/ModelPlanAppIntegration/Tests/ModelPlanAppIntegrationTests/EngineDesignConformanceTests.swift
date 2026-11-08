@@ -93,6 +93,32 @@ import ModelPlanEngineClient
         XCTAssertTrue(collapsed.preferences.showDock, "Auto-Collapse never turns the widget off")
         dock.close();restarted.composition.dock.close()
     }
+    /// The widget and status menus both offer Reset Position and run the same reset; the standard app menu
+    /// (shown only while Settings is open) carries Settings, Close Window and Quit with their shortcuts.
+    func testWidgetAndStatusMenusOfferResetPositionAndTheAppMenuHasCloseWindow() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let store=try SettingsStore(url:root.appendingPathComponent("settings.json"))
+        let entry=app(store);var resets=0
+        entry.resetCockpitPosition={ resets+=1 }
+        try await store.update { $0.language = .english };await entry.prepare();entry.allowDockPresentation()
+        let dock=entry.composition.dock.menu()
+        let widgetIndex=try XCTUnwrap(dock.items.firstIndex { $0.title == "Reset Position" })
+        dock.performActionForItem(at:widgetIndex)
+        let status=try XCTUnwrap(entry.liveStatusMenu)
+        let statusIndex=try XCTUnwrap(status.items.firstIndex { $0.title == "Reset Position" })
+        status.performActionForItem(at:statusIndex)
+        XCTAssertEqual(resets,2,"both menus return the cockpit under the icon")
+        let application=try XCTUnwrap(entry.applicationMenu.items.first?.submenu)
+        let close=try XCTUnwrap(application.items.first { $0.keyEquivalent == "w" })
+        XCTAssertEqual(close.title,"Close Window")
+        try await store.update { $0.language = .chinese };await entry.prepare()
+        XCTAssertEqual(close.title,"关闭窗口","the app menu follows the app language")
+        try await store.update { $0.language = .english };await entry.prepare()
+        XCTAssertEqual(close.keyEquivalent,"w");XCTAssertEqual(close.action,#selector(NSWindow.performClose(_:)))
+        XCTAssertTrue(application.items.contains { $0.keyEquivalent == "q" && $0.action == #selector(NSApplication.terminate(_:)) })
+        entry.composition.dock.close()
+    }
     func testMenusFollowSettingsLanguageAndSpecOrder() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:root) }
@@ -105,7 +131,7 @@ import ModelPlanEngineClient
                 // Owner HIG decision 11-06: [Auto-Collapse ✓, Settings…] — [Quit ModelPlan]; no Hide item, no shortcuts (D37).
                 let dock=entry.composition.dock.menu().items
                 let dockTitles=dock.map { $0.isSeparatorItem ? "—" : $0.title }
-                let group=[en ? "Auto-Collapse" : "自动收起",en ? "Settings…" : "设置…","—",en ? "Quit ModelPlan" : "退出 ModelPlan"]
+                let group=[en ? "Auto-Collapse" : "自动收起",en ? "Settings…" : "设置…",en ? "Reset Position" : "重置位置","—",en ? "Quit ModelPlan" : "退出 ModelPlan"]
                 XCTAssertEqual(dockTitles,enabled ? [en ? "Open Cockpit" : "打开驾驶舱","—"]+group : group)
                 XCTAssertFalse(dockTitles.contains { $0.contains("Hide") || $0.contains("隐藏") || $0.contains("Close") || $0.contains("关闭") })
                 let toggle=try XCTUnwrap(dock.first { $0.title == (en ? "Auto-Collapse" : "自动收起") })
@@ -118,7 +144,7 @@ import ModelPlanEngineClient
                 XCTAssertEqual(quit.keyEquivalent,"")
                 XCTAssertTrue(dock.allSatisfy { $0.keyEquivalent.isEmpty }, "no item in the widget menu carries a shortcut")
                 let titles=try XCTUnwrap(entry.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
-                XCTAssertEqual(Array(titles.suffix(7)),en ? ["Website","Methodology","Privacy","Help…","Settings…","About ModelPlan","Quit ModelPlan"]:["网站","方法论","隐私","说明…","设置…","关于 ModelPlan","退出 ModelPlan"])
+                XCTAssertEqual(Array(titles.suffix(8)),en ? ["Website","Methodology","Privacy","Help…","Settings…","Reset Position","About ModelPlan","Quit ModelPlan"]:["网站","方法论","隐私","说明…","设置…","重置位置","关于 ModelPlan","退出 ModelPlan"])
                 XCTAssertFalse(titles.contains { $0.contains(" / ") })
             }
             entry.composition.dock.close()
