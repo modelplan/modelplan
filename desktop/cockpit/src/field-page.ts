@@ -5,6 +5,7 @@
 // Low Power Mode (spike 11-08, D63): the page cannot read it, so native passes it in the payload and through `power`
 // on every change. Low power or Reduce Motion mounts the scene quiet; it always renders on demand only.
 // Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) for behaviour; the code is written here.
+import {layoutFieldAxes} from './field-axes.js';
 import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
 
 interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly lowPower?:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null}
@@ -19,7 +20,7 @@ const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:s
 const webgl=()=>{try{return !!document.createElement('canvas').getContext('webgl2');}catch{return false;}};
 
 function mount(root:HTMLElement) {
- let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,reduceMotion=false,lowPower=false,quiet=false,launches=0;
+ let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,reduceMotion=false,lowPower=false,quiet=false,launches=0,stopAxes=()=>{};
  const bar=el('header','field-bar'),stage=el('div','ov-porthole field-stage'),list=el('div','field-list');
  const close=el('button','field-close');close.type='button';close.onclick=()=>post({type:'close'});
  const mineKey=el('button','field-preset'),allKey=el('button','field-preset'),count=el('span','field-count');mineKey.type=allKey.type='button';
@@ -36,14 +37,14 @@ function mount(root:HTMLElement) {
  };
  const preset=(ids:readonly string[])=>{chosen=new Set(ids.slice(0,FIELD_LIMIT));refresh();};
  mineKey.onclick=()=>preset(mine.length?mine:models.map(m=>m.id));allKey.onclick=()=>preset(models.map(m=>m.id));search.oninput=refresh;
- const fallback=(text:string)=>{stage.replaceChildren(el('p','nogl',text));};
+ const fallback=(text:string)=>{stopAxes();stage.replaceChildren(el('p','nogl',text));};
  for(const type of ['pointerdown','keydown','wheel'])root.addEventListener(type,()=>post({type:'activity'}),{passive:true});
  window.addEventListener('keydown',e=>{if(e.key==='Escape')post({type:'close'});});
 
  // Builds a fresh scene host and mounts the reserved scene into it; a newer launch or dispose wins. Disposing a scene
  // forces its context loss, and the scene reports that loss as a failure afterwards: only the current launch may fall back.
  async function launch() {
-  const w=words[language],launch=++launches;
+  stopAxes();const w=words[language],launch=++launches;
   const host=el('div','r1-field p2-field'),canvas=el('div','wb-canvas'),plates=el('div','wb-plates'),voyage=el('div','wb-voyage');
   host.append(canvas,document.createElementNS('http://www.w3.org/2000/svg','svg'),plates,voyage);host.children[1]!.setAttribute('class','wb-leaders');stage.replaceChildren(host);
   const url='../runtime/field-scene/cockpit-scene.bundle.js';
@@ -52,6 +53,7 @@ function mount(root:HTMLElement) {
   const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;quiet=reduceMotion||lowPower;
   scene=mountWorkbenchField(host,{models:flown,focus,quiet,showPath:true,language,onDemand:true,noIntro:true,
    onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{if(disposed||launch!==launches)return;scene=null;fallback(w.noGl);}});
+  if(scene)stopAxes=layoutFieldAxes(host);
   scene.renderFor?.(1400);refresh();
  }
  return {
@@ -73,7 +75,7 @@ function mount(root:HTMLElement) {
   stats():FieldStats|null {
    const s=scene?.stats?.();return scene?{lowPower,quiet,frames:s?.frames??0,scheduled:!!s?.scheduled}:null;
   },
-  dispose(){disposed=true;scene?.dispose();scene=null;root.replaceChildren();},
+  dispose(){disposed=true;stopAxes();scene?.dispose();scene=null;root.replaceChildren();},
  };
 }
 const root=document.getElementById('field');

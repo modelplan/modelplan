@@ -1010,6 +1010,17 @@ func ThreadOrigin(path string) string {
 	return originOf(meta.Source)
 }
 
+// CodexBackgroundThread: the thread's own log says Codex started it by itself (a subagent, an
+// internal guardian or review), not the user. Only the log's first line is read; a thread whose
+// log is not found is taken as the user's.
+func CodexBackgroundThread(home, thread string) bool {
+	if home == "" || clip(thread) == "" || thread != clip(thread) {
+		return false
+	}
+	p := findThread(filepath.Join(home, "sessions"), thread)
+	return p != "" && background(ThreadOrigin(p), "")
+}
+
 // Background: a thread Codex runs by itself (subagent reviews, internal guardians, auto review),
 // not the user's own work.
 func Background(origin, model string) bool { return background(origin, model) }
