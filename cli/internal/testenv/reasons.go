@@ -17,7 +17,7 @@ import (
 // accidental identity implementation of ReaderErrorCode must not weaken tests.
 func ReaderReasonCode(value string) bool {
 	switch value {
-	case "policy_pending", "file_missing", "file_unreadable", "parse_error", "schema_changed", "http_401", "http_403", "http_429", "http_5xx", "network", "timeout", "runtime_missing", "unsupported_login", "other":
+	case "policy_pending", "file_missing", "file_unreadable", "parse_error", "schema_changed", "http_401", "http_403", "http_429", "http_5xx", "network", "timeout", "runtime_missing", "unsupported_login", "not_signed_in", "other":
 		return true
 	default:
 		return false

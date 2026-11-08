@@ -67,12 +67,14 @@ import ModelPlanWire
         XCTAssertFalse(scopeView.isHiddenOrHasHiddenAncestor)
         XCTAssertFalse(scopeView === first.scopeConsentEntry.view, "First run must not steal the Settings view")
         XCTAssertTrue(first.scopeConsentEntry.controller.selectedIDs.isEmpty, "Restoration must not select or grant any scope")
-        // G3-19 / D27 (owner 11-06): standard readers are on by default with no prompt. A fresh profile's
-        // first-run sheet shows one line — what is read and where to turn it off — and no per-reader boxes.
-        XCTAssertTrue(try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.") }.isEmpty,
-                      "the first-run sheet has no per-reader choices")
+        // G3-45 (owner 11-08) supersedes the G3-19 one-line notice: the page lists each detected tool
+        // with a checkbox, checked by default when it can be read (D27 keeps standard readers on), and
+        // no per-path controls. Browser sessions and unrecognised paths are not offered here.
+        let toolBoxes = try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.") }
+        XCTAssertEqual(Set(toolBoxes.map { $0.accessibilityIdentifier() }), ["scope.firstRun.tool.codex", "scope.firstRun.tool.cursor"],
+                       "one checkbox per detected tool and nothing else")
+        XCTAssertTrue(toolBoxes.allSatisfy { $0.state == .on }, "readable tools start checked")
         let notice = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.firstRun.notice" } as? NSTextField)
-        XCTAssertTrue(notice.stringValue.contains("Codex"), notice.stringValue)
         XCTAssertTrue(notice.stringValue.contains("Settings › Data & Privacy"), notice.stringValue)
         XCTAssertTrue(first.scopeConsentEntry.controller.isOnByDefault("codex.local_history"))
         XCTAssertFalse(first.scopeConsentEntry.controller.isOnByDefault("cursor.browser_session"), "browser sessions ask when first needed")
@@ -188,7 +190,7 @@ import ModelPlanWire
         XCTAssertFalse(firstRunWindow.isVisible)
         XCTAssertTrue(scopeView.arrangedSubviews.isEmpty, "Closing first run retires its presentation")
         let grantsAfterDone = await syntheticClient.grantCount()
-        XCTAssertEqual(grantsAfterDone, 0, "Completing first run must not implicitly authorize selected scopes")
+        XCTAssertEqual(grantsAfterDone, 1, "Done sends the page's choices once, as the one first-run consent (G3-45)")
         XCTAssertFalse(first.scopeConsentEntry.view.arrangedSubviews.isEmpty, "Settings retains its separate consent view")
         XCTAssertEqual(cockpitButton.accessibilityLabel(), "打开驾驶舱")
         let chineseMenu = try XCTUnwrap(first.liveStatusMenu)

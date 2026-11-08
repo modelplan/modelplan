@@ -99,36 +99,48 @@ private actor D41Engine: EngineClient {
         return try XCTUnwrap(try app.composition.dock.cardContent(for: member))
     }
 
-    func testAllowIsTheOnlyThingThatSendsTheKeychainGrant() async throws {
+    /// G3-45 (owner 11-08) replaced the first-run Allow/Later line with the tool list: Claude Code's
+    /// row says macOS may ask once for the Keychain, and Done with the row checked is the consent.
+    /// Presenting the page still asks nothing of the system.
+    func testDoneWithClaudeCheckedIsTheOnlyThingThatSendsTheKeychainGrant() async throws {
         let (app, engine) = try await launch(keychain: "unset")
         let sheet = try app.scopeConsentEntry.makeFirstRunView(language: .english)
         show(sheet)
-        let line = try XCTUnwrap(view("scope.firstRun.keychain", in: sheet) as? NSTextField)
+        let line = try XCTUnwrap(view("scope.firstRun.reads.claude", in: sheet) as? NSTextField)
         XCTAssertTrue(line.stringValue.contains("Keychain") && line.stringValue.contains("Always Allow"), line.stringValue)
+        let box = try XCTUnwrap(view("scope.firstRun.tool.claude", in: sheet) as? NSButton)
+        XCTAssertEqual(box.state, .on, "a readable tool starts checked")
+        XCTAssertNil(view("scope.keychain.allow", in: sheet), "no separate Keychain button on the first-run page")
         let grantsBefore = await engine.recorded()
         XCTAssertTrue(grantsBefore.isEmpty, "presenting the sheet asks nothing of the system")
-        let allow = try XCTUnwrap(view("scope.keychain.allow", in: sheet) as? NSButton)
-        XCTAssertEqual(allow.title, "Allow reading")
-        allow.performClick(nil)
-        var grants = [WireConsentGrantParams]()
-        for _ in 0..<300 where grants.isEmpty { grants = await engine.recorded(); try await Task.sleep(for: .milliseconds(10)) }
+        let committed = await app.scopeConsentEntry.controller.commitFirstRunChoices()
+        XCTAssertTrue(committed)
+        let grants = await engine.recorded()
         XCTAssertEqual(grants.count, 1)
         XCTAssertEqual(grants.first?.allow, [Self.scope])
+        XCTAssertEqual(grants.first?.deny, [])
         XCTAssertEqual(grants.first?.keychain?[Self.scope], .allow)
         let actions = await engine.userActions()
         XCTAssertEqual(actions, 1, "the grant carries the user's action, which is what admits the foreground read")
     }
 
-    func testLaterRecordsNothingAndLeavesTheStandingState() async throws {
+    /// Unchecking Claude Code refuses it: no Keychain read is requested and the standing state stays visible.
+    func testUncheckedClaudeIsRefusedWithoutAKeychainRequest() async throws {
         let (app, engine) = try await launch(keychain: "unset")
         let sheet = try app.scopeConsentEntry.makeFirstRunView(language: .english)
         show(sheet)
-        (try XCTUnwrap(view("scope.keychain.later", in: sheet) as? NSButton)).performClick(nil)
-        for _ in 0..<100 where view("scope.firstRun.keychain", in: sheet) != nil { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertNil(view("scope.firstRun.keychain", in: sheet), "Later closes the question")
-        XCTAssertFalse(app.scopeConsentEntry.controller.asksForKeychainOnFirstRun)
+        (try XCTUnwrap(view("scope.firstRun.tool.claude", in: sheet) as? NSButton)).performClick(nil)
+        for _ in 0..<100 where app.scopeConsentEntry.controller.isFirstRunToolChosen("claude") { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(app.scopeConsentEntry.controller.isFirstRunToolChosen("claude"))
+        XCTAssertEqual((try XCTUnwrap(view("scope.firstRun.tool.claude", in: sheet) as? NSButton)).state, .off)
+        let before = await engine.recorded()
+        XCTAssertTrue(before.isEmpty, "unchecking records nothing until Done")
+        _ = await app.scopeConsentEntry.controller.commitFirstRunChoices()
         let grants = await engine.recorded()
-        XCTAssertTrue(grants.isEmpty, "Later records nothing and starts no read")
+        XCTAssertEqual(grants.count, 1)
+        XCTAssertEqual(grants.first?.allow, [])
+        XCTAssertEqual(grants.first?.deny, [Self.scope])
+        XCTAssertTrue(grants.first?.keychain?.isEmpty != false, "a refused tool starts no Keychain read")
         XCTAssertNotNil(view("scope.keychain.needed", in: app.scopeConsentEntry.view), "Data & Privacy states the need")
         XCTAssertNotNil(view("scope.keychain.allow", in: app.scopeConsentEntry.view), "with the same button")
         let content = try card(app)
