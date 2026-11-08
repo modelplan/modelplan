@@ -171,7 +171,7 @@ private actor G350Engine: EngineClient {
             if var windows = copy["windows"] as? [[String: Any]], !windows.isEmpty {
                 windows[0]["remainingPercent"] = [0, 62, 76][order % 3]; windows[0]["role"] = "weekly"; windows[0]["durationSeconds"] = 604800
                 windows[0]["limitKey"] = "weekly"; windows[0]["poolKey"] = "main"; windows[0]["current"] = true; windows[0]["observedAt"] = observed
-                windows[0]["resetsAt"] = weeklyReset; windows[0]["validUntil"] = "2099-01-01T00:00:00Z"
+                windows[0]["resetsAt"] = weeklyReset; windows[0]["validUntil"] = weeklyReset
                 windows[0].removeValue(forKey: "modelScope")
                 copy["windows"] = [windows[0]]; copy["route"] = "runtime_rpc"; copy["observedAt"] = observed
             }
