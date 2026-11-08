@@ -676,3 +676,20 @@ test("data-sync: guanbear's own PR and any other PR keep today's rules", () => {
   assert.match(r.why, /not a trusted same-repository PR/);
   assert.equal(R.dataSyncRunId(pr({ user: { login: "someone", id: 5 }, head: { sha: H, ref: "data/sync-1-2", repo: { full_name: "modelplan/modelplan" } } })), null);
 });
+
+test("an action_required run never ran: it is skipped when picking the latest run, so it cannot fail or pass a head", () => {
+  const held = (path, id) => run(path, "action_required", id, "completed", { head_branch: `data/sync-0.5.21-${RUN_ID}` });
+  const checks = syncChecks();
+  // A data-sync PR: newer pull_request runs held for approval next to the executed dispatched runs.
+  const r = evalSync({ runs: [...checks, held(".github/workflows/ci.yml", 50), held(".github/workflows/repo-checks.yml", 51)] });
+  assert.equal(r.state, R.SUCCESS, r.why);
+  // Only held runs: nothing executed, so pending, never success.
+  const only = evalSync({ runs: [held(".github/workflows/ci.yml", 50), held(".github/workflows/repo-checks.yml", 51)] });
+  assert.equal(only.state, R.PENDING, only.why);
+  assert.equal(evalPr({ comments: [comment(v("merge"))], runs: [run(".github/workflows/ci.yml", "action_required", 5)] }).state, R.PENDING, "ordinary PR too");
+  // A held run newer than an executed failure does not hide the failure.
+  const failed = evalSync({ runs: [{ ...checks[0], conclusion: "failure", id: 3 }, checks[1], held(".github/workflows/ci.yml", 60)] });
+  assert.equal(failed.state, R.FAILURE, failed.why);
+  assert.equal(R.ciState([run(".github/workflows/ci.yml", "failure", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.FAILURE);
+  assert.equal(R.ciState([run(".github/workflows/ci.yml", "success", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.SUCCESS);
+});
