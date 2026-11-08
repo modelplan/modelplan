@@ -11,7 +11,19 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
     func hide()
 }
 
+/// While Settings is open the app is a regular app (Dock icon, standard main menu, so Command-comma, -W and -Q
+/// work); with Settings closed it is an accessory again: no Dock icon and no app menu.
+@MainActor final class SettingsAppPresence {
+    private let apply: (NSApplication.ActivationPolicy) -> Void
+    private(set) var isRegular = false
+    init(apply: @escaping (NSApplication.ActivationPolicy) -> Void = { NSApplication.shared.setActivationPolicy($0) }) { self.apply = apply }
+    func settingsOpened() { guard !isRegular else { return }; isRegular = true; apply(.regular) }
+    func settingsClosed() { guard isRegular else { return }; isRegular = false; apply(.accessory) }
+}
+
 @MainActor private final class NativeSettingsWindowSurface: SettingsWindowSurface {
+    private let presence = SettingsAppPresence()
+    private var closeObserver: NSObjectProtocol?
     private let controller: SettingsWindowController
     init(editor: SettingsEditor, environment: @escaping @MainActor () -> SettingsEnvironment, scopeConsentEntry: ScopeConsentEntry?) {
         controller = SettingsWindowController(editor: editor, environmentProvider: environment, scopeConsentEntry: scopeConsentEntry)
@@ -19,10 +31,16 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
     func prepare() async { await controller.prepare() }
     func show(paneID: String?) {
         if let paneID { controller.selectPane(paneID) }
+        presence.settingsOpened()
         controller.showWindow(nil)
+        if closeObserver == nil, let window = controller.window {
+            closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.presence.settingsClosed() }
+            }
+        }
         controller.window?.makeKeyAndOrderFront(nil)
     }
-    func hide() { controller.window?.orderOut(nil) }
+    func hide() { controller.window?.orderOut(nil); presence.settingsClosed() }
 }
 
 /// Retain one per app. All Settings entry points share the existing application editor and one lazy window.

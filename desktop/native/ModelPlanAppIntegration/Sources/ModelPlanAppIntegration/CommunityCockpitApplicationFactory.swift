@@ -101,6 +101,9 @@ import ModelPlanDock
             if prewarms { owner.startPrewarm(applied: { [weak application] in application?.composition.latestSettings }) }
         }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
+        owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
+        owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
+        application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
         return application
     }
 }
@@ -116,6 +119,21 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
+    /// Right-click menu hooks, set by the factory beside `settings`.
+    var setSize: ((SettingsSize) -> Void)?
+    var currentSize: (() -> SettingsSize?)?
+    weak var currentPage: CockpitWindowController?
+    private var contextMenu: CockpitContextMenu?
+    /// The cockpit's own right-click menu: Settings…, Reset Position, Quota Widget Size, Help.
+    func makeContextMenu(page: CockpitWindowController?) -> NSMenu {
+        let menu = CockpitContextMenu(language: appearance.locale == .en ? .english : .chinese, size: currentSize?(),
+            actions: .init(settings: { [weak self] in self?.settings?() },
+                           resetPosition: { [weak page] in page?.resetPosition() },
+                           help: { [weak page] in page?.showHelpMap() },
+                           setSize: { [weak self] in self?.setSize?($0) }))
+        contextMenu = menu
+        return menu.menu
+    }
     /// The one way a cockpit website link leaves the app; tests read the URL instead of a browser.
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
@@ -185,6 +203,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
+        currentPage = page
+        page.contextMenuProvider = { [weak self, weak page] in self?.makeContextMenu(page: page) }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
         #endif

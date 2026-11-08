@@ -48,6 +48,7 @@ struct StatusNoticePresentation {
         let submenu = NSMenu()
         submenu.autoenablesItems = false
         submenu.addItem(applicationSettingsItem)
+        submenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
         submenu.addItem(.separator())
         submenu.addItem(applicationQuitItem)
         application.submenu = submenu
@@ -189,6 +190,7 @@ struct StatusNoticePresentation {
         composition.dock.cockpitEntryEnabled = self.cockpitEntryEnabled
         composition.dock.menuNoticeDidChange = { [weak self] notice, first in self?.applyMenuNotice(notice, first: first) }
         composition.dock.showSettings = settingsHost.action
+        composition.dock.resetPosition = { [weak self] in self?.resetPositions() }
         composition.dock.showConsole = { [weak self] in self?.showConsole() }
     }
     private func updateMemberRefreshCapability() {
@@ -749,6 +751,8 @@ struct StatusNoticePresentation {
             .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
                   action: available ? { [weak self] in self?.showHelp(fromStatusMenu: true) } : nil),
             .init(title: settingsTitle, keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
+            .init(title: EngineRowsText.resetPosition.value(language), accessibilityID: "status.resetPosition",
+                  action: available ? { [weak self] in self?.resetPositions() } : nil),
             .init(title: EngineRowsText.about.value(language), action: available ? { [weak self] in self?.showAbout() } : nil),
             .init(title: quitTitle, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
@@ -888,6 +892,37 @@ struct StatusNoticePresentation {
         else { hideFeedback = currentOutcome == .ready ? nil : currentOutcome }
         if currentOutcome == .ready && shown { composition.dock.revealForUser() }
         renderMenu()
+    }
+    /// Set by the cockpit factory: returns a dragged-out cockpit under the menu bar icon.
+    var resetCockpitPosition: (() -> Void)?
+    /// "Reset Position" (widget and status menus): the cockpit goes back under the icon and the widget
+    /// returns to the default along-edge position. Edge and display choices are kept.
+    func resetPositions() {
+        guard !terminating, !lifecyclePaused else { return }
+        resetCockpitPosition?()
+        Task { @MainActor [weak self] in
+            guard let self, !self.terminating else { return }
+            await self.commitBounded(.dockPosition(SettingsPreferences().dockAlongFraction))
+        }
+    }
+    /// The cockpit menu's Quota Widget Size choice: the same stored setting as Settings.
+    func setWidgetSize(_ size: SettingsSize) async {
+        guard !terminating, !lifecyclePaused else { return }
+        await commitBounded(size)
+    }
+    private func commitBounded(_ edit: SettingsB21Edit) async {
+        for _ in 0..<ShowQuotaWidgetRequest.attemptLimit {
+            guard !terminating, settings.editor.snapshot != nil else { return }
+            do { _ = try await settings.editor.commit(edit); return }
+            catch { await settings.editor.reload() }
+        }
+    }
+    private func commitBounded(_ size: SettingsSize) async {
+        for _ in 0..<ShowQuotaWidgetRequest.attemptLimit {
+            guard !terminating, settings.editor.snapshot != nil else { return }
+            do { _ = try await settings.editor.commit(SettingsB20Edit.size(size)); return }
+            catch { await settings.editor.reload() }
+        }
     }
     @objc private func showConsoleMenu() { showConsole() }
     @objc private func openPublicLink(_ sender:NSMenuItem) {
