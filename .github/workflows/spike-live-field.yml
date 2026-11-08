@@ -1,0 +1,69 @@
+# Measurement spike only (cockpit-full-v1, 2026-11-08). Runs on pushes to its own branch; never on main.
+name: Spike live field measurement
+on:
+  push:
+    branches: [spike/live-field-1108]
+permissions:
+  contents: read
+concurrency:
+  group: spike-live-field
+  cancel-in-progress: true
+jobs:
+  measure:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build the official cockpit bundle
+        run: |
+          npm ci --prefix desktop/cockpit --ignore-scripts --no-audit --no-fund
+          npm run build:official --prefix desktop/cockpit
+          cp desktop/native/tools/live-field-spike/spike-harness.html desktop/native/tools/live-field-spike/spike-harness.js desktop/cockpit/.tmp/official/
+          ls desktop/cockpit/.tmp/official/runtime/field-scene
+      - name: Build the driver app
+        run: |
+          set -eux
+          app=$RUNNER_TEMP/LiveFieldSpike.app
+          mkdir -p $app/Contents/MacOS
+          swiftc -O -o $app/Contents/MacOS/LiveFieldSpike desktop/native/tools/live-field-spike/LiveFieldSpike.swift
+          cat > $app/Contents/Info.plist <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>LiveFieldSpike</string>
+          <key>CFBundleIdentifier</key><string>ai.modelplan.spike.livefield</string>
+          <key>CFBundleName</key><string>LiveFieldSpike</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>LSMinimumSystemVersion</key><string>15.0</string>
+          <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          EOF
+          codesign -s - --force $app
+      - name: Machine
+        run: |
+          sw_vers; sysctl -n machdep.cpu.brand_string hw.ncpu hw.memsize
+          system_profiler SPDisplaysDataType | head -40
+          pmset -g || true
+          ioreg -r -d 1 -w 0 -c IOAccelerator | grep -E 'Utilization|IOClass|model' | head -20 || true
+      - name: Run A (normal power)
+        run: python3 desktop/native/tools/live-field-spike/sample.py $RUNNER_TEMP/LiveFieldSpike.app desktop/cockpit/.tmp/official $RUNNER_TEMP/out/A-normal --plan full
+      - name: Run B (Low Power Mode)
+        continue-on-error: true
+        run: |
+          sudo pmset -a lowpowermode 1 || true
+          pmset -g | grep -i -E 'lowpower|powermode' || echo "lowpowermode key not reported"
+          python3 desktop/native/tools/live-field-spike/sample.py $RUNNER_TEMP/LiveFieldSpike.app desktop/cockpit/.tmp/official $RUNNER_TEMP/out/B-lowpower --plan lpm
+          sudo pmset -a lowpowermode 0 || true
+      - name: Report
+        if: always()
+        run: |
+          python3 desktop/native/tools/live-field-spike/report.py $RUNNER_TEMP/out/* | tee $RUNNER_TEMP/out/report.md
+          cat $RUNNER_TEMP/out/report.md >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-field-spike
+          path: ${{ runner.temp }}/out
