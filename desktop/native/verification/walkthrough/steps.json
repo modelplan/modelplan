@@ -686,7 +686,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -742,7 +743,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -775,7 +777,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1045,7 +1048,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1209,7 +1213,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:label:ModelPlan Cockpit"
+        "crop": "window-of:label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1254,7 +1259,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:label:ModelPlan Cockpit"
+        "crop": "window-of:label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {

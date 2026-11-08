@@ -47,6 +47,10 @@ class FakeHost:
     def capture(self, path, rect=None):
         Path(path).write_bytes(b"png")
 
+    def capture_window(self, path, window_id):
+        self.calls.append(("capture_window", window_id))
+        Path(path).write_bytes(b"png")
+
     def sleep(self, seconds):
         self.clock += seconds
 
@@ -176,6 +180,17 @@ class Steps(unittest.TestCase):
         self.assertEqual(record["status"], "pass")
         for key in ("file", "crop", "tree"):
             self.assertTrue((self.out / record[key]).exists())
+
+    def test_window_shot_captures_the_smallest_window_holding_the_target(self):
+        host = FakeHost({"windows": [{"frame": [0, 0, 900, 900], "children": [{"id": "x", "frame": [110, 110, 20, 20]}]}]},
+                        windows=[{"id": 7, "onScreen": True, "bounds": [0, 0, 900, 900]},
+                                 {"id": 9, "onScreen": True, "bounds": [100, 100, 300, 300]},
+                                 {"id": 11, "onScreen": False, "bounds": [105, 105, 50, 50]}])
+        step = {"id": "s", "title": "t", "expected": "e", "shot": {"window": "ax:x"}}
+        record = walker(host, self.out, [step]).walk_steps()[0]
+        self.assertIn(("capture_window", 9), host.calls)
+        self.assertEqual(record["window"]["bounds"], [100, 100, 300, 300])
+        self.assertTrue((self.out / record["window"]["file"]).exists())
 
     def test_a_failed_action_is_still_photographed_and_blocks_dependents(self):
         steps = [{"id": "a", "title": "t", "expected": "e", "actions": [{"op": "click", "target": "ax:gone"}]},

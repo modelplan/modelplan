@@ -169,6 +169,11 @@ class Host:
             command.append("-R%d,%d,%d,%d" % tuple(round(v) for v in rect))
         subprocess.run(command + [str(path)], check=True, timeout=30)
 
+    def capture_window(self, path, window_id):
+        """One window by its CGWindow number, without its shadow (-o). The PNG keeps the window's alpha, so a clear
+        window shows as transparent and an opaque backing does not; the visual comparison lane reads this."""
+        subprocess.run(["screencapture", "-x", "-o", "-l%d" % window_id, str(path)], check=True, timeout=30)
+
     def run(self, command, env, stdin=None, timeout=120):
         return subprocess.run(command, env=env, input=stdin, capture_output=True, text=True, timeout=timeout)
 
@@ -506,6 +511,14 @@ class Walkthrough:
             if stats["colours"] < MIN_COLOURS or stats["dominantShare"] > MAX_DOMINANT:
                 raise WalkthroughError("blank render: %d colours, %.2f dominant" % (stats["colours"], stats["dominantShare"]))
 
+    def window_holding(self, frame):
+        """The smallest on-screen window of the app whose bounds contain the centre of `frame`."""
+        cx, cy = frame[0] + frame[2] / 2, frame[1] + frame[3] / 2
+        found = [win for win in self.windows() if win.get("onScreen") and win.get("bounds")
+                 and win["bounds"][0] <= cx <= win["bounds"][0] + win["bounds"][2]
+                 and win["bounds"][1] <= cy <= win["bounds"][1] + win["bounds"][3]]
+        return min(found, key=lambda win: win["bounds"][2] * win["bounds"][3], default=None)
+
     def run_step(self, index, step):
         name = "%02d-%s" % (index, step["id"])
         record = {"step": step["id"], "title": step["title"], "expected": step["expected"],
@@ -546,6 +559,14 @@ class Walkthrough:
                 self.host.capture(self.out / (name + ".crop.png"), node["frame"])
                 record["crop"] = name + ".crop.png"
                 self.crops[step["id"]] = record["crop"]
+        window = step.get("shot", {}).get("window")
+        if window:
+            # The app window that holds the target, captured alone with its alpha (visual comparison evidence).
+            node = resolve(tree, window)
+            shot = node and self.window_holding(node["frame"])
+            if shot is not None:
+                self.host.capture_window(self.out / (name + ".window.png"), shot["id"])
+                record["window"] = {"file": name + ".window.png", "bounds": shot["bounds"], "target": node["frame"]}
         if not reasons:
             for check in step.get("checks", []):
                 try:
