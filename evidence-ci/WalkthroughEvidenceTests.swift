@@ -40,7 +40,16 @@ import ModelPlanCockpitWeb
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.regular)
         var page: CockpitWindowController?
-        CommunityCockpitApplicationFactory.verificationPage = { page = $0 }
+        // The test process's status item is never laid out in the hosted runner's menu bar (its frame stays at
+        // y = -23), so the page gets a synthetic placement under where the icon would be. Placement is not
+        // what this evidence shows; the click path, the toggle and the widget are.
+        CommunityCockpitApplicationFactory.verificationPage = { controller in
+            page = controller
+            if let screen = NSScreen.main {
+                let usable = screen.visibleFrame
+                controller.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.maxX - 260, y: usable.maxY, width: 22, height: 22))
+            }
+        }
         defer { CommunityCockpitApplicationFactory.verificationPage = nil }
         let entry = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "walkthrough-evidence",
             allowedEnvironment: ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C"], offline: true, readOnly: true),
