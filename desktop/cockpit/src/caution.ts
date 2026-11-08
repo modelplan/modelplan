@@ -6,13 +6,13 @@
 // - AMBER: a quota forecast to run out before its reset while still above T (cockpitForecastV1). An engine
 //   that does not negotiate it creates no amber condition.
 // - Public reset announcements/confirmations, lower-effort advice, extra resets expiring within 48 hours and stale
-//   (retained) readings are list-only (blue); they never light the lamp. Credits being drawn, peak hours and
+//   (retained) readings are list-only (blue); they never light the lamp. Credits being drawn and
 //   non-reset official notices have no producer field yet, so they are not listed.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
 import {currentWindow,runOutMinutes} from './prototype-data-adapter.js';
 import {tables} from '../study/rocket-r1/i18n.js';
-import {relativeMoment} from '../study/rocket-r1/mfd-pages/fmt.js';
+import {relativeMoment,dhm} from '../study/rocket-r1/mfd-pages/fmt.js';
 import '../study/rocket-r1/strings/common.js';
 import '../study/rocket-r1/strings/mfd.js';
 
@@ -72,6 +72,17 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   const n=(cards.items??[]).filter(c=>{const at=c.expiresAt?Date.parse(c.expiresAt):NaN;return Number.isFinite(at)&&at>now&&at-now<=48*3600e3;}).length;
   if(!n)continue;
   list.push({id:JSON.stringify(['cards',m.key,n]),level:'blue',member:m.key,text:{en:`${m.row.name.en} · ${n} ${n===1?'reset expires':'resets expire'} within 48 hours`,zh:`${m.row.name.zh} · 重置次数中有 ${n} 次将在 48 小时内到期`}});
+ }
+ // D63: a declared plan's published peak-rate window (cockpitPeaksV1), from the same time-of-day windows the CLI's
+ // advice reads. Blue and list-only; a peak already over is not listed.
+ for(const peak of data.details?.peaks??[]){
+  const m=members.find(x=>x.row.id===peak.rowId),start=Date.parse(peak.startsAt),end=peak.endsAt?Date.parse(peak.endsAt):NaN;
+  if(!m||!Number.isFinite(start)||(Number.isFinite(end)&&end<=now))continue;
+  const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['peak',peak.rowId,peak.startsAt]);
+  if(start<=now){list.push({id,level:'blue',member:m.key,text:{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
+  const wait=(start-now)/60000;
+  if(Number.isFinite(end))list.push({id,level:'blue',member:m.key,text:both('alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
+  else list.push({id,level:'blue',member:m.key,text:{en:`${s('en')} peak in ${dhm(wait)}`,zh:`${s('zh-CN')} ${dhm(wait)} 后进入高峰`}});
  }
  lamp.sort((a,b)=>a.remaining-b.remaining||a.resetAt-b.resetAt);
  // CKP-MFD-27 (study core.js alerts): on a red quota, each running session of that subscription above its model's
