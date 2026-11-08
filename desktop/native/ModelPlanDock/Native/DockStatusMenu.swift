@@ -124,13 +124,18 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         // text, so the dot ends at the icon's right edge instead and stays with the icon.
         if !button.title.isEmpty, button.image != nil,
            button.imagePosition == .imageLeading || button.imagePosition == .imageLeft,
-           let icon = button.cell?.imageRect(forBounds: bounds), !icon.isEmpty,
-           icon.maxX - side >= bounds.minX, icon.maxX < bounds.maxX {
-            frame = NSRect(x: icon.maxX - side, y: top, width: side, height: side)
-            autoresizingMask = [.maxXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
-        } else {
-            frame = NSRect(x: max(bounds.minX, bounds.maxX - side), y: top, width: side, height: side)
-            autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+           let cell = button.cell {
+            // Read-only on the real cell, never a copy: NSCell.copy() shares unretained internals (the image) with the button,
+            // and releasing the copy over-released the button's image (crash in the next renderMenu, build 14).
+            // The rect is computed from the width the content needs, not the button's current frame.
+            let content = NSRect(x: bounds.minX, y: bounds.minY, width: ceil(cell.cellSize.width), height: bounds.height)
+            let icon = cell.imageRect(forBounds: content)
+            if !icon.isEmpty, icon.maxX - side >= bounds.minX, icon.maxX < content.maxX {
+                frame = NSRect(x: icon.maxX - side, y: top, width: side, height: side)
+                autoresizingMask = [.maxXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+                if superview !== button { button.addSubview(self) }
+                return
+            }
         }
         if superview !== button { button.addSubview(self) }
     }
