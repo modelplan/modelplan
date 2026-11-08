@@ -717,7 +717,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// Context menu "Reset position": a dragged-out cockpit goes back under the menu bar icon.
   public func resetPosition() { snapHome() }
-  /// Context menu "Help": shows the page's Option help map (Esc or a click dismisses it). The page shows
+  /// Context menu "Help…": shows the page's Option help map (Esc or a click dismisses it). The page shows
   /// it only while it is the key window, so a cockpit that is not key is made key first and the page is
   /// given a moment to learn it.
   public func showHelpMap() {

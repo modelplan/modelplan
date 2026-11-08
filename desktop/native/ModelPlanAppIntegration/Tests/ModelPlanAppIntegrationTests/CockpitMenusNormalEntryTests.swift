@@ -82,7 +82,7 @@ extension CommunityCockpitEntryTests {
         try await withComposedCockpit { entry, page, settings in
             let window = try XCTUnwrap(page.window)
             let menu = try XCTUnwrap(page.contextMenuProvider?(), "the composed cockpit supplies its own right-click menu")
-            XCTAssertEqual(titles(menu), ["Settings…", "Reset Position", "Quota Widget Size", "—", "Help"])
+            XCTAssertEqual(titles(menu), ["Settings…", "Reset Position", "Quota Widget Size", "—", "Help…"])
             let sizes = try XCTUnwrap(menu.items[2].submenu)
             XCTAssertEqual(sizes.items.map(\.title), ["Small", "Medium", "Large"])
             XCTAssertEqual(sizes.items.map(\.state), [.off, .on, .off], "the stored size (Medium by default) is checked")

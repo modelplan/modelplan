@@ -128,8 +128,8 @@ private actor G1BEngine: EngineClient {
         XCTAssertGreaterThan(statusTitles.count, 1)
         XCTAssertGreaterThanOrEqual(dockTitles.count, 3)
         XCTAssertEqual(statusTitles, expected)
-        // Owner HIG decision 11-06: the widget menu is [✓自动收起, 设置…] — [退出 ModelPlan]; no Hide.
-        XCTAssertEqual(dockTitles, ["自动收起", "设置…", "退出 ModelPlan"])
+        // Owner HIG decision 11-06: the widget menu is [✓自动收起, 设置…, 重置位置] — [退出 ModelPlan]; no Hide.
+        XCTAssertEqual(dockTitles, ["自动收起", "设置…", "重置位置", "退出 ModelPlan"])
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         let english = try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
         XCTAssertGreaterThan(english.count, 1)

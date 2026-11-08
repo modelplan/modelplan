@@ -14,8 +14,8 @@ import ModelPlanSettings
 
     func testCockpitMenuItemsFollowTheAppLanguage() throws {
         let english = menu(.english) { _ in }.menu, chinese = menu(.chinese) { _ in }.menu
-        XCTAssertEqual(titles(english), ["Settings…", "Reset Position", "Quota Widget Size", "—", "Help"])
-        XCTAssertEqual(titles(chinese), ["设置…", "重置位置", "额度挂件大小", "—", "说明"])
+        XCTAssertEqual(titles(english), ["Settings…", "Reset Position", "Quota Widget Size", "—", "Help…"])
+        XCTAssertEqual(titles(chinese), ["设置…", "重置位置", "额度挂件大小", "—", "说明…"])
         XCTAssertEqual(try XCTUnwrap(english.items[2].submenu).items.map(\.title), ["Small", "Medium", "Large"])
         XCTAssertEqual(try XCTUnwrap(chinese.items[2].submenu).items.map(\.title), ["小", "中", "大"])
         XCTAssertTrue(english.items.allSatisfy { $0.keyEquivalent.isEmpty })

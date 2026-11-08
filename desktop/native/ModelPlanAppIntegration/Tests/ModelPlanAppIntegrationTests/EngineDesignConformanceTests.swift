@@ -128,7 +128,7 @@ import ModelPlanEngineClient
             for language in [SettingsLanguage.chinese,.english] {
                 try await store.update { $0.language=language };await entry.prepare();entry.allowDockPresentation()
                 let en=language == .english
-                // Owner HIG decision 11-06: [Auto-Collapse ✓, Settings…] — [Quit ModelPlan]; no Hide item, no shortcuts (D37).
+                // Owner HIG decision 11-06: [Auto-Collapse ✓, Settings…, Reset Position] — [Quit ModelPlan]; no Hide item, no shortcuts (D37).
                 let dock=entry.composition.dock.menu().items
                 let dockTitles=dock.map { $0.isSeparatorItem ? "—" : $0.title }
                 let group=[en ? "Auto-Collapse" : "自动收起",en ? "Settings…" : "设置…",en ? "Reset Position" : "重置位置","—",en ? "Quit ModelPlan" : "退出 ModelPlan"]
