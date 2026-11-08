@@ -1,1 +1,1 @@
-At night the cockpit again shows its plain metal shell, its rounded hull and side boosters, around the c01 canopy; it had been switched off while waiting for hull art that is not part of this release.
+At night the cockpit now draws its hull as in the design: the r3 hull walls and aft plate around the canopy, with nothing drawn around the hull, so the desktop shows through beside and below it.

@@ -81,6 +81,17 @@ if (official) {
   }
   await cp(resolve(strip,'SOURCES.md'),resolve(output,'assets/SOURCES.md'));
   css+='\n'+stripCss.toString('utf8');
+  // D68: the r3 hull's plain plates (owner 2026-11-08), each checked against the reserved-visuals registry.
+  const hull=resolve(assets,'cockpit/hull'),hullFiles=[];
+  for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const h of [890,640])for(const d of ['1x','2x'])hullFiles.push(`${part}-${h}-${d}.png`);
+  await mkdir(resolve(output,'assets/hull'),{recursive:true});
+  for(const name of hullFiles){
+    const bytes=await readFile(resolve(hull,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/hull/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit hull resource: '+name);
+    await writeFile(resolve(output,'assets/hull',name),bytes);
+  }
+  await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
+  css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});

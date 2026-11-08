@@ -107,3 +107,15 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 #cockpit .ck-tape{pointer-events:auto}
 #cockpit .dk-fad .fd-ch.xhl .fd-indicator{color:var(--lcd-ink)}
 #cockpit .ec.xhl,#cockpit .ek.xhl{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcd-ink) 40%,transparent)}
+
+/* D68 hull walls, measured on the opus-r7 study as composed (night, all four shapes): the c01 canopy is the crown,
+   and below it one continuous plain wall runs from the canopy foot to the aft plate (22 px), tiled from 9 px; no
+   crown plate, cone band or record panel is drawn. The wall tile and the aft plate are the released r3 plain
+   plates of the official edition; the community edition has none and stays neutral. */
+#cockpit{--hull-wall-top:216px;--hull-clip-top:216px}
+:root[data-profile="compact"] #cockpit{--hull-wall-top:48px;--hull-clip-top:48px}
+:root #cockpit[data-shell="closed"]{--hull-wall-top:30px;--hull-clip-top:36px}
+:root[data-theme="night"] #cockpit .ck-shell :is(.hull-crown,.hull-cone,.hull-lower,.hull-record){display:none}
+:root[data-theme="night"] #cockpit .ck-shell .hull-upper{top:var(--hull-wall-top);bottom:22px;height:auto;background-image:var(--hull-lower);background-size:636px 32px;background-position:50% 9px;background-repeat:repeat-y}
+:root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(var(--hull-clip-top) 16px 22px)}
+:root[data-theme="night"] #cockpit .ck-deck::before{left:0;right:0;clip-path:inset(0)}

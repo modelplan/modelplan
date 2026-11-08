@@ -5,7 +5,7 @@ import {visualFixture} from '../visual-fixture.mjs';
 import {firstPixel} from '../png-pixel.mjs';
 
 // CKP-SHELL-25 (owner 11-08 review): around the hull everything is transparent; only the hull, the canopy and the
-// base row are drawn. Pixels left and right of the hull and its side boosters (x 3..633) and in the reserve corners have alpha 0 on the page
+// base row are drawn. Pixels beside the canopy, above it, and in the base reserve outside the bells have alpha 0 on the page
 // the native window shows (the window and web view are clear).
 for(const [tier,canvas] of [['tall',911],['compact',661]])for(const closed of [false,true])
 test(`CKP-SHELL-25 ${tier}${closed?' closed':''}: nothing is painted outside the hull silhouette`,async({page})=>{
@@ -18,7 +18,10 @@ test(`CKP-SHELL-25 ${tier}${closed?' closed':''}: nothing is painted outside the
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
  await page.waitForTimeout(200);
  const outside=[];
- for(const y of [20,Math.round(root*.3),Math.round(root*.6),root-20,root+4,height-3])for(const x of [0,1,634,635])outside.push([x,y]);
+ // D68 r3 silhouette (measured): the canopy narrows toward the top, the walls fill the width from the canopy foot to
+ // the aft plate, and the base reserve is clear except for the bells.
+ const wallTop=closed?30:(tier==='tall'?216:48);
+ for(const x of [0,1,634,635]){outside.push([x,2],[x,root+3],[x,height-3]);if(wallTop>=48)outside.push([x,Math.round(wallTop/2)]);}
  for(const [x,y] of outside){
   const [,,,alpha]=firstPixel(await page.screenshot({clip:{x,y,width:1,height:1},omitBackground:true}));
   expect(alpha,`alpha at ${x},${y}`).toBe(0);
