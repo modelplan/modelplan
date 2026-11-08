@@ -112,3 +112,22 @@ test('D63 a focused rocket outside my models joins the field and takes the focus
  await expect(page.locator('.field-count')).toHaveText('3/10');
  await expect(page.locator('.field-row',{hasText:'Synthetic 7'}).locator('input')).toBeChecked();
 });
+// CKP-PORT-13 (D63): "Full fleet on the website ↗". The page never sends a URL: it names the flown public model IDs
+// and native builds the modelplan.ai address (prototype website-updates/links.js fleetUrl, the site's focus query).
+test('CKP-PORT-13 the website link names the flown fleet and the host builds the address',async({page})=>{
+ await page.addInitScript(()=>{window.sent=[];});
+ await open(page);
+ await page.evaluate(()=>{const post=window.webkit.messageHandlers.field.postMessage;window.webkit.messageHandlers.field.postMessage=m=>{window.sent.push(JSON.parse(m));post(m);};});
+ await show(page,payload());
+ const link=page.locator('.field-website');await expect(link).toHaveText('Full fleet on the website ↗');
+ await link.click();
+ const website=await page.evaluate(()=>window.sent.filter(m=>m.type==='website'));
+ expect(website).toEqual([{type:'website',models:['m1','m2']}]);
+ await page.locator('.field-preset',{hasText:'All'}).click();await link.click();
+ expect((await page.evaluate(()=>window.sent.filter(m=>m.type==='website'))).at(-1).models).toHaveLength(10);
+ expect(await page.locator('.field-website[href]').count()).toBe(0);
+});
+test('CKP-PORT-13 Chinese link text',async({page})=>{
+ await open(page);await show(page,payload(3,{language:'zh'}));
+ await expect(page.locator('.field-website')).toHaveText('在网站上看完整舰队 ↗');
+});

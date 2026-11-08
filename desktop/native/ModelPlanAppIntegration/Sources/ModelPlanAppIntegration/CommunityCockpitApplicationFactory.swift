@@ -216,6 +216,7 @@ struct CockpitUnavailableNotice {
     private func openField(focusName:String?=nil) {
         guard let bundle=owner.verifiedBundle else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
+        panel.onWebsite={ [owner] url in owner.openWebsite(url) }
         guard let payload=fieldPayload(lowPower:panel.isLowPower,focusName:focusName) else { return }
         fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
     }

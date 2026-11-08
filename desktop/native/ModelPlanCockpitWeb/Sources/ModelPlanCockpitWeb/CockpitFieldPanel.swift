@@ -36,6 +36,8 @@ import WebKit
   /// Test seam: where the panel's scripts go; the page's web view when nil.
   var scriptSink: ((String) -> Void)?
   public var onClosed: (() -> Void)?
+  /// CKP-PORT-13: opens the website's fleet view; the host decides how (the default browser).
+  public var onWebsite: (@MainActor (URL) -> Void)?
   public private(set) var isOpen = false
   public init(
     bundle: VerifiedCockpitBundle, idleSeconds: TimeInterval = CockpitFieldPanel.defaultIdleSeconds,
@@ -103,6 +105,8 @@ import WebKit
     switch type {
     case "loaded": pageLoaded = true; deliver()
     case "activity": renewIdle()
+    case "website":
+      if let models = message["models"] as? [String], let url = Self.fleetURL(models: models) { onWebsite?(url) }
     case "close", "failed": close()
     default: break
     }
@@ -118,6 +122,17 @@ import WebKit
   }
   private func run(_ script: String) {
     if let scriptSink { scriptSink(script) } else { webView?.evaluateJavaScript(script, completionHandler: nil) }
+  }
+  /// The website's fleet view for these public model IDs (the site's `focus` query: `[\w:.-]{1,96}`, comma separated).
+  /// The page never sends an address; anything else is refused.
+  public static func fleetURL(models: [String]) -> URL? {
+    let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_:.-")
+    guard (1...10).contains(models.count),
+      models.allSatisfy({ (1...96).contains($0.count) && $0.allSatisfy(allowed.contains) }) else { return nil }
+    var parts = URLComponents()
+    parts.scheme = "https"; parts.host = "modelplan.ai"; parts.path = "/"
+    parts.queryItems = [URLQueryItem(name: "focus", value: models.joined(separator: ","))]
+    return parts.url
   }
   private func deliver() {
     guard let payload, let encoded = try? JSONEncoder().encode(payload),

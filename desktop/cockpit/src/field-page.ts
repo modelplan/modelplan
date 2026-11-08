@@ -12,8 +12,8 @@ interface Scene {update(models:readonly FieldModel[],focus:string|null,path?:boo
 export interface FieldStats {readonly lowPower:boolean;readonly quiet:boolean;readonly frames:number;readonly scheduled:boolean}
 declare global {interface Window {modelPlanField?:{show(raw:string):boolean;power(lowPower:boolean):boolean;stats():FieldStats|null;dispose():void}}}
 
-const words={en:{close:'Close',mine:'Mine',all:'All',search:'Search models',noGl:'The 3D view needs WebGL, which is not available here.',empty:'No published models yet.'},
- zh:{close:'关闭',mine:'我的',all:'全部',search:'搜索模型',noGl:'3D 视图需要 WebGL，当前不可用。',empty:'暂无已发布模型。'}} as const;
+const words={en:{website:'Full fleet on the website ↗',close:'Close',mine:'Mine',all:'All',search:'Search models',noGl:'The 3D view needs WebGL, which is not available here.',empty:'No published models yet.'},
+ zh:{website:'在网站上看完整舰队 ↗',close:'关闭',mine:'我的',all:'全部',search:'搜索模型',noGl:'3D 视图需要 WebGL，当前不可用。',empty:'暂无已发布模型。'}} as const;
 const post=(message:Record<string,unknown>)=>(window.webkit?.messageHandlers as Record<string,{postMessage(m:string):void}>|undefined)?.field?.postMessage(JSON.stringify(message));
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
 const webgl=()=>{try{return !!document.createElement('canvas').getContext('webgl2');}catch{return false;}};
@@ -24,7 +24,9 @@ function mount(root:HTMLElement) {
  const close=el('button','field-close');close.type='button';close.onclick=()=>post({type:'close'});
  const mineKey=el('button','field-preset'),allKey=el('button','field-preset'),count=el('span','field-count');mineKey.type=allKey.type='button';
  const search=el('input','field-search');search.type='search';
- bar.append(mineKey,allKey,search,count,close);root.append(bar,stage,list);
+ // CKP-PORT-13: the page names the flown public IDs; native builds the modelplan.ai address and opens it.
+ const website=el('button','field-website');website.type='button';website.onclick=()=>post({type:'website',models:fleet().map(m=>m.id)});
+ bar.append(mineKey,allKey,search,count,website,close);root.append(bar,stage,list);
  const fleet=()=>fieldFleet(models,chosen);
  const refresh=()=>{
   const flown=fleet();if(focus===null||!flown.some(m=>m.id===focus))focus=flown[0]?.id??null;
@@ -57,7 +59,7 @@ function mount(root:HTMLElement) {
  return {
   async show(value:Show) {
    language=value.language;const w=words[language];document.documentElement.lang=language==='en'?'en':'zh-CN';
-   close.textContent='×';close.setAttribute('aria-label',w.close);mineKey.textContent=w.mine;allKey.textContent=w.all;search.placeholder=w.search;search.setAttribute('aria-label',w.search);
+   website.textContent=w.website;close.textContent='×';close.setAttribute('aria-label',w.close);mineKey.textContent=w.mine;allKey.textContent=w.all;search.placeholder=w.search;search.setAttribute('aria-label',w.search);
    reduceMotion=value.reduceMotion;lowPower=value.lowPower===true;
    models=value.models.flatMap(m=>{const f=fieldModel(m);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
    chosen=new Set((mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT));
