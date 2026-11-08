@@ -51,7 +51,7 @@ test('both editions have reproducible bounded manifests; community excludes rese
     assert.equal(provenance.fixtureAudit.copied,false);
     for(const name of Object.keys(manifest.files)){
       assert.doesNotMatch(name,/workbench-data|three[.]/i);
-      const brands=['openai-white','claude-rounded','zhipu','x-white','qwen','deepseek','kimi-white','minimax','gemini','xiaomi'].map(mark=>`assets/brands/${mark}.svg`);
+      const brands=['openai-white','claude-rounded','claude','zhipu','x-white','qwen','deepseek','kimi-white','minimax','gemini','xiaomi'].map(mark=>`assets/brands/${mark}.svg`);
       if(name.endsWith('.svg'))assert.ok(edition==='official'&&['assets/detach.svg','assets/put-back.svg',...brands].includes(name),`unapproved SVG: ${name}`);
       // Published U12 PNGs may join the verified pack; no runtime scene code.
       if(name.startsWith('runtime/')&&name!==scene)assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
