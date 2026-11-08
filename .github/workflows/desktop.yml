@@ -244,7 +244,7 @@ jobs:
       matrix:
         os:
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@6977264358154565359c26b6330ecbfd8231edff
     with:
       task: native
       os: ${{ matrix.os }}
@@ -260,7 +260,7 @@ jobs:
       matrix:
         os:
         - macos-15
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@a632ef2fc02008a8c79c95a067ae2a01220f2b31
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@6977264358154565359c26b6330ecbfd8231edff
     with:
       task: native
       os: ${{ matrix.os }}
@@ -269,14 +269,14 @@ jobs:
     name: native-headless (macos-latest)
     needs: queue-scope
     if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@6977264358154565359c26b6330ecbfd8231edff
     with:
       task: native-headless
       os: macos-latest
 
   runner-probe:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mac_ci_probe && github.actor_id == '11829005' }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@6977264358154565359c26b6330ecbfd8231edff
     with:
       task: ${{ inputs.mac_ci_probe_mode == 'gui' && 'gui-probe' || 'probe' }}
       os: macos-latest
