@@ -5,8 +5,9 @@
 //   "Credits being drawn" is red too, but no reader reports it yet, so it never appears here.
 // - AMBER: a quota forecast to run out before its reset while still above T (cockpitForecastV1). An engine
 //   that does not negotiate it creates no amber condition.
-// - Public reset announcements/confirmations, lower-effort advice and stale (retained) readings are list-only
-//   (blue); they never light the lamp.
+// - Public reset announcements/confirmations, lower-effort advice, extra resets expiring within 48 hours and stale
+//   (retained) readings are list-only (blue); they never light the lamp. Credits being drawn, peak hours and
+//   non-reset official notices have no producer field yet, so they are not listed.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
 import {currentWindow,runOutMinutes} from './prototype-data-adapter.js';
@@ -60,6 +61,17 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   const mid=e.schedule&&e.schedule.precision!=='date'&&Number.isFinite(from)?Number.isFinite(through)?(from+through)/2:from:null;
   const at=mid===null?null:Math.round(mid/(30*60000))*30*60000;
   list.push({id,level:'blue',member:m.key,text:at===null?both('mfd.alResetSoon',lang=>({s:s(lang)})):both('mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
+ }
+ // D63: extra resets (reset cards) that expire within 48 hours, one blue line per subscription. Personal facts are joined
+ // only through a verified reference, as the Subscription page joins them. List-only: they never light the lamp.
+ const verified=new Set(data.subscriptions.map(s=>s.subscriptionRef));
+ for(const m of members){
+  if(m.unstable||!verified.has(m.key))continue;
+  const details=data.details?.subscriptions.filter(s=>s.subscriptionRef===m.key)??[],cards=details.length===1?details[0]!.resetCards:null;
+  if(!cards||cards.state==='unknown')continue;
+  const n=(cards.items??[]).filter(c=>{const at=c.expiresAt?Date.parse(c.expiresAt):NaN;return Number.isFinite(at)&&at>now&&at-now<=48*3600e3;}).length;
+  if(!n)continue;
+  list.push({id:JSON.stringify(['cards',m.key,n]),level:'blue',member:m.key,text:{en:`${m.row.name.en} · ${n} ${n===1?'reset expires':'resets expire'} within 48 hours`,zh:`${m.row.name.zh} · 重置次数中有 ${n} 次将在 48 小时内到期`}});
  }
  lamp.sort((a,b)=>a.remaining-b.remaining||a.resetAt-b.resetAt);
  // CKP-MFD-27 (study core.js alerts): on a red quota, each running session of that subscription above its model's
