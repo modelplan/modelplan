@@ -2010,12 +2010,22 @@ struct DockHelpInteraction: Equatable {
                 sourceAndAge: row?.cardSourceAndAge(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? [:],
-                additionalRows: model?.presentationRows[id]?.cardAdditionalRows(at: now, english: preferences.language == .english) ?? [],
+                additionalRows: (model?.presentationRows[id]?.cardAdditionalRows(at: now, english: preferences.language == .english) ?? [])
+                    + Self.usedUpRows(projected, at: now, language: preferences.language),
                 links: currentCardSourceLinks(for: id, at: now),
                 enterLabel: (cardUsesSettings(id) ? EngineRowsText.contextSettings : EngineRowsText.cockpitAction).value(preferences.language),
                 dismissLabel: EngineRowsText.contextClose.value(preferences.language),
                 actionLabel: row?.actionLabel ?? "",
                 redBelow: effectiveRedBelow, at: now)
+    }
+    /// D65: one plain line per general window at 0 % (shown numbers only), under the readout.
+    static func usedUpRows(_ input: DockInstrumentInput, at now: Date, language: SettingsLanguage) -> [DockCardRow] {
+        input.windows.filter(\.isGeneral).compactMap { window in
+            guard DockInstrumentProjection.admittedRemaining(window, in: input, now: now) == 0 else { return nil }
+            let minutes = window.resetsAt.flatMap { $0 > now ? Int(($0.timeIntervalSince(now) / 60).rounded(.up)) : nil }
+            let text = EngineRowsText.quotaUsedUp(period: window.period, label: window.label, resetMinutes: minutes).value(language)
+            return DockCardRow(id: "usedUp:" + window.id, kind: .event, label: "", value: text, tone: .critical)
+        }
     }
     private func cardUsesSettings(_ id: String) -> Bool {
         purpose == .production || model?.presentationRows[id] != nil
