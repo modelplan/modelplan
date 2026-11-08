@@ -338,5 +338,53 @@ class Guard(unittest.TestCase):
                 w.run(args, FakeHost())
 
 
+class CrashReportRedactionTests(unittest.TestCase):
+    def sample(self):
+        header = {"app_name": "ModelPlan", "app_version": "1.0", "incident_id": "6F0E2C1A-1111-2222-3333-444455556666"}
+        body = {"procPath": "/Users/alice/Library/Developer/ModelPlan.app/Contents/MacOS/ModelPlan", "userID": 501,
+                "hostName": "alices-mbp.local", "crashReporterKey": "ABCDEF12-3456-7890-ABCD-EF1234567890",
+                "bundleInfo": {"CFBundleShortVersionString": "1.0", "CFBundleVersion": "14"},
+                "exception": {"type": "EXC_BAD_ACCESS", "signal": "SIGSEGV", "codes": "0x0000000000000001, 0x0000000000000000"},
+                "usedImages": [{"name": "ModelPlan", "path": "/Users/alice/ModelPlan.app/Contents/MacOS/ModelPlan",
+                                "uuid": "11111111-2222-3333-4444-555555555555"},
+                               {"name": "libsystem_kernel.dylib", "path": "/usr/lib/system/libsystem_kernel.dylib"}],
+                "faultingThread": 1,
+                "threads": [{"frames": [{"imageIndex": 1, "imageOffset": 1}]},
+                            {"frames": [{"imageIndex": 0, "imageOffset": 4096, "symbol": "Cockpit.draw", "symbolLocation": 12},
+                                        {"imageIndex": 1, "imageOffset": 77, "symbol": "mach_msg"}]}]}
+        return json.dumps(header) + "\n" + json.dumps(body)
+
+    def test_redacts_identifying_text_and_keeps_crashing_frames(self):
+        out = w.redact_crash_report(self.sample(), ["alice", "alices-mbp.local"])
+        text = json.dumps(out)
+        for leaked in ("alice", "/Users", "alices-mbp", "11111111-2222", "6F0E2C1A", "ABCDEF12", "procPath", "501"):
+            self.assertNotIn(leaked, text)
+        self.assertEqual(out["exceptionType"], "EXC_BAD_ACCESS")
+        self.assertEqual(out["appVersion"], "1.0")
+        self.assertEqual([f["symbol"] for f in out["frames"]], ["Cockpit.draw", "mach_msg"])
+        self.assertEqual(out["frames"][0]["image"], "ModelPlan")
+        self.assertEqual(out["frames"][0]["imageOffset"], 4096)
+
+    def test_scrub_text_removes_paths_uuids_and_names(self):
+        text = w.scrub_text("at /Users/bob/x/y.swift:3 id 11111111-2222-3333-4444-555555555555 host mac-1", ["bob", "mac-1"])
+        for leaked in ("/Users", "bob", "11111111", "mac-1"):
+            self.assertNotIn(leaked, text)
+
+    def test_keep_writes_only_redacted_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home, out = Path(tmp) / "alice", Path(tmp) / "out"
+            reports = home / "Library/Logs/DiagnosticReports"
+            reports.mkdir(parents=True)
+            out.mkdir()
+            (reports / (w.APP_EXECUTABLE + "-1.ips")).write_text(self.sample(), encoding="utf-8")
+            w.keep_crash_reports(home, [w.APP_EXECUTABLE + "-1.ips"], out)
+            files = list((out / "crash-reports").iterdir())
+            self.assertEqual([f.suffix for f in files], [".json"])
+            self.assertNotIn("alice", files[0].read_text(encoding="utf-8"))
+
+    def test_unparseable_report_leaves_no_raw_text(self):
+        self.assertIsNone(w.redact_crash_report("not json /Users/alice"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ from pathlib import Path
 import plistlib
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -839,15 +840,72 @@ def crash_reports(home):
     return sorted(p.name for p in reports.glob(APP_EXECUTABLE + "*")) if reports.is_dir() else []
 
 
+PATH_PATTERN = re.compile(r"(?:[A-Za-z]:\\|~?/)(?:[^\s\"'<>:,;()\[\]{}]+/)*[^\s\"'<>:,;()\[\]{}]*")
+UUID_PATTERN = re.compile(r"\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b")
+LONG_HEX_PATTERN = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
+
+
+def scrub_text(text, secrets=()):
+    """Replace anything that names the runner: absolute paths, UUIDs, long hex ids, and known user or host names."""
+    text = UUID_PATTERN.sub("<id>", str(text))
+    text = PATH_PATTERN.sub("<path>", text)
+    text = LONG_HEX_PATTERN.sub("<id>", text)
+    for secret in sorted({s for s in secrets if s and len(s) > 1}, key=len, reverse=True):
+        text = re.sub(re.escape(secret), "<redacted>", text, flags=re.IGNORECASE)
+    return text
+
+
+def redact_crash_report(raw, secrets=()):
+    """Reduce a macOS .ips crash report (a JSON header line, then a JSON body) to what diagnosis needs: the app
+    version, the exception type and code, and the crashed thread's frames as image name, symbol and offset.
+    Everything else is dropped, so paths, user and host names, ids, procPath and userID never get through; a
+    regex pass then scrubs what remains. Returns None when the report cannot be parsed."""
+    head, _, rest = raw.partition("\n")
+    try:
+        header, body = json.loads(head), json.loads(rest)
+    except ValueError:
+        try:
+            header, body = {}, json.loads(raw)
+        except ValueError:
+            return None
+    if not isinstance(body, dict):
+        return None
+    header = header if isinstance(header, dict) else {}
+    images = body.get("usedImages") or []
+    threads = body.get("threads") or []
+    index = body.get("faultingThread")
+    thread = threads[index] if isinstance(index, int) and 0 <= index < len(threads) else {}
+    frames = []
+    for frame in thread.get("frames") or []:
+        image = images[frame["imageIndex"]] if isinstance(frame.get("imageIndex"), int) and 0 <= frame["imageIndex"] < len(images) else {}
+        name = image.get("name") or Path(str(image.get("path", ""))).name
+        frames.append({"image": name, "symbol": frame.get("symbol"), "symbolLocation": frame.get("symbolLocation"),
+                       "imageOffset": frame.get("imageOffset")})
+    exception = body.get("exception") or {}
+    kept = {"appVersion": body.get("bundleInfo", {}).get("CFBundleShortVersionString") or header.get("app_version"),
+            "build": body.get("bundleInfo", {}).get("CFBundleVersion") or header.get("build_version"),
+            "exceptionType": exception.get("type"), "signal": exception.get("signal"),
+            "exceptionCodes": exception.get("codes"), "subtype": exception.get("subtype"),
+            "terminationReason": (body.get("termination") or {}).get("indicator"),
+            "crashedThreadName": thread.get("name") or thread.get("queue"), "frames": frames}
+    return json.loads(scrub_text(json.dumps(kept), secrets))
+
+
 def keep_crash_reports(home, names, out):
-    """Copy the app's crash reports next to the manifest: without them a crash on a hosted Mac leaves no trace.
-    The synthetic profile holds no account data; the report names only the runner's paths."""
+    """Keep a redacted summary of the app's crash reports next to the manifest: without it a crash on a hosted Mac
+    leaves no trace. The raw .ips is never copied, because it embeds absolute host paths, the session user name,
+    procPath, userID and host identifiers that must stay out of a public artifact (see the sessionUser note in run).
+    Each report becomes <name>.redacted.json, built by redact_crash_report from an allow-list of fields."""
     if not names:
         return
     target = out / "crash-reports"
     target.mkdir(exist_ok=True)
+    secrets = [home.name, os.environ.get("USER", ""), os.environ.get("LOGNAME", ""), socket.gethostname(),
+               socket.gethostname().split(".")[0]]
     for name in names:
-        shutil.copy2(home / "Library/Logs/DiagnosticReports" / name, target / name)
+        raw = (home / "Library/Logs/DiagnosticReports" / name).read_text(encoding="utf-8", errors="replace")
+        summary = redact_crash_report(raw, secrets) or {"unparsed": True}
+        (target / (Path(name).stem + ".redacted.json")).write_text(json.dumps(summary, indent=1, sort_keys=True), encoding="utf-8")
 
 
 def reader_rows(report):
