@@ -9,6 +9,8 @@
 // the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
 export const CONTEXT = "modelplan-gates";
+// The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
+export const REPO = "modelplan/modelplan";
 // Every lane posts through this account; anybody can comment on a public repo, so nothing else counts.
 // The numeric id is checked too, so a renamed or recycled login never inherits the trust.
 export const TRUSTED = Object.freeze({ login: "guanbear", id: 11829005 });
@@ -307,25 +309,44 @@ export function trainScenarioGap(pr, members) {
 }
 
 // ---- CI at one commit (merge-when.sh) ----
-// runs: Actions workflow runs whose head_sha is the commit. Only the newest run per workflow counts, so a
+// runs: Actions workflow runs whose head_sha is the commit. A head sha is not unique to us: a fork can open a PR
+// with the same head and produce its own runs, which the head_sha listing returns too. So only runs that
+// `scope` accepts count (prRunScope / queueRunScope below), and of those only the newest run per workflow, so a
 // superseded or re-triggered run never blocks. A run GitHub rejected at parse time (startup_failure) has no
-// jobs and is caught here too. statuses: commit statuses at the commit other than our own context.
+// jobs and is caught here too, and so is a cancelled run (a job past its timeout cancels the whole run): when
+// it is the newest run for the head, the head fails rather than waiting. statuses: commit statuses at the
+// commit other than our own context.
 const OK_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
-export function latestRuns(runs) {
+export function latestRuns(runs, scope = () => true) {
   const by = new Map();
   for (const r of runs) {
-    if (SELF_WORKFLOWS.includes(r.path)) continue;
+    if (SELF_WORKFLOWS.includes(r.path) || !scope(r)) continue;
     const prev = by.get(r.workflow_id);
     if (!prev || r.id > prev.id) by.set(r.workflow_id, r);
   }
   return [...by.values()];
 }
 
-export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW] } = {}) {
-  const latest = latestRuns(runs);
+// A PR head's runs: made in this repository (never a fork's run for the same sha) and owned by this PR. A
+// same-repository run lists its PRs; one that lists none (a manual run on the branch) must be on the PR's branch.
+export function prRunScope(pr) {
+  const repo = pr.base.repo.full_name;
+  return (r) => r.head_repository?.full_name === repo
+    && (r.pull_requests?.length ? r.pull_requests.some((p) => p.number === pr.number) : r.head_branch === pr.head.ref);
+}
+
+// A merge-group commit's runs: the queue's own merge_group runs in this repository.
+export function queueRunScope(repo) {
+  return (r) => r.head_repository?.full_name === repo && r.event === "merge_group"
+    && String(r.head_branch).startsWith("gh-readonly-queue/main/");
+}
+
+export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope } = {}) {
+  const latest = latestRuns(runs, scope);
   const failed = [], waiting = [];
   for (const r of latest) {
     if (r.status !== "completed") waiting.push(r.name);
+    else if (r.conclusion === "cancelled") failed.push(`${r.name} cancelled upstream (timed out or stopped; re-run it)`);
     else if (!OK_CONCLUSIONS.has(r.conclusion)) failed.push(`${r.name} ${r.conclusion}`);
   }
   for (const s of statuses) {
@@ -338,6 +359,12 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW] } = 
   if (missing.length) return { state: PENDING, why: `waiting for ${missing.join(", ")} to start` };
   if (waiting.length) return { state: PENDING, why: `running: ${waiting.join(", ")}` };
   return { state: SUCCESS, why: "checks green" };
+}
+
+// A finished cancelled run re-evaluates its PR only while its head is still the PR head; a run cancelled because
+// a newer push replaced it is skipped, since the newer head's own runs re-evaluate (#767).
+export function cancelledRunSuperseded(run, prHead) {
+  return run.conclusion === "cancelled" && run.head_sha !== prHead;
 }
 
 // ---- One PR head ----
@@ -388,7 +415,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
     if (g === "issues") return res(FAILURE, "GLMREV ISSUES at head", extra);
     if (g !== "ok") missing.push("GLMREV OK or ACCEPTED");
   }
-  const ci = ciState(runs, statuses);
+  const ci = ciState(runs, statuses, { scope: prRunScope(pr) });
   if (ci.state === FAILURE) return res(FAILURE, ci.why, extra);
   if (missing.length) return res(PENDING, `tier ${tier}: needs ${missing.join(", ")}`, extra);
   if (ci.state === PENDING) return res(PENDING, ci.why, extra);
@@ -397,15 +424,15 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 
 // ---- One merge-group commit ----
 // steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}}.
-// queueRuns/queueStatuses: CI on the group commit itself.
-export function evaluateGroup({ steps, queueRuns, queueStatuses = [] }) {
+// queueRuns/queueStatuses: CI on the group commit itself; repo: the repository whose queue runs count.
+export function evaluateGroup({ steps, queueRuns, queueStatuses = [], repo = REPO }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
   for (const s of steps) {
     const n = `#${s.pr}`;
     if (!s.mergeProof.ok) return { state: FAILURE, why: `${n}: ${s.mergeProof.why}` };
     if (s.prResult.state !== SUCCESS) return { state: s.prResult.state === PENDING ? FAILURE : s.prResult.state, why: `${n}: ${s.prResult.why}` };
   }
-  const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS });
+  const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo) });
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };
   return { state: SUCCESS, why: `group of ${steps.length}: gates pass` };
 }

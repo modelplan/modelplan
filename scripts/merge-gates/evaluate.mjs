@@ -11,7 +11,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
-import { CONTEXT, FAILURE, description, evaluateGroup, evaluatePr, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
+import { CONTEXT, FAILURE, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -114,7 +114,7 @@ async function evaluateGroupAndPost(groupSha) {
     gh.all(`/actions/runs?head_sha=${groupSha}`, "workflow_runs", 500),
     gh.get(`/commits/${groupSha}/status`),
   ]);
-  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [] });
+  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], repo });
   await post(groupSha, { group: steps.map((s) => s.pr), ...result });
 }
 
@@ -136,7 +136,14 @@ async function fromEvent() {
   if (wr.event !== "pull_request" && wr.event !== "pull_request_review") return log({ skipped: `run event ${wr.event}` });
   let numbers = (wr.pull_requests ?? []).map((p) => p.number);
   if (!numbers.length) numbers = (await gh.get(`/commits/${wr.head_sha}/pulls`)).filter((p) => p.state === "open").map((p) => p.number);
-  for (const n of numbers) await evaluatePrAndPost(n);
+  for (const n of numbers) {
+    // A cancelled run whose head is no longer the PR head was replaced by a newer push: that head's runs decide.
+    if (wr.conclusion === "cancelled" && cancelledRunSuperseded(wr, (await gh.get(`/pulls/${n}`)).head.sha)) {
+      log({ pr: n, skipped: "cancelled run of a superseded head" });
+      continue;
+    }
+    await evaluatePrAndPost(n);
+  }
 }
 
 const pr = flag("--pr"), group = flag("--group");

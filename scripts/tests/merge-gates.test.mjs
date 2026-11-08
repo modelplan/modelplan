@@ -18,11 +18,16 @@ const at = () => new Date(Date.UTC(2026, 10, 4, 0, 0, clock++)).toISOString();
 const comment = (body, user = ME) => ({ user, body, created_at: at() });
 const review = (body, user = ME) => ({ user, body, submitted_at: at() });
 const file = (filename, extra = {}) => ({ filename, ...extra });
-const run = (path, conclusion = "success", id = 1, status = "completed") => ({ id, workflow_id: path, path, name: path.split("/").pop(), status, conclusion });
+// A run of PR #7 made in this repository; `qrun` is one of the merge queue's runs on a group commit.
+const run = (path, conclusion = "success", id = 1, status = "completed", over = {}) => ({ id, workflow_id: path, path, name: path.split("/").pop(), status, conclusion,
+  head_sha: H, head_repository: { full_name: "modelplan/modelplan" }, head_branch: "feature/x", event: "pull_request", pull_requests: [{ number: 7 }], ...over });
+const qrun = (path, conclusion = "success", id = 1, status = "completed", over = {}) =>
+  run(path, conclusion, id, status, { head_branch: `gh-readonly-queue/main/pr-7-${OLD}`, event: "merge_group", pull_requests: [], ...over });
 const greenCi = [run(".github/workflows/ci.yml")];
+const greenQueue = R.QUEUE_WORKFLOWS.map((path) => qrun(path));
 const pr = (over = {}) => ({
-  state: "open", draft: false, user: ME,
-  head: { sha: H, repo: { full_name: "modelplan/modelplan" } },
+  number: 7, state: "open", draft: false, user: ME,
+  head: { sha: H, ref: "feature/x", repo: { full_name: "modelplan/modelplan" } },
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
@@ -172,6 +177,55 @@ test("CI at the head: newest run per workflow, parse-time failures, statuses, an
   assert.equal(evalPr({ comments: [], runs: [run(".github/workflows/ci.yml", "failure")] }).state, R.FAILURE, "a red head fails before reviews arrive");
 });
 
+test("CI scope: a fork's newer passing run for the same head sha never masks our failing run", () => {
+  const CI = ".github/workflows/ci.yml";
+  const ours = run(CI, "failure", 1);
+  const fork = run(CI, "success", 2, "completed", { head_repository: { full_name: "attacker/modelplan" }, pull_requests: [] });
+  // Without a scope the newest run wins: this is the masking the scope closes.
+  assert.equal(R.ciState([ours, fork]).state, R.SUCCESS);
+  const masked = evalPr({ comments: [comment(v("merge"))], runs: [ours, fork] });
+  assert.equal(masked.state, R.FAILURE, "our own failing run still decides");
+  assert.match(masked.why, /ci\.yml failure/);
+  assert.equal(evalPr({ comments: [comment(v("merge"))], runs: [fork] }).state, R.PENDING, "a fork's run alone never counts as CI");
+  // Another PR of this repository with the same head (a train branch) does not speak for this PR either.
+  const other = run(CI, "success", 3, "completed", { head_branch: "train/x", pull_requests: [{ number: 8 }] });
+  assert.equal(evalPr({ comments: [comment(v("merge"))], runs: [ours, other] }).state, R.FAILURE);
+  // A same-repository run with no PR list (a manual run) counts only on the PR's branch.
+  const manual = (branch) => run(CI, "success", 4, "completed", { event: "workflow_dispatch", head_branch: branch, pull_requests: [] });
+  assert.equal(evalPr({ comments: [comment(v("merge"))], runs: [ours, manual("feature/x")] }).state, R.SUCCESS);
+  assert.equal(evalPr({ comments: [comment(v("merge"))], runs: [ours, manual("elsewhere")] }).state, R.FAILURE);
+  assert.equal(evalPr({ comments: [comment(v("merge"))], runs: [run(CI, "success", 1, "completed", { head_repository: null })] }).state, R.PENDING, "no repository, no trust");
+});
+
+test("CI scope in the merge queue: only this repository's merge_group runs count for the group commit", () => {
+  const ok = { pr: 7, prResult: { state: R.SUCCESS, why: "ok" }, mergeProof: { ok: true } };
+  const failing = R.QUEUE_WORKFLOWS.map((path) => qrun(path, "failure", 1));
+  const forkGreen = R.QUEUE_WORKFLOWS.map((path) => run(path, "success", 9, "completed", { head_repository: { full_name: "attacker/modelplan" }, pull_requests: [] }));
+  const group = R.evaluateGroup({ steps: [ok], queueRuns: [...failing, ...forkGreen] });
+  assert.equal(group.state, R.FAILURE, "a fork PR at the group commit cannot pass the group");
+  assert.equal(R.evaluateGroup({ steps: [ok], queueRuns: forkGreen }).state, R.PENDING, "fork runs alone: the queue's CI has not run");
+  // A pull_request run of ours at the group sha is not the queue's run either.
+  assert.equal(R.evaluateGroup({ steps: [ok], queueRuns: R.QUEUE_WORKFLOWS.map((path) => run(path)) }).state, R.PENDING);
+  assert.equal(R.evaluateGroup({ steps: [ok], queueRuns: greenQueue, repo: "other/repo" }).state, R.PENDING, "repo comes from the caller");
+  // A single-PR group reuses the head's checks: the PR's own fork-masked failure fails that step first.
+  const head = evalPr({ comments: [comment(v("merge"))], runs: [run(".github/workflows/ci.yml", "failure", 1),
+    run(".github/workflows/ci.yml", "success", 2, "completed", { head_repository: { full_name: "attacker/modelplan" }, pull_requests: [] })] });
+  assert.equal(R.evaluateGroup({ steps: [{ pr: 7, prResult: head, mergeProof: { ok: true } }], queueRuns: greenQueue }).state, R.FAILURE);
+});
+
+test("CI cancelled upstream: the newest run being cancelled fails the head; a superseded head's cancel is skipped", () => {
+  const CI = ".github/workflows/ci.yml";
+  const timedOut = evalPr({ comments: [comment(v("merge"))], runs: [run(CI, "cancelled", 2)] });
+  assert.equal(timedOut.state, R.FAILURE, "a timed-out run never leaves the head pending");
+  assert.match(timedOut.why, /cancelled upstream/);
+  assert.equal(evalPr({ comments: [comment(v("merge"))], runs: [run(CI, "cancelled", 1), run(CI, "success", 2)] }).state, R.SUCCESS, "a re-run replaces it");
+  assert.equal(R.evaluateGroup({ steps: [{ pr: 7, prResult: { state: R.SUCCESS, why: "ok" }, mergeProof: { ok: true } }],
+    queueRuns: [qrun(CI, "cancelled"), qrun(".github/workflows/desktop.yml")] }).state, R.FAILURE);
+  assert.equal(R.cancelledRunSuperseded({ conclusion: "cancelled", head_sha: OLD }, H), true, "a newer push replaced it");
+  assert.equal(R.cancelledRunSuperseded({ conclusion: "cancelled", head_sha: H }, H), false, "still the head: evaluate");
+  assert.equal(R.cancelledRunSuperseded({ conclusion: "failure", head_sha: OLD }, H), false);
+});
+
 test("ledger evidence: exact-head trusted comment required for every listed scenario", () => {
   const docs = [file("docs/evidence.md")];
   const ledger = (body, extra = {}) => pr({ title: "Fix G3-07", body, ...extra });
@@ -202,7 +256,7 @@ test("merge group requires evidence for each member's own head", () => {
   const absent = evalPr({p:other, files:docs, comments:[comment(`VERIFIED: D-02 @ ${H} evidence=wrong-head`)]});
   const valid = evalPr({p:other, files:docs, comments:[comment(`VERIFIED: D-02 @ ${OLD} evidence=second`)]});
   const step = (n, result) => ({pr:n, prResult:result, mergeProof:{ok:true}});
-  const queueRuns = R.QUEUE_WORKFLOWS.map((path) => run(path));
+  const queueRuns = greenQueue;
   assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, absent)], queueRuns}).state, R.FAILURE);
   assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, valid)], queueRuns}).state, R.SUCCESS);
 });
@@ -213,7 +267,7 @@ test("malformed scenario members fail PR and merge group despite valid evidence"
   for (const invalid of ["S6", "d-01", "V-1", "V-001"]) {
     const result = evalPr({ p: pr({title:"G3-07", body:`Scenarios: V-01, ${invalid}`}), files:docs, comments:[receipt] });
     assert.equal(result.state, R.FAILURE, invalid);
-    assert.equal(R.evaluateGroup({steps:[{pr:1, prResult:result, mergeProof:{ok:true}}], queueRuns:greenCi}).state, R.FAILURE, invalid);
+    assert.equal(R.evaluateGroup({steps:[{pr:1, prResult:result, mergeProof:{ok:true}}], queueRuns:greenQueue}).state, R.FAILURE, invalid);
   }
   const valid = evalPr({p:pr({title:"G3-07", body:"Scenarios: V-01 (normal entry), V-01"}), files:docs, comments:[receipt]});
   assert.equal(valid.state, R.SUCCESS);
@@ -226,7 +280,7 @@ test("a Scenarios line without a ledger row needs the same exact-head evidence (
   const pending = evalPr({ p: plain("Scenarios: C-09, C-10"), files: docs, comments: [done("C-09")] });
   assert.equal(pending.state, R.PENDING);
   assert.match(pending.why, /evidence pending: C-10/);
-  const group = R.evaluateGroup({ steps: [{ pr: 661, prResult: pending, mergeProof: { ok: true } }], queueRuns: greenCi });
+  const group = R.evaluateGroup({ steps: [{ pr: 661, prResult: pending, mergeProof: { ok: true } }], queueRuns: greenQueue });
   assert.equal(group.state, R.FAILURE, "a pending member never lands");
   assert.equal(evalPr({ p: plain("Scenarios: C-09, C-10"), files: docs, comments: [done("C-09"), comment(`EVIDENCE-DEFERRED: C-10 @ ${H} issue=470`)] }).state, R.SUCCESS);
   assert.equal(evalPr({ p: plain("Scenarios: C-09"), files: docs, comments: [comment(`VERIFIED: C-09 @ ${OLD} evidence=fixture`)] }).state, R.PENDING, "another head proves nothing");
@@ -351,16 +405,16 @@ test("train: every member's scenarios must be in the train's own line (#650 drop
 test("merge-group evaluation: the group's own CI replaces any stale-base rule", () => {
   const ok = { state: R.SUCCESS, why: "ok" };
   const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, ...o });
-  const qci = R.QUEUE_WORKFLOWS.map((path) => run(path));
+  const qci = greenQueue;
   assert.ok(R.QUEUE_WORKFLOWS.includes(".github/workflows/desktop.yml"), "the queue must test the Mac build class");
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: qci }).state, R.SUCCESS);
   assert.equal(R.evaluateGroup({ steps: [], queueRuns: qci }).state, R.FAILURE);
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [] }).state, R.PENDING, "queue CI not started yet");
   assert.equal(R.evaluateGroup({ steps: [step(), step({ pr: 8, prResult: { state: R.PENDING, why: "x" } })], queueRuns: qci }).state, R.FAILURE, "an unready PR fails the group");
-  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml")] }).state, R.PENDING, "the Mac queue run has not started");
-  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml"), run(".github/workflows/desktop.yml", "failure")] }).state, R.FAILURE, "a failed Mac queue run fails the group");
+  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [qrun(".github/workflows/ci.yml")] }).state, R.PENDING, "the Mac queue run has not started");
+  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [qrun(".github/workflows/ci.yml"), qrun(".github/workflows/desktop.yml", "failure")] }).state, R.FAILURE, "a failed Mac queue run fails the group");
   assert.equal(R.evaluateGroup({ steps: [step({ mergeProof: { ok: false, why: "x" } })], queueRuns: qci }).state, R.FAILURE);
-  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml", "failure"), run(".github/workflows/desktop.yml")] }).state, R.FAILURE);
+  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [qrun(".github/workflows/ci.yml", "failure"), qrun(".github/workflows/desktop.yml")] }).state, R.FAILURE);
   assert.ok(R.description("x".repeat(200)).length <= 140);
 });
 
@@ -517,4 +571,11 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
   // A run skipped by the job's `if:` must not cancel a live evaluation: the concurrency group sits on the job.
   assert.doesNotMatch(gates, /^concurrency:/m);
   assert.match(gates, /^    concurrency:\n      group: merge-gates-/m);
+  // A cancelled run evaluates (a timeout cancels the whole run) unless a newer push replaced its head, and it never
+  // shares a concurrency group with the live evaluation of the PR.
+  const jobIf = /^    if: >-\n((?:      .*\n)+)/m.exec(gates)[1];
+  assert.doesNotMatch(jobIf, /conclusion != 'cancelled'\n/, "cancelled runs are not dropped outright");
+  assert.match(jobIf, /conclusion != 'cancelled' \|\| github\.event\.workflow_run\.event == 'merge_group'\n\s+\|\| github\.event\.workflow_run\.pull_requests\[0\]\.head\.sha == github\.event\.workflow_run\.head_sha\)/);
+  assert.match(gates, /group: merge-gates-\$\{\{ github\.event\.workflow_run\.conclusion == 'cancelled' && format\('cancelled-\{0\}', github\.event\.workflow_run\.head_sha\)/);
+  assert.match(readFileSync(join(root, "scripts/merge-gates/evaluate.mjs"), "utf8"), /cancelledRunSuperseded\(wr, /, "the evaluator re-checks the live head");
 });

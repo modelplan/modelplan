@@ -61,10 +61,13 @@ test("repo-checks.yml selects manifests for the notices macOS leg, including und
 
 test("repo-checks.yml runs the Linux notices check for every input of scripts/third-party-notices.py", () => {
   for (const path of ["desktop/cockpit/src/a.ts", "cli/internal/测试.go", "clients/swift/a.swift", "LICENSES/CodexBar-MIT.txt",
-    "tools/u10/Package.swift", ".github/workflows/release.yml", "scripts/third-party-notices.py", "scripts/tests/test_third_party_notices.py"]) {
+    "tools/u10/Package.swift", ".github/workflows/release.yml", "scripts/third-party-notices.py", "scripts/tests/test_third_party_notices.py",
+    // The root workspace files steer Go module resolution under cli/.
+    "go.work", "go.work.sum"]) {
     assert.equal(selects("repo-checks.yml", path, 1), true, path);
   }
-  for (const path of ["docs/a.md", "codex/server.mjs", "claude-code/hooks/a.sh", "scripts/check-source-policy.mjs", ".github/workflows/ci.yml"]) {
+  for (const path of ["docs/a.md", "codex/server.mjs", "claude-code/hooks/a.sh", "scripts/check-source-policy.mjs", ".github/workflows/ci.yml",
+    "docs/go.work", "go.work.bak"]) {
     assert.equal(selects("repo-checks.yml", path, 1), false, path);
   }
 });
