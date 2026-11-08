@@ -59,7 +59,7 @@ test('QA 11-08 the axis labels of the enlarged field never overlap and stay insi
  await page.setViewportSize({width:900,height:640});await open(page);
  const devs=['openai','anthropic','zhipuai'];
  await show(page,JSON.stringify({language:'en',reduceMotion:true,models:Array.from({length:10},(_,i)=>spread(i,devs[i%3])),mine:[],focus:null}));
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready')),{timeout:20000}).toBe(true);// the scene bundle can take a while on a busy software-GL box
  test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
  await expect.poll(()=>page.locator('.tick3.field-axis-placed').count()).toBeGreaterThan(4);
  await page.waitForTimeout(1500);
