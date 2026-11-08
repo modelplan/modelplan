@@ -201,7 +201,12 @@ extension CommunityCockpitEntryTests {
                 if prewarm, run > 1 {
                     for _ in 0..<3000 where probe.traced("warm.ready", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
                     let ready = try XCTUnwrap(probe.traced("warm.ready", after: closedAt), "run \(run): an empty page is loaded again after the close")
-                    print("G3-42-REWARM run=\(run) closeToWarmReadyMs=\(Self.ms(closedAt, ready)) webKitFootprintKiB=\(kib(Self.webKitFootprints()))")
+                    // A page rebuilt after a close is warm-painted too, out of view; the click comes after that.
+                    for _ in 0..<800 where probe.timed("prewarm warm-paint", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
+                    let painted = try XCTUnwrap(probe.timed("prewarm warm-paint", after: closedAt), "run \(run): the rebuilt page is warm-painted")
+                    XCTAssertTrue(painted.hasPrefix("prewarm warm-paint painted=true"), "run \(run): \(painted)")
+                    XCTAssertFalse(probe.made.last?.window?.isVisible ?? true, "run \(run): and out of view again")
+                    print("G3-42-REWARM run=\(run) closeToWarmReadyMs=\(Self.ms(closedAt, ready)) \(painted) webKitFootprintKiB=\(kib(Self.webKitFootprints()))")
                     try await Task.sleep(for: .milliseconds(300))
                 } else if run > 1 {
                     try await Task.sleep(for: .seconds(2))

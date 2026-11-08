@@ -184,14 +184,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onShown: (() -> Void)?
   private var shown = false, awaitingShown = false
   /// The first visible paint of a WebKit process (its GPU and compositing start) took about 2.3 s on a
-  /// hosted runner even with the page loaded. A prewarmed page pays it once: the empty page is ordered in
-  /// at alpha 0, ignoring the mouse and never key, until two animation frames have painted, then ordered out.
+  /// hosted runner even with the page loaded. A prewarmed page pays it in the background: the empty page is
+  /// ordered in at alpha 0, ignoring the mouse and never key, until two animation frames have painted, then
+  /// ordered out.
   private var warmPainting = false
-  /// The cost is the process's, not the page's: later pages, even new ones, rendered in about 30 ms. So the
-  /// warm paint runs only until this app has painted a cockpit page once, warm or shown. A warm paint that
-  /// reaches its cap also counts: the page was not painted at alpha 0 there, and trying again on every
-  /// rebuilt page would only order an invisible panel in again for six seconds each time.
-  private static var processHasPainted = false
+  /// G3-42: every new page pays part of this, not only the process's first. In the packaged walkthrough a
+  /// page rebuilt after a close took 0.9 s from the click to its first visibility receipt and 1.3 s to data,
+  /// and the hosted test once 2.5 s, against 0.1 s and 0.5 s for the warm-painted first page. So every hidden
+  /// page is warm-painted. A warm paint that reaches its cap means this process does not paint at alpha 0,
+  /// and then none is tried again, so an invisible panel is not ordered in for six seconds after each close.
+  private static var warmPaintUnavailable = false
   private var warmPaintEnd: Task<Void, Never>?
   private var warmPaintStarted: TimeInterval?
   /// G3-42 timing: render receipts logged since the last open, the first two only.
@@ -495,7 +497,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       }
   }
   private func warmPaint() {
-    guard !Self.processHasPainted, let panel = window, let web, !shown, !ending, !warmPainting else { return }
+    guard !Self.warmPaintUnavailable, let panel = window, let web, !shown, !ending, !warmPainting else { return }
     warmPainting = true
     warmPaintStarted = CockpitTimingLog.now
     panel.ignoresMouseEvents = true
@@ -520,9 +522,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     warmPaintEnd?.cancel(); warmPaintEnd = nil
     guard warmPainting else { return }
     warmPainting = false
-    // Painted, or capped: either way this process does not warm-paint again (see processHasPainted). A click
-    // during the warm paint (painted false, shown) leaves it to the shown page.
-    if painted || !shown { Self.processHasPainted = true }
+    // Capped while still hidden: this process does not paint at alpha 0 (see warmPaintUnavailable). A click
+    // during the warm paint (painted false, shown) is not a cap.
+    if !painted, !shown { Self.warmPaintUnavailable = true }
     CockpitTimingLog.record("prewarm warm-paint painted=\(painted) clicked=\(shown) ms=\(warmPaintStarted.map { CockpitTimingLog.ms(since: $0) } ?? -1)")
     #if MODELPLAN_TEST_ONLY_SPI
     verificationWarmPainted?(painted)
@@ -586,7 +588,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           else { self.watchDeferredAppearance() }
           if let id = self.bridge.currentDisplayRequest, self.bridge.awaitsDisplayReceipt(id) { self.renderWatchdog.wait(for: id) }
           self.freshnessDriver.show()
-          Self.processHasPainted = true
           if self.awaitingShown, let onShown = self.onShown {
             self.awaitingShown = false; self.refreshAfterHiddenDisplay = false; onShown()
           } else if self.refreshAfterHiddenDisplay { self.refreshAfterHiddenDisplay = false; self.onReady?() }
