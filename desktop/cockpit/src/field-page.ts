@@ -10,6 +10,7 @@
 // Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) and study website-updates/style.css round 5 for
 // behaviour; the code is written here.
 import {featherShape,type FieldShape} from './field-shape.js';
+import {layoutFieldAxes} from './field-axes.js';
 import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
 
 interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly lowPower?:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null}
@@ -24,7 +25,7 @@ const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:s
 const webgl=()=>{try{return !!document.createElement('canvas').getContext('webgl2');}catch{return false;}};
 
 function mount(root:HTMLElement) {
- let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,reduceMotion=false,lowPower=false,quiet=false,launches=0,shape:FieldShape|null=null;
+ let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,reduceMotion=false,lowPower=false,quiet=false,launches=0,shape:FieldShape|null=null,stopAxes=()=>{};
  const bar=el('header','field-bar'),stage=el('div','ov-porthole field-stage'),list=el('div','field-list');
  const close=el('button','field-close');close.type='button';close.onclick=()=>post({type:'close'});
  const mineKey=el('button','field-preset'),allKey=el('button','field-preset'),count=el('span','field-count');mineKey.type=allKey.type='button';
@@ -53,7 +54,7 @@ function mount(root:HTMLElement) {
  };
  const preset=(ids:readonly string[])=>{chosen=new Set(ids.slice(0,FIELD_LIMIT));refresh();};
  mineKey.onclick=()=>preset(mine.length?mine:models.map(m=>m.id));allKey.onclick=()=>preset(models.map(m=>m.id));search.oninput=refresh;
- const fallback=(text:string)=>{stage.replaceChildren(el('p','nogl',text));};
+ const fallback=(text:string)=>{stopAxes();stage.replaceChildren(el('p','nogl',text));};
  for(const type of ['pointerdown','keydown','wheel'])root.addEventListener(type,()=>post({type:'activity'}),{passive:true});
  window.addEventListener('keydown',e=>{if(e.key==='Escape')post({type:'close'});});
 
@@ -70,7 +71,8 @@ function mount(root:HTMLElement) {
   const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;quiet=reduceMotion||lowPower;
   scene=mountWorkbenchField(host,{models:flown,focus,quiet,showPath:true,language,onDemand:true,noIntro:true,
    onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{if(disposed||launch!==launches)return;scene=null;fallback(w.noGl);}});
-  scene.renderFor?.(1400);refresh();
+  stopAxes();if(scene)stopAxes=layoutFieldAxes(host,shape?.span);
+  scene?.renderFor?.(1400);refresh();
  }
  return {
   async show(value:Show) {
@@ -94,7 +96,7 @@ function mount(root:HTMLElement) {
   stats():FieldStats|null {
    const s=scene?.stats?.();return scene?{lowPower,quiet,frames:s?.frames??0,scheduled:!!s?.scheduled}:null;
   },
-  dispose(){disposed=true;shape?.dispose();shape=null;scene?.dispose();scene=null;root.replaceChildren();},
+  dispose(){disposed=true;stopAxes();shape?.dispose();shape=null;scene?.dispose();scene=null;root.replaceChildren();},
  };
 }
 const root=document.getElementById('field');
