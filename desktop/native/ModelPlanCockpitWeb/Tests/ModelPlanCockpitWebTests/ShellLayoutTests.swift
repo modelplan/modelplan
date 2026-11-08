@@ -63,6 +63,24 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(left.frame.maxY,1094)
         XCTAssertEqual(right.frame.size,left.frame.size)
     }
+    /// G3-46 / D53: the shell's left edge sits under the icon's left edge, directly below the menu bar,
+    /// and shifts left only as far as the right screen edge needs.
+    func testG3_46OpensWithItsLeftEdgeUnderTheIcon() throws {
+        let usable = CGRect(x: 0, y: 0, width: 1440, height: 876)
+        func placed(_ iconX: CGFloat) throws -> CGRect {
+            try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: .init(x: iconX, y: 876, width: 28, height: 24), shutterClosed: false)).frame
+        }
+        let roomy = try placed(500)
+        XCTAssertEqual(roomy.minX + 8, 500, "the shell's left edge is the icon's left edge")
+        XCTAssertEqual(roomy.maxY, 870, "directly below the menu bar, 6 pt gap")
+        let tight = try placed(1100)
+        XCTAssertEqual(tight.maxX, 1440, "near the right edge it shifts left only to stay on screen")
+        XCTAssertEqual(tight.minX, 1440 - 636)
+        XCTAssertEqual(try placed(804 + 8).minX, 804, "the last icon position that needs no shift")
+        let hidden = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: CockpitShellLayout.hiddenIconAnchor(usable: usable), shutterClosed: false)).frame
+        XCTAssertEqual(hidden.maxX, 1440, "a hidden icon opens the cockpit at the top-right")
+        XCTAssertEqual(hidden.maxY, 870, "directly below the menu bar")
+    }
     @MainActor func testUpdatingOneArrangementDoesNotConsumeExtraMemorySlots() {
         let session = CockpitShellSession()
         for index in 0..<12 { session.remember(.init(x:index,y:index),arrangement:"same") }
