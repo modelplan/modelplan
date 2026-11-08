@@ -16,7 +16,7 @@ import {scaleView,levelK,bankView,faderModel,lcdView,indicatorView,marksView,str
 import {setLanguage,t,formatCredits} from '../study/rocket-r1/i18n.js';
 import {overview} from '../study/rocket-r1/mfd-pages/overview.js';
 import {plans} from '../study/rocket-r1/mfd-pages/plans.js';
-import {relativeMoment,tok,until} from '../study/rocket-r1/mfd-pages/fmt.js';
+import {relativeMoment,tok,until,md} from '../study/rocket-r1/mfd-pages/fmt.js';
 import {tune} from '../study/rocket-r1/mfd-pages/tune.js';
 import {where} from '../study/rocket-r1/mfd-pages/where.js';
 import '../study/rocket-r1/strings/mfd.js';
@@ -99,6 +99,9 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const published=publishedFleet(data,scope,now);
   return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),sessionRanking:lastSeen(members,ids),models:published,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published},empty:accounts.length===0,ids,members};
  }
+ // The first local day of the recorded history (cockpitHistoryV1 dailyFrom), as a local midnight.
+ function recordStart(){const from=data?.history?.coverage==='local-history'?data.history.dailyFrom:null;if(!from||!/^\d{4}-\d{2}-\d{2}$/.test(from))return null;const [y,m,day]=from.split('-').map(Number);return new Date(y!,m!-1,day!).getTime();}
+ const dayStart=(now:number,back:number)=>{const at=new Date(now);return new Date(at.getFullYear(),at.getMonth(),at.getDate()-back).getTime();};
  function paint(keepFaders=false,now?:number){
   if(now!==undefined)renderedNow=now;
   if(!keepFaders){paintScale();paintFaders();}bar.setAttribute('aria-label',t('mfd.keysAria'));
@@ -121,6 +124,10 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   if(returnPage!==null){const back=node('button','mfd-back',t('mfd.back',{p:t(pages[returnPage]!.module.title)}));back.type='button';back.dataset.mfd='back';page.prepend(back);}
   // v1 has today facts but no daily history; never turn a partial aggregate into a complete total.
   if(selected===0&&d.daily.length){const top=page.querySelector('.ov-top');if(top)top.append(node('span','lbl ov-local',locale==='en'?'On this Mac':'本机记录'));}
+  // D63: a total over a period longer than the local record says where the record starts, not "30 days".
+  const since=recordStart();
+  if(since!==null&&selected===0&&d.daily.length){const sum=page.querySelector('.ov-top .ov-sum'),label=sum?.previousElementSibling;if(label&&since>dayStart(d.now,29))label.textContent=t('mfd.since',{d:md(since,{lang:locale})});}
+  if(since!==null&&selected===1)for(const stats of page.querySelectorAll<HTMLElement>('.sp-stats[data-days]')){const days=Number(stats.dataset.days),head=stats.querySelector('.stat-h');if(head&&Number.isFinite(days)&&since>dayStart(d.now,days-1))head.textContent+=' · '+t('mfd.since',{d:md(since,{lang:locale})});}
   if(selected===0&&!d.daily.length){const members=scope==='all'?d.members:d.members.filter(m=>m.key===scope),values=members.map(m=>prototypeEngineSupplement(m.account,data??undefined).todayTokens);if(values.length&&values.every((v):v is number=>v!==null)){const sum=values.reduce((a,v)=>a+v,0);if(Number.isSafeInteger(sum)){const total=node('div','ov-top');total.append(node('span','lbl',t('mfd.today')),node('b','ov-total',tok(sum)));const alerts=page.querySelector('.mfd-alerts');if(alerts)alerts.after(total);else page.prepend(total);}}}
   // Study list IDs are positional; attach the originating member identity for focus restoration.
   for(const el of page.querySelectorAll<HTMLElement>('[data-mfd^="scope:member"]')){const match=/^scope:member(\d+)$/.exec(el.dataset.mfd??'');const member=match?d.members[Number(match[1])]:null;if(member){el.dataset.focusMember=member.key;}}
