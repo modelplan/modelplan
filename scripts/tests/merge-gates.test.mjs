@@ -48,6 +48,8 @@ test("tier: path rules, test-only rule, override and gate self-protection", () =
   assert.equal(R.pathTier([]), 1);
   assert.equal(R.pathTier([".github/workflows/merge-gates.yml"]), 2);
   assert.equal(R.pathTier(["scripts/merge-gates/rules.mjs"]), 2);
+  assert.equal(R.pathTier([R.TIER_TABLE]), 2, "the tier table decides which scenarios need evidence");
+  assert.equal(R.pathTier(["docs/a.md", R.TIER_TABLE]), 2);
   assert.equal(R.pathTier([".github/workflows/release.yml"]), 2);
   assert.deepEqual(R.prPaths([file("docs/new.md", { previous_filename: "cli/old.go" })]), ["docs/new.md", "cli/old.go"]);
   const items = R.feed([comment("REVIEW-TIER: 2"), comment("note\nREVIEW-TIER: 0"), comment("REVIEW-TIER: 0", { login: "x", id: 3 })], [review("REVIEW-TIER: 1")]);
@@ -137,6 +139,13 @@ test("design gate: paths, pin-only bundle updates, DESIGN lines only in design-c
   assert.equal(evalPr({ files: [file("desktop/official-visuals/dock/a.svg")], comments: [] }).state, R.PENDING, "tier 0 design-touching still needs DESIGN");
 });
 
+test("design gate: only the pinned CLI identity file is excluded by name; other generated-looking files are reviewed", () => {
+  const identity = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityConsentCLIIdentity.generated.swift";
+  assert.equal(R.designTouch([file(identity)], conf).touching, false);
+  for (const other of [identity.replace("CommunityConsentCLIIdentity", "DockFace"), identity.replace(".generated.swift", ".swift"), `${identity}.swift`, identity.replace("ModelPlanAppIntegration/Sources/ModelPlanAppIntegration", "ModelPlanDock/Native")])
+    assert.equal(R.designTouch([file(other)], conf).touching, true, other);
+});
+
 test("GLM gate: seams only, exact head, comment must start with the line, latest wins", () => {
   const files = [file("cli/main.go")];
   const merge = comment(v("merge"));
@@ -210,6 +219,135 @@ test("malformed scenario members fail PR and merge group despite valid evidence"
   assert.equal(valid.state, R.SUCCESS);
 });
 
+test("a Scenarios line without a ledger row needs the same exact-head evidence (#661: C-10 passed unaccounted)", () => {
+  const docs = [file("docs/evidence.md")];
+  const plain = (body) => pr({ title: "Cockpit publication", body: `Ledger: none\n${body}`, head: { sha: H, ref: "web/publication", repo: { full_name: "modelplan/modelplan" } } });
+  const done = (id) => comment(`VERIFIED: ${id} @ ${H} evidence=fixture`);
+  const pending = evalPr({ p: plain("Scenarios: C-09, C-10"), files: docs, comments: [done("C-09")] });
+  assert.equal(pending.state, R.PENDING);
+  assert.match(pending.why, /evidence pending: C-10/);
+  const group = R.evaluateGroup({ steps: [{ pr: 661, prResult: pending, mergeProof: { ok: true } }], queueRuns: greenCi });
+  assert.equal(group.state, R.FAILURE, "a pending member never lands");
+  assert.equal(evalPr({ p: plain("Scenarios: C-09, C-10"), files: docs, comments: [done("C-09"), comment(`EVIDENCE-DEFERRED: C-10 @ ${H} issue=470`)] }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: plain("Scenarios: C-09"), files: docs, comments: [comment(`VERIFIED: C-09 @ ${OLD} evidence=fixture`)] }).state, R.PENDING, "another head proves nothing");
+  assert.equal(evalPr({ p: plain("Scenarios: none"), files: docs }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: pr({ title: "Docs", body: "No declaration here." }), files: docs }).state, R.SUCCESS);
+});
+
+test("D21: without a ledger row a CI-tier scenario rides on green CI; real-Mac tiers and anything unknown need a line", () => {
+  const docs = [file("docs/evidence.md")];
+  const tiers = R.parseTiers("# comment\nid\ttier\tneeds\nS-11\tT2\t-\nV-17\tT1P\t-\nR-01\tT0\tVF\nC-10\tT3\tCK\nD-02\tT4\tSYS\n");
+  assert.deepEqual([...tiers], [["S-11", "T2"], ["V-17", "T1P"], ["R-01", "T0"], ["C-10", "T3"], ["D-02", "T4"]]);
+  const plain = (line) => pr({ title: "Cockpit", body: `Ledger: none\nScenarios: ${line}` });
+  const ev = (line, o = {}) => R.evaluatePr({ pr: plain(line), items: R.feed(o.comments ?? []), files: docs, runs: o.runs ?? greenCi, statuses: [], verifiedEdge: () => false, conf, tiers: o.tiers ?? tiers });
+
+  assert.equal(ev("S-11, V-17, R-01").state, R.SUCCESS, "T2 passes on green CI");
+  assert.equal(ev("S-11", { runs: [run(".github/workflows/ci.yml", "failure")] }).state, R.FAILURE, "red CI stops it");
+  assert.equal(ev("S-11", { runs: [run(".github/workflows/ci.yml", null, 1, "in_progress")] }).state, R.PENDING, "running CI is not green");
+  const t3 = ev("S-11, C-10");
+  assert.equal(t3.state, R.PENDING, "T3 still needs its line");
+  assert.match(t3.why, /evidence pending: C-10$|evidence pending: C-10\b/);
+  assert.doesNotMatch(t3.why, /S-11/);
+  assert.equal(ev("D-02").state, R.PENDING, "T4 too");
+  assert.equal(ev("C-10", { comments: [comment(`EVIDENCE-DEFERRED: C-10 @ ${H} issue=470`)] }).state, R.SUCCESS);
+  assert.equal(ev("C-10", { comments: [comment(`VERIFIED: C-10 @ ${H} evidence=fixture`)] }).state, R.SUCCESS);
+  assert.equal(ev("Z-01").state, R.PENDING, "a scenario missing from the table needs evidence");
+  assert.equal(ev("G3-12").state, R.PENDING, "a ledger row in the line is a ledger PR");
+  // A PR naming a ledger row needs a line for every scenario, whatever its tier.
+  const ledger = R.evaluatePr({ pr: pr({ title: "Fix G3-07", body: "Scenarios: S-11" }), items: [], files: docs, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, tiers });
+  assert.equal(ledger.state, R.PENDING);
+
+  // Fail closed: no readable table means every scenario needs evidence.
+  const missing = R.tiersFrom(() => { throw new Error("ENOENT"); });
+  assert.equal(missing.size, 0);
+  assert.equal(ev("S-11", { tiers: missing }).state, R.PENDING);
+  assert.equal(ev("S-11", { tiers: R.tiersFrom(() => "not a table\n") }).state, R.PENDING);
+
+  // The shipped table, and the checkout that must bring it to the gate.
+  const shipped = R.tiersFrom(() => readFileSync(join(root, R.TIER_TABLE), "utf8"));
+  assert.equal(shipped.get("C-10"), "T3");
+  assert.ok(shipped.size > 90);
+  const sparse = /sparse-checkout: \|\n((?:\s+\S+\n)+)/.exec(readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8"))?.[1].trim().split(/\s+/) ?? [];
+  assert.ok(sparse.includes("scripts/merge-gates"), "the gate's own code");
+  assert.ok(sparse.includes(dirname(R.TIER_TABLE)), "cone-mode sparse checkout takes directories, so the table's directory");
+});
+
+test("Scenarios lines: spec IDs or none, on every PR; requirement IDs and free text are rejected (exception review 1.4)", () => {
+  const docs = [file("docs/evidence.md")];
+  const plain = (line) => pr({ title: "Widget setting", body: `Ledger: none\n${line}` });
+  for (const line of [
+    "Scenarios: SET-9-09",
+    "Scenarios: SET-9 Quota Widget controls (widget side)",
+    "Scenarios: LBL-2.2-01, LBL-2.2-02",
+    "Scenarios: DOCK-3.1-01, D-01",
+    "Scenarios: owner test build opens the cockpit from the menu bar",
+    "Scenarios: D-01 and a sentence",
+    "Scenarios: none listed",
+    "Scenarios: none, D-03",
+    "Scenarios:",
+    "Scenarios were not changed",
+  ]) {
+    const result = evalPr({ p: plain(line), files: docs });
+    assert.equal(result.state, R.FAILURE, line);
+    assert.match(result.why, /Scenarios line/, line);
+  }
+  const draft = evalPr({ p: pr({ draft: true, title: "x", body: "Scenarios: SET-9-12" }), files: docs });
+  assert.equal(draft.state, R.FAILURE, "a draft sees the rejection at once");
+  // Forms real PRs use: notes in brackets, semicolons, bold, none with a note.
+  const shapes = {
+    "Scenarios: R-08, R-09 (partial evidence); V-06, V-07": ["R-08", "R-09", "V-06", "V-07"],
+    "**Scenarios:** C-13 (Effort and Breakdown slice), C-05 (live locale; web slice)": ["C-05", "C-13"],
+    "Scenarios: D-12 and D-24": ["D-12", "D-24"],
+    "Scenarios: G3-12, V-03": ["G3-12", "V-03"],
+    "Scenarios: none": [],
+    "**Scenarios:** None": [],
+    "Scenarios: none (no new product behaviour)": [],
+  };
+  for (const [line, ids] of Object.entries(shapes)) {
+    const parsed = R.parseScenarios(`Intro\n${line}\nScenarios: SET-9-09`);
+    assert.equal(parsed.malformed, null, line);
+    assert.deepEqual(parsed.ids, ids, line);
+  }
+  assert.equal(R.parseScenarios("no line").declared, false);
+});
+
+test("train: every member's scenarios must be in the train's own line (#650 dropped seven)", () => {
+  const docs = [file("docs/evidence.md")];
+  const ref = (name) => ({ sha: H, ref: name, repo: { full_name: "modelplan/modelplan" } });
+  const train = pr({ title: "Quota Widget train", body: "Ledger: none\nScenarios: D-01, V-02", head: ref("b/widget-train") });
+  const done = [comment(`VERIFIED: D-01 @ ${H} evidence=fixture`), comment(`VERIFIED: V-02 @ ${H} evidence=fixture`)];
+  const trainPr = (members, p = train) => R.evaluatePr({ pr: p, items: R.feed(done), files: docs, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, members });
+  assert.equal(trainPr([{ number: 1, body: "Scenarios: D-01" }, { number: 2, body: "Scenarios: none" }, { number: 3, body: "no line" }]).state, R.SUCCESS);
+  const short = trainPr([{ number: 519, body: "Scenarios: R-08, V-02" }, { number: 518, body: "Scenarios: S-01" }]);
+  assert.equal(short.state, R.FAILURE);
+  assert.match(short.why, /#519: R-08/);
+  assert.match(short.why, /#518: S-01/);
+  const bad = trainPr([{ number: 626, body: "Scenarios: SET-9 Quota Widget controls" }]);
+  assert.equal(bad.state, R.FAILURE, "an unreadable member line cannot be proved a subset");
+  assert.match(bad.why, /#626/);
+  const none = pr({ title: "Train", body: "Scenarios: none", head: ref("b/x") });
+  assert.equal(trainPr([{ number: 7, body: "Scenarios: D-01" }], none).state, R.FAILURE);
+
+  assert.ok(R.isTrain(train));
+  assert.ok(R.isTrain(pr({ title: "Build 9 TRAIN", body: "" })));
+  assert.ok(R.isTrain(pr({ title: "x", body: "", head: ref("b/widget") })));
+  assert.ok(R.isTrain(pr({ title: "x", body: "## Supersedes\n\n#620" })));
+  assert.ok(!R.isTrain(pr({ title: "Restrained change", body: "supersedes #1 in prose", head: ref("feature/b/x") })));
+  assert.deepEqual(R.supersededPrs("Intro #1\n## Supersedes\n\n#620, #621. Also #518 (see #518).\n\n## Dependencies\n\n#646"), [518, 620, 621]);
+  assert.deepEqual(R.supersededPrs("#1 only"), []);
+
+  // Members: merged into the train branch, or an open PR whose exact head the train contains, or superseded by name.
+  const inTrain = new Set(["1".repeat(40)]);
+  const picked = R.trainMembers(train, {
+    based: [{ number: 665, merged_at: "2026-11-07T00:00:00Z", head: { sha: "2".repeat(40) }, body: "a" }, { number: 666, merged_at: null, head: { sha: "1".repeat(40) }, body: "b" }, { number: 669, merged_at: null, head: { sha: "3".repeat(40) }, body: "c" }],
+    open: [{ number: 519, head: { sha: "1".repeat(40) }, body: "d" }, { number: 700, head: { sha: "4".repeat(40) }, body: "e" }, { number: 665, head: { sha: "2".repeat(40) }, body: "a" }],
+    superseded: [{ number: 620, head: { sha: "5".repeat(40) }, base: { ref: "main" }, body: "f" }, { number: 650, head: { sha: H }, body: "self" },
+      { number: 523, merged_at: "2026-11-07T00:00:00Z", head: { sha: "6".repeat(40) }, base: { ref: "main" }, body: "landed under its own gate" }],
+    commits: inTrain,
+  });
+  assert.deepEqual(picked.map((m) => m.number), [519, 620, 665, 666]);
+});
+
 test("merge-group evaluation: the group's own CI replaces any stale-base rule", () => {
   const ok = { state: R.SUCCESS, why: "ok" };
   const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, ...o });
@@ -276,6 +414,21 @@ test("carry proof: object-identical contribution over a clean main merge, fail c
     r.g("checkout", "-q", "-b", "side", "main~2"); r.put("c.txt", "side\n"); r.g("commit", "-qam", "side");
     r.g("checkout", "-q", "-b", "pr4", reviewed); r.g("merge", "-q", "--no-edit", "side");
     assert.equal(G.verifyCarry(r.dir, reviewed, r.sha(), MAINREF).why, "second parent is not on main");
+  } finally { r.done(); }
+});
+
+test("commitsOnlyIn: the head's commits that main does not have, fail closed on a missing object", () => {
+  const r = repo();
+  try {
+    const base = r.sha();
+    r.g("checkout", "-qb", "member"); r.put("a.txt", "m\n"); r.g("commit", "-qam", "member");
+    const member = r.sha();
+    r.g("checkout", "-qb", "train"); r.put("b.txt", "t\n"); r.g("commit", "-qam", "train");
+    const train = r.sha();
+    const only = G.commitsOnlyIn(r.dir, train, MAINREF);
+    assert.ok(only.has(member) && only.has(train));
+    assert.ok(!only.has(base));
+    assert.throws(() => G.commitsOnlyIn(r.dir, "f".repeat(40), MAINREF), /not found/);
   } finally { r.done(); }
 });
 

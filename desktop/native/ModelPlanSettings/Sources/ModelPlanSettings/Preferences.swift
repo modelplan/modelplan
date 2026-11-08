@@ -171,6 +171,8 @@ public actor SettingsStore {
     private var current: SettingsPreferences
     private var revision: UInt64 = 0
     private var foundationBacking: FoundationPreferenceFile.Opened?
+    /// The folder that holds this store's file; other small per-profile app state lives beside it.
+    public nonisolated var directory: URL { url.deletingLastPathComponent() }
     public init(url: URL, onboardingDefinition: OnboardingDefinition = .task65) throws {
         self.url = url; self.onboardingDefinition = onboardingDefinition
         if FileManager.default.fileExists(atPath: url.path) {
