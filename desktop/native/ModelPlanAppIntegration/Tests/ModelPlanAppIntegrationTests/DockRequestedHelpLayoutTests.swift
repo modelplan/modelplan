@@ -217,7 +217,10 @@ import ModelPlanSettings
         let recipe = NeutralHelpUIRecipeProvider()
         let widget = CGRect(x: 0, y: 145, width: 72, height: 415)
         let rings = (0..<5).map { CGRect(x: 12, y: 190 + CGFloat($0) * 70, width: 42, height: 42) }
-        let anchors: [DockRequestedHelpAnchor] = rings.enumerated().map { .init(id: "dock.rings.\($0.offset)", region: $0.offset == 0 ? .rings : .nozzle, rect: $0.element, visible: true) }
+        let anchors: [DockRequestedHelpAnchor] = rings.enumerated().map { .init(id: "dock.rings.\($0.offset)", region: $0.offset == 0 ? .rings : .nozzle, rect: $0.element, visible: true,
+                  caption: "Quota ring number \($0.offset + 1) of five, with its own reading.") }
+        // Each anchor carries its own caption: the layout keeps one anchor per region unless it has a caption,
+        // so without captions only the first ring and the first nozzle would be labelled.
         for size in [CGSize(width: 900, height: 700), CGSize(width: 1280, height: 720), CGSize(width: 1280, height: 600), CGSize(width: 900, height: 480)] {
             for language in [InstrumentLanguage.english, .chinese] {
                 let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: size, language: language,
