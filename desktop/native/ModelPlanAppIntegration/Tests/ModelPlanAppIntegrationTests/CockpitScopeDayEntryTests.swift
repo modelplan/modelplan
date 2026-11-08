@@ -146,6 +146,8 @@ extension CommunityCockpitEntryTests {
         do {
             let first = try await openAndWaitForData()
             XCTAssertEqual(first.scopes.first, "all", "A fresh app opens at All")
+            let rows = first.data?.projection.rows ?? []
+            print("SCOPE-DAY rows=\(rows.map { "\($0.id):\($0.accounts.count)" }) subscriptions=\(first.data?.subscriptions.count ?? -1)")
             let key = try XCTUnwrap(first.firstMemberKey, "The real response must list the synthetic subscription")
             first.onIntent?(.scopeSelect(key))
             XCTAssertEqual(first.scopes.last, key, "The selected engine key scopes the open page")
