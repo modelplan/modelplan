@@ -42,7 +42,7 @@ private actor D65Engine: EngineClient {
 
 /// D65 (owner 11-08, option B): a window at 0 % draws its ring track in dark red, tints the nozzle face
 /// light red and dims the vendor mark; the card adds "5-hour quota used up · resets in 3h 18m"
-/// (5 小时额度已用完 · 3 小时 18 分后恢复). Reference: handoffs/shared/zero-quota-options-1108.md and
+/// (5 小时额度已用完 · 3 小时 18 分后重置). Reference: handoffs/shared/zero-quota-options-1108.md and
 /// evidence/zero-quota-options @ 7de7acaa (the option B overlay this ports: track #9c3427 .95,
 /// face #df604c .20, mark #0b0f13 .45).
 @MainActor final class D65ZeroQuotaTests: XCTestCase {
@@ -167,7 +167,7 @@ private actor D65Engine: EngineClient {
         XCTAssertEqual(events.first?.tone, .critical)
         let other = try XCTUnwrap(app.composition.dock.cardContent(for: try XCTUnwrap(ids["Codex one"]), at: base))
         XCTAssertTrue(other.rows.allSatisfy { $0.kind != .event }, "a 1 % window says nothing")
-        XCTAssertEqual(EngineRowsText.quotaUsedUp(period: .fiveHour, label: "5h", resetMinutes: 198).chinese, "5 小时额度已用完 · 3 小时 18 分后恢复")
+        XCTAssertEqual(EngineRowsText.quotaUsedUp(period: .fiveHour, label: "5h", resetMinutes: 198).chinese, "5 小时额度已用完 · 3 小时 18 分后重置")
         XCTAssertEqual(EngineRowsText.quotaUsedUp(period: .week, label: "week", resetMinutes: 2 * 1440 + 300).english, "Weekly quota used up · resets in 2d 5h")
         XCTAssertEqual(EngineRowsText.quotaUsedUp(period: .fiveHour, label: "5h", resetMinutes: nil).chinese, "5 小时额度已用完")
 

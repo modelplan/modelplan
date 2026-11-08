@@ -26,7 +26,7 @@ enum EngineRowsText {
     static let statusItemHidden = SettingsText("The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right.",
                                                "菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。")
     /// D65 (owner 11-08): the card's plain line for a window at 0 %, with the time until it resets when known.
-    /// "5-hour quota used up · resets in 3h 18m" / "5 小时额度已用完 · 3 小时 18 分后恢复".
+    /// "5-hour quota used up · resets in 3h 18m" / "5 小时额度已用完 · 3 小时 18 分后重置".
     static func quotaUsedUp(period: DockQuotaPeriod, label: String, resetMinutes: Int?) -> SettingsText {
         let name: SettingsText
         switch period {
@@ -43,7 +43,7 @@ enum EngineRowsText {
         if days > 0 { en = "\(days)d \(hours)h"; zh = "\(days) 天 \(hours) 小时" }
         else if hours > 0 { en = "\(hours)h \(rest)m"; zh = "\(hours) 小时 \(rest) 分" }
         else { en = "\(max(1, rest))m"; zh = "\(max(1, rest)) 分" }
-        return SettingsText(english + " · resets in " + en, chinese + " · " + zh + "后恢复")
+        return SettingsText(english + " · resets in " + en, chinese + " · " + zh + "后重置")
     }
     static let waiting = SettingsText("Waiting for readings", "等待读数")
     static let paused = SettingsText("Readings paused", "读数已暂停")
