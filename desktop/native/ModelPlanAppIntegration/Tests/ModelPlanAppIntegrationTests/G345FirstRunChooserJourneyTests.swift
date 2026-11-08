@@ -49,7 +49,7 @@ private actor G345Engine: EngineClient {
     }
     /// Claude Code (local history, saved login), Codex (local history, runtime), Cursor (local history,
     /// saved login, browser session), ZCode (saved key) are detected; Gemini is not.
-    private func facts() throws -> WireConsentFacts {
+    private func facts(keychain: Set<String> = ["claude.account_usage.saved_login"]) throws -> WireConsentFacts {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures().appendingPathComponent("WireConsentFacts.json"))) as? [String: Any])
         let base = try XCTUnwrap((object["scopes"] as? [[String: Any]])?.first)
         let paths: [(String, String, String, Bool, Bool)] = [
@@ -68,7 +68,7 @@ private actor G345Engine: EngineClient {
             scope["scope"] = id; scope["tool"] = tool; scope["route"] = route; scope["state"] = "unset"
             scope["detected"] = detected; scope["retired"] = false; scope["defaultCheck"] = defaultCheck; scope["cleanupPending"] = false
             scope.removeValue(forKey: "disabledReason")
-            if id == "claude.account_usage.saved_login" { scope["keychain"] = "unset" } else { scope.removeValue(forKey: "keychain") }
+            if keychain.contains(id) { scope["keychain"] = "unset" } else { scope.removeValue(forKey: "keychain") }
             return scope
         }
         return try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: object))
@@ -90,11 +90,11 @@ private actor G345Engine: EngineClient {
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
-    private func launch(locale: String) async throws -> (EngineDockMenuApplication, G345Engine) {
+    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"]) async throws -> (EngineDockMenuApplication, G345Engine) {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g345-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
-        let consent = try facts(), snapshot = try rows()
+        let consent = try facts(keychain: keychain), snapshot = try rows()
         final class Holder: @unchecked Sendable { var engine: G345Engine? }
         let holder = Holder()
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]),
@@ -186,5 +186,60 @@ private actor G345Engine: EngineClient {
         let settings = views(app.scopeConsentEntry.view)
         let status = try XCTUnwrap(settings.first { $0.accessibilityIdentifier() == "scope.status.claude.account_usage.saved_login" } as? NSTextField)
         XCTAssertTrue(status.stringValue.hasPrefix("未登录 Claude Code"), status.stringValue)
+    }
+
+    /// D61 (3): at least one tool must be ticked; Done stays disabled until one is.
+    func testDoneNeedsAtLeastOneTickedTool() async throws {
+        let (app, engine) = try await launch(locale: "en-US")
+        let window = try await firstRun(app)
+        let done = try find("firstRun.done", in: window, as: NSButton.self)
+        XCTAssertTrue(done.isEnabled, "readable tools start ticked, so Done starts enabled")
+        XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.firstRun.pickOne" && !$0.isHiddenOrHasHiddenAncestor })
+        for tool in ["codex", "cursor"] {
+            try find("scope.firstRun.tool." + tool, in: window, as: NSButton.self).performClick(nil)
+            for _ in 0..<100 where (try? find("scope.firstRun.tool." + tool, in: window, as: NSButton.self))?.state != .off { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        XCTAssertFalse(try find("firstRun.done", in: window, as: NSButton.self).isEnabled, "nothing ticked: Done is disabled")
+        XCTAssertTrue(try text("scope.firstRun.pickOne", in: window).contains("at least one"))
+        try find("firstRun.done", in: window, as: NSButton.self).performClick(nil)
+        try await Task.sleep(for: .milliseconds(100))
+        let none = await engine.recorded()
+        XCTAssertTrue(none.isEmpty, "a disabled Done sends nothing")
+        let notDone = await app.foundationStore.snapshot()
+        XCTAssertFalse(notDone.preferences.onboarding.completed)
+        try find("scope.firstRun.tool.cursor", in: window, as: NSButton.self).performClick(nil)
+        for _ in 0..<100 where !((try? find("firstRun.done", in: window, as: NSButton.self))?.isEnabled ?? false) { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(try find("firstRun.done", in: window, as: NSButton.self).isEnabled, "one tick enables Done again")
+    }
+
+    /// D61 (2): whether a tool can show a macOS Keychain prompt comes from its read path's access
+    /// class (the engine's Keychain-capable scopes), not from the vendor. Here a synthetic Cursor
+    /// sign-in is Keychain-capable: its line says so and its Keychain read is asked only on Done.
+    func testKeychainAccessClassNotVendorDecidesTheKeychainRead() async throws {
+        let (app, engine) = try await launch(locale: "en-US", keychain: ["cursor.account_usage.saved_login"])
+        let window = try await firstRun(app)
+        XCTAssertTrue(try text("scope.firstRun.reads.cursor", in: window).contains("macOS may ask once for Keychain access"))
+        XCTAssertTrue(try text("scope.firstRun.reads.codex", in: window).contains("No Keychain prompt"))
+        let before = await engine.recorded()
+        XCTAssertTrue(before.isEmpty, "nothing that can prompt is asked before Done")
+        try find("firstRun.done", in: window, as: NSButton.self).performClick(nil)
+        var grants: [WireConsentGrantParams] = []
+        for _ in 0..<300 where grants.isEmpty { try await Task.sleep(for: .milliseconds(10)); grants = await engine.recorded() }
+        XCTAssertEqual(grants.count, 1)
+        XCTAssertEqual(grants.first?.keychain?["cursor.account_usage.saved_login"], .allow, "a ticked Keychain-capable path gets its Keychain read on Done")
+        XCTAssertEqual(grants.first?.keychain?.count, 1, "plain paths never carry a Keychain read")
+    }
+
+    /// D61 (2): an unticked Keychain-capable tool is refused and gets no Keychain read.
+    func testUntickedKeychainToolGetsNoKeychainRead() async throws {
+        let (app, engine) = try await launch(locale: "en-US", keychain: ["cursor.account_usage.saved_login"])
+        let window = try await firstRun(app)
+        try find("scope.firstRun.tool.cursor", in: window, as: NSButton.self).performClick(nil)
+        for _ in 0..<100 where (try? find("scope.firstRun.tool.cursor", in: window, as: NSButton.self))?.state != .off { try await Task.sleep(for: .milliseconds(10)) }
+        try find("firstRun.done", in: window, as: NSButton.self).performClick(nil)
+        var grants: [WireConsentGrantParams] = []
+        for _ in 0..<300 where grants.isEmpty { try await Task.sleep(for: .milliseconds(10)); grants = await engine.recorded() }
+        XCTAssertEqual(grants.first?.deny, ["cursor.account_usage.saved_login", "cursor.local_history"])
+        XCTAssertTrue(grants.first?.keychain?.isEmpty != false)
     }
 }
