@@ -21,7 +21,7 @@ test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the
   const after=getComputedStyle(sh,'::after');
   return {shellBg:c.backgroundImage,shellShadow:c.boxShadow,boosters:[...document.querySelectorAll('.ck-booster')].map(b=>getComputedStyle(b).display),
    wall:el('.ck-shell .hull-upper'),crown:{...el('.ck-shell .hull-crown'),height:Math.round(document.querySelector('.ck-shell .hull-crown').getBoundingClientRect().height),filter:getComputedStyle(document.querySelector('.ck-shell .hull-crown')).filter},hidden:['.hull-crown','.hull-cone','.hull-lower','.hull-record'].map(s=>getComputedStyle(document.querySelector('.ck-shell '+s)).display),
-   aft:after.backgroundImage,all:[...document.querySelectorAll('#cockpit *')].flatMap(e=>[getComputedStyle(e).backgroundImage,getComputedStyle(e,'::before').backgroundImage,getComputedStyle(e,'::after').backgroundImage]).join(' ')};});
+   aft:after.backgroundImage,cap:(q=>q.backgroundImage+' '+q.backgroundColor)(getComputedStyle(document.querySelector('.s6-closed-cap'))),all:[...document.querySelectorAll('#cockpit *')].flatMap(e=>[getComputedStyle(e).backgroundImage,getComputedStyle(e,'::before').backgroundImage,getComputedStyle(e,'::after').backgroundImage]).join(' ')};});
  const plate=tier==='tall'?890:640;
  expect(v.shellBg).toBe('none');expect(v.shellShadow).toBe('none');expect(v.boosters).toEqual(['none','none']);
  // Closed (owner D72): the study's 16 px cap slab sits 14 px down, 620 wide, in the shared gunmetal tone; open, the
@@ -29,6 +29,8 @@ test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the
  if(closed){
   expect(v.crown).toMatchObject({display:'block',top:14,height:16,left:0,width:620,filter:'saturate(0.12) brightness(0.78)'});
   expect(v.crown.bg).toContain('/assets/hull/cap-slab.svg');
+  // Nothing covers the slab: the page's closed-state section stays transparent (the study has no dark cap there).
+  expect(v.cap).toBe('none rgba(0, 0, 0, 0)');
   expect(v.hidden.slice(1)).toEqual(['none','none','none']);
  }else expect(v.hidden).toEqual(['none','none','none','none']);
  expect(v.wall).toMatchObject({display:'block',top:wallTop,bottom:22,left:-8,width:636});

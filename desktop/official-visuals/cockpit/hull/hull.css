@@ -34,3 +34,5 @@
   --hull-aft:image-set(url('/assets/hull/aft-closed-1x.png') 1x,url('/assets/hull/aft-closed-2x.png') 2x);
   --hull-cap:url('/assets/hull/cap-slab.svg');
 }
+/* The page's closed-state section paints no dark cap over the slab; the study shows the slab alone. */
+:root[data-theme="night"] #cockpit[data-shell="closed"] .s6-closed-cap{background:none!important}
