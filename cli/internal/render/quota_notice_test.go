@@ -52,3 +52,33 @@ func TestQuotaSaysWhyNothingWasRead(t *testing.T) {
 		}
 	}
 }
+
+func TestSpendNoticeAndOtherPlan(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	cheaper := &advise.Step{Action: "cheaper_model", ModelName: "Claude Sonnet 5.5", Label: "High", AbilityDelta: f(0.3), CostRatio: f(0.55)}
+	other := &advise.OtherPlan{Name: "Codex", Window: "weekly", Remaining: 60, ResetsIn: 48 * 60}
+	n := []advise.QuotaNotice{{Kind: "low", Window: "weekly", Remaining: 8, ResetsIn: 180, Other: other, Cheaper: cheaper}}
+	for _, c := range []struct {
+		s                 Style
+		user, model, line string
+	}{
+		{Style{T: EN},
+			"Spawning subagents with low quota: Weekly quota: 8% left, resets in 3h; Codex still has 60% of its weekly quota left, resets in 2d.",
+			"Spawning subagents with low quota: Weekly quota: 8% left, resets in 3h; Codex still has 60% of its weekly quota left, resets in 2d. For subagents that do not need this model, Claude Sonnet 5.5 High scores as well at ×0.55 the cost (+0.3 pts).",
+			"Weekly quota: 8% left, resets in 3h; Codex still has 60% of its weekly quota left, resets in 2d. Claude Sonnet 5.5 High scores as well at ×0.55 the cost (+0.3 pts)."},
+		{Style{T: ZH},
+			"额度偏低时派子代理：每周额度：剩余8%，3时后重置；Codex 每周额度还剩60%，2天后重置。",
+			"额度偏低时派子代理：每周额度：剩余8%，3时后重置；Codex 每周额度还剩60%，2天后重置。不需要当前模型的子代理可以用 Claude Sonnet 5.5 High，能力相当，成本 ×0.55（+0.3 分）。",
+			"每周额度：剩余8%，3时后重置；Codex 每周额度还剩60%，2天后重置。Claude Sonnet 5.5 High 能力相当，成本 ×0.55（+0.3 分）。"},
+	} {
+		if got := c.s.SpendNotice(n, nil, false); got != c.user {
+			t.Errorf("user:\ngot  %s\nwant %s", got, c.user)
+		}
+		if got := c.s.SpendNotice(n, cheaper, true); got != c.model {
+			t.Errorf("model:\ngot  %s\nwant %s", got, c.model)
+		}
+		if got := c.s.QuotaNotice(n[0]); got != c.line {
+			t.Errorf("prompt notice:\ngot  %s\nwant %s", got, c.line)
+		}
+	}
+}

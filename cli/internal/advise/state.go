@@ -150,6 +150,7 @@ func (s *State) SaveWithLockWait(cache string, now time.Time, wait time.Duration
 		if q.At.After(local.At) {
 			local.At = q.At
 		}
+		local.Spend = max(local.Spend, q.Spend)
 		s.Quotas[k] = local
 	}
 	keys := map[string]bool{}

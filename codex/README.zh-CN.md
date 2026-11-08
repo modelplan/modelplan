@@ -69,6 +69,10 @@ codex plugin add modelplan-codex@modelplan
 
 **第二个钩子（可选）。** `SessionStart · Hook 2`，matcher 为 `compact|resume`，命令 `sh "$PLUGIN_ROOT/hooks/session-start.sh"`：Codex 压缩或恢复对话后，把这个对话收到过、现在仍然成立的额度偏低那一行按当前数字重新交给 Codex。不下载、不记录、不改设置。不允许它也不影响其他功能，只是压缩后的对话会少这一行。
 
+**第三个钩子（可选）。** `PreToolUse · Hook 3`，matcher 为 `spawn_agent`，命令 `sh "$PLUGIN_ROOT/hooks/pre-tool.sh"`，超时 3 秒：派子代理是额度消耗最快的时候。主对话派子代理时，如果额度到了和额度偏低那一行同样的节点（剩余 20%、10%、5%，或按最近用量会在重置前用完），给你看一行，Codex 收到同样的事实；派子代理没写模型时，再附一个已发布数据里能力相当、更省的模型。和消息提示共用记录，已经说过的那一档不再说，每个对话最多 3 次；子代理里再派子代理不提示；读数超过 60 分钟或读不到时什么都不说。只读本机缓存，不联网，不拦截，不改子代理的设置。Codex 会像其他钩子一样请你审核；不允许它也不影响其他功能。关闭自动提示时它也一起关闭。
+
+**其他 plan 的余量。** 额度偏低的那一行（来自消息钩子或第三个钩子）会附上你另一个已连接、明显宽裕的 plan：所有未过期窗口都还剩 30% 以上，且没有偏紧，例如“Claude 每周额度还剩60%，2天后重置”。读数过期、读不到或已过重置时间的 plan 不会被说成还有额度。只提你已经有的 plan，不推荐购买，不自动切换。
+
 插件已自带三个 Skill：`model-dashboard`（看板、模型与档位比较）、`model-plan`（结合任务、公开数据和本机额度给建议）和 `setup`（首次检查），不需要再单独安装同一份 Skill。想在终端里用 CLI，仍可用 `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` 自己安装；插件不需要它。
 
 ### 更新与卸载
