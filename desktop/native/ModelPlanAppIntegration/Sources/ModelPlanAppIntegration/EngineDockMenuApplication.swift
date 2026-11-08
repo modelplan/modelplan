@@ -293,14 +293,18 @@ struct StatusNoticePresentation {
     public func showConsole() {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
         composition.dock.acknowledgeCockpitOpening()
-        if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
+        if console == nil {
+            console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition)
+            console?.onShowingChanged = { [weak self] in self?.refreshStatusTooltip() }
+        }
         if let value = composition.latestSettings { console?.applySettings(value) }
         console?.show()
+        refreshStatusTooltip()
     }
     /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
     /// entry (menu item, ignition, shortcut, reopening the app) only ever opens.
     func toggleConsole() {
-        if let console, console.isShowing { console.requestClose() } else { showConsole() }
+        if let console, console.isShowing { console.requestClose(); refreshStatusTooltip() } else { showConsole() }
     }
     /// OS accessibility changes are presentation facts, never saved user choices.
     func updateSystemAccessibility(_ observed: SettingsEnvironment) {
@@ -793,8 +797,17 @@ struct StatusNoticePresentation {
         button.title = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
         // With no image the fallback title is the whole item; image-only would hide it.
         if button.image != nil { button.imagePosition = title.isEmpty ? .imageOnly : .imageLeading }
-        button.toolTip = detail
+        statusTooltip = detail
+        button.toolTip = statusTooltipHidden ? nil : detail
         button.setAccessibilityHelp(detail)
+    }
+    /// G3-49: the icon's tooltip sits above every app window and drew over the porthole when a click left the
+    /// pointer on the icon. While the cockpit is showing the icon has no tooltip; the accessible help stays.
+    private var statusTooltip = ""
+    private var statusTooltipHidden: Bool { console?.isShowing == true }
+    func refreshStatusTooltip() {
+        guard let button = status?.button else { return }
+        button.toolTip = statusTooltipHidden ? nil : statusTooltip
     }
     private func showHelp(fromStatusMenu: Bool = false) {
         guard !terminating, !lifecyclePaused else { return }

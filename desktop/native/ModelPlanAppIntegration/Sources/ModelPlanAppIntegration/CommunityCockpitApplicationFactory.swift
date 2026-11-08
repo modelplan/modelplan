@@ -241,6 +241,7 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
             self.wantsVisible = false
+            self.onShowingChanged?()
             self.fieldPanel?.close()
             self.pageOpened = false
         }
@@ -304,6 +305,7 @@ struct CockpitUnavailableNotice {
         }
     }
     var isShowing: Bool { wantsVisible }
+    var onShowingChanged: (() -> Void)?
     /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
     func requestClose() {
         if pageOpened { owner.coordinator?.requestClose() } else { hide() }
@@ -311,6 +313,7 @@ struct CockpitUnavailableNotice {
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
         wantsVisible = false
+        onShowingChanged?()
         showTask?.cancel()
         showTask = nil
         fieldPanel?.close()
