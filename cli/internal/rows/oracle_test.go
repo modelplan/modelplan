@@ -90,12 +90,12 @@ func TestDesignOracle(t *testing.T) {
 
 		{name: "first read failed, no account (grok P1)", in: Input{Catalogue: []CatalogueEntry{oracleTool("grok", true)}, Consents: oracleAllowed("grok"),
 			Profiles: []ProfileState{{ToolID: "grok", ProfileKey: "g1", LatestAttempt: AttemptResultFailed, AttemptedAt: oracleTime(-time.Minute), LastFailure: &FailureInput{Code: "parse_error", At: oracleTime(-time.Minute)}}}},
-			want: []oracleWant{{row: "grok", state: StateFailed, code: CodeParseError, action: ActionRefresh, dock: true}}},
+			want: []oracleWant{{row: "grok", state: StateFailed, code: CodeParseError, action: ActionRefresh, dock: false}}},
 
 		{name: "keychain actually blocks claude read", in: Input{Catalogue: []CatalogueEntry{oracleTool("claude", true)}, Consents: oracleAllowed("claude"),
 			Profiles:       []ProfileState{{ToolID: "claude", ProfileKey: "c1", LatestAttempt: AttemptResultFailed, AttemptedAt: oracleTime(-time.Minute), LastFailure: &FailureInput{Code: "keychain-confirmation-needed", At: oracleTime(-time.Minute)}}},
 			KeychainBlocks: []KeychainBlock{{ToolID: "claude", Blocked: true, Status: "keychain-confirmation-needed"}}},
-			want: []oracleWant{{row: "claude", state: StateNeedsKeychain, code: CodeKeychainConfirmationNeeded, action: ActionOpenSettingsKeychain, dock: true}}},
+			want: []oracleWant{{row: "claude", state: StateNeedsKeychain, code: CodeKeychainConfirmationNeeded, action: ActionOpenSettingsKeychain, dock: false}}},
 
 		{name: "keychain choice unset but credentials file works stays fresh", in: Input{Catalogue: []CatalogueEntry{oracleTool("claude", true)}, Consents: oracleAllowed("claude"),
 			Profiles: []ProfileState{oracleFresh("claude", "c1")}, Accounts: []AccountInput{oracleAccount("claude", "c1", oracleWindow())},
@@ -126,13 +126,13 @@ func TestDesignOracle(t *testing.T) {
 			want: []oracleWant{{row: "gemini", state: StatePending, code: CodeNotReadYet, dock: true}}},
 
 		{name: "allowed but uninstalled and readerless: tool_not_found beats no_reader", in: Input{Catalogue: []CatalogueEntry{{ToolID: "amp", Detected: false, ReaderExists: false}}, Consents: oracleAllowed("amp")},
-			want: []oracleWant{{row: "amp", state: StateNeedsAction, code: CodeToolNotFound, dock: true}}},
+			want: []oracleWant{{row: "amp", state: StateNeedsAction, code: CodeToolNotFound, dock: false}}},
 
 		{name: "allowed, installed, no reader is unsupported", in: Input{Catalogue: []CatalogueEntry{{ToolID: "amp", Detected: true, ReaderExists: false}}, Consents: oracleAllowed("amp")},
-			want: []oracleWant{{row: "amp", state: StateUnsupported, code: CodeNoReader, dock: true}}},
+			want: []oracleWant{{row: "amp", state: StateUnsupported, code: CodeNoReader, dock: false}}},
 
 		{name: "allowed but retired from the catalogue keeps its row", in: Input{Consents: oracleAllowed("droid")},
-			want: []oracleWant{{row: "droid", state: StateNeedsAction, code: CodeCatalogueRetired, dock: true}}},
+			want: []oracleWant{{row: "droid", state: StateNeedsAction, code: CodeCatalogueRetired, dock: false}}},
 
 		{name: "denied tool exports no accounts and has no dock row", in: Input{Catalogue: []CatalogueEntry{oracleTool("cursor", true)},
 			Consents: []ConsentRecord{{ToolID: "cursor", Generation: 7, State: ConsentDenied}},
@@ -147,7 +147,7 @@ func TestDesignOracle(t *testing.T) {
 		{name: "admission veto beats a fresh value", in: Input{Catalogue: []CatalogueEntry{oracleTool("copilot", true)}, Consents: oracleAllowed("copilot"),
 			Profiles: []ProfileState{oracleFresh("copilot", "p1")}, Accounts: []AccountInput{oracleAccount("copilot", "p1", oracleWindow())},
 			Admissions: []Admission{{ToolID: "copilot", Veto: "codexbar-not-audited"}}},
-			want: []oracleWant{{row: "copilot", state: StateOff, code: CodeCodexBarNotAudited, dock: true}}},
+			want: []oracleWant{{row: "copilot", state: StateOff, code: CodeCodexBarNotAudited, dock: false}}},
 
 		{name: "implicit consent behaves like allowed", in: Input{Catalogue: []CatalogueEntry{oracleTool("codex", true)},
 			Consents: []ConsentRecord{{ToolID: "codex", Generation: 7, State: ConsentImplicit}},
@@ -156,7 +156,7 @@ func TestDesignOracle(t *testing.T) {
 
 		{name: "expired login needs the tool", in: Input{Catalogue: []CatalogueEntry{oracleTool("claude", true)}, Consents: oracleAllowed("claude"),
 			Profiles: []ProfileState{{ToolID: "claude", ProfileKey: "c1", LatestAttempt: AttemptResultFailed, AttemptedAt: oracleTime(-time.Minute), LastFailure: &FailureInput{Code: "expired", At: oracleTime(-time.Minute)}}}},
-			want: []oracleWant{{row: "claude", state: StateNeedsAction, code: CodeLoginExpired, action: ActionOpenTool, dock: true}}},
+			want: []oracleWant{{row: "claude", state: StateNeedsAction, code: CodeLoginExpired, action: ActionOpenTool, dock: false}}},
 
 		{name: "readers off: no tool rows, declared plan still shows", in: Input{ReadersOff: true, Catalogue: []CatalogueEntry{oracleTool("codex", true)}, Consents: oracleAllowed("codex"),
 			DeclaredPlanIDs: []string{"team-plan"}},
@@ -203,14 +203,15 @@ func TestDesignOracle(t *testing.T) {
 			if tc.summary != "" && p.RowsSummary.State != tc.summary {
 				t.Fatalf("summary = %s, want %s", p.RowsSummary.State, tc.summary)
 			}
-			// Membership invariant: every allowed or implicit tool has exactly one Dock row unless readers are off.
+			// Membership invariant: every allowed or implicit tool is a row, and it has a Dock ring
+			// unless it holds no reading (G3-38, D76); readers off exempts all.
 			if !in.ReadersOff {
 				for _, c := range in.Consents {
 					if c.State != ConsentAllowed && c.State != ConsentImplicit {
 						continue
 					}
 					r := oracleRow(t, p, CanonicalTool(c.ToolID))
-					if r == nil || !oracleHas(r, SurfaceDock) {
+					if r == nil || !oracleHas(r, SurfaceDock) && !unreadable(*r) {
 						t.Fatalf("allowed tool %s has no Dock row", c.ToolID)
 					}
 				}

@@ -1,0 +1,1 @@
+A detected subscription that cannot be read no longer gets a Dock ring, whatever the reason (not signed in, waiting for permission or consent, an unsupported sign-in, a reader error with no reading). The Settings subscription list and the menu still list it with the reason.

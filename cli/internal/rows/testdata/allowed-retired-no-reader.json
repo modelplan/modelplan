@@ -14,7 +14,6 @@
         },
         "vendorKey": null,
         "surfaces": [
-          "dock",
           "menu",
           "settings"
         ],
@@ -40,19 +39,25 @@
       }
     ],
     "rowsSummary": {
-      "state": "ok",
+      "state": "empty",
       "reason": {
-        "code": "ok",
+        "code": "no_dock_rows",
         "text": {
-          "en": "Readings and actions are available",
-          "zh": "读数或操作可用"
+          "en": "No Dock reading or available action yet",
+          "zh": "尚无 Dock 读数或可用操作"
         }
       },
       "text": {
-        "en": "Readings and actions are available",
-        "zh": "读数或操作可用"
+        "en": "No Dock reading or available action yet",
+        "zh": "尚无 Dock 读数或可用操作"
       },
-      "nextStep": null
+      "nextStep": {
+        "action": "open_settings_consent",
+        "text": {
+          "en": "Review reader consent in Settings",
+          "zh": "在设置中检查读取授权"
+        }
+      }
     }
   }
 }
