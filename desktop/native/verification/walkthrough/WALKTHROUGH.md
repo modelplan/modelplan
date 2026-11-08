@@ -85,7 +85,7 @@ notch, so nothing can cover the icon. Each step may name its owner ledger `requi
 Scripted checks: `publication-sync`, `launch`, `reader-first-reading` (seconds to the first reading on the widget),
 `alive-after-walk`, `widget-ax-frames`, `doctor-readers` (`modelplan doctor readers` before shutdown, kept as
 `doctor-readers.json`), `reader-refresh-timing` (`--refresh`), `quit` (through the real menu item, no signal),
-`restart-launch`, `restart-no-first-run`, `restart-widget-place`, `restart-readings`, `restart-quit`,
+`restart-launch`, `restart-no-first-run`, `restart-widget-place` (edge, width and centre along the edge; not height), `restart-station-late` (info: height differs after relaunch, a station appeared late, G3-36 family), `restart-readings`, `restart-quit`,
 `no-crash-report`.
 
 Status `info` records a fact without passing or failing the job:
