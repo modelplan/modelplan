@@ -59,11 +59,10 @@ test('G3-47 vendor keys keep their identity colour and mark',async({page})=>{
  await open(page);
  const keys=await page.evaluate(()=>[...document.querySelectorAll('.eng-keys .ek[data-sub]')].map(k=>{const i=k.querySelector('img.lamp');
   const n=k.querySelector('.ek-name').getBoundingClientRect(),m=i?.getBoundingClientRect();
-  return {name:k.querySelector('.ek-name')?.textContent,strip:getComputedStyle(k.querySelector('.bl')).backgroundColor,mark:i?{src:i.getAttribute('src'),loaded:i.complete&&i.naturalWidth>0,beside:m.right<=n.left&&Math.abs((m.top+m.height/2)-(n.top+n.height/2))<=1.5}:null};}));
+  return {name:k.querySelector('.ek-name')?.textContent,strip:getComputedStyle(k.querySelector('.bl')).backgroundColor,mark:i?{src:i.getAttribute('src'),loaded:i.complete&&i.naturalWidth>0,beside:m.left+m.width/2+7<=n.left&&Math.abs((m.top+m.height/2)-(n.top+n.height/2))<=1.5}:null};}));
  expect(keys.map(k=>k.strip)).toEqual(['rgb(106, 168, 255)','rgb(255, 154, 106)','rgb(238, 242, 246)','rgb(198, 204, 212)']);
- expect(keys.slice(0,3).map(k=>k.mark?.loaded)).toEqual([true,true,true]);
+ expect(keys.map(k=>k.mark?.loaded)).toEqual([true,true,true,true]); // Gemini CLI has no vendor key but shows its own mark
  // The mark sits beside the name on one centre line, as in the study.
- expect(keys.slice(0,3).map(k=>k.mark?.beside)).toEqual([true,true,true]);
- expect(keys[3].mark).toBeNull();
+ expect(keys.map(k=>k.mark?.beside)).toEqual([true,true,true,true]);
  expect(missing).toEqual([]);
 });

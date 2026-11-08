@@ -199,3 +199,12 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .mfd-tip.eng-hint{position:fixed;z-index:40}
 /* The comparison title never gives way to its note or links (current unknown made it "Compare …"). */
 .dk-mfd .cmp-h .mfd-title{flex:none}.dk-mfd .cmp-h .cmp-note{min-width:0;overflow:hidden;text-overflow:ellipsis}.dk-mfd .cmp-header-links{min-width:0;overflow:hidden}
+
+/* Tab marks are fitted by their glyph, not their file: each scale makes the drawn glyph's longest side 14 px in
+   the 16 px box (measured from the mark's pixels), so OpenAI's half-empty canvas and Claude's full tile read alike. */
+.ck-eng .ek .ek-identity .lamp{transform:scale(var(--fit,1))}
+.ck-eng .ek .ek-identity .lamp[src$="openai-white.svg"]{--fit:1.75}
+.ck-eng .ek .ek-identity .lamp[src$="claude-rounded.svg"],.ck-eng .ek .ek-identity .lamp[src$="cursor.svg"],.ck-eng .ek .ek-identity .lamp[src$="copilot.svg"],.ck-eng .ek .ek-identity .lamp[src$="opencode.svg"],.ck-eng .ek .ek-identity .lamp[src$="kiro.svg"],.ck-eng .ek .ek-identity .lamp[src$="amp.svg"]{--fit:.875}
+.ck-eng .ek .ek-identity .lamp[src$="kimi-white.svg"],.ck-eng .ek .ek-identity .lamp[src$="grok.svg"]{--fit:.91}
+.ck-eng .ek .ek-identity .lamp[src$="gemini.svg"]{--fit:1.12}
+.ck-eng .ek .ek-identity .lamp[src$="qwen.svg"]{--fit:1.09}
