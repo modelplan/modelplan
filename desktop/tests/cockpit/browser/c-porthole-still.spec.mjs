@@ -19,7 +19,8 @@ const state=page=>page.evaluate(()=>{
     layers:field.querySelectorAll('.ck-still-layer').length,additive:field.querySelectorAll('.ck-still-add').length,
     media:field.querySelectorAll('img,svg,canvas,video').length,
     animations:document.getAnimations().filter(a=>a.effect?.target?.closest?.('.ck-field')).length,
-    covers:Math.abs(box.width-document.querySelector('.ck-port').clientWidth)<1&&box.height>0&&box.top>=port.top,
+    // The field covers the whole port (and, in the official edition, the canopy window around it: d-porthole-frame).
+    covers:box.left<=port.left&&box.right>=port.right&&box.top<=port.top&&box.height>0,
     blend:getComputedStyle(field.querySelector('.ck-still-add')).mixBlendMode};
 });
 for(const theme of ['night','day'])for(const tier of ['tall','compact'])test(`porthole still ${theme} ${tier}`,async({page})=>{
