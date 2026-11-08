@@ -157,7 +157,9 @@ let lpmConfigs: [Config] = [
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
-let driver = Driver()
-try? "\(getpid())".write(to: out.appendingPathComponent("pid"), atomically: true, encoding: .utf8)
-Task { @MainActor in await driver.run() }
+MainActor.assumeIsolated {
+  let driver = Driver()
+  try? "\(getpid())".write(to: out.appendingPathComponent("pid"), atomically: true, encoding: .utf8)
+  Task { @MainActor in await driver.run() }
+}
 app.run()
