@@ -6,15 +6,20 @@
 .ck-base :is(.bz,.bz-empty){--bell-w:min(120px,calc(var(--cw) * 121 / 133));--bell-h:calc(var(--bell-w) * 10 / 81)}
 .ck-base :is(.bz,.bz-empty) .bz-line{top:0;width:var(--bell-w);height:var(--bell-h);border-radius:0;background:transparent url('./assets/bells/bell-night-2x.png') center/100% 100% no-repeat;opacity:1}
 @media (min-resolution:2dppx){.ck-base :is(.bz,.bz-empty) .bz-line{background-image:url('./assets/bells/bell-night-3x.png')}}
-/* Subscribed bells take the silver finish; its 2x source is the largest that exists, so it serves both densities. */
-.ck-base .bz .bz-line,.ck-base .bz.stale .bz-line{background-image:url('./assets/bells/bell-silver-2x.png')}
-.ck-base .bz.stale .bz-line{filter:grayscale(1) brightness(.75)}
-/* Empty bays: the same shape, dimmed, with no plume or halo. */
+/* Subscribed bells take the silver finish through the shared gunmetal transfer (CKP-SHELL-15, CKP-ENG-16), the same
+   for idle, working and stale bells, so an idle bell reads dark, close to the hull; only a working bell lights its
+   mouth. Measured on the opus-r7 study: saturate(.12) brightness(.78). The silver 2x source is the largest that
+   exists, so it serves both densities. */
+.ck-base .bz .bz-line{background-image:url('./assets/bells/bell-silver-2x.png');filter:saturate(.12) brightness(.78)}
+/* Empty bays: the black/graphite bell, quietly dimmed, unfiltered by the gunmetal transfer. */
 .ck-base .bz-empty .bz-line{filter:brightness(.9)}
 .ck-base .bz-glow{display:none}
-.ck-base .bz:hover .bz-line{filter:brightness(1.2)}
-/* Working (CKP-ENG-17/18): one soft glow fills the bell's inner mouth, brightest at the opening with a slightly
-   whiter core, fading about 3 px past the outer lower rim, in the quota-status colour. No plume body, cone, tip,
-   halo or second band; idle bells and empty bays emit nothing. */
-.ck-base .bz .bz-sheet{top:calc(var(--bell-h) * .42);width:calc(var(--bell-w) * .9);height:calc(var(--bell-h) * .58 + 3px);z-index:2}
-.ck-base .bz .bz-sheet::before{border-radius:50%;background:radial-gradient(ellipse 50% 70% at 50% 25%,color-mix(in srgb,var(--fuel) 55%,white) 0%,color-mix(in srgb,var(--fuel) 85%,transparent) 38%,color-mix(in srgb,var(--fuel) 35%,transparent) 70%,transparent 100%);-webkit-mask-image:none;mask-image:none}
+.ck[data-active="true"] .ck-base .bz:hover .bz-line{filter:saturate(.12) brightness(.95)}
+/* Working (CKP-ENG-17/18): one soft glow fills the inner mouth from the opening down, whiter at the core, fading
+   about 3 px past the outer lower rim, in the quota-status colour; no plume body. Geometry measured on the study:
+   it starts at bell width x 0.0557, spans the inner mouth (bell width x 0.9033) x 1.08, and runs 5 px past the
+   bell's foot at 60 % opacity. */
+.ck-base .bz .bz-sheet{top:calc(var(--bell-w) * .05574);width:calc(var(--bell-w) * .9033 * 1.08);height:calc(var(--bell-h) - var(--bell-w) * .05574 + 5px);opacity:.6;z-index:2}
+.ck-base .bz .bz-sheet::before{border-radius:50% 50% 0 0/calc(var(--bell-w) * .0226) calc(var(--bell-w) * .0226) 0 0;
+  background:linear-gradient(180deg,color-mix(in srgb,color-mix(in srgb,var(--fuel) 78%,white) 95%,transparent),color-mix(in srgb,var(--fuel) 78%,transparent) 22%,color-mix(in srgb,var(--fuel) 40%,transparent) 65%,transparent);
+  -webkit-mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%);mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%)}

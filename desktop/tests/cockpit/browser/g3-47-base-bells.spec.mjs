@@ -45,8 +45,8 @@ for(const tier of ['tall','compact'])test(`G3-47 ${tier}: one bell per column in
  expect(v.bells[0].label).toMatch(/working now · 120 t\/s/);
  const sheet=v.bells[0].sheet;
  expect(sheet.anim).toBe('cockpit-mouth-shimmer');
- // CKP-ENG-17: the light fills the mouth and fades about 3 px past the rim, no plume body.
- expect(sheet.bottom).toBeLessThanOrEqual(v.bells[0].top+v.bells[0].h+3.5);
+ // CKP-ENG-17: the light fills the mouth and fades out within 5 px past the foot (visible about 3 px), no plume body.
+ expect(sheet.bottom).toBeLessThanOrEqual(v.bells[0].top+v.bells[0].h+5.5);
  expect(v.bells.slice(1).every(b=>b.sheet===null)).toBe(true);
 });
 

@@ -122,11 +122,11 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 .bz.stale .bz-line,.bz-empty .bz-line{background:var(--base-stale,#6b7077)}
 .bz-empty .bz-line{opacity:.35}
 /* Working (CKP-ENG-17/18): a soft mouth light below the line in the quota-status colour; nothing when idle. */
-.bz-sheet{position:absolute;left:50%;top:2px;width:var(--w,22px);height:8px;transform:translateX(-50%);transform-origin:50% 0;pointer-events:none}
+.bz-sheet{position:absolute;left:50%;top:2px;width:var(--w,22px);height:8px;transform:translateX(-50%);transform-origin:50% 0;pointer-events:none;opacity:.6}
 .bz-sheet::before{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(ellipse 50% 70% at 50% 25%,color-mix(in srgb,var(--fuel) 55%,white) 0%,color-mix(in srgb,var(--fuel) 85%,transparent) 38%,color-mix(in srgb,var(--fuel) 35%,transparent) 70%,transparent 100%)}
 /* Mouth shimmer (CKP-ENG-19, MOT-2.3-05): stepped at a low rate, small uneven opacity and height jitter, X fixed;
    only on an active, open page and never under the host's or the system's Reduce Motion. */
-@keyframes cockpit-mouth-shimmer{0%{opacity:.9;transform:translateX(-50%) scaleY(1)}17%{opacity:.86;transform:translateX(-50%) scaleY(1.04)}36%{opacity:.95;transform:translateX(-50%) scaleY(.95)}49%{opacity:.88;transform:translateX(-50%) scaleY(1.06)}73%{opacity:.93;transform:translateX(-50%) scaleY(.97)}88%{opacity:.85;transform:translateX(-50%) scaleY(1.02)}100%{opacity:.9;transform:translateX(-50%) scaleY(1)}}
+@keyframes cockpit-mouth-shimmer{0%{opacity:.6;transform:translateX(-50%) scaleY(1)}17%{opacity:.58;transform:translateX(-50%) scaleY(1.04)}36%{opacity:.62;transform:translateX(-50%) scaleY(.95)}49%{opacity:.59;transform:translateX(-50%) scaleY(1.06)}73%{opacity:.61;transform:translateX(-50%) scaleY(.97)}88%{opacity:.57;transform:translateX(-50%) scaleY(1.02)}100%{opacity:.6;transform:translateX(-50%) scaleY(1)}}
 @media (prefers-reduced-motion:no-preference){
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet{animation:cockpit-mouth-shimmer 1.73s steps(10,end) var(--fo,0s) infinite!important}
 }
