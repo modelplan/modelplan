@@ -44,8 +44,6 @@ enum DockGripInk {
     @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }
     /// Skin-space origin of the view's local coordinates (the hover viewport when one is reserved).
     @_spi(DockResourceChecks) public var layoutOriginForChecks: CGPoint { layoutOrigin }
-    /// Set only by the owner-test option; the appearance reads it when it lays out the rings.
-    public var centresRings = false
     @_spi(DockResourceChecks) public var presentedImageForChecks: CGImage? { failed || community ? nil : image }
     /// G3-32: the text runs of the last full render (fallback marks, readouts, aliases).
     @_spi(DockResourceChecks) public private(set) var presentedTextMetricsForChecks: [DockGlyphMetric] = []
