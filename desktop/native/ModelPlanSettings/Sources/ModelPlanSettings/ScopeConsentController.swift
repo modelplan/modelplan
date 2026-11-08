@@ -23,6 +23,9 @@ public struct FirstRunTool: Sendable, Equatable {
     public let scopes: [String]
     public let routes: [RowsRoute]
     public let block: ScopeToolBlock?
+    /// D61: a path of this tool can show a macOS Keychain prompt (the engine's access class,
+    /// sent as a Keychain choice on the scope), so it is read only after Done and only if ticked.
+    public let promptsKeychain: Bool
     public var canRead: Bool { block == nil && !scopes.isEmpty }
 }
 /// Transient UI choices over already-accepted facts. No persistence or protocol acceptance logic.
@@ -52,6 +55,7 @@ public struct FirstRunTool: Sendable, Equatable {
     /// G3-45: the user's own first-run changes; untouched tools follow their default.
     private var firstRunToolChoices: [String: Bool] = [:]
     private var rowCodes: [String: RowsCode] = [:]
+    private var rowStates: [String: RowsState] = [:]
     private var observers: [UUID: @MainActor () -> Void] = [:]
     public init(commands: any ScopeConsentCommands, copyReport: (@MainActor (String) throws -> Void)? = nil) {
         self.commands = commands; self.copyReport = copyReport
@@ -208,13 +212,14 @@ public struct FirstRunTool: Sendable, Equatable {
         rowsSummary = value.projection.rowsSummary
         claudeRowState = value.projection.rows.first { $0.id == "claude" }?.state
         rowCodes = Dictionary(value.projection.rows.map { ($0.id, $0.reason.code) }, uniquingKeysWith: { first, _ in first })
+        rowStates = Dictionary(value.projection.rows.map { ($0.id, $0.state) }, uniquingKeysWith: { first, _ in first })
         changed()
     }
     public func clearAcceptedPrivateState() {
         lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []
         activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil;diagnosticsPresentation=nil; notice = .none
         facts = nil; rowsSummary = nil; claudeRowState = nil; keychainLater = false; selectedIDs = []; phase = .idle
-        firstRunToolChoices = [:]; rowCodes = [:]; changed()
+        firstRunToolChoices = [:]; rowCodes = [:]; rowStates = [:]; changed()
     }
     /// D41: Claude Code's saved-login path, when it is here and usable.
     private var claudeSavedLogin: WireConsentScope? {
@@ -329,7 +334,8 @@ public struct FirstRunTool: Sendable, Equatable {
             let standard = (byTool[tool] ?? []).filter {
                 $0.route.isKnown && $0.route != .knownUnknown && $0.route != .browserSession && $0.disabledReason == nil && !$0.cleanupPending
             }
-            return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool))
+            return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool),
+                                promptsKeychain: standard.contains { $0.keychain != nil })
         }
     }
     /// Checked unless the user unchecked it, it cannot be read, or every path was already refused.
@@ -343,9 +349,15 @@ public struct FirstRunTool: Sendable, Equatable {
         guard canMutate, firstRunTools.contains(where: { $0.tool == tool && $0.canRead }) else { return }
         firstRunToolChoices[tool] = chosen; changed()
     }
+    /// D61 (3): when any tool can be read, at least one must be ticked before Done.
+    public var firstRunChoiceSatisfied: Bool {
+        let readable = firstRunTools.filter(\.canRead)
+        return readable.isEmpty || readable.contains { isFirstRunToolChosen($0.tool) }
+    }
     /// The one grant Done sends: checked tools allowed, unchecked ones refused. A tool that cannot
-    /// be read is left as it is. Claude Code's Keychain read is included only when the user has
-    /// not chosen yet and its login does not already read, so macOS asks at most once (D41).
+    /// be read is left as it is. A Keychain-capable path (by access class, D61) gets its Keychain
+    /// read only when ticked, when no Keychain choice exists yet and its tool does not already read
+    /// without it, so macOS asks at most once (D41).
     public func firstRunChoiceIntent() -> ScopeConsentIntent? {
         guard let facts else { return nil }
         var allow: [String] = [], deny: [String] = [], keychain: [String] = []
@@ -355,7 +367,7 @@ public struct FirstRunTool: Sendable, Equatable {
                 guard let scope = facts.scopes.first(where: { $0.scope == id }) else { continue }
                 if chosen {
                     if scope.state != .allowed { allow.append(id) }
-                    if scope.tool == "claude", scope.route == .savedLoginApi, scope.keychain == .unset, claudeRowState != .fresh, !keychainLater {
+                    if scope.keychain == .unset, rowStates[scope.tool] != .fresh, !keychainLater {
                         if scope.state == .allowed { allow.append(id) }
                         keychain.append(id)
                     }
@@ -371,6 +383,7 @@ public struct FirstRunTool: Sendable, Equatable {
     /// request could not be sent, so the page stays open with the user's choices.
     public func commitFirstRunChoices() async -> Bool {
         guard facts != nil else { return true }
+        guard firstRunChoiceSatisfied else { return false }
         guard let intent = firstRunChoiceIntent() else { return true }
         guard canMutate else { return false }
         let value = ScopeConsentConfirmation(id: UUID(), intent: intent)

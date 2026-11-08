@@ -190,8 +190,10 @@ import AppKit
         let enabled = active && pageValid && !busy && !editor.isSaving && !editor.connections.isBusy && options != nil && !scopeUnavailable && scopeIdle
         loginButton.isEnabled = enabled
         for button in readerButtons.values { button.isEnabled = enabled && !editor.connections.isAvailable }
-        doneButton.isEnabled = enabled
-        helpButton.isEnabled = enabled && !helpButton.isHidden && editor.context.capabilities.helpMapAvailable && editor.onHostRequest != nil
+        // D61 (3): with readable tools on the page, at least one must be ticked.
+        let chosen = scopeConsentEntry?.controller.firstRunChoiceSatisfied ?? true
+        doneButton.isEnabled = enabled && chosen
+        helpButton.isEnabled = enabled && chosen && !helpButton.isHidden && editor.context.capabilities.helpMapAvailable && editor.onHostRequest != nil
     }
     @objc private func loginChanged() {
         guard active, !busy, loginButton.isEnabled else { return }

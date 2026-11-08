@@ -134,6 +134,10 @@ import ModelPlanWire
             if index > 0 { separator() }
             toolRow(tool)
         }
+        if !controller.firstRunChoiceSatisfied {
+            label(.init("Tick at least one tool to continue.", "请至少勾选一个工具。"))
+            arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.pickOne")
+        }
         gap()
         label(.init("Tools you install later are read by default. Turn any of them off in Settings › Data & Privacy.",
                     "之后安装的工具默认会读取，可在 设置 › 数据与隐私 中关闭。"), secondary: true)
@@ -213,27 +217,31 @@ import ModelPlanWire
         return names[tool].map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
     }
     private static let noKeychain = SettingsText(" No Keychain prompt.", "不会弹出钥匙串授权。")
-    /// One plain line per tool: what is read and whether macOS may ask for the Keychain.
+    private static let mayAskKeychain = SettingsText(" macOS may ask once for Keychain access; choose \u{201C}Always Allow\u{201D}.",
+                                                     "macOS 可能会询问一次钥匙串权限，请选“始终允许”。")
+    /// One plain line per tool: what is read, then whether macOS may ask for the Keychain. The
+    /// Keychain part follows the paths' access class (D61), not the vendor.
     static func readLine(_ tool: FirstRunTool) -> SettingsText {
+        let base: SettingsText
         switch tool.tool {
         case "claude":
-            return .init("Reads the Claude Code sign-in saved in its credentials file or the Keychain, and its local history. macOS may ask once for Keychain access; choose \u{201C}Always Allow\u{201D}.",
-                         "读取 Claude Code 保存在凭据文件或钥匙串里的登录，以及本机历史记录。macOS 可能会询问一次钥匙串权限，请选“始终允许”。")
+            base = .init("Reads the Claude Code sign-in saved in its credentials file or the Keychain, and its local history.",
+                         "读取 Claude Code 保存在凭据文件或钥匙串里的登录，以及本机历史记录。")
         case "codex":
-            return .init("Asks Codex's own app server for usage with the sign-in Codex saved, and reads its local history." + noKeychain.english,
-                         "通过 Codex 自带的 app-server，用它已保存的登录查询用量，并读取本机历史记录。" + noKeychain.chinese)
+            base = .init("Asks Codex's own app server for usage with the sign-in Codex saved, and reads its local history.",
+                         "通过 Codex 自带的 app-server，用它已保存的登录查询用量，并读取本机历史记录。")
         case "cursor":
-            return .init("Reads the sign-in Cursor saved in its local database, and its local history." + noKeychain.english,
-                         "读取 Cursor 本地数据库里保存的登录，以及本机历史记录。" + noKeychain.chinese)
+            base = .init("Reads the sign-in Cursor saved in its local database, and its local history.",
+                         "读取 Cursor 本地数据库里保存的登录，以及本机历史记录。")
         case "grok":
-            return .init("Reads the sign-in Grok saved in ~/.grok, and its local history." + noKeychain.english,
-                         "读取 Grok 保存在 ~/.grok 里的登录，以及本机历史记录。" + noKeychain.chinese)
+            base = .init("Reads the sign-in Grok saved in ~/.grok, and its local history.",
+                         "读取 Grok 保存在 ~/.grok 里的登录，以及本机历史记录。")
         case "kiro":
-            return .init("Asks the Kiro CLI for usage with the sign-in Kiro saved. ModelPlan does not read or keep Kiro's credentials.",
+            base = .init("Asks the Kiro CLI for usage with the sign-in Kiro saved. ModelPlan does not read or keep Kiro's credentials.",
                          "调用 Kiro CLI 查询用量，沿用它已保存的登录。ModelPlan 不读取也不保存 Kiro 的凭据。")
         case "zai":
-            return .init("Reads the GLM Coding Plan key you saved in ZCode, and its local history." + noKeychain.english,
-                         "读取你在 ZCode 里保存的 GLM Coding Plan 密钥，以及本机历史记录。" + noKeychain.chinese)
+            base = .init("Reads the GLM Coding Plan key you saved in ZCode, and its local history.",
+                         "读取你在 ZCode 里保存的 GLM Coding Plan 密钥，以及本机历史记录。")
         default:
             var english: [String] = [], chinese: [String] = []
             let routes = Set(tool.routes.map(\.rawValue))
@@ -241,10 +249,11 @@ import ModelPlanWire
             if routes.contains("runtime_rpc") { english.append("usage from its own runtime"); chinese.append("它自带运行时提供的用量") }
             if routes.contains("api_key_api") { english.append("the API key you configured for it"); chinese.append("你为它配置的 API 密钥") }
             if routes.contains("local_log") || routes.contains("local_sqlite") { english.append("its local history"); chinese.append("本机历史记录") }
-            guard !english.isEmpty else { return .init("Reads its usage on this Mac." + noKeychain.english, "读取它在本机的用量。" + noKeychain.chinese) }
-            return .init("Reads " + english.joined(separator: " and ") + "." + noKeychain.english,
-                         "读取" + chinese.joined(separator: "和") + "。" + noKeychain.chinese)
+            base = english.isEmpty ? .init("Reads its usage on this Mac.", "读取它在本机的用量。")
+                : .init("Reads " + english.joined(separator: " and ") + ".", "读取" + chinese.joined(separator: "和") + "。")
         }
+        let keychain = tool.promptsKeychain ? mayAskKeychain : noKeychain
+        return .init(base.english + keychain.english, base.chinese + keychain.chinese)
     }
     static func blockLine(_ block: ScopeToolBlock, tool: String, firstRun: Bool = true) -> SettingsText {
         let name = toolName(tool)
