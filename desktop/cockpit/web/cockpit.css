@@ -120,7 +120,7 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
    plate the released r3 plain plate of the official edition; the community edition has none and stays neutral. */
 #cockpit{--hull-wall-top:216px;--hull-clip-top:216px}
 :root[data-profile="compact"] #cockpit{--hull-wall-top:48px;--hull-clip-top:48px}
-:root #cockpit[data-shell="closed"]{--hull-wall-top:30px;--hull-clip-top:36px}
+:root #cockpit[data-shell="closed"]{--hull-wall-top:30px;--hull-clip-top:30px}
 :root[data-theme="night"] #cockpit .ck-shell :is(.hull-crown,.hull-cone,.hull-lower,.hull-record){display:none}
 :root[data-theme="night"] #cockpit .ck-shell .hull-upper{top:var(--hull-wall-top);bottom:22px;height:auto;background-image:var(--hull-wall);background-size:636px 32px;background-position:50% 9px;background-repeat:repeat-y}
 :root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(var(--hull-clip-top) 16px 22px)}

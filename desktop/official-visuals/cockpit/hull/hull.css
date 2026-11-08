@@ -36,3 +36,5 @@
 }
 /* The page's closed-state section paints no dark cap over the slab; the study shows the slab alone. */
 :root[data-theme="night"] #cockpit[data-shell="closed"] .s6-closed-cap{background:none!important}
+/* The strip panel's own outer 16 px wall paint gives way to the continuous hull rails (study strip-hull-unify). */
+:root[data-theme="night"] #cockpit .ck-head::before{clip-path:inset(0 16px)}
