@@ -1,0 +1,2 @@
+settings notice (zh-CN): 菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。
+widget menu first item: 菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。

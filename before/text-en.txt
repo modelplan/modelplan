@@ -1,0 +1,2 @@
+settings notice (en): The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right.
+widget menu first item: The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right.

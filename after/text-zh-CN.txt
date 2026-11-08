@@ -1,0 +1,2 @@
+settings notice (zh-CN): 菜单栏已满，macOS 把 ModelPlan 图标藏起来了。腾出位置：在「系统设置 › 菜单栏」里关掉一些图标，或按住 ⌘ 把系统图标拖出菜单栏。在此之前，右键点额度挂件可打开设置。
+widget menu first item: 菜单栏已满，ModelPlan 图标被挡住了。设置里有解决办法。

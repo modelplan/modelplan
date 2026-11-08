@@ -1,0 +1,2 @@
+settings notice (en): The menu bar is full, so macOS hides the ModelPlan icon. To make room, turn some icons off in System Settings > Menu Bar, or hold ⌘ and drag system icons off the menu bar. Until then, right-click the Quota Widget for Settings.
+widget menu first item: The menu bar is full and the ModelPlan icon is hidden. Settings shows how to fix it.
