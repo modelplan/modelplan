@@ -83,6 +83,15 @@ extension CommunityCockpitEntryTests {
         return Int(seconds) * 1000 + Int(attoseconds / 1_000_000_000_000_000)
     }
 
+    /// Click to first data on a hosted runner. The PR measured 26 to 88 ms there on most runs, but a loaded
+    /// runner once took 1040 ms (the query alone took 1045 ms in that run), and a cold start is about 3.3 s.
+    /// This hosted gate only catches a lost prewarm. The product target on a real Mac stays under 800 ms,
+    /// and that is checked by device evidence (C-01, C-36, tracked in #470), not by this bound.
+    static let hostedClickToDataBoundMs = 1500
+    /// WebKit footprint while the cockpit is shown, by launch label ("prewarm", "baseline"), for the comparison
+    /// printed after both launches of one test run.
+    @MainActor static var shownFootprints: [String: [(kib: Int, processes: Int)]] = [:]
+
     private final class OpenProbe {
         typealias Render = (at: ContinuousClock.Instant, frame: CGRect, rootHeight: CGFloat?)
         var made: [CockpitWindowController] = []
@@ -226,6 +235,9 @@ extension CommunityCockpitEntryTests {
                 let queryStart = ContinuousClock.now
                 let queried = (try? await entry.composition.client.cockpit(timeout: .seconds(10))) != nil
                 let query = queried ? Self.ms(queryStart) : -1
+                let shownSample = Self.webKitFootprints()
+                Self.shownFootprints[label, default: []].append((kib: kib(shownSample), processes: shownSample.count))
+                print("G3-42-MEMORY \(label) run=\(run) shownWebKitFootprintKiB=\(kib(shownSample)) webKitProcesses=\(shownSample.count)")
                 print("G3-42-STAGES \(label) run=\(run) pageBuiltByClick=\(probe.made.count > pagesBefore) "
                     + "pageReadyMs=\(at(probe.traced("page.ready", after: click))) shownMs=\(at(probe.traced("page.shown", after: click))) "
                     + "lastReplyShownMs=\(at(lastShown)) firstDataMs=\(at(renders.first?.at)) freshReplyMs=\(at(fresh)) "
@@ -237,9 +249,9 @@ extension CommunityCockpitEntryTests {
                     // The packaged build's own record of the same open, measured from the click in the console.
                     XCTAssertNotNil(probe.timed("open page=warm-ready", after: click), "run \(run): \(probe.timing.map(\.line))")
                     let rendered = try XCTUnwrap(probe.timed("open rendered n=1 clickMs=", after: click), "run \(run)")
-                    XCTAssertLessThan(try XCTUnwrap(Int(rendered.split(separator: "=").last ?? "")), 800, "run \(run): \(rendered)")
+                    XCTAssertLessThan(try XCTUnwrap(Int(rendered.split(separator: "=").last ?? "")), Self.hostedClickToDataBoundMs, "run \(run): \(rendered)")
                     let first = try XCTUnwrap(renders.first?.at, "run \(run): the shown page renders data")
-                    XCTAssertLessThan(Self.ms(click, first), 800, "run \(run): a click shows the cockpit with data without a WebKit cold start")
+                    XCTAssertLessThan(Self.ms(click, first), Self.hostedClickToDataBoundMs, "run \(run): a click shows the cockpit with data without a WebKit cold start")
                     let shownLast = try XCTUnwrap(lastShown, "run \(run): the last reply is shown first")
                     let freshReply = try XCTUnwrap(fresh, "run \(run): a fresh reply follows")
                     XCTAssertLessThan(shownLast, freshReply, "run \(run)")
@@ -290,9 +302,10 @@ extension CommunityCockpitEntryTests {
     /// CKP-SHELL-20 (owner D50): after launch the app loads one hidden, empty page and fills the last reply;
     /// a click shows that page and the last reply at once, then the fresh reply replaces it without a layout
     /// change, and after each close an empty page is loaded again. The prewarmed launch runs first, while this
-    /// test process has not started WebKit, so its hidden page pays the cold start. The 800 ms bound is loose
-    /// for a hosted runner and still far below a WebKit cold start (about 3.3 s there). The second launch,
-    /// without prewarm, reports the open as it was before.
+    /// test process has not started WebKit, so its hidden page pays the cold start. The hosted bound
+    /// (`hostedClickToDataBoundMs`, 1500 ms) is still far below a WebKit cold start (about 3.3 s there); the
+    /// real-Mac target stays under 800 ms (C-01, C-36 on #470). The second launch, without prewarm, opens as
+    /// main does, and the WebKit footprint while shown is compared between the two launches.
     @MainActor func testG3_42ClickToFirstDataStagesAtTheNormalEntry() async throws {
         let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
@@ -300,6 +313,7 @@ extension CommunityCockpitEntryTests {
               FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
             throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
         }
+        Self.shownFootprints = [:]
         for prewarm in [true, false] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-42-stages-" + UUID().uuidString).resolvingSymlinksInPath()
             defer { try? FileManager.default.removeItem(at: root) }
@@ -307,6 +321,16 @@ extension CommunityCockpitEntryTests {
             do { try await measureLaunch(prewarm: prewarm, root: root, official: official, cli: URL(fileURLWithPath: path)) }
             catch { XCTFail("\(prewarm ? "prewarm" : "baseline") launch stopped: \(error)") }
         }
+        // Same test process and runner: the prewarmed launch against the launch that opens as main does.
+        func median(_ label: String) -> Int {
+            let values = (Self.shownFootprints[label] ?? []).map(\.kib).sorted()
+            return values.isEmpty ? -1 : values[values.count / 2]
+        }
+        let (warm, base) = (median("prewarm"), median("baseline"))
+        print("G3-42-MEMORY-COMPARE shownWebKitFootprintKiB median prewarm=\(warm) baseline=\(base) deltaKiB=\(warm - base) "
+            + "prewarm=\(Self.shownFootprints["prewarm"]?.map { "\($0.kib)/\($0.processes)p" } ?? []) "
+            + "baseline=\(Self.shownFootprints["baseline"]?.map { "\($0.kib)/\($0.processes)p" } ?? [])")
+        Self.shownFootprints = [:]
     }
 }
 #endif
