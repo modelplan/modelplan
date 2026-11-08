@@ -27,7 +27,7 @@ const read=page=>page.evaluate(()=>[...document.querySelectorAll('.ck-base .bz,.
  if(!p)return {cls:b.className,plume:null};
  const s=getComputedStyle(p),before=getComputedStyle(p,'::before'),r=p.getBoundingClientRect(),a=p.getAnimations()[0]?.effect?.getTiming();
  return {cls:b.className,bell:{top:l.top,w:l.width},fd:b.style.getPropertyValue('--fd'),fuel:getComputedStyle(b).getPropertyValue('--fuel').trim(),
-  plume:{top:r.top,h:p.offsetHeight,w:p.offsetWidth,display:s.display,opacity:Number(s.opacity),mask:before.maskImage||before.webkitMaskImage,paint:before.backgroundImage,
+  plume:{faint:Number(before.opacity),top:r.top,h:p.offsetHeight,w:p.offsetWidth,display:s.display,opacity:Number(s.opacity),mask:before.maskImage||before.webkitMaskImage,paint:before.backgroundImage,
    anim:s.animationName,timing:s.animationTimingFunction,direction:s.animationDirection,iterations:s.animationIterationCount,duration:s.animationDuration,live:a?1:0}};
 }));
 
@@ -44,6 +44,8 @@ test('D73 a working bell has a faint half-height flame on top of its mouth glow;
  expect(plume.h).toBeCloseTo((34-3.5)/2,0);
  expect(plume.mask).toContain('assets/bells/mouth-plume-mask.png');
  expect(plume.paint).toMatch(/gradient/);
+ // Faint (owner 10-26): the paint is held at half strength whatever the flicker step.
+ expect(plume.faint).toBe(.5);
  expect(work[0].fuel).not.toBe('');
  expect(plume.anim).toBe('cockpit-bell-plume');
  // steps(1,end): WebKit serializes it as steps(1).

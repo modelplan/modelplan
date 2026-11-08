@@ -26,9 +26,9 @@
 /* Flame (owner D73): the study's task 66 plume at half its height and faint (owner 10-26: half is enough, just a
    hint). It starts 3.5 px into the mouth, spans the inner mouth (bell width x 0.9033), runs min((34 - 3.5) / 2,
    len x 0.8) px, is cut by the released mouth-plume-mask.png and coloured by the subscription's quota state (--fuel),
-   like the glow above it. The keyframes in cockpit.css scale its opacity from this .5 peak. */
-.ck-base .bz .bz-plume{display:block;top:3.5px;width:calc(var(--bell-w) * .9033);height:min(calc((34px - 3.5px) / 2),calc(var(--len,18px) * .8));opacity:.5;z-index:2}
-.ck-base .bz .bz-plume::before{content:"";position:absolute;inset:0;
+   like the glow above it. Its paint is held at .5 so the stepped keyframes (on the element) only vary it from there. */
+.ck-base .bz .bz-plume{display:block;top:3.5px;width:calc(var(--bell-w) * .9033);height:min(calc((34px - 3.5px) / 2),calc(var(--len,18px) * .8));z-index:2}
+.ck-base .bz .bz-plume::before{content:"";position:absolute;inset:0;opacity:.5;
   background:linear-gradient(180deg,color-mix(in srgb,var(--fuel) 95%,transparent),color-mix(in srgb,var(--fuel) 70%,transparent) 24%,color-mix(in srgb,var(--fuel) 26%,transparent) 65%,transparent);
   -webkit-mask-image:url('./assets/bells/mouth-plume-mask.png');mask-image:url('./assets/bells/mouth-plume-mask.png');-webkit-mask-size:100% 100%;mask-size:100% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
 .ck-base .bz .bz-sheet{z-index:3}
