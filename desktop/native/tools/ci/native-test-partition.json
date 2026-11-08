@@ -71,6 +71,7 @@
         "DockWakePolicyTests",
         "EngineDesignConformanceTests",
         "EngineDockInteractionBindingTests",
+        "FindQuotaWidgetJourneyTests",
         "HintExecutionHostTests",
         "HostPairedProjectionTests",
         "InstrumentHelpCompositionTests",
@@ -126,7 +127,7 @@
         },
         "CommunityCockpitEntryTests/testProductionPinsAdmitCanonicalBundles": {
           "leg": "headless",
-          "reason": "needs both canonical cockpit editions built first"
+          "reason": "needs both canonical cockpit editions built and their generated pins compiled in (check-bundle-pins.py), which U11 native supplies"
         },
         "S1GalleryTests/testProduceOffscreenGallery": {
           "leg": "headless",

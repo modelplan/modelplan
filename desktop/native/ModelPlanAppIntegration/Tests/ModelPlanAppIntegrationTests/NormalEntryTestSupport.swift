@@ -84,3 +84,15 @@ import ModelPlanSettings
         XCTAssertEqual(editor.snapshot?.revision,revision)
     }
 }
+
+/// D56 (owner 2026-11-08) made a fresh profile start with the Quota Widget collapsed. Journeys
+/// written for an expanded widget open a new profile with Auto-Collapse saved off; a profile that
+/// already exists keeps whatever it saved. Fresh defaults are covered by FindQuotaWidgetJourneyTests
+/// and SET909DockDefaultsJourneyTests, which use EngineRowsEntry.makeSettingsStore directly.
+@MainActor func expandedWidgetSettingsStore(applicationSupport root: URL, rowIDMap: [String: String] = [:],
+                                            preferredLanguages: [String] = Locale.preferredLanguages) async throws -> SettingsStore {
+    let newProfile = !FileManager.default.fileExists(atPath: root.path)
+    let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, rowIDMap: rowIDMap, preferredLanguages: preferredLanguages)
+    if newProfile { _ = try await store.update { $0.autoHide = false } }
+    return store
+}

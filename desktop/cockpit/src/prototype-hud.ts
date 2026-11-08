@@ -5,6 +5,8 @@
 import type {WireCockpitData} from '../generated/wire.js';
 import {FIELD_LIMIT,fieldModel,type FieldModel} from './field-model.js';
 import {cockpitMembers} from './members.js';
+import {sessionMember} from './session-binding.js';
+import {shortLabel} from '../study/rocket-r1/short-label.js';
 
 const SVG='http://www.w3.org/2000/svg',TALL_ROWS=6,COMPACT_ROWS=3;
 const svg=<K extends keyof SVGElementTagNameMap>(tag:K,attributes:Record<string,string|number>)=>{const e=document.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attributes))e.setAttribute(k,String(v));return e;};
@@ -22,12 +24,12 @@ function roundRobin(list:readonly HudModel[]) {
 /** One order for the scope (hud-selection/selection.js): models used this week, the lineup, then developers in turn; dominated last. */
 export function publishedFleet(data:WireCockpitData|null|undefined,scope='all',now=Date.now()):HudModel[] {
  const published=data?.details?.publishedModels??[],developerOf=new Map(published.map(m=>[m.id,m.developerId]));
- const member=scope==='all'||!data?null:cockpitMembers(data).find(m=>m.key===scope)??null;
+ const members=data?cockpitMembers(data):[],member=scope==='all'?null:members.find(m=>m.key===scope)??null;
  if(scope!=='all'&&!member)return [];
- const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt);return (!member||s.subscriptionRef===member.key)&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
+ const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt);return (!member||sessionMember(members,s)?.key===member.key)&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
  const latest=new Map<string,string|null>();for(const s of recent)if(!latest.has(s.model))latest.set(s.model,s.effort);
  const developer=member?toolDevelopers[member.row.id]:undefined;
- const candidates=published.flatMap(m=>{const f=fieldModel(m);return f&&(!member||developerOf.get(m.id)===developer||latest.has(m.id))?[f]:[];});
+ const candidates=published.flatMap(m=>{const f=fieldModel(m,shortLabel);return f&&(!member||developerOf.get(m.id)===developer||latest.has(m.id))?[f]:[];});
  const beaten=(m:FieldModel)=>candidates.some(n=>n.id!==m.id&&n.sel[2]>0&&m.sel[2]>0&&n.sel[1]>=m.sel[1]&&n.sel[2]<=m.sel[2]&&(n.sel[1]>m.sel[1]||n.sel[2]<m.sel[2]));
  const models=candidates.map((m):HudModel=>({...m,dominated:beaten(m),...(latest.has(m.id)?{latestEffort:latest.get(m.id)??null}:{})}));
  const byId=new Map(models.map(m=>[m.id,m]));

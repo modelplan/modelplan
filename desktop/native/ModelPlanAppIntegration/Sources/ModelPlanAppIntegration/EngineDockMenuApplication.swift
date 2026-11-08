@@ -65,6 +65,8 @@ struct StatusNoticePresentation {
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
     private var helpRevealTask: Task<Void, Never>?
+    /// D56 Find Quota Widget: one spotlight for the status menu, the shortcut and the end of first run.
+    let spotlight = QuotaWidgetSpotlight()
     private var showFeedback: ShowQuotaWidgetOutcome?, hideFeedback: ShowQuotaWidgetOutcome?
     private var autoCollapseFailed = false
     /// True only for a sealed owner-test package; a release package never offers or applies these.
@@ -170,6 +172,15 @@ struct StatusNoticePresentation {
         }
         composition.dock.requestAutoCollapse = { [weak self] on in
             Task { @MainActor [weak self] in await self?.setAutoCollapse(on) }
+        }
+        if !createsNativePanels {
+            spotlight.makeSurface = { DetachedQuotaWidgetSpotlightSurface() }
+            spotlight.makeInput = { DetachedQuotaWidgetSpotlightInput() }
+        }
+        spotlight.onActiveChange = { [weak self] active in
+            guard let self else { return }
+            self.composition.dock.spotlightHold = active
+            self.dockHelp?.refresh()
         }
         #if MODELPLAN_U6_DRIVE
         composition.provider.verificationWillClear = { [weak self] invalidation in
@@ -461,6 +472,7 @@ struct StatusNoticePresentation {
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
         statusHelpRequestID = nil
+        spotlight.finish(.withdrawn)
         dockHelp?.suspend()
         composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
         // A retry or engine failure can withdraw rows while the OS gate remains open.
@@ -485,12 +497,8 @@ struct StatusNoticePresentation {
         guard !terminating, !lifecyclePaused else { return }
         switch action {
         case .openCockpit: showConsole()
-        case .toggleDock:
-            guard settings.editor.snapshot?.preferences.showDock == true else {
-                Task { @MainActor [weak self] in await self?.setDockShown(true) }
-                return
-            }
-            Task { @MainActor [weak self] in _ = try? await self?.settings.editor.commit(SettingsB21Edit.showDock(false)) }
+        // D56: the SET-9-05 widget slot is the Find Quota Widget shortcut.
+        case .toggleDock: findQuotaWidget()
         }
     }
     private func dispatchHostRequest(_ request: SettingsHostRequest) {
@@ -524,7 +532,11 @@ struct StatusNoticePresentation {
         case .firstRunCompleted(let effects, _):
             for effect in effects {
                 switch effect {
-                case .revealDock: composition.dock.setPresentationAllowed(true)
+                case .revealDock:
+                    composition.dock.setPresentationAllowed(true)
+                    // D56: once, at the end of first run, show where the widget is. "See what's
+                    // here" latches the Help map over the widget instead, which already shows it.
+                    if !effects.contains(.latchOptionHelp) { findQuotaWidget() }
                 case .returnToSettings: Task { [weak self] in await self?.settingsHost.present() }
                 case .openCockpit: showConsole()
                 case .latchOptionHelp: showHelp()
@@ -707,6 +719,9 @@ struct StatusNoticePresentation {
             .init(title: label("Refresh", "刷新"), target: (available || canRetry) ? self : nil, selector: (available || canRetry) ? #selector(refreshRows) : nil),
             .init(title: showTitle, accessibilityID: "status.showQuotaWidget", checked: widgetShown,
                   action: showAvailability == .ready ? { [weak self] in Task { @MainActor [weak self] in await self?.setDockShown(!widgetShown) } } : nil),
+            // D56: shows where the widget is; it turns the widget on first when it is off.
+            .init(title: EngineRowsText.findQuotaWidget.value(language), accessibilityID: "status.findQuotaWidget",
+                  action: available && showAvailability == .ready ? { [weak self] in self?.findQuotaWidget() } : nil),
             .init(title: nil),
             .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
             .init(title: label("Website", "网站"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.website.url) }),
@@ -822,6 +837,7 @@ struct StatusNoticePresentation {
     }
     private func showHelp(fromStatusMenu: Bool = false) {
         guard !terminating, !lifecyclePaused else { return }
+        spotlight.finish(.cancelled)
         helpRevealTask?.cancel(); helpRevealTask = nil
         let requestID = fromStatusMenu ? UUID() : nil
         statusHelpRequestID = requestID
@@ -851,7 +867,7 @@ struct StatusNoticePresentation {
     }
     /// Makes the widget visible for a Help request: saves Show when it was hidden, then
     /// reveals it from the strip. Returns false when Show cannot be saved.
-    private func showDockForHelp() async -> Bool {
+    private func showDockForHelp(highlight: Bool = true) async -> Bool {
         if settings.editor.snapshot?.preferences.showDock != true {
             guard ShowQuotaWidgetRequest.availability(paused: terminating, loaded: settings.editor.snapshot != nil,
                     saving: settings.editor.isSaving || showRequestInFlight) == .ready else { return false }
@@ -860,8 +876,24 @@ struct StatusNoticePresentation {
             showRequestInFlight = false
             guard !terminating, outcome == .ready, settings.editor.snapshot?.preferences.showDock == true else { return false }
         }
-        composition.dock.revealForUser()
+        composition.dock.revealForUser(highlight: highlight)
         return true
+    }
+    /// D56 Find Quota Widget, from the status menu, the shortcut or the end of first run. The
+    /// widget is turned on if it is off (as Help does), slides out if collapsed, and the rest of its
+    /// display dims. Afterwards the normal auto-collapse rules apply again.
+    func findQuotaWidget() {
+        guard !terminating, !lifecyclePaused, composition.dock.canPresentForHelp, settings.editor.snapshot != nil else { return }
+        spotlight.run(reduceMotion: { [weak self] in
+            // The effective setting already folds in the system's Reduce Motion.
+            self?.composition.latestSettings?.effective.reduceMotion ?? true
+        }, prepare: { [weak self] in
+            guard let self, !self.terminating, !self.lifecyclePaused else { return false }
+            return await self.showDockForHelp(highlight: false)
+        }, target: { [weak self] in
+            guard let self, !self.terminating, !self.lifecyclePaused else { return nil }
+            return self.composition.dock.spotlightTarget
+        })
     }
     func showFeedbackText(_ language: SettingsLanguage) -> String? {
         if autoCollapseFailed { return SettingsText("Could not change Auto-Collapse. Check Settings and try again.", "无法更改自动收起，请检查设置后重试。").value(language) }
@@ -927,6 +959,7 @@ struct StatusNoticePresentation {
     }
     private func retireApplicationSurfaces() {
         helpRevealTask?.cancel(); helpRevealTask = nil
+        spotlight.finish(.cancelled)
         settings.editor.onHostRequest = nil
         applicationSettingsItem.isEnabled = false
         applicationSettingsItem.keyEquivalent = ""
