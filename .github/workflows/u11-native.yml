@@ -29,7 +29,7 @@ jobs:
     # Runs in the pinned trusted-mac.yml (docs/mac-ci.md): the ordinary owner Macs with MAC_CI_NONGUI=enabled,
     # hosted macos-15 otherwise.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@6977264358154565359c26b6330ecbfd8231edff
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@0c86af351dd4417399682fdd5cc213189b91987d
     with:
       task: u11-native
       os: macos-15
