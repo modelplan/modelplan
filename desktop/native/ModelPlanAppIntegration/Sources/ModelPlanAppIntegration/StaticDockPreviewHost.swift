@@ -790,6 +790,7 @@ struct DockHelpInteraction: Equatable {
         style.verticalPadding = QuotaWidgetCardGeometry.plateVerticalPadding
         style.plateRadius = QuotaWidgetCardGeometry.plateRadius
         style.brandSize = QuotaWidgetCardGeometry.headingIconSize
+        style.brandMarkSize = cardMarkSize
         style.headerGap = QuotaWidgetCardGeometry.headingGap
         style.headerBottomGap = QuotaWidgetCardGeometry.headingBottomGap
         style.headerMinimumHeight = QuotaWidgetCardGeometry.headingMinimumHeight; style.labelLift = QuotaWidgetCardGeometry.rowLabelLift
@@ -830,7 +831,7 @@ struct DockHelpInteraction: Equatable {
         return value
     }
     private static var cardStores: [Bool: DockArtworkStore] = [:]
-    private static func cardResourceStore(zaiMarkEnabled: Bool) -> DockArtworkStore? {
+    static func cardResourceStore(zaiMarkEnabled: Bool) -> DockArtworkStore? {
         if let store = cardStores[zaiMarkEnabled] { return store }
         guard let data = try? DockThirdPartyResources.manifestData(zaiMarkEnabled: zaiMarkEnabled),
               let manifest = try? JSONDecoder().decode(DockResourceManifest.self, from: data),
@@ -843,18 +844,36 @@ struct DockHelpInteraction: Equatable {
     private func cardBrandImage(_ id: String) -> NSImage? {
         let view = interactionView
         guard let key = view.presentedReadingsForChecks[id]?.vendorResourceKey,
-              let resource = view.presentedSkinForChecks?.stations.first(where: { $0.subscriptionID == id })?.glyphs[key],
-              let store = Self.cardResourceStore(zaiMarkEnabled: view.zaiMarkEnabled),
-              let image = try? store.image(resource, maximumPixelSize: 64) else { return nil }
-        let size = QuotaWidgetCardGeometry.headingIconSize
-        return NSImage(cgImage: image, size: NSSize(width: size, height: size))
+              let resource = view.presentedSkinForChecks?.stations.first(where: { $0.subscriptionID == id })?.glyphs[key] else { return nil }
+        return Self.cardMark(resource, zaiMarkEnabled: view.zaiMarkEnabled)
     }
+    /// G3-50 (owner 11-08: the prototype's card mark is itself the wrong size): the mark is cropped to
+    /// its visible glyph, as the ring does (#397), so a mark that keeps clear space in its file (OpenAI
+    /// fills about half of its viewBox) is not drawn smaller than the others. The card then sizes every
+    /// mark to the title's height (`DockCardStyle.brandMarkSize`).
+    static func cardMark(_ resource: String, zaiMarkEnabled: Bool) -> NSImage? {
+        let side = cardMarkSize
+        guard let store = cardResourceStore(zaiMarkEnabled: zaiMarkEnabled),
+              let glyph = try? store.fittedGlyph(resource, targetPixelSize: Int((side * 3).rounded(.up))),
+              glyph.width > 0, glyph.height > 0 else { return nil }
+        let k = side / CGFloat(max(glyph.width, glyph.height))
+        return NSImage(cgImage: glyph, size: NSSize(width: CGFloat(glyph.width) * k, height: CGFloat(glyph.height) * k))
+    }
+    /// The visible mark's longest side: the card title's line height.
+    static var cardMarkSize: CGFloat { DockCardStyle.titleMarkSize(nameFontSize: QuotaWidgetCardMaterial.nameFontSize) }
     public let dockView = DockInstrumentView(frame: .zero)
     private let sliver = DockSliverView(frame: .zero)
     private let empty = StaticDockStatusLabel(wrappingLabelWithString: "")
     let card = DockCardView(frame: .zero)
     private let cardChrome = NSView(frame: .zero), cardArrow = HostCardArrowView(frame: .zero)
     /// The card's pointer arrow polygon in screen coordinates while a native card panel is shown.
+    /// The card plate's screen frame while a native card panel is shown.
+    var cardPlateForChecks: CGRect? {
+        guard let window = card.window, !card.isHidden, window.isVisible else { return nil }
+        return window.convertToScreen(card.convert(card.bounds, to: nil))
+    }
+    /// The card panel's content (plate plus arrow) for evidence captures.
+    var cardChromeForChecks: NSView? { card.window == nil ? nil : cardChrome }
     var cardArrowForChecks: [CGPoint]? {
         guard let window = cardArrow.window, !cardArrow.isHidden, cardArrow.points.count == 3 else { return nil }
         return cardArrow.points.map { window.convertPoint(toScreen: cardArrow.convert($0, to: nil)) }
@@ -920,6 +939,13 @@ struct DockHelpInteraction: Equatable {
             return self.acceptsInstrumentAction(from: self.dockView, source: source)
         }
         dockView.onEscape = { [weak self] in self?.closeHeldCard() ?? false }
+        for view in [dockView] + alternateViews {
+            // G3-50: a shown card follows its ring when hover magnification moves it.
+            view.onNozzlePosesChanged = { [weak self, weak view] in
+                guard let self, let view, view === self.interactionView else { return }
+                self.refreshCardPlacement()
+            }
+        }
         sliver.onReveal = { [weak self] in self?.edge.reveal() }
         connectEdge()
         let refresh: () -> Void = { [weak self] in
@@ -2039,6 +2065,16 @@ struct DockHelpInteraction: Equatable {
         interactionView.setHotNozzle(id, glow: CGColor(srgbRed: glow.red, green: glow.green, blue: glow.blue, alpha: glow.alpha),
                                      blur: QuotaWidgetCardMaterial.hotGlowBlur)
         guard createsNativePanels else { return }
+        placeCardPanel(id)
+    }
+    /// Re-places a shown native card from its ring as painted now (prototype card.js refreshCardPlacement).
+    private func refreshCardPlacement() {
+        guard createsNativePanels, permitted, !retired, !card.isHidden, let id = cardID,
+              cardPanel?.isVisible == true else { return }
+        placeCardPanel(id)
+    }
+    private func placeCardPanel(_ id: String) {
+        let style = Self.prototypeCardStyle // the arrow takes the plate's fill and seam
         if cardPanel == nil {
             let panel = makePanel(); cardPanel = panel
             // The plate's drop shadow (prototype face.css:52 0 8px 24px #0007) comes from the window server.
