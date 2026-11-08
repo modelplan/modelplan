@@ -211,6 +211,32 @@ import ModelPlanSettings
         }
     }
 
+    /// Narrow and short screens: the map is still produced, every caption stays inside the screen and off the
+    /// rings, and captions beside the widget keep the order of their targets (so leaders cannot cross).
+    func testNarrowAndShortScreensStillShowTheMapInOrder() throws {
+        let recipe = NeutralHelpUIRecipeProvider()
+        let widget = CGRect(x: 0, y: 145, width: 72, height: 415)
+        let rings = (0..<5).map { CGRect(x: 12, y: 190 + CGFloat($0) * 70, width: 42, height: 42) }
+        let anchors: [DockRequestedHelpAnchor] = rings.enumerated().map { .init(id: "dock.rings.\($0.offset)", region: $0.offset == 0 ? .rings : .nozzle, rect: $0.element, visible: true) }
+        for size in [CGSize(width: 900, height: 700), CGSize(width: 1280, height: 720), CGSize(width: 1280, height: 600), CGSize(width: 900, height: 480)] {
+            for language in [InstrumentLanguage.english, .chinese] {
+                let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: size, language: language,
+                    anchors: anchors, blocked: [], avoid: [widget], recipe: recipe), "map hidden at \(size)")
+                let result = recipe.presentation(for: input)
+                XCTAssertNotNil(result.mapHeader, "no header at \(size)")
+                XCTAssertEqual(result.unresolvedMapIDs, [])
+                XCTAssertEqual(result.mapLabels.count, anchors.count, "a caption is missing at \(size)")
+                let screen = CGRect(origin: .zero, size: size)
+                let ordered = anchors.compactMap { anchor in result.mapLabels.first { $0.anchorID == anchor.id } }
+                for label in result.mapLabels {
+                    XCTAssertTrue(screen.contains(label.frame), "\(label.id) leaves the screen at \(size)")
+                    for ring in rings { XCTAssertFalse(label.frame.intersects(ring), "\(label.id) covers a ring at \(size)") }
+                }
+                XCTAssertEqual(ordered.map(\.frame.minY), ordered.map(\.frame.minY).sorted(), "captions out of order at \(size)")
+            }
+        }
+    }
+
     /// Owner D71: the Help map callouts use the study's dark plate with light text, not white. Drawn by the
     /// real layer and read back from its pixels, so a theme-following fill cannot pass.
     func testHelpMapCalloutsAreDrawnOnTheDarkPlate() throws {

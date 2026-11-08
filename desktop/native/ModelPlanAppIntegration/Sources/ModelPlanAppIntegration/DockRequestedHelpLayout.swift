@@ -42,6 +42,9 @@ struct DockRequestedHelpAnchor: Equatable {
         var obstacles = blocked + avoid + visible.map(\.rect)
         var frames: [String: CGRect] = [:]
         var columnBottom = -CGFloat.infinity
+        enum ColumnSide { case left, right }
+        var columnSide: ColumnSide?
+        var column: [String] = []
         for anchor in visible {
             guard let entry = catalogEntries[anchor.region] else { return nil }
             let fallback = language == .chinese ? "喷口：悬停查看卡片，拖动可排序，⌥ 加方向键移动一位。" : "Nozzle: hover for its card, drag to reorder or use Option arrows to move one place."
@@ -63,26 +66,49 @@ struct DockRequestedHelpAnchor: Equatable {
             // A target on the widget gets its caption in one column beside the panel, as high as the target
             // allows and never over the previous caption. Targets and captions then run in the same order,
             // so the straight leaders between them cannot cross.
+            // The column side is chosen once per panel; a side too narrow for the full width narrows the
+            // caption (not below 120 pt), and only then falls back to the other side.
             var beside: CGRect?
             if let panel = avoid.first(where: { $0.insetBy(dx: -4, dy: -4).intersects(anchor.rect) }) {
-                let x = panel.midX < viewport.width / 2 ? panel.maxX + 10 : panel.minX - 10 - width
-                let y = max(anchor.rect.midY - height / 2, columnBottom + 4, 32)
-                let candidate = CGRect(x: x, y: y, width: width, height: height)
-                if candidate.minX >= 8, candidate.maxX <= viewport.width - 8, candidate.maxY <= viewport.height - 8,
-                   !blocked.contains(where: { $0.intersects(candidate) }) {
-                    beside = candidate; columnBottom = candidate.maxY
+                let rightRoom = viewport.width - 8 - (panel.maxX + 10), leftRoom = panel.minX - 10 - 8
+                let preferRight = columnSide.map { $0 == .right } ?? (panel.midX < viewport.width / 2 ? rightRoom >= 120 || rightRoom >= leftRoom : !(leftRoom >= 120 || leftRoom >= rightRoom))
+                for side in (preferRight ? [ColumnSide.right, .left] : [.left, .right]) where columnSide == nil || columnSide == side {
+                    let room = side == .right ? rightRoom : leftRoom
+                    let w = min(width, room)
+                    guard w >= min(width, 120) else { continue }
+                    let h = w == width ? height : ceil(recipe.measure(text, width: w - 16, role: .caption).height) + 10
+                    let x = side == .right ? panel.maxX + 10 : panel.minX - 10 - w
+                    let y = max(anchor.rect.midY - h / 2, columnBottom + 4, 32)
+                    let candidate = CGRect(x: x, y: y, width: w, height: h)
+                    if !blocked.contains(where: { $0.intersects(candidate) }) {
+                        beside = candidate; columnBottom = candidate.maxY; columnSide = side
+                        column.append(labelID); break
+                    }
                 }
             }
-            guard let frame = beside ?? HelpUIGeometry.placeCard(anchor: anchor.rect, size: size,
-                                                                 viewport: viewport, blocked: obstacles) else { return nil }
+            // Never hide the map for want of a clean spot: widen the search, then clamp inside the screen.
+            let frame = beside
+                ?? HelpUIGeometry.placeCard(anchor: anchor.rect, size: size, viewport: viewport, blocked: obstacles)
+                ?? HelpUIGeometry.placeCard(anchor: anchor.rect, size: size, viewport: viewport, blocked: blocked + visible.map(\.rect))
+                ?? CGRect(x: min(max(8, anchor.rect.maxX + 10), max(8, viewport.width - 8 - width)),
+                          y: min(max(32, anchor.rect.midY - height / 2), max(32, viewport.height - 8 - height)),
+                          width: width, height: height)
             frames[labelID] = frame; obstacles.append(frame)
+        }
+        // A column that runs off the bottom of a short screen moves up as one, keeping order and spacing.
+        if let last = column.last, let first = column.first, let lastFrame = frames[last], let firstFrame = frames[first],
+           lastFrame.maxY > viewport.height - 8 {
+            let shift = min(lastFrame.maxY - (viewport.height - 8), max(0, firstFrame.minY - 32))
+            for id in column { if let f = frames[id] { frames[id] = f.offsetBy(dx: 0, dy: -shift) } }
         }
         // The header goes last, so that no caption has to route a leader around it.
         let headerWidth = min(400, viewport.width - 32)
         let headerText = catalog.metaphor + "\n" + catalog.dismissal
         let headerHeight = ceil(recipe.measure(headerText, width: headerWidth - 16, role: .header).height) + 10
-        guard let header = HelpUIGeometry.placeCard(anchor: visible[0].rect,
-                size: CGSize(width: headerWidth, height: headerHeight), viewport: viewport, blocked: obstacles) else { return nil }
+        let headerSize = CGSize(width: headerWidth, height: headerHeight)
+        let header = HelpUIGeometry.placeCard(anchor: visible[0].rect, size: headerSize, viewport: viewport, blocked: obstacles)
+            ?? HelpUIGeometry.placeCard(anchor: visible[0].rect, size: headerSize, viewport: viewport, blocked: blocked + visible.map(\.rect))
+            ?? CGRect(x: (viewport.width - headerWidth) / 2, y: max(8, viewport.height - 8 - headerHeight), width: headerWidth, height: headerHeight)
         map.header = header
         map.captionFrames = frames
         map.straightLeaders = true

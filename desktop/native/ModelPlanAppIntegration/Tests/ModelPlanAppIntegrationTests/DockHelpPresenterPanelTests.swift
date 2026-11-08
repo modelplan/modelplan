@@ -42,29 +42,31 @@ import ModelPlanSettings
             windowPolicy: { _ in (.readOnly, []) }, language: { .english }, accessibility: { (true, true) },
             copy: { _, _ in nil }, dismiss: { _ in }, activate: { activations += 1 }, layer: layer)
         addTeardownBlock { @MainActor in presenter.dispose() }
-        func open() throws -> [HelpUIDismissReason?] {
+        func open(_ dismiss: @escaping @MainActor (HelpUIDismissReason?) -> Void) throws {
             let viewport = try XCTUnwrap(presenter.prepareMap(surface: surface))
             let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: surface.layoutID, viewport: viewport.size,
                 language: .english, anchors: anchors, blocked: [], recipe: recipe))
             layer.update(input)
-            var reasons: [HelpUIDismissReason?] = []
-            XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: { reasons.append($0) }))
-            return reasons
+            XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: dismiss))
         }
-        _ = try open()
+        func press(_ event: NSEvent?) throws { NSApplication.shared.sendEvent(try XCTUnwrap(event)) }
+        let esc = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)
+        let click = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+        var first: [HelpUIDismissReason?] = [], second: [HelpUIDismissReason?] = []
+        // Showing again replaces the first monitor: one Esc reaches only the newest handler, once.
+        try open { first.append($0) }
         XCTAssertEqual(activations, 1, "opening the map brings the app forward")
-        func key(_ code: UInt16) -> NSEvent? {
-            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
-                             context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: code)
-        }
-        var reasons: [HelpUIDismissReason?] = []
-        XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: { reasons.append($0) }))
-        NSApplication.shared.sendEvent(try XCTUnwrap(key(53)))
-        XCTAssertEqual(reasons, [.escape], "Esc closes the Help map")
-        let click = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
-            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
-        XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: { reasons.append($0) }))
-        NSApplication.shared.sendEvent(click)
-        XCTAssertEqual(reasons, [.escape, .pointer], "a click outside closes the Help map")
+        XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: { second.append($0) }), "called again without prepareMap")
+        try press(esc)
+        XCTAssertEqual(first, [], "a replaced map's monitor is gone")
+        XCTAssertEqual(second, [.escape], "one Esc press closes the Help map once")
+        // A click outside, on a fresh map.
+        var third: [HelpUIDismissReason?] = []
+        try open { third.append($0) }
+        try press(click)
+        XCTAssertEqual(third, [.pointer], "one click outside closes the Help map once")
+        XCTAssertEqual(second, [.escape], "no earlier monitor answered the click")
     }
 }

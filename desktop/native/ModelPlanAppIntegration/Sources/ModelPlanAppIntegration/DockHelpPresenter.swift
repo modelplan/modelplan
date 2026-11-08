@@ -26,6 +26,8 @@ import ModelPlanSettings
     private var panel: NSPanel?
     private var eventMonitor: Any?
     private var deactivateObserver: NSObjectProtocol?
+    /// The app that was frontmost before a map activated this one; restored when the map closes.
+    private var previousApp: NSRunningApplication?
     private var currentOffer: HintOffer?
     private var currentExplanationID: String?
     private var currentSurfaceValue: DockHelpSurface?
@@ -188,6 +190,8 @@ import ModelPlanSettings
         guard window.isVisible, window.alphaValue > 0, isCurrent(surface) else {
             window.orderOut(nil); return false
         }
+        // A second call replaces the first: one monitor and one observer at a time, never stacked.
+        removeEventMonitor(); removeDeactivateObserver()
         var optionHeld = NSEvent.modifierFlags.contains(.option)
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .flagsChanged]) { [weak self, weak window] event in
             guard let self, let window, window.isVisible, !self.retired, self.generation == token,
@@ -206,6 +210,10 @@ import ModelPlanSettings
         }
         // After the observer exists: activating must not read as the app losing focus. Esc and a click
         // outside the map are local events only while the app is active.
+        if !NSApp.isActive, previousApp == nil {
+            let front = NSWorkspace.shared.frontmostApplication
+            if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
+        }
         activate()
         return true
     }
@@ -269,6 +277,9 @@ import ModelPlanSettings
         generation &+= 1; currentSurfaceValue = nil
         removeEventMonitor(); removeDeactivateObserver()
         panel?.orderOut(nil); layer.removeFromSuperview()
+        // Give focus back only if this app still holds it; a user who switched away keeps their choice.
+        if let previousApp, NSApp.isActive { previousApp.activate() }
+        previousApp = nil
     }
 
     func dispose() {
