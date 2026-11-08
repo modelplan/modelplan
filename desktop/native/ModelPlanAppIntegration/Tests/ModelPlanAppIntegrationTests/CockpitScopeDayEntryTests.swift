@@ -2,6 +2,7 @@
 import Foundation
 import XCTest
 import ModelPlanCockpitWeb
+import ModelPlanSettings
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
