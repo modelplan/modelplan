@@ -242,7 +242,14 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     switch event {
     case .clearPrivateViews(let invalidation):
       cancelQuery()
-      // A consent or store change forgets the saved scope; an engine stop (the app quitting) keeps it for today.
+      // The engine's first floor arrives as a clear with no previous session; nothing private was shown yet, so a scope
+      // restored for today (D64) stays, and is still checked against the first reply. After a session, a consent or
+      // store change forgets the saved scope; an engine stop (the app quitting) keeps it for today.
+      if invalidation.previous == nil {
+        delivery = nil; scopeMembers.removeAll()
+        if let page { await page.clearPrivateViews(adopting: nil); page.updateScope(selectedScope) }
+        break
+      }
       if invalidation.reason == .generationAdvanced || invalidation.reason == .epochChanged { scopeMemory?.save(nil) }
       delivery = nil; selectedScope="all"; scopeMembers.removeAll()
       // Do not adopt a guessed session from nextFloor. The subsequent
