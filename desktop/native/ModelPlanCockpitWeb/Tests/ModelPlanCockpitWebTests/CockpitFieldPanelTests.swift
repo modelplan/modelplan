@@ -39,4 +39,54 @@ final class CockpitFieldPanelTests: XCTestCase {
     panel.close()
     XCTAssertEqual(closed, 2)
   }
+  /// Spike 11-08 / D63: native tells the page about Low Power Mode, which the page cannot read. Changes while open go
+  /// to `power` once the page has loaded and only when the state changes; a closed panel stops listening.
+  @MainActor func testLowPowerChangesReachTheOpenPageOnce() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-power-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    var low = false
+    let center = NotificationCenter()
+    let panel = CockpitFieldPanel(bundle: try bundle(root), lowPower: { low }, notifications: center)
+    var scripts: [String] = []
+    panel.scriptSink = { scripts.append($0) }
+    let changed = {
+      center.post(name: .NSProcessInfoPowerStateDidChange, object: nil)
+      RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+    XCTAssertFalse(panel.isLowPower)
+    panel.open(payload: #"{"lowPower":false}"#, near: nil)
+    low = true; changed()
+    XCTAssertTrue(scripts.isEmpty, "Nothing reaches a page that has not loaded")
+    panel.receive(#"{"type":"loaded"}"#)
+    XCTAssertEqual(scripts.count, 2)
+    XCTAssertTrue(scripts[0].hasPrefix("window.modelPlanField?.show("))
+    XCTAssertEqual(scripts[1], "window.modelPlanField?.power(true)", "The change before load catches up after show")
+    changed()
+    XCTAssertEqual(scripts.count, 2, "No change, nothing sent")
+    low = false; changed()
+    XCTAssertEqual(scripts.last, "window.modelPlanField?.power(false)")
+    panel.close()
+    low = true; changed()
+    XCTAssertEqual(scripts.count, 3, "A closed panel stops listening")
+  }
+  /// D63 (review of #734): a field opened while Low Power Mode is already on is quiet from the start, whatever the
+  /// payload said: right after `show` the page gets `power(true)`.
+  @MainActor func testAFieldOpenedInLowPowerModeIsQuietFromTheStart() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-power-open-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let center = NotificationCenter()
+    let panel = CockpitFieldPanel(bundle: try bundle(root), lowPower: { true }, notifications: center)
+    var scripts: [String] = []
+    panel.scriptSink = { scripts.append($0) }
+    XCTAssertTrue(panel.isLowPower)
+    panel.open(payload: #"{"lowPower":false}"#, near: nil)
+    defer { panel.close() }
+    panel.receive(#"{"type":"loaded"}"#)
+    XCTAssertEqual(scripts.count, 2)
+    XCTAssertTrue(scripts[0].hasPrefix("window.modelPlanField?.show("))
+    XCTAssertEqual(scripts[1], "window.modelPlanField?.power(true)")
+    center.post(name: .NSProcessInfoPowerStateDidChange, object: nil)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    XCTAssertEqual(scripts.count, 2, "still on, nothing more")
+  }
 }

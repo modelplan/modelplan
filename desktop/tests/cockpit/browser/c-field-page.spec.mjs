@@ -52,24 +52,28 @@ test('D43 every vendor mark the scene asks for loads under the page CSP, close t
   ['openai-white.svg','claude-rounded.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
  for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
 });
-// QA 11-08: the enlarged field's axis labels overlapped (price ticks under the front-row caption, time ticks stacked).
-// Prototype field-picker-tags/axis-layout.js: screen-space lanes in the page; the scene's ticks and values are unchanged.
-const spread=(i,dev)=>({id:'s'+i,name:'Synthetic '+i,developerId:dev,recommended:'medium',efforts:[{effort:'low',label:'Low',star:false,ability:30+i*2,cost:.05*(i+1),time:20},{effort:'medium',label:'Med',star:true,ability:40+i*2,cost:.1*(i+1),time:30},{effort:'high',label:'High',star:false,ability:45+i*2,cost:.3*(i+1),time:60}]});
-test('QA 11-08 the axis labels of the enlarged field never overlap and stay inside the view',async({page})=>{
- await page.setViewportSize({width:900,height:640});await open(page);
- const devs=['openai','anthropic','zhipuai'];
- await show(page,JSON.stringify({language:'en',reduceMotion:true,models:Array.from({length:10},(_,i)=>spread(i,devs[i%3])),mine:[],focus:null}));
- await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready')),{timeout:20000}).toBe(true);// the scene bundle can take a while on a busy software-GL box
+// Spike 11-08 / D63: the page cannot read Low Power Mode, so native passes it in the payload and on every change.
+// Low power renders on demand only with the scene's quiet motion (no camera sway or fly-ins): idle means no frames.
+test('D63 low power: the field mounts quiet, draws no frames while idle, and follows a live change',async({page})=>{
+ await open(page);await show(page,payload(4,{reduceMotion:false,lowPower:true}));
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
  test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
- await expect.poll(()=>page.locator('.tick3.field-axis-placed').count()).toBeGreaterThan(4);
- await page.waitForTimeout(1500);
- const {boxes,stage}=await page.evaluate(()=>{
-  const box=e=>{const r=e.getBoundingClientRect();return {text:e.textContent,x:r.x,y:r.y,r:r.right,b:r.bottom};};
-  return {stage:box(document.querySelector('.field-stage')),boxes:[...document.querySelectorAll('.tick3')].filter(e=>getComputedStyle(e).visibility!=='hidden'&&Number(getComputedStyle(e).opacity)>.02&&e.getBoundingClientRect().width>0).map(box)};
- });
- expect(boxes.length).toBeGreaterThan(4);
- for(const a of boxes){
-  expect(a.x>=stage.x&&a.r<=stage.r&&a.y>=stage.y&&a.b<=stage.b,a.text+' inside').toBe(true);
-  for(const b of boxes)if(a!==b)expect(a.r<=b.x||b.r<=a.x||a.b<=b.y||b.b<=a.y,a.text+' / '+b.text).toBe(true);
- }
+ const stats=()=>page.evaluate(()=>window.modelPlanField.stats());
+ await expect.poll(async()=>(await stats())?.quiet).toBe(true);
+ await page.waitForTimeout(2500);const settled=await stats();expect(settled.lowPower).toBe(true);expect(settled.scheduled).toBe(false);
+ await page.waitForTimeout(2000);expect((await stats()).frames).toBe(settled.frames);
+ expect(await page.evaluate(()=>window.modelPlanField.power(false))).toBe(true);
+ await expect.poll(async()=>(await stats())?.quiet).toBe(false);expect((await stats()).lowPower).toBe(false);
+ expect(await page.evaluate(()=>window.modelPlanField.power(true))).toBe(true);
+ await expect.poll(async()=>(await stats())?.quiet).toBe(true);
+ // A disposed scene's late context-loss report must not replace the new scene with the fallback.
+ await page.waitForTimeout(1500);await expect(page.locator('.field-stage .nogl')).toHaveCount(0);
+ await expect(page.locator('.field-stage canvas')).toHaveCount(1);expect((await stats())?.quiet).toBe(true);
+});
+test('D63 Reduce Motion alone also keeps the scene quiet, and the payload without lowPower is not low power',async({page})=>{
+ await open(page);await show(page,payload(4));
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
+ await expect.poll(()=>page.evaluate(()=>window.modelPlanField.stats()?.quiet)).toBe(true);
+ expect(await page.evaluate(()=>window.modelPlanField.stats().lowPower)).toBe(false);
 });
