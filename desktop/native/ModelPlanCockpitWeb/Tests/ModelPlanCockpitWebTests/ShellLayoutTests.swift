@@ -88,16 +88,16 @@ final class ShellLayoutTests: XCTestCase {
     /// D51/D60 Settings "Cockpit size" 80 / 85 (default) / 90 / 100 %: drawn at that size when it fits, otherwise
     /// smaller to fit the screen.
     func testD60SizesFitOrShrinkToTheScreen() throws {
-        XCTAssertEqual(CockpitSize.standard, .percent85)
+        XCTAssertEqual(CockpitSize.standard, .automatic)
         for size in CockpitSize.allCases {
             let value = try placed(width: 1680, height: 1050, bar: 24, size: size)
-            XCTAssertEqual(value.scale, size.scale); XCTAssertFalse(value.sizeFellBack); XCTAssertEqual(value.profile, .full)
+            XCTAssertEqual(value.scale, size.scale(screenWidth: 1680)); XCTAssertFalse(value.sizeFellBack); XCTAssertEqual(value.profile, .full)
             XCTAssertEqual(value.frame.maxY, 1050 - 24 - 6)
         }
         // 1440x900 with the Dock at the bottom: 80 % and 85 % fit (729 and 774 of 800 pt), 90 % and 100 % draw at 87.8 %.
         for size in [CockpitSize.percent80, .percent85] {
             let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70, size: size)
-            XCTAssertEqual(value.scale, size.scale); XCTAssertFalse(value.sizeFellBack)
+            XCTAssertEqual(value.scale, size.scale(screenWidth: 1440)); XCTAssertFalse(value.sizeFellBack)
         }
         for size in [CockpitSize.percent90, .percent100] {
             let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70, size: size)
@@ -108,14 +108,41 @@ final class ShellLayoutTests: XCTestCase {
     /// so the window is the 85 % width where it is anchored and its right-edge clamp uses that width.
     func testD60PlacementUsesTheFinalScaledWidth() throws {
         let value = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: 0, width: 1680, height: 1026),
-            anchor: .init(x: 800, y: 1026, width: 28, height: 24), shutterClosed: false))
+            anchor: .init(x: 800, y: 1026, width: 28, height: 24), shutterClosed: false, size: .percent85))
         XCTAssertEqual(value.scale, 0.85)
         XCTAssertEqual(value.frame.width, 636 * 0.85, accuracy: 1e-9)
         XCTAssertEqual(value.frame.midX, 814, accuracy: 1e-9, "anchored on the icon at the scaled width")
         let edge = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: 0, width: 1680, height: 1026),
-            anchor: .init(x: 1670, y: 1026, width: 28, height: 24), shutterClosed: false))
+            anchor: .init(x: 1670, y: 1026, width: 28, height: 24), shutterClosed: false, size: .percent85))
         XCTAssertEqual(edge.frame.maxX, 1680, accuracy: 1e-9, "the right-edge clamp uses the scaled width")
         XCTAssertEqual(edge.frame.width, 636 * 0.85, accuracy: 1e-9)
+    }
+    /// D66: Auto (the default) is 85 % on screens up to 1512 pt wide (13-14 inch laptops) and 100 % on wider ones,
+    /// judged on the full width of the icon's screen; it is re-judged when the cockpit opens on another screen.
+    func testD66AutoFollowsTheScreenWidth() throws {
+        XCTAssertEqual(CockpitSize.automaticLaptopScreenWidth, 1512)
+        // width, height, menu bar, expected Auto scale (every case has room for 100 %, so only the width decides).
+        for (width, height, bar, expected) in [(1440, 1050, 24, 0.85), (1470, 1050, 37, 0.85), (1512, 1050, 37, 0.85),
+                                               (1728, 1117, 37, 1.0), (2560, 1440, 25, 1.0), (1920, 1080, 25, 1.0)] as [(CGFloat, CGFloat, CGFloat, CGFloat)] {
+            let value = try placed(width: width, height: height, bar: bar)
+            XCTAssertEqual(value.scale, expected, "\(Int(width)) pt wide"); XCTAssertEqual(value.profile, .full)
+        }
+        // Real Air screens: Auto 85 %, still shrinking to fit when the Dock is at the bottom on the 13-inch.
+        XCTAssertEqual(try placed(width: 1470, height: 956, bar: 37, macDock: 70).scale, 0.85)
+        XCTAssertEqual(try placed(width: 1440, height: 900, bar: 24, macDock: 140).scale, 730 / 911, accuracy: 1e-9)
+        // The screen's full width decides, not the width left by a side Dock.
+        let side = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 80, y: 0, width: 1648, height: 1093), anchor: .init(x: 1200, y: 1093, width: 28, height: 24),
+                                                        shutterClosed: false, screenWidth: 1728))
+        XCTAssertEqual(side.scale, 1)
+        let air = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 70, y: 0, width: 1400, height: 919), anchor: .init(x: 1000, y: 919, width: 28, height: 24),
+                                                       shutterClosed: false, screenWidth: 1470))
+        XCTAssertEqual(air.scale, 0.85)
+        // Switching screens: the same Auto choice gives 85 % on the Air and 100 % on an external display.
+        let onAir = try placed(width: 1470, height: 956, bar: 37), onExternal = try placed(width: 2560, height: 1440, bar: 25)
+        XCTAssertEqual(onAir.frame.width, 636 * 0.85, accuracy: 1e-9); XCTAssertEqual(onExternal.frame.width, 636, accuracy: 1e-9)
+        // Manual choices stay fixed across screens.
+        XCTAssertEqual(try placed(width: 2560, height: 1440, bar: 25, size: .percent85).scale, 0.85)
+        XCTAssertEqual(try placed(width: 1470, height: 1050, bar: 37, size: .percent100).scale, 1)
     }
     /// D51: the drag region scales with the page so it stays on the strip at every size.
     func testD51DragRegionScalesWithThePage() throws {

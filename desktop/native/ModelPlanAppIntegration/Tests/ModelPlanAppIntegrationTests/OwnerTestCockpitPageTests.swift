@@ -162,6 +162,36 @@ extension CommunityCockpitEntryTests {
         XCTAssertEqual(window.frame.size, start.size, "the same cockpit, not a resized one")
     }
 
+    /// D66 on the real page and panel: Auto draws 85 % on an Air-width screen and 100 % when the same cockpit is placed
+    /// on an external display, and back; the page zoom follows.
+    @MainActor func testD66AutoSizeFollowsTheScreenTheCockpitOpensOn() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("d66-" + UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+        let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+        let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+        let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+        defer { page.discard() }
+        let air = CGRect(x: 0, y: 0, width: 1470, height: 919), external = CGRect(x: 0, y: 0, width: 2560, height: 1415)
+        page.verificationPlacement = (usable: air, anchor: CGRect(x: 1100, y: air.maxY, width: 28, height: 24))
+        page.open()
+        let window = try XCTUnwrap(page.window), web = try XCTUnwrap(page.verificationWebView)
+        for (screen, expected) in [(air, CGFloat(0.85)), (external, 1), (air, 0.85)] {
+            page.verificationPlacement = (usable: screen, anchor: CGRect(x: 1100, y: screen.maxY, width: 28, height: 24))
+            XCTAssertEqual(page.verificationLayout?.scale, expected, "\(Int(screen.width)) pt wide")
+            XCTAssertEqual(window.frame.width, 636 * expected, accuracy: 1)
+            XCTAssertEqual(web.pageZoom, expected, accuracy: 1e-6)
+            XCTAssertEqual(page.verificationShellState?.tier, .tall)
+        }
+    }
+
     /// G3-53 / CKP-PORT-09 on the real page and panel: a real click on the porthole shutter closes and reopens it
     /// at both heights, and the page draws the closed cap. Owner Build 12: "开关窗也没效果".
     @MainActor func testG3_53ShutterClickClosesAndReopensTheRealCockpit() async throws {

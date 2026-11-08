@@ -72,7 +72,7 @@ import XCTest
         XCTAssertTrue(try XCTUnwrap(controller.choice(key: .notificationConsent)).isEnabled)
         controller.close()
     }
-    /// CKP-SHELL-07 / owner D51, D60: "Cockpit size" is a live v1 control on the Cockpit pane, default 85 %,
+    /// CKP-SHELL-07 / owner D51, D60: "Cockpit size" is a live v1 control on the Cockpit pane, default Auto (D66),
     /// with its fallback note, and the choice persists and reaches the cockpit consumer.
     func testD51CockpitSizeChoicePersistsAndFeedsTheCockpit() async throws {
         let editor = try await makeEditor()
@@ -82,10 +82,10 @@ import XCTest
         controller.selectPane("cockpit")
         let popup = try XCTUnwrap(controller.choice(key: .cockpitSize))
         XCTAssertTrue(popup.isEnabled)
-        XCTAssertEqual(popup.itemArray.compactMap { $0.representedObject as? String }, ["80", "85", "90", "100"])
-        XCTAssertEqual(popup.itemArray.map(\.title), ["80 %", "85 %", "90 %", "100 %"])
-        XCTAssertEqual(popup.selectedItem?.representedObject as? String, "85", "D60: 85 % by default")
-        XCTAssertTrue(labels(controller.window!.contentView!).contains { $0.contains("drawn smaller to fit") })
+        XCTAssertEqual(popup.itemArray.compactMap { $0.representedObject as? String }, ["automatic", "80", "85", "90", "100"])
+        XCTAssertEqual(popup.itemArray.map(\.title), ["Auto", "80 %", "85 %", "90 %", "100 %"])
+        XCTAssertEqual(popup.selectedItem?.representedObject as? String, "automatic", "D66: Auto by default")
+        XCTAssertTrue(labels(controller.window!.contentView!).contains { $0.contains("85 % on laptop screens") })
         try await choose("80", key: .cockpitSize, controller: controller)
         XCTAssertEqual(editor.snapshot?.preferences.cockpitSize, .percent80)
         XCTAssertEqual(editor.effective?.cockpitSize, .percent80)

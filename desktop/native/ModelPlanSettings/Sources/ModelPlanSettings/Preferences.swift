@@ -20,8 +20,9 @@ public enum PercentagePin: String, Codable, CaseIterable, Sendable { case auto, 
 public enum HoverMagnification: String, Codable, CaseIterable, Sendable { case none, subtle, strong }
 public enum MenuDisplay: String, Codable, CaseIterable, Sendable { case icon, tightest, twoWindows }
 public enum OpeningPreference: String, Codable, CaseIterable, Sendable { case hold, quick }
-/// Cockpit size (CKP-SHELL-07, owner D51, D60): 85 % by default; a screen too short for the choice draws it smaller.
-public enum SettingsCockpitSize: String, Codable, CaseIterable, Sendable { case percent80 = "80", percent85 = "85", percent90 = "90", percent100 = "100" }
+/// Cockpit size (CKP-SHELL-07, owner D51, D60, D66): Auto by default (85 % on laptop-width screens, 100 % on wider
+/// ones); a screen too short for the choice draws it smaller.
+public enum SettingsCockpitSize: String, Codable, CaseIterable, Sendable { case automatic, percent80 = "80", percent85 = "85", percent90 = "90", percent100 = "100" }
 public enum SettingsLanguage: String, Codable, CaseIterable, Sendable { case chinese = "zh-CN", english = "en" }
 public enum NotificationKind: String, Codable, CaseIterable, Sendable { case forecast, reset, official, expiring, stale }
 public struct NotificationPreferences: Codable, Equatable, Sendable {
@@ -100,7 +101,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public var dockShortcut = ShortcutChord.unassigned
     public var language: SettingsLanguage = .chinese
     public var opening: OpeningPreference = .hold
-    public var cockpitSize: SettingsCockpitSize = .percent85
+    public var cockpitSize: SettingsCockpitSize = .automatic
     public var beatMilliseconds = 250
     public var showProjectNames = true
     public var notifications = NotificationPreferences()

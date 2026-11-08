@@ -599,9 +599,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let icon = requested ?? CGRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.maxY, width: 0, height: 0)
     return (screen.visibleFrame, icon)
   }
+  /// D66: Auto judges the full width of the screen the cockpit opens on (the icon's screen), whatever the Dock takes.
+  private func screenWidth(_ usable: CGRect) -> CGFloat {
+    NSScreen.screens.first { $0.visibleFrame == usable }?.frame.width ?? usable.width
+  }
   private func applyLayout() {
     guard let window, let (usable, icon) = environment(),
-          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size) else { return }
+          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return }
     layout = fit
     appearance = .init(theme: .night, locale: appearance.locale, profile: fit.profile,
       reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, size: appearance.size)
@@ -622,7 +626,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
     } else {
       shellSession.detached = false
-      guard let (usable, icon) = environment(), let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size) else { return }
+      guard let (usable, icon) = environment(), let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return }
       if appearance.reduceMotion { applyLayout() }
       else {
         NSAnimationContext.runAnimationGroup { context in

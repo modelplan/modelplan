@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 
-/// Settings "Cockpit size" (owner D51, D60). The cockpit is drawn at this size, the study layout scaled as one
-/// page; on a screen too short for it, smaller, down to the readable floor. 85 % is the default (D60, option A).
+/// Settings "Cockpit size" (owner D51, D60, D66). The cockpit is drawn at this size, the study layout scaled as one
+/// page; on a screen too short for it, smaller, down to the readable floor. Auto is the default (D66): 85 % on
+/// laptop-width screens, 100 % on wider ones, judged on the screen the cockpit opens on (the menu bar icon's).
 public enum CockpitSize: String, CaseIterable, Sendable {
-    case percent80 = "80", percent85 = "85", percent90 = "90", percent100 = "100"
-    public static let standard = CockpitSize.percent85
-    public var scale: CGFloat {
-        switch self { case .percent80: return 0.8; case .percent85: return 0.85; case .percent90: return 0.9; case .percent100: return 1 }
+    case automatic, percent80 = "80", percent85 = "85", percent90 = "90", percent100 = "100"
+    public static let standard = CockpitSize.automatic
+    /// D66: screens up to this width (13-14 inch laptops, e.g. MacBook Air 1440/1470, MacBook Pro 14 at 1512) get 85 %
+    /// under Auto; wider screens (15 inch and up, external displays) get 100 %.
+    public static let automaticLaptopScreenWidth: CGFloat = 1512
+    public static let automaticLaptopScale: CGFloat = 0.85
+    public func scale(screenWidth: CGFloat) -> CGFloat {
+        switch self {
+        case .automatic: return screenWidth <= Self.automaticLaptopScreenWidth ? Self.automaticLaptopScale : 1
+        case .percent80: return 0.8; case .percent85: return 0.85; case .percent90: return 0.9; case .percent100: return 1
+        }
     }
 }
 
@@ -30,7 +38,8 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public let frame: CGRect
     /// The chosen size did not fit this screen, so the cockpit is drawn smaller.
     public let sizeFellBack: Bool
-    public static func fit(usable: CGRect, anchor: CGRect, shutterClosed: Bool, size: CockpitSize = .standard) -> Self? {
+    /// `screenWidth` is the full width of the screen the cockpit opens on; it defaults to the usable width.
+    public static func fit(usable: CGRect, anchor: CGRect, shutterClosed: Bool, size: CockpitSize = .standard, screenWidth: CGFloat? = nil) -> Self? {
         guard !usable.isNull, !usable.isInfinite, usable.width.isFinite, usable.height.isFinite, usable.width > 0, usable.height > 40,
               usable.origin.x.isFinite, usable.origin.y.isFinite,
               anchor.origin.x.isFinite, anchor.origin.y.isFinite else { return nil }
@@ -39,7 +48,8 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let available = top - usable.minY
         guard available > 0 else { return nil }
         // The chosen size, or less when the screen is too short or narrow for it.
-        func fitting(_ root: CGFloat) -> CGFloat { min(size.scale, usable.width / Self.width, available / (root + Self.baseReserve)) }
+        let chosen = size.scale(screenWidth: screenWidth ?? usable.width)
+        func fitting(_ root: CGFloat) -> CGFloat { min(chosen, usable.width / Self.width, available / (root + Self.baseReserve)) }
         var profile = CockpitAppearance.Profile.full, forcedClosed = false
         var scale = fitting(877)
         if scale < Self.minimumFullScale {
@@ -48,7 +58,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
             forcedClosed = usable.height - 6 - Self.baseReserve < 627
             scale = fitting(forcedClosed ? 609 : 627)
         }
-        let fellBack = scale < size.scale
+        let fellBack = scale < chosen
         let closed = shutterClosed || forcedClosed
         let height: CGFloat = profile == .full ? (closed ? 691 : 877) : (closed ? 609 : 627)
         // The scale follows the open root, so closing the shutter never resizes the strip or the canopy.
