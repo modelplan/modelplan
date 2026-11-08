@@ -43,9 +43,11 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var page: (any CockpitPageSurface)?
   private var pageGeneration: UUID?
   public private(set) var selectedScope = "all"
-  /// The calendar day the scope was chosen; the clock is replaced only by tests.
+  /// The calendar day the scope was chosen.
   private var scopeDay: DateComponents?
-  var currentDate: () -> Date = { Date() }
+  /// The clock that decides that day. The app sets its own clock here, so the day follows the clock its
+  /// other deadlines use.
+  public var currentDate: @MainActor () -> Date = { Date() }
   private var scopeMembers = Set<String>()
   private var request: Task<Void, Never>?
   private var requestToken: UUID?

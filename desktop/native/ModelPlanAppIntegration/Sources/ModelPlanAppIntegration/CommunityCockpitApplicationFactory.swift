@@ -66,6 +66,7 @@ import ModelPlanDock
                 owner.coordinator=coordinator
                 let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
+                coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
