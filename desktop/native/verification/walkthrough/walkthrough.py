@@ -562,7 +562,7 @@ class Walkthrough:
         window = step.get("shot", {}).get("window")
         if window:
             # The app window that holds the target, captured alone with its alpha (visual comparison evidence).
-            node = resolve(tree, window)
+            node = {"frame": self.remembered} if window == "remembered" and self.remembered else resolve(tree, window)
             shot = node and self.window_holding(node["frame"])
             if shot is not None:
                 self.host.capture_window(self.out / (name + ".window.png"), shot["id"])
