@@ -1319,15 +1319,21 @@
     {
       "id": "settings-window",
       "title": "Settings window",
-      "expected": "The cockpit's Settings button opens the Settings window on its first page; the visual comparison reads its window shot.",
+      "expected": "Settings… in the status menu opens the Settings window on its first page; the visual comparison reads its window shot.",
       "actions": [
         {
-          "op": "toggleCockpit",
-          "want": "open"
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
         },
         {
-          "op": "click",
-          "target": "label:Settings"
+          "op": "wait",
+          "seconds": 1.2
+        },
+        {
+          "op": "press",
+          "by": "title",
+          "value": "Settings…"
         },
         {
           "op": "await",
