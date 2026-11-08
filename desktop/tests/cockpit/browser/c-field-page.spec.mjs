@@ -13,12 +13,91 @@ async function open(page) {
 }
 const show=(page,raw)=>page.evaluate(raw=>window.modelPlanField.show(raw),raw);
 
-test('the picker starts on my models and the presets change the fleet within the limit',async({page})=>{
- await open(page);expect(await show(page,payload())).toBe(true);
- await expect(page.locator('.field-count')).toHaveText('2/10');
- await page.locator('.field-preset',{hasText:'All'}).click();await expect(page.locator('.field-count')).toHaveText('10/10');
- await expect(page.locator('.field-row input:not(:checked)').first()).toBeDisabled();
- await page.locator('.field-search').fill('Synthetic 11');await expect(page.locator('.field-row')).toHaveCount(1);
+// Item 6 (task 91 round 5, study website-updates/fleet.js): the frosted model-picker card. Presets are My subscriptions
+// and All only (no site picks without published data), search by name or maker, at most 10 rockets, a lamp launches or
+// retracts, a row focuses its rocket, and the card folds into a count. Synthetic public data only.
+const devs=['openai','anthropic','zhipuai','google'];
+const varied=i=>({id:'m'+i,name:(i%4===1?'Claude ':'')+'Synthetic '+i,developerId:devs[i%4],recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:30+i*2,cost:.1*(1+i%5),time:30}]});
+const variedPayload=(n=12,extra={})=>JSON.stringify({language:'en',reduceMotion:true,models:Array.from({length:n},(_,i)=>varied(i)),mine:['m1','m2'],focus:null,...extra});
+const rows=page=>page.locator('.field-model-row');
+test('item 6 the picker starts on my subscriptions; presets, search, the 10-rocket limit and the lamps',async({page})=>{
+ await page.setViewportSize({width:1323,height:735});await open(page);expect(await show(page,variedPayload())).toBe(true);
+ const picker=page.locator('.website-fleet-picker');await expect(picker).toBeVisible();
+ await expect(page.locator('[data-field-preset]')).toHaveText(['My subscriptions','All']);
+ await expect(page.locator('[data-field-preset="mine"]')).toHaveAttribute('aria-pressed','true');
+ await expect(page.locator('.field-roster-heading span')).toHaveText('2/10 on field');
+ await expect(rows(page)).toHaveCount(12);
+ await expect(page.locator('.field-model-row[data-on="true"]')).toHaveCount(2);
+ await page.locator('[data-field-preset="all"]').click();
+ await expect(page.locator('[data-field-preset="all"]')).toHaveAttribute('aria-pressed','true');
+ await expect(page.locator('.field-roster-heading span')).toHaveText('10/10 on field');
+ const off=page.locator('.field-model-row[data-on="false"] .field-launch-lamp').first();
+ await expect(off).toBeDisabled();await expect(page.locator('.website-fleet-picker footer small')).toHaveText('10 rocket limit · retract one to add another');
+ const on=page.locator('.field-model-row[data-on="true"] .field-launch-lamp').first(),id=await on.getAttribute('data-fleet-model');
+ await expect(on).toHaveText('✓');await expect(on).toHaveAttribute('aria-pressed','true');
+ await on.click();await expect(page.locator('.field-roster-heading span')).toHaveText('9/10 on field');
+ await expect(page.locator(`.field-model-row[data-field-row="${id}"]`)).toHaveAttribute('data-on','false');
+ await expect(page.locator('[data-field-preset][aria-pressed="true"]')).toHaveCount(0);
+ await page.locator(`.field-launch-lamp[data-fleet-model="${id}"]`).click();await expect(page.locator('.field-roster-heading span')).toHaveText('10/10 on field');
+ await page.locator('[data-field-search]').fill('synthetic 11');await expect(rows(page)).toHaveCount(1);
+ await page.locator('[data-field-search]').fill('anthropic');await expect(rows(page)).toHaveCount(3);
+ await page.locator('[data-field-search]').fill('nothing like it');await expect(page.locator('.field-empty')).toHaveText('No matching models');
+ await page.locator('[data-field-search]').fill('');
+ await page.locator('[data-field-reset]').click();await expect(page.locator('.field-roster-heading span')).toHaveText('2/10 on field');
+ await expect(page.locator('[data-field-preset="mine"]')).toHaveAttribute('aria-pressed','true');
+});
+test('item 6 rows: maker, name, ★ effort, ability and cost bars; my subscriptions first; a row click focuses its rocket',async({page})=>{
+ await page.setViewportSize({width:1323,height:735});await open(page);// Cost rises with ability here, so no model is outclassed.
+ const rising=i=>({...varied(i),efforts:[{effort:'medium',label:'Med',star:true,ability:30+i*2,cost:.1*(i+1),time:30}]});
+ await show(page,JSON.stringify({language:'en',reduceMotion:true,models:Array.from({length:6},(_,i)=>rising(i)),mine:['m1','m2','m5'],focus:null}));
+ await expect(page.locator('.field-roster-heading b')).toHaveText('My subscriptions first');
+ expect(await rows(page).evaluateAll(es=>es.map(e=>e.dataset.fieldRow))).toEqual(['m5','m2','m1','m4','m3','m0']);
+ await expect(page.locator('.field-group-label')).toHaveText('MORE PUBLIC MODELS');
+ expect(await page.locator('.field-group-label + .field-model-row').getAttribute('data-field-row')).toBe('m4');
+ const first=rows(page).first();
+ await expect(first.locator('.field-vendor-name')).toHaveText('Anthropic');await expect(first.locator('.field-full-name b')).toHaveText('Claude Synthetic 5');
+ await expect(first.locator('.sp-cr-name em')).toHaveText('★ Med');await expect(first.locator('.sp-tile img')).toHaveAttribute('src','assets/brands/claude.svg');
+ await expect(first.locator('.sp-cr-bars b')).toHaveText(['40.0','×6.0']);
+ // Lamps do not reorder the list.
+ await page.locator('.field-launch-lamp[data-fleet-model="m5"]').click();
+ expect(await rows(page).evaluateAll(es=>es.map(e=>e.dataset.fieldRow))).toEqual(['m5','m2','m1','m4','m3','m0']);
+ await page.locator('.field-launch-lamp[data-fleet-model="m5"]').click();
+ // ×1 is the cheapest published model at its ★ effort; the footer names it.
+ await expect(page.locator('.website-fleet-picker footer small')).toHaveText('×1 = Synthetic 0 ★ Med · Field-local choice');
+ await page.locator('.field-model-row[data-field-row="m2"] .field-model-focus').click();
+ await expect(page.locator('.field-model-row.on')).toHaveAttribute('data-field-row','m2');
+ // A row whose model is not on the field launches it and takes the focus (there is room).
+ await page.locator('.field-model-row[data-field-row="m4"] .field-model-focus').click();
+ await expect(page.locator('.field-model-row.on')).toHaveAttribute('data-field-row','m4');
+ await expect(page.locator('.field-roster-heading span')).toHaveText('4/10 on field');
+});
+test('item 6 v1 shows only the derivable verdict: outclassed models carry the tag and sink; no published-only tags (D71)',async({page})=>{
+ await page.setViewportSize({width:1323,height:735});await open(page);
+ const m=(id,name,ability,cost)=>({id,name,developerId:'openai',recommended:'high',efforts:[{effort:'high',label:'High',star:true,ability,cost,time:30}]});
+ await show(page,JSON.stringify({language:'en',reduceMotion:true,mine:['a','b','c'],focus:null,models:[m('a','Alpha',50,.4),m('b','Beta',45,.8),m('c','Gamma',30,.1)]}));
+ await expect(rows(page)).toHaveCount(3);
+ await expect(rows(page).last()).toHaveAttribute('data-field-row','b');await expect(rows(page).last()).toHaveClass(/dominated/);
+ await expect(page.locator('.sp-cr-tags i')).toHaveText(['Outclassed']);
+ await expect(page.locator('.tag-strongest,.tag-best_value,.tag-cheapest,.tag-equivalent_costlier')).toHaveCount(0);
+ // The chart: one dot per rocket on the field, the gold frontier through the undominated ones, a dotted line from Beta to Alpha.
+ await expect(page.locator('.field-frontier .sp-which-dot')).toHaveCount(3);
+ await expect(page.locator('.field-frontier path.field-front')).toHaveCount(1);
+ await expect(page.locator('.field-frontier line.field-beaten')).toHaveCount(1);
+ await page.locator('[data-field-preset="mine"]').click();
+ await page.locator('.field-launch-lamp[data-fleet-model="a"]').click();await page.locator('.field-launch-lamp[data-fleet-model="b"]').click();
+ await expect(page.locator('.field-chart-empty')).toHaveText('Select at least two models to compare.');
+});
+test('item 6 the card folds into a count and the scene takes the width; the native blur follows',async({page})=>{
+ await page.addInitScript(()=>{window.posted=[];window.messages=[];window.webkit={messageHandlers:{field:{postMessage(m){window.messages.push(JSON.parse(m));window.posted.push(JSON.parse(m).type);}}}};});
+ await page.setViewportSize({width:1323,height:735});await page.goto('/field.html');await page.waitForFunction(()=>!!window.modelPlanField);await show(page,variedPayload());
+ await page.locator('[data-fleet-done]').click();
+ await expect(page.locator('.website-fleet-picker')).toBeHidden();
+ const tools=page.locator('[data-fleet-picker]');await expect(tools).toBeVisible();await expect(tools).toHaveText('Pick models 2/10');
+ await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='card').at(-1)?.width)).toBe(0);
+ expect((await page.locator('.field-stage').boundingBox()).x).toBeLessThan(200);
+ await tools.click();await expect(page.locator('.website-fleet-picker')).toBeVisible();await expect(tools).toBeHidden();
+ await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='card').at(-1)?.width)).toBe(430);
+ expect((await page.locator('.field-stage').boundingBox()).x).toBe(458);
 });
 test('Esc and the close key ask the host to close, and interaction renews the idle timer',async({page})=>{
  await open(page);await show(page,payload());await expect(page.locator('.field-close')).toHaveText('×');
@@ -28,7 +107,7 @@ test('Esc and the close key ask the host to close, and interaction renews the id
 });
 test('Chinese words, and nothing published says so',async({page})=>{
  await open(page);await show(page,payload(0,{language:'zh'}));
- await expect(page.locator('.nogl')).toHaveText('暂无已发布模型。');await expect(page.locator('.field-preset').first()).toHaveText('我的');
+ await expect(page.locator('.nogl')).toHaveText('暂无已发布模型。');await expect(page.locator('[data-field-preset]')).toHaveText(['我的订阅','全部']);
  await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
 });
 test('dispose clears the page',async({page})=>{
@@ -110,8 +189,9 @@ test('D63 a click on a rocket in the still opens the field focused on that rocke
 });
 test('D63 a focused rocket outside my models joins the field and takes the focus',async({page})=>{
  await open(page);await show(page,payload(12,{focus:'m7'}));
- await expect(page.locator('.field-count')).toHaveText('3/10');
- await expect(page.locator('.field-row',{hasText:'Synthetic 7'}).locator('input')).toBeChecked();
+ await expect(page.locator('.field-roster-heading span')).toHaveText('3/10 on field');
+ await expect(page.locator('.field-model-row[data-field-row="m7"]')).toHaveAttribute('data-on','true');
+ await expect(page.locator('.field-model-row.on')).toHaveAttribute('data-field-row','m7');
 });
 // CKP-PORT-13 (D63): "Full fleet on the website ↗". The page never sends a URL: it names the flown public model IDs
 // and native builds the modelplan.ai address (prototype website-updates/links.js fleetUrl, the site's focus query).
@@ -120,17 +200,17 @@ test('CKP-PORT-13 the website link names the flown fleet and the host builds the
  await open(page);
  await page.evaluate(()=>{const post=window.webkit.messageHandlers.field.postMessage;window.webkit.messageHandlers.field.postMessage=m=>{window.sent.push(JSON.parse(m));post(m);};});
  await show(page,payload());
- const link=page.locator('.field-website');await expect(link).toHaveText('Full fleet on the website ↗');
+ const link=page.locator('.field-website');await expect(link).toHaveText('Compare ↗');await expect(link).toHaveAttribute('aria-label','Full fleet on the website');
  await link.click();
  const website=await page.evaluate(()=>window.sent.filter(m=>m.type==='website'));
  expect(website).toEqual([{type:'website',models:['m1','m2']}]);
- await page.locator('.field-preset',{hasText:'All'}).click();await link.click();
+ await page.locator('[data-field-preset="all"]').click();await link.click();
  expect((await page.evaluate(()=>window.sent.filter(m=>m.type==='website'))).at(-1).models).toHaveLength(10);
  expect(await page.locator('.field-website[href]').count()).toBe(0);
 });
 test('CKP-PORT-13 Chinese link text',async({page})=>{
  await open(page);await show(page,payload(3,{language:'zh'}));
- await expect(page.locator('.field-website')).toHaveText('在网站上看完整舰队 ↗');
+ await expect(page.locator('.field-website')).toHaveText('网站对比 ↗');await expect(page.locator('.field-website')).toHaveAttribute('aria-label','在网站上看完整舰队');
 });
 // CKP-PORT-11 (D63): the c01 porthole silhouette feathered ~10% into the desktop, derived from the published
 // window-890-1x.png at open. Reference: alpha samples of the prototype's approved mask (task 91 round 5,

@@ -124,6 +124,11 @@ final class CockpitFieldPanelTests: XCTestCase {
     let frame = try XCTUnwrap(panel.cardBlurFrame)
     XCTAssertEqual(frame.size, NSSize(width: 430, height: 500))
     XCTAssertEqual(frame.minX, 0)
+    // Item 6: the picker folds into a count; the page reports an empty card and the blur goes.
+    panel.receive(#"{"type":"card","x":0,"y":0,"width":0,"height":0,"radius":12}"#)
+    XCTAssertNil(panel.cardBlurFrame, "a folded card has no blur")
+    panel.receive(#"{"type":"card","x":0,"y":20,"width":430,"height":500,"radius":12}"#)
+    XCTAssertNotNil(panel.cardBlurFrame, "unfolded, the blur is back")
   }
   /// D63 (review of #734): a field opened while Low Power Mode is already on is quiet from the start, whatever the
   /// payload said: right after `show` the page gets `power(true)`.

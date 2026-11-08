@@ -163,7 +163,9 @@ import WebKit
     guard let cardBlur, let bounds = cardBlur.superview?.bounds else { return }
     let number = { (key: String) in (message[key] as? NSNumber)?.doubleValue }
     guard let x = number("x"), let y = number("y"), let width = number("width"), let height = number("height"),
-          width > 0, height > 0, width <= 4096, height <= 4096 else { return }
+          width >= 0, height >= 0, width <= 4096, height <= 4096 else { return }
+    // A folded card reports an empty rect: no card, no blur.
+    guard width > 0, height > 0 else { cardBlur.isHidden = true; return }
     let rect = Self.cardFrame(x: x, y: y, width: width, height: height, in: bounds)
     guard !rect.isEmpty else { cardBlur.isHidden = true; return }
     cardBlur.frame = rect; cardBlur.layer?.cornerRadius = CGFloat(min(24, max(0, number("radius") ?? 12)))
