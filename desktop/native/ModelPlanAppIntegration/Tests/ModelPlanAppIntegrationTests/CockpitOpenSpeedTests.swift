@@ -117,6 +117,10 @@ extension CommunityCockpitEntryTests {
         CommunityCockpitApplicationFactory.verificationPage = { [weak probe] page in
             let id = ObjectIdentifier(page)
             probe?.made.append(page)
+            let built = ContinuousClock.now
+            page.verificationWarmPainted = { [weak probe] painted in
+                probe?.log.append("warmPaint painted=\(painted) sinceBuiltMs=\(Self.ms(built))")
+            }
             page.onRendered = { [weak page, weak probe] in
                 guard let page, let probe else { return }
                 probe.rendered[id, default: []].append((at: ContinuousClock.now, frame: page.window?.frame ?? .zero, rootHeight: page.verificationRootHeight))
