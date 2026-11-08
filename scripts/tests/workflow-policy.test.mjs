@@ -205,5 +205,5 @@ test("U11 may use the ordinary owner Macs, never the GUI Mac, with the same owne
   assert.match(job, /\*gui\*\) echo "::error::/, "the job refuses a GUI runner even if a label is misassigned");
   assert.match(job, /persist-credentials: false/);
   assert.match(job, /echo "HOME=\$base\/home"/, "home and caches live in the job's runner temp");
-  assert.match(job, /if: always\(\)\n\s+shell: bash\n\s+run: rm -rf -- \.tmp/);
+  assert.match(job, /if: always\(\)\n\s+shell: bash\n\s+run: \|\n(?:\s+#.*\n)?\s+chmod -R u\+w -- "\$RUNNER_TEMP\/u11-isolated".*\n\s+rm -rf -- \.tmp /, "Go's read-only module cache is made writable before removal");
 });
