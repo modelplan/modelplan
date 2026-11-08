@@ -82,6 +82,18 @@ test('G3-48 compact HUD names never overlap, however long',async({page})=>{
  const rows=await page.locator('.hud-strip .hp').evaluateAll(rows=>rows.map(r=>{const box=e=>e.getBoundingClientRect(),hud=r.closest('.hud').getBoundingClientRect(),row=box(r),name=box(r.querySelector('b')),rec=box(r.querySelector('.hp-rec'));return {top:row.top,bottom:row.bottom,nameRight:name.right,recLeft:rec.left,recRight:rec.right,hudRight:hud.right};}));
  expect(rows).toHaveLength(3);
  for(const [i,r] of rows.entries()){expect(r.nameRight).toBeLessThanOrEqual(r.recLeft);expect(r.recRight).toBeLessThanOrEqual(r.hudRight+0.5);if(i)expect(r.top).toBeGreaterThanOrEqual(rows[i-1].bottom);}
+ // The boxes above can fit while the glyphs still paint past them: check the painted text against the ★.
+ const painted=await page.locator('.hud-strip .hp').evaluateAll(rows=>rows.map(r=>{
+  const name=r.querySelector('b'),rec=r.querySelector('.hp-rec').getBoundingClientRect(),style=getComputedStyle(name);
+  const range=document.createRange();range.selectNodeContents(name);const text=range.getBoundingClientRect();
+  const clipped=style.overflow==='hidden'&&style.textOverflow==='ellipsis'&&style.whiteSpace==='nowrap';
+  return {overflows:name.scrollWidth>name.clientWidth,clipped,textRight:text.right,boxRight:name.getBoundingClientRect().right,recLeft:rec.left,lineHeight:style.lineHeight,rowHeight:r.getBoundingClientRect().height};
+ }));
+ for(const p of painted){
+  expect(p.overflows&&!p.clipped,'a name wider than its box must be clipped with an ellipsis').toBe(false);
+  expect(p.clipped?p.boxRight:p.textRight).toBeLessThanOrEqual(p.recLeft);
+  expect([p.lineHeight,p.rowHeight]).toEqual(['10px',10]);
+ }
 });
 test('CKP-PORT-06 a row opens 档位 and Esc or Back returns to the page before',async({page})=>{
  await open(page);
