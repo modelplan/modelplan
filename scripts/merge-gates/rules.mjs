@@ -321,6 +321,9 @@ export function latestRuns(runs, scope = () => true) {
   const by = new Map();
   for (const r of runs) {
     if (SELF_WORKFLOWS.includes(r.path) || !scope(r)) continue;
+    // action_required: GitHub holds the run for approval (a bot-opened or fork PR) and never executes it, so it
+    // proves nothing and must not displace a real run; with no executed run the workflow stays "waiting to start".
+    if (r.status === "completed" && r.conclusion === "action_required") continue;
     const prev = by.get(r.workflow_id);
     if (!prev || r.id > prev.id) by.set(r.workflow_id, r);
   }
