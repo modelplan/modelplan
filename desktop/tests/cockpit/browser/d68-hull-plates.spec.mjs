@@ -4,7 +4,7 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
 // D68 / CKP-SHELL-16, -25 (owner 2026-11-08): the hull is the r3 plain plates as the opus-r7 study composes them,
-// not a CSS plate. Below the c01 canopy one continuous plain wall runs to the aft plate; no crown plate, cone band,
+// not a CSS plate. Below the c01 canopy the side walls are the study's upper wall, taper and lower wall (owner build 13); no crown plate,
 // record panel or detail layer; no CSS plate, rim or booster. The wall tile is the study's canopy-h1 lower skin. Numbers measured on the study in each shape.
 for(const [tier,closed,wallTop,canvas] of [['tall',false,216,911],['tall',true,30,725],['compact',false,48,661],['compact',true,30,643]])
 test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the aft plate`,async({page})=>{
@@ -36,9 +36,10 @@ test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the
   // The slab saves the study's 6 px (cap 16 + 2 px first row): the strip sits at 39 px and the record panel ends
   // 22 px above the bottom, on the aft plate's edge, not over it.
   expect([v.headTop,v.tapeGap]).toEqual([39,22]);
-  expect(v.hidden.slice(1)).toEqual(['none','none','none']);
- }else expect(v.hidden).toEqual(['none','none','none','none']);
- expect(v.wall).toMatchObject({display:'block',top:wallTop,bottom:22,left:-8,width:636});
+  expect(v.hidden.slice(1)).toEqual(['block','block','none']);
+ }else expect(v.hidden).toEqual(['none','block','block','none']);
+ // Owner build 13: the wall is the study's upper wall, taper and lower wall (b13-hull-taper.spec.mjs has their boxes).
+ expect(v.wall).toMatchObject({display:'block',top:wallTop,left:-8,width:636});
  // Side walls (owner, after D68): the study paints the canopy-h1 lower-skin tile, the same bytes in every shape.
  expect(v.wall.bg).toContain('/assets/hull/lower-skin-890-');
  // Closed, the study's aft is its own closed plate (D72).

@@ -119,16 +119,27 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 #cockpit .dk-fad .fd-ch.xhl .fd-indicator{color:var(--lcd-ink)}
 #cockpit .ec.xhl,#cockpit .ek.xhl{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcd-ink) 40%,transparent)}
 
-/* D68 hull walls, measured on the opus-r7 study as composed (night, all four shapes): the c01 canopy is the crown,
-   and below it one continuous plain wall runs from the canopy foot to the aft plate (22 px), tiled from 9 px; no
-   crown plate, cone band or record panel is drawn. The wall tile is the study's canopy-h1 lower skin and the aft
-   plate the released r3 plain plate of the official edition; the community edition has none and stays neutral. */
-#cockpit{--hull-wall-top:216px;--hull-clip-top:216px}
-:root[data-profile="compact"] #cockpit{--hull-wall-top:48px;--hull-clip-top:48px}
-:root #cockpit[data-shell="closed"]{--hull-wall-top:30px;--hull-clip-top:30px}
-:root[data-theme="night"] #cockpit .ck-shell :is(.hull-crown,.hull-cone,.hull-lower,.hull-record){display:none}
-:root[data-theme="night"] #cockpit .ck-shell .hull-upper{top:var(--hull-wall-top);bottom:22px;height:auto;background-image:var(--hull-wall);background-size:636px 32px;background-position:50% 9px;background-repeat:repeat-y}
-:root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(var(--hull-clip-top) 16px 22px)}
+/* Hull walls (owner build 13), as the opus-r7 study composes them (canopy-h1 + canopy-c01 + strip-hull-unify): narrow
+   at the top, wide at the bottom. Below the c01 canopy (the crown) an upper wall stands 8 px inside the 636 px hull,
+   a 31 px taper steps out above the instruments and the lower wall runs full width to the aft plate (22 px). Each is
+   the lower-skin tile in one vertical phase (the strip's content line, cap + 9 px), cut by the study's alpha masks
+   (official edition, hull.css); the community edition has neither and stays neutral. The taper tops are the study's
+   formulas at the fixed root heights 877/627 open (root - console - tape - 40) and 691/609 closed
+   (84.5 + eng - 4.5 + (root + 6 - 120 - eng - console - tape) / 3 - 6). */
+#cockpit{--hull-cap-h:216px;--hull-taper-top:486px}
+#cockpit[data-layout="640"]{--hull-cap-h:48px;--hull-taper-top:312px}
+#cockpit[data-shell="closed"]{--hull-cap-h:30px;--hull-taper-top:300px}
+#cockpit[data-shell="closed"][data-layout="640"]{--hull-taper-top:294px}
+:root[data-theme="night"] #cockpit .ck-shell :is(.hull-crown,.hull-record){display:none}
+:root[data-theme="night"] #cockpit .ck-shell :is(.hull-upper,.hull-cone,.hull-lower){display:block;bottom:auto;background-image:var(--hull-wall);background-size:636px 32px;background-repeat:repeat-y;-webkit-mask-composite:source-over;mask-composite:add;mask-mode:alpha}
+:root[data-theme="night"] #cockpit .ck-shell .hull-upper{top:var(--hull-cap-h);height:calc(var(--hull-taper-top) - var(--hull-cap-h));background-position:50% 9px;-webkit-mask-image:var(--hull-upper-mask),var(--hull-upper-skin-mask);mask-image:var(--hull-upper-mask),var(--hull-upper-skin-mask);-webkit-mask-size:636px var(--hull-upper-h),636px 32px;mask-size:636px var(--hull-upper-h),636px 32px;-webkit-mask-repeat:no-repeat,repeat-y;mask-repeat:no-repeat,repeat-y;-webkit-mask-position:50% 100%,50% 0;mask-position:50% 100%,50% 0}
+:root[data-theme="night"] #cockpit .ck-shell .hull-cone{top:var(--hull-taper-top);height:31px;background-position:50% calc(var(--hull-cap-h) + 9px - var(--hull-taper-top));-webkit-mask-image:var(--hull-taper-mask);mask-image:var(--hull-taper-mask);-webkit-mask-size:636px 31px;mask-size:636px 31px;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:0 0;mask-position:0 0}
+:root[data-theme="night"] #cockpit .ck-shell .hull-lower{top:calc(var(--hull-taper-top) + 31px);bottom:22px;height:auto;background-position:50% calc(var(--hull-cap-h) - 22px - var(--hull-taper-top));-webkit-mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);-webkit-mask-size:636px var(--hull-lower-h),636px 32px;mask-size:636px var(--hull-lower-h),636px 32px;-webkit-mask-repeat:no-repeat,repeat-y;mask-repeat:no-repeat,repeat-y;-webkit-mask-position:50% 100%,50% 0;mask-position:50% 100%,50% 0}
+:root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(var(--hull-cap-h) 16px 22px)}
+/* Collapsed (owner build 13): the study's slab row keeps 14 px of nothing above the slab, which in the native window
+   only widened the gap under the menu bar. The page draws the slab at the window's top edge instead; the shell
+   inside keeps the study's coordinates. */
+#cockpit.ck[data-shell="closed"]{margin-top:-14px}
 /* Closed (owner D72): the porthole row is the study's slab row, cap 16 + 2 px (strip-hull-unify .ck.shut), so the
    strip sits at 39 px and the record panel ends on the aft plate's edge. */
 #cockpit.ck[data-shell="closed"]{grid-template-rows:18px 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px)}

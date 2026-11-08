@@ -38,3 +38,51 @@
 :root[data-theme="night"] #cockpit[data-shell="closed"] .s6-closed-cap{background:none!important}
 /* The strip panel's own outer 16 px wall paint gives way to the continuous hull rails (study strip-hull-unify). */
 :root[data-theme="night"] #cockpit .ck-head::before{clip-path:inset(0 16px)}
+/* Hull shape (owner build 13): narrow at the top, wide at the bottom, as the study cuts it (canopy-h1 + strip-hull-unify).
+   The wall tile is cut by the alpha of the study's own upper-wall, taper and lower-stage parts; only their alpha is
+   used. Alpha masks take plain URLs, as in the study: older WebKit does not reliably select image-set masks. */
+:root[data-theme="night"] #cockpit{
+  --hull-upper-h:283px;--hull-lower-h:338px;
+  --hull-upper-mask:url('/assets/hull/upper-walls-890-1x.png');--hull-upper-skin-mask:url('/assets/hull/upper-skin-890-1x.png');
+  --hull-taper-mask:url('/assets/hull/taper-890-1x.png');
+  --hull-lower-mask:url('/assets/hull/lower-stage-890-1x.png');--hull-lower-skin-mask:url('/assets/hull/lower-skin-890-1x.png');
+}
+:root[data-theme="night"] #cockpit[data-layout="640"]{
+  --hull-upper-h:277px;--hull-lower-h:262px;
+  --hull-upper-mask:url('/assets/hull/upper-walls-640-1x.png');--hull-upper-skin-mask:url('/assets/hull/upper-skin-640-1x.png');
+  --hull-lower-mask:url('/assets/hull/lower-stage-640-1x.png');
+}
+:root[data-theme="night"] #cockpit[data-shell="closed"]{
+  --hull-upper-h:283px;--hull-lower-h:338px;
+  --hull-upper-mask:url('/assets/hull/upper-walls-closed-1x.png');--hull-upper-skin-mask:url('/assets/hull/upper-skin-closed-1x.png');
+  --hull-lower-mask:url('/assets/hull/lower-stage-890-1x.png');
+}
+@media(min-resolution:2dppx){
+:root[data-theme="night"] #cockpit{
+  --hull-upper-mask:url('/assets/hull/upper-walls-890-2x.png');--hull-upper-skin-mask:url('/assets/hull/upper-skin-890-2x.png');
+  --hull-taper-mask:url('/assets/hull/taper-890-2x.png');
+  --hull-lower-mask:url('/assets/hull/lower-stage-890-2x.png');--hull-lower-skin-mask:url('/assets/hull/lower-skin-890-2x.png');
+}
+:root[data-theme="night"] #cockpit[data-layout="640"]{
+  --hull-upper-mask:url('/assets/hull/upper-walls-640-2x.png');--hull-upper-skin-mask:url('/assets/hull/upper-skin-640-2x.png');
+  --hull-lower-mask:url('/assets/hull/lower-stage-640-2x.png');
+}
+:root[data-theme="night"] #cockpit[data-shell="closed"]{
+  --hull-upper-mask:url('/assets/hull/upper-walls-closed-2x.png');--hull-upper-skin-mask:url('/assets/hull/upper-skin-closed-2x.png');
+  --hull-lower-mask:url('/assets/hull/lower-stage-890-2x.png');
+}
+}
+/* The c01 frame's raw lower sides run straight down to the image edge; the study rounds them with its solid outline
+   (strip-hull-unify), so the frame's foot meets the 620 px upper walls. */
+#cockpit .ck-portrow::before{-webkit-mask:url('/runtime/canopy-c01/solid-outline-890-1x.png') 0 0/636px 216px no-repeat;mask:url('/runtime/canopy-c01/solid-outline-890-1x.png') 0 0/636px 216px no-repeat}
+#cockpit[data-layout="640"] .ck-portrow::before{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-640-1x.png');mask-image:url('/runtime/canopy-c01/solid-outline-640-1x.png');-webkit-mask-size:636px 48px;mask-size:636px 48px}
+@media(min-resolution:2dppx){
+#cockpit .ck-portrow::before{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-890-2x.png');mask-image:url('/runtime/canopy-c01/solid-outline-890-2x.png')}
+#cockpit[data-layout="640"] .ck-portrow::before{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-640-2x.png');mask-image:url('/runtime/canopy-c01/solid-outline-640-2x.png')}
+}
+/* Strip logo (owner build 13): the study's rocket mark beside the live wordmark (study hud-selection), not the
+   early all-caps wordmark raster. */
+:root[data-theme] #cockpit .ck-head .brand-mark{background:url('/assets/logo.svg') center/28px 28px no-repeat}
+:root[data-theme] #cockpit .ck-head .wordmark{background:none;font:600 14px/20px 'DM Sans',sans-serif;letter-spacing:-.025em;color:var(--silk-hi);width:112px;height:20px}
+:root[data-theme] #cockpit .ck-head .wordmark b{font:inherit;color:#df604c}
+:root[data-theme] #cockpit .ck-head .wordmark::before,:root[data-theme] #cockpit .ck-head .wordmark::after{content:none;background:none;transform:none}

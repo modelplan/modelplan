@@ -93,9 +93,11 @@ for(const theme of ['night','day'])test(`COL-2.1-12/17 brand red stays out of ev
  for(const name of ['Overview','Subscription','Effort','Breakdown']){await page.getByRole('button',{name,exact:true}).click();seen.push(...await paints(page));}
  await page.keyboard.down('Alt');seen.push(...await paints(page));await page.keyboard.up('Alt');
  expect(seen.length).toBeGreaterThan(200);
- // The only cockpit place for it is the Plan wordmark, which the strip draws as approved art rather than CSS paint.
+ // The only cockpit place for it is the strip's live "Plan" wordmark (owner build 13: the study's hud-selection
+ // wordmark replaced the early raster); no other surface paints it.
  const brand=seen.filter(p=>near(p.rgb,BRAND.night,20)||near(p.rgb,BRAND.day,20));
- expect([...new Set(brand.map(p=>`${p.name} ${p.property}`))]).toEqual([]);
+ expect([...new Set(brand.map(p=>`${p.name} ${p.property}`))]).toEqual(['b color']);
+ expect(await page.evaluate(()=>[...document.querySelectorAll('#cockpit b')].filter(e=>getComputedStyle(e).color==='rgb(223, 96, 76)').map(e=>e.closest('.ck-head .wordmark')?'wordmark':e.className))).toEqual(['wordmark']);
  // Status places carry only their status palette, never a value close to the brand reds.
  expect(seen.filter(p=>statusBearing.test(p.name)&&near(p.rgb,STATUS.low,2)&&(near(p.rgb,BRAND.night,2)||near(p.rgb,BRAND.day,2)))).toEqual([]);
 });
