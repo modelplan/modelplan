@@ -173,7 +173,8 @@ import ModelPlanWire
             column.addArrangedSubview(field); wrappingLabels.append(field)
             field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
-        line(Self.readLine(tool), id: "scope.firstRun.reads." + id)
+        // An unsupported login is not read at all, so its row says only why (D52).
+        if tool.block != .unsupportedLogin { line(Self.readLine(tool), id: "scope.firstRun.reads." + id) }
         if let block = tool.block {
             line(Self.blockLine(block, tool: id), id: "scope.firstRun.status." + id, color: .systemOrange)
         }

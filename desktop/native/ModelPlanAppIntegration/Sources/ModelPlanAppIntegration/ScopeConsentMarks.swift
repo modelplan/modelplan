@@ -5,11 +5,12 @@ import ModelPlanDockResources
 
 /// G3-45: the first-run tool list shows each vendor's mark, from the same checked third-party
 /// marks the Quota Widget uses (nominative use, see the vendor notice). Missing marks return nil
-/// and the page shows two letters instead.
+/// and the page shows two letters instead. ZCode's Zhipu mark is a filled square, which reads as a
+/// black block when drawn in one colour, so ZCode keeps its two letters.
 @MainActor enum ScopeConsentMarks {
     private static let resources: [String: String] = [
         "claude": "logo-claude", "codex": "logo-openai", "cursor": "logo-cursor", "copilot": "logo-copilot",
-        "gemini": "logo-gemini", "grok": "logo-grok", "kimi": "logo-kimi", "zai": "logo-zhipu", "qwen": "logo-qwen",
+        "gemini": "logo-gemini", "grok": "logo-grok", "kimi": "logo-kimi", "qwen": "logo-qwen",
         "opencodego": "logo-opencode", "opencode": "logo-opencode", "kiro": "logo-kiro", "amp": "logo-amp",
         "droid": "logo-droid", "antigravity": "logo-antigravity", "minimax": "logo-minimax",
     ]

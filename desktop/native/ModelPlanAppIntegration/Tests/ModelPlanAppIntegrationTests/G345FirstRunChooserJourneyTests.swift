@@ -130,9 +130,12 @@ private actor G345Engine: EngineClient {
         for tool in ["claude", "codex", "cursor", "zai"] {
             XCTAssertFalse(try find("scope.firstRun.row." + tool, in: window, as: NSView.self).isHiddenOrHasHiddenAncestor)
             XCTAssertTrue(views(try find("scope.firstRun.row." + tool, in: window, as: NSView.self)).compactMap { ($0 as? NSTextField)?.stringValue }.contains("Detected on this Mac"))
+            guard tool != "zai" else { continue }
             let reads = try text("scope.firstRun.reads." + tool, in: window)
             XCTAssertTrue(reads.hasPrefix("Reads") || reads.hasPrefix("Asks"), reads)
         }
+        XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.firstRun.reads.zai" },
+                     "a login that is not read does not describe a read")
         XCTAssertTrue(try text("scope.firstRun.reads.claude", in: window).contains("Keychain"), "Claude Code says macOS may ask for the Keychain")
         XCTAssertTrue(try text("scope.firstRun.reads.codex", in: window).contains("No Keychain prompt"))
         XCTAssertTrue(try text("scope.firstRun.status.claude", in: window).hasPrefix("Not signed in"), "G3-38: signed-out Claude Code says so")
