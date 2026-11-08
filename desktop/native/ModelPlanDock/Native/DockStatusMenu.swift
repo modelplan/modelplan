@@ -122,6 +122,9 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         // MENU-06: the dot belongs to the icon's top right in every display style. With a
         // percentage title after the leading icon, the button's right edge is the end of the
         // text, so the dot ends at the icon's right edge instead and stays with the icon.
+        // The icon is measured against the width the content needs, never the button's current
+        // bounds: right after a refresh those still hold the previous size, and a dot placed from
+        // them landed on the "%" and moved back on the next refresh (owner build 13: "0%" read "0").
         if !button.title.isEmpty, button.image != nil,
            button.imagePosition == .imageLeading || button.imagePosition == .imageLeft,
            let cell = button.cell {
@@ -137,6 +140,8 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
                 return
             }
         }
+        frame = NSRect(x: max(bounds.minX, bounds.maxX - side), y: top, width: side, height: side)
+        autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
         if superview !== button { button.addSubview(self) }
     }
     public override func hitTest(_ point:NSPoint)->NSView?{nil}
