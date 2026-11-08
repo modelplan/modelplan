@@ -127,7 +127,7 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         // them landed on the "%" and moved back on the next refresh (owner build 13: "0%" read "0").
         if !button.title.isEmpty, button.image != nil,
            button.imagePosition == .imageLeading || button.imagePosition == .imageLeft,
-           let cell = button.cell {
+           let cell = Self.measuringCell(for: button) {
             // Read-only on the real cell, never a copy: NSCell.copy() shares unretained internals (the image) with the button,
             // and releasing the copy over-released the button's image (crash in the next renderMenu, build 14).
             // The rect is computed from the width the content needs, not the button's current frame.
@@ -143,6 +143,22 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         frame = NSRect(x: max(bounds.minX, bounds.maxX - side), y: top, width: side, height: side)
         autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
         if superview !== button { button.addSubview(self) }
+    }
+    /// A FRESH cell configured like the button's (never a copy of its cell: NSCell.copy() shares the image without
+    /// retaining it and over-released it, build 14 crash; and the real cell's size follows the button's current frame).
+    /// The new cell owns its own retained image and is only ever measured against a rect we pass.
+    private static func measuringCell(for button: NSButton) -> NSButtonCell {
+        let cell = NSButtonCell()
+        cell.image = button.image
+        cell.title = button.title
+        cell.font = button.font
+        cell.imagePosition = button.imagePosition
+        cell.imageScaling = button.imageScaling
+        cell.bezelStyle = button.bezelStyle
+        cell.isBordered = button.isBordered
+        cell.alignment = button.alignment
+        cell.imageHugsTitle = (button.cell as? NSButtonCell)?.imageHugsTitle ?? false
+        return cell
     }
     public override func hitTest(_ point:NSPoint)->NSView?{nil}
     public override func draw(_ dirtyRect:NSRect){guard let notice else{return};let color=colors[notice.tone] ?? .secondaryLabelColor
