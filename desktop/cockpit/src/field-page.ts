@@ -4,6 +4,7 @@
 // releases the WebGL context. The 180 s idle close and the outside-click close live in the native panel.
 // Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) for behaviour; the code is written here.
 import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
+import {shortLabel} from '../study/rocket-r1/short-label.js';
 
 interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null}
 interface Scene {update(models:readonly FieldModel[],focus:string|null,path?:boolean):void;renderFor?(ms:number):void;dispose():void}
@@ -40,7 +41,7 @@ function mount(root:HTMLElement) {
   async show(value:Show) {
    language=value.language;const w=words[language];document.documentElement.lang=language==='en'?'en':'zh-CN';
    close.textContent='×';close.setAttribute('aria-label',w.close);mineKey.textContent=w.mine;allKey.textContent=w.all;search.placeholder=w.search;search.setAttribute('aria-label',w.search);
-   models=value.models.flatMap(m=>{const f=fieldModel(m);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
+   models=value.models.flatMap(m=>{const f=fieldModel(m,shortLabel);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
    chosen=new Set((mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT));
    if(!models.length){fallback(w.empty);refresh();post({type:'ready'});return;}
    if(!webgl()){fallback(w.noGl);refresh();post({type:'ready'});return;}
