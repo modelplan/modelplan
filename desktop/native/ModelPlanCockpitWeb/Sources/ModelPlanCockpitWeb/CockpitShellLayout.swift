@@ -63,9 +63,19 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let height: CGFloat = profile == .full ? (closed ? 691 : 877) : (closed ? 609 : 627)
         // The scale follows the open root, so closing the shutter never resizes the strip or the canopy.
         let canvas = CGSize(width: Self.width * scale, height: (height + Self.baseReserve) * scale)
-        let x = max(usable.minX, min(anchor.midX - canvas.width / 2, usable.maxX - canvas.width))
+        let x = attachedX(anchor: anchor, width: canvas.width, scale: scale, usable: usable)
         return Self(profile: profile, shutterClosed: closed, forcedClosed: forcedClosed, scale: scale, rootHeight: height,
                     frame: CGRect(x: x, y: top - canvas.height, width: canvas.width, height: canvas.height), sizeFellBack: fellBack)
+    }
+    /// G3-46: with no visible menu bar icon, open at the top-right of the screen, directly below the menu bar.
+    public static func hiddenIconAnchor(usable: CGRect) -> CGRect {
+        CGRect(x: usable.maxX, y: usable.maxY, width: 0, height: 0)
+    }
+    /// G3-46 (owner D53): like other menu bar tools, the cockpit's visible left edge lines up with the menu
+    /// bar icon's left edge. The 636 px raster has an 8 px transparent margin around the 620 px shell. When
+    /// that would run past the right edge it shifts left just enough to stay on the screen.
+    public static func attachedX(anchor: CGRect, width: CGFloat, scale: CGFloat, usable: CGRect) -> CGFloat {
+        max(usable.minX, min(anchor.minX - 8 * scale, usable.maxX - width))
     }
     /// The page canvas in CSS px: the root plus the base reserve.
     public var pageSize: CGSize { .init(width: Self.width, height: rootHeight + Self.baseReserve) }
@@ -76,6 +86,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
         return CGRect(x: 24, y: rootHeight + 34 - stripTop - 29, width: 216, height: 32)
     }
     public var scaledTitleDragFrame: CGRect { titleDragFrame.applying(.init(scaleX: scale, y: scale)) }
+
     public func shellState(attached: Bool, scope: String = "all") -> CockpitShellState {
         .init(closed: shutterClosed, attached: attached, forcedClosed: forcedClosed,
               tier: profile == .full ? .tall : .compact, scope: scope)

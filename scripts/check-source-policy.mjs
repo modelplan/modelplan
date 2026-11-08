@@ -149,6 +149,17 @@ for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p)
     "community build must not read the reserved visuals outside the --official branch",
   );
 }
+// Cockpit admission pins are generated at build time from the canonical build (check-bundle-pins.py --write) and
+// never committed, so parallel cockpit PRs cannot conflict on them (D69).
+{
+  const generated = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift";
+  const factory = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift";
+  assert.ok(!tracked.includes(generated), "generated cockpit pins must not be committed: " + generated);
+  assert.ok(
+    !/"(community|official)"\s*:\s*"[a-f0-9]{64}"/.test((await read(factory)).toString()),
+    "cockpit manifest pins are generated at build time; do not commit them in " + factory,
+  );
+}
 const core = JSON.parse(await read("reader/manifest.json"));
 assert.deepEqual(Object.keys(core.files).sort(), ["LICENSE", "public-reader.d.mts", "public-reader.mjs"], "only publication verification may be exported here");
 for (const [p, meta] of Object.entries(core.files)) {

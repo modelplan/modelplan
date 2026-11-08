@@ -111,7 +111,7 @@ final class ShellLayoutTests: XCTestCase {
             anchor: .init(x: 800, y: 1026, width: 28, height: 24), shutterClosed: false, size: .percent85))
         XCTAssertEqual(value.scale, 0.85)
         XCTAssertEqual(value.frame.width, 636 * 0.85, accuracy: 1e-9)
-        XCTAssertEqual(value.frame.midX, 814, accuracy: 1e-9, "anchored on the icon at the scaled width")
+        XCTAssertEqual(value.frame.minX, 800 - 8 * 0.85, accuracy: 1e-9, "the left edge sits under the icon at the scaled margin")
         let edge = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: 0, width: 1680, height: 1026),
             anchor: .init(x: 1670, y: 1026, width: 28, height: 24), shutterClosed: false, size: .percent85))
         XCTAssertEqual(edge.frame.maxX, 1680, accuracy: 1e-9, "the right-edge clamp uses the scaled width")
@@ -198,6 +198,24 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(right.frame.maxX,0)
         XCTAssertEqual(left.frame.maxY,1094)
         XCTAssertEqual(right.frame.size,left.frame.size)
+    }
+    /// G3-46 / D53: the shell's left edge sits under the icon's left edge, directly below the menu bar,
+    /// and shifts left only as far as the right screen edge needs.
+    func testG3_46OpensWithItsLeftEdgeUnderTheIcon() throws {
+        let usable = CGRect(x: 0, y: 0, width: 1440, height: 1026)
+        func placed(_ iconX: CGFloat) throws -> CGRect {
+            try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: .init(x: iconX, y: 1026, width: 28, height: 24), shutterClosed: false, size: .percent100)).frame
+        }
+        let roomy = try placed(500)
+        XCTAssertEqual(roomy.minX + 8, 500, "the shell's left edge is the icon's left edge")
+        XCTAssertEqual(roomy.maxY, 1020, "directly below the menu bar, 6 pt gap")
+        let tight = try placed(1100)
+        XCTAssertEqual(tight.maxX, 1440, "near the right edge it shifts left only to stay on screen")
+        XCTAssertEqual(tight.minX, 1440 - 636)
+        XCTAssertEqual(try placed(804 + 8).minX, 804, "the last icon position that needs no shift")
+        let hidden = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: CockpitShellLayout.hiddenIconAnchor(usable: usable), shutterClosed: false, size: .percent100)).frame
+        XCTAssertEqual(hidden.maxX, 1440, "a hidden icon opens the cockpit at the top-right")
+        XCTAssertEqual(hidden.maxY, 1020, "directly below the menu bar")
     }
     @MainActor func testUpdatingOneArrangementDoesNotConsumeExtraMemorySlots() {
         let session = CockpitShellSession()
