@@ -164,7 +164,7 @@ import AppKit
         let headerFont=recipeProvider.font(for:.header);guard isCurrent(token) else { return }
         let captionFont=recipeProvider.font(for:.caption);guard isCurrent(token) else { return }
         let buttonFont=recipeProvider.font(for:.button);guard isCurrent(token) else { return }
-        let ink=recipeProvider.primaryInk;guard isCurrent(token) else { return }
+        let ink=Self.mapInk;guard isCurrent(token) else { return }
         let catalog=HelpMapCatalog(input.language)
         header.isHidden=result.mapHeader==nil;header.stringValue=catalog.metaphor+"\n"+catalog.dismissal
         header.font=headerFont;header.textColor=ink
@@ -330,24 +330,29 @@ import AppKit
     }
     public override func draw(_ dirtyRect:NSRect) {
         guard let presentation else { return }
-        if let frame=presentation.mapHeader { panel(frame) }
+        if let frame=presentation.mapHeader { panel(frame,fill:Self.mapPlate,border:Self.mapEdge) }
         for label in presentation.mapLabels {
-            panel(label.frame)
+            panel(label.frame,fill:Self.mapPlate,border:Self.mapEdge)
             guard let first=label.leader.first else { continue }
             let path=NSBezierPath();path.move(to:first);for point in label.leader.dropFirst() { path.line(to:point) }
             // A halo in the caption's own plate colour keeps the line visible on any desktop.
             path.lineCapStyle = .round;path.lineJoinStyle = .round
-            recipeProvider.panelColor.setStroke();path.lineWidth=3;path.stroke()
-            recipeProvider.secondaryInk.setStroke();path.lineWidth=1;path.stroke()
+            Self.mapPlate.setStroke();path.lineWidth=3;path.stroke()
+            Self.mapLine.setStroke();path.lineWidth=1;path.stroke()
             if let end=label.leader.last {
-                recipeProvider.panelColor.setFill();NSBezierPath(ovalIn:.init(x:end.x-3.5,y:end.y-3.5,width:7,height:7)).fill()
-                recipeProvider.primaryInk.setFill();NSBezierPath(ovalIn:.init(x:end.x-2,y:end.y-2,width:4,height:4)).fill()
+                Self.mapPlate.setFill();NSBezierPath(ovalIn:.init(x:end.x-3.5,y:end.y-3.5,width:7,height:7)).fill()
+                Self.mapInk.setFill();NSBezierPath(ovalIn:.init(x:end.x-2,y:end.y-2,width:4,height:4)).fill()
             }
         }
     }
-    private func panel(_ frame:CGRect) {
-        recipeProvider.panelColor.setFill();let path=NSBezierPath(roundedRect:frame,xRadius:4,yRadius:4);path.fill()
-        recipeProvider.borderColor.setStroke();path.lineWidth=1;path.stroke()
+    /// The study's help callout: a near-black plate with white text and a light hairline, on any desktop (owner D71).
+    static let mapPlate=NSColor(srgbRed:0.043,green:0.063,blue:0.102,alpha:1)
+    static let mapInk=NSColor(srgbRed:0.96,green:0.97,blue:0.98,alpha:1)
+    static let mapLine=NSColor(srgbRed:0.78,green:0.82,blue:0.88,alpha:0.9)
+    static let mapEdge=NSColor(srgbRed:1,green:1,blue:1,alpha:0.16)
+    private func panel(_ frame:CGRect,fill:NSColor? = nil,border:NSColor? = nil) {
+        (fill ?? recipeProvider.panelColor).setFill();let path=NSBezierPath(roundedRect:frame,xRadius:4,yRadius:4);path.fill()
+        (border ?? recipeProvider.borderColor).setStroke();path.lineWidth=1;path.stroke()
     }
     public override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance();needsDisplay=true;card?.needsDisplay=true }
     public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties();needsDisplay=true;card?.needsDisplay=true }

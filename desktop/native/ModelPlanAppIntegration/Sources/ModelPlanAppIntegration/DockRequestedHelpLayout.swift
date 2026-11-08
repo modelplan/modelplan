@@ -47,6 +47,7 @@ struct DockRequestedHelpAnchor: Equatable {
                 size: CGSize(width: headerWidth, height: headerHeight), viewport: viewport, blocked: obstacles) else { return nil }
         map.header = header; obstacles.append(header)
         var frames: [String: CGRect] = [:]
+        var columnBottom = -CGFloat.infinity
         for anchor in visible {
             guard let entry = catalogEntries[anchor.region] else { return nil }
             let fallback = language == .chinese ? "喷口：悬停查看卡片，拖动可排序，⌥ 加方向键移动一位。" : "Nozzle: hover for its card, drag to reorder or use Option arrows to move one place."
@@ -64,11 +65,26 @@ struct DockRequestedHelpAnchor: Equatable {
             let measured = recipe.measure(text, width: maxWidth - 16, role: .caption)
             let width = min(maxWidth, max(80, ceil(measured.width) + 16))
             let height = ceil(recipe.measure(text, width: width - 16, role: .caption).height) + 10
-            guard let frame = HelpUIGeometry.placeCard(anchor: anchor.rect, size: CGSize(width: width, height: height),
-                                                       viewport: viewport, blocked: obstacles) else { return nil }
+            let size = CGSize(width: width, height: height)
+            // A target on the widget gets its caption in one column beside the panel, as high as the target
+            // allows and never over the previous caption. Targets and captions then run in the same order,
+            // so the straight leaders between them cannot cross.
+            var beside: CGRect?
+            if let panel = avoid.first(where: { $0.insetBy(dx: -4, dy: -4).intersects(anchor.rect) }) {
+                let x = panel.midX < viewport.width / 2 ? panel.maxX + 10 : panel.minX - 10 - width
+                let y = max(anchor.rect.midY - height / 2, columnBottom + 4, 32)
+                let candidate = CGRect(x: x, y: y, width: width, height: height)
+                if candidate.minX >= 8, candidate.maxX <= viewport.width - 8, candidate.maxY <= viewport.height - 8,
+                   !(blocked + [header]).contains(where: { $0.intersects(candidate) }) {
+                    beside = candidate; columnBottom = candidate.maxY
+                }
+            }
+            guard let frame = beside ?? HelpUIGeometry.placeCard(anchor: anchor.rect, size: size,
+                                                                 viewport: viewport, blocked: obstacles) else { return nil }
             frames[labelID] = frame; obstacles.append(frame)
         }
         map.captionFrames = frames
+        map.straightLeaders = true
         return HelpUIRenderInput(sessionID: session, viewport: viewport, profile: .compact640, language: language,
                                  anchors: visible.map { .init(id: $0.id, rect: $0.rect) }, liveReadings: blocked, map: map)
     }

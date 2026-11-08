@@ -190,7 +190,49 @@ import ModelPlanSettings
                 XCTAssertGreaterThanOrEqual(label.leader.count, 2, "\(label.id) has no leader")
             }
             XCTAssertFalse(try XCTUnwrap(result.mapHeader).intersects(widget))
+            // Each leader is one straight line to its target, and no two cross: lines must not share a long run.
+            let widgetSide = result.mapLabels.filter { label in anchors.first { $0.id == label.anchorID }.map { widget.insetBy(dx: -4, dy: -4).intersects($0.rect) } ?? false }
+            XCTAssertFalse(widgetSide.isEmpty)
+            XCTAssertEqual(Set(widgetSide.map { $0.frame.minX }).count, 1, "the widget's captions share one column")
+            for label in result.mapLabels { XCTAssertEqual(label.leader.count, 2, "\(label.id) leader is not one straight line") }
+            func cross(_ a: [CGPoint], _ b: [CGPoint]) -> Bool {
+                func side(_ p: CGPoint, _ q: CGPoint, _ r: CGPoint) -> CGFloat { (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x) }
+                return side(a[0], a[1], b[0]) * side(a[0], a[1], b[1]) < 0 && side(b[0], b[1], a[0]) * side(b[0], b[1], a[1]) < 0
+            }
+            for (i, one) in result.mapLabels.enumerated() {
+                for other in result.mapLabels[(i + 1)...] { XCTAssertFalse(cross(one.leader, other.leader), "\(one.id) crosses \(other.id)") }
+            }
         }
+    }
+
+    /// Owner D71: the Help map callouts use the study's dark plate with light text, not white. Drawn by the
+    /// real layer and read back from its pixels, so a theme-following fill cannot pass.
+    func testHelpMapCalloutsAreDrawnOnTheDarkPlate() throws {
+        let recipe = NeutralHelpUIRecipeProvider()
+        let rings = (0..<3).map { CGRect(x: 12, y: 190 + CGFloat($0) * 70, width: 42, height: 42) }
+        let anchors: [DockRequestedHelpAnchor] = rings.enumerated().map { .init(id: "dock.rings.\($0.offset)", region: $0.offset == 0 ? .rings : .nozzle, rect: $0.element, visible: true) }
+        let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: CGSize(width: 800, height: 600),
+            language: .english, anchors: anchors, blocked: [], avoid: [CGRect(x: 0, y: 145, width: 72, height: 415)], recipe: recipe))
+        let layer = HelpUILayerView(recipeProvider: recipe)
+        layer.frame = CGRect(origin: .zero, size: input.viewport)
+        layer.update(input)
+        let presentation = try XCTUnwrap(layer.presentation)
+        XCTAssertFalse(presentation.mapLabels.isEmpty)
+        let rep = try XCTUnwrap(layer.bitmapImageRepForCachingDisplay(in: layer.bounds))
+        layer.cacheDisplay(in: layer.bounds, to: rep)
+        func luminance(_ color: NSColor?) throws -> CGFloat {
+            let rgb = try XCTUnwrap(color?.usingColorSpace(.sRGB))
+            return 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
+        }
+        let scale = CGFloat(rep.pixelsWide) / layer.bounds.width
+        for label in presentation.mapLabels {
+            // Inside the plate, left of the text (which starts 8 pt in); the layer is flipped, so y is as laid out.
+            let fill = rep.colorAt(x: Int((label.frame.minX + 3) * scale), y: Int(label.frame.midY * scale))
+            XCTAssertLessThan(try luminance(fill), 0.25, "\(label.id) callout fill is not dark")
+        }
+        let fields = layer.subviews.compactMap { $0 as? NSTextField }.filter { !$0.stringValue.isEmpty }
+        XCTAssertFalse(fields.isEmpty)
+        for field in fields { XCTAssertGreaterThan(try luminance(field.textColor), 0.8, "\(field.stringValue) text is not light") }
     }
 
     func testLabelsEveryVisibleAnchorAndOmitsHiddenAnchors() throws {
