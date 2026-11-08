@@ -84,6 +84,8 @@ if (official) {
   // D68: the r3 hull's plain plates (owner 2026-11-08), each checked against the reserved-visuals registry.
   const hull=resolve(assets,'cockpit/hull'),hullFiles=[];
   for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const h of [890,640])for(const d of ['1x','2x'])hullFiles.push(`${part}-${h}-${d}.png`);
+  hullFiles.push('lower-skin-890-1x.png','lower-skin-890-2x.png'); // side walls: the study's canopy-h1 lower skin
+  hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg'); // closed shell (D72): aft plate and cap slab
   await mkdir(resolve(output,'assets/hull'),{recursive:true});
   for(const name of hullFiles){
     const bytes=await readFile(resolve(hull,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/hull/assets/'+name];

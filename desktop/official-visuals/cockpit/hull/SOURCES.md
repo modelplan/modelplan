@@ -37,3 +37,18 @@ Copyright (c) 2026 ModelPlan. The owner approved publishing the r3 hull's plain 
 | assets/upper-640-2x.png | 8331 B | 1272x64 | `4bee0a171e70a25ad5f991a84bf8050c8490af45a48c1fc03ef8434c5802e5e3` |
 | assets/upper-890-1x.png | 2197 B | 636x32 | `09826671d2ecf89331560248a030df01b020bb596d1c53416de2779aedc7ddb3` |
 | assets/upper-890-2x.png | 7408 B | 1272x64 | `c3a19684dce8d99bb5550fda0d364a4f97dfb903c9b54ef4b9b010a1c9335cbb` |
+
+Side walls (owner approval after D68): `lower-skin-890-1x.png` and `lower-skin-890-2x.png` are copied unchanged from the private study `design-handoffs/opus-r7/src/assets/canopy-h1/` at design commit `ae0245ec6d043a96f6d8fd7423f5cb7dc7716166`. The study (strip-hull-unify) tiles them as the wall skin; its 640 and closed copies are byte-identical, so only the 890 names are published.
+
+| File | Size | Pixels | SHA-256 |
+| --- | --- | --- | --- |
+| assets/lower-skin-890-1x.png | 3365 B | 636x32 | `f9090de83f5635646dd78dfad51cd4e52f9a20d8880d8f665498d4ba73533d03` |
+| assets/lower-skin-890-2x.png | 12984 B | 1272x64 | `04791e51b27f5c82f6977f5b08632cc07fab31e60bbcf98e7fd21319c692dd41` |
+
+Closed state (owner D72, 2026-11-08): `aft-closed-1x.png` and `aft-closed-2x.png` are copied unchanged from the private study `design-handoffs/opus-r7/src/assets/canopy-h1/` at design commit `ae0245ec6d043a96f6d8fd7423f5cb7dc7716166`, and `cap-slab.svg` from `clients/official-visuals/study/strip-hull-unify/` at design commit `7b5fda0018f42ce3c9a12ee49469aa4e91f11eb1`. The study draws the closed shell's aft plate and its 16 px cap slab with them.
+
+| File | Size | Pixels | SHA-256 |
+| --- | --- | --- | --- |
+| assets/aft-closed-1x.png | 18277 B | 636x22 | `37dc3630e0964db538b09c7a66be3062a30200667dd2c3493b508600ff9015d1` |
+| assets/aft-closed-2x.png | 62939 B | 1272x44 | `00426f0fcec00636c9b12fb324275266ddc602fa7365f1f3d181048dd644faff` |
+| assets/cap-slab.svg | 1190 B | 620x16 (SVG) | `b42be81e9bed80298f7fdb8f7069d0640b1e860c68c4967d727eaef9118a07a8` |

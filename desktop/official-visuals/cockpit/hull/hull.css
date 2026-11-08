@@ -13,6 +13,8 @@
   --hull-console-gutter:image-set(url('/assets/hull/console-gutter-890-1x.png') 1x,url('/assets/hull/console-gutter-890-2x.png') 2x);
   --hull-record-gutter:image-set(url('/assets/hull/record-gutter-890-1x.png') 1x,url('/assets/hull/record-gutter-890-2x.png') 2x);
   --hull-compact-crown:image-set(url('/assets/hull/crown-640-1x.png') 1x,url('/assets/hull/crown-640-2x.png') 2x);
+  /* Side walls: the study (strip-hull-unify) tiles the canopy-h1 lower skin, the same bytes at 890, 640 and closed. */
+  --hull-wall:image-set(url('/assets/hull/lower-skin-890-1x.png') 1x,url('/assets/hull/lower-skin-890-2x.png') 2x);
   --hull-upper-detail:none;--hull-lower-detail:none;--hull-record-detail:none;--hull-mouth:none;
 }
 /* The short profile takes the 640 plates and their native heights. */
@@ -26,4 +28,9 @@
   --hull-console-gutter:image-set(url('/assets/hull/console-gutter-640-1x.png') 1x,url('/assets/hull/console-gutter-640-2x.png') 2x);
   --hull-record-gutter:image-set(url('/assets/hull/record-gutter-640-1x.png') 1x,url('/assets/hull/record-gutter-640-2x.png') 2x);
   --hull-cone-h:20px;--hull-crown-height:12px;--hull-upper-height:308px;--hull-lower-height:212px;--hull-record-height:58px;
+}
+/* Closed shell (owner D72): the study's own aft plate and 16 px cap slab. */
+:root[data-theme="night"] #cockpit[data-shell="closed"]{
+  --hull-aft:image-set(url('/assets/hull/aft-closed-1x.png') 1x,url('/assets/hull/aft-closed-2x.png') 2x);
+  --hull-cap:url('/assets/hull/cap-slab.svg');
 }
