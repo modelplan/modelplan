@@ -74,6 +74,10 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-o1{animation-delay:-.13s!important}
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-o2{animation-delay:-.26s!important}
 }
+/* Website links are small secondary text, at the cockpit's 10 px floor. */
+#cockpit .website-link{font:10px/10px var(--f-lcd);color:var(--lcd-muted);text-decoration:none;white-space:nowrap}
+#cockpit .website-link:hover,#cockpit .website-link:focus-visible{color:var(--lcd-ink)}
+#cockpit .sp-h .website-link{margin-left:auto;flex:none}
 
 /* The enlarged launch field's own page (src/field-page.ts). */
 body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}

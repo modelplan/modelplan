@@ -43,13 +43,16 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var page: (any CockpitPageSurface)?
   private var pageGeneration: UUID?
   public private(set) var selectedScope = "all"
+  /// The calendar day the scope was chosen; the clock is replaced only by tests.
+  private var scopeDay: DateComponents?
+  var currentDate: () -> Date = { Date() }
   private var scopeMembers = Set<String>()
   private var request: Task<Void, Never>?
   private var requestToken: UUID?
   private var requestTicket: CockpitQueryTicket?
   private var refreshAgain = false
   public var onIntent: ((CockpitIntent) -> Void)?
-  public var onUnavailable: (() -> Void)?
+  public var onUnavailable: ((CockpitUnavailableReason) -> Void)?
   public var onClosed: (() -> Void)?
   public var onOpened: (() -> Void)?
 
@@ -99,17 +102,18 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     _ = try await client.start()
   }
   public func open() {
-    guard let delivery, client != nil, let context = try? Self.bridgeContext(delivery) else {
-      onUnavailable?()
-      return
-    }
+    guard client != nil else { onUnavailable?(.noClient); return }
+    guard let delivery else { onUnavailable?(.noDelivery); return }
+    guard let context = try? Self.bridgeContext(delivery) else { onUnavailable?(.invalidContext); return }
     if let page {
       page.open()
       if self.page === page { onOpened?() }
       return
     }
     let newPage: any CockpitPageSurface
-    do { newPage = try makePage(context) } catch { onUnavailable?(); return }
+    do { newPage = try makePage(context) } catch {
+      onUnavailable?(.pageCreation(CockpitFailureLog.errorName(error))); return
+    }
     let generation = UUID()
     pageGeneration = generation
     newPage.onReady = { [weak self] in
@@ -127,6 +131,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       self?.onClosed?()
     }
     page = newPage
+    retireScopeFromAnotherDay()
     newPage.updateScope(selectedScope)
     newPage.open()
     if page === newPage { onOpened?() }
@@ -134,9 +139,14 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func receiveIntent(_ intent:CockpitIntent) {
     if case .scopeSelect(let key)=intent {
       guard delivery != nil,scopeMembers.contains(key) else { return }
-      selectedScope=key; page?.updateScope(key); return
+      selectedScope=key; scopeDay=calendarDay(currentDate()); page?.updateScope(key); return
     }
     onIntent?(intent)
+  }
+  private func calendarDay(_ date:Date) -> DateComponents { Calendar.current.dateComponents([.era,.year,.month,.day],from:date) }
+  /// CKP-ENTRY-04: a scope lasts for the day it was chosen; the first open on a later day starts at All.
+  private func retireScopeFromAnotherDay() {
+    if selectedScope != "all", scopeDay != calendarDay(currentDate()) { selectedScope="all" }
   }
   public func updateAppearance(_ appearance: CockpitAppearance) { page?.updateAppearance(appearance) }
   /// User close retains the page until its normal transition completes.
@@ -171,7 +181,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         // ProcessEngineClient pairs this completion with the ordered feature
         // event. That event alone owns the notice, in either scheduling order.
       } catch {
-        if self?.requestToken == token { self?.onUnavailable?() }
+        if self?.requestToken == token { self?.onUnavailable?(.query(CockpitFailureLog.errorName(error))) }
       }
       guard let self, self.requestToken == token else { return }
       self.request = nil
@@ -201,7 +211,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     } catch {
       delivery = nil
       close()
-      onUnavailable?()
+      onUnavailable?(.contextRejected)
     }
   }
   public func consume(_ event: EngineClientEvent) async {
@@ -230,7 +240,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     case .featureFailure(.cockpit, _):
       cancelQuery()
       // Capture the foreground recovery intent before onClosed retires it.
-      onUnavailable?()
+      onUnavailable?(.featureFailure)
       close()
     default: break
     }

@@ -74,6 +74,9 @@ jobs:
             grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.CommunityCockpitEntryTests $test\]' passed" .tmp/u11-product-tests.log \
               || { echo "::error::CommunityCockpitEntryTests/$test did not run and pass"; exit 1; }
           done
+          # G3-13: the runtime card journey needs the real CLI, so this is the only leg that runs it.
+          grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.DockCodexRuntimeRealServerTests testSameRuntimeMemberUpdatesTheOpenCard\]' passed" .tmp/u11-product-tests.log \
+            || { echo "::error::DockCodexRuntimeRealServerTests/testSameRuntimeMemberUpdatesTheOpenCard did not run and pass"; exit 1; }
           # The card's readout font must draw on the oldest supported macOS, which this runner is.
           grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.QuotaWidgetCardPrototypeTests testReadoutValuesAreActuallyDrawn\]' passed" .tmp/u11-product-tests.log \
             || { echo "::error::QuotaWidgetCardPrototypeTests/testReadoutValuesAreActuallyDrawn did not run and pass"; exit 1; }

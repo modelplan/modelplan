@@ -1,1 +1,0 @@
-The cockpit's faders now show the published models for your subscriptions, models in use first, with pinning by a long press. They were empty before. The cockpit entry stays off in packaged builds until the v1 cockpit is enabled.

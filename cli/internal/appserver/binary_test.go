@@ -37,7 +37,7 @@ func TestRealBinaryProtocolLifecycle(t *testing.T) {
 		home := t.TempDir()
 		stderr := &bytes.Buffer{}
 		cmd := exec.Command(bin, "app-server")
-		cmd.Env = append([]string{"HOME=" + home, "PATH=/nonexistent", "TMPDIR=" + home, "LANG=C"}, noRealCodex(home)...)
+		cmd.Env = append([]string{"HOME=" + home, "PATH=/nonexistent", "TMPDIR=" + home, "LANG=C", "MODELPLAN_BASE=http://127.0.0.1:1"}, noRealCodex(home)...)
 		cmd.Stderr = stderr
 		stdin, err := cmd.StdinPipe()
 		if err != nil {

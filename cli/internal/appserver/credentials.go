@@ -9,7 +9,11 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
+
+// credentialQuiet keeps automatic reads off a provider just after an explicit read.
+const credentialQuiet = 15 * time.Second
 
 type credentialReply struct {
 	result wire.CredentialResult
@@ -139,11 +143,15 @@ func (s *Server) openCredential(parent context.Context, need CredentialNeed, exp
 		s.mu.Unlock()
 		return "", ProtocolError{wire.CodeCredentialRejected}
 	}
-	for _, op := range s.credentials {
-		if op.need.Provider == need.Provider {
-			s.mu.Unlock()
-			return "", ProtocolError{wire.CodeBusy}
-		}
+	// The grant's own operation goes ahead of its hold and of an earlier read, which the reader
+	// lock orders; only an operation still waiting for its result stands in the way.
+	busy := s.credentialActiveLocked(need.Provider)
+	if explicit {
+		busy = s.credentialOpenLocked(need.Provider)
+	}
+	if busy {
+		s.mu.Unlock()
+		return "", ProtocolError{wire.CodeBusy}
 	}
 	var random [16]byte
 	if _, err := rand.Read(random[:]); err != nil {
@@ -171,6 +179,53 @@ func (s *Server) openCredential(parent context.Context, need CredentialNeed, exp
 	return id, nil
 }
 
+// holdCredentialForGrant keeps the provider for a Keychain Allow from before the consent commit:
+// from then on a background reader is admitted, and if it opened the one operation the user's
+// prompt would be dropped. The returned function ends the hold.
+func (s *Server) holdCredentialForGrant(p wire.ConsentGrantParams) func() {
+	providers := []string{}
+	for scope, choice := range p.Keychain {
+		if definition, ok := consent.Definition(scope); ok && choice == wire.KeychainAllow {
+			providers = append(providers, definition.Tool)
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.credentialGrants == nil {
+		s.credentialGrants = map[string]int{}
+	}
+	for _, provider := range providers {
+		s.credentialGrants[provider]++
+	}
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, provider := range providers {
+			s.credentialGrants[provider]--
+		}
+	}
+}
+
+// CredentialHold reports an operation for the provider that is waiting for its result, or an
+// explicit one whose read is still running, and when the quiet time after an explicit read ends.
+// One user action is one credential read, whatever its outcome.
+func (s *Server) CredentialHold(provider string) (bool, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.credentialActiveLocked(provider), s.credentialReadEnded[provider].Add(credentialQuiet)
+}
+func (s *Server) credentialActiveLocked(provider string) bool {
+	return s.credentialGrants[provider] > 0 || s.credentialReads[provider] > 0 || s.credentialOpenLocked(provider)
+}
+func (s *Server) credentialOpenLocked(provider string) bool {
+	for _, op := range s.credentials {
+		if op.need.Provider == provider {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) acceptCredential(ctx context.Context, p wire.CredentialResult) error {
 	// Refresh before matching: an external CLI revoke need not have reached the
 	// watcher yet. The receiver repeats the atomic U2 admission/fence before use.
@@ -182,6 +237,22 @@ func (s *Server) acceptCredential(ctx context.Context, p wire.CredentialResult) 
 	if ok {
 		delete(s.credentials, p.OperationID)
 		op.timer.Stop()
+		if op.reply == nil {
+			// The operation is spent, but its read has only begun.
+			if s.credentialReads == nil {
+				s.credentialReads = map[string]int{}
+			}
+			s.credentialReads[op.need.Provider]++
+			defer func() {
+				s.mu.Lock()
+				defer s.mu.Unlock()
+				s.credentialReads[op.need.Provider]--
+				if s.credentialReadEnded == nil {
+					s.credentialReadEnded = map[string]time.Time{}
+				}
+				s.credentialReadEnded[op.need.Provider] = time.Now()
+			}()
+		}
 	}
 	valid := ok && op.session == s.session && op.stamp == s.view.Stamp && time.Now().Before(op.expires)
 	s.mu.Unlock()
