@@ -375,6 +375,7 @@ export function cancelledRunSuperseded(run, prHead) {
 export const DATA_SYNC = Object.freeze({
   bot: { login: "github-actions[bot]", id: 41898282 },
   workflow: ".github/workflows/data-sync.yml",
+  repoChecks: ".github/workflows/repo-checks.yml",
   branch: /^data\/sync-[0-9A-Za-z._+-]+-([0-9]+)$/,
   runEvents: ["schedule", "workflow_dispatch"],
 });
@@ -396,15 +397,20 @@ export function dataSyncProblem({ pr, files, items, sync }) {
   const runId = dataSyncRunId(pr);
   if (!runId) return "branch is not data/sync-<version>-<run id>";
   const paths = prPaths(files);
+  if (files.length >= FILE_LIST_LIMIT) return "file list may be truncated (API cap)";
   if (!files.length || paths.some((f) => !f.startsWith("data/") || f.split("/").includes(".."))) return "a changed file is outside data/";
   const { run, commit } = sync ?? {};
   if (!run) return "the data-sync run could not be read";
   if (run.id !== runId || String(run.path ?? "").split("@")[0] !== DATA_SYNC.workflow) return "branch run is not a data-sync.yml run";
   if (run.repository?.full_name !== REPO || run.head_repository?.full_name !== REPO) return "data-sync run is not from this repository";
   if (!DATA_SYNC.runEvents.includes(run.event) || run.head_branch !== "main") return "data-sync run was not a scheduled or manual run on main";
-  if (!run.created_at || !pr.created_at || run.created_at > pr.created_at) return "data-sync run did not precede the PR";
+  if (!run.head_sha || !run.created_at || !run.updated_at || !pr.created_at || pr.created_at < run.created_at || pr.created_at > run.updated_at)
+    return "PR was not opened while the data-sync run was running";
   if (!commit || commit.sha !== pr.head.sha) return "head commit could not be read";
   if (!isBot(commit.author) || (commit.parents ?? []).length !== 1) return "head commit is not a single commit authored by github-actions";
+  // The commit sits directly on the main commit the run checked out (this also rules out a tag or branch that merely
+  // shares the name "main").
+  if (commit.parents[0].sha !== run.head_sha) return "head commit is not on the commit the data-sync run checked out";
   if (![...verdicts(items, pr.head.sha, []).values()].includes("merge")) return "needs a trusted VERDICT: merge @ the exact head";
   return null;
 }
@@ -462,9 +468,10 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
     if (g === "issues") return res(FAILURE, "GLMREV ISSUES at head", extra);
     if (g !== "ok") missing.push("GLMREV OK or ACCEPTED");
   }
-  // A PR opened with the workflow token starts no ci.yml run, so an admitted data-sync PR requires no anchor run;
-  // any run or status that does exist must still be green, and the merge queue runs CI on the group commit.
-  const ci = ciState(runs, statuses, { scope: prRunScope(pr), ...(dataSync ? { required: [] } : {}) });
+  // A PR opened with the workflow token starts no pull_request run, so data-sync.yml dispatches ci.yml and
+  // repo-checks.yml on the branch; prRunScope accepts those same-repository runs on the PR's branch. Both are
+  // required before an admitted PR can pass.
+  const ci = ciState(runs, statuses, { scope: prRunScope(pr), ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
   if (ci.state === FAILURE) return res(FAILURE, ci.why, extra);
   if (missing.length) return res(PENDING, `tier ${tier}: needs ${missing.join(", ")}`, extra);
   if (ci.state === PENDING) return res(PENDING, ci.why, extra);
