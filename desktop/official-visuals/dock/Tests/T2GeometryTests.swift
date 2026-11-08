@@ -32,11 +32,9 @@ final class T2GeometryTests: XCTestCase {
                     XCTAssertEqual(geometry.outlineLocal.count, 962)
                     XCTAssertEqual(geometry.shown.map(\.id) + geometry.overflow.map(\.id), rows.map(\.id))
                     if edge == .right {
-                        XCTAssertEqual(geometry.stations[0].centre.x,
-                            1470 - (diameter / 2 + 14 * diameter / 52), accuracy: 0.000001)
+                        XCTAssertEqual(geometry.stations[0].centre.x, 1470 - geometry.freeDepth / 2, accuracy: 0.000001)
                     } else {
-                        XCTAssertEqual(geometry.stations[0].centre.y,
-                            956 - (diameter / 2 + 14 * diameter / 52), accuracy: 0.000001)
+                        XCTAssertEqual(geometry.stations[0].centre.y, 956 - geometry.freeDepth / 2, accuracy: 0.000001)
                     }
                     XCTAssertEqual(geometry.buttonOverhang, 0.4, accuracy: 1.0 / 4096)
                     XCTAssertEqual(geometry.clockRadius, diameter / 2 + 3 * diameter / 52)

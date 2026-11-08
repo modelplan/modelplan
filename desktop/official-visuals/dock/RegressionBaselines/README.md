@@ -3,6 +3,8 @@
 
 The 36 synthetic Dock captures and 27 flame poses are frozen byte-for-byte from the owner-accepted batch-013, rendered from commit `fc87088f2c3e67d9ab0aefc2f9f90d6c315b6657`. Owner acceptance is recorded in PR #397 comment 6557081264; the regression scope revision is comment 6557410743. The scenes are synthetic. Vendor marks in these images remain trademarks of their respective owners; see THIRD-PARTY-TRADEMARKS.md. These images are regression references, not a new artwork licence.
 
+D48 (owner, 2026-11-07) moved the quota ring to the middle of the face. The 36 Dock captures changed only where rendering the code before and after that move differs, so everything else is still the accepted batch-013 pixels. The empty station and the 27 flame poses stay within the tolerance and are unchanged. The owner's approval of these images is recorded on the PR.
+
 ## Regression contract
 
 CI re-renders all 36 Dock scenes and 27 flame poses through `ProductionDockFactory.community` with synthetic inputs. It checks scenario inventory, station identities, hull bounds and the A5 control, then compares every premultiplied sRGB/alpha pixel to the frozen PNG. The mean absolute channel error must be at most 3/255, and the mean error in every 16×16 tile at most 32/255. The first allows small platform rasterization noise; the local-tile bound prevents a missing small control, mark or material feature from disappearing into the background average. Both thresholds are conservative initial cross-macOS allowances, not SSIM or a new visual acceptance criterion.
