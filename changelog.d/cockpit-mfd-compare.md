@@ -1,0 +1,1 @@
+The cockpit now opens the "Compare · <model>" page when you try an effort on a fader, colours each fader and record line by its subscription, uses short model names, names subscriptions with their mark, plan and whole-minute reading age, explains the Reserve row, and records live Codex sessions when only Codex is allowed.
