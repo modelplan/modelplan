@@ -97,8 +97,9 @@ private actor G350Engine: EngineClient {
         XCTAssertEqual(StaticDockPreviewHost.prototypeCardStyle.brandSize, 20, "the prototype slot stays")
         XCTAssertEqual(StaticDockPreviewHost.prototypeCardStyle.brandMarkSize, side)
         let slot = CGRect(x: 11, y: 10, width: 20, height: 20)
-        XCTAssertEqual(DockCardView.brandMarkFrame(slot: slot, image: CGSize(width: 30, height: 30), mark: side),
-                       CGRect(x: 21 - side / 2, y: 20 - side / 2, width: side, height: side))
+        let square = DockCardView.brandMarkFrame(slot: slot, image: CGSize(width: 30, height: 30), mark: side)
+        XCTAssertEqual(square.width, side, accuracy: 0.0001); XCTAssertEqual(square.height, side, accuracy: 0.0001)
+        XCTAssertEqual(square.midX, slot.midX, accuracy: 0.0001); XCTAssertEqual(square.midY, slot.midY, accuracy: 0.0001)
         let wide = DockCardView.brandMarkFrame(slot: slot, image: CGSize(width: 40, height: 20), mark: side)
         XCTAssertEqual(wide.width, side, accuracy: 0.001); XCTAssertEqual(wide.height, side / 2, accuracy: 0.001)
         XCTAssertEqual(wide.midX, slot.midX, accuracy: 0.001); XCTAssertEqual(wide.midY, slot.midY, accuracy: 0.001)
