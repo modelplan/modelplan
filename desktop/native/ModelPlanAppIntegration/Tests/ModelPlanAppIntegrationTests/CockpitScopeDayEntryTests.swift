@@ -65,6 +65,9 @@ extension CommunityCockpitEntryTests {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-scope-day-" + UUID().uuidString)
         let config = home.appendingPathComponent(".config/modelplan")
         try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+        // The local-history grant needs a Codex home and the observed cache, as in the details journey.
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".codex"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/Caches/modelplan/observed"), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let environment = ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
         func command(_ arguments: [String], input: [String: Any]? = nil) async throws -> [String: Any] {
