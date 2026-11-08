@@ -191,6 +191,7 @@
         "timeout",
         "runtime_missing",
         "unsupported_login",
+        "not_signed_in",
         "other"
       ]
     },

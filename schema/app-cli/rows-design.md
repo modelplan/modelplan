@@ -154,7 +154,7 @@ Then the rules apply in order:
 | 2 | consent: unset (and not implicit), denied, outdated, or changed mid-read | needs_consent / pending | consent_required, consent_denied, consent_outdated, consent_changed |
 | 3 | tool missing from the machine, or retired | needs_action | tool_not_found, catalogue_retired |
 | 4 | no reader exists for the tool | unsupported | no_reader |
-| 5 | the credential read is **actually blocked** by the credential store (Keychain unset/denied/canceled/not found/unavailable/confirmation needed, and no readable credentials file), and C is empty | needs_keychain | keychain_unset, keychain_denied, keychain_canceled, keychain_not_found, keychain_unavailable, keychain_confirmation_needed |
+| 5 | the credential read is **actually blocked** by the credential store (Keychain unset/denied/canceled/not found/unavailable/confirmation needed, and no readable credentials file), and C is empty | needs_keychain / needs_action | keychain_unset, keychain_denied, keychain_canceled, keychain_unavailable, keychain_confirmation_needed; not_signed_in when the Keychain has no login item (G3-38) |
 | 6 | C and R both empty, and the latest attempt failed | failed / needs_action | reader error codes; login_expired, runtime_missing and http_401 give needs_action |
 | 7 | C and R both empty, and the latest attempt succeeded with no windows | empty | no_usage_windows |
 | 8 | C and R both empty, and there was no attempt yet, or the reader is busy or cooling down | pending | not_read_yet, reader_busy, no_manual_reading |
@@ -185,6 +185,7 @@ The closed set of codes, with the state and next-step action each one gives:
 | consent_required, consent_denied, consent_outdated | needs_consent | open_settings_consent |
 | keychain_unset, keychain_denied, keychain_canceled, keychain_not_found, keychain_unavailable, keychain_confirmation_needed | needs_keychain | open_settings_keychain |
 | login_expired | needs_action | open_tool |
+| not_signed_in | needs_action (no Dock surface; Settings and the menu say "Not signed in", G3-38) | none |
 | runtime_missing | needs_action | install_runtime |
 | update_required | needs_action | update_cli |
 | key_missing, tool_not_found, catalogue_retired, http_401, unsupported_login | needs_action | open_settings_consent |

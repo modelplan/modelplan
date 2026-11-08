@@ -140,7 +140,13 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 				Allowed: true, PriorGrant: r.Grant.KeychainPriorGrant, Interactive: r.Grant.Interactive, ProfileRef: r.ProfileKey,
 			})
 			if k.State != "ok" {
-				return readerOutcome{Entry: readerEntry{Status: k.State, NextStep: k.NextStep, CredentialReadState: k.State}}
+				out := readerOutcome{Entry: readerEntry{Status: k.State, NextStep: k.NextStep, CredentialReadState: k.State}}
+				if k.State == "not-found" {
+					// G3-38 (owner D52): no credentials file and no Keychain login means
+					// Claude Code is installed but signed out, not a generic failure.
+					out.Entry.ErrorCode = "not_signed_in"
+				}
+				return out
 			}
 			b, status = k.Value, ""
 		}

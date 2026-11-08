@@ -69,7 +69,7 @@ import AppKit
             do {
                 try scopePresentation?.prepare(language: editor.snapshot?.preferences.language ?? .english)
                 scopeUnavailable = false; errorMessage = nil
-                if scopeObserver == nil { scopeObserver = scopeConsentEntry.controller.observe { [weak self] in self?.refreshEnabled() } }
+                if scopeObserver == nil { scopeObserver = scopeConsentEntry.controller.observe { [weak self] in self?.refresh() } }
             } catch { scopeUnavailable = true }
         }
         refresh()
@@ -157,7 +157,8 @@ import AppKit
             connectionsView.isHidden = scopeConsentEntry != nil
             scopePresentation?.apply(language: language)
             readerStack.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable
-            subscriptions.isHidden = editor.connections.isAvailable
+            // G3-45: with the reading choices on the page, its tool list replaces this summary.
+            subscriptions.isHidden = editor.connections.isAvailable || scopeConsentEntry?.controller.facts != nil
             subscriptions.stringValue = page.subscriptions.isEmpty
                 ? SettingsWords.text("No subscriptions detected yet. You can finish now.", "尚未检测到订阅，可以直接完成。", language)
                 : SettingsWords.text("Subscriptions detected", "已检测到的订阅", language) + "\n" + page.subscriptions.map { [$0.name.value(language),$0.plan].filter { !$0.isEmpty }.joined(separator: " · ") }.joined(separator: "\n")
@@ -189,8 +190,10 @@ import AppKit
         let enabled = active && pageValid && !busy && !editor.isSaving && !editor.connections.isBusy && options != nil && !scopeUnavailable && scopeIdle
         loginButton.isEnabled = enabled
         for button in readerButtons.values { button.isEnabled = enabled && !editor.connections.isAvailable }
-        doneButton.isEnabled = enabled
-        helpButton.isEnabled = enabled && !helpButton.isHidden && editor.context.capabilities.helpMapAvailable && editor.onHostRequest != nil
+        // D61 (3): with readable tools on the page, at least one must be ticked.
+        let chosen = scopeConsentEntry?.controller.firstRunChoiceSatisfied ?? true
+        doneButton.isEnabled = enabled && chosen
+        helpButton.isEnabled = enabled && chosen && !helpButton.isHidden && editor.context.capabilities.helpMapAvailable && editor.onHostRequest != nil
     }
     @objc private func loginChanged() {
         guard active, !busy, loginButton.isEnabled else { return }
@@ -209,6 +212,15 @@ import AppKit
         saveTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.busy = false; self.refresh() }
+            // G3-45: Done is the one first-run consent (owner 10-27). The choices go to the engine
+            // first; if they cannot be sent the page stays open with them.
+            if let entry = self.scopeConsentEntry, !(await entry.controller.commitFirstRunChoices()) {
+                guard self.active, self.generation == expectedGeneration else { return }
+                self.errorMessage = SettingsWords.text("Your reading choices could not be saved. Check the connection and press Done again.",
+                    "读取选择未能保存。请检查连接后再点“完成”。", self.editor.snapshot?.preferences.language ?? .chinese)
+                return
+            }
+            guard self.active, self.generation == expectedGeneration else { return }
             do {
                 _ = try await self.editor.completeFirstRun(options: options, action: action, host: self.host, expectedRevision: revision)
                 if self.generation == expectedGeneration { self.suspend(); self.close() }

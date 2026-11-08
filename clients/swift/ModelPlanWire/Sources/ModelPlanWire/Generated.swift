@@ -473,6 +473,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
     case `catalogueRetired`
     case `http401`
     case `unsupportedLogin`
+    case `notSignedIn`
     case `privacyBlocked`
     case `catalogueOff`
     case `notAdmitted`
@@ -525,6 +526,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
         case "catalogue_retired": self = .`catalogueRetired`
         case "http_401": self = .`http401`
         case "unsupported_login": self = .`unsupportedLogin`
+        case "not_signed_in": self = .`notSignedIn`
         case "privacy_blocked": self = .`privacyBlocked`
         case "catalogue_off": self = .`catalogueOff`
         case "not_admitted": self = .`notAdmitted`
@@ -579,6 +581,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
         case .`catalogueRetired`: return "catalogue_retired"
         case .`http401`: return "http_401"
         case .`unsupportedLogin`: return "unsupported_login"
+        case .`notSignedIn`: return "not_signed_in"
         case .`privacyBlocked`: return "privacy_blocked"
         case .`catalogueOff`: return "catalogue_off"
         case .`notAdmitted`: return "not_admitted"
