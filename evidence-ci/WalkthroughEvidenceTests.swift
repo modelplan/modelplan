@@ -31,6 +31,10 @@ import ModelPlanCockpitWeb
             "ModelPlanBundledHelperSHA256": digest, CommunityConsentBundleIdentity.ownerTestKey: true]
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: contents.appendingPathComponent("Info.plist"))
         let home = root.appendingPathComponent("home"); try fm.createDirectory(at: home, withIntermediateDirectories: true)
+        let env2 = ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
+        let seed = Process(); seed.executableURL = helper; seed.arguments = ["consent", "init", "--json"]; seed.environment = env2
+        seed.standardOutput = FileHandle.nullDevice; seed.standardError = FileHandle.nullDevice; seed.standardInput = FileHandle.nullDevice
+        try seed.run(); seed.waitUntilExit()
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
         _ = try await settings.update { $0.showDock = true; $0.autoHide = false }
         _ = NSApplication.shared
@@ -62,7 +66,10 @@ import ModelPlanCockpitWeb
             let w = page?.window
             print("WALK \(label) paused=\(entry.lifecyclePaused) connection=\(entry.composition.store.snapshot.connection) page=\(page != nil) visible=\(w?.isVisible ?? false) alpha=\(w?.alphaValue ?? -1) frame=\(w?.frame ?? .zero) anchor=\(entry.cockpitAnchor ?? .zero) widget=\(String(describing: entry.composition.dock.edgePresentation?.paintedFrame))")
         }
-        for _ in 0..<100 where entry.lifecyclePaused { try await Task.sleep(for: .milliseconds(100)) }
+        for _ in 0..<200 {
+            if case .ready = entry.composition.store.snapshot.connection, let a = entry.cockpitAnchor, a.minY > 0 { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
         try await Task.sleep(for: .seconds(4)); state("closed"); try shot("1-closed")
         try click(); try await Task.sleep(for: .seconds(6)); state("first"); try shot("2-after-first-click")
         try click(); try await Task.sleep(for: .seconds(2)); state("second"); try shot("3-after-second-click")
