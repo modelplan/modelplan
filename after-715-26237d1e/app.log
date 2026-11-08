@@ -1,0 +1,35 @@
+modelplan-cockpit timing prewarm build n=1
+modelplan-cockpit timing prewarm ready buildMs=1719
+modelplan-cockpit timing prewarm last-reply buildMs=3521
+modelplan-cockpit timing prewarm warm-paint painted=true clicked=false ms=1826
+modelplan-cockpit timing open page=warm-ready clickMs=160
+modelplan-cockpit timing open shown clickMs=226
+modelplan-cockpit timing open display=last clickMs=226
+modelplan-cockpit timing open rendered n=1 clickMs=285
+modelplan-cockpit timing open display=fresh clickMs=1027
+modelplan-cockpit timing open rendered n=2 clickMs=1119
+modelplan-cockpit timing prewarm build n=2
+modelplan-cockpit timing prewarm ready buildMs=1474
+modelplan-cockpit timing prewarm warm-paint painted=true clicked=false ms=1120
+modelplan-cockpit timing open page=warm-ready clickMs=224
+modelplan-cockpit timing open shown clickMs=256
+modelplan-cockpit timing open display=last clickMs=257
+modelplan-cockpit timing open rendered n=1 clickMs=302
+modelplan-cockpit timing open display=fresh clickMs=1189
+modelplan-cockpit timing open rendered n=2 clickMs=1292
+modelplan-cockpit timing prewarm build n=3
+modelplan-cockpit timing prewarm ready buildMs=1265
+modelplan-cockpit timing prewarm warm-paint painted=true clicked=false ms=947
+modelplan-cockpit timing open page=warm-ready clickMs=160
+modelplan-cockpit timing open shown clickMs=194
+modelplan-cockpit timing open display=last clickMs=194
+modelplan-cockpit timing open rendered n=1 clickMs=315
+modelplan-cockpit timing open display=fresh clickMs=993
+modelplan-cockpit timing open rendered n=2 clickMs=1063
+modelplan-cockpit timing prewarm build n=4
+modelplan-cockpit timing prewarm ready buildMs=1364
+modelplan-cockpit timing prewarm warm-paint painted=true clicked=false ms=880
+modelplan-cockpit timing prewarm build n=1
+modelplan-cockpit timing prewarm ready buildMs=1249
+modelplan-cockpit timing prewarm last-reply buildMs=2875
+modelplan-cockpit timing prewarm warm-paint painted=true clicked=false ms=1629

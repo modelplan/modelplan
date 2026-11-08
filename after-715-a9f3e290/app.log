@@ -1,0 +1,36 @@
+modelplan-cockpit timing prewarm build n=1
+modelplan-cockpit timing prewarm ready buildMs=3211
+modelplan-cockpit timing prewarm last-reply buildMs=6400
+modelplan-cockpit timing prewarm hidden-visibility-late
+modelplan-cockpit timing prewarm warm-paint painted=true clicked=false ms=3262
+modelplan-cockpit timing open page=warm-ready clickMs=2
+modelplan-cockpit timing open shown clickMs=133
+modelplan-cockpit timing open display=last clickMs=134
+modelplan-cockpit timing open rendered n=1 clickMs=482
+modelplan-cockpit timing open display=fresh clickMs=1761
+modelplan-cockpit timing open rendered n=2 clickMs=1942
+modelplan-cockpit timing prewarm build n=2
+modelplan-cockpit timing prewarm ready buildMs=1932
+modelplan-cockpit timing prewarm warm-paint painted=true clicked=false ms=1083
+modelplan-cockpit timing open page=warm-ready clickMs=4
+modelplan-cockpit timing open shown clickMs=82
+modelplan-cockpit timing open display=last clickMs=82
+modelplan-cockpit timing open rendered n=1 clickMs=332
+modelplan-cockpit timing open display=fresh clickMs=1290
+modelplan-cockpit timing open rendered n=2 clickMs=1490
+modelplan-cockpit timing prewarm build n=3
+modelplan-cockpit timing prewarm ready buildMs=1537
+modelplan-cockpit timing prewarm warm-paint painted=true clicked=false ms=1461
+modelplan-cockpit timing open page=warm-ready clickMs=3
+modelplan-cockpit timing open shown clickMs=73
+modelplan-cockpit timing open display=last clickMs=73
+modelplan-cockpit timing open rendered n=1 clickMs=360
+modelplan-cockpit timing open display=fresh clickMs=1441
+modelplan-cockpit timing open rendered n=2 clickMs=1566
+modelplan-cockpit timing prewarm build n=4
+modelplan-cockpit timing prewarm ready buildMs=1577
+modelplan-cockpit timing prewarm warm-paint painted=true clicked=false ms=1272
+modelplan-cockpit timing prewarm build n=1
+modelplan-cockpit timing prewarm ready buildMs=1618
+modelplan-cockpit timing prewarm last-reply buildMs=3770
+modelplan-cockpit timing prewarm warm-paint painted=true clicked=false ms=2157
