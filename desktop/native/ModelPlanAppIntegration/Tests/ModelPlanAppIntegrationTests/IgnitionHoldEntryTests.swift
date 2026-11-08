@@ -3,6 +3,7 @@ import AppKit
 import XCTest
 import ModelPlanEngineClient
 import ModelPlanEngineStore
+import ModelPlanShell
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
@@ -53,10 +54,18 @@ import ModelPlanWire
         let ignition = try XCTUnwrap(button, "The normal entry shows an enabled ignition on the real Dock panel")
         let panel = try XCTUnwrap(ignition.window)
         let point = ignition.convert(CGPoint(x: ignition.bounds.midX, y: ignition.bounds.midY), to: nil)
+        // The press must land on the ignition and not on a drag region or another view: say what it hit if not.
+        let hit = try XCTUnwrap(panel.contentView).hitTest(try XCTUnwrap(panel.contentView?.superview).convert(point, from: nil))
+        XCTAssertTrue(hit === ignition || hit?.isDescendant(of: ignition) == true,
+                      "The press point hits \(String(describing: hit)) (panel visible \(panel.isVisible), alpha \(panel.alphaValue), ignores mouse \(panel.ignoresMouseEvents)), not the ignition")
+        // The Dock panel asks where the pointer is for its drag transaction; keep it on the ignition.
+        (panel as? PulseDockPanel)?.pointerLocation = { panel.convertPoint(toScreen: point) }
+        // Earlier tests can leave events queued; AppKit's tracking loop would read those first.
+        while NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true) != nil {}
         func mouse(_ type: NSEvent.EventType) throws -> NSEvent {
             try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
-                eventNumber: 1, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1))
+                eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1))
         }
         /// Presses the ignition for `seconds`. The button tracks the press until the mouse-up, which a timer posts
         /// while AppKit's tracking loop runs; a second timer reads the console halfway through the hold.
@@ -66,7 +75,7 @@ import ModelPlanWire
                 MainActor.assumeIsolated { observation.opensDuringHold = probe.shows }
             }
             let release = Timer(timeInterval: seconds, repeats: false) { _ in
-                MainActor.assumeIsolated { NSApp.postEvent(up, atStart: false) }
+                MainActor.assumeIsolated { NSApp.postEvent(up, atStart: true) }
             }
             RunLoop.main.add(check, forMode: .common); RunLoop.main.add(release, forMode: .common)
             let started = ProcessInfo.processInfo.systemUptime
