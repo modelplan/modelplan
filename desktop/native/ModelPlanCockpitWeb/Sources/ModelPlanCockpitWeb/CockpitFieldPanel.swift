@@ -32,6 +32,13 @@ import WebKit
     self.bundle = bundle; self.idleSeconds = idleSeconds
   }
 
+  /// The composition's bounds on a screen's visible frame (prototype floating-frame.js fieldFrame): 90% of the width
+  /// within 960–1440 pt and 80% of the height within 600–900 pt, at least 16 pt from every edge, centred.
+  public static func frame(in visible: NSRect) -> NSRect {
+    let width = min(visible.width - 32, min(1440, max(960, (visible.width * 0.9).rounded())))
+    let height = min(visible.height - 32, min(900, max(600, (visible.height * 0.8).rounded())))
+    return NSRect(x: visible.minX + (visible.width - width) / 2, y: visible.minY + (visible.height - height) / 2, width: width, height: height)
+  }
   /// `payload` is the JSON the page's `show` takes: public model data and presentation only.
   public func open(payload: String, near anchor: NSRect?) {
     guard !isOpen else { window?.makeKeyAndOrderFront(nil); return }
@@ -41,14 +48,14 @@ import WebKit
     config.setURLSchemeHandler(BundleScheme(bundle), forURLScheme: "modelplan-cockpit")
     let proxy = FieldMessageProxy(); proxy.owner = self; self.proxy = proxy
     config.userContentController.add(proxy, name: "field")
-    let size = NSSize(width: 900, height: 640)
     let screen = anchor.flatMap { rect in NSScreen.screens.first { $0.frame.intersects(rect) } } ?? NSScreen.main
-    let visible = screen?.visibleFrame ?? NSRect(origin: .zero, size: size)
-    let origin = NSPoint(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2)
-    let panel = FieldWindow(contentRect: NSRect(origin: origin, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
-    panel.isReleasedWhenClosed = false; panel.level = Self.level; panel.hasShadow = true
-    panel.backgroundColor = .black; panel.appearance = NSAppearance(named: .darkAqua); panel.delegate = self
-    let view = WKWebView(frame: NSRect(origin: .zero, size: size), configuration: config)
+    let frame = Self.frame(in: screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768))
+    let panel = FieldWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    // Task 91 round 5: a transparent composition on the desktop; the page draws a frosted card and the feathered scene.
+    panel.isReleasedWhenClosed = false; panel.level = Self.level; panel.hasShadow = false
+    panel.isOpaque = false; panel.backgroundColor = .clear
+    panel.appearance = NSAppearance(named: .darkAqua); panel.delegate = self
+    let view = WKWebView(frame: NSRect(origin: .zero, size: frame.size), configuration: config)
     view.autoresizingMask = [.width, .height]; view.allowsBackForwardNavigationGestures = false
     panel.contentView = view
     window = panel; webView = view
