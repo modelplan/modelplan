@@ -972,11 +972,19 @@
     {
       "id": "cockpit-reopen",
       "title": "Cockpit opens again",
-      "expected": "The second open is quicker than the first; compare secondsTo with cockpit-open (G3-42).",
+      "expected": "Opened again (closed by the icon or, if that fails, by Close), the second open is quicker than the first; compare secondsTo with cockpit-open (G3-42).",
       "requires": [
-        "cockpit-toggle-close"
+        "cockpit-open"
       ],
       "actions": [
+        {
+          "op": "toggleCockpit",
+          "want": "closed"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
         {
           "op": "click",
           "target": "status-item"
@@ -1164,7 +1172,7 @@
     {
       "id": "air-1440x900",
       "title": "Cockpit at 1440x900, Dock at the bottom",
-      "expected": "On a 1440x900 screen (13-inch MacBook Air) the full cockpit opens under the menu bar icon and fits between the menu bar and the Dock (G3-39).",
+      "expected": "On a 1440x900 screen (13-inch MacBook Air) the full cockpit opens under the menu bar icon and fits between the menu bar and the Dock (G3-39). Hosted Macs offer no 1440x900, so the walk uses 1600x900: the same height, which is what decides the fit.",
       "prototype": "desktop/cockpit/study/rocket-r1",
       "actions": [
         {
@@ -1176,6 +1184,12 @@
           "size": [
             1440,
             900
+          ],
+          "fallback": [
+            [
+              1600,
+              900
+            ]
           ]
         },
         {

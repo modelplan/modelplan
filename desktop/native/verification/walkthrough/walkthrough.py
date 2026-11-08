@@ -286,6 +286,10 @@ class Walkthrough:
         offered = {(m["width"], m["height"]) for m in self.host.helper("modes")}
         size = tuple(action["size"]) if action["size"] != "largest" else next(
             (c for c in DISPLAY_CANDIDATES if c in offered), None)
+        if size not in offered:  # A stand-in with the same height, which is what decides a vertical fit.
+            size = next((tuple(f) for f in action.get("fallback", []) if tuple(f) in offered), size)
+            if size in offered:
+                self.measures["requested"] = "x".join(map(str, action["size"]))
         if size not in offered:
             raise WalkthroughSkip("display %s not offered here; offered: %s" % (
                 "x".join(map(str, action["size"])) if size is None else "%dx%d" % size,

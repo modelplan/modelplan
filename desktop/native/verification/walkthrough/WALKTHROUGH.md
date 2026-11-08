@@ -76,7 +76,7 @@ the second open (G3-42). `setDisplay` records the display it set and `fits` the 
 Step checks beyond presence: `cardNamed` (the open card carries the name of the ring `clickRing` clicked),
 `collapsed` (the remembered window is gone or less than half its area), `allOnScreen` (every match lies on the
 screen, for the help map), `fits` (inside the visible area between the menu bar and the Dock, for the cockpit at
-1440x900 and 1470x956; hosted modes are 1x, so 1470x956 is skipped where the host does not list it).
+1440x900 and 1470x956; hosted modes are 1x and list neither, so 1440x900 is walked at 1600x900, the same height, and 1470x956 is skipped).
 
 `seed.json` has one declared ring at 0%, so the widget, the collapsed sliver, the card and the cockpit are all
 photographed with an exhausted subscription. A hidden menu bar icon is not walked here: a hosted display has no
