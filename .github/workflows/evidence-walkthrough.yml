@@ -1,0 +1,46 @@
+# Temporary evidence capture for G3-40 (#696) and G3-41 (#695). Lives only on this evidence branch.
+name: Evidence walkthrough
+on:
+  push:
+    branches: [evidence/g3-40-walkthrough]
+    paths: ['.github/workflows/evidence-walkthrough.yml', 'evidence-ci/**']
+permissions:
+  contents: read
+jobs:
+  capture:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: before-main, ref: f8f022b3beba706cf7a4de1feeef4a9a78d121ae}
+          - {name: after-696, ref: cockpit/tray-toggle}
+          - {name: after-695, ref: cockpit/widget-stays-open}
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: ev}
+      - uses: actions/checkout@v4
+        with: {ref: '${{ matrix.ref }}', path: src}
+      - uses: actions/setup-go@v5
+        with: {go-version-file: src/cli/go.mod, cache: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Build page, CLI and copy the evidence test
+        run: |
+          set -e
+          cd src
+          git log -1 --format='%H %s'
+          npm ci --prefix desktop/cockpit --ignore-scripts
+          npm run build:official --prefix desktop/cockpit
+          (cd cli && go build -o ../.tmp-cli/modelplan ./cmd/modelplan)
+          cp ../ev/evidence-ci/WalkthroughEvidenceTests.swift desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/
+          mkdir -p "$RUNNER_TEMP/shots"
+      - name: Capture
+        env:
+          MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/src/.tmp-cli/modelplan
+          MODELPLAN_EVIDENCE_DIR: ${{ runner.temp }}/shots
+        run: swift test --package-path src/desktop/native/ModelPlanAppIntegration --jobs 3 -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter WalkthroughEvidenceTests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: 'shots-${{ matrix.name }}', path: '${{ runner.temp }}/shots'}
