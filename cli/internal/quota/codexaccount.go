@@ -114,18 +114,25 @@ func accountFailureWait(s *accountSnap) time.Duration {
 // CodexFailureWait is the scheduler's wait after a failed read: the budget the failure left.
 // A failure that recorded nothing keeps the ordinary wait.
 func CodexFailureWait(cache string) time.Duration {
-	return accountFailureWait(loadCurrentAccount(cache))
+	state, _ := consent.Current()
+	return accountFailureWait(loadCurrentAccount(cache, state))
 }
 
-// loadCurrentAccount is the snapshot only while the present consent still stands behind it. A
-// snapshot from before a reset or revoke is no earlier read of this grant (G3-36): its age and
-// its failure count must not hold a new grant's first read back.
-func loadCurrentAccount(cache string) *accountSnap {
+// loadCurrentAccount is the snapshot only while it belongs to the present consent store. A
+// snapshot from a store that has since been rebuilt (settings and consent moved aside, then a new
+// grant) is no earlier read of this grant (G3-36): its age, its failure count and the reader
+// schedule beside it must not hold the new first read back. A revoke and re-grant inside the same
+// store keeps the snapshot and its schedule: the shared read budget survives revocation.
+func loadCurrentAccount(cache string, state consent.State) *accountSnap {
 	s := loadAccount(cache)
 	if s == nil {
 		return nil
 	}
-	if state, _ := consent.Current(); !state.CaptureAllowed(s.Admission, consent.ScopeCodexRuntimeUsage) {
+	epoch := ""
+	if s.Admission != nil {
+		epoch = s.Admission.StoreEpoch
+	}
+	if epoch != state.StoreEpoch {
 		return nil
 	}
 	return s
@@ -293,9 +300,9 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	if now.Before(next) {
 		return nil
 	}
-	previous = loadCurrentAccount(cache)
+	previous = loadCurrentAccount(cache, state)
 	if previous == nil && loadAccount(cache) != nil {
-		// The cache predates the present grant: its schedule is no budget for this grant (G3-36).
+		// The cache belongs to a consent store that was rebuilt: its schedule is no budget for this grant (G3-36).
 		// A first read after Forget (no snapshot) keeps the shared reservation.
 		_ = os.Remove(readerAttemptPath(cache, "codex"))
 	}
@@ -808,7 +815,8 @@ func codexRefreshNext(cache string) (time.Time, error) {
 	if err != nil {
 		return next, err
 	}
-	if snapshot := loadCurrentAccount(cache); snapshot != nil {
+	state, _ := consent.Current()
+	if snapshot := loadCurrentAccount(cache, state); snapshot != nil {
 		wait := AccountEvery
 		if snapshot.Status != "ok" {
 			wait = accountFailureWait(snapshot)

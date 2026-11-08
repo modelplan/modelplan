@@ -136,3 +136,32 @@ func TestG336FailureAfterNewGrantRetriesSoon(t *testing.T) {
 		t.Fatal("a failed first read after a new grant did not retry soon")
 	}
 }
+
+// A revoke and re-grant inside the same consent store keeps the shared read budget: the schedule
+// booked by the last read still holds, and Codex is not asked early.
+func TestG336RevokeAndRegrantInSameStoreKeepsTheBudget(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	grantCodexRuntime(t)
+	bin, log := fakeCodex(t, acctResponse)
+	if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
+		t.Fatal(err)
+	}
+	if err := consent.Change(consent.Path(), func(s *consent.State) error {
+		return consent.Set(s, "codex", false, "", "", acctNow)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	grantCodexRuntime(t)
+	before, _ := os.ReadFile(log)
+	soon := acctNow.Add(time.Minute)
+	if AccountDue(cache, soon) {
+		t.Fatal("a revoke and re-grant reset the read budget")
+	}
+	if err := RefreshCodexAccount(context.Background(), cache, bin, soon); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(log); string(after) != string(before) {
+		t.Fatal("Codex was asked before the booked time")
+	}
+}
