@@ -138,3 +138,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .ck[data-active="true"] .bz:hover .bz-tip{display:block}
 /* The r6 afterglow arc sat where the base row now is. */
 .ck-afterglow{display:none}
+/* G3-47 review: a key's vendor mark sits beside its name, both centred on the key (layout measured on the study:
+   flex row, centred, 5 px gap, 3 px from the key top). */
+.ck-eng .ek .ek-identity{position:absolute;left:50%;top:3px;transform:translateX(-50%);display:flex;align-items:center;gap:5px;width:max-content;max-width:calc(100% - 8px)}
+.ck-eng .ek .ek-identity .lamp{position:static;transform:none;flex:none}
