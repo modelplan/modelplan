@@ -1,0 +1,76 @@
+# Temporary evidence capture for G3-46 (#713) and G3-48 (#716). Lives only on this evidence branch.
+name: Evidence G3-46 G3-48
+on:
+  push:
+    branches: [evidence/g3-46-48-49]
+    paths: ['.github/workflows/evidence-g3-46-48-49.yml', 'evidence-ci/**']
+permissions:
+  contents: read
+jobs:
+  placement:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: before-main, ref: f2497135d57bc7374b8b04ed039641e2f615cd3c}
+          - {name: after-713, ref: cockpit/placement-left}
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: ev}
+      - uses: actions/checkout@v4
+        with: {ref: '${{ matrix.ref }}', path: src}
+      - uses: actions/setup-go@v5
+        with: {go-version-file: src/cli/go.mod, cache: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Build page, CLI and copy the evidence test
+        run: |
+          set -e
+          cd src; git log -1 --format='%H %s'
+          npm ci --prefix desktop/cockpit --ignore-scripts
+          npm run build:official --prefix desktop/cockpit
+          (cd cli && go build -o ../.tmp-cli/modelplan ./cmd/modelplan)
+          cp ../ev/evidence-ci/PlacementEvidenceTests.swift desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/
+          mkdir -p "$RUNNER_TEMP/shots"
+      - name: Capture
+        env:
+          MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/src/.tmp-cli/modelplan
+          MODELPLAN_EVIDENCE_DIR: ${{ runner.temp }}/shots
+        run: swift test --package-path src/desktop/native/ModelPlanAppIntegration --jobs 3 -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter PlacementEvidenceTests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: 'placement-${{ matrix.name }}', path: '${{ runner.temp }}/shots'}
+  hud:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: before-main, ref: f2497135d57bc7374b8b04ed039641e2f615cd3c}
+          - {name: after-716, ref: cockpit/hud-strip-rows}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: ev}
+      - uses: actions/checkout@v4
+        with: {ref: '${{ matrix.ref }}', path: src}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Capture
+        working-directory: src/desktop/cockpit
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/shots
+        run: |
+          set -e
+          mkdir -p "$EVIDENCE_DIR"
+          npm ci --ignore-scripts
+          npx playwright install --with-deps webkit
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          node build.mjs --official
+          cp ../../../ev/evidence-ci/hud-evidence.spec.mjs ../tests/cockpit/browser/
+          npx playwright test --config ../tests/cockpit/playwright.config.mjs hud-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: 'hud-${{ matrix.name }}', path: '${{ runner.temp }}/shots'}
