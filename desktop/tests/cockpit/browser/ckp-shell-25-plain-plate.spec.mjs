@@ -20,7 +20,8 @@ test(`CKP-SHELL-25 ${tier}${closed?' closed':''}: the plain plate is drawn`,asyn
  });
  expect(plate.theme).toBe('night');
  expect(plate.background).toContain('gradient');
- expect(plate.shadow).not.toBe('none');
+ // Owner 11-08: no drop shadow; nothing is drawn around the hull (ckp-shell-25-transparent.spec.mjs).
+ expect(plate.shadow).toBe('none');
  expect(plate.radius).not.toBe('0px');
  expect(plate.width).toBe(620);
  expect(plate.boosters).toEqual([true,true]);

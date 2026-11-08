@@ -56,7 +56,7 @@
       "source": "design-handoffs/opus-r7/src/rocket-r1/hull-r3.css",
       "sourceSha256": "73617d9c1d884f65c6dcc362bb946e244fd22b12d8ed51640077d054bf3dc076",
       "destination": "prototype/prototype-hull-r3.css",
-      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter); keep only transition:none and pointer-events:none of the night .ck-shell override and drop the parts that switch off the plain plate (its background, shadow and radius, its ::before interior backing, .ck-booster display:none), because v1 ships the plain plate and not the hull-r3 plate set (CKP-SHELL-25, owner D37)"
+      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter); keep box-shadow:none (nothing is drawn outside the hull silhouette), transition:none and pointer-events:none of the night .ck-shell override and drop the parts that switch off the plain plate (its background and radius, its ::before interior backing, .ck-booster display:none), because v1 ships the plain plate and not the hull-r3 plate set (CKP-SHELL-25, owner D37)"
     },
     {
       "source": "design-handoffs/opus-r7/src/rocket-r1/cockpit-fit.js",
