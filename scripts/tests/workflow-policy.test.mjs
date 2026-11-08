@@ -207,3 +207,25 @@ test("U11 may use the ordinary owner Macs, never the GUI Mac, with the same owne
   assert.match(job, /echo "HOME=\$base\/home"/, "home and caches live in the job's runner temp");
   assert.match(job, /if: always\(\)\n\s+shell: bash\n\s+run: \|\n(?:\s+#.*\n)?\s+chmod -R u\+w -- "\$RUNNER_TEMP\/u11-isolated".*\n\s+rm -rf -- \.tmp /, "Go's read-only module cache is made writable before removal");
 });
+
+test("every owner-Mac route that is not a GUI task needs modelplan-mac-nongui, so the GUI Mac only runs GUI jobs", () => {
+  const arrays = [...TRUSTED_MAC_ROUTE.matchAll(/'(\["self-hosted"[^\]]*\])'/g)].map((m) => JSON.parse(m[1]));
+  assert.ok(arrays.length >= 3);
+  for (const labels of arrays) {
+    const gui = labels.includes("modelplan-mac-gui");
+    assert.ok(gui || labels.includes("modelplan-mac-nongui"), JSON.stringify(labels));
+    if (gui) assert.ok(!labels.includes("modelplan-mac-nongui"));
+  }
+  const gui = /\(inputs\.task == 'native' \|\| inputs\.task == 'gui-probe'\) && '(\[[^\]]*\])'/.exec(TRUSTED_MAC_ROUTE);
+  assert.ok(gui && JSON.parse(gui[1]).includes("modelplan-mac-gui"), "only native and gui-probe take the GUI label");
+  const reusable = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  for (const job of ["native-headless", "transport", "sequences", "probe", "u11-native"]) {
+    const block = reusable.split(`\n  ${job}:\n`)[1].split(/\n  [a-z0-9-]+:\n/)[0];
+    assert.match(block, /case "\$\{RUNNER_NAME:-\}" in \*gui\*\)/, `${job} refuses a GUI runner`);
+  }
+  // Every caller uses one pin, the one that carries this route.
+  const dir = new URL("../../.github/workflows/", import.meta.url);
+  const pins = new Set();
+  for (const f of fs.readdirSync(dir)) for (const m of fs.readFileSync(new URL(f, dir), "utf8").matchAll(/trusted-mac\.yml@([0-9a-f]{40})/g)) pins.add(m[1]);
+  assert.equal(pins.size, 1, [...pins].join(" "));
+});
