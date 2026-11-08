@@ -1,0 +1,6 @@
+anchor=(885.0, 874.0, 22.0, 22.0) cursor=(896.0, 15.0) accessibilityTrusted=false screenRecording=false
+tooltipBefore=Loading readings. If this persists, check Settings.
+capture 1-hover-closed-icon: 1040x680 written=true
+open=synthetic click (the posted event did not reach the item) shows=1 tooltipAfterOpen=nil
+capture 2-open-pointer-resting-on-icon: 1040x680 written=true
+plateFrame=(885.0, 630.0, 360.0, 240.0)
