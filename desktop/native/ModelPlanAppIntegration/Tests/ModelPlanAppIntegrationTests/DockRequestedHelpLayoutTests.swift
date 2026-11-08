@@ -85,7 +85,7 @@ import ModelPlanSettings
         let recipe = NeutralHelpUIRecipeProvider()
         let anchors: [DockRequestedHelpAnchor] = [
             .init(id: "status.menu", region: .sliver, rect: CGRect(x: 1641, y: 1, width: 64, height: 22), visible: true,
-                  caption: "Right-click the menu bar icon and choose Show Quota Widget."),
+                  caption: "Right-click the menu bar icon and choose Find Quota Widget."),
             .init(id: "dock.ignition", region: .ignition, rect: CGRect(x: 9.3, y: 212.9, width: 28.8, height: 28.8), visible: true),
             .init(id: "dock.rings.a", region: .rings, rect: CGRect(x: 12.7, y: 257.1, width: 42.3, height: 42.3), visible: true),
             .init(id: "dock.nozzle.a", region: .nozzle, rect: CGRect(x: 11.8, y: 256.2, width: 44, height: 44), visible: true),
