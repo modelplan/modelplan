@@ -24,8 +24,8 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"9a2e4ed18779ea1e5a0792d61b3add415176c8a18bf6031ebe91a4767f23a2fd",
-        "official":"01f21d1b1facdf599cbbb71efdee4e6b5e3d57de8246f24b225076421f4fc63f",
+        "community":"e6cc1ae6405ccac49907b7b5dfce7641b89c411fa3b20833837b79393d6cff78",
+        "official":"00949a9b64ff659474200e1c3cd865fefa981d157b59a4722856d40c0396234d",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -66,6 +66,8 @@ import ModelPlanDock
                 owner.coordinator=coordinator
                 let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
+                coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
+                coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
@@ -142,6 +144,25 @@ import ModelPlanDock
     }
 }
 
+/// D64: the cockpit scope and its local day in one small file beside the settings. A consent or store change removes it.
+@MainActor final class FileCockpitScopeMemory: CockpitScopeMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> (key: String, day: String)? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let key = value["scope"] as? String, let day = value["day"] as? String else { return nil }
+        return (key, day)
+    }
+    func save(_ value: (key: String, day: String)?) {
+        guard let value else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["scope": value.key, "day": value.day], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
 /// Both menu and Dock actions are retained by EngineDockMenuApplication.showConsole.
 /// Rendering comes only from the same client's ordered typed response, never
 /// from retagging the Store's cached cockpit DTO with a newer context.
@@ -180,7 +201,6 @@ struct CockpitUnavailableNotice {
             self.wantsVisible = false
             self.fieldPanel?.close()
             self.pageOpened = false
-            self.composition.dock.setCockpitPresentationBlocked(false)
         }
     }
     /// Public model data only: the launch field never receives personal readings. The official page is
@@ -229,7 +249,7 @@ struct CockpitUnavailableNotice {
     func show() {
         wantsVisible=true
         guard showTask == nil else { return }
-        composition.dock.setCockpitPresentationBlocked(true)
+        composition.dock.prepareForCockpit()
         showTask=Task { @MainActor [weak self] in
             guard let self else { return }
             let snapshot=await owner.settingsStore.snapshot()
@@ -247,9 +267,13 @@ struct CockpitUnavailableNotice {
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
             owner.coordinator?.open()
-            if !pageOpened { composition.dock.setCockpitPresentationBlocked(false) }
             showTask = nil
         }
+    }
+    var isShowing: Bool { wantsVisible }
+    /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
+    func requestClose() {
+        if pageOpened { owner.coordinator?.requestClose() } else { hide() }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
@@ -259,7 +283,6 @@ struct CockpitUnavailableNotice {
         fieldPanel?.close()
         owner.coordinator?.close()
         pageOpened = false
-        composition.dock.setCockpitPresentationBlocked(false)
         fallback?.hide()
     }
     private func unavailable(path:String,history:Bool=false) {
