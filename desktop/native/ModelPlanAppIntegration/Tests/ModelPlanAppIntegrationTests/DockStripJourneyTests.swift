@@ -212,4 +212,49 @@ private actor DockStripEngine: EngineClient {
         XCTAssertEqual(cockpitOpened.dots, before.dots)
         XCTAssertEqual(cockpitOpened.segments, before.segments)
     }
+
+    /// G3-51 (owner, build 12): an empty Codex quota barely showed on the collapsed strip. The prototype
+    /// paints each alarming member's pitch as a glow (clients/official-visuals/dock-aftview-integration/
+    /// face.css:125-130, .sl-segment): a gradient along the strip over the whole pitch, clear at both
+    /// ends and full ink from 40 % to 60 %, at opacity .4; the strip clips it. Checked pixel by pixel
+    /// against the same strip with alerts off. Writes the strip with and without alerts (and an 8x
+    /// enlargement side by side) to dock-visual/g3-51.
+    func testBeforeG351StripOnMain() async throws {
+        let fixture = try DockStripFixture(shortRemaining: [51, 50, 0])
+        addTeardownBlock { @MainActor in await fixture.close() }
+        try await fixture.open(autoHide: true)
+        XCTAssertEqual(fixture.host.edgePresentation?.state, .sliver)
+        let size = try XCTUnwrap(fixture.host.edgePresentation?.placement).sliverFrame.size
+        func capture(_ view: DockSliverView) throws -> NSBitmapImageRep {
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            return bitmap
+        }
+        let view = try fixture.host.prepareSliver(size: size, backingScale: 2)
+        let alerted = try capture(view)
+        _ = try await fixture.app.settingsHost.application.editor.commit(SettingsB20Edit.sliverAlert(false))
+        let neutralView = try fixture.host.prepareSliver(size: size, backingScale: 2)
+        XCTAssertTrue(neutralView.quotaSegmentColorRolesForChecks.allSatisfy { $0.quotaRole == nil })
+        let neutral = try capture(neutralView)
+        XCTAssertEqual(alerted.pixelsWide, neutral.pixelsWide); XCTAssertEqual(alerted.pixelsHigh, neutral.pixelsHigh)
+
+        let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
+        let out = root.appendingPathComponent("dock-instrument-checks/dock-visual/g3-51", isDirectory: true)
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        try XCTUnwrap(alerted.representation(using: .png, properties: [:])).write(to: out.appendingPathComponent("before-strip-alerts.png"))
+        try XCTUnwrap(neutral.representation(using: .png, properties: [:])).write(to: out.appendingPathComponent("before-strip-alerts-off.png"))
+        if let a = alerted.cgImage, let n = neutral.cgImage {
+            let zoom = 8, gap = 40, w = (a.width * zoom) * 2 + gap * 3, h = a.height * zoom + gap * 2
+            if w * h <= 40_000_000, let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                c.setFillColor(CGColor(srgbRed: 0.93, green: 0.94, blue: 0.95, alpha: 1)); c.fill(CGRect(x: 0, y: 0, width: w, height: h))
+                c.interpolationQuality = .none
+                c.draw(a, in: CGRect(x: gap, y: gap, width: a.width * zoom, height: a.height * zoom))
+                c.draw(n, in: CGRect(x: gap * 2 + a.width * zoom, y: gap, width: n.width * zoom, height: n.height * zoom))
+                if let image = c.makeImage(), let rep = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                    try rep.write(to: out.appendingPathComponent("before-strip-alerts-vs-off-8x.png"))
+                }
+            }
+        }
+    }
 }

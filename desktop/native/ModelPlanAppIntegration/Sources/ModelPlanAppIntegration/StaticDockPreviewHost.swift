@@ -865,6 +865,13 @@ struct DockHelpInteraction: Equatable {
     let card = DockCardView(frame: .zero)
     private let cardChrome = NSView(frame: .zero), cardArrow = HostCardArrowView(frame: .zero)
     /// The card's pointer arrow polygon in screen coordinates while a native card panel is shown.
+    /// The card plate's screen frame while a native card panel is shown.
+    var cardPlateForChecks: CGRect? {
+        guard let window = card.window, !card.isHidden, window.isVisible else { return nil }
+        return window.convertToScreen(card.convert(card.bounds, to: nil))
+    }
+    /// The card panel's content (plate plus arrow) for evidence captures.
+    var cardChromeForChecks: NSView? { card.window == nil ? nil : cardChrome }
     var cardArrowForChecks: [CGPoint]? {
         guard let window = cardArrow.window, !cardArrow.isHidden, cardArrow.points.count == 3 else { return nil }
         return cardArrow.points.map { window.convertPoint(toScreen: cardArrow.convert($0, to: nil)) }
