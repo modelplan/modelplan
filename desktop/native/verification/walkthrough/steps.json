@@ -1021,45 +1021,11 @@
       "requirement": "G3-42"
     },
     {
-      "id": "cockpit-detach",
-      "title": "Cockpit detached",
-      "expected": "Detach turns the cockpit into its own window; the button now reads Put back (G3-43).",
+      "id": "cockpit-drag-title",
+      "title": "Cockpit dragged by its title strip",
+      "expected": "Dragging the left part of the title strip moves the cockpit out from under the icon (G3-43).",
       "requires": [
         "cockpit-reopen"
-      ],
-      "actions": [
-        {
-          "op": "click",
-          "target": "label:Detach"
-        },
-        {
-          "op": "wait",
-          "seconds": 1.5
-        },
-        {
-          "op": "park"
-        },
-        {
-          "op": "wait",
-          "seconds": 1
-        }
-      ],
-      "shot": {
-        "crop": "label:ModelPlan Cockpit"
-      },
-      "checks": [
-        {
-          "exists": "label:Put back"
-        }
-      ],
-      "requirement": "G3-43"
-    },
-    {
-      "id": "cockpit-drag-title",
-      "title": "Detached cockpit dragged by its title strip",
-      "expected": "Dragging the left part of the title strip moves the detached window (G3-43).",
-      "requires": [
-        "cockpit-detach"
       ],
       "actions": [
         {
@@ -1095,37 +1061,6 @@
         }
       ],
       "requirement": "G3-43"
-    },
-    {
-      "id": "cockpit-put-back",
-      "title": "Cockpit put back",
-      "expected": "Put back returns the cockpit under the menu bar icon.",
-      "requires": [
-        "cockpit-detach"
-      ],
-      "actions": [
-        {
-          "op": "click",
-          "target": "label:Put back"
-        },
-        {
-          "op": "wait",
-          "seconds": 1.5
-        },
-        {
-          "op": "park"
-        },
-        {
-          "op": "wait",
-          "seconds": 1
-        }
-      ],
-      "shot": {},
-      "checks": [
-        {
-          "exists": "label:Detach"
-        }
-      ]
     },
     {
       "id": "cockpit-close",
