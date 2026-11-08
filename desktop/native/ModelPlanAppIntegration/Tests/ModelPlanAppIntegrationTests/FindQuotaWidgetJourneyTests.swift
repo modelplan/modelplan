@@ -72,8 +72,9 @@ private actor D56SyntheticEngine: EngineClient {
 
     /// `firstRunDone` skips first run, as a returning user. The pointer rests away from every edge.
     private func make(_ root: URL, displays: [DockDisplayArea]? = nil, firstRunDone: Bool = true,
-                      surface: D56QuietSurface = D56QuietSurface(), registrar: D56ShortcutRegistrar? = nil,
+                      surface given: D56QuietSurface? = nil, registrar: D56ShortcutRegistrar? = nil,
                       edit: ((inout SettingsPreferences) -> Void)? = nil) async throws -> EngineDockMenuApplication {
+        let surface = given ?? D56QuietSurface()
         let fixture = try rows()
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         if firstRunDone || edit != nil {
