@@ -35,13 +35,14 @@ enum EngineRowsText {
                            "腾出位置：在「系统设置 › 菜单栏」里关掉一些图标，或按住 ⌘ 把系统图标拖出菜单栏。")
             : SettingsText("To make room, hold ⌘ and drag system icons off the menu bar, set some items to Don't Show in Menu Bar in System Settings > Control Center, or quit apps whose icons you don't need.",
                            "腾出位置：按住 ⌘ 把系统图标拖出菜单栏，在「系统设置 › 控制中心」里把一些项目设为「不在菜单栏中显示」，或退出不需要图标的应用。")
+        // MENU-07b: the Cockpit opens from the widget's Ignition, from opening the app again, or a set shortcut.
         let reach: SettingsText
         if cockpit, let shortcut {
-            reach = SettingsText("Until then, click the Ignition on the Quota Widget or press \(shortcut) to open the Cockpit, and right-click the Quota Widget for Settings.",
-                                 "在此之前，点额度挂件上的点火钮或按 \(shortcut) 打开驾驶舱，右键点额度挂件可打开设置。")
+            reach = SettingsText("Until then, open the Cockpit with the Ignition on the Quota Widget, by opening ModelPlan again from Spotlight, or with \(shortcut), and right-click the Quota Widget for Settings.",
+                                 "在此之前，点额度挂件上的点火钮、用聚焦搜索再次打开 ModelPlan 或按 \(shortcut)，都能打开驾驶舱；右键点额度挂件可打开设置。")
         } else if cockpit {
-            reach = SettingsText("Until then, click the Ignition on the Quota Widget to open the Cockpit, and right-click the Quota Widget for Settings.",
-                                 "在此之前，点额度挂件上的点火钮打开驾驶舱，右键点额度挂件可打开设置。")
+            reach = SettingsText("Until then, open the Cockpit with the Ignition on the Quota Widget or by opening ModelPlan again from Spotlight, and right-click the Quota Widget for Settings.",
+                                 "在此之前，点额度挂件上的点火钮或用聚焦搜索再次打开 ModelPlan，都能打开驾驶舱；右键点额度挂件可打开设置。")
         } else {
             reach = SettingsText("Until then, right-click the Quota Widget for Settings.", "在此之前，右键点额度挂件可打开设置。")
         }

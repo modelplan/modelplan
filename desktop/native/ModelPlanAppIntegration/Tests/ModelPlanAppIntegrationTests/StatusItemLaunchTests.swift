@@ -149,12 +149,12 @@ import ModelPlanSettings
     /// they cannot see. It now says how to make room on this macOS version and where the Cockpit and
     /// Settings are meanwhile. This checks the wording per version and per build, and that each named
     /// way in works with the status item covered: the widget's Ignition and its right-click menu
-    /// (Open Cockpit, Settings…) and the Cockpit shortcut.
+    /// (Open Cockpit, Settings…), the Cockpit shortcut and opening the app again (MENU-07b).
     func testG352HiddenIconNoticeNamesWaysInThatWorkWhileTheIconIsHidden() async throws {
         XCTAssertEqual(EngineRowsText.statusItemHidden(macOSMajor: 26, cockpit: true, shortcut: "⌥⌘M").english,
-                       "The menu bar is full, so macOS hides the ModelPlan icon. To make room, turn some icons off in System Settings > Menu Bar, or hold ⌘ and drag system icons off the menu bar. Until then, click the Ignition on the Quota Widget or press ⌥⌘M to open the Cockpit, and right-click the Quota Widget for Settings.")
+                       "The menu bar is full, so macOS hides the ModelPlan icon. To make room, turn some icons off in System Settings > Menu Bar, or hold ⌘ and drag system icons off the menu bar. Until then, open the Cockpit with the Ignition on the Quota Widget, by opening ModelPlan again from Spotlight, or with ⌥⌘M, and right-click the Quota Widget for Settings.")
         XCTAssertEqual(EngineRowsText.statusItemHidden(macOSMajor: 26, cockpit: true, shortcut: nil).chinese,
-                       "菜单栏已满，macOS 把 ModelPlan 图标藏起来了。腾出位置：在「系统设置 › 菜单栏」里关掉一些图标，或按住 ⌘ 把系统图标拖出菜单栏。在此之前，点额度挂件上的点火钮打开驾驶舱，右键点额度挂件可打开设置。")
+                       "菜单栏已满，macOS 把 ModelPlan 图标藏起来了。腾出位置：在「系统设置 › 菜单栏」里关掉一些图标，或按住 ⌘ 把系统图标拖出菜单栏。在此之前，点额度挂件上的点火钮或用聚焦搜索再次打开 ModelPlan，都能打开驾驶舱；右键点额度挂件可打开设置。")
         let sequoia = EngineRowsText.statusItemHidden(macOSMajor: 15, cockpit: true, shortcut: nil)
         XCTAssertTrue(sequoia.english.contains("System Settings > Control Center"), sequoia.english)
         XCTAssertFalse(sequoia.english.contains("System Settings > Menu Bar"), "macOS 15 has no Menu Bar pane")
@@ -207,6 +207,8 @@ import ModelPlanSettings
         XCTAssertEqual(shortcuts.registered[.openCockpit], ShortcutChord("M", modifiers: [.command, .option]))
         shortcuts.onPress?(.openCockpit)
         XCTAssertEqual(console.shows, 3, "the Cockpit shortcut works with the icon covered")
+        XCTAssertFalse(app.applicationShouldHandleReopen(.shared, hasVisibleWindows: false))
+        XCTAssertEqual(console.shows, 4, "opening the app again opens the Cockpit with the icon covered")
     }
 
     func testMissingTemplateImageFallsBackToAVisibleTitle() async throws {
