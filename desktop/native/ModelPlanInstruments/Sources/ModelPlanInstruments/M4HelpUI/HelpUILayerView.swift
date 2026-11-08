@@ -335,8 +335,14 @@ import AppKit
             panel(label.frame)
             guard let first=label.leader.first else { continue }
             let path=NSBezierPath();path.move(to:first);for point in label.leader.dropFirst() { path.line(to:point) }
+            // A halo in the caption's own plate colour keeps the line visible on any desktop.
+            path.lineCapStyle = .round;path.lineJoinStyle = .round
+            recipeProvider.panelColor.setStroke();path.lineWidth=3;path.stroke()
             recipeProvider.secondaryInk.setStroke();path.lineWidth=1;path.stroke()
-            if let end=label.leader.last { recipeProvider.primaryInk.setFill();NSBezierPath(ovalIn:.init(x:end.x-2,y:end.y-2,width:4,height:4)).fill() }
+            if let end=label.leader.last {
+                recipeProvider.panelColor.setFill();NSBezierPath(ovalIn:.init(x:end.x-3.5,y:end.y-3.5,width:7,height:7)).fill()
+                recipeProvider.primaryInk.setFill();NSBezierPath(ovalIn:.init(x:end.x-2,y:end.y-2,width:4,height:4)).fill()
+            }
         }
     }
     private func panel(_ frame:CGRect) {

@@ -13,7 +13,7 @@ struct DockRequestedHelpAnchor: Equatable {
 
 @MainActor enum DockRequestedHelpLayout {
     static func make(session: UUID, viewport: CGSize, language: InstrumentLanguage,
-                     anchors: [DockRequestedHelpAnchor], blocked: [CGRect],
+                     anchors: [DockRequestedHelpAnchor], blocked: [CGRect], avoid: [CGRect] = [],
                      recipe: any HelpUIRecipeProvider, refreshAvailable: Bool = false) -> HelpUIRenderInput? {
         var selectedRegions = Set<HelpMapRegion>()
         // Leaders run no higher than y = 28, below the menu bar, and end 4 pt beyond an anchor's edge.
@@ -37,7 +37,9 @@ struct DockRequestedHelpAnchor: Equatable {
         let catalog = HelpMapCatalog(language)
         let catalogEntries = Dictionary(uniqueKeysWithValues: catalog.entries(for: .dock).map { ($0.region, $0) })
         var map = HelpUIMapInput(mode: .latched, surface: .dock)
-        var obstacles = blocked + visible.map(\.rect)
+        // `avoid` (the widget itself) only steers placement. Leaders must still reach targets inside it,
+        // so it is not a reading the layer routes around.
+        var obstacles = blocked + avoid + visible.map(\.rect)
         let headerWidth = min(400, viewport.width - 32)
         let headerText = catalog.metaphor + "\n" + catalog.dismissal
         let headerHeight = ceil(recipe.measure(headerText, width: headerWidth - 16, role: .header).height) + 10

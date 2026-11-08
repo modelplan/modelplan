@@ -158,6 +158,39 @@ import ModelPlanSettings
         XCTAssertTrue(result.mapLabels.contains { $0.anchorID == "status.menu" })
     }
 
+    /// QA 11-08 item 7: "Number" hid the third ring and "Quota rings" covered the second. Captions
+    /// go beside the widget, as in the study, and each draws a leader to its own target.
+    func testCaptionsSitBesideTheWidgetWithALeaderToEachTarget() throws {
+        let recipe = NeutralHelpUIRecipeProvider()
+        let widget = CGRect(x: 0, y: 145, width: 72, height: 415)
+        let rings = (0..<5).map { CGRect(x: 12, y: 190 + CGFloat($0) * 70, width: 42, height: 42) }
+        let anchors: [DockRequestedHelpAnchor] = [
+            .init(id: "status.menu", region: .sliver, rect: CGRect(x: 1641, y: 1, width: 64, height: 22), visible: true,
+                  caption: "Right-click the menu bar icon and choose Show Quota Widget."),
+            .init(id: "dock.ignition", region: .ignition, rect: CGRect(x: 9, y: 146, width: 29, height: 29), visible: true),
+            .init(id: "dock.nozzle.a", region: .nozzle, rect: rings[0].insetBy(dx: -1, dy: -1), visible: true),
+            .init(id: "dock.rings.a", region: .rings, rect: rings[0], visible: true),
+            .init(id: "dock.number.a", region: .number, rect: CGRect(x: 10, y: 236, width: 47, height: 13), visible: true),
+            .init(id: "dock.grip.0", region: .dockMove, rect: CGRect(x: 9, y: 530, width: 37, height: 25), visible: true),
+        ] + rings.dropFirst().enumerated().map { index, ring in
+            .init(id: "dock.rings.\(index + 1)", region: .rings, rect: ring, visible: true)
+        }
+        let readings = rings.map { CGRect(x: 10, y: $0.maxY + 4, width: 47, height: 13) }
+        for language in [InstrumentLanguage.english, .chinese] {
+            let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: CGSize(width: 1920, height: 1080),
+                language: language, anchors: anchors, blocked: readings, avoid: [widget], recipe: recipe, refreshAvailable: true))
+            let result = recipe.presentation(for: input)
+            XCTAssertEqual(result.unresolvedMapIDs, [])
+            XCTAssertFalse(result.mapLabels.isEmpty)
+            for label in result.mapLabels {
+                for ring in rings { XCTAssertFalse(label.frame.intersects(ring), "\(label.id) covers a ring") }
+                XCTAssertFalse(label.frame.intersects(widget), "\(label.id) sits on the widget")
+                XCTAssertGreaterThanOrEqual(label.leader.count, 2, "\(label.id) has no leader")
+            }
+            XCTAssertFalse(try XCTUnwrap(result.mapHeader).intersects(widget))
+        }
+    }
+
     func testLabelsEveryVisibleAnchorAndOmitsHiddenAnchors() throws {
         let recipe = NeutralHelpUIRecipeProvider()
         let anchors: [DockRequestedHelpAnchor] = [
