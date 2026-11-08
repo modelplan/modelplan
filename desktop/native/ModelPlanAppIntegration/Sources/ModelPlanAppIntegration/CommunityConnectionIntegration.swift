@@ -4,12 +4,18 @@ import ModelPlanCore
 import ModelPlanSettings
 import ModelPlanCommunityHost
 
-@MainActor private final class ConnectionFirstRunSurface: SettingsWindowSurface {
+/// G3-37: macOS 14+ ignores an accessory app's activate() while another app is active (hosted
+/// macOS 15 evidence, #690), so the first-run window is also ordered above other apps' windows.
+/// It does not take key focus from the front app.
+@MainActor protocol FirstRunFrontRaising: AnyObject { func raiseToFront() }
+
+@MainActor private final class ConnectionFirstRunSurface: SettingsWindowSurface, FirstRunFrontRaising {
     private let controller: SettingsFirstRunController
     init(editor: SettingsEditor, scopeConsentEntry: ScopeConsentEntry?) { controller = SettingsFirstRunController(editor: editor, scopeConsentEntry: scopeConsentEntry) }
     func prepare() async { await controller.prepare() }
     func show(paneID: String?) { controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil) }
     func hide() { controller.suspend(); controller.window?.orderOut(nil) }
+    func raiseToFront() { controller.window?.orderFrontRegardless() }
 }
 
 /// App composition retains this module over its existing editor. Construction has no backend/UI effects.
@@ -110,6 +116,7 @@ import ModelPlanCommunityHost
         guard eligible(token) else { return }
         presentedThisLaunch = true
         surface.show(paneID: nil)
+        if activating { (surface as? FirstRunFrontRaising)?.raiseToFront() }
     }
     private func eligible(_ token: UInt64) -> Bool { !disposed && generation == token && canPresent() && !disposed && generation == token }
     public func requireBackend() throws {
