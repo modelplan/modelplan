@@ -24,8 +24,8 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"92527d8c8216f85991da659c29a9b1e411b202535df444420e52cb6357eeee52",
-        "official":"f6421b5e8828c46741dd6338d43903161168dbff4727ace5b369fd27339ce088",
+        "community":"91cfad69c2a40efe18126f79329b758eb4976aaf280e049ca1a92ca7233c45b8",
+        "official":"7842bac9c77e1aecf3c4a28494b0cf555b9bea75acd5c42c24084e8dc4794ae4",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -180,7 +180,6 @@ struct CockpitUnavailableNotice {
             self.wantsVisible = false
             self.fieldPanel?.close()
             self.pageOpened = false
-            self.composition.dock.setCockpitPresentationBlocked(false)
         }
     }
     /// Public model data only: the launch field never receives personal readings. The official page is
@@ -229,7 +228,7 @@ struct CockpitUnavailableNotice {
     func show() {
         wantsVisible=true
         guard showTask == nil else { return }
-        composition.dock.setCockpitPresentationBlocked(true)
+        composition.dock.prepareForCockpit()
         showTask=Task { @MainActor [weak self] in
             guard let self else { return }
             let snapshot=await owner.settingsStore.snapshot()
@@ -247,9 +246,13 @@ struct CockpitUnavailableNotice {
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
             owner.coordinator?.open()
-            if !pageOpened { composition.dock.setCockpitPresentationBlocked(false) }
             showTask = nil
         }
+    }
+    var isShowing: Bool { wantsVisible }
+    /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
+    func requestClose() {
+        if pageOpened { owner.coordinator?.requestClose() } else { hide() }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
@@ -259,7 +262,6 @@ struct CockpitUnavailableNotice {
         fieldPanel?.close()
         owner.coordinator?.close()
         pageOpened = false
-        composition.dock.setCockpitPresentationBlocked(false)
         fallback?.hide()
     }
     private func unavailable(path:String,history:Bool=false) {

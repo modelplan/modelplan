@@ -20,7 +20,7 @@ import ModelPlanCore
     public func cancel(){timer?.invalidate();timer=nil}
     deinit{timer?.invalidate()}
 }
-/// The host resolves durable displays, fullscreen/cockpit policy and actual native protection truth.
+/// The host resolves durable displays, fullscreen policy and actual native protection truth.
 public struct DockEdgeEnvironment:Sendable {
     public var displays:[DockDisplayArea],layouts:[DockEdgeLayout],primaryDisplayID:String?,pointer:CGPoint?,presence:DockPresence,cardFrame:CGRect?
     public init(displays:[DockDisplayArea],layouts:[DockEdgeLayout],primaryDisplayID:String?=nil,pointer:CGPoint?=nil,presence:DockPresence = .init(),cardFrame:CGRect?=nil){
@@ -97,7 +97,6 @@ public struct DockEdgePresentation:Equatable,Sendable {
         guard drag == nil else { return }
         preference=value;refresh()
     }
-    public func restoreAfterCockpitClose(){refresh(intent:.restoreFromCockpit)}
     public func reveal(){refresh(intent:.reveal)}
     public func refresh(){refresh(intent:.sample)}
     public func acceptsPress(keyboardOrAccessibility:Bool=false)->Bool{
@@ -177,7 +176,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
         return true
     }
     private func allowsDrag(_ presence: DockPresence) -> Bool {
-        presence.lifecycleActive && presence.enabled && presence.cockpitClosed && presence.allowedOverFullscreen
+        presence.lifecycleActive && presence.enabled && presence.allowedOverFullscreen
     }
 
     public func updateBackgroundMove(global: CGPoint) {
