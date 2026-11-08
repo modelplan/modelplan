@@ -60,6 +60,16 @@ to validate the runner without changing the general switch or launching all
 product checks. Acceptance must verify the assigned runner identity and the
 probe result; an online status alone is insufficient.
 
+## GUI leg on hosted Macs
+
+Hosted macOS runners have a real WindowServer session. `MAC_CI_GUI_POOL=hosted` (or a `desktop` dispatch with
+`gui_pool=hosted`) splits the GUI leg in two (owner D62, 2026-11-08): `native-hosted-gui` runs the
+`hosted-gui` leg on hosted `macos-15`, and `native-owner-gui` runs only the `ownerGui` classes of
+`native-test-partition.json` on the owner's GUI Mac. `native_test_partition.py` derives both from the same
+listed suite and verifies each, so together they are exactly the old GUI leg. A class goes on `ownerGui` when it
+cannot finish on a hosted Mac, for example because it waits for a Keychain or activation prompt that nobody
+answers there. Unset, the whole GUI leg runs on the GUI Mac as before.
+
 ## Ordinary owner Macs for headless workflows
 
 `MAC_CI_NONGUI=enabled` (owner D62, 2026-11-08) moves the `u11-native` task of `trusted-mac.yml` to the

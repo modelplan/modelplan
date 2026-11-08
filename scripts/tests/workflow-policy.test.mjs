@@ -216,8 +216,11 @@ test("every owner-Mac route that is not a GUI task needs modelplan-mac-nongui, s
     assert.ok(gui || labels.includes("modelplan-mac-nongui"), JSON.stringify(labels));
     if (gui) assert.ok(!labels.includes("modelplan-mac-nongui"));
   }
-  const gui = /\(inputs\.task == 'native' \|\| inputs\.task == 'gui-probe'\) && '(\[[^\]]*\])'/.exec(TRUSTED_MAC_ROUTE);
-  assert.ok(gui && JSON.parse(gui[1]).includes("modelplan-mac-gui"), "only native and gui-probe take the GUI label");
+  const gui = /\(inputs\.task == 'native' \|\| inputs\.task == 'native-owner-gui' \|\| inputs\.task == 'gui-probe'\) && '(\[[^\]]*\])'/.exec(TRUSTED_MAC_ROUTE);
+  assert.ok(gui && JSON.parse(gui[1]).includes("modelplan-mac-gui"), "only native, native-owner-gui and gui-probe take the GUI label");
+  // The hosted GUI split never reaches an owner Mac: it is excluded from the owner branch, and its caller passes macos-15.
+  assert.ok(TRUSTED_MAC_ROUTE.includes("inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' &&"));
+  assert.ok(TRUSTED_MAC_ROUTE.includes("((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled')"), "owner GUI tasks still need MAC_CI_GUI");
   const reusable = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
   for (const job of ["native-headless", "transport", "sequences", "probe", "u11-native"]) {
     const block = reusable.split(`\n  ${job}:\n`)[1].split(/\n  [a-z0-9-]+:\n/)[0];
