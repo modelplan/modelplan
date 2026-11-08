@@ -282,6 +282,10 @@ func buildCandidate(in Input, c *candidate) Row {
 	}
 	outcome := classify(f)
 	applyOutcome(&row, in, c, outcome)
+	if row.Reason.Code == CodeNotSignedIn {
+		// G3-38 (owner D52): a signed-out tool has no ring. Settings and the menu still say why.
+		row.Surfaces = []Surface{SurfaceMenu, SurfaceSettings}
+	}
 	for _, a := range row.Accounts {
 		if a.ValueState == ValueStateCurrent {
 			row.ExpiresAt = earlier(row.ExpiresAt, a.FreshUntil)
@@ -371,6 +375,9 @@ func nextStep(in Input, c *candidate, outcome Outcome) *NextStep {
 	step := &NextStep{Action: outcome.Action, Text: actionTexts[outcome.Action]}
 	if outcome.Code == CodeNoReader {
 		step.Text = Text{EN: "Reader support is not available yet", ZH: "暂不支持此读取器"}
+	}
+	if outcome.Code == CodeNotSignedIn {
+		step.Text = Text{EN: "Sign in to the tool; ModelPlan reads it after that", ZH: "登录该工具后，ModelPlan 会开始读取"}
 	}
 	if outcome.Code == CodeNoManualReading {
 		step.Text = Text{EN: "Add a manual reading in Settings", ZH: "在设置中填写手动读数"}
