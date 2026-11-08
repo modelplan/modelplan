@@ -93,7 +93,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
 
  const bar=node('div','mfd-pk'),screen=node('div','mfd-screen'),page=node('div','mfd-page pg-overview'),footer=node('div','mfd-ok');bar.setAttribute('role','toolbar');screen.dataset.mat='well';page.dataset.fill='page';screen.append(page);
  const pages=cockpitPageRegistry,modules=pages.map(p=>p.module);let uiWhere='proj',uiTime='today',uiDays=30,uiChart='bars',uiStack=true,uiSubTab='now',gridFill:{w:number;h:number}|null=null;
- const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}selected=i;paint();};bar.append(b);return {b,caption};});
+ const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;paint();};bar.append(b);return {b,caption};});
  mfd.replaceChildren(bar,screen,footer);
  // The study's floating LCD tooltip (mfd.css .mfd-tip) for chart cells and buckets: hover shows a [data-tip]'s lines,
  // the first as its heading. Text only; it never takes pointer events.

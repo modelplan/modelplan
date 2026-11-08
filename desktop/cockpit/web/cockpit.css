@@ -115,3 +115,5 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 #cockpit .ec.xhl,#cockpit .ek.xhl{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcd-ink) 40%,transparent)}
 /* Owner D76: the Reserve hint floats over the page in the MFD tip style. */
 .mfd-tip.eng-hint{position:fixed;z-index:40}
+/* The comparison title never gives way to its note or links (current unknown made it "Compare …"). */
+.dk-mfd .cmp-h .mfd-title{flex:none}.dk-mfd .cmp-h .cmp-note{min-width:0;overflow:hidden;text-overflow:ellipsis}.dk-mfd .cmp-header-links{min-width:0;overflow:hidden}

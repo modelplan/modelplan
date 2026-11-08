@@ -79,4 +79,14 @@ test('CKP-MFD compare: the back key is named "Back …" for assistive tech, and 
  await page.locator('.hud-list .hp').first().click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-tune/);
  await expect(page.locator('.fd-indicator[data-state="try"]')).toHaveCount(0);
+ // A page key closes the view the HUD opened (study closeMfdView('page')): no stale "‹ back" line on the next page.
+ await page.locator('[data-mfd="page:overview"]').click();
+ await expect(page.locator('.mfd-page .mfd-back')).toHaveCount(0);
+});
+
+test('CKP-MFD compare: the title stays whole when the current effort is unknown',async({page})=>{
+ await open(page);
+ const astra=page.locator('.fd-ch:not(.empty)').nth(1);await astra.locator('.fd-strip').click();
+ const title=page.locator('.mfd-title');await expect(title).toHaveText('Compare · Astra');
+ expect(await title.evaluate(e=>e.scrollWidth<=e.clientWidth+.5)).toBe(true);
 });
