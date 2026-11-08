@@ -187,6 +187,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// hosted runner even with the page loaded. A prewarmed page pays it once: the empty page is ordered in
   /// at alpha 0, ignoring the mouse and never key, until two animation frames have painted, then ordered out.
   private var warmPainting = false
+  /// The cost is the process's, not the page's: later pages, even new ones, rendered in about 30 ms. So the
+  /// warm paint runs only until this app has painted a cockpit page once, warm or shown.
+  private static var processHasPainted = false
   private var warmPaintEnd: Task<Void, Never>?
   #if MODELPLAN_TEST_ONLY_SPI
   public var verificationWarmPainted: ((Bool) -> Void)?
@@ -481,7 +484,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       }
   }
   private func warmPaint() {
-    guard let panel = window, let web, !shown, !ending, !warmPainting else { return }
+    guard !Self.processHasPainted, let panel = window, let web, !shown, !ending, !warmPainting else { return }
     warmPainting = true
     panel.ignoresMouseEvents = true
     panel.alphaValue = 0
@@ -505,6 +508,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     warmPaintEnd?.cancel(); warmPaintEnd = nil
     guard warmPainting else { return }
     warmPainting = false
+    if painted { Self.processHasPainted = true }
     #if MODELPLAN_TEST_ONLY_SPI
     verificationWarmPainted?(painted)
     #endif
@@ -560,6 +564,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           else { self.watchDeferredAppearance() }
           if let id = self.bridge.currentDisplayRequest, self.bridge.awaitsDisplayReceipt(id) { self.renderWatchdog.wait(for: id) }
           self.freshnessDriver.show()
+          Self.processHasPainted = true
           if self.awaitingShown, let onShown = self.onShown {
             self.awaitingShown = false; self.refreshAfterHiddenDisplay = false; onShown()
           } else if self.refreshAfterHiddenDisplay { self.refreshAfterHiddenDisplay = false; self.onReady?() }
