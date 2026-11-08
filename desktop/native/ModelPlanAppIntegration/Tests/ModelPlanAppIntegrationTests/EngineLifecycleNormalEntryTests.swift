@@ -66,6 +66,9 @@ private actor LifecycleEngine: EngineClient {
     func hide() { hides += 1 }
 }
 
+/// glm-690-1: counts the real entry's `activateSettings` calls, the seam the first-run flow activates through.
+@MainActor private final class ActivationCounter { var value = 0 }
+
 @MainActor final class EngineLifecycleNormalEntryTests: XCTestCase {
     func testFirstRunWaitsForFreshRowsAndWithdrawsOnPause() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-gate-" + UUID().uuidString)
@@ -73,7 +76,8 @@ private actor LifecycleEngine: EngineClient {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
         var client: LifecycleEngine?
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"]), createsNativePanels: false, makeClient: { _, store in let value = LifecycleEngine(store: store, rows: fixture); client = value; return value }, activateSettings: {})
+        let activations = ActivationCounter()
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"]), createsNativePanels: false, makeClient: { _, store in let value = LifecycleEngine(store: store, rows: fixture); client = value; return value }, activateSettings: { activations.value += 1 })
         let surface = LifecycleFirstRunProbe(); app.makeFirstRunSurfaceWithConsent = { _, _ in surface }
         await app.prepare(); let engine = try XCTUnwrap(client)
         app.setActivityPaused(true)
@@ -84,6 +88,7 @@ private actor LifecycleEngine: EngineClient {
         app.setActivityPaused(false)
         for _ in 0..<1000 { if surface.shows > 0 { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(surface.shows, 1, "First run resumes only after current rows")
+        XCTAssertEqual(activations.value, 1, "G3-37: the launch's first presentation brings the app to the front through the real entry")
         workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
         XCTAssertTrue(app.lifecyclePaused); XCTAssertGreaterThan(surface.hides, 0, "Pause withdraws an already visible first run")
         await app.restoreFirstRunIfNeeded(); XCTAssertEqual(surface.shows, 1)
@@ -93,9 +98,11 @@ private actor LifecycleEngine: EngineClient {
         try await engine.publishFresh()
         for _ in 0..<1000 { if surface.shows >= 2 { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(surface.shows, 2)
+        XCTAssertEqual(activations.value, 1, "A re-show after wake takes no focus")
         try app.settingsHost.application.editor.request(.previewFirstRun)
         for _ in 0..<1000 { if surface.shows >= 3 { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(surface.shows, 3, "Explicit navigation remains available after resumption")
+        XCTAssertEqual(activations.value, 2, "An explicit open still activates")
         await app.stopLifecycle()
     }
 
@@ -245,10 +252,15 @@ private actor LifecycleEngine: EngineClient {
         return root
     }
 
-    private func make(_ root: URL, topology: Topology, rows: WireRowsSnapshot? = nil, native: Bool = false,
+    /// These journeys exercise an expanded widget. Since D56 (owner 2026-11-08) a fresh profile
+    /// starts collapsed, so a new profile records auto-collapse off unless `freshDefaults` asks for
+    /// the shipped defaults. A relaunch on an existing profile keeps whatever it saved.
+    private func make(_ root: URL, topology: Topology, rows: WireRowsSnapshot? = nil, native: Bool = false, freshDefaults: Bool = false,
                       beforePrepare: ((EngineDockMenuApplication) -> Void)? = nil, edit: ((inout SettingsPreferences) -> Void)? = nil)
         async throws -> EngineDockMenuApplication {
+        let newProfile = !FileManager.default.fileExists(atPath: root.path)
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        if newProfile && !freshDefaults { _ = try await store.update { $0.autoHide = false } }
         if let edit { _ = try await store.update { edit(&$0) } }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("synthetic-engine"),
             applicationVersion: "test", allowedEnvironment: [:], offline: true, readOnly: true),
@@ -318,11 +330,13 @@ private actor LifecycleEngine: EngineClient {
     func testG317TrulyFreshProfileEnablesAndShowsTheWidget() async throws {
         let topology = Topology(), root = profile()
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path), "Precondition: no profile at all")
-        let app = try await make(root, topology: topology)
+        let app = try await make(root, topology: topology, freshDefaults: true)
         _ = start(app)
-        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
+        // D56: shown, collapsed to its strip at the edge.
+        try await wait { app.composition.dock.edgePresentation?.state == .sliver }
         let editor = app.settingsHost.application.editor
         XCTAssertEqual(editor.snapshot?.preferences.showDock, true)
+        XCTAssertEqual(editor.snapshot?.preferences.autoHide, true)
         XCTAssertEqual(try showDockRow(app), .toggle(true), "Settings shows the Quota Widget switch on")
         let status = await app.foundationStore.foundationStatus()
         let document = try XCTUnwrap(status?.path)

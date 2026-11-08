@@ -1,0 +1,1 @@
+An alarming quota (warning or empty) now shows on the collapsed widget strip as the prototype's glow: a red or amber gradient centred on that ring's place, at the prototype's strength, instead of a faint flat tint.

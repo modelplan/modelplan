@@ -28,6 +28,7 @@ func (s Style) QuotaNotice(n advise.QuotaNotice) string {
 		if n.Kind == "surplus" {
 			x += "; what is left lapses at the reset"
 		}
+		x += s.otherPlan(n.Other)
 		x += "."
 		if d := n.Down; d != nil {
 			x += fmt.Sprintf(" The effort is above ★: ★%s uses ×%.2f the quota of the current effort%s; suggest it to the user once.", d.Label, *d.CostRatio, pts(d.AbilityDelta, " (%+.1f pts)"))
@@ -47,11 +48,56 @@ func (s Style) QuotaNotice(n advise.QuotaNotice) string {
 	if n.Kind == "surplus" {
 		x += "，没用完的届时作废"
 	}
+	x += s.otherPlan(n.Other)
 	x += "。"
 	if d := n.Down; d != nil {
 		x += fmt.Sprintf("当前档位高于★：★%s 的额度消耗是当前档的 ×%.2f%s，可以向用户提一次。", d.Label, *d.CostRatio, pts(d.AbilityDelta, "（%+.1f 分）"))
 	} else if c := n.Cheaper; c != nil && c.CostRatio != nil {
 		x += fmt.Sprintf("%s %s 能力相当，成本 ×%.2f%s。", c.ModelName, c.Label, *c.CostRatio, pts(c.AbilityDelta, "（%+.1f 分）"))
+	}
+	return x
+}
+
+// otherPlan names another connected plan with room, after a low notice's facts.
+func (s Style) otherPlan(o *advise.OtherPlan) string {
+	if o == nil {
+		return ""
+	}
+	q := s.qt()
+	kind := q.Kinds[o.Window]
+	if kind == "" {
+		kind = q.Kinds["unknown"]
+	}
+	if s.T == EN {
+		if k, ok := map[string]string{"five_hour": "5-hour", "weekly": "weekly", "monthly": "monthly"}[o.Window]; ok {
+			kind = k
+		}
+		return fmt.Sprintf("; %s still has %g%% of its %s quota left, resets in %s", o.Name, o.Remaining, kind, q.Dur(o.ResetsIn))
+	}
+	return fmt.Sprintf("；%s %s额度还剩%g%%，%s后重置", o.Name, kind, o.Remaining, q.Dur(o.ResetsIn))
+}
+
+// SpendNotice is the warning when the main thread spawns subagents while its quota is low.
+// The user gets the facts; the model also gets, when the spawn names no model (the subagent
+// then runs on the thread's own), a cheaper model that scores as well. Subagents cannot pick an
+// effort, so no effort step is named.
+func (s Style) SpendNotice(ns []advise.QuotaNotice, cheaper *advise.Step, forModel bool) string {
+	lines := make([]string, 0, len(ns))
+	for _, n := range ns {
+		n.Down, n.Cheaper = nil, nil
+		lines = append(lines, s.QuotaNotice(n))
+	}
+	x := strings.Join(lines, " ")
+	if s.T == EN {
+		x = "Quota is tight; keep an eye on usage when spawning subagents. " + x
+		if forModel && cheaper != nil && cheaper.CostRatio != nil {
+			x += fmt.Sprintf(" For subagents that do not need this model, %s %s scores as well at ×%.2f the cost%s; use it if the task allows.", cheaper.ModelName, cheaper.Label, *cheaper.CostRatio, pts(cheaper.AbilityDelta, " (%+.1f pts)"))
+		}
+		return x
+	}
+	x = "额度偏紧，派子代理时可以留意一下用量。" + x
+	if forModel && cheaper != nil && cheaper.CostRatio != nil {
+		x += fmt.Sprintf("不需要当前模型的子代理，任务允许时可以改用 %s %s，能力相当，成本 ×%.2f%s。", cheaper.ModelName, cheaper.Label, *cheaper.CostRatio, pts(cheaper.AbilityDelta, "（%+.1f 分）"))
 	}
 	return x
 }

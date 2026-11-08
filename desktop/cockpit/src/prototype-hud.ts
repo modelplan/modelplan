@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 // The porthole HUD from public published data: on the tall profile a mini frontier above the first six chart models,
-// on the compact profile one strip of three. It reads no scores of its own and shows nothing personal except which
+// on the compact profile one strip: a small frontier beside three stacked rows. It reads no scores of its own and shows nothing personal except which
 // effort a running session last reported. Prototype: rocket-r1/porthole.js:49-76 for behaviour; the code is written here.
 import type {WireCockpitData} from '../generated/wire.js';
 import {FIELD_LIMIT,fieldModel,type FieldModel} from './field-model.js';
 import {cockpitMembers} from './members.js';
+import {sessionMember} from './session-binding.js';
+import {shortLabel} from '../study/rocket-r1/short-label.js';
 
 const SVG='http://www.w3.org/2000/svg',TALL_ROWS=6,COMPACT_ROWS=3;
 const svg=<K extends keyof SVGElementTagNameMap>(tag:K,attributes:Record<string,string|number>)=>{const e=document.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attributes))e.setAttribute(k,String(v));return e;};
@@ -22,12 +24,12 @@ function roundRobin(list:readonly HudModel[]) {
 /** One order for the scope (hud-selection/selection.js): models used this week, the lineup, then developers in turn; dominated last. */
 export function publishedFleet(data:WireCockpitData|null|undefined,scope='all',now=Date.now()):HudModel[] {
  const published=data?.details?.publishedModels??[],developerOf=new Map(published.map(m=>[m.id,m.developerId]));
- const member=scope==='all'||!data?null:cockpitMembers(data).find(m=>m.key===scope)??null;
+ const members=data?cockpitMembers(data):[],member=scope==='all'?null:members.find(m=>m.key===scope)??null;
  if(scope!=='all'&&!member)return [];
- const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt);return (!member||s.subscriptionRef===member.key)&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
+ const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt);return (!member||sessionMember(members,s)?.key===member.key)&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
  const latest=new Map<string,string|null>();for(const s of recent)if(!latest.has(s.model))latest.set(s.model,s.effort);
  const developer=member?toolDevelopers[member.row.id]:undefined;
- const candidates=published.flatMap(m=>{const f=fieldModel(m);return f&&(!member||developerOf.get(m.id)===developer||latest.has(m.id))?[f]:[];});
+ const candidates=published.flatMap(m=>{const f=fieldModel(m,shortLabel);return f&&(!member||developerOf.get(m.id)===developer||latest.has(m.id))?[f]:[];});
  const beaten=(m:FieldModel)=>candidates.some(n=>n.id!==m.id&&n.sel[2]>0&&m.sel[2]>0&&n.sel[1]>=m.sel[1]&&n.sel[2]<=m.sel[2]&&(n.sel[1]>m.sel[1]||n.sel[2]<m.sel[2]));
  const models=candidates.map((m):HudModel=>({...m,dominated:beaten(m),...(latest.has(m.id)?{latestEffort:latest.get(m.id)??null}:{})}));
  const byId=new Map(models.map(m=>[m.id,m]));
@@ -63,7 +65,8 @@ export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,co
  const fleet=publishedFleet(data,options.scope,options.now),rows=fleet.slice(0,compact?COMPACT_ROWS:TALL_ROWS);
  host.replaceChildren();host.hidden=!!options.closed||!rows.length;host.classList.toggle('hud-b',!compact);host.classList.toggle('hud-strip',compact);if(host.hidden)return;
  host.setAttribute('role','group');host.setAttribute('aria-label',locale==='en'?'Published models':'已发布模型');
- if(!compact){const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),162,77,locale==='en'?'Ability against cost at each recommended effort':'各推荐档位的能力与成本'));host.append(chart);}
+ // G3-48: the compact strip follows the study at 640 (86x30 chart, then three 10 px rows), not three columns.
+ const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),compact?86:162,compact?30:77,locale==='en'?'Ability against cost at each recommended effort':'各推荐档位的能力与成本'));host.append(chart);
  const list=document.createElement('div');list.className='hud-list';
  for(const [i,m] of rows.entries()){
   const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(!compact&&m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;

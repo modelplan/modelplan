@@ -34,6 +34,14 @@ final class SettingsCatalogueCopyTests: XCTestCase {
         }
         XCTAssertTrue(try row(.showDock).subtitle.chinese.contains("菜单栏图标"))
     }
+    /// D56: the SET-9-05 widget shortcut slot is the Find Quota Widget shortcut.
+    func testD56WidgetShortcutRowNamesFindQuotaWidget() throws {
+        let rows = try SettingsCatalogue.rows(preferences: .init(), context: .init())
+        let row = try XCTUnwrap(rows.first { $0.key == .dockShortcut })
+        XCTAssertEqual(row.title.english, "Find Quota Widget shortcut")
+        XCTAssertEqual(row.title.chinese, "找到额度挂件快捷键")
+        XCTAssertFalse(row.title.chinese.contains("隐藏"))
+    }
     func testQuotaWindowChoicesUseGlossaryLabelsInBothLanguages() {
         XCTAssertEqual(SettingsWords.option("5h", key: .percentagePin, language: .english), "5h")
         XCTAssertEqual(SettingsWords.option("5h", key: .percentagePin, language: .chinese), "5小时")
