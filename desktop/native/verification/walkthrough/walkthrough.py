@@ -238,6 +238,22 @@ class Walkthrough:
         if action.get("timed"):
             self.measures["secondsTo:" + action["target"]] = round(self.host.now() - started, 2)
 
+    def op_awaitAbsent(self, action):
+        """Wait until a target has left the screen, such as the first-run page still looking for tools."""
+        deadline = self.host.now() + action.get("timeout", 15)
+        while resolve(self.tree(), action["target"]) is not None:
+            if self.host.now() >= deadline:
+                raise WalkthroughError("still on screen after %ss: %s" % (action.get("timeout", 15), action["target"]))
+            self.host.sleep(0.5)
+
+    def op_when(self, action):
+        """Run nested actions only when a target is on screen ("present") or is not ("absent"), so one walk fits a
+        build with the flow and a build without it (the first-run chooser, a widget that starts collapsed)."""
+        target = action.get("present") or action.get("absent")
+        if (resolve(self.tree(), target) is not None) == ("present" in action):
+            for nested in action["then"]:
+                getattr(self, "op_" + nested["op"])(nested)
+
     def op_wait(self, action):
         self.host.sleep(action["seconds"])
 

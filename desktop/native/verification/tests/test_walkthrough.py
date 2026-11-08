@@ -141,8 +141,11 @@ class Script(unittest.TestCase):
         for index, step in enumerate(self.STEPS):
             self.assertTrue(step["title"] and step["expected"])
             self.assertTrue(set(step.get("requires", [])) <= set(ids[:index]), step["id"])
-            for action in step.get("actions", []):
+            actions = list(step.get("actions", []))
+            while actions:
+                action = actions.pop()
                 self.assertTrue(hasattr(w.Walkthrough, "op_" + action["op"]), action["op"])
+                actions.extend(action.get("then", []))
 
     def test_covers_the_agreed_walkthrough(self):
         ids = {s["id"] for s in self.STEPS}
@@ -201,6 +204,23 @@ class Steps(unittest.TestCase):
         self.assertTrue((self.out / first["file"]).exists())
         self.assertEqual((second["status"], second["file"]), ("not-run", None))
         self.assertEqual(second["reason"], "needs a")
+
+    def test_when_runs_nested_actions_only_for_the_flow_on_screen(self):
+        tree = {"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "pick", "frame": [1, 1, 2, 2]},
+                                                                  {"id": "tool.a", "frame": [3, 3, 2, 2]}]}]}
+        host = FakeHost(tree)
+        walk = walker(host, self.out, [])
+        walk.op_when({"op": "when", "present": "ax:pick", "then": [{"op": "click", "target": "ax^:tool."}]})
+        walk.op_when({"op": "when", "absent": "ax:pick", "then": [{"op": "click", "target": "ax:gone"}]})
+        walk.op_when({"op": "when", "present": "ax:gone", "then": [{"op": "click", "target": "ax:gone"}]})
+        self.assertEqual([c for c in host.calls if c[0] == "click"], [("click", 4.0, 4.0)])
+
+    def test_await_absent_fails_when_the_target_stays(self):
+        host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "looking", "frame": [1, 1, 2, 2]}]}]})
+        walk = walker(host, self.out, [])
+        walk.op_awaitAbsent({"target": "ax:gone"})
+        with self.assertRaises(w.WalkthroughError):
+            walk.op_awaitAbsent({"target": "ax:looking", "timeout": 2})
 
     def test_blank_render_fails(self):
         host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "id": "x"}]}, stats={"colours": 2, "dominantShare": 0.99})

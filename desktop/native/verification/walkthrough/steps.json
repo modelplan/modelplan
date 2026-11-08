@@ -4,12 +4,17 @@
     {
       "id": "first-run-window",
       "title": "First-run window",
-      "expected": "The Set up ModelPlan window lists the synthetic subscriptions; the widget is visible beside it.",
+      "expected": "The Set up ModelPlan window lists the synthetic subscriptions (since build 14: one row per tool found, with a checkbox); the widget is visible beside it.",
       "actions": [
         {
           "op": "await",
           "target": "ax:firstRun.done",
           "timeout": 30
+        },
+        {
+          "op": "awaitAbsent",
+          "target": "ax:scope.firstRun.looking",
+          "timeout": 20
         },
         {
           "op": "park"
@@ -28,7 +33,7 @@
     {
       "id": "first-run-done",
       "title": "First run finished",
-      "expected": "Done closes the window and the widget stays. No hint is due here: v1 hints are for a concealed widget.",
+      "expected": "Done closes the window and the widget stays. With the tool chooser (build 14) Done needs one tool ticked; a tool found is ticked by default, so the walk ticks one only when the page asks for it. No hint is due here: v1 hints are for a concealed widget.",
       "requires": [
         "first-run-window"
       ],
@@ -37,6 +42,20 @@
           "op": "press",
           "by": "id",
           "value": "firstRun.login"
+        },
+        {
+          "op": "when",
+          "present": "ax:scope.firstRun.pickOne",
+          "then": [
+            {
+              "op": "click",
+              "target": "ax^:scope.firstRun.tool."
+            },
+            {
+              "op": "wait",
+              "seconds": 0.5
+            }
+          ]
         },
         {
           "op": "click",
@@ -58,6 +77,73 @@
       "checks": [
         {
           "absent": "ax:firstRun.done"
+        }
+      ]
+    },
+    {
+      "id": "widget-found",
+      "title": "Widget found and kept out",
+      "expected": "A fresh install starts with the widget collapsed (D56, build 14). Find Quota Widget in the status menu slides it out, and Auto-Collapse is turned off from the widget's own menu so the rest, card and size steps see the whole widget. A build without Find Quota Widget starts expanded and skips this.",
+      "actions": [
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.2
+        },
+        {
+          "op": "when",
+          "present": "ax:status.findQuotaWidget",
+          "then": [
+            {
+              "op": "press",
+              "by": "id",
+              "value": "status.findQuotaWidget"
+            },
+            {
+              "op": "await",
+              "target": "ax^:dock.subscription.",
+              "timeout": 10
+            },
+            {
+              "op": "click",
+              "target": "ax:dock.grip.0",
+              "button": "right"
+            },
+            {
+              "op": "wait",
+              "seconds": 1.2
+            },
+            {
+              "op": "press",
+              "by": "id",
+              "value": "dock.menu.autoCollapse"
+            }
+          ]
+        },
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 3
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "exists": "ax^:dock.subscription."
         }
       ]
     },
