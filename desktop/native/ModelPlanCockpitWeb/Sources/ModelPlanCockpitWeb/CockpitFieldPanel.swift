@@ -48,7 +48,7 @@ import WebKit
     let panel = FieldWindow(contentRect: NSRect(origin: origin, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
     panel.isReleasedWhenClosed = false; panel.level = Self.level; panel.hasShadow = true
     panel.backgroundColor = .black; panel.appearance = NSAppearance(named: .darkAqua); panel.delegate = self
-    let view = WKWebView(frame: NSRect(origin: .zero, size: size), configuration: config)
+    let view = CockpitWebView(frame: NSRect(origin: .zero, size: size), configuration: config)
     view.autoresizingMask = [.width, .height]; view.allowsBackForwardNavigationGestures = false
     panel.contentView = view
     window = panel; webView = view

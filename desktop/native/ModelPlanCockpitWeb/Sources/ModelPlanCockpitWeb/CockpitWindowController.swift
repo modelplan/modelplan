@@ -90,6 +90,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var snapGuide: NSPanel?
   public let bridge: CockpitBridgeState
   private var web: WKWebView?
+  /// G3-55: set by the first main-frame navigation of this web view; later ones (Reload) are cancelled.
+  private var pageLoadStarted = false
   private let proxy = MessageProxy()
   private var observers: [NSObjectProtocol] = []
   private var freshnessObservers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -245,7 +247,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
   #endif
   public var queryTicket: CockpitQueryTicket? { bridge.queryTicket }
-  private var pageURL: URL {
+  var pageURL: URL {
     URL(string: "modelplan-cockpit://bundle/index.html?pageId=\(bridge.pageID.uuidString)")!
   }
 
@@ -304,7 +306,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
       configureVerification?(config)
     #endif
-    let view = WKWebView(frame: .zero, configuration: config)
+    let view = CockpitWebView(frame: .zero, configuration: config)
+    pageLoadStarted = false
     // Owner review 11-08 / CKP-SHELL-25: only the hull and canopy are drawn; the web view paints no backing of its
     // own, so the clear panel shows the desktop around the transparent page.
     view.setValue(false, forKey: "drawsBackground")
@@ -480,8 +483,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         waiter?.resume()
       case .action(let intent):
         switch intent {
-        case .detach: setAttached(false)
-        case .putBack: setAttached(true)
         case .shutterToggle:
           if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
         case .close: closeAnimated()
@@ -613,9 +614,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
   ) {
-    decisionHandler(
-      navigationAction.targetFrame?.isMainFrame == true && navigationAction.request.url == pageURL
-        ? .allow : .cancel)
+    let allowed = CockpitNavigationPolicy.allows(
+      isMainFrame: navigationAction.targetFrame?.isMainFrame == true, url: navigationAction.request.url,
+      pageURL: pageURL, type: navigationAction.navigationType, alreadyLoaded: pageLoadStarted)
+    if allowed { pageLoadStarted = true }
+    decisionHandler(allowed ? .allow : .cancel)
   }
   public func webView(
     _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
@@ -724,19 +727,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     dragRegion?.frame = fit.scaledTitleDragFrame
     publishAppearance()
   }
-  private func setAttached(_ attached: Bool) {
-    guard let window, shellSession.detached == attached else { return }
-    if !attached {
-      shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
-    } else {
-      shellSession.detached = false
-      guard let (usable, icon) = environment(), let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return }
-      if appearance.reduceMotion { applyLayout() }
-      else {
-        NSAnimationContext.runAnimationGroup { context in
-          context.duration = 0.25; context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-          window.animator().setFrame(fit.frame, display: true)
-        }
+  /// Returns a dragged-out cockpit to the menu bar anchor. The only way home is the drag snap.
+  private func snapHome() {
+    guard let window, shellSession.detached else { return }
+    shellSession.detached = false
+    guard let (usable, icon) = environment(), let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return }
+    if appearance.reduceMotion { applyLayout() }
+    else {
+      NSAnimationContext.runAnimationGroup { context in
+        context.duration = 0.25; context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        window.animator().setFrame(fit.frame, display: true)
       }
     }
     updateAppearance(appearance)
@@ -765,7 +765,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       guard shellSession.detached else { return }
       if let (_, _) = environment(), let home = layout?.frame,
          hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40 {
-        setAttached(true)
+        snapHome()
       } else { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     case .cancelled: cancelDrag()
     }

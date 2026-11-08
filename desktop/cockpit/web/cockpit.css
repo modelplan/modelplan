@@ -36,7 +36,6 @@
 /* The approved strip art is shared between editions; adapt its metal to day
    without changing the artwork or the separately licensed source sheet. */
 :root[data-theme="day"] .ck-head::before,:root[data-theme="day"] .ck-head .key::before,:root[data-theme="day"] .shutter-slider::before,:root[data-theme="day"] .shutter-thumb,:root[data-theme="day"] .shutter-blind{filter:invert(.76) hue-rotate(180deg)}
-:root[data-theme="day"] .ck-head .detach-glyph{background:var(--silk-hi)}
 
 /* Bounded caution blink; hidden, closed and reduced-motion surfaces stay still. */
 @keyframes cockpit-caution-blink{50%{filter:brightness(.45)}}
