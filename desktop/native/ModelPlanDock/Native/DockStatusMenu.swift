@@ -156,7 +156,6 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         cell.bezelStyle = button.bezelStyle
         cell.isBordered = button.isBordered
         cell.alignment = button.alignment
-        cell.imageHugsTitle = (button.cell as? NSButtonCell)?.imageHugsTitle ?? false
         return cell
     }
     public override func hitTest(_ point:NSPoint)->NSView?{nil}
