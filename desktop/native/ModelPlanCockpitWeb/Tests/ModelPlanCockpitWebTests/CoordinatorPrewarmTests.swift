@@ -132,7 +132,7 @@ final class CoordinatorPrewarmTests: XCTestCase {
     await coordinator.consume(try reply(session))
     await client.complete(); await coordinator.joinCurrentQueryForVerification()
     XCTAssertEqual(warm.displayedWhileHidden, 0, "nothing is displayed on a hidden page")
-    await coordinator.consume(.rowsChanged)
+    coordinator.refresh() // what a row change asks for
     requests = await client.requests
     XCTAssertEqual(requests, 1, "row changes while hidden wait for the open")
 
