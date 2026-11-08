@@ -143,7 +143,9 @@ extension CommunityCockpitEntryTests {
             XCTAssertEqual(NSApp.activationPolicy(), .regular, "while Settings is open the app has a Dock icon and the standard menu")
             let main = try XCTUnwrap(NSApp.mainMenu?.items.first?.submenu)
             XCTAssertTrue(main.items.contains { $0.keyEquivalent == "," }, "Command-comma opens Settings")
-            XCTAssertTrue(main.items.contains { $0.keyEquivalent == "w" }, "Command-W closes the window")
+            let close = try XCTUnwrap(main.items.first { $0.keyEquivalent == "w" }, "Command-W closes the window")
+            XCTAssertEqual(close.action, #selector(NSWindow.performClose(_:)))
+            XCTAssertTrue(["Close Window", "关闭窗口"].contains(close.title), "Close Window is localized like the rest of the app menu")
             XCTAssertTrue(main.items.contains { $0.keyEquivalent == "q" }, "Command-Q quits")
             newVisibleWindows(since: before, except: window).forEach { $0.close() }
             try await waitUntil("closing Settings returns the app to an accessory") { NSApp.activationPolicy() == .accessory }
