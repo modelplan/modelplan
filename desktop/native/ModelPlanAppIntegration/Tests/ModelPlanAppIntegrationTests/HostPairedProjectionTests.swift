@@ -220,7 +220,7 @@ actor EntrySyntheticClient: EngineClient {
     func testD18NormalOptionArrowsSaveAndAnnounceWithEitherReduceMotionSource() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-keyboard-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, secondWeekly: 55)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -270,7 +270,7 @@ actor EntrySyntheticClient: EngineClient {
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 25, secondWeekly: 20)
         func start() async throws -> EngineDockMenuApplication {
-            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
             let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
                 applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
                 dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
@@ -336,7 +336,7 @@ actor EntrySyntheticClient: EngineClient {
     func testS11PulseBandsReachTheRenderedRingsReadoutsAndCardRows() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-bands-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let fixture = try Self.rows(weekly: 50, secondWeekly: 51)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -392,7 +392,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryReprojectsAtVerifiedDeadlineWithoutNewRowsAndClearsOnRevoke() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z")), elapsed = 0.0
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75)
         var acceptedStore: EngineStore?
@@ -421,7 +421,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryPreservesTwoStableAccountsAndClearsBothOnRevocation() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-multi-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z")), elapsed = 0.0
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, secondWeekly: 33)
         var acceptedStore: EngineStore?
@@ -490,7 +490,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardShowsEachAdmittedWindowsOwnSourceAndAge() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("window-provenance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let readings = try Self.rows(weekly: 75, windowSources: .distinct)
         var elapsed = 0.0
@@ -533,7 +533,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardRetainsAccountProvenanceForRestrictedAndSourceLessMembers() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-restricted-provenance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, secondWeekly: 55, windowSources: .restrictedWithLegacyMember)
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
@@ -606,7 +606,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardResetTimeUsesTheCompactPrototypeFormat() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-copy-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let resets = ISO8601DateFormatter().string(from: wall.addingTimeInterval(2 * 3600 + 14 * 60))
         let snapshot = try Self.rows(weekly: 75, weeklyDeadline: resets)
@@ -633,7 +633,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardShowsAMoneyBalanceWithoutTheRawFloat() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("money-balance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, reserveBalance: 14_207.8550653333, reserveUnit: "money")
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -659,7 +659,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardShowsNoNativeTooltips() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("card-tooltips-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let readings = try Self.rows(weekly: 75, extraWindow: true)
         var elapsed = 0.0
@@ -692,7 +692,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalReserveLabelAndNumberHaveVisibleRoomInBothLanguages() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-extent-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, reserveBalance: 19_613.9573653333)
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
@@ -761,7 +761,7 @@ actor EntrySyntheticClient: EngineClient {
         ] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-expiry-" + UUID().uuidString)
             addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: [language])
+            let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: [language])
             let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T16:00:00Z"))
             var wall = start
             let snapshot = try Self.rows(weekly: 75, resetCardClock: start, resetFacts: .init(count: 1, expiresIn: 12 * 60))
@@ -815,7 +815,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardAdmitsOnlyVerifiedResetFactsAndLinks() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-card-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 12, day: 2, hour: 16)))
         let snapshot = try Self.rows(weekly: 75, resetCardClock: wall)
         let officialURL = "https://status.openai.com/incidents/demo-reset"
@@ -937,7 +937,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryMagnifiesNozzleWithoutMovingItsReadout() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-magnification-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         // Keep the tightest window above the 50 % amber band (#562), so the readout is neutral
         // ink, with ink-heavy digits ("58%") like the original 42.5 % fixture had.
@@ -1091,7 +1091,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalMenuKeepsActionsAndLocalizesOneLinePerFailedReader() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-menu-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let healthy = try Self.rows(weekly: 75, secondWeekly: 55)
         let failed = try Self.rows(weekly: 75, secondWeekly: 55, sequence: 8, readerFailed: true)
@@ -1109,8 +1109,8 @@ actor EntrySyntheticClient: EngineClient {
         func items() throws -> [NSMenuItem] {
             try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
         }
-        let english = ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"]
-        let chinese = ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
+        let english = ["Refresh", "Show Quota Widget", "Find Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"]
+        let chinese = ["刷新", "显示额度挂件", "找到额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
         XCTAssertEqual(try items().map(\.title), english)
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try items().map(\.title), chinese)
@@ -1135,7 +1135,7 @@ actor EntrySyntheticClient: EngineClient {
     func testS07NormalEntryDistinguishesPaintedHelpTargetsAndFocus() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-help-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, resetID: "synthetic-dock-help")
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -1214,7 +1214,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-language-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         var interactionElapsed=0.0
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, secondWeekly: 55)
@@ -1265,7 +1265,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryUniqueUnboundMemberUsesSnapshotScopedProofAndClears() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-unbound-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, unbound: true)
         var acceptedStore: EngineStore?
@@ -1288,7 +1288,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalHostCloseCancelsDeadlineAndRetiresCachedContent() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-close-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
@@ -1310,7 +1310,7 @@ actor EntrySyntheticClient: EngineClient {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-display-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let fixture = try Self.rows(weekly: 15, fiveHour: 9)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
@@ -1367,7 +1367,7 @@ actor EntrySyntheticClient: EngineClient {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let iso = ISO8601DateFormatter()
         var wall = try XCTUnwrap(iso.date(from: "2026-12-02T00:00:00Z"))
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let fixture = try Self.rows(weekly: 15, weeklyDeadline: "2026-12-02T00:01:00Z", includeSession: false)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
@@ -1398,7 +1398,7 @@ actor EntrySyntheticClient: EngineClient {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let iso = ISO8601DateFormatter()
         var wall = try XCTUnwrap(iso.date(from: "2026-12-02T00:00:00Z"))
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let fixture = try Self.rows(weekly: 15, fiveHour: 9, weeklyDeadline: "2026-12-02T00:01:00Z", accountFreshUntil: "2028-12-01T00:00:00Z")
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
@@ -1434,7 +1434,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryKeepsLoadingAndFailureOutOfMenusWithoutAdmittedRows() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-first-open-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,

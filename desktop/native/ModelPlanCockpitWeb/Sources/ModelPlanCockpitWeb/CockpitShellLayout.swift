@@ -26,7 +26,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
         guard available > 0 else { return nil }
         let scale = min(1, usable.width / 636, available / (height + 34))
         let size = CGSize(width: 636 * scale, height: (height + 34) * scale)
-        let x = max(usable.minX, min(anchor.midX - size.width / 2, usable.maxX - size.width))
+        let x = attachedX(anchor: anchor, width: size.width, scale: scale, usable: usable)
         return Self(profile: profile, shutterClosed: closed, forcedClosed: forcedClosed, scale: scale, rootHeight: height,
                     frame: CGRect(x: x, y: top - size.height, width: size.width, height: size.height))
     }
@@ -35,6 +35,16 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public var titleDragFrame: CGRect {
         let stripTop: CGFloat = shutterClosed ? 45 : (profile == .full ? 225 : 57)
         return CGRect(x: 24, y: rootHeight + 34 - stripTop - 29, width: 216, height: 32)
+    }
+    /// G3-46: with no visible menu bar icon, open at the top-right of the screen, directly below the menu bar.
+    public static func hiddenIconAnchor(usable: CGRect) -> CGRect {
+        CGRect(x: usable.maxX, y: usable.maxY, width: 0, height: 0)
+    }
+    /// G3-46 (owner D53): like other menu bar tools, the cockpit's visible left edge lines up with the menu
+    /// bar icon's left edge. The 636 px raster has an 8 px transparent margin around the 620 px shell. When
+    /// that would run past the right edge it shifts left just enough to stay on the screen.
+    public static func attachedX(anchor: CGRect, width: CGFloat, scale: CGFloat, usable: CGRect) -> CGFloat {
+        max(usable.minX, min(anchor.minX - 8 * scale, usable.maxX - width))
     }
     public func shellState(attached: Bool, scope: String = "all") -> CockpitShellState {
         .init(closed: shutterClosed, attached: attached, forcedClosed: forcedClosed,

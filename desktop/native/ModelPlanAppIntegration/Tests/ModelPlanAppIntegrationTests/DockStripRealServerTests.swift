@@ -132,7 +132,7 @@ import ModelPlanSettings
         func assertRole(_ percent: Double, _ role: DockQuotaStatus?, line: UInt = #line) throws {
             let binding = try XCTUnwrap(strip.quotaSegmentColorRolesForChecks.first { $0.remainingPercent == percent }, line: line)
             XCTAssertEqual(binding.quotaRole, role, line: line)
-            XCTAssertEqual(binding.opacity, role == nil ? 0 : 0.18, line: line)
+            XCTAssertEqual(binding.opacity, role == nil ? 0 : 0.4, line: line) // G3-51: the prototype segment opacity
         }
         XCTAssertEqual(strip.quotaSegmentColorRolesForChecks.count, 3)
         try assertRole(51, nil)
