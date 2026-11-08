@@ -40,12 +40,6 @@ struct DockRequestedHelpAnchor: Equatable {
         // `avoid` (the widget itself) only steers placement. Leaders must still reach targets inside it,
         // so it is not a reading the layer routes around.
         var obstacles = blocked + avoid + visible.map(\.rect)
-        let headerWidth = min(400, viewport.width - 32)
-        let headerText = catalog.metaphor + "\n" + catalog.dismissal
-        let headerHeight = ceil(recipe.measure(headerText, width: headerWidth - 16, role: .header).height) + 10
-        guard let header = HelpUIGeometry.placeCard(anchor: visible[0].rect,
-                size: CGSize(width: headerWidth, height: headerHeight), viewport: viewport, blocked: obstacles) else { return nil }
-        map.header = header; obstacles.append(header)
         var frames: [String: CGRect] = [:]
         var columnBottom = -CGFloat.infinity
         for anchor in visible {
@@ -75,7 +69,7 @@ struct DockRequestedHelpAnchor: Equatable {
                 let y = max(anchor.rect.midY - height / 2, columnBottom + 4, 32)
                 let candidate = CGRect(x: x, y: y, width: width, height: height)
                 if candidate.minX >= 8, candidate.maxX <= viewport.width - 8, candidate.maxY <= viewport.height - 8,
-                   !(blocked + [header]).contains(where: { $0.intersects(candidate) }) {
+                   !blocked.contains(where: { $0.intersects(candidate) }) {
                     beside = candidate; columnBottom = candidate.maxY
                 }
             }
@@ -83,6 +77,13 @@ struct DockRequestedHelpAnchor: Equatable {
                                                                  viewport: viewport, blocked: obstacles) else { return nil }
             frames[labelID] = frame; obstacles.append(frame)
         }
+        // The header goes last, so that no caption has to route a leader around it.
+        let headerWidth = min(400, viewport.width - 32)
+        let headerText = catalog.metaphor + "\n" + catalog.dismissal
+        let headerHeight = ceil(recipe.measure(headerText, width: headerWidth - 16, role: .header).height) + 10
+        guard let header = HelpUIGeometry.placeCard(anchor: visible[0].rect,
+                size: CGSize(width: headerWidth, height: headerHeight), viewport: viewport, blocked: obstacles) else { return nil }
+        map.header = header
         map.captionFrames = frames
         map.straightLeaders = true
         return HelpUIRenderInput(sessionID: session, viewport: viewport, profile: .compact640, language: language,
