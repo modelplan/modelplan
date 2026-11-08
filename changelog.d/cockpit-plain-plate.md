@@ -1,0 +1,1 @@
+At night the cockpit again shows its plain metal shell, its rounded hull and side boosters, around the c01 canopy; it had been switched off while waiting for hull art that is not part of this release.

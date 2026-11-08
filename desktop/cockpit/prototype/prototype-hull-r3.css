@@ -32,10 +32,8 @@
     --hull-cone-h:20px;--hull-crown-height:12px;--hull-upper-height:308px;--hull-lower-height:212px;--hull-record-height:58px;
   }
 .ck-shell :is(.hull-crown,.hull-upper,.hull-cone,.hull-lower,.hull-record){display:none}
-:root[data-theme="night"] .ck-shell{background:none;box-shadow:none;border-radius:0;transition:none;pointer-events:none}
+:root[data-theme="night"] .ck-shell{transition:none;pointer-events:none}
 
-:root[data-theme="night"] .ck-shell::before{inset:0;clip-path:inset(12px 16px 22px);border-radius:0;box-shadow:none;background:radial-gradient(120% 60% at 18% 0,var(--metal-sheen),transparent 60%),linear-gradient(180deg,var(--metal-1),var(--metal-2) 45%,var(--metal-3))}
-:root[data-theme="night"] .ck-booster{display:none}
 :root[data-theme="night"] .ck{--hull-record-span:var(--tape-h);--hull-cap-height:var(--hull-crown-height);--hull-cone-top:calc(100% - var(--console-h) - var(--tape-h) - 35.5px - var(--hull-cone-h) / 2)}
 :root[data-theme="night"] .ck.shut{--hull-cap-height:12px;--hull-record-span:calc(var(--tape-h) + (100% - 120px - var(--eng-h) - var(--console-h) - var(--tape-h)) / 3);--hull-cone-top:calc(84.5px + var(--eng-h) - var(--hull-cone-h) / 2 + (100% - 120px - var(--eng-h) - var(--console-h) - var(--tape-h)) / 3)}
 
