@@ -8,6 +8,9 @@
 import type {CautionItem} from './caution.js';
 
 const MAX=64;
+// Only a verified subscription reference (16 hex) names the same account after a restart. A fallback member's identity
+// (`row#route#position`) holds for one session and could match another account later, so it is never kept or restored.
+const durableMember=(stable:string)=>{try{const p=JSON.parse(stable);return Array.isArray(p)&&typeof p[0]==='string'&&/^[a-f0-9]{16}$/.test(p[0]);}catch{return false;}};
 const window_=(stable:string)=>{try{const p=JSON.parse(stable);return Array.isArray(p)&&p.length===3?JSON.stringify([p[0],p[1]]):null;}catch{return null;}};
 
 export interface CautionMemory {
@@ -20,14 +23,14 @@ export interface CautionMemory {
 }
 export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):CautionMemory {
  const acked=new Set<string>(),shown=new Set<string>();let current:string[]=[],newest:string|null=null;
- const report=()=>onChange([...acked].slice(-MAX));
+ const report=()=>onChange([...acked].filter(durableMember).slice(-MAX));
  return {
-  restore(ids){for(const id of ids.slice(0,MAX))if(typeof id==='string')acked.add(id);},
+  restore(ids){for(const id of ids.slice(0,MAX))if(typeof id==='string'&&durableMember(id))acked.add(id);},
   update(items,read){
    const lit=items.filter(x=>x.level!=='blue').map(x=>x.stable);
    // Recurrence: a condition is over only when its window has a real reading and no longer qualifies.
    let changed=false;
-   for(const set of [acked,shown])for(const id of [...set]){const w=window_(id);if(w!==null&&read.has(w)&&!lit.includes(id)){set.delete(id);if(set===acked)changed=true;}}
+   for(const set of [acked,shown])for(const id of [...set]){const w=window_(id);if(w!==null&&read.has(w)&&!lit.includes(id)){set.delete(id);if(set===acked&&durableMember(id))changed=true;}}
    if(changed)report();
    const fresh=lit.filter(id=>!acked.has(id)&&!shown.has(id));
    for(const id of fresh){shown.add(id);newest=id;}
@@ -35,7 +38,7 @@ export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):Cautio
    return fresh.length>0;
   },
   acknowledge(){
-   const before=acked.size;for(const id of current)acked.add(id);if(acked.size!==before)report();
+   const before=[...acked].filter(durableMember).join('|');for(const id of current)acked.add(id);if([...acked].filter(durableMember).join('|')!==before)report();
    if(newest===null||!current.includes(newest))newest=current[0]??null;
    return newest;
   },

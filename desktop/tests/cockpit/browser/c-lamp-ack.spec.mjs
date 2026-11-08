@@ -113,3 +113,16 @@ test('G3-56 a pressed amber caution that escalates to red blinks again',async({p
  w.remainingPercent=20;expect(await receive(send('display',{data}))).toBe(true);
  await expect(lamp).toHaveClass(/\bred\b/);await expect(lamp).toHaveClass(flash);
 });
+
+test('G3-56 a fallback member (no verified subscription reference) is acknowledged in memory only',async({page})=>{
+ const {data,windows}=zeroData();windows[0].remainingPercent=0;
+ // No verified subscription: the member is keyed row#route, which names a different account after a restart.
+ data.subscriptions=[];for(const a of data.projection.rows[0].accounts)a.subscriptionRef=null;
+ let o=await open(page,data);await expect(o.lamp).toHaveClass(flash);await pressed(page,o.lamp);
+ expect(await posted(page)).toEqual([]);
+ // This session: a refresh stays steady.
+ expect(await o.receive(o.send('display',{data}))).toBe(true);await expect(o.lamp).not.toHaveClass(flash);
+ // A host that was handed such an id anyway (an older build) cannot suppress a blink with it.
+ const id=JSON.stringify([data.projection.rows[0].id+'#'+data.projection.rows[0].accounts[0].route,windows[0].id,'red']);
+ o=await open(page,data,[id]);await expect(o.lamp).toHaveClass(flash);
+});
