@@ -16,7 +16,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax:firstRun.done"
+        "crop": "window-of:ax:firstRun.done",
+        "window": "window-of:ax:firstRun.done"
       },
       "checks": [
         {
@@ -86,7 +87,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax:dock.grip.0"
+        "crop": "window-of:ax:dock.grip.0",
+        "window": "window-of:ax:dock.grip.0"
       },
       "checks": [
         {
@@ -113,7 +115,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax:dock.grip.0"
+        "crop": "window-of:ax:dock.grip.0",
+        "window": "window-of:ax:dock.grip.0"
       },
       "checks": [
         {
@@ -446,7 +449,8 @@
         }
       ],
       "shot": {
-        "crop": "remembered"
+        "crop": "remembered",
+        "window": "remembered"
       },
       "checks": [
         {
@@ -539,7 +543,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax^:dock.card."
+        "crop": "window-of:ax^:dock.card.",
+        "window": "window-of:ax^:dock.card."
       },
       "checks": [
         {
@@ -568,7 +573,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax^:dock.card."
+        "crop": "window-of:ax^:dock.card.",
+        "window": "window-of:ax^:dock.card."
       },
       "checks": [
         {
@@ -623,7 +629,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax^:dock.card."
+        "crop": "window-of:ax^:dock.card.",
+        "window": "window-of:ax^:dock.card."
       },
       "checks": [
         {
@@ -686,7 +693,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -742,7 +750,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -775,7 +784,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1045,7 +1055,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1209,7 +1220,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:label:ModelPlan Cockpit"
+        "crop": "window-of:label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1224,7 +1236,7 @@
     {
       "id": "air-1470x956",
       "title": "Cockpit at 1470x956, Dock at the bottom",
-      "expected": "On a 1470x956 screen (MacBook Air M2/M3 default) the full cockpit fits between the menu bar and the Dock (G3-39). Skipped where the host offers no such mode.",
+      "expected": "On a 1470x956 screen (MacBook Air M2/M3 default) the full cockpit fits between the menu bar and the Dock (G3-39). Hosted Macs offer no 1470x956, so the walk uses 1280x960: nearly the same height, which is what decides the fit.",
       "actions": [
         {
           "op": "toggleCockpit",
@@ -1235,6 +1247,12 @@
           "size": [
             1470,
             956
+          ],
+          "fallback": [
+            [
+              1280,
+              960
+            ]
           ]
         },
         {
@@ -1254,7 +1272,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:label:ModelPlan Cockpit"
+        "crop": "window-of:label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1292,6 +1311,177 @@
         {
           "absent": "label:ModelPlan Cockpit"
         },
+        {
+          "exists": "ax:dock.grip.0"
+        }
+      ]
+    },
+    {
+      "id": "settings-window",
+      "title": "Settings window",
+      "expected": "Settings… in the status menu opens the Settings window on its first page; the visual comparison reads its window shot.",
+      "actions": [
+        {
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.2
+        },
+        {
+          "op": "press",
+          "by": "title",
+          "value": "Settings…"
+        },
+        {
+          "op": "await",
+          "target": "ax:settings.sidebar",
+          "timeout": 15
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:settings.sidebar",
+        "window": "window-of:ax:settings.sidebar"
+      },
+      "checks": [
+        {
+          "exists": "ax:settings.sidebar"
+        }
+      ]
+    },
+    {
+      "id": "widget-size-S",
+      "title": "Quota Widget size S",
+      "expected": "Settings > Quota Widget size S resizes the widget; the visual comparison reads its window shot against the prototype's S widget.",
+      "requires": [
+        "settings-window"
+      ],
+      "actions": [
+        {
+          "op": "press",
+          "by": "id",
+          "value": "settings.size"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.6
+        },
+        {
+          "op": "press",
+          "by": "title",
+          "value": "S"
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0",
+        "window": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "exists": "ax:dock.grip.0"
+        }
+      ]
+    },
+    {
+      "id": "widget-size-L",
+      "title": "Quota Widget size L",
+      "expected": "Settings > Quota Widget size L resizes the widget; the visual comparison reads its window shot against the prototype's L widget.",
+      "requires": [
+        "settings-window"
+      ],
+      "actions": [
+        {
+          "op": "press",
+          "by": "id",
+          "value": "settings.size"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.6
+        },
+        {
+          "op": "press",
+          "by": "title",
+          "value": "L"
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0",
+        "window": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "exists": "ax:dock.grip.0"
+        }
+      ]
+    },
+    {
+      "id": "widget-size-M",
+      "title": "Quota Widget size back to M",
+      "expected": "Settings > Quota Widget size M restores the default widget.",
+      "requires": [
+        "settings-window"
+      ],
+      "actions": [
+        {
+          "op": "press",
+          "by": "id",
+          "value": "settings.size"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.6
+        },
+        {
+          "op": "press",
+          "by": "title",
+          "value": "M"
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {},
+      "checks": [
         {
           "exists": "ax:dock.grip.0"
         }
