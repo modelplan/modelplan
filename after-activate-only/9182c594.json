@@ -1,0 +1,33 @@
+{
+ "firstRunShown": true,
+ "frontAfterFirstRun": "\"LSDisplayName\"=\"System Settings\"",
+ "frontBeforeLaunch": "\"LSDisplayName\"=\"System Settings\"",
+ "host": {
+  "accessibilityTrusted": true,
+  "listenEvent": true,
+  "metalDevice": "Apple Paravirtual device",
+  "postEvent": true,
+  "screenCapture": true,
+  "screens": [
+   {
+    "frame": [
+     0,
+     0,
+     1920,
+     1080
+    ],
+    "scale": 1,
+    "visible": [
+     0,
+     73,
+     1920,
+     982
+    ]
+   }
+  ],
+  "sessionOnConsole": true,
+  "sessionUser": "runner"
+ },
+ "label": "9182c594",
+ "source": "9182c594b49fcc72d3070eb1b7c3c8f7e4ab1edc"
+}
