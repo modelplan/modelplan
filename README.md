@@ -12,3 +12,5 @@ Real CLI vendor keys, two working subscriptions, page over a wallpaper-like back
 Prototype comparisons (unpublished study) are on the shared disk only: handoffs/shared/cockpit-review-1108/.
 
 d68/ (owner D68): main = ff1b1264, after = base-bells 4e083815 (r3 hull plain plates, idle bells at the hull-bottom colour). Prototype comparisons on the shared disk only.
+
+d70/: base-bells b706c2d4 (D70 study bells, r3 hull, clear window). bell-states.png = active, idle, empty slot.
