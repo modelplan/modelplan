@@ -90,7 +90,7 @@ func (s *RefreshScheduler) automatic() {
 					}
 					continue
 				}
-				result, _, err := s.Request(s.ctx, wire.RefreshRequestParams{Scopes: []string{scope}})
+				result, _, err := s.request(s.ctx, wire.RefreshRequestParams{Scopes: []string{scope}}, true)
 				outcome, reason := refreshNotAttempted, refreshUnavailable
 				if err == nil && len(result) == 1 {
 					if result[0].DisabledReason == nil {

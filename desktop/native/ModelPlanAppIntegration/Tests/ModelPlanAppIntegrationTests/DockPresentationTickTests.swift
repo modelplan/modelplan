@@ -64,7 +64,7 @@ private actor TickSilentClient: EngineClient {
         // The reading is valid for 150 s; its 5-hour window resets in 3 hours.
         row["id"] = "codex"; row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock"]
         row["expiresAt"] = stamp(150); row["refreshNotBefore"] = stamp(0)
-        row["reason"] = ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
+        row["reason"] = ["code": "ok", "text": ["en": "Reading available", "zh": "已读到用量"]]
         account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = "current"
         account["observedAt"] = stamp(-60); account["freshUntil"] = stamp(150); account["lastFailure"] = NSNull()
         account.removeValue(forKey: "resetCards")

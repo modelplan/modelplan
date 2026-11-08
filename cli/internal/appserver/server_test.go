@@ -792,3 +792,87 @@ func TestRefreshDecisionDiagnosticsCapability(t *testing.T) {
 		})
 	}
 }
+
+type blockingCredentialBackend struct {
+	*memoryBackend
+	entered, release chan struct{}
+}
+
+func (b blockingCredentialBackend) AcceptCredential(ctx context.Context, stamp Stamp, need CredentialNeed, result wire.CredentialResult) error {
+	close(b.entered)
+	<-b.release
+	return b.memoryBackend.AcceptCredential(ctx, stamp, need, result)
+}
+
+// The operation is spent when its result arrives, but its read is what the one-per-provider
+// rule protects: a second operation must wait for the read, not only for the result.
+func TestExplicitCredentialHoldsProviderUntilItsReadEnds(t *testing.T) {
+	backend := blockingCredentialBackend{newMemoryBackend(), make(chan struct{}), make(chan struct{})}
+	c := startClient(t, Config{Backend: backend})
+	c.initialize(t)
+	op, err := c.server.RequestCredential(CredentialNeed{Provider: "claude", Scope: testScope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.next(t, func(m map[string]json.RawMessage) bool { return string(m["method"]) == `"credentials/request"` })
+	c.send(t, 2, "credentials/result", wire.CredentialResult{OperationID: op, Outcome: wire.OutcomeNotFound})
+	<-backend.entered
+	if active, _ := c.server.CredentialHold("claude"); !active {
+		t.Fatal("provider free while the explicit read runs")
+	}
+	if _, err := c.server.RequestCredential(CredentialNeed{Provider: "claude", Scope: testScope}); err == nil {
+		t.Fatal("second operation opened during the read")
+	}
+	close(backend.release)
+	if m := c.response(t, 2); m["error"] != nil {
+		t.Fatal("result rejected")
+	}
+	active, until := c.server.CredentialHold("claude")
+	if active || !until.After(time.Now()) {
+		t.Fatalf("after the read: active=%v until=%v", active, until)
+	}
+}
+
+type racingGrantBackend struct {
+	*memoryBackend
+	server func() *Server
+	raced  chan error
+}
+
+// Grant commits, then a background reader reaches the operation table before the handler does.
+func (b *racingGrantBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (GrantResult, error) {
+	result, err := b.memoryBackend.Grant(ctx, p)
+	if err != nil {
+		return result, err
+	}
+	_, raced := b.server().RequestCredential(CredentialNeed{Provider: "claude", Scope: testScope})
+	b.raced <- raced
+	result.Credentials = []CredentialNeed{{Provider: "claude", Scope: testScope, Interactive: true}}
+	return result, nil
+}
+
+// A user who presses Allow gets the Keychain prompt: the provider is theirs from before the
+// consent commit, so nothing background can open the one operation first and drop the prompt.
+func TestKeychainAllowOwnsProviderBeforeConsentCommits(t *testing.T) {
+	backend := &racingGrantBackend{memoryBackend: newMemoryBackend(), raced: make(chan error, 1)}
+	c := startClient(t, Config{Backend: backend})
+	backend.server = func() *Server { return c.server }
+	c.initialize(t)
+	view, err := backend.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.send(t, 2, "consent/grant", wire.ConsentGrantParams{RequestID: "prompt", ExpectStoreEpoch: view.Stamp.Epoch, ExpectGeneration: view.Stamp.Generation, TextVersion: 1, Allow: []string{testScope}, Deny: []string{}, Keychain: map[string]wire.KeychainChoice{testScope: wire.KeychainAllow}})
+	request := c.next(t, func(m map[string]json.RawMessage) bool { return string(m["method"]) == `"credentials/request"` })
+	var params wire.Envelope[wire.CredentialRequest]
+	if err := json.Unmarshal(request["params"], &params); err != nil {
+		t.Fatal(err)
+	}
+	if !params.Data.Interactive {
+		t.Fatalf("the prompt lost to a background read: %+v", params.Data)
+	}
+	var protocol ProtocolError
+	if raced := <-backend.raced; !errors.As(raced, &protocol) || protocol.Code != wire.CodeBusy {
+		t.Fatalf("background operation during the grant: %v", raced)
+	}
+}

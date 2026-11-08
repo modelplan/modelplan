@@ -24,7 +24,8 @@ enum EngineMenuBarTitle {
         }
         if preferences.menuDisplay == .twoWindows {
             func window(_ period: DockQuotaPeriod) -> Double? {
-                tightest.input.windows.first { $0.isGeneral && $0.period == period }?.remainingPercent
+                tightest.input.windows.first { $0.isGeneral && $0.period == period }
+                    .flatMap { DockInstrumentProjection.admittedRemaining($0, in: tightest.input, now: now) }
             }
             let week = preferences.language == .english ? "wk" : "周"
             let parts = [window(.fiveHour).map { "5h " + shown($0) }, window(.week).map { week + " " + shown($0) }].compactMap { $0 }
