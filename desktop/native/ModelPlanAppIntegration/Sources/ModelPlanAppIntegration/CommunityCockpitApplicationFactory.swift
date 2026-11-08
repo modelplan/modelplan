@@ -185,14 +185,15 @@ struct CockpitUnavailableNotice {
     /// Public model data only: the launch field never receives personal readings. The official page is
     /// the only one that asks; a community bundle has no field page, so the panel is not offered.
     private struct FieldPayload:Encodable {
-        let language:String,reduceMotion:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
+        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
     }
     private var fieldPanel:CockpitFieldPanel?
     var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
-    func fieldPayload() -> String? {
+    /// `lowPower`: Low Power Mode at open (spike 11-08, D63); the panel sends later changes to the page.
+    func fieldPayload(lowPower:Bool=ProcessInfo.processInfo.isLowPowerModeEnabled) -> String? {
         guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
         let mine=details.publication?.models.map(\.id) ?? []
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:nil)
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:nil)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -210,8 +211,9 @@ struct CockpitUnavailableNotice {
         }
     }
     private func openField() {
-        guard let bundle=owner.verifiedBundle,let payload=fieldPayload() else { return }
+        guard let bundle=owner.verifiedBundle else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
+        guard let payload=fieldPayload(lowPower:panel.isLowPower) else { return }
         fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.

@@ -52,3 +52,28 @@ test('D43 every vendor mark the scene asks for loads under the page CSP, close t
   ['openai-white.svg','claude-rounded.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
  for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
 });
+// Spike 11-08 / D63: the page cannot read Low Power Mode, so native passes it in the payload and on every change.
+// Low power renders on demand only with the scene's quiet motion (no camera sway or fly-ins): idle means no frames.
+test('D63 low power: the field mounts quiet, draws no frames while idle, and follows a live change',async({page})=>{
+ await open(page);await show(page,payload(4,{reduceMotion:false,lowPower:true}));
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
+ const stats=()=>page.evaluate(()=>window.modelPlanField.stats());
+ await expect.poll(async()=>(await stats())?.quiet).toBe(true);
+ await page.waitForTimeout(2500);const settled=await stats();expect(settled.lowPower).toBe(true);expect(settled.scheduled).toBe(false);
+ await page.waitForTimeout(2000);expect((await stats()).frames).toBe(settled.frames);
+ expect(await page.evaluate(()=>window.modelPlanField.power(false))).toBe(true);
+ await expect.poll(async()=>(await stats())?.quiet).toBe(false);expect((await stats()).lowPower).toBe(false);
+ expect(await page.evaluate(()=>window.modelPlanField.power(true))).toBe(true);
+ await expect.poll(async()=>(await stats())?.quiet).toBe(true);
+ // A disposed scene's late context-loss report must not replace the new scene with the fallback.
+ await page.waitForTimeout(1500);await expect(page.locator('.field-stage .nogl')).toHaveCount(0);
+ await expect(page.locator('.field-stage canvas')).toHaveCount(1);expect((await stats())?.quiet).toBe(true);
+});
+test('D63 Reduce Motion alone also keeps the scene quiet, and the payload without lowPower is not low power',async({page})=>{
+ await open(page);await show(page,payload(4));
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
+ await expect.poll(()=>page.evaluate(()=>window.modelPlanField.stats()?.quiet)).toBe(true);
+ expect(await page.evaluate(()=>window.modelPlanField.stats().lowPower)).toBe(false);
+});
