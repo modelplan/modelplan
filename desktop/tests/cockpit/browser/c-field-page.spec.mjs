@@ -49,7 +49,7 @@ test('the official porthole opens the field by click and keyboard',async({page})
 test('D43 every vendor mark the scene asks for loads under the page CSP, close to square',async({page})=>{
  await open(page);
  const sizes=await page.evaluate(async names=>Promise.all(names.map(name=>new Promise(done=>{const image=new Image();image.onload=()=>done([name,image.naturalWidth>0,Math.abs(image.naturalWidth/image.naturalHeight-1)<=.05]);image.onerror=()=>done([name,false,false]);image.src='./assets/brands/'+name;}))),
-  ['openai-white.svg','claude-rounded.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
+  ['openai-white.svg','claude-rounded.svg','claude.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
  for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
 });
 // CKP-PORT-11 (D63): the c01 porthole silhouette feathered ~10% into the desktop, derived from the published
@@ -76,4 +76,20 @@ test('CKP-PORT-11 the scene is masked by the silhouette; bare desktop and the fe
  await page.mouse.click(card.x+card.width/2,card.y+card.height-8);expect(await closes()).toBe(0);
  await page.mouse.click(stage.x+3,stage.y+3);expect(await closes()).toBe(1);
  await page.mouse.click(440,4);expect(await closes()).toBe(2);
+});
+// CKP-PORT-11 in the native panel: a transparent WKWebView cannot blur the desktop with backdrop-filter, so the page
+// reports where the frosted card is and the panel puts a behind-window blur there. The scene's plates use the
+// prototype's LCD face (rocket.css .ov-porthole .wb-plates .plate), whose variables live on #cockpit and #overlay.
+test('CKP-PORT-11 the page reports the frosted card rect to the native panel, and the plates have the LCD face',async({page})=>{
+ await page.addInitScript(()=>{window.posted=[];window.messages=[];window.webkit={messageHandlers:{field:{postMessage(m){window.messages.push(JSON.parse(m));window.posted.push(JSON.parse(m).type);}}}};});
+ await page.setViewportSize({width:1323,height:735});await page.goto('/field.html');await page.waitForFunction(()=>!!window.modelPlanField);await show(page,payload());
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ const card=await page.locator('.field-card').boundingBox();
+ await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='card').at(-1)??null)).toEqual({type:'card',x:card.x,y:card.y,width:card.width,height:card.height,radius:12});
+ await page.setViewportSize({width:1100,height:640});
+ const moved=await page.locator('.field-card').boundingBox();
+ await expect.poll(()=>page.evaluate(()=>window.messages.filter(m=>m.type==='card').at(-1)?.y)).toBe(moved.y);
+ expect(await page.evaluate(()=>getComputedStyle(document.getElementById('field')).getPropertyValue('--f-lcd'))).toMatch(/JetBrains Mono/);
+ const plate=page.locator('.wb-plates .plate').first();
+ if(await plate.count())expect(await plate.evaluate(e=>getComputedStyle(e).fontFamily)).toMatch(/JetBrains Mono/);
 });

@@ -31,6 +31,14 @@ function mount(root:HTMLElement) {
  const shaped=featherShape(new URL('runtime/canopy-c01/window-890-1x.png',document.baseURI).href).then(value=>{
   if(disposed){value?.dispose();return;}shape=value;if(value)stage.style.setProperty('--field-mask',`url("${value.maskUrl}")`);stage.dataset.shape=value?'feathered':'none';
  });
+ // A transparent WKWebView cannot blur the desktop behind it, so the native panel puts a behind-window blur under the
+ // card; it learns where the card is (CSS px = points) on every layout change.
+ let reported='';
+ const reportCard=()=>{
+  const r=card.getBoundingClientRect(),message={type:'card',x:r.x,y:r.y,width:r.width,height:r.height,radius:12},key=JSON.stringify(message);
+  if(r.width&&key!==reported){reported=key;post(message);}
+ };
+ const cardWatch=new ResizeObserver(reportCard);cardWatch.observe(card);cardWatch.observe(root);
  // Bare desktop closes: the transparent page around the card and scene, and the scene's own feathered rim.
  root.addEventListener('click',e=>{
   if(!e.isTrusted)return;
@@ -70,7 +78,7 @@ function mount(root:HTMLElement) {
     onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{scene=null;fallback(w.noGl);}});
    scene.renderFor?.(1400);refresh();post({type:'ready'});
   },
-  dispose(){disposed=true;shape?.dispose();shape=null;scene?.dispose();scene=null;root.replaceChildren();},
+  dispose(){disposed=true;cardWatch.disconnect();shape?.dispose();shape=null;scene?.dispose();scene=null;root.replaceChildren();},
  };
 }
 const root=document.getElementById('field');
