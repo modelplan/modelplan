@@ -177,3 +177,8 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 /* Closed (owner D72), as the study composes it: the cap slab, 620 x 16 at 14 px, in the shared gunmetal tone (task 88). */
 :root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{display:block;left:0;width:620px;top:14px;height:16px;-webkit-mask-image:none;mask-image:none;clip-path:none;background:var(--hull-cap,none) center/620px 16px no-repeat;filter:saturate(.12) brightness(.78)}
 :root[data-theme="night"] #cockpit .ck-deck::before{left:0;right:0;clip-path:inset(0)}
+
+/* Owner D76: the Reserve hint floats over the page in the MFD tip style. */
+.mfd-tip.eng-hint{position:fixed;z-index:40}
+/* The comparison title never gives way to its note or links (current unknown made it "Compare …"). */
+.dk-mfd .cmp-h .mfd-title{flex:none}.dk-mfd .cmp-h .cmp-note{min-width:0;overflow:hidden;text-overflow:ellipsis}.dk-mfd .cmp-header-links{min-width:0;overflow:hidden}

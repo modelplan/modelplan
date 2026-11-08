@@ -8,6 +8,9 @@
 // The host CSP blocks style attributes: every value goes through CSSOM, and wire text never becomes CSS.
 import type { WireCockpitData } from '../generated/wire.js';
 import { cockpitMembers } from './members.js';
+import { sessionMember } from './session-binding.js';
+type Session=NonNullable<WireCockpitData['details']>['sessions'][number];
+type Member=ReturnType<typeof cockpitMembers>[number];
 
 const INSET=4,FLAME_MIN=12,FLAME_MAX=24;
 // Status colours shared with the engine fills (study colour-mode.js STATUS_HEX).
@@ -23,21 +26,14 @@ export function flameLength(rate:number|null):number {
  return Math.round(FLAME_MIN+(FLAME_MAX-FLAME_MIN)*Math.max(0,Math.min(1,(rate-30)/90)));
 }
 
-// Which subscription a session runs on, by the rule of session-binding.ts sessionMember() (PR #761), so the bells
-// agree with the faders and the record strip: a producer-verified subscriptionRef wins, and one that names no member
-// leaves the session unbound; without one, the session joins the single subscription of its tool, and with two or
-// more of that tool it stays unbound. Kept here until #761 is on main; then this imports sessionMember().
-const SESSION_TOOLS:Readonly<Record<string,string>>={codex:'codex','claude-code':'claude',claude:'claude',zcode:'zai',zai:'zai',glm:'zai',opencode:'opencodego',opencodego:'opencodego',gemini:'gemini',grok:'grok',kimi:'kimi',qwen:'qwen',cursor:'cursor',copilot:'copilot'};
-type Session=NonNullable<WireCockpitData['details']>['sessions'][number];
-export function sessionMemberKey(members:readonly {key:string;row:{id:string}}[],session:Pick<Session,'source'|'subscriptionRef'>):string|null {
- if(session.subscriptionRef)return members.some(m=>m.key===session.subscriptionRef)?session.subscriptionRef:null;
- const tool=SESSION_TOOLS[session.source.toLowerCase()];if(!tool)return null;
- const same=members.filter(m=>m.row.id===tool);
- return same.length===1?same[0]!.key:null;
+// Which subscription a session runs on: the rule of session-binding.ts sessionMember() (PR #761), so the bells agree
+// with the faders and the record strip.
+export function sessionMemberKey(members:readonly Member[],session:Pick<Session,'source'|'subscriptionRef'>):string|null {
+ return sessionMember(members,session)?.key??null;
 }
 
 // A member works while one of its sessions is running (the in-use state the engine reports).
-function running(data:WireCockpitData,members:readonly {key:string;row:{id:string}}[],key:string):{working:boolean;rate:number|null} {
+function running(data:WireCockpitData,members:readonly Member[],key:string):{working:boolean;rate:number|null} {
  const detail=data.details;if(!detail||detail.sessionCoverage!=='local-last-seen')return {working:false,rate:null};
  const live=detail.sessions.filter(s=>s.state==='running'&&sessionMemberKey(members,s)===key);
  const rates=live.map(s=>s.rate).filter((r):r is number=>typeof r==='number'&&Number.isFinite(r)&&r>=0);
