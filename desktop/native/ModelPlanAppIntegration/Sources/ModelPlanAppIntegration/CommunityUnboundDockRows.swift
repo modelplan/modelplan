@@ -91,13 +91,23 @@ public struct DockContentRow: Sendable {
         // The prototype has no money row: a money balance keeps its own name on the one line.
         let reserve = DockCardRow(id: "reserve", kind: .reserve, label: credits?.label ?? (english ? "Reserve" : "储备"),
             value: [count?.value ?? "", credits?.value ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
-            detail: notes.joined(separator: " · "))
+            detail: notes.joined(separator: " · "),
+            hint: Self.reserveHint(hasResets: count != nil, hasCredits: credits != nil, english: english))
         var placed = false
         return additionalRows.flatMap { row -> [DockCardRow] in
             guard row.id == "reset-count" || row.id == "credits" else { return [row] }
             if placed { return [] }
             placed = true
             return [reserve]
+        }
+    }
+    /// What the reserve line's figures mean, in the card (the line shows only "↺1 · 3,903").
+    static func reserveHint(hasResets: Bool, hasCredits: Bool, english: Bool) -> String {
+        switch (hasResets, hasCredits) {
+        case (true, true): return english ? "↺ extra resets left · then top-up credits" : "↺ 剩余额外重置次数 · 之后是充值点数"
+        case (true, false): return english ? "↺ extra resets left" : "↺ 剩余额外重置次数"
+        case (false, true): return english ? "Top-up credits left" : "剩余充值点数"
+        case (false, false): return ""
         }
     }
     public func resetDetails(at now:Date,english:Bool,selectedWindowID:String?=nil) -> [String:String] {

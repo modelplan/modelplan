@@ -741,6 +741,48 @@ actor EntrySyntheticClient: EngineClient {
         }
     }
 
+    /// Build 13 owner review (ledger: none): the reserve line reads "↺1 · 19,614" with no word on what the two figures
+    /// are. Pointing at the row shows what they mean, in the card (DOCK-3.6-18: card text and accessible help, never a native tooltip).
+    func testNormalReserveRowExplainsItsFiguresWhenPointedAt() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-hint-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try Self.rows(weekly: 75, reserveBalance: 19_613.9573653333)
+        let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
+        var pointer = CGPoint(x: 700, y: 450)
+        var elapsed = 0.0
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let dock = app.composition.dock, view = dock.dockView
+        let id = "aaaaaaaaaaaaaaaa"
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let nozzle = try XCTUnwrap(view.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + nozzle.midX - view.bounds.minX,
+            y: placement.frame.maxY - nozzle.midY + view.bounds.minY)
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+        elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
+        XCTAssertFalse(dock.card.isHidden)
+        XCTAssertNil(dock.card.visibleHintForChecks("reserve"), "no hint until the pointer is on the row")
+        XCTAssertEqual(dock.card.rowHelpForChecks("reserve"), "↺ extra resets left · then top-up credits")
+        dock.card.hoverRowForChecks("reserve", inside: true)
+        XCTAssertEqual(dock.card.visibleHintForChecks("reserve"), "↺ extra resets left · then top-up credits")
+        dock.card.hoverRowForChecks("reserve", inside: false)
+        XCTAssertNil(dock.card.visibleHintForChecks("reserve"))
+        func tooltips(_ root: NSView) -> [String] { (root.toolTip.map { [$0] } ?? []) + root.subviews.flatMap(tooltips) }
+        dock.card.hoverRowForChecks("reserve", inside: true)
+        XCTAssertEqual(tooltips(dock.card), [], "DOCK-3.6-18: the hint is card text, not a native tooltip")
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        dock.card.hoverRowForChecks("reserve", inside: true)
+        XCTAssertEqual(dock.card.visibleHintForChecks("reserve"), "↺ 剩余额外重置次数 · 之后是充值点数")
+    }
+
     func testResetSourceURLRejectsUnsafeAddressParts() throws {
         for raw in [
             "http://status.openai.com/incidents/demo",

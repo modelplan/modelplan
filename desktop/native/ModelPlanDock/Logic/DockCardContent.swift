@@ -9,8 +9,10 @@ public struct DockCardRow:Equatable,Sendable {
     public let emphasised:Bool
     /// A notice's state pill: 已预告 / 已确认.
     public let pill:String
-    public init(id:String,kind:Kind,label:String,value:String,detail:String="",remainingFraction:Double?=nil,tone:DockQuotaStatus = .unknown,emphasised:Bool=false,pill:String=""){
-        self.id=id;self.kind=kind;self.label=label;self.value=value;self.detail=detail;self.remainingFraction=remainingFraction;self.tone=tone;self.emphasised=emphasised;self.pill=pill
+    /// What the row's figures mean; shown in the card while the pointer is on the row (never a native tooltip) and spoken as its help.
+    public let hint:String
+    public init(id:String,kind:Kind,label:String,value:String,detail:String="",remainingFraction:Double?=nil,tone:DockQuotaStatus = .unknown,emphasised:Bool=false,pill:String="",hint:String=""){
+        self.hint=hint;self.id=id;self.kind=kind;self.label=label;self.value=value;self.detail=detail;self.remainingFraction=remainingFraction;self.tone=tone;self.emphasised=emphasised;self.pill=pill
     }
 }
 public struct DockCardLink:Equatable,Sendable {
@@ -29,7 +31,7 @@ public struct DockCardContent:Equatable,Sendable {
         self.rows=rows;self.links=links;self.enterLabel=enterLabel;self.dismissLabel=dismissLabel;self.actionLabel=actionLabel
     }
     public func validate()throws{
-        let strings=[subscriptionID,name,plan,sourceAndAge,stateLabel,enterLabel,dismissLabel,actionLabel]+rows.flatMap{[$0.id,$0.label,$0.value,$0.detail]}+links.map(\.label)
+        let strings=[subscriptionID,name,plan,sourceAndAge,stateLabel,enterLabel,dismissLabel,actionLabel]+rows.flatMap{[$0.id,$0.label,$0.value,$0.detail,$0.hint]}+links.map(\.label)
         guard !subscriptionID.isEmpty,rows.count<=64,links.count<=8,Set(rows.map(\.id)).count==rows.count,!rows.contains(where:{$0.id.isEmpty}),strings.allSatisfy({$0.utf8.count<=2048}),links.allSatisfy(\.allowed),rows.allSatisfy({r in r.remainingFraction.map{$0.isFinite && (0...1).contains($0)} ?? true}) else{throw DockLogicError.invalidCatalogue}
     }
 }

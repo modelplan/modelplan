@@ -93,7 +93,18 @@ import CryptoKit
     }
 }
 /// Rows lay out top-down like the card itself.
-@MainActor private final class DockCardRowView:NSView { override var isFlipped:Bool{true} }
+/// A card row. A row with a hint reports the pointer entering and leaving (DOCK-3.6-18: the hint is card text, not a native tooltip).
+@MainActor private final class DockCardRowView:NSView {
+    override var isFlipped:Bool{true}
+    var onHover:((Bool)->Void)?{didSet{updateTrackingAreas()}}
+    override func updateTrackingAreas(){
+        super.updateTrackingAreas()
+        trackingAreas.forEach{removeTrackingArea($0)}
+        if onHover != nil{addTrackingArea(NSTrackingArea(rect:.zero,options:[.mouseEnteredAndExited,.activeAlways,.inVisibleRect],owner:self,userInfo:nil))}
+    }
+    override func mouseEntered(with event:NSEvent){onHover?(true)}
+    override func mouseExited(with event:NSEvent){onHover?(false)}
+}
 @MainActor public final class DockCardView:NSView {
     public var onEnter:((String,UInt64)->Void)?,onDismiss:(()->Void)?,onOpenURL:((URL)->Void)?,onAction:((String)->Void)?
     public var permitsAction:((String,UInt64)->Bool)?
@@ -101,6 +112,8 @@ import CryptoKit
     private var content:DockCardContent?,generation:UInt64=0,style=DockCardStyle()
     private var labels=[String:NSTextField](),buttons=[String:DockCardButton]()
     private var bars=[String:DockCardBar](),rowViews=[String:NSView](),brandView:NSImageView?
+    /// The row whose hint is showing, and the hint text of every row that has one.
+    private var hoveredHintRow:String?,hintTexts=[String:String]()
     /// The readout window in card coordinates (flipped), drawn behind the rows.
     private var windowRect:CGRect?,noticeRect:CGRect?,highlightRects=[CGRect]()
     public override init(frame:NSRect){super.init(frame:frame)}
@@ -198,7 +211,8 @@ import CryptoKit
             place(cell.field,in:self);let h=ceil(natural(cell.field).height)
             cell.field.frame=CGRect(x:headerX,y:y+(headerHeight-h)/2,width:cell.width,height:h);headerX+=cell.width+style.headerGap
         }
-        if let brandView{brandView.frame.origin.y=y+(headerHeight-brandView.frame.height)/2}
+        // The mark sits on the name's line, not centred on the whole title block (the plan line hangs below it).
+        if let brandView{brandView.frame.origin.y=y+(nameHeight-brandView.frame.height)/2}
         y+=headerHeight+style.headerBottomGap
         // Readout window with the fixed row grid (dock.css .cd-lcd / .cd-r, face.css 56/78/34/1fr).
         let pad=style.window == nil ? NSEdgeInsets(top:0,left:0,bottom:0,right:0) : style.windowPadding
@@ -215,7 +229,13 @@ import CryptoKit
             usedRows.insert(rowID)
             let rowView=rowViews[rowID] ?? DockCardRowView();rowViews[rowID]=rowView;place(rowView,in:self)
             rowView.setAccessibilityElement(true);rowView.setAccessibilityRole(.group)
-            rowView.setAccessibilityLabel([row.label,row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "))
+            rowView.setAccessibilityLabel([row.label,row.value,row.detail,row.hint].filter{!$0.isEmpty}.joined(separator:" · "))
+            rowView.setAccessibilityHelp(row.hint.isEmpty ? nil:row.hint)
+            if let hoverable=rowView as? DockCardRowView{
+                if row.hint.isEmpty{hoverable.onHover=nil}
+                else{hoverable.onHover={[weak self] (inside:Bool) in self?.setHint(row:rowID,showing:inside)}}
+            }
+            if row.hint.isEmpty{hintTexts.removeValue(forKey:rowID)}else{hintTexts[rowID]=row.hint}
             let l=label(rowID+".label",row.label,font:readoutSmall,color:row.emphasised ? style.ink:style.muted);place(l,in:rowView)
             if row.kind == .extraQuota{l.setAccessibilityLabel(row.label)} // DOCK-3.6-18: no native tooltip
             let toneColor=style.quota[row.tone] ?? style.ink
@@ -271,6 +291,13 @@ import CryptoKit
             }
             let kept=Set(cells.map{ObjectIdentifier($0.view)}+(detailBelow.map{[ObjectIdentifier($0)]} ?? []))
             for child in rowView.subviews where !kept.contains(ObjectIdentifier(child)){child.removeFromSuperview()}
+            if !row.hint.isEmpty{
+                // The hint takes the row's place while the pointer is on it; the row's own speech carries it as help.
+                let hint=label(rowID+".hint",row.hint,font:readoutSmall,color:style.ink);place(hint,in:rowView)
+                hint.setAccessibilityElement(false);hint.isHidden=true
+                let h=ceil(natural(hint).height)
+                hint.frame=CGRect(x:-2,y:max(0,(rowHeight-h)/2),width:rowWidth+4,height:h)
+            }
             rowView.frame=CGRect(x:style.padding+pad.left,y:rowY,width:rowWidth,height:rowHeight)
             if row.emphasised,style.rowHighlight != nil{highlightRects.append(rowView.frame.insetBy(dx:-style.rowOutset,dy:0))}
             rowY+=rowHeight
@@ -360,8 +387,30 @@ import CryptoKit
         for id in Array(labels.keys) where !usedLabels.contains(id){labels.removeValue(forKey:id)?.removeFromSuperview()}
         for id in Array(rowViews.keys) where !usedRows.contains(id){if let row=rowViews.removeValue(forKey:id){row.setAccessibilityElement(false);row.removeFromSuperview()}}
         frame.size=CGSize(width:style.width,height:max(40,ceil(y)))
+        refreshHints()
         setAccessibilityElement(true);needsDisplay=true
     }
+    /// The pointer entered or left a row that has a hint: show the hint in place of its figures, or restore them.
+    private func setHint(row id:String,showing:Bool){
+        if showing{hoveredHintRow=id}else if hoveredHintRow == id{hoveredHintRow=nil}
+        refreshHints()
+    }
+    private func refreshHints(){
+        if let hovered=hoveredHintRow,hintTexts[hovered] == nil{hoveredHintRow=nil}
+        for (id,rowView) in rowViews{
+            let showing=hoveredHintRow == id && hintTexts[id] != nil,hint=labels[id+".hint"]
+            for child in rowView.subviews{
+                if child === hint{child.isHidden = !showing}else{child.alphaValue = showing ? 0.08:1}
+            }
+        }
+    }
+    /// Checks: move the pointer onto or off a row (the row's tracking area calls the same code), and read what shows.
+    @_spi(DockResourceChecks) public func hoverRowForChecks(_ id:String,inside:Bool){setHint(row:"row."+id,showing:inside)}
+    @_spi(DockResourceChecks) public func visibleHintForChecks(_ id:String)->String?{
+        guard let hint=labels["row."+id+".hint"],!hint.isHidden,hint.superview?.isHidden == false else{return nil}
+        return hint.stringValue
+    }
+    @_spi(DockResourceChecks) public func rowHelpForChecks(_ id:String)->String?{rowViews["row."+id]?.accessibilityHelp()}
     /// The mark's frame in its slot: aspect-fitted to `mark` points (the whole slot when nil), centred.
     public static func brandMarkFrame(slot:CGRect,image:CGSize,mark:CGFloat?)->CGRect{
         let side=min(mark ?? slot.width,slot.width,slot.height)
@@ -381,7 +430,7 @@ import CryptoKit
         content=nil;buttons.values.forEach{$0.retire()};bars.values.forEach{$0.setAccessibilityElement(false)}
         rowViews.values.forEach{$0.setAccessibilityElement(false)}
         subviews.forEach{$0.removeFromSuperview()}
-        buttons.removeAll();bars.removeAll();labels.removeAll();rowViews.removeAll();brandView=nil;windowRect=nil;noticeRect=nil;highlightRects=[]
+        buttons.removeAll();bars.removeAll();labels.removeAll();rowViews.removeAll();hintTexts.removeAll();hoveredHintRow=nil;brandView=nil;windowRect=nil;noticeRect=nil;highlightRects=[]
     }
     public override func draw(_ dirtyRect:NSRect){
         // Flat plate with a 1 pt inset seam; dark readout window with its own seam (face.css #card.c7).
