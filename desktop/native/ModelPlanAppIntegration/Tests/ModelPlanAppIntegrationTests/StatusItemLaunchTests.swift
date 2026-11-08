@@ -130,6 +130,21 @@ import XCTest
         return app
     }
 
+    /// G3-46: when macOS hides the icon behind a full menu bar, the cockpit has no anchor to open under and
+    /// uses the top-right fallback; once the icon shows again it anchors on the icon.
+    func testG3_46HiddenIconGivesNoCockpitAnchor() async throws {
+        let app = try await application(cockpitEntryEnabled: true)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        var visible = false
+        app.statusItemVisibility = { visible }
+        app.checkStatusItemVisibility()
+        XCTAssertNil(app.cockpitAnchor, "a hidden icon is not an anchor")
+        visible = true
+        app.checkStatusItemVisibility()
+        if app.statusButtonForTesting?.window?.isVisible == true { XCTAssertNotNil(app.cockpitAnchor, "a visible icon anchors again") }
+    }
+
     func testLaunchedStatusButtonShowsTheTemplateImageOrAVisibleTitle() async throws {
         let app = try await application()
         defer { app.removeStatusItem(); app.composition.dock.close() }
