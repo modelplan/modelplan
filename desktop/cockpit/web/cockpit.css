@@ -11,7 +11,7 @@
 .ck-head{grid-row:2;grid-column:1;z-index:3}.ck-portrow{grid-row:1;grid-column:1;min-height:0}.ck-eng{grid-row:3;grid-column:1;overflow:auto;min-width:0;min-height:0}.ck-deck{grid-row:4;grid-column:1;min-height:0}.ck-tape{grid-row:5;grid-column:1;min-height:0;overflow:auto}.ck-brand{margin-right:auto}.ck-head .key{min-width:54px}.wordmark{white-space:nowrap}
 .ck-portrow::after{display:none}.ck-port{height:100%;background:var(--port-bg);min-height:0}.ck-field{display:none!important}.hud:not(.wide){position:absolute;left:28px;right:28px;top:auto;bottom:18px;max-width:none;width:auto;min-height:0;display:block;padding:8px 12px;background:var(--lcd-glass);box-shadow:var(--well);border-radius:5px}.u11-summary{font:11px var(--f-silk);color:var(--lcd-ink)}
 .activity{display:block;width:6px;height:6px;border-radius:50%;background:var(--gold-lcd);opacity:.35}
-.ck-deck{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:10px}.dk-fad{display:flex;flex-direction:column;min-width:0;min-height:0}.u11-fader{position:relative;width:10px;border-radius:5px;background:linear-gradient(90deg,var(--slot-1),var(--slot-2));box-shadow:var(--well);opacity:.5}.u11-fader i{position:absolute;left:-10px;right:-10px;bottom:25%;height:18px;border-radius:3px;background:linear-gradient(var(--key-1),var(--key-2));box-shadow:var(--raised)}.fd-bank{padding:8px;text-align:center}.dk-mfd{overflow:auto;padding:14px;background:var(--lcd-bg);box-shadow:var(--well);border-radius:5px;min-height:0}.dk-mfd h2{font-size:10px;color:var(--lcd-muted);margin:0 0 10px}.u11-subscription{display:grid;gap:6px;border-top:1px solid var(--slot-line);padding:9px 0;color:var(--lcd-ink);font:10px var(--f-silk)}.u11-empty,.ec-empty{font:11px var(--f-silk);color:var(--lcd-muted);padding:10px}.ck-tape{display:flex;flex-direction:column;gap:5px;padding:10px 12px;background:var(--lcd-bg);box-shadow:var(--well)}.u11-observed{font:10px 'Share Tech Mono',monospace;color:var(--lcd-ink)}
+.ck-deck{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:10px}.dk-fad{display:flex;flex-direction:column;min-width:0;min-height:0}.u11-fader{position:relative;width:10px;border-radius:5px;background:linear-gradient(90deg,var(--slot-1),var(--slot-2));box-shadow:var(--well);opacity:.5}.u11-fader i{position:absolute;left:-10px;right:-10px;bottom:25%;height:18px;border-radius:3px;background:linear-gradient(var(--key-1),var(--key-2));box-shadow:var(--raised)}.fd-bank{padding:8px;text-align:center}.dk-mfd{overflow:auto;padding:14px;background:var(--lcd-bg);box-shadow:var(--well);border-radius:5px;min-height:0}.dk-mfd h2{font-size:10px;color:var(--lcd-muted);margin:0 0 10px}.u11-subscription{display:grid;gap:6px;border-top:1px solid var(--slot-line);padding:9px 0;color:var(--lcd-ink);font:10px var(--f-silk)}.u11-empty,.ec-empty{font:11px var(--f-silk);color:var(--lcd-muted);padding:10px}.ck-tape{display:block;padding:3px 12px;background:var(--lcd-bg);box-shadow:var(--well)}.u11-observed{font:10px 'Share Tech Mono',monospace;color:var(--lcd-ink)}
 
 /* The static table replaces the prototype's two direct grid children. */
 
@@ -118,3 +118,20 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 #cockpit .ck-tape{pointer-events:auto}
 #cockpit .dk-fad .fd-ch.xhl .fd-indicator{color:var(--lcd-ink)}
 #cockpit .ec.xhl,#cockpit .ek.xhl{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcd-ink) 40%,transparent)}
+
+/* D68 hull walls, measured on the opus-r7 study as composed (night, all four shapes): the c01 canopy is the crown,
+   and below it one continuous plain wall runs from the canopy foot to the aft plate (22 px), tiled from 9 px; no
+   crown plate, cone band or record panel is drawn. The wall tile is the study's canopy-h1 lower skin and the aft
+   plate the released r3 plain plate of the official edition; the community edition has none and stays neutral. */
+#cockpit{--hull-wall-top:216px;--hull-clip-top:216px}
+:root[data-profile="compact"] #cockpit{--hull-wall-top:48px;--hull-clip-top:48px}
+:root #cockpit[data-shell="closed"]{--hull-wall-top:30px;--hull-clip-top:30px}
+:root[data-theme="night"] #cockpit .ck-shell :is(.hull-crown,.hull-cone,.hull-lower,.hull-record){display:none}
+:root[data-theme="night"] #cockpit .ck-shell .hull-upper{top:var(--hull-wall-top);bottom:22px;height:auto;background-image:var(--hull-wall);background-size:636px 32px;background-position:50% 9px;background-repeat:repeat-y}
+:root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(var(--hull-clip-top) 16px 22px)}
+/* Closed (owner D72): the porthole row is the study's slab row, cap 16 + 2 px (strip-hull-unify .ck.shut), so the
+   strip sits at 39 px and the record panel ends on the aft plate's edge. */
+#cockpit.ck[data-shell="closed"]{grid-template-rows:18px 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px)}
+/* Closed (owner D72), as the study composes it: the cap slab, 620 x 16 at 14 px, in the shared gunmetal tone (task 88). */
+:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{display:block;left:0;width:620px;top:14px;height:16px;-webkit-mask-image:none;mask-image:none;clip-path:none;background:var(--hull-cap,none) center/620px 16px no-repeat;filter:saturate(.12) brightness(.78)}
+:root[data-theme="night"] #cockpit .ck-deck::before{left:0;right:0;clip-path:inset(0)}
