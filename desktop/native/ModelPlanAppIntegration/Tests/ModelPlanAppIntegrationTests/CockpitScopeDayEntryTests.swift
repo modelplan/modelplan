@@ -67,18 +67,35 @@ extension CommunityCockpitEntryTests {
         try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let environment = ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
-        let seed = Process()
-        seed.executableURL = helper
-        seed.arguments = ["consent", "init", "--json"]
-        seed.environment = environment
-        seed.standardInput = FileHandle.nullDevice
-        seed.standardOutput = FileHandle.nullDevice
-        seed.standardError = FileHandle.nullDevice
-        try seed.run()
-        let seedDeadline = ContinuousClock.now + .seconds(5)
-        while seed.isRunning && ContinuousClock.now < seedDeadline { try await Task.sleep(for: .milliseconds(10)) }
-        if seed.isRunning { seed.terminate(); return XCTFail("Temporary consent initialization timed out") }
-        XCTAssertEqual(seed.terminationStatus, 0)
+        func command(_ arguments: [String], input: [String: Any]? = nil) async throws -> [String: Any] {
+            let process = Process(), output = Pipe()
+            process.executableURL = helper
+            process.arguments = arguments
+            process.environment = environment
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            let stdin = input.map { _ in Pipe() }
+            process.standardInput = stdin ?? FileHandle.nullDevice
+            try process.run()
+            if let input, let stdin {
+                try stdin.fileHandleForWriting.write(contentsOf: JSONSerialization.data(withJSONObject: input))
+                try stdin.fileHandleForWriting.close()
+            }
+            let deadline = ContinuousClock.now + .seconds(5)
+            while process.isRunning && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            if process.isRunning { process.terminate(); throw CocoaError(.fileReadUnknown) }
+            XCTAssertEqual(process.terminationStatus, 0, arguments.joined(separator: " "))
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: output.fileHandleForReading.readDataToEndOfFile()) as? [String: Any])
+        }
+        // The cockpit query needs a consent decision; grant the same synthetic local scope as the details journey.
+        _ = try await command(["consent", "init", "--json"])
+        let before = try await command(["consent", "--json"])
+        _ = try await command(["consent", "grant", "--json"], input: [
+            "requestId": UUID().uuidString.lowercased(), "expectStoreEpoch": try XCTUnwrap(before["storeEpoch"] as? String),
+            "expectGeneration": try XCTUnwrap(before["generation"] as? Int),
+            "consentTextVersion": try XCTUnwrap(before["consentTextVersion"] as? Int),
+            "allow": ["codex.local_history"], "deny": [String]()
+        ])
         // The real producer reads local.json as declared quota, with no provider credentials or calls.
         let iso = ISO8601DateFormatter(), real = Date()
         let fixture: [String: Any] = ["schemaVersion": 1, "plans": [["planId": "synthetic-scope-day"]], "windows": [[
@@ -95,8 +112,8 @@ extension CommunityCockpitEntryTests {
             return page
         }
         defer { CommunityCockpitApplicationFactory.verificationPageFactory = previousFactory }
-        // The app's clock: noon on a fixed local day, moved only by the test.
-        let noon = try XCTUnwrap(Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 6, hour: 12)))
+        // The app's clock: noon today, moved only by the test.
+        let noon = try XCTUnwrap(Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()))
         var wall = noon
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: home, preferredLanguages: ["en"])
         let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-scope-day",
