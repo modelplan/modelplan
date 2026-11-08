@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 ModelPlan.
+// G3-47: the cockpit base row in the 34 px reserve below the root, one bell per visible subscription, directly
+// under its engine column, plus a dimmed socket under each empty bay. Port of the study's rocket-r1/base.js
+// (spec 3.9, entrance C) and base-bells notes: a subscription with a running session of its own burns (a status-
+// coloured sheet below the bell, 12-24 px by output rate); a stale or failed reading is grey; otherwise idle.
+// The official edition paints the bells with the released base-bell art; the community edition keeps the study's
+// flat light. Columns are measured from the drawn engine table, so the row follows paging and the page zoom.
+// The host CSP blocks style attributes: every value goes through CSSOM, and wire text never becomes CSS.
+import type { WireCockpitData } from '../generated/wire.js';
+import { cockpitMembers } from './members.js';
+
+const INSET=4,FLAME_MIN=12,FLAME_MAX=24;
+// Status colours shared with the engine fills (study colour-mode.js STATUS_HEX).
+const FUEL:Readonly<Record<string,string>>={ok:'#5ad9ba',mid:'#eac17b',low:'#ef4444'};
+const RANK:Readonly<Record<string,number>>={ok:1,mid:2,low:3};
+const COLOUR=/^#[0-9a-f]{6}$/i;
+
+export type BaseLight={key:string;x:number;w:number;cw:number;colour:string;fuel:string;state:'work'|'stale'|'idle';rate:number|null;len:number};
+
+// Glow sheet length: 30 t/s or less -> 12, 120 t/s or more -> 24, no rate -> the middle (study flameLen).
+export function flameLength(rate:number|null):number {
+ if(rate===null)return (FLAME_MIN+FLAME_MAX)/2;
+ return Math.round(FLAME_MIN+(FLAME_MAX-FLAME_MIN)*Math.max(0,Math.min(1,(rate-30)/90)));
+}
+
+// Running sessions attributed to a member by its verified subscription ref. A session without one is not
+// guessed onto a column.
+function running(data:WireCockpitData,key:string):{working:boolean;rate:number|null} {
+ const detail=data.details;if(!detail||detail.sessionCoverage!=='local-last-seen')return {working:false,rate:null};
+ const live=detail.sessions.filter(s=>s.state==='running'&&s.subscriptionRef===key);
+ const rates=live.map(s=>s.rate).filter((r):r is number=>typeof r==='number'&&Number.isFinite(r)&&r>=0);
+ return {working:live.length>0,rate:rates.length?rates.reduce((a,b)=>a+b,0):null};
+}
+
+export function baseLights(root:HTMLElement,data:WireCockpitData):{lights:BaseLight[];sockets:{x:number;cw:number}[]} {
+ const box=root.getBoundingClientRect(),k=box.width?root.offsetWidth/box.width:1;
+ const keys=new Set(cockpitMembers(data).map(m=>m.key));
+ const lights:BaseLight[]=[];
+ for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .ek[data-sub]')){
+  const id=key.dataset.sub??'',member=key.dataset.scope??'';
+  const column=[...root.querySelectorAll<HTMLElement>('.ck-eng .ec[data-col]')].find(e=>e.dataset.col===id);
+  const r=(column??key).getBoundingClientRect();if(!r.width)continue;
+  const vendor=key.querySelector<HTMLElement>('.bl')?.style.getPropertyValue('--v').trim()??'';
+  const level=[...(column?.querySelectorAll<HTMLElement>('.qcell')??[])].map(c=>['ok','mid','low'].find(l=>c.classList.contains('lv-'+l))).filter((l):l is string=>!!l).sort((a,b)=>RANK[b]-RANK[a])[0];
+  const grey=!!column?.classList.contains('grey'),live=keys.has(member)?running(data,member):{working:false,rate:null};
+  const state=grey?'stale':live.working?'work':'idle',cw=r.width*k;
+  lights.push({key:member,x:(r.left+r.width/2-box.left)*k,w:Math.max(8,cw-2*INSET),cw,colour:COLOUR.test(vendor)?vendor:'#7d868e',
+   fuel:level?FUEL[level]:'#7d868e',state,rate:live.rate,len:state==='work'?flameLength(live.rate):0});
+ }
+ const sockets=[...root.querySelectorAll<HTMLElement>('.ck-eng .eng-cols .ec-bay')].map(e=>{const r=e.getBoundingClientRect();return {x:(r.left+r.width/2-box.left)*k,cw:r.width*k};}).filter(s=>s.cw>0);
+ return {lights,sockets};
+}
+
+function px(n:number){return n.toFixed(2)+'px';}
+
+// Paints the row into its own layer under the root; returns a disposer.
+export function mountPrototypeBase(root:HTMLElement,data:()=>WireCockpitData|null,label:(light:BaseLight)=>string) {
+ let layer=root.querySelector<HTMLElement>(':scope > .ck-base');
+ if(!layer){layer=document.createElement('div');layer.className='ck-base';root.append(layer);}
+ const base=layer;let last='';
+ const paint=()=>{
+  const value=data();
+  if(!value||!root.offsetWidth){if(base.childElementCount)base.replaceChildren();last='';return;}
+  const {lights,sockets}=baseLights(root,value),key=JSON.stringify([lights,sockets,lights.map(label)]);
+  if(key===last)return;last=key;
+  const nodes:HTMLElement[]=[];
+  for(const [j,z] of lights.entries()){
+   const b=document.createElement('span');b.className='bz '+z.state;b.setAttribute('role','img');b.setAttribute('aria-label',label(z));
+   for(const [k,v] of [['left',px(z.x)],['--w',px(z.w)],['--cw',px(z.cw)],['--v',z.colour],['--fuel',z.fuel],['--len',z.len+'px'],
+    ['--fd',(.19+(j*37%5)*.017).toFixed(3)+'s'],['--fo',(-(j*53%7)*.023).toFixed(3)+'s']] as const)b.style.setProperty(k,v);
+   const glow=document.createElement('i');glow.className='bz-glow';const line=document.createElement('i');line.className='bz-line';b.append(glow,line);
+   if(z.state==='work'){const sheet=document.createElement('i');sheet.className='bz-sheet';b.append(sheet);}
+   nodes.push(b);
+  }
+  for(const s of sockets){const e=document.createElement('span');e.className='bz-empty';e.setAttribute('aria-hidden','true');e.style.setProperty('left',px(s.x));e.style.setProperty('--cw',px(s.cw));const line=document.createElement('i');line.className='bz-line';e.append(line);nodes.push(e);}
+  base.replaceChildren(...nodes);
+ };
+ const engine=root.querySelector<HTMLElement>('.ck-eng');
+ const mutations=new MutationObserver(paint),resize=typeof ResizeObserver==='undefined'?null:new ResizeObserver(paint);
+ if(engine){mutations.observe(engine,{childList:true,subtree:true,attributes:true,attributeFilter:['class','data-sub','data-scope']});resize?.observe(engine);}
+ resize?.observe(root);
+ return {paint,dispose(){mutations.disconnect();resize?.disconnect();base.replaceChildren();}};
+}

@@ -81,6 +81,16 @@ if (official) {
   }
   await cp(resolve(strip,'SOURCES.md'),resolve(output,'assets/SOURCES.md'));
   css+='\n'+stripCss.toString('utf8');
+  // G3-47: the released base-bell rasters (owner 2026-11-08), each checked against the reserved-visuals registry.
+  const bells=resolve(assets,'cockpit/bells'),bellFiles=['bell-night-2x.png','bell-night-3x.png','bell-silver-2x.png','mouth-plume-mask.png'];
+  await mkdir(resolve(output,'assets/bells'),{recursive:true});
+  for(const name of bellFiles){
+    const bytes=await readFile(resolve(bells,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/bells/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit bell resource: '+name);
+    await writeFile(resolve(output,'assets/bells',name),bytes);
+  }
+  await cp(resolve(bells,'SOURCES.md'),resolve(output,'assets/bells/SOURCES.md'));
+  css+='\n'+await readFile(resolve(bells,'bells.css'),'utf8');
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});

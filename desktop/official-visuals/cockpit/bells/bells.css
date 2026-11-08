@@ -1,0 +1,23 @@
+/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
+/* Copyright (c) 2026 ModelPlan. G3-47 base bells in the 34 px reserve, written for this page from the base-bells
+   notes (see SOURCES.md); the images are the released, unchanged base-bell rasters. */
+/* Bell width follows the measured column: min(120 px, column x 121/133), the old (cw - 8)/cw proportion at six
+   columns; height is width x 10/81. 162x20 is drawn at 1x and 243x30 at 2x, never a stretched feature. */
+.ck-base :is(.bz,.bz-empty){--bell-w:min(120px,calc(var(--cw) * 121 / 133));--bell-h:calc(var(--bell-w) * 10 / 81)}
+.ck-base :is(.bz,.bz-empty) .bz-line{top:0;width:var(--bell-w);height:var(--bell-h);border-radius:0;background:transparent url('./assets/bells/bell-night-2x.png') center/100% 100% no-repeat;opacity:1}
+@media (min-resolution:2dppx){.ck-base :is(.bz,.bz-empty) .bz-line{background-image:url('./assets/bells/bell-night-3x.png')}}
+/* Subscribed bells take the silver finish; its 2x source is the largest that exists, so it serves both densities. */
+.ck-base .bz .bz-line,.ck-base .bz.stale .bz-line{background-image:url('./assets/bells/bell-silver-2x.png')}
+.ck-base .bz.stale .bz-line{filter:grayscale(1) brightness(.75)}
+/* Empty bays: the same shape, dimmed, with no plume or halo. */
+.ck-base .bz-empty .bz-line{filter:brightness(.9)}
+.ck-base .bz-glow{display:none}
+.ck-base .bz:hover .bz-line{filter:brightness(1.2)}
+/* Working: the plume hangs from the bell's opening through the released mouth mask. Its canvas is
+   (bell width x 73.17/81) x 340/306 wide, rooted at bell width x 8.169105/81, and capped to the reserve left
+   below that root. It stands still at its middle pose: the study's .94/1/.97 pose cycle would be a third endless
+   animation, which the motion policy does not admit without the owner. */
+.ck-base .bz .bz-sheet{--root:calc(var(--bell-w) * 8.169105 / 81);top:var(--root);width:calc(var(--bell-w) * 73.17 / 81 * 340 / 306);
+  height:min(calc(var(--len) + var(--bell-h) - var(--root)),calc(34px - var(--root)));z-index:2;
+  -webkit-mask:url('./assets/bells/mouth-plume-mask.png') center top/100% 100% no-repeat;mask:url('./assets/bells/mouth-plume-mask.png') center top/100% 100% no-repeat}
+.ck-base .bz .bz-sheet::before{-webkit-mask-image:none;mask-image:none}

@@ -107,3 +107,26 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 #cockpit .ck-tape{pointer-events:auto}
 #cockpit .dk-fad .fd-ch.xhl .fd-indicator{color:var(--lcd-ink)}
 #cockpit .ec.xhl,#cockpit .ek.xhl{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcd-ink) 40%,transparent)}
+
+/* G3-47 base row (study entrance.css, entrance C): one light per visible subscription under its engine column, in
+   the 34 px reserve below the root. The official edition replaces the flat light with the base-bell art. The study's
+   `.ck.open` cockpit state is the page's data-active. The flame is a still sheet: the study's shimmer would be a third
+   endless animation, which the motion policy (MOT-2.3, owner D39) does not admit without the owner. */
+.ck-base{position:absolute;left:0;top:100%;width:100%;height:34px;pointer-events:none;z-index:1}
+.bz,.bz-empty{position:absolute;top:0;width:var(--cw,40px);height:34px;transform:translateX(-50%)}
+.bz{pointer-events:auto}
+.ck[data-active="false"] .bz{pointer-events:none}
+.bz-line,.bz-glow{position:absolute;left:50%;top:3.5px;width:var(--w,22px);height:3px;transform:translateX(-50%);border-radius:1.5px}
+.bz-line{background:var(--v)}
+.bz-empty .bz-line{background:var(--base-stale,#6b7077);opacity:.35}
+.bz-glow{box-shadow:0 0 5px 1px color-mix(in srgb,var(--v) 40%,transparent)}
+.bz.stale .bz-line{background:var(--base-stale,#6b7077)}
+.bz.stale .bz-glow{box-shadow:none}
+.bz-sheet{position:absolute;left:50%;top:5px;width:var(--w,22px);height:var(--len);transform:translateX(-50%);transform-origin:50% 0}
+.bz-sheet::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,color-mix(in srgb,color-mix(in srgb,var(--fuel) 22%,white) 95%,transparent),color-mix(in srgb,var(--fuel) 68%,transparent) 28%,color-mix(in srgb,var(--fuel) 26%,transparent) 66%,transparent);
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 6px,#000 calc(100% - 6px),transparent);mask-image:linear-gradient(90deg,transparent,#000 6px,#000 calc(100% - 6px),transparent)}
+.ck[data-active="true"] .bz:hover .bz-line{filter:brightness(1.35)}
+.ck[data-active="true"] .bz:hover .bz-glow{box-shadow:0 0 6px 2px color-mix(in srgb,var(--v) 55%,transparent)}
+.ck[data-active="true"] .bz.stale:hover .bz-glow{box-shadow:none}
+/* The r6 afterglow arc sat where the base row now is. */
+.ck-afterglow{display:none}

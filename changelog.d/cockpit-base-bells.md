@@ -1,0 +1,1 @@
+The cockpit base now shows a bell under each subscription column, and a subscription with a session running right now shows a flame below its bell, coloured by how much quota it has left. The official appearance uses the released base-bell art; the community appearance draws a flat light in the same place.
