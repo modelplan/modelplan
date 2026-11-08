@@ -32,7 +32,10 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   const paint=()=>{
     const theme=document.documentElement.dataset.theme==='day'?'day':'night',layout=cockpit.dataset.layout==='640'?640:890;
     const frame=pack.projections.find(p=>p.theme===theme&&p.layout===layout);
-    const port=field.parentElement??field,W=port.clientWidth,H=port.clientHeight;
+    // The field's own box (the full canopy window in the official edition), from the port and the field's insets: the
+    // field is not displayed until painted, so it cannot be measured directly.
+    const port=field.parentElement??field,cs=getComputedStyle(field),px=(v:string)=>parseFloat(v)||0;
+    const W=port.clientWidth-px(cs.left)-px(cs.right),H=port.clientHeight-px(cs.top)-px(cs.bottom);
     if(!frame||!W||!H){field.dataset.still=frame?'sizing':'none';return;}
     const key=`${frame.id}:${W}x${H}`;if(key===painted)return;painted=key;
     // Cover the field like a background: scale to the larger ratio and centre; the port clips the rest.
