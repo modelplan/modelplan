@@ -4,12 +4,18 @@ import ModelPlanCore
 import ModelPlanSettings
 import ModelPlanCommunityHost
 
-@MainActor private final class ConnectionFirstRunSurface: SettingsWindowSurface {
+/// G3-37: macOS 14+ ignores an accessory app's activate() while another app is active (hosted
+/// macOS 15 evidence, #690), so the first-run window is also ordered above other apps' windows.
+/// It does not take key focus from the front app.
+@MainActor protocol FirstRunFrontRaising: AnyObject { func raiseToFront() }
+
+@MainActor private final class ConnectionFirstRunSurface: SettingsWindowSurface, FirstRunFrontRaising {
     private let controller: SettingsFirstRunController
     init(editor: SettingsEditor, scopeConsentEntry: ScopeConsentEntry?) { controller = SettingsFirstRunController(editor: editor, scopeConsentEntry: scopeConsentEntry) }
     func prepare() async { await controller.prepare() }
     func show(paneID: String?) { controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil) }
     func hide() { controller.suspend(); controller.window?.orderOut(nil) }
+    func raiseToFront() { controller.window?.orderFrontRegardless() }
 }
 
 /// App composition retains this module over its existing editor. Construction has no backend/UI effects.
@@ -23,6 +29,9 @@ import ModelPlanCommunityHost
     private var generation: UInt64 = 0
     private var navigation: UUID?
     private var disposed = false
+    /// FR-9-09: the launch's first presentation comes to the front. Later restores follow a wake
+    /// or an engine restart and must not take focus from another app.
+    private var presentedThisLaunch = false
 
     public init(application: SettingsApplicationCoordinator, backend: (any SettingsConnectionAllowing)? = nil,
                 canPresent: @escaping @MainActor () -> Bool,
@@ -72,7 +81,7 @@ import ModelPlanCommunityHost
         await application.editor.connections.refresh()
         guard !disposed, generation == token, !Task.isCancelled,
               application.editor.snapshot?.preferences.onboarding.completed == false else { return }
-        await showFirstRun(token: token, userInitiated: false, inspect: false)
+        await showFirstRun(token: token, activating: !presentedThisLaunch, inspect: false)
     }
     public func openFirstRun() async { await route(.allowUsage, forceFirstRun: true) }
     public func openSettings() async { await route(nil) }
@@ -93,9 +102,9 @@ import ModelPlanCommunityHost
             await showSettings(destination == .about ? "about" : destination == nil ? nil : "subscriptions")
             return
         }
-        await showFirstRun(token: token, userInitiated: userInitiated, inspect: true)
+        await showFirstRun(token: token, activating: userInitiated, inspect: true)
     }
-    private func showFirstRun(token: UInt64, userInitiated: Bool, inspect: Bool) async {
+    private func showFirstRun(token: UInt64, activating: Bool, inspect: Bool) async {
         // Presence/preview only; the injected backend owns canonical gate restoration.
         if inspect { await application.editor.connections.refresh() }
         guard eligible(token) else { return }
@@ -103,9 +112,11 @@ import ModelPlanCommunityHost
         guard let surface, eligible(token) else { return }
         await surface.prepare()
         guard eligible(token) else { return }
-        if userInitiated { activate() }
+        if activating { activate() }
         guard eligible(token) else { return }
+        presentedThisLaunch = true
         surface.show(paneID: nil)
+        if activating { (surface as? FirstRunFrontRaising)?.raiseToFront() }
     }
     private func eligible(_ token: UInt64) -> Bool { !disposed && generation == token && canPresent() && !disposed && generation == token }
     public func requireBackend() throws {
