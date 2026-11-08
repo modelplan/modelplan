@@ -142,8 +142,25 @@ class Script(unittest.TestCase):
 
     def test_covers_the_agreed_walkthrough(self):
         ids = {s["id"] for s in self.STEPS}
-        self.assertTrue({"widget-rest", "widget-hover", "popup-card", "drag-snap", "status-menu-right", "ring-centred-on",
-                         "ring-centred-off", "first-use-hint", "cockpit-open", "porthole-enlarged", "hud-select", "faders"} <= ids)
+        self.assertTrue({"widget-rest", "widget-hover", "popup-card", "drag-snap", "status-menu-right", "first-use-hint",
+                         "cockpit-open", "porthole-enlarged", "hud-select", "faders"} <= ids)
+
+    def test_covers_the_build_12_checklist(self):
+        ids = {s["id"] for s in self.STEPS}
+        self.assertTrue({"first-run-window", "widget-collapse", "widget-reveal", "card-third-ring", "card-pointer-away",
+                         "card-empty-quota", "cockpit-toggle-close", "cockpit-reopen", "shutter-closed", "cockpit-detach",
+                         "cockpit-drag-title", "help-map", "air-1440x900", "air-1470x956"} <= ids)
+
+    def test_the_seed_has_a_ring_at_zero(self):
+        seed = json.loads((ROOT / "seed.json").read_text(encoding="utf-8"))
+        self.assertIn(0, [p["remainingPercent"] for p in seed["declared"]])
+
+    def test_every_check_kind_is_known(self):
+        known = {"differsFrom", "matches", "exists", "opened", "absent", "checked", "on", "moved", "changed", "cardNamed",
+                 "collapsed", "allOnScreen", "fits", "newWindow", "noNewWindow", "windowClosed", "nonblank"}
+        for step in self.STEPS:
+            for check in step.get("checks", []):
+                self.assertIn(next(iter(check)), known, step["id"])
 
 
 class Steps(unittest.TestCase):
@@ -205,6 +222,68 @@ class Steps(unittest.TestCase):
                 "checks": [{"matches": {"step": "nothing", "max": 1}}]}
         host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "id": "x"}]})
         self.assertEqual(walker(host, self.out, [step]).walk_steps()[0]["status"], "fail")
+
+
+class NewChecks(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.out = Path(directory.name)
+
+    def one(self, host, step):
+        return walker(host, self.out, [{"id": "s", "title": "t", "expected": "e", **step}]).walk_steps()[0]
+
+    def test_a_host_without_the_display_mode_skips_and_does_not_fail(self):
+        class Modes(FakeHost):
+            def helper(self, *arguments):
+                if arguments[0] == "modes":
+                    return [{"width": 1920, "height": 1080}]
+                return super().helper(*arguments)
+        record = self.one(Modes(), {"actions": [{"op": "setDisplay", "size": [1470, 956]}]})
+        self.assertEqual(record["status"], "skipped")
+        self.assertIn("1920x1080", record["reason"])
+        self.assertEqual(w.failures({"steps": [record], "checks": []}), [])
+
+    def test_card_named_after_the_clicked_ring(self):
+        tree = {"windows": [{"frame": [0, 0, 90, 300], "children": [
+            {"id": "dock.subscription.a", "label": "A", "frame": [0, 10, 40, 40]},
+            {"id": "dock.subscription.b", "label": "B", "frame": [0, 60, 40, 40]},
+            {"id": "dock.card.text.name", "value": "A", "frame": [100, 10, 80, 20]}]}]}
+        self.assertEqual(self.one(FakeHost(tree), {"actions": [{"op": "clickRing", "index": 0}],
+                                                   "checks": [{"cardNamed": True}]})["status"], "pass")
+        record = self.one(FakeHost(tree), {"actions": [{"op": "clickRing", "index": 1}], "checks": [{"cardNamed": True}]})
+        self.assertEqual(record["status"], "fail")
+        self.assertIn("'B'", record["reason"])
+
+    def test_collapsed_means_gone_or_much_smaller(self):
+        big = {"windows": [{"frame": [0, 0, 90, 300], "children": [{"id": "g", "frame": [1, 1, 5, 5]}]}]}
+        step = {"actions": [{"op": "remember", "target": "window-of:ax:g"}], "checks": [{"collapsed": "window-of:ax:g"}]}
+        self.assertEqual(self.one(FakeHost(big), step)["status"], "fail")
+        walk = walker(FakeHost({}), self.out, [])
+        walk.remembered = [0, 0, 90, 300]
+        walk.check({"collapsed": "window-of:ax:g"}, self.out, {})
+
+    def test_fits_uses_the_visible_area_below_the_menu_bar_and_above_the_dock(self):
+        facts = {"screens": [{"frame": [0, 0, 1440, 900], "visible": [0, 70, 1440, 805]}]}
+        self.assertEqual(w.visible_area(facts), [0, 25, 1440, 805])
+        tall = {"windows": [{"frame": [800, 25, 600, 860], "label": "ModelPlan Cockpit"}]}
+        walk = walker(FakeHost(tall), self.out, [])
+        walk.facts = facts
+        with self.assertRaises(w.WalkthroughError):
+            walk.check({"fits": "label:ModelPlan Cockpit"}, self.out, {})
+
+    def test_a_harness_fault_fails_the_step_and_the_walk_goes_on(self):
+        class Broken(FakeHost):
+            def helper(self, *arguments):
+                if arguments[0] == "move":
+                    raise TypeError("boom")
+                return super().helper(*arguments)
+        steps = [{"id": "a", "title": "t", "expected": "e", "actions": [{"op": "park"}]},
+                 {"id": "b", "title": "t", "expected": "e"}]
+        first, second = walker(Broken(), self.out, steps).walk_steps()
+        self.assertEqual(first["status"], "fail")
+        self.assertIn("TypeError", first["reason"])
+        self.assertEqual(second["status"], "pass")
 
 
 class Guard(unittest.TestCase):

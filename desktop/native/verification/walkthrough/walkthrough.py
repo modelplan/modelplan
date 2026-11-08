@@ -32,6 +32,10 @@ class WalkthroughError(Exception):
     """A step could not do what it says. The message is the manifest's reason."""
 
 
+class WalkthroughSkip(Exception):
+    """A step that this host cannot walk, such as a display mode it does not offer. Not a failure."""
+
+
 # Targets: pure functions over the helper's accessibility tree, so they run in tests on any host.
 
 def walk(node, window=None):
@@ -121,6 +125,28 @@ def reflected(frame, window):
     return [frame[0], 2 * top + height - frame[1] - frame[3], frame[2], frame[3]]
 
 
+def inside(frame, bounds, slack=1):
+    return (frame[0] >= bounds[0] - slack and frame[1] >= bounds[1] - slack
+            and frame[0] + frame[2] <= bounds[0] + bounds[2] + slack and frame[1] + frame[3] <= bounds[1] + bounds[3] + slack)
+
+
+def visible_area(facts):
+    """The main screen's visible area in top-left coordinates, as accessibility frames use.
+
+    The helper reports AppKit frames, which count from the bottom: menu bar above, Dock below.
+    """
+    screen = facts["screens"][0]
+    height = screen["frame"][3]
+    x, y, w, h = screen["visible"]
+    return [x, height - y - h, w, h]
+
+
+def ring_order(tree):
+    """Rings as the eye reads them: top to bottom, then left to right."""
+    rings = [n for n in resolve_all(tree, "ax^:dock.subscription.") if visible(n)]
+    return sorted(rings, key=lambda n: (round(n["frame"][1]), round(n["frame"][0])))
+
+
 def window_ids(windows):
     return {w["id"] for w in windows if w.get("onScreen")}
 
@@ -169,6 +195,9 @@ class Walkthrough:
         self.frames_mirrored = False
         self.mirror_evidence = {}
         self.crops = {}
+        self.measures = {}
+        self.expected_card = None
+        self.facts = None
 
     def tree(self):
         tree = self.host.helper("tree", self.pid)
@@ -199,7 +228,10 @@ class Walkthrough:
     # Operations named in steps.json.
 
     def op_await(self, action):
+        started = self.host.now()
         self.await_target(action["target"], action.get("timeout", 15))
+        if action.get("timed"):
+            self.measures["secondsTo:" + action["target"]] = round(self.host.now() - started, 2)
 
     def op_wait(self, action):
         self.host.sleep(action["seconds"])
@@ -218,6 +250,73 @@ class Walkthrough:
     def op_hover(self, action):
         self.host.helper("move", *centre(self.need(action["target"])["frame"]), 0.5)
         self.host.sleep(action.get("seconds", 1))
+
+    def op_hoverRemembered(self, action):
+        """Point at a fraction of the frame remembered earlier, such as the edge where a collapsed widget waits."""
+        if self.remembered is None:
+            raise WalkthroughError("nothing remembered to point at")
+        frame = self.remembered
+        self.host.helper("move", frame[0] + frame[2] * action["at"][0], frame[1] + frame[3] * action["at"][1], 0.5)
+        self.host.sleep(action.get("seconds", 1))
+
+    def op_clickRing(self, action):
+        """Click a ring by reading order or by target; the card that opens should carry its name."""
+        tree = self.tree()
+        if "target" in action:
+            ring = resolve(tree, action["target"])
+        else:
+            rings = ring_order(tree)
+            ring = rings[action["index"]] if len(rings) > action["index"] else None
+        if ring is None:
+            raise WalkthroughError("ring not on screen: %s" % action.get("target", action.get("index")))
+        self.expected_card = ring.get("label")
+        self.host.helper("click", *centre(ring["frame"]))
+
+    def op_dragStrip(self, action):
+        """Drag the cockpit by its title strip: left of the strip buttons, at their height."""
+        window = self.need(action["window"])["frame"]
+        button = self.need(action["strip"])["frame"]
+        start = (window[0] + window[2] * action.get("x", 0.12), centre(button)[1])
+        self.host.helper("down", *start)
+        self.host.helper("held", start[0] + action["by"][0], start[1] + action["by"][1], action.get("seconds", 1.0))
+        self.host.helper("up")
+
+    def op_setDisplay(self, action):
+        """Switch the main display to a size, or skip when this host does not offer it."""
+        offered = {(m["width"], m["height"]) for m in self.host.helper("modes")}
+        size = tuple(action["size"]) if action["size"] != "largest" else next(
+            (c for c in DISPLAY_CANDIDATES if c in offered), None)
+        if size not in offered:
+            raise WalkthroughSkip("display %s not offered here; offered: %s" % (
+                "x".join(map(str, action["size"])) if size is None else "%dx%d" % size,
+                ", ".join("%dx%d" % m for m in sorted(offered, reverse=True)[:12])))
+        if not self.host.helper("setmode", *size).get("set"):
+            raise WalkthroughError("could not switch the display to %dx%d" % size)
+        self.host.sleep(action.get("settle", 3))
+        self.facts = self.host.helper("host")
+        frame = self.facts["screens"][0]["frame"]
+        self.screen = (frame[2], frame[3])
+        self.measures["display"] = "%dx%d" % size
+
+    def op_toggleCockpit(self, action):
+        """Bring the cockpit to the wanted state with the menu bar icon; nothing to do when it is there already."""
+        target = "label:ModelPlan Cockpit"
+        if (resolve(self.tree(), target) is not None) == (action["want"] == "open"):
+            return
+        self.host.helper("click", *centre(self.need("status-item")["frame"]))
+        if action["want"] == "open":
+            self.await_target(target, action.get("timeout", 25))
+            return
+        deadline = self.host.now() + action.get("timeout", 5)
+        while resolve(self.tree(), target) is not None:
+            if self.host.now() >= deadline:
+                raise WalkthroughError("cockpit still open")
+            self.host.sleep(0.25)
+
+    def op_closeShutter(self, _):
+        shutter = self.need("label:Porthole shutter")
+        if str(shutter.get("value")) != "1":  # aria-pressed is true while closed.
+            self.host.helper("click", *centre(shutter["frame"]))
 
     def op_clickIn(self, action):
         frame = self.need(action["target"])["frame"]
@@ -251,7 +350,13 @@ class Walkthrough:
         raw = self.host.helper("tree", self.pid)
         window = resolve(raw, "window-of:ax:dock.grip.0")
         rings = [n for n in resolve_all(raw, "ax^:dock.subscription.") if visible(n)]
-        painted = {n["id"]: resolve(self.tree(), "ax:" + n["id"])["frame"] for n in rings}
+        corrected = self.tree()
+        painted = {}
+        for n in rings:
+            node = resolve(corrected, "ax:" + n["id"])
+            if node is None:
+                raise WalkthroughError("ring left the screen while mapping: " + str(n.get("label")))
+            painted[n["id"]] = node["frame"]
         result = []
         for ring in rings:
             result.append({"ring": ring.get("label"), "cardAtPainted": self.card_at(centre(painted[ring["id"]])),
@@ -305,9 +410,10 @@ class Walkthrough:
         self.host.helper("up")
 
     def op_dismissHints(self, _):
-        # A first-use hint is a card with one close button; there is no fixed count on purpose.
+        # A first-use hint is a card (help.card.<anchor>) with one button; there is no fixed count on purpose.
         for _ in range(3):
-            button = resolve(self.tree(), "label:Dismiss hint")
+            card = resolve(self.tree(), "ax^:help.card.")
+            button = next((n for n, _ in walk(card) if n.get("role") == "AXButton" and visible(n)), None) if card else None
             if button is None:
                 return
             self.host.helper("click", *centre(button["frame"]))
@@ -348,6 +454,28 @@ class Walkthrough:
             node = resolve(tree, value)
             if node is None or node.get("value") == self.remembered:
                 raise WalkthroughError("value did not change: " + value)
+        if kind == "cardNamed":
+            node = resolve(tree, "ax:dock.card.text.name")
+            name = node.get("value") if node else None
+            if name != self.expected_card:
+                raise WalkthroughError("card shows %r, expected %r" % (name, self.expected_card))
+        if kind == "collapsed":
+            node = resolve(tree, value)
+            before = self.remembered
+            if node is not None and (before is None or node["frame"][2] * node["frame"][3] > 0.5 * before[2] * before[3]):
+                raise WalkthroughError("not collapsed: " + value)
+        if kind == "allOnScreen":
+            found = [n for n in resolve_all(tree, value) if visible(n)]
+            screen = [0, 0, self.screen[0], self.screen[1]]
+            outside = [n.get("id") or n.get("label") for n in found if not inside(n["frame"], screen)]
+            if not found or outside:
+                raise WalkthroughError("off screen: %s" % (", ".join(map(str, outside)) or "nothing found for " + value))
+        if kind == "fits":
+            node = resolve(tree, value)
+            area = visible_area(self.facts or self.host.helper("host"))
+            if node is None or not inside(node["frame"], area):
+                raise WalkthroughError("%s at %s is not inside the visible area %s" % (value, node and node["frame"], area))
+            record.setdefault("measures", {})["frame:" + value] = node["frame"]
         if kind == "newWindow" and not window_ids(self.windows()) - self.window_baseline:
             raise WalkthroughError("no new window opened")
         if kind == "noNewWindow" and window_ids(self.windows()) - self.window_baseline:
@@ -374,13 +502,23 @@ class Walkthrough:
             record.update(status="not-run", reason="needs " + ", ".join(blocked))
             return record
         started = self.host.now()
-        reasons = []
+        reasons, skipped = [], None
+        self.measures = {}
         self.window_baseline = window_ids(self.windows())
         try:
             for action in step.get("actions", []):
                 getattr(self, "op_" + action["op"])(action)
+        except WalkthroughSkip as skip:
+            skipped = str(skip)
         except WalkthroughError as error:
             reasons.append(str(error))
+        except Exception as error:  # A harness fault is this step's failure, not the end of the manifest.
+            reasons.append("harness error: %s: %s" % (type(error).__name__, error))
+        if self.measures:
+            record["measures"] = dict(self.measures)
+        if skipped:
+            record.update(status="skipped", reason=skipped, seconds=round(self.host.now() - started, 2))
+            return record
         # A failed step is photographed too: the picture shows where it stopped.
         self.host.capture(self.out / (name + ".png"))
         record["file"] = name + ".png"
@@ -389,7 +527,8 @@ class Walkthrough:
         record["tree"] = name + ".tree.json"
         crop = step.get("shot", {}).get("crop")
         if crop:
-            node = resolve(tree, crop)
+            # "remembered" crops the frame an action remembered, such as where a collapsed widget was.
+            node = {"frame": self.remembered} if crop == "remembered" and self.remembered else resolve(tree, crop)
             if node is not None:
                 self.host.capture(self.out / (name + ".crop.png"), node["frame"])
                 record["crop"] = name + ".crop.png"
@@ -400,6 +539,8 @@ class Walkthrough:
                     self.check(check, self.out, record)
                 except WalkthroughError as error:
                     reasons.append(str(error))
+                except Exception as error:
+                    reasons.append("harness error in check: %s: %s" % (type(error).__name__, error))
         record.update(status="fail" if reasons else "pass", reason="; ".join(reasons) or None,
                       seconds=round(self.host.now() - started, 2))
         return record
@@ -653,11 +794,39 @@ def run(args, host):
     frame = facts["screens"][0]["frame"]
     cli, exe = app / "Contents/Helpers/modelplan", app / "Contents/MacOS" / APP_EXECUTABLE
     walkthrough = Walkthrough(host, app, out, steps, seed, (frame[2], frame[3]))
+    walkthrough.facts = facts
     fresh = fresh_profile_probe(host, walkthrough, exe, cli, Path(str(home) + "-fresh"), seed, out)
     # Public data only. Without it the cockpit has no faders, no HUD and no enlarged view.
     env = seed_profile(host, cli, home, seed, datetime.datetime.now(datetime.timezone.utc))
     synced = host.run([str(cli), "sync"], env, timeout=130)
     checks = [fresh, outcome("publication-sync", synced.returncode == 0, {"exit": synced.returncode})]
+    try:
+        checks.extend(walk_app(host, walkthrough, exe, cli, env, out))
+    except Exception as error:  # Still write the manifest: the pictures so far are the evidence.
+        checks.append(outcome("harness", False, {"error": "%s: %s" % (type(error).__name__, error)}))
+    crashes = crash_reports(Path.home())
+    checks.append(outcome("no-crash-report", not crashes, {"reports": crashes}))
+    # The session user name stays out of a public artifact even when it is only "runner".
+    host_facts = {k: v for k, v in facts.items() if k != "sessionUser"}
+    manifest = {"schemaVersion": 1, "profile": "synthetic", "sourceSHA": info.get("ModelPlanPublicSource"),
+                "artifact": args.artifact, "host": host_facts, "steps": walkthrough.results, "checks": checks}
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True), encoding="utf-8")
+    (out / "SUMMARY.md").write_text(summary(manifest), encoding="utf-8")
+    shutil.rmtree(home, ignore_errors=True)
+    shutil.rmtree(str(home) + "-fresh", ignore_errors=True)
+    failed = failures(manifest)
+    print("not passed: " + (", ".join(failed) or "none"), flush=True)
+    return 1 if failed else 0
+
+
+def failures(manifest):
+    """Steps that did not pass (a host that cannot walk a step skips it) and failed checks."""
+    return ([r["step"] for r in manifest["steps"] if r["status"] not in ("pass", "skipped")]
+            + [c["check"] for c in manifest["checks"] if c["status"] == "fail"])
+
+
+def walk_app(host, walkthrough, exe, cli, env, out):
+    checks = []
     with (out / "app.log").open("w", encoding="utf-8") as log:
         process, first_window, first_reading = launch_app(host, walkthrough, exe, env, log)
         checks.append(outcome("launch", first_window is not None and process.poll() is None,
@@ -678,17 +847,7 @@ def run(args, host):
         code, forced = quit_app(host, walkthrough, process)
         checks.append(outcome("quit", code == 0 and not forced, {"exit": code, "forced": forced}))
         checks.extend(restart_checks(host, walkthrough, exe, env, log, before))
-    crashes = crash_reports(Path.home())
-    checks.append(outcome("no-crash-report", not crashes, {"reports": crashes}))
-    manifest = {"schemaVersion": 1, "profile": "synthetic", "sourceSHA": info.get("ModelPlanPublicSource"),
-                "artifact": args.artifact, "host": facts, "steps": walkthrough.results, "checks": checks}
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True), encoding="utf-8")
-    (out / "SUMMARY.md").write_text(summary(manifest), encoding="utf-8")
-    shutil.rmtree(home, ignore_errors=True)
-    shutil.rmtree(str(home) + "-fresh", ignore_errors=True)
-    failed = [r["step"] for r in manifest["steps"] if r["status"] != "pass"] + [c["check"] for c in checks if c["status"] == "fail"]
-    print("not passed: " + (", ".join(failed) or "none"), flush=True)
-    return 1 if failed else 0
+    return checks
 
 
 def summary(manifest):

@@ -56,10 +56,12 @@ itself (see `publication-fresh-profile` below). That is the only network use, an
 
 ## Output
 
-`manifest.json` has `sourceSHA`, `artifact`, `host` and:
+`manifest.json` has `sourceSHA`, `artifact`, `host` (display, permissions and GPU; no user name) and:
 
-- `steps[]`: `step`, `title`, `expected`, `prototype`, `status` (`pass`, `fail`, `not-run`), `reason`,
-  `file` (full screen), `crop` (the named surface, when there is one) and `tree` (accessibility state then).
+- `steps[]`: `step`, `title`, `expected`, `prototype`, `status` (`pass`, `fail`, `not-run`, `skipped`), `reason`,
+  `seconds` (how long the step took), `measures` (numbers a step records, below), `file` (full screen), `crop`
+  (the named surface, when there is one) and `tree` (accessibility state then). `skipped` means this host cannot
+  walk the step, such as a display mode it does not offer; it does not fail the job.
 - `checks[]`: `check`, `status`, `detail`. These need no judgement.
 
 `pass` on a step means only that its actions ran and its scripted checks held. Whether the picture looks right
@@ -68,7 +70,17 @@ photographed. A step whose `requires` did not pass is `not-run`, never inferred.
 for people and is also the job summary.
 
 `differsFrom` and `matches` compare a crop with the crop of an earlier step by changed-pixel share, kept under
-`measures`: ring centred on must differ from the snapped widget, off must match it again.
+`measures`. An `await` with `timed` records `secondsTo:<target>`: compare `cockpit-reopen` with `cockpit-open` for
+the second open (G3-42). `setDisplay` records the display it set and `fits` the frame it measured.
+
+Step checks beyond presence: `cardNamed` (the open card carries the name of the ring `clickRing` clicked),
+`collapsed` (the remembered window is gone or less than half its area), `allOnScreen` (every match lies on the
+screen, for the help map), `fits` (inside the visible area between the menu bar and the Dock, for the cockpit at
+1440x900 and 1470x956; hosted modes are 1x, so 1470x956 is skipped where the host does not list it).
+
+`seed.json` has one declared ring at 0%, so the widget, the collapsed sliver, the card and the cockpit are all
+photographed with an exhausted subscription. A hidden menu bar icon is not walked here: a hosted display has no
+notch, so nothing can cover the icon. Each step may name its owner ledger `requirement`.
 
 Scripted checks: `publication-sync`, `launch`, `reader-first-reading` (seconds to the first reading on the widget),
 `alive-after-walk`, `widget-ax-frames`, `doctor-readers` (`modelplan doctor readers` before shutdown, kept as
