@@ -233,6 +233,7 @@ final class CoordinatorPrewarmTests: XCTestCase {
     await coordinator.shutdown()
   }
 
+  #if MODELPLAN_TEST_ONLY_SPI
   /// G3-42: the timing log shows, in a packaged build, that the hidden page was made and how long the click
   /// took to show data. Each line is a stage name with counts and milliseconds, never data.
   @MainActor func testTimingLogShowsThePrewarmAndTheOpenStagesWithoutData() async throws {
@@ -273,4 +274,5 @@ final class CoordinatorPrewarmTests: XCTestCase {
     }
     await coordinator.shutdown(); await client.complete()
   }
+  #endif
 }
