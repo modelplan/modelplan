@@ -1,0 +1,29 @@
+/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
+/* Copyright (c) 2026 ModelPlan. D68 (owner 2026-11-08): the r3 hull's plain plates only, the released unchanged
+   rasters listed in SOURCES.md. The detail layers and the mouth are not part of v1 and stay empty. The plate rules
+   that place these images are the MIT prototype port (prototype-hull-r3.css). The URLs are root-absolute because a
+   custom property's url() resolves where it is used, inside prototype/. */
+:root[data-theme="night"]{
+  --hull-crown:image-set(url('/assets/hull/crown-890-1x.png') 1x,url('/assets/hull/crown-890-2x.png') 2x);
+  --hull-upper:image-set(url('/assets/hull/upper-890-1x.png') 1x,url('/assets/hull/upper-890-2x.png') 2x);
+  --hull-cone:image-set(url('/assets/hull/cone-890-1x.png') 1x,url('/assets/hull/cone-890-2x.png') 2x);
+  --hull-lower:image-set(url('/assets/hull/lower-890-1x.png') 1x,url('/assets/hull/lower-890-2x.png') 2x);
+  --hull-aft:image-set(url('/assets/hull/aft-890-1x.png') 1x,url('/assets/hull/aft-890-2x.png') 2x);
+  --hull-engine-gutter:image-set(url('/assets/hull/engine-gutter-890-1x.png') 1x,url('/assets/hull/engine-gutter-890-2x.png') 2x);
+  --hull-console-gutter:image-set(url('/assets/hull/console-gutter-890-1x.png') 1x,url('/assets/hull/console-gutter-890-2x.png') 2x);
+  --hull-record-gutter:image-set(url('/assets/hull/record-gutter-890-1x.png') 1x,url('/assets/hull/record-gutter-890-2x.png') 2x);
+  --hull-compact-crown:image-set(url('/assets/hull/crown-640-1x.png') 1x,url('/assets/hull/crown-640-2x.png') 2x);
+  --hull-upper-detail:none;--hull-lower-detail:none;--hull-record-detail:none;--hull-mouth:none;
+}
+/* The short profile takes the 640 plates and their native heights. */
+:root[data-theme="night"][data-profile="compact"]{
+  --hull-crown:image-set(url('/assets/hull/crown-640-1x.png') 1x,url('/assets/hull/crown-640-2x.png') 2x);
+  --hull-upper:image-set(url('/assets/hull/upper-640-1x.png') 1x,url('/assets/hull/upper-640-2x.png') 2x);
+  --hull-cone:image-set(url('/assets/hull/cone-640-1x.png') 1x,url('/assets/hull/cone-640-2x.png') 2x);
+  --hull-lower:image-set(url('/assets/hull/lower-640-1x.png') 1x,url('/assets/hull/lower-640-2x.png') 2x);
+  --hull-aft:image-set(url('/assets/hull/aft-640-1x.png') 1x,url('/assets/hull/aft-640-2x.png') 2x);
+  --hull-engine-gutter:image-set(url('/assets/hull/engine-gutter-640-1x.png') 1x,url('/assets/hull/engine-gutter-640-2x.png') 2x);
+  --hull-console-gutter:image-set(url('/assets/hull/console-gutter-640-1x.png') 1x,url('/assets/hull/console-gutter-640-2x.png') 2x);
+  --hull-record-gutter:image-set(url('/assets/hull/record-gutter-640-1x.png') 1x,url('/assets/hull/record-gutter-640-2x.png') 2x);
+  --hull-cone-h:20px;--hull-crown-height:12px;--hull-upper-height:308px;--hull-lower-height:212px;--hull-record-height:58px;
+}
