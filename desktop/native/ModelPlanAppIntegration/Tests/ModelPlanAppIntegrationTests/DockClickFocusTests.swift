@@ -51,14 +51,14 @@ import ModelPlanDock
         while NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true) != nil {}
         for (type, mask, pressure) in [(NSEvent.EventType.leftMouseDown, NSEvent.EventTypeMask.leftMouseDown, Float(1)),
                                        (.leftMouseUp, .leftMouseUp, 0)] {
-            let number = Int.random(in: 1_000...999_999)
+            // AppKit renumbers posted events, so the click is recognised by its window and location.
             NSApp.postEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
-                eventNumber: number, clickCount: 1, pressure: pressure), file: file, line: line), atStart: true)
+                eventNumber: 0, clickCount: 1, pressure: pressure), file: file, line: line), atStart: true)
             let read = try XCTUnwrap(NSApp.nextEvent(matching: mask, until: Date(timeIntervalSinceNow: 2), inMode: .default, dequeue: true),
                                      "the posted \(type) never came back", file: file, line: line)
-            XCTAssertEqual(read.eventNumber, number, "another \(type) was read instead of the click", file: file, line: line)
-            XCTAssertEqual(read.windowNumber, window.windowNumber, file: file, line: line)
+            XCTAssertEqual(read.windowNumber, window.windowNumber, "another \(type) was read instead of the click", file: file, line: line)
+            XCTAssertEqual(read.locationInWindow, point, "another \(type) was read instead of the click", file: file, line: line)
             NSApp.sendEvent(read)
             XCTAssertTrue(NSApp.currentEvent === read, "AppKit's current event is the click it delivered", file: file, line: line)
         }
