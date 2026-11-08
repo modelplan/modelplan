@@ -94,7 +94,9 @@ import WebKit
     view.load(URLRequest(url: URL(string: "modelplan-cockpit://bundle/field.html")!))
     panel.makeKeyAndOrderFront(nil)
     renewIdle()
-    sentLowPower = lowPower(); pageLoaded = false  // the state the payload carries
+    // Nothing sent yet: after `show` the page always gets the state of that moment, so a field opened in Low Power
+    // Mode is quiet even if the payload said otherwise (or was built before the change).
+    sentLowPower = nil; pageLoaded = false
     powerObserver = notifications.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) {
       [weak self] _ in MainActor.assumeIsolated { self?.powerChanged() }
     }

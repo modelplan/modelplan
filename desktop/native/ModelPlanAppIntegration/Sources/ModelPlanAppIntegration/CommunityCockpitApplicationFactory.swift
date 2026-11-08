@@ -189,6 +189,7 @@ struct CockpitUnavailableNotice {
     }
     private var fieldPanel:CockpitFieldPanel?
     var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
+<<<<<<< HEAD
     /// `lowPower`: Low Power Mode at open (spike 11-08, D63); the panel sends later changes to the page.
     /// `focusName`: the published display name of a rocket clicked in the porthole still; an unknown name focuses nothing.
     func fieldPayload(lowPower:Bool=ProcessInfo.processInfo.isLowPowerModeEnabled,focusName:String?=nil) -> String? {
@@ -196,6 +197,13 @@ struct CockpitUnavailableNotice {
         let mine=details.publication?.models.map(\.id) ?? []
         let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
         let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus)
+=======
+    /// `lowPower` is the Low Power Mode state at open (D63): the scene mounts quiet and on demand when it is on.
+    func fieldPayload(lowPower:Bool=ProcessInfo.processInfo.isLowPowerModeEnabled) -> String? {
+        guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
+        let mine=details.publication?.models.map(\.id) ?? []
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:nil)
+>>>>>>> claude/field-low-power
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -213,11 +221,18 @@ struct CockpitUnavailableNotice {
             hide()
         }
     }
+<<<<<<< HEAD
     private func openField(focusName:String?=nil) {
         guard let bundle=owner.verifiedBundle else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
         panel.onWebsite={ [owner] url in owner.openWebsite(url) }
         guard let payload=fieldPayload(lowPower:panel.isLowPower,focusName:focusName) else { return }
+=======
+    private func openField() {
+        guard let bundle=owner.verifiedBundle else { return }
+        let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
+        guard let payload=fieldPayload(lowPower:panel.isLowPower) else { return }
+>>>>>>> claude/field-low-power
         fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
