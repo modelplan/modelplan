@@ -42,6 +42,8 @@ import CryptoKit
     public var rowHighlight:NSColor?=nil,rowOutset:CGFloat=4,rowHighlightRadius:CGFloat=4
     /// Space under the readout before the plate's bottom padding (the prototype's empty .cd-events band).
     public var readoutBottomGap:CGFloat=0
+    /// Space above each event sentence (dock.css .cd-events p margin-top).
+    public var eventGap:CGFloat=6
     /// The notice's own window: gap above it and its inset (dock.css .cd-ev).
     public var noticeGap:CGFloat=7,noticePadding=NSEdgeInsets(top:6,left:8,bottom:6,right:8)
     /// Header: name size (semibold), small text size, gap after the mark, gap below the header.
@@ -197,7 +199,8 @@ import CryptoKit
         var rowY=y+pad.top
         let c=style.columns,g=style.columnGap
         highlightRects=[];noticeRect=nil
-        let readings=value.rows.filter{$0.kind != .notice},notices=value.rows.filter{$0.kind == .notice}
+        let readings=value.rows.filter{$0.kind != .notice && $0.kind != .event},notices=value.rows.filter{$0.kind == .notice}
+        let events=value.rows.filter{$0.kind == .event}
         let noticeTextWidth=inner-style.noticePadding.left-style.noticePadding.right
         for (index,row) in readings.enumerated(){
             if index>0{rowY+=style.rowGap}
@@ -270,6 +273,19 @@ import CryptoKit
             rowY+=pad.bottom
             windowRect=style.window == nil ? nil : CGRect(x:style.padding,y:windowTop,width:inner,height:rowY-windowTop)
             y=rowY
+        }
+        // Event sentences under the readout (prototype dock.css .cd-events p: 6 pt above, 11 pt LCD face, the
+        // full plate width; a warning or critical sentence takes its status ink).
+        for row in events{
+            let rowID="row."+row.id
+            usedRows.insert(rowID)
+            let rowView=rowViews[rowID] ?? DockCardRowView();rowViews[rowID]=rowView;place(rowView,in:self)
+            rowView.setAccessibilityElement(true);rowView.setAccessibilityRole(.staticText);rowView.setAccessibilityLabel(row.value)
+            let colour=row.tone == .warning || row.tone == .critical ? (style.quota[row.tone] ?? style.ink) : style.ink
+            let line=label(rowID+".value",row.value,font:readoutSmall,color:colour,wraps:true);place(line,in:rowView)
+            let h=wrapped(line,width:inner);line.frame=CGRect(x:-2,y:0,width:inner+4,height:h)
+            for child in rowView.subviews where child !== line{child.removeFromSuperview()}
+            y+=style.eventGap;rowView.frame=CGRect(x:style.padding,y:y,width:inner,height:h);y+=h
         }
         // The announced public reset is its own window (dock.css .cd-ev): title and pill, timing, then what it is not.
         let noticeTop=y+style.noticeGap

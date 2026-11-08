@@ -581,7 +581,7 @@
     "Resources/artwork.json": "23c13b15206a61e2a24fe11121f47acdb0472215a5a33151b1a2cd137acf8348",
     "SOURCES.md": "e3279a19fd71718eb725e70914951c0fb828819c50291bd9a6d3bb7d25d9ffb1",
     "T2BundledArtwork.swift": "27c4a46a389afae29c0c7bd9ed5871483c4b666b4c2f67f4b9e206fbe6095265",
-    "T2DockSkin.swift": "86dc2f555d1003a6930a3ed5957be2de4918f05048b707b9e087a222740d8ce4",
+    "T2DockSkin.swift": "461f566122ac3aa007d5d1e5862209c479a96c2299b887feede5bf182926c7c1",
     "T2EdgeCoordinates.swift": "3a6d9945c0bec5ce152c8cad2a55e9cef453ad33f12994f4769dbf185a6d7f67",
     "T2FaceMaterial.swift": "0ac067f6346e44e1447b2f1a1634590e5bb21a1b7190f85ed71d7d7aa2c60fb3",
     "T2FlameFrameProvider.swift": "c4cfe07ca51bc5dea30ecd883de5c56c9e9a1f46ae5ce4202aebeea4edb0aa9f",
