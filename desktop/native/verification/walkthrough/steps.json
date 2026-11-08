@@ -663,6 +663,139 @@
       ]
     },
     {
+      "id": "widget-out-again",
+      "title": "Widget out again after the collapse steps",
+      "expected": "Recovery, not a feature check: when the collapse steps leave the widget folded (build 14: the widget menu can close before Auto-Collapse is pressed), Auto-Collapse is turned off in Settings and Find Quota Widget brings it out, so the card, cockpit and size steps still see the whole widget.",
+      "actions": [
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        },
+        {
+          "op": "when",
+          "absent": "ax^:dock.subscription.",
+          "then": [
+            {
+              "op": "key",
+              "name": "escape"
+            },
+            {
+              "op": "click",
+              "target": "status-item",
+              "button": "right"
+            },
+            {
+              "op": "wait",
+              "seconds": 1.2
+            },
+            {
+              "op": "when",
+              "present": "ax:status.findQuotaWidget",
+              "then": [
+                {
+                  "op": "press",
+                  "by": "title",
+                  "value": "Settings…"
+                },
+                {
+                  "op": "await",
+                  "target": "ax:settings.sidebar",
+                  "timeout": 15
+                },
+                {
+                  "op": "click",
+                  "target": "ax:settings.pane.dock"
+                },
+                {
+                  "op": "await",
+                  "target": "ax:settings.autoHide",
+                  "timeout": 5
+                },
+                {
+                  "op": "when",
+                  "then": [
+                    {
+                      "op": "press",
+                      "by": "id",
+                      "value": "settings.autoHide"
+                    },
+                    {
+                      "op": "wait",
+                      "seconds": 0.6
+                    },
+                    {
+                      "op": "press",
+                      "by": "title",
+                      "value": "Off"
+                    },
+                    {
+                      "op": "wait",
+                      "seconds": 1.5
+                    }
+                  ],
+                  "equals": {
+                    "target": "ax:settings.autoHide",
+                    "value": "On"
+                  }
+                },
+                {
+                  "op": "click",
+                  "target": "subrole:AXCloseButton"
+                },
+                {
+                  "op": "wait",
+                  "seconds": 1
+                },
+                {
+                  "op": "click",
+                  "target": "status-item",
+                  "button": "right"
+                },
+                {
+                  "op": "wait",
+                  "seconds": 1.2
+                },
+                {
+                  "op": "press",
+                  "by": "id",
+                  "value": "status.findQuotaWidget"
+                },
+                {
+                  "op": "await",
+                  "target": "ax^:dock.subscription.",
+                  "timeout": 10
+                }
+              ]
+            },
+            {
+              "op": "key",
+              "name": "escape"
+            },
+            {
+              "op": "park"
+            },
+            {
+              "op": "wait",
+              "seconds": 3
+            }
+          ]
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "exists": "ax^:dock.subscription."
+        }
+      ]
+    },
+    {
       "id": "popup-card",
       "title": "Popup card",
       "expected": "A click on the top ring opens its card with the synthetic windows and reset times.",
