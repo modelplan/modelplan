@@ -151,6 +151,9 @@ extension CommunityCockpitEntryTests {
             let processes = BudgetProcesses.of(web)
             XCTAssertNotNil(processes.web, "cycle \(cycle): the page's WebContent process is attributable")
             let open = try await processes.cpuPercent(over: 10)
+            // Memory while open, per process: the App, the page's WebContent and the GPU process(es).
+            let mib = { (pid: pid_t?) in pid.flatMap { ProcessSample.read($0) }.map { String(format: "%.1f", Double($0.footprint) / mebibyte) } ?? "--" }
+            print("CKP-SHELL-19 cycle=\(cycle) openAppMiB=\(mib(getpid())) openWebContentMiB=\(mib(processes.web)) openGPUMiB=\(processes.gpu.isEmpty ? "--" : processes.gpu.map { mib($0) }.joined(separator: "+"))")
             page.discard()
             return (open, processes)
             }
