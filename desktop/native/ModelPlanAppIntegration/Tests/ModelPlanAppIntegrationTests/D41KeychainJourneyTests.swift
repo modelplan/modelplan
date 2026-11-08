@@ -124,7 +124,8 @@ private actor D41Engine: EngineClient {
         XCTAssertEqual(actions, 1, "the grant carries the user's action, which is what admits the foreground read")
     }
 
-    /// Unchecking Claude Code refuses it: no Keychain read is requested and the standing state stays visible.
+    /// Unticking Claude Code requests no Keychain read and the standing state stays visible. It is
+    /// the only tool here, so D61 (3) also holds Done back: nothing is sent at all.
     func testUncheckedClaudeIsRefusedWithoutAKeychainRequest() async throws {
         let (app, engine) = try await launch(keychain: "unset")
         let sheet = try app.scopeConsentEntry.makeFirstRunView(language: .english)
@@ -135,12 +136,11 @@ private actor D41Engine: EngineClient {
         XCTAssertEqual((try XCTUnwrap(view("scope.firstRun.tool.claude", in: sheet) as? NSButton)).state, .off)
         let before = await engine.recorded()
         XCTAssertTrue(before.isEmpty, "unchecking records nothing until Done")
-        _ = await app.scopeConsentEntry.controller.commitFirstRunChoices()
+        XCTAssertFalse(app.scopeConsentEntry.controller.firstRunChoiceSatisfied, "D61: at least one tool must be ticked")
+        let committed = await app.scopeConsentEntry.controller.commitFirstRunChoices()
+        XCTAssertFalse(committed, "with nothing ticked the choice cannot be sent")
         let grants = await engine.recorded()
-        XCTAssertEqual(grants.count, 1)
-        XCTAssertEqual(grants.first?.allow, [])
-        XCTAssertEqual(grants.first?.deny, [Self.scope])
-        XCTAssertTrue(grants.first?.keychain?.isEmpty != false, "a refused tool starts no Keychain read")
+        XCTAssertTrue(grants.isEmpty, "an unticked Keychain tool starts no Keychain read")
         XCTAssertNotNil(view("scope.keychain.needed", in: app.scopeConsentEntry.view), "Data & Privacy states the need")
         XCTAssertNotNil(view("scope.keychain.allow", in: app.scopeConsentEntry.view), "with the same button")
         let content = try card(app)
