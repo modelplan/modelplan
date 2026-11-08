@@ -33,6 +33,8 @@ public struct StaticDockGeometry {
     public var noticeUnit: CGFloat = 1
     /// Normalized along-axis member pitch ranges registered by the active appearance.
     public var quotaPitchRanges: [String: ClosedRange<Double>] = [:]
+    /// The same pitches before clamping to the strip: the sliver glow is laid out over the whole pitch (G3-51).
+    public var quotaPitchSpans: [String: ClosedRange<Double>] = [:]
     var hoverStations: [String: DockHoverStation] = [:]
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
@@ -1824,7 +1826,8 @@ struct DockHelpInteraction: Equatable {
             let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to:input),now:now,redBelow:effectiveRedBelow)
             let status = reading?.status ?? .unknown
             let role:DockQuotaStatus? = status == .warning || status == .critical ? status:nil
-            return .init(subscriptionID:id,remainingPercent:reading?.remainingPercent,quotaRole:role,ink:role.map(ink),from:pitch.lowerBound,through:pitch.upperBound)
+            return .init(subscriptionID:id,remainingPercent:reading?.remainingPercent,quotaRole:role,ink:role.map(ink),from:pitch.lowerBound,through:pitch.upperBound,
+                         span:presentationGeometry.quotaPitchSpans[id])
         }
     }
     /// Uses the same bounded view preparation in native presentation and no-window checks.
