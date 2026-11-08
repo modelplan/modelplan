@@ -196,14 +196,6 @@ struct DockHelpInteraction: Equatable {
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
-    /// Owner test builds only (EngineDockMenuApplication gates it): rings centred in the face.
-    var ringsCentred = false {
-        didSet {
-            guard oldValue != ringsCentred else { return }
-            for view in [dockView] + alternateViews { view.centresRings = ringsCentred }
-            inputGeneration &+= 1; rebuild()
-        }
-    }
     private func installIgnitionArt() {
         let side = dockView.presentedSkinForChecks?.fixedLayers.first { $0.resource.contains("recessed-guard") }?.rect.width ?? 0
         consoleButton.installArt(side > 0 ? T2IgnitionArt.shared : nil, guardSide: side)
@@ -253,7 +245,6 @@ struct DockHelpInteraction: Equatable {
     private var attentionWasExpanded = false
     private var locateLayer: CAShapeLayer?
     private var pendingUserReveal = false
-    private var cockpitPresentationBlocked = false
     private var locateTask: Task<Void, Never>?
     private var locating = false
     /// G3-12: a requested Help map is drawn over the expanded widget, so the widget stays
@@ -267,9 +258,8 @@ struct DockHelpInteraction: Equatable {
             }
         }
     }
-    /// Presentation is allowed by the lifecycle and not blocked by the cockpit, so a Show
-    /// request can make the widget visible now.
-    var canPresentForHelp: Bool { permitted && !retired && !retiring && !cockpitPresentationBlocked }
+    /// Presentation is allowed by the lifecycle, so a Show request can make the widget visible now.
+    var canPresentForHelp: Bool { permitted && !retired && !retiring }
     public private(set) var menuNotice: DockNotice?
     /// The menu owner connects DockNoticeIndicatorView; no notification ledger is duplicated here.
     public var menuNoticeDidChange: ((DockNotice?, Bool) -> Void)?
@@ -569,7 +559,7 @@ struct DockHelpInteraction: Equatable {
         let catalogue = model?.inputs.map(\.id) ?? []
         let expanded = edge.presentation?.state == .expanded
         let active = permitted && !retired && !rendering && preferences.showDock &&
-            env.presence.cockpitClosed && appearance != nil && view.interactionProjectionAvailable && model != nil
+            appearance != nil && view.interactionProjectionAvailable && model != nil
         var inside: Bool?
         if let place, let pointer = env.pointer,
            let display = env.displays.first(where: { $0.id == place.displayID }) {
@@ -1383,7 +1373,6 @@ struct DockHelpInteraction: Equatable {
         var presence = native.presence
         presence.enabled = preferences.showDock; presence.autoHide = preferences.autoHide
         presence.lifecycleActive = permitted && !retired
-        presence.cockpitClosed = presence.cockpitClosed && !cockpitPresentationBlocked
         presence.allowedOverFullscreen = native.presence.allowedOverFullscreen || preferences.showOverFullscreen
         presence.menuActuallyOpen = menuOpen; presence.locating = locating || helpMapHold
         presence.cardFocused = cardHasKeyboardFocus || interactionView.keyboardTargetID != nil
@@ -1937,16 +1926,11 @@ struct DockHelpInteraction: Equatable {
         try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
         publishAttention()
     }
-    func setCockpitPresentationBlocked(_ blocked: Bool) {
-        guard !retired, cockpitPresentationBlocked != blocked else { return }
-        cockpitPresentationBlocked = blocked
-        if blocked {
-            clearLocateHighlight()
-            edge.refresh()
-            dismissCard()
-        } else {
-            edge.restoreAfterCockpitClose()
-        }
+    /// D49: the widget stays in place while the cockpit is open; only its transient card and highlight go.
+    func prepareForCockpit() {
+        guard !retired else { return }
+        clearLocateHighlight()
+        dismissCard()
     }
 
     func revealForUser() {
