@@ -20,6 +20,9 @@ public enum PercentagePin: String, Codable, CaseIterable, Sendable { case auto, 
 public enum HoverMagnification: String, Codable, CaseIterable, Sendable { case none, subtle, strong }
 public enum MenuDisplay: String, Codable, CaseIterable, Sendable { case icon, tightest, twoWindows }
 public enum OpeningPreference: String, Codable, CaseIterable, Sendable { case hold, quick }
+/// Cockpit size (CKP-SHELL-07, owner D51, D60, D66): Auto by default (85 % on laptop-width screens, 100 % on wider
+/// ones); a screen too short for the choice draws it smaller.
+public enum SettingsCockpitSize: String, Codable, CaseIterable, Sendable { case automatic, percent80 = "80", percent85 = "85", percent90 = "90", percent100 = "100" }
 public enum SettingsLanguage: String, Codable, CaseIterable, Sendable { case chinese = "zh-CN", english = "en" }
 public enum NotificationKind: String, Codable, CaseIterable, Sendable { case forecast, reset, official, expiring, stale }
 public struct NotificationPreferences: Codable, Equatable, Sendable {
@@ -98,6 +101,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public var dockShortcut = ShortcutChord.unassigned
     public var language: SettingsLanguage = .chinese
     public var opening: OpeningPreference = .hold
+    public var cockpitSize: SettingsCockpitSize = .automatic
     public var beatMilliseconds = 250
     public var showProjectNames = true
     public var notifications = NotificationPreferences()
@@ -110,7 +114,7 @@ public struct SettingsPreferences: Codable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case theme, size, motion, transparency, percentageMode, showPercentages, redBelow, sliverAlert
         case showDock, autoHide, revealMilliseconds, magnification, showOverFullscreen, followActiveDisplay
-        case openAtLogin, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, beatMilliseconds, showProjectNames
+        case openAtLogin, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, beatMilliseconds, showProjectNames, cockpitSize
         case notifications, subscriptions, subscriptionSettings, onboarding, dockEdge, dockDisplayID, dockAlongFraction, readerConsent, helpHints
     }
     /// Missing v1 choices adopt defaults; malformed preferences fail closed. Progress recovery is flow-owned.
@@ -131,7 +135,7 @@ public struct SettingsPreferences: Codable, Sendable {
         automaticUpdates = try value(.automaticUpdates, automaticUpdates)
         menuDisplay = try value(.menuDisplay, menuDisplay); openShortcut = try value(.openShortcut, openShortcut)
         dockShortcut = try value(.dockShortcut, dockShortcut); language = try value(.language, language)
-        opening = try value(.opening, opening); beatMilliseconds = try value(.beatMilliseconds, beatMilliseconds)
+        opening = try value(.opening, opening); cockpitSize = try value(.cockpitSize, cockpitSize); beatMilliseconds = try value(.beatMilliseconds, beatMilliseconds)
         showProjectNames = try value(.showProjectNames, showProjectNames); notifications = try value(.notifications, notifications)
         subscriptions = try value(.subscriptions, subscriptions); subscriptionSettings = try value(.subscriptionSettings, subscriptionSettings)
         onboarding = try value(.onboarding, onboarding)

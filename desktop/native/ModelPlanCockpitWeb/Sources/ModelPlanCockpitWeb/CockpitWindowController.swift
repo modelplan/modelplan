@@ -238,6 +238,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     public var verificationShellState: CockpitShellState? { currentShell }
     public var verificationRootHeight: CGFloat? { layout?.rootHeight }
+    public var verificationLayout: CockpitShellLayout? { layout }
     public var verificationDragRegion: NSView? { dragRegion }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
@@ -639,13 +640,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     scope=key; publishAppearance()
   }
   public func updateAppearance(_ value: CockpitAppearance) {
+    let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: .night, locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, size: value.size)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       window?.alphaValue = 1
     }
-    publishAppearance()
+    // Settings "Cockpit size" applies live to an open cockpit; the relayout publishes the appearance.
+    if resized, window != nil { applyLayout() } else { publishAppearance() }
   }
   private var currentShell: CockpitShellState? {
     #if MODELPLAN_TEST_ONLY_SPI
@@ -696,17 +699,25 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let icon = requested ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
+  /// D66: Auto judges the full width of the screen the cockpit opens on (the icon's screen), whatever the Dock takes.
+  private func screenWidth(_ usable: CGRect) -> CGFloat {
+    NSScreen.screens.first { $0.visibleFrame == usable }?.frame.width ?? usable.width
+  }
   private func applyLayout() {
     guard let window, let (usable, icon) = environment(),
-          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed) else { return }
+          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return }
     layout = fit
     appearance = .init(theme: .night, locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, size: appearance.size)
     let frame = shellSession.detached ? fit.clamping(origin: shellSession.origin(for: arrangement) ?? window.frame.origin, usable: usable) : fit.frame
     window.setFrame(frame, display: true)
-    window.contentView?.setBoundsSize(.init(width: 636, height: fit.rootHeight + 34))
-    web?.frame = .init(x: 0, y: 0, width: 636, height: fit.rootHeight + 34)
-    dragRegion?.frame = fit.titleDragFrame
+    // CKP-SHELL-07 (owner D51): a scaled cockpit is the same page at a uniform WebKit page zoom, not a
+    // scaled bitmap, so text is drawn at its final size and the page hit-tests its own controls.
+    let bounds = CGRect(origin: .zero, size: frame.size)
+    window.contentView?.setBoundsSize(bounds.size)
+    web?.frame = bounds
+    web?.pageZoom = fit.scale
+    dragRegion?.frame = fit.scaledTitleDragFrame
     publishAppearance()
   }
   private func setAttached(_ attached: Bool) {
@@ -715,7 +726,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
     } else {
       shellSession.detached = false
-      guard let (usable, icon) = environment(), let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed) else { return }
+      guard let (usable, icon) = environment(), let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return }
       if appearance.reduceMotion { applyLayout() }
       else {
         NSAnimationContext.runAnimationGroup { context in

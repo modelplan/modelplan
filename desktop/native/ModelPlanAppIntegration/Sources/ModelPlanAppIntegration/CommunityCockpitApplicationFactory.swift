@@ -244,7 +244,8 @@ struct CockpitUnavailableNotice {
     private func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
         let e=value.effective
         return .init(theme:owner.appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
-            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames)
+            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames,
+            size:CockpitSize(e.cockpitSize))
     }
     func show() {
         wantsVisible=true
@@ -262,7 +263,8 @@ struct CockpitUnavailableNotice {
             case .system:theme=NSApp.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
             }
             owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
-                redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames)
+                redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,
+                size:CockpitSize(snapshot.preferences.cockpitSize))
             if let appliedSettings { owner.appearance=cockpitAppearance(appliedSettings) }
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
@@ -312,6 +314,19 @@ struct CockpitUnavailableNotice {
                 if fallback == nil { fallback=EngineRowsConsole(composition:composition) };fallback?.show()
             default:break
             }
+        }
+    }
+}
+
+/// Settings "Cockpit size" (CKP-SHELL-07) to the cockpit window's size: the same five choices.
+extension CockpitSize {
+    init(_ value: SettingsCockpitSize) {
+        switch value {
+        case .automatic: self = .automatic
+        case .percent80: self = .percent80
+        case .percent85: self = .percent85
+        case .percent90: self = .percent90
+        case .percent100: self = .percent100
         }
     }
 }
