@@ -114,6 +114,48 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 #cockpit .dk-fad .fd-ch.xhl .fd-indicator{color:var(--lcd-ink)}
 #cockpit .ec.xhl,#cockpit .ek.xhl{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcd-ink) 40%,transparent)}
 
+/* G3-47 base row (CKP-ENG-15..20, CKP-SHELL-13; study entrance.css and base.js): one light per visible subscription
+   under its engine column, in the 34 px reserve below the root, and a dim socket under each empty bay. The official
+   edition draws the released base bells over these boxes; the community edition keeps a plain metal line. Identity
+   comes from the column and the hover name, never a vendor-colour line (CKP-ENG-16). */
+.ck-base{position:absolute;left:0;top:100%;width:100%;height:34px;pointer-events:none;z-index:1}
+.bz,.bz-empty{position:absolute;top:0;width:var(--cw,40px);height:34px;transform:translateX(-50%)}
+.bz{pointer-events:auto}
+.ck[data-active="false"] .bz{pointer-events:none}
+.bz-line,.bz-glow{position:absolute;left:50%;top:3.5px;width:var(--w,22px);height:3px;transform:translateX(-50%);border-radius:1.5px}
+.bz-line{background:var(--base-metal,#9aa1a8)}
+.bz-glow{display:none}
+.bz.stale .bz-line,.bz-empty .bz-line{background:var(--base-stale,#6b7077)}
+.bz-empty .bz-line{opacity:.35}
+/* Working (CKP-ENG-17/18): a soft mouth light below the line in the quota-status colour; nothing when idle. */
+.bz-sheet{position:absolute;left:50%;top:2px;width:var(--w,22px);height:8px;transform:translateX(-50%);transform-origin:50% 0;pointer-events:none;opacity:.6}
+.bz-sheet::before{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(ellipse 50% 70% at 50% 25%,color-mix(in srgb,var(--fuel) 55%,white) 0%,color-mix(in srgb,var(--fuel) 85%,transparent) 38%,color-mix(in srgb,var(--fuel) 35%,transparent) 70%,transparent 100%)}
+/* Mouth shimmer (CKP-ENG-19, MOT-2.3-05): stepped at a low rate, small uneven opacity and height jitter, X fixed;
+   only on an active, open page and never under the host's or the system's Reduce Motion. */
+@keyframes cockpit-mouth-shimmer{0%{opacity:.6;transform:translateX(-50%) scaleY(1)}17%{opacity:.58;transform:translateX(-50%) scaleY(1.04)}36%{opacity:.62;transform:translateX(-50%) scaleY(.95)}49%{opacity:.59;transform:translateX(-50%) scaleY(1.06)}73%{opacity:.61;transform:translateX(-50%) scaleY(.97)}88%{opacity:.57;transform:translateX(-50%) scaleY(1.02)}100%{opacity:.6;transform:translateX(-50%) scaleY(1)}}
+@media (prefers-reduced-motion:no-preference){
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet{animation:cockpit-mouth-shimmer 1.73s steps(10,end) var(--fo,0s) infinite!important}
+}
+/* Flame (owner D73): only the official edition draws it (its mask is released art); the community edition has none.
+   It steps with the study's plume timing (--fd per bell, steps(1,end), alternate), only on an active, open page and
+   never under the host's or the system's Reduce Motion, when it stays still. */
+.bz-plume{display:none;position:absolute;left:50%;transform:translateX(-50%);transform-origin:50% 0;pointer-events:none}
+@keyframes cockpit-bell-plume{0%{transform:translateX(-50%) scaleY(.94);opacity:.8}55%{transform:translateX(-50%) scaleY(1);opacity:1}100%{transform:translateX(-50%) scaleY(.97);opacity:.9}}
+@media (prefers-reduced-motion:no-preference){
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-plume{animation:cockpit-bell-plume var(--fd,.2s) steps(1,end) var(--fo,0s) infinite alternate!important}
+}
+/* Hover (CKP-ENG-20): the light brightens, its column lights and the subscription name shows above it. */
+.ck[data-active="true"] .bz:hover .bz-line{filter:brightness(1.35)}
+.ck-eng .ec.xhl{background-color:#ffffff14;box-shadow:inset 0 0 0 1px #e9edf03a}
+.bz-tip{position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);padding:2px 7px;border-radius:5px;white-space:nowrap;pointer-events:none;display:none;
+  font:500 10.5px/14px var(--f-silk,system-ui);color:var(--pop-ink,#e8e9ea);background:var(--pop-bg,#1b1e22);box-shadow:0 0 0 1px #ffffff1f;z-index:2}
+.ck[data-active="true"] .bz:hover .bz-tip{display:block}
+/* The r6 afterglow arc sat where the base row now is. */
+.ck-afterglow{display:none}
+/* G3-47 review: a key's vendor mark sits beside its name, both centred on the key (layout measured on the study:
+   flex row, centred, 5 px gap, 3 px from the key top). */
+.ck-eng .ek .ek-identity{position:absolute;left:50%;top:3px;transform:translateX(-50%);display:flex;align-items:center;gap:5px;width:max-content;max-width:calc(100% - 8px)}
+.ck-eng .ek .ek-identity .lamp{position:static;transform:none;flex:none}
 /* D68 hull walls, measured on the opus-r7 study as composed (night, all four shapes): the c01 canopy is the crown,
    and below it one continuous plain wall runs from the canopy foot to the aft plate (22 px), tiled from 9 px; no
    crown plate, cone band or record panel is drawn. The wall tile is the study's canopy-h1 lower skin and the aft

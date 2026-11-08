@@ -118,7 +118,14 @@ extension CommunityCockpitEntryTests {
         let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
         let helper = app.appendingPathComponent("Contents/Helpers/modelplan")
         let capture = Self.budgetRepoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
-        let data = try WireDecoder.decode(WireCockpitData.self, from: Data(contentsOf: capture))
+        // Owner D73: measure the worst case, a working subscription whose bell burns (mouth glow and flame both
+        // animate). The capture's one session is made a running, locally seen one; nothing else changes.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var details = try XCTUnwrap(json["details"] as? [String: Any])
+        details["sessionCoverage"] = "local-last-seen"
+        details["sessions"] = try XCTUnwrap(details["sessions"] as? [[String: Any]]).map { var s = $0; s["state"] = "running"; return s }
+        json["details"] = details
+        let data = try WireDecoder.decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: json))
 
         // The App before any cockpit page exists.
         try await Task.sleep(for: .seconds(1))
@@ -147,6 +154,8 @@ extension CommunityCockpitEntryTests {
                 shown = (columns ?? 0) > 0
             }
             XCTAssertTrue(shown, "cycle \(cycle): the readings are on the page")
+            let burning = (try? await web.evaluateJavaScript("document.querySelectorAll('.ck-base .bz.work .bz-plume').length")) as? Int
+            XCTAssertGreaterThan(burning ?? 0, 0, "cycle \(cycle): a working bell burns while the budget is measured (D73)")
             try await Task.sleep(for: .seconds(2)) // let the open settle, as a person reads it
             let processes = BudgetProcesses.of(web)
             XCTAssertNotNil(processes.web, "cycle \(cycle): the page's WebContent process is attributable")

@@ -1,0 +1,34 @@
+/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
+/* Copyright (c) 2026 ModelPlan. G3-47 base bells in the 34 px reserve, written for this page from the base-bells
+   notes (see SOURCES.md); the images are the released, unchanged base-bell rasters. */
+/* Bell width follows the measured column: min(120 px, column x 121/133), the old (cw - 8)/cw proportion at six
+   columns; height is width x 10/81. 162x20 is drawn at 1x and 243x30 at 2x, never a stretched feature. */
+.ck-base :is(.bz,.bz-empty){--bell-w:min(120px,calc(var(--cw) * 121 / 133));--bell-h:calc(var(--bell-w) * 10 / 81)}
+.ck-base :is(.bz,.bz-empty) .bz-line{top:0;width:var(--bell-w);height:var(--bell-h);border-radius:0;background:transparent url('./assets/bells/bell-night-2x.png') center/100% 100% no-repeat;opacity:1}
+@media (min-resolution:2dppx){.ck-base :is(.bz,.bz-empty) .bz-line{background-image:url('./assets/bells/bell-night-3x.png')}}
+/* Subscribed bells take the silver finish through the shared gunmetal transfer (CKP-SHELL-15, CKP-ENG-16), the same
+   for idle, working and stale bells, so an idle bell reads dark, close to the hull; only a working bell lights its
+   mouth. Measured on the opus-r7 study: saturate(.12) brightness(.78). The silver 2x source is the largest that
+   exists, so it serves both densities. */
+.ck-base .bz .bz-line{background-image:url('./assets/bells/bell-silver-2x.png');filter:saturate(.12) brightness(.78)}
+/* Empty bays: the black/graphite bell, quietly dimmed, unfiltered by the gunmetal transfer. */
+.ck-base .bz-empty .bz-line{filter:brightness(.9)}
+.ck-base .bz-glow{display:none}
+.ck[data-active="true"] .ck-base .bz:hover .bz-line{filter:saturate(.12) brightness(.95)}
+/* Working (CKP-ENG-17/18): one soft glow fills the inner mouth from the opening down, whiter at the core, fading
+   about 3 px past the outer lower rim, in the quota-status colour; no plume body. Geometry measured on the study:
+   it starts at bell width x 0.0557, spans the inner mouth (bell width x 0.9033) x 1.08, and runs 5 px past the
+   bell's foot at 60 % opacity. */
+.ck-base .bz .bz-sheet{top:calc(var(--bell-w) * .05574);width:calc(var(--bell-w) * .9033 * 1.08);height:calc(var(--bell-h) - var(--bell-w) * .05574 + 5px);opacity:.6;z-index:2}
+.ck-base .bz .bz-sheet::before{border-radius:50% 50% 0 0/calc(var(--bell-w) * .0226) calc(var(--bell-w) * .0226) 0 0;
+  background:linear-gradient(180deg,color-mix(in srgb,color-mix(in srgb,var(--fuel) 78%,white) 95%,transparent),color-mix(in srgb,var(--fuel) 78%,transparent) 22%,color-mix(in srgb,var(--fuel) 40%,transparent) 65%,transparent);
+  -webkit-mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%);mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%)}
+/* Flame (owner D73): the study's task 66 plume at half its height and faint (owner 10-26: half is enough, just a
+   hint). As the study composes it (its adaptive bell variables win over task 66's 3.5 px), it starts at the mouth
+   (bell width x 0.05574), spans the inner mouth (bell width x 0.9033), runs min((34 - top) / 2, len x 0.8) px, is cut by the released mouth-plume-mask.png and coloured by the subscription's quota state (--fuel),
+   like the glow above it. Its paint is held at .5 so the stepped keyframes (on the element) only vary it from there. */
+.ck-base .bz .bz-plume{display:block;top:calc(var(--bell-w) * .05574);width:calc(var(--bell-w) * .9033);height:min(calc((34px - var(--bell-w) * .05574) / 2),calc(var(--len,18px) * .8));z-index:2}
+.ck-base .bz .bz-plume::before{content:"";position:absolute;inset:0;opacity:.5;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--fuel) 95%,transparent),color-mix(in srgb,var(--fuel) 70%,transparent) 24%,color-mix(in srgb,var(--fuel) 26%,transparent) 65%,transparent);
+  -webkit-mask-image:url('./assets/bells/mouth-plume-mask.png');mask-image:url('./assets/bells/mouth-plume-mask.png');-webkit-mask-size:100% 100%;mask-size:100% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+.ck-base .bz .bz-sheet{z-index:3}
