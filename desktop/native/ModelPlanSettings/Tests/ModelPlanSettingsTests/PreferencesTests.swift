@@ -41,7 +41,8 @@ final class PreferencesTests: XCTestCase {
             let url = try file(), first = try SettingsStore(url: url)
             _ = try await first.update { $0.autoHide = saved }
             _ = try await SettingsStore(url: url).update { $0.language = .english }
-            let restarted = await SettingsStore(url: url).snapshot().preferences
+            let reopened = try SettingsStore(url: url)
+            let restarted = await reopened.snapshot().preferences
             XCTAssertEqual(restarted.autoHide, saved, "a saved value survives restart and unrelated edits")
         }
         let unset = try JSONDecoder().decode(SettingsPreferences.self, from: Data("{\"showDock\":true}".utf8))
