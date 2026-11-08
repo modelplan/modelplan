@@ -8,8 +8,19 @@ import ModelPlanSettings
     func render()
     func hide()
     func applySettings(_ value: SettingsApplication)
+    /// True from the moment an open is requested until the surface has closed.
+    var isShowing: Bool { get }
+    /// A user close: keeps the surface's transition and saved state, unlike `hide()`.
+    func requestClose()
+    /// Called when `isShowing` may have changed without a call from the owner, such as the page's own close.
+    var onShowingChanged: (() -> Void)? { get set }
 }
-public extension EngineRowsConsoleSurface { func applySettings(_ value: SettingsApplication) {} }
+public extension EngineRowsConsoleSurface {
+    func applySettings(_ value: SettingsApplication) {}
+    var isShowing: Bool { false }
+    func requestClose() { hide() }
+    var onShowingChanged: (() -> Void)? { get { nil } set {} }
+}
 /// Read-only native Dock-reading status; no private cockpit or producer is constructed.
 @MainActor final class EngineRowsConsole: NSWindowController, EngineRowsConsoleSurface {
     private let composition: EngineDockMenuComposition
