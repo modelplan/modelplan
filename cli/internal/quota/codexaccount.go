@@ -648,10 +648,19 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		!s.Good.ObservedAt.After(now) && now.Sub(s.Good.ObservedAt) <= accountKeep &&
 		admission.State().CaptureAllowed(s.Good.Admission, consent.ScopeCodexRuntimeUsage) {
 		failed, s = s, s.Good
-		if failed.Status != toolcli.RuntimeMissing {
-			r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: "stale", ErrorCode: failed.failureCode(),
-				Reason: "last refresh failed at " + failed.ObservedAt.UTC().Format(time.RFC3339) + "; showing the reading from " + s.ObservedAt.UTC().Format(time.RFC3339)})
+	}
+	// failureSource names the failed refresh; shown says whether the retained windows are the ones shown.
+	failureSource := func(shown bool) {
+		if failed == nil || failed.Status == toolcli.RuntimeMissing {
+			return
 		}
+		reason := "last refresh failed at " + failed.ObservedAt.UTC().Format(time.RFC3339)
+		if shown {
+			reason += "; showing the reading from " + s.ObservedAt.UTC().Format(time.RFC3339)
+		} else {
+			reason += "; the session-log reading is shown"
+		}
+		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: "stale", ErrorCode: failed.failureCode(), Reason: reason})
 	}
 	if s == nil || s.Status != "ok" || now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now.Add(5*time.Minute)) {
 		return
@@ -670,10 +679,12 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 	if !live {
 		for _, candidate := range r.Accounts {
 			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil {
+				failureSource(false) // the session-log reading wins; the retained windows are not merged
 				return
 			}
 		}
 	}
+	failureSource(true)
 	var harness *Harness
 	pool := ""
 	hadLocal := false

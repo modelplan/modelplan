@@ -4,6 +4,7 @@ package quota
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,5 +134,26 @@ func TestCodexFailureStateMatchesTheOtherReaders(t *testing.T) {
 		if got := codexFailureState(&c.s); got != c.want {
 			t.Errorf("%+v: %q, want %q", c.s, got, c.want)
 		}
+	}
+}
+
+// With session logs present the log reading wins, so the failure source must not claim the
+// retained windows are shown, and the retained windows are not merged.
+func TestFailedRefreshWithSessionLogsDoesNotClaimRetainedWindows(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	goodAccount(t, cache, acctNow)
+	at := acctNow.Add(10 * time.Minute)
+	if err := RefreshCodexAccount(context.Background(), cache, failingCodex(t), at); err == nil {
+		t.Fatal("a failing Codex reported success")
+	}
+	used := 5.0
+	r := Report{Accounts: []Account{{Source: "codex", ObservedAt: at, Windows: []Window{{Kind: "five_hour", UsedPercent: &used, ObservedAt: at}}}}}
+	applyAccount(&r, cache, at.Add(time.Minute))
+	if len(r.Accounts) != 1 || r.Accounts[0].Via != "" || len(r.Accounts[0].Windows) != 1 {
+		t.Fatalf("accounts %+v", r.Accounts)
+	}
+	if len(r.Sources) != 1 || r.Sources[0].Status != "stale" || strings.Contains(r.Sources[0].Reason, "showing") || !strings.Contains(r.Sources[0].Reason, "session-log") {
+		t.Fatalf("sources %+v", r.Sources)
 	}
 }
