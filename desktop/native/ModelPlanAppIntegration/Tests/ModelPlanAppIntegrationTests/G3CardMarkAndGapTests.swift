@@ -123,7 +123,8 @@ private actor G350Engine: EngineClient {
             XCTAssertGreaterThanOrEqual(fill, 0.94, "\(resource): the glyph fills the mark (no file clear space)")
             let card = DockCardView(frame: .zero)
             card.appearance = NSAppearance(named: .darkAqua)
-            try card.apply(content(String(resource.dropFirst(5)).capitalized), style: StaticDockPreviewHost.prototypeCardStyle, brandImage: mark)
+            var production = StaticDockPreviewHost.prototypeCardStyle; production.showsActions = false // the production card (D37)
+            try card.apply(content(String(resource.dropFirst(5)).capitalized), style: production, brandImage: mark)
             let frame = try XCTUnwrap(card.brandMarkFrameForChecks, resource)
             XCTAssertEqual(max(frame.width, frame.height), side, accuracy: 0.01, resource)
             XCTAssertEqual(frame.midX, 11 + 10, accuracy: 0.01, "\(resource): centred in the slot")
@@ -134,7 +135,7 @@ private actor G350Engine: EngineClient {
             if let image = bitmap.cgImage { png(image, out.appendingPathComponent("after-\(resource).png")) }
             // Before: main's cardBrandImage, the whole file (viewBox) drawn into the 20 pt slot.
             if let store = StaticDockPreviewHost.cardResourceStore(zaiMarkEnabled: zai), let file = try? store.image(resource, maximumPixelSize: 64) {
-                var legacy = StaticDockPreviewHost.prototypeCardStyle; legacy.brandMarkSize = nil
+                var legacy = StaticDockPreviewHost.prototypeCardStyle; legacy.brandMarkSize = nil; legacy.showsActions = false
                 let old = DockCardView(frame: .zero); old.appearance = NSAppearance(named: .darkAqua)
                 try old.apply(content(String(resource.dropFirst(5)).capitalized), style: legacy, brandImage: NSImage(cgImage: file, size: NSSize(width: 20, height: 20)))
                 if let rep = old.bitmapImageRepForCachingDisplay(in: old.bounds) {
