@@ -12,12 +12,12 @@ function zeroData(){
  const account=data.projection.rows[0].accounts[0];for(const w of account.windows)w.remainingPercent=75;
  return {data,account,windows:account.windows};
 }
-async function open(page,data){
- await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+async function open(page,data,acked){
+ await page.addInitScript(()=>{window.posted=[];window.webkit={messageHandlers:{cockpit:{postMessage(m){window.posted.push(m);}}}};});
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance,shell,redBelow:25,...(acked?{ackedCautions:acked}:{})}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
  return {send,receive,lamp:page.locator('[data-caution]')};
@@ -50,10 +50,26 @@ test('G3-56 a pressed caution stays steady after the cockpit closes and reopens'
  await expect(lamp).not.toHaveClass(flash);
 });
 
-test('G3-56 a pressed caution stays steady in a reloaded page',async({page})=>{
+// The page reports each acknowledgement to the host (action cautionAck), which keeps it in the app's preferences and
+// returns it in the next load. The page's own web view keeps nothing.
+const posted=page=>page.evaluate(()=>window.posted.map(m=>typeof m==='string'?JSON.parse(m):m).filter(m=>m.type==='action'&&m.action==='cautionAck').map(m=>m.ids));
+test('G3-56 a pressed caution is reported to the host and stays steady after an app restart',async({page})=>{
  const {data,windows}=zeroData();windows[0].remainingPercent=0;
  let o=await open(page,data);await expect(o.lamp).toHaveClass(flash);await pressed(page,o.lamp);
- o=await open(page,data);await expect(o.lamp).toHaveClass(/\blit\b/);await expect(o.lamp).not.toHaveClass(flash);
+ const reports=await posted(page);expect(reports).toHaveLength(1);expect(reports[0]).toHaveLength(1);
+ const ids=reports[0];
+ // Restart: a fresh page whose load carries what the host remembered.
+ o=await open(page,data,ids);await expect(o.lamp).toHaveClass(/\blit\b/);await expect(o.lamp).not.toHaveClass(flash);
+ expect(await posted(page)).toEqual([]);
+ // Without the host's memory the same page blinks again, so the memory is what keeps it steady.
+ o=await open(page,data);await expect(o.lamp).toHaveClass(flash);
+});
+
+test('G3-56 a recurrence is reported so the host forgets the cleared caution',async({page})=>{
+ const {data,windows}=zeroData();windows[0].remainingPercent=0;
+ const {send,receive,lamp}=await open(page,data);await expect(lamp).toHaveClass(flash);await pressed(page,lamp);
+ for(const w of windows)w.remainingPercent=75;expect(await receive(send('display',{data}))).toBe(true);
+ expect((await posted(page)).at(-1)).toEqual([]);
 });
 
 test('G3-56 a real clear and return blinks again, and so does a second window going red',async({page})=>{
@@ -81,4 +97,19 @@ test('G3-56 pressing the lamp flashes the newest acknowledged caution row once, 
  await lamp.click();await expect(marked).toHaveCount(1);
  expect(await marked.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');
  expect(await marked.evaluate(e=>getComputedStyle(e).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+});
+
+test('G3-56 a pressed amber caution that escalates to red blinks again',async({page})=>{
+ const iso=minutes=>new Date(Date.parse('2026-11-04T12:00:00Z')+minutes*60000).toISOString();
+ const data=visualFixture().data,row=data.projection.rows[0],account=row.accounts[0],w=account.windows[0];
+ for(const r of data.projection.rows)for(const a of r.accounts)for(const x of a.windows)if(x.remainingPercent!==null)x.remainingPercent=90;
+ w.remainingPercent=60;w.resetsAt=iso(300);
+ data.details.forecasts=[{source:row.id,subscriptionRef:account.subscriptionRef,windowId:w.id,runsOutAt:iso(40),pace:'tight',basis:'recent-rate',observedAt:iso(-2),}];
+ const {send,receive,lamp}=await open(page,data);
+ await expect(lamp).toHaveClass(/\bamber\b/);await expect(lamp).toHaveClass(flash);await pressed(page,lamp);
+ // The same amber caution with other numbers stays steady.
+ w.remainingPercent=55;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(flash);
+ // Crossing the red line is an escalation: a different severity, so it blinks.
+ w.remainingPercent=20;expect(await receive(send('display',{data}))).toBe(true);
+ await expect(lamp).toHaveClass(/\bred\b/);await expect(lamp).toHaveClass(flash);
 });
