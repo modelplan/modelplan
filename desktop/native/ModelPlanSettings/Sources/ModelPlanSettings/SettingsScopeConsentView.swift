@@ -255,15 +255,13 @@ import ModelPlanWire
         let keychain = tool.promptsKeychain ? mayAskKeychain : noKeychain
         return .init(base.english + keychain.english, base.chinese + keychain.chinese)
     }
-    static func blockLine(_ block: ScopeToolBlock, tool: String, firstRun: Bool = true) -> SettingsText {
+    static func blockLine(_ block: ScopeToolBlock, tool: String) -> SettingsText {
         let name = toolName(tool)
         switch block {
-        case .notSignedIn where firstRun:
-            return .init("Not signed in. Sign in to " + name.english + ", then turn it on in Settings › Data & Privacy.",
-                         "未登录。登录 " + name.chinese + " 后，可在 设置 › 数据与隐私 中打开。")
         case .notSignedIn:
+            // One sentence pair with the engine rows (rows.NotSignedInText): first run, Settings and the menu agree.
             return .init("Not signed in to " + name.english + ". ModelPlan reads it after you sign in.",
-                         "未登录 " + name.chinese + "。登录后 ModelPlan 会读取。")
+                         "未登录 " + name.chinese + "。登录后会自动读取。")
         case .unsupportedLogin:
             return .init("Signed in with an account ModelPlan cannot read yet, so nothing is read.",
                          "这种账号登录方式暂不支持读取，因此不读取。")
@@ -359,7 +357,7 @@ import ModelPlanWire
             }
             // G3-38 (owner D52): say why a detected tool has no reading, e.g. Claude Code signed out.
             if scope.detected, let block = controller.block(forTool: scope.tool) {
-                label(Self.blockLine(block, tool: scope.tool, firstRun: false))
+                label(Self.blockLine(block, tool: scope.tool))
                 arrangedSubviews.last?.setAccessibilityIdentifier("scope.status." + id)
             }
             // D27: a standard reader is on by default; its row says so and its switch is on.

@@ -63,6 +63,20 @@ func TestG338ClaudeWithoutLoginIsNotSignedIn(t *testing.T) {
 	if claude.Reason.Code != rows.CodeNotSignedIn || claude.Reason.Text.EN != "Not signed in" || claude.Reason.Text.ZH != "未登录" {
 		t.Fatalf("reason = %+v, want not_signed_in", claude.Reason)
 	}
+	// One sentence pair with first run and Settings (rows.NotSignedInText), no English in the Chinese
+	// line besides the tool's own name.
+	want := rows.NotSignedInText(claude.Name.EN, claude.Name.ZH)
+	if claude.NextStep == nil || claude.NextStep.Text != want || claude.NextStep.Text.ZH != "未登录 "+claude.Name.ZH+"。登录后会自动读取。" {
+		t.Fatalf("next step = %+v, want %+v", claude.NextStep, want)
+	}
+	// Needs action, but there is nothing for the user to press: no menu next-step button, and the
+	// summary does not count a signed-out tool as a usable Dock row.
+	if claude.State != rows.StateNeedsAction || claude.NextStep.Action != rows.ActionNone {
+		t.Fatalf("state=%s action=%s, want needs_action with action none", claude.State, claude.NextStep.Action)
+	}
+	if projection.RowsSummary.State == rows.SummaryStateOK {
+		t.Fatalf("a signed-out tool alone flipped the summary to ok: %+v", projection.RowsSummary)
+	}
 	for _, surface := range claude.Surfaces {
 		if surface == rows.SurfaceDock {
 			t.Fatal("a signed-out tool still has a Dock ring")

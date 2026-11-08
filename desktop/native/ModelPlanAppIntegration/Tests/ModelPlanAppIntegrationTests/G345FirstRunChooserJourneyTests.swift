@@ -49,7 +49,7 @@ private actor G345Engine: EngineClient {
     }
     /// Claude Code (local history, saved login), Codex (local history, runtime), Cursor (local history,
     /// saved login, browser session), ZCode (saved key) are detected; Gemini is not.
-    private func facts(keychain: Set<String> = ["claude.account_usage.saved_login"]) throws -> WireConsentFacts {
+    private func facts(keychain: Set<String> = ["claude.account_usage.saved_login"], detectedOnly: Set<String>? = nil) throws -> WireConsentFacts {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures().appendingPathComponent("WireConsentFacts.json"))) as? [String: Any])
         let base = try XCTUnwrap((object["scopes"] as? [[String: Any]])?.first)
         let paths: [(String, String, String, Bool, Bool)] = [
@@ -66,7 +66,7 @@ private actor G345Engine: EngineClient {
         object["scopes"] = paths.map { id, tool, route, defaultCheck, detected -> [String: Any] in
             var scope = base
             scope["scope"] = id; scope["tool"] = tool; scope["route"] = route; scope["state"] = "unset"
-            scope["detected"] = detected; scope["retired"] = false; scope["defaultCheck"] = defaultCheck; scope["cleanupPending"] = false
+            scope["detected"] = detectedOnly.map { $0.contains(tool) } ?? detected; scope["retired"] = false; scope["defaultCheck"] = defaultCheck; scope["cleanupPending"] = false
             scope.removeValue(forKey: "disabledReason")
             if keychain.contains(id) { scope["keychain"] = "unset" } else { scope.removeValue(forKey: "keychain") }
             return scope
@@ -90,11 +90,11 @@ private actor G345Engine: EngineClient {
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
-    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"]) async throws -> (EngineDockMenuApplication, G345Engine) {
+    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"], detectedOnly: Set<String>? = nil) async throws -> (EngineDockMenuApplication, G345Engine) {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g345-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
-        let consent = try facts(keychain: keychain), snapshot = try rows()
+        let consent = try facts(keychain: keychain, detectedOnly: detectedOnly), snapshot = try rows()
         final class Holder: @unchecked Sendable { var engine: G345Engine? }
         let holder = Holder()
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]),
@@ -138,7 +138,7 @@ private actor G345Engine: EngineClient {
                      "a login that is not read does not describe a read")
         XCTAssertTrue(try text("scope.firstRun.reads.claude", in: window).contains("Keychain"), "Claude Code says macOS may ask for the Keychain")
         XCTAssertTrue(try text("scope.firstRun.reads.codex", in: window).contains("No Keychain prompt"))
-        XCTAssertTrue(try text("scope.firstRun.status.claude", in: window).hasPrefix("Not signed in"), "G3-38: signed-out Claude Code says so")
+        XCTAssertEqual(try text("scope.firstRun.status.claude", in: window), "Not signed in to Claude Code. ModelPlan reads it after you sign in.", "G3-38: signed-out Claude Code says so, in the one shared sentence")
         XCTAssertTrue(try text("scope.firstRun.status.zai", in: window).contains("nothing is read"), "D52: ZCode with an account login is listed, not read")
         let byTool = Dictionary(uniqueKeysWithValues: boxes.map { ($0.accessibilityIdentifier().replacingOccurrences(of: "scope.firstRun.tool.", with: ""), $0) })
         XCTAssertEqual(byTool["codex"]?.state, .on); XCTAssertEqual(byTool["cursor"]?.state, .on)
@@ -180,12 +180,14 @@ private actor G345Engine: EngineClient {
         let window = try await firstRun(app)
         XCTAssertEqual(try text("scope.firstRun.notice", in: window).contains("设置 › 数据与隐私"), true)
         XCTAssertTrue(views(try find("scope.firstRun.row.codex", in: window, as: NSView.self)).compactMap { ($0 as? NSTextField)?.stringValue }.contains("本机已检测到"))
-        XCTAssertTrue(try text("scope.firstRun.status.claude", in: window).hasPrefix("未登录"))
+        XCTAssertEqual(try text("scope.firstRun.status.claude", in: window), "未登录 Claude Code。登录后会自动读取。")
         XCTAssertTrue(try text("scope.firstRun.reads.claude", in: window).contains("钥匙串"))
         // Settings > Data & Privacy states the same reason on the tool's paths (G3-38 A).
         let settings = views(app.scopeConsentEntry.view)
         let status = try XCTUnwrap(settings.first { $0.accessibilityIdentifier() == "scope.status.claude.account_usage.saved_login" } as? NSTextField)
-        XCTAssertTrue(status.stringValue.hasPrefix("未登录 Claude Code"), status.stringValue)
+        XCTAssertEqual(status.stringValue, "未登录 Claude Code。登录后会自动读取。", "Settings and first run use the same sentence")
+        let line = try text("scope.firstRun.status.claude", in: window).replacingOccurrences(of: "Claude Code", with: "")
+        XCTAssertNil(line.range(of: "[A-Za-z]", options: .regularExpression), "no English inside the Chinese line besides the tool name: \(line)")
     }
 
     /// D61 (3): at least one tool must be ticked; Done stays disabled until one is.
@@ -241,5 +243,45 @@ private actor G345Engine: EngineClient {
         for _ in 0..<300 where grants.isEmpty { try await Task.sleep(for: .milliseconds(10)); grants = await engine.recorded() }
         XCTAssertEqual(grants.first?.deny, ["cursor.account_usage.saved_login", "cursor.local_history"])
         XCTAssertTrue(grants.first?.keychain?.isEmpty != false)
+    }
+
+    /// D61 (3) exception: when no listed tool can be read (here a signed-out Claude Code and a ZCode
+    /// account login), nothing can be ticked, so Done stays enabled; pressing it finishes the first run
+    /// and sends no grant. The page cannot get stuck.
+    func testDoneStaysEnabledWhenNoDetectedToolIsReadable() async throws {
+        let (app, engine) = try await launch(locale: "en-US", detectedOnly: ["claude", "zai"])
+        let window = try await firstRun(app)
+        for tool in ["claude", "zai"] {
+            let box = try find("scope.firstRun.tool." + tool, in: window, as: NSButton.self)
+            XCTAssertFalse(box.isEnabled, "\(tool) cannot be read, so its checkbox is disabled")
+            XCTAssertEqual(box.state, .off)
+        }
+        XCTAssertTrue(app.scopeConsentEntry.controller.firstRunChoiceSatisfied)
+        let done = try find("firstRun.done", in: window, as: NSButton.self)
+        XCTAssertTrue(done.isEnabled, "nothing is readable, so Done must not wait for a tick")
+        XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.firstRun.pickOne" && !$0.isHiddenOrHasHiddenAncestor })
+        done.performClick(nil)
+        var saved = await app.foundationStore.snapshot()
+        for _ in 0..<300 where !saved.preferences.onboarding.completed { try await Task.sleep(for: .milliseconds(10)); saved = await app.foundationStore.snapshot() }
+        XCTAssertTrue(saved.preferences.onboarding.completed, "Done finishes the first run")
+        let grants = await engine.recorded()
+        XCTAssertTrue(grants.isEmpty, "no readable tool: Done sends no grant")
+    }
+
+    /// G3-38: a not_signed_in row (needs_action, next step action none) is shown in Settings and the
+    /// menu, but it has no Dock row, no reset or forecast signal (the menu badge), and no diagnostics
+    /// or next-step item in the status menu.
+    func testNotSignedInRowRaisesNoBadgeOrMenuAction() async throws {
+        let (app, _) = try await launch(locale: "en-US")
+        let provider = app.composition.provider
+        for _ in 0..<300 where !provider.dockContent.menuRows.contains(where: { $0.id == "claude" }) { try await Task.sleep(for: .milliseconds(10)) }
+        let content = provider.dockContent
+        XCTAssertTrue(content.menuRows.contains { $0.id == "claude" }, "the menu still names the tool")
+        XCTAssertFalse(content.dockRows.contains { $0.id == "claude" || $0.id == "zai" }, "a signed-out tool has no Dock row")
+        XCTAssertTrue(app.composition.resetSignals.isEmpty, "nothing that could raise the menu badge")
+        if let menu = app.liveStatusMenu {
+            let titles = menu.items.map(\.title)
+            XCTAssertFalse(titles.contains { $0.contains("Details…") || $0.contains("Allow reading") || $0.contains("Permission needed") }, "no next-step or diagnostics item: \(titles)")
+        }
     }
 }

@@ -356,6 +356,17 @@ func applyOutcome(row *Row, in Input, c *candidate, outcome Outcome) {
 	row.State = outcome.State
 	row.Reason = Reason{Code: outcome.Code, Text: outcome.Text}
 	row.NextStep = nextStep(in, c, outcome)
+	if outcome.Code == CodeNotSignedIn && row.NextStep != nil {
+		// One sentence pair across first run, Settings and the rows (G3-38): the Chinese line
+		// carries no English words besides the tool's own name.
+		row.NextStep.Text = NotSignedInText(row.Name.EN, row.Name.ZH)
+	}
+}
+
+// NotSignedInText is the single not-signed-in sentence. The Swift copies in Settings and
+// first run (SettingsScopeConsentView.blockLine) use the same words; a test pins them.
+func NotSignedInText(nameEN, nameZH string) Text {
+	return Text{EN: "Not signed in to " + nameEN + ". ModelPlan reads it after you sign in.", ZH: "未登录 " + nameZH + "。登录后会自动读取。"}
 }
 
 var actionTexts = map[Action]Text{
@@ -375,9 +386,6 @@ func nextStep(in Input, c *candidate, outcome Outcome) *NextStep {
 	step := &NextStep{Action: outcome.Action, Text: actionTexts[outcome.Action]}
 	if outcome.Code == CodeNoReader {
 		step.Text = Text{EN: "Reader support is not available yet", ZH: "暂不支持此读取器"}
-	}
-	if outcome.Code == CodeNotSignedIn {
-		step.Text = Text{EN: "Sign in to the tool; ModelPlan reads it after that", ZH: "登录该工具后，ModelPlan 会开始读取"}
 	}
 	if outcome.Code == CodeNoManualReading {
 		step.Text = Text{EN: "Add a manual reading in Settings", ZH: "在设置中填写手动读数"}
