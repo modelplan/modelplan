@@ -470,6 +470,8 @@ struct StatusNoticePresentation {
         var context = settings.editor.context
         context.shortcutObservations = observations
         settings.update(context: context)
+        // G3-52: a hidden-icon notice names the Cockpit shortcut as it now is.
+        if statusItemHidden { checkStatusItemVisibility() }
     }
     private func performShortcut(_ action: ShortcutAction) {
         guard !terminating, !lifecyclePaused else { return }
@@ -591,13 +593,22 @@ struct StatusNoticePresentation {
         guard !terminating else { return }
         let visible = statusItemVisibility.map { $0() } ?? status?.button?.window.map { $0.occlusionState.contains(.visible) }
         let hidden = visible == false
-        guard hidden != statusItemHidden else { return }
+        let notice = hidden ? statusItemHiddenNotice : nil
+        guard hidden != statusItemHidden || notice != settings.editor.context.statusItemNotice else { return }
         statusItemHidden = hidden
-        composition.dock.statusIconNotice = hidden ? EngineRowsText.statusItemHidden : nil
+        composition.dock.statusIconNotice = hidden ? EngineRowsText.statusItemHiddenMenu : nil
         var context = settings.editor.context
-        context.statusItemNotice = hidden ? EngineRowsText.statusItemHidden : nil
+        context.statusItemNotice = notice
         settings.update(context: context)
     }
+    /// G3-52: the steps for this Mac, naming only the ways in this build has (the Cockpit entry, a set shortcut).
+    var statusItemHiddenNotice: SettingsText {
+        let shortcut = settings.editor.snapshot.flatMap { EngineRowsText.chordLabel($0.preferences.openShortcut) }
+        return EngineRowsText.statusItemHidden(macOSMajor: macOSMajorVersion(), cockpit: cockpitEntryEnabled,
+                                               shortcut: cockpitEntryEnabled && shortcutRegistrar != nil ? shortcut : nil)
+    }
+    /// The macOS major version the notice is worded for (a test seam; this Mac by default).
+    var macOSMajorVersion: () -> Int = { ProcessInfo.processInfo.operatingSystemVersion.majorVersion }
     var statusButtonForTesting: NSStatusBarButton? { status?.button }
     var statusMenuForTesting: NSMenu? { status?.menu }
     var statusLengthForTesting: CGFloat? { status?.length }
