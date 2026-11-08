@@ -5,6 +5,7 @@ import ModelPlanDock
 /// Strings owned by the normal-entry status menu and its fallback reading window.
 enum EngineRowsText {
     static let showQuotaWidget = SettingsText("Show Quota Widget", "显示额度挂件")
+    static let findQuotaWidget = SettingsText("Find Quota Widget", "找到额度挂件")
     /// The widget menu's checkable item; the same stored setting as Settings' auto-collapse switch.
     static let autoCollapse = SettingsText("Auto-Collapse", "自动收起")
     /// One-time hint after the widget is turned off from the status menu or Settings.
