@@ -125,6 +125,10 @@ elif name == 'python3':
             command.write_text(stub)
             command.chmod(0o700)
         self.output = root / 'packaged'
+        # A stale generated pins file from an earlier local build.
+        self.generated = self.repo / 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift'
+        self.generated.parent.mkdir(parents=True)
+        self.generated.write_text('stale')
         self.artifact = root / 'credential-artifact'
         self.artifact.mkdir()
         self.credential = self.artifact / 'modelplan-credential-agent'
@@ -305,10 +309,8 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
                     self.assertFalse((resources / 'Cockpit').exists())
                     self.assertFalse((resources / 'build-edition.json').exists())
                     self.assertFalse(any(c['command'] == 'npm' for c in self.fixture.commands()))
-                    # No generated cockpit pins: a package without the page admits none.
-                    swift = [c for c in self.fixture.commands() if c['command'] == 'swift']
-                    self.assertTrue(swift)
-                    self.assertFalse(any('-DMODELPLAN_COCKPIT_BUILD_PINS' in c['args'] for c in swift))
+                    # No generated cockpit pins: a package without the page admits none, even after an earlier build.
+                    self.assertFalse(self.fixture.generated.exists())
                     self.assertFalse(any(c['command'] == 'python3' and c['args'][0].endswith('/check-bundle-pins.py')
                                          for c in self.fixture.commands()))
 
@@ -331,7 +333,6 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
         self.assertLess(max(builds), pins)
         swift = [i for i, c in enumerate(commands) if c['command'] == 'swift']
         self.assertLess(pins, swift[0])
-        self.assertTrue(all('-DMODELPLAN_COCKPIT_BUILD_PINS' in commands[i]['args'] for i in swift))
         # Then the finished App is checked to ship exactly that page and pin, before anything is signed.
         app_args = commands[shipped]['args']
         self.assertEqual(app_args[app_args.index('--app') + 1], str(self.fixture.output / 'ModelPlan Community.app'))

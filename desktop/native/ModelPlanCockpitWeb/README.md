@@ -65,10 +65,10 @@ releases the web view and sends unload best-effort without awaiting indefinitely
 
 The manifest must be explicitly pinned. The pins are never committed: whoever
 compiles the App first builds both canonical editions, then runs
-`python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --write`, which
-validates them and writes the gitignored `CockpitBundlePins.generated.swift`, and
-compiles with `-Xswiftc -DMODELPLAN_COCKPIT_BUILD_PINS`. Without that define the
-App has no pins and admits no cockpit page. `package-neutral.sh --owner-test` and
+`python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py`, which
+validates them and writes the gitignored `CockpitBundlePins.generated.swift` that
+the App then compiles in. Without that file the App has no pins and admits no
+cockpit page. `package-neutral.sh --owner-test` and
 U11 native do this; `--app <bundle>` then proves the packaged `Resources/Cockpit`
 is the built edition and its pin is in the executable. The `desktop` workflow's
 `cockpit-pins` job rebuilds both editions twice on every PR, main push and

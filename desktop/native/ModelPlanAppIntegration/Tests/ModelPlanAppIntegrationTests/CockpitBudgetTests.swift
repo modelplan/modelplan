@@ -109,7 +109,7 @@ extension CommunityCockpitEntryTests {
         let official = Self.budgetRepoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
         guard FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path),
               !CommunityCockpitApplicationFactory.manifestPins.isEmpty else { // pins exist only in a build that generated them
-            throw XCTSkip("Build the canonical official cockpit and generate its pins (check-bundle-pins.py --write, -DMODELPLAN_COCKPIT_BUILD_PINS) first")
+            throw XCTSkip("Build the canonical official cockpit and generate its pins (check-bundle-pins.py) first")
         }
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("ckp-shell-19-" + UUID().uuidString).resolvingSymlinksInPath()

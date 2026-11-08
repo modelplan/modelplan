@@ -39,14 +39,14 @@ public_source=$(git -C "$repo_root" rev-parse HEAD)
 if [ -n "$(git -C "$repo_root" status --porcelain)" ]; then echo "Source tree must be clean" >&2; exit 1; fi
 if [ "$cockpit_entry" = true ]; then
     # The canonical cockpit editions; their native admission pins are generated from these exact bytes
-    # (never committed) and compiled into the App below.
+    # (never committed) into a gitignored Swift file that the App build below compiles in.
     npm ci --prefix "$repo_root/desktop/cockpit" --ignore-scripts
     npm run build --prefix "$repo_root/desktop/cockpit"
     npm run build:official --prefix "$repo_root/desktop/cockpit"
     python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --repo "$repo_root" --write
-    pin_flags=(-Xswiftc -DMODELPLAN_COCKPIT_BUILD_PINS)
 else
-    pin_flags=()
+    # No cockpit page in this package, so no pins: never compile in a stale generated file from an earlier build.
+    rm -f "$native_root/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift"
 fi
 mkdir -p "$output_dir"
 archive_dir=$(cd "$archive_dir" && pwd)
@@ -64,7 +64,7 @@ for architecture in arm64 x86_64; do
     else
     swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
         --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration release \
-        --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp ${pin_flags[@]+"${pin_flags[@]}"}
+        --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp
     fi
     fi
     archive_arch=$architecture

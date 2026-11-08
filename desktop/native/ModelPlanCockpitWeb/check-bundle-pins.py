@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: MIT
 """Native cockpit admission pins, produced from the canonical web build at build time.
 
-The pins are never committed. `--write` validates both locally built editions and writes the
-gitignored Swift file the app is compiled with (`-DMODELPLAN_COCKPIT_BUILD_PINS`); the default
-mode checks that file still equals the build; `--app` proves a packaged app ships exactly the
-built edition whose pin is compiled into its executable.
+The pins are never committed. The default mode (or `--write`) validates both locally built
+editions and writes the gitignored Swift file the app compiles in; `--check` only verifies that
+file still equals the build; `--app` proves a packaged app ships exactly the built edition whose
+pin is compiled into its executable.
 """
 import argparse
 import hashlib
@@ -16,7 +16,6 @@ import re
 EDITIONS = ('community', 'official')
 FACTORY = 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift'
 GENERATED = 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift'
-DEFINE = 'MODELPLAN_COCKPIT_BUILD_PINS'
 COMMITTED_PIN = re.compile(r'"(community|official)"\s*:\s*"[a-f0-9]{64}"')
 # Official bundle prefixes copied from the reserved visuals, and their source directories under the register's prefix.
 RESERVED_SOURCES = (('runtime/', 'runtime/'), ('assets/', 'cockpit/strip/assets/'))
@@ -108,13 +107,13 @@ def validate(repo):
 def render(results):
     rows = ''.join('        "%s": "%s",\n' % (r['edition'], r['manifestSHA256']) for r in results)
     return ('// SPDX-License-Identifier: MIT\n'
-            '// Generated at build time by desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --write\n'
+            '// Generated at build time by desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py\n'
             '// from desktop/cockpit/.tmp. Never committed (.gitignore); see CommunityCockpitApplicationFactory.\n'
-            '#if ' + DEFINE + '\n'
-            'enum CockpitBuildPins {\n'
-            '    static let manifest: [String: String] = [\n' + rows + '    ]\n'
-            '}\n'
-            '#endif\n')
+            'extension CockpitBuildPins {\n'
+            '    static var manifest: [String: String] {\n'
+            '        [\n' + rows + '        ]\n'
+            '    }\n'
+            '}\n')
 
 
 def no_committed_pins(repo):
@@ -157,12 +156,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[3])
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument('--write', action='store_true', help='write the gitignored generated pins file')
+    mode.add_argument('--write', action='store_true', help='write the gitignored generated pins file (default)')
+    mode.add_argument('--check', action='store_true', help='only verify the generated file equals the build')
     mode.add_argument('--app', type=Path, help='check a packaged .app against the build and its pins')
     args = parser.parse_args()
-    if args.write:
-        print(json.dumps(write(args.repo)))
-    elif args.app:
+    if args.app:
         print(json.dumps(check_app(args.repo, args.app)))
-    else:
+    elif args.check:
         print(json.dumps(check(args.repo)))
+    else:
+        print(json.dumps(write(args.repo)))

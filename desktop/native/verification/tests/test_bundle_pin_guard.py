@@ -40,7 +40,7 @@ class BundlePinGuardTests(unittest.TestCase):
         self.write_policy()
         self.factory = self.root / guard.FACTORY
         self.factory.parent.mkdir(parents=True)
-        self.factory.write_text('    #if MODELPLAN_COCKPIT_BUILD_PINS\n    public static let manifestPins = CockpitBuildPins.manifest\n    #endif\n')
+        self.factory.write_text('    public static let manifestPins = CockpitBuildPins.manifest\n')
         self.pins = {edition: build(self.root, edition) for edition in guard.EDITIONS}
 
     def write_policy(self):
@@ -49,7 +49,7 @@ class BundlePinGuardTests(unittest.TestCase):
     def test_write_generates_the_pins_of_the_build_and_check_accepts_them(self):
         self.assertEqual([x['manifestSHA256'] for x in guard.write(self.root)], [self.pins['community'], self.pins['official']])
         generated = (self.root / guard.GENERATED).read_text()
-        self.assertIn('#if MODELPLAN_COCKPIT_BUILD_PINS', generated)
+        self.assertIn('extension CockpitBuildPins {', generated)
         for edition, pin in self.pins.items():
             self.assertIn('"%s": "%s",' % (edition, pin), generated)
         self.assertEqual([x['files'] for x in guard.check(self.root)], [1, 1])

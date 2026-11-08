@@ -193,12 +193,12 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertNil(app.composition.store.snapshot.rows)
         await app.composition.stop()
     }
-    /// The manifest pins are generated at build time from the canonical build (check-bundle-pins.py --write) and
-    /// compiled in with MODELPLAN_COCKPIT_BUILD_PINS; U11 native requires this test to run and pass. Without them
+    /// The manifest pins are generated at build time from the canonical build (check-bundle-pins.py) into a
+    /// gitignored Swift file; U11 native builds and generates before it compiles this test. Without them
     /// the factory has no pins, so it admits no cockpit page at all.
     @MainActor func testProductionPinsAdmitCanonicalBundles() async throws {
         guard !CommunityCockpitApplicationFactory.manifestPins.isEmpty else {
-            throw XCTSkip("Built without generated cockpit pins (check-bundle-pins.py --write, -DMODELPLAN_COCKPIT_BUILD_PINS)")
+            throw XCTSkip("Built without generated cockpit pins (check-bundle-pins.py)")
         }
         XCTAssertEqual(Set(CommunityCockpitApplicationFactory.manifestPins.keys), ["community", "official"])
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()

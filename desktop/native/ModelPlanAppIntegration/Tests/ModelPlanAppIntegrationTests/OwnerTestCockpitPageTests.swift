@@ -80,7 +80,7 @@ extension CommunityCockpitEntryTests {
         let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
         guard FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path),
               !CommunityCockpitApplicationFactory.manifestPins.isEmpty else { // pins exist only in a build that generated them
-            throw XCTSkip("Build the canonical official cockpit and generate its pins (check-bundle-pins.py --write, -DMODELPLAN_COCKPIT_BUILD_PINS) first")
+            throw XCTSkip("Build the canonical official cockpit and generate its pins (check-bundle-pins.py) first")
         }
         for ownerTest in [true, false] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("owner-test-page-" + UUID().uuidString)
@@ -120,7 +120,7 @@ extension CommunityCockpitEntryTests {
         let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
         guard FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path),
               !CommunityCockpitApplicationFactory.manifestPins.isEmpty else { // pins exist only in a build that generated them
-            throw XCTSkip("Build the canonical official cockpit and generate its pins (check-bundle-pins.py --write, -DMODELPLAN_COCKPIT_BUILD_PINS) first")
+            throw XCTSkip("Build the canonical official cockpit and generate its pins (check-bundle-pins.py) first")
         }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-42-once-" + UUID().uuidString).resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
