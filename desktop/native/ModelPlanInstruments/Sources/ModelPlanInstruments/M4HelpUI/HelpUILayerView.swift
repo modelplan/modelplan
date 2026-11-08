@@ -153,8 +153,9 @@ import AppKit
               !(candidate.mapHeader != nil && candidate.card != nil),
               frames.allSatisfy({HelpUIGeometry.valid($0) && safe.contains($0) && HelpUIGeometry.free($0,from:input.liveReadings)}),
               candidate.mapLabels.allSatisfy({ label in
-                  label.leader.allSatisfy({$0.x.isFinite && $0.y.isFinite}) && zip(label.leader,label.leader.dropFirst()).allSatisfy {
-                      HelpUIGeometry.segmentIsClear($0.0,$0.1,blocks:input.liveReadings+frames)
+                  label.leader.allSatisfy({$0.x.isFinite && $0.y.isFinite}) && zip(label.leader,label.leader.dropFirst()).allSatisfy { from,to in
+                      input.map.straightLeaders ? !frames.contains { frame in HelpUIGeometry.segmentCrosses(from,to,rect:frame) }
+                          : HelpUIGeometry.segmentIsClear(from,to,blocks:input.liveReadings+frames)
                   }
               }) else { return .init(sessionID:input.sessionID,unresolvedMapIDs:["invalidRecipe"]) }
         return candidate
