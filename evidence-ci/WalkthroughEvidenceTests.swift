@@ -5,6 +5,7 @@
 import AppKit
 import CryptoKit
 import XCTest
+import ModelPlanCockpitWeb
 @testable import ModelPlanAppIntegration
 
 @MainActor final class WalkthroughEvidenceTests: XCTestCase {
@@ -33,6 +34,10 @@ import XCTest
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
         _ = try await settings.update { $0.showDock = true; $0.autoHide = false }
         _ = NSApplication.shared
+        NSApp.setActivationPolicy(.regular)
+        var page: CockpitWindowController?
+        CommunityCockpitApplicationFactory.verificationPage = { page = $0 }
+        defer { CommunityCockpitApplicationFactory.verificationPage = nil }
         let entry = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "walkthrough-evidence",
             allowedEnvironment: ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C"], offline: true, readOnly: true),
             settingsStore: settings, createsNativePanels: true, bundleURL: app, cockpitEntryEnabled: true)
@@ -53,9 +58,14 @@ import XCTest
                 _ = entry.handleStatusClick(event)
             }
         }
-        try await Task.sleep(for: .seconds(4)); try shot("1-closed")
-        try click(); try await Task.sleep(for: .seconds(6)); try shot("2-after-first-click")
-        try click(); try await Task.sleep(for: .seconds(2)); try shot("3-after-second-click")
+        func state(_ label: String) {
+            let w = page?.window
+            print("WALK \(label) paused=\(entry.lifecyclePaused) connection=\(entry.composition.store.snapshot.connection) page=\(page != nil) visible=\(w?.isVisible ?? false) alpha=\(w?.alphaValue ?? -1) frame=\(w?.frame ?? .zero) anchor=\(entry.cockpitAnchor ?? .zero) widget=\(String(describing: entry.composition.dock.edgePresentation?.paintedFrame))")
+        }
+        for _ in 0..<100 where entry.lifecyclePaused { try await Task.sleep(for: .milliseconds(100)) }
+        try await Task.sleep(for: .seconds(4)); state("closed"); try shot("1-closed")
+        try click(); try await Task.sleep(for: .seconds(6)); state("first"); try shot("2-after-first-click")
+        try click(); try await Task.sleep(for: .seconds(2)); state("second"); try shot("3-after-second-click")
         await entry.composition.stop()
         entry.removeStatusItem(); entry.composition.dock.close()
     }
