@@ -193,9 +193,9 @@ import ModelPlanWire
     private func markView(_ tool: String) -> NSView {
         let view: NSView
         if let image = markImage?(tool) {
-            image.isTemplate = true
+            // A template mark follows the label colour; a coloured one keeps its own colours.
             let imageView = NSImageView(image: image); imageView.imageScaling = .scaleProportionallyUpOrDown
-            imageView.contentTintColor = .labelColor
+            imageView.contentTintColor = image.isTemplate ? .labelColor : nil
             view = imageView
         } else {
             let letters = NSTextField(labelWithString: String(Self.toolName(tool).english.prefix(2)))
@@ -203,7 +203,7 @@ import ModelPlanWire
             letters.textColor = .secondaryLabelColor
             view = letters
         }
-        view.setAccessibilityElement(false)
+        view.setAccessibilityElement(false); view.setAccessibilityIdentifier("scope.mark." + tool)
         view.translatesAutoresizingMaskIntoConstraints = false
         view.widthAnchor.constraint(equalToConstant: Self.markSize).isActive = true
         view.heightAnchor.constraint(equalToConstant: Self.markSize).isActive = true

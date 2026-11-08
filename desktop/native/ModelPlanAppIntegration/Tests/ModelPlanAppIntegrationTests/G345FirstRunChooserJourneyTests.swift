@@ -121,6 +121,30 @@ private actor G345Engine: EngineClient {
     }
     private func text(_ id: String, in window: NSWindow) throws -> String { try find(id, in: window, as: NSTextField.self).stringValue }
 
+    /// Build 13 owner review (ledger: none): ZCode showed the letters "ZC" and Kiro a white block. A filled tile mark
+    /// keeps its own colours instead of being tinted to one colour, and ZCode shows the Zhipu mark it already has.
+    func testFirstRunShowsRealMarksForZCodeAndKiro() async throws {
+        for tool in ["zai", "kiro"] {
+            let mark = try XCTUnwrap(ScopeConsentMarks.image(for: tool), tool)
+            XCTAssertFalse(mark.isTemplate, "\(tool): a coloured tile is drawn as the file is")
+            let cg = try XCTUnwrap(mark.cgImage(forProposedRect: nil, context: nil, hints: nil), tool)
+            let rep = NSBitmapImageRep(cgImage: cg)
+            var coloured = 0
+            for y in stride(from: 0, to: rep.pixelsHigh, by: 2) { for x in stride(from: 0, to: rep.pixelsWide, by: 2) {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), c.alphaComponent > 0.5 else { continue }
+                if max(c.redComponent, c.greenComponent, c.blueComponent) - min(c.redComponent, c.greenComponent, c.blueComponent) > 0.2 { coloured += 1 }
+            } }
+            XCTAssertGreaterThan(coloured, 20, "\(tool): the mark carries colour, not a plain block")
+        }
+        XCTAssertTrue(try XCTUnwrap(ScopeConsentMarks.image(for: "cursor")).isTemplate, "one-colour marks still follow the label colour")
+        let (app, _) = try await launch(locale: "en-US")
+        let window = try await firstRun(app)
+        let zai = try find("scope.mark.zai", in: window, as: NSImageView.self)
+        XCTAssertNotNil(zai.image, "ZCode shows a mark, not the letters ZC")
+        XCTAssertNil(zai.contentTintColor, "and keeps its own colours")
+        XCTAssertFalse(views(try find("scope.firstRun.row.zai", in: window, as: NSView.self)).compactMap { ($0 as? NSTextField)?.stringValue }.contains("ZC"))
+    }
+
     func testFirstRunListsDetectedToolsAndDoneSendsTheChoices() async throws {
         let (app, engine) = try await launch(locale: "en-US")
         let window = try await firstRun(app)
