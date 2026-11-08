@@ -16,6 +16,8 @@ async function open(page,{reduceMotion=false}={}){
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const data=visualFixture().data;
  data.details.sessions[0]={...data.details.sessions[0],subscriptionRef:data.projection.rows[0].accounts[0].subscriptionRef,rate:120};
+ // One working bell: the Claude session is idle here (binding is covered by base-bell-binding.test.mjs).
+ data.details.sessions[1]={...data.details.sessions[1],state:'idle'};
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion},shell:{...shell,tier:'tall'}}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
@@ -53,6 +55,8 @@ test('D73 a working bell has a faint half-height flame on top of its mouth glow;
  // steps(1,end): WebKit serializes it as steps(1).
  expect(plume.timing).toMatch(/^steps\(1(, end)?\)$/);expect([plume.direction,plume.iterations]).toEqual(['alternate','infinite']);
  expect(parseFloat(plume.duration)).toBeCloseTo(parseFloat(fd),3);
+ // CKP-SHELL-19: only transform and opacity move, so the compositor runs it with no script frame loop.
+ expect(await page.evaluate(()=>[...new Set([...document.querySelectorAll('.ck-base .bz.work .bz-plume')].flatMap(p=>p.getAnimations()).flatMap(a=>a.effect.getKeyframes()).flatMap(k=>Object.keys(k).filter(n=>!['offset','easing','composite','computedOffset'].includes(n))))].sort())).toEqual(['opacity','transform']);
 });
 
 test('D73 the flame is still under Reduce Motion and stops while hidden or with the shutter closed',async({page})=>{

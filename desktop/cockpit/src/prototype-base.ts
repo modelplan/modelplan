@@ -2,7 +2,7 @@
 // Copyright (c) 2026 ModelPlan.
 // G3-47: the cockpit base row in the 34 px reserve below the root, one bell per visible subscription, directly
 // under its engine column, plus a dimmed socket under each empty bay. Port of the study's rocket-r1/base.js
-// (spec 3.9, entrance C) and base-bells notes: a subscription with a running session of its own burns (a status-
+// (spec 3.9, entrance C) and base-bells notes: a subscription with a running session bound to it burns (a status-
 // coloured sheet below the bell, 12-24 px by output rate); a stale or failed reading is grey; otherwise idle.
 // The official edition paints the bells with the released base-bell art; the community edition keeps a plain line. Columns are measured from the drawn engine table, so the row follows paging and the page zoom.
 // The host CSP blocks style attributes: every value goes through CSSOM, and wire text never becomes CSS.
@@ -23,18 +23,30 @@ export function flameLength(rate:number|null):number {
  return Math.round(FLAME_MIN+(FLAME_MAX-FLAME_MIN)*Math.max(0,Math.min(1,(rate-30)/90)));
 }
 
-// Running sessions attributed to a member by its verified subscription ref. A session without one is not
-// guessed onto a column.
-function running(data:WireCockpitData,key:string):{working:boolean;rate:number|null} {
+// Which subscription a session runs on, by the rule of session-binding.ts sessionMember() (PR #761), so the bells
+// agree with the faders and the record strip: a producer-verified subscriptionRef wins, and one that names no member
+// leaves the session unbound; without one, the session joins the single subscription of its tool, and with two or
+// more of that tool it stays unbound. Kept here until #761 is on main; then this imports sessionMember().
+const SESSION_TOOLS:Readonly<Record<string,string>>={codex:'codex','claude-code':'claude',claude:'claude',zcode:'zai',zai:'zai',glm:'zai',opencode:'opencodego',opencodego:'opencodego',gemini:'gemini',grok:'grok',kimi:'kimi',qwen:'qwen',cursor:'cursor',copilot:'copilot'};
+type Session=NonNullable<WireCockpitData['details']>['sessions'][number];
+export function sessionMemberKey(members:readonly {key:string;row:{id:string}}[],session:Pick<Session,'source'|'subscriptionRef'>):string|null {
+ if(session.subscriptionRef)return members.some(m=>m.key===session.subscriptionRef)?session.subscriptionRef:null;
+ const tool=SESSION_TOOLS[session.source.toLowerCase()];if(!tool)return null;
+ const same=members.filter(m=>m.row.id===tool);
+ return same.length===1?same[0]!.key:null;
+}
+
+// A member works while one of its sessions is running (the in-use state the engine reports).
+function running(data:WireCockpitData,members:readonly {key:string;row:{id:string}}[],key:string):{working:boolean;rate:number|null} {
  const detail=data.details;if(!detail||detail.sessionCoverage!=='local-last-seen')return {working:false,rate:null};
- const live=detail.sessions.filter(s=>s.state==='running'&&s.subscriptionRef===key);
+ const live=detail.sessions.filter(s=>s.state==='running'&&sessionMemberKey(members,s)===key);
  const rates=live.map(s=>s.rate).filter((r):r is number=>typeof r==='number'&&Number.isFinite(r)&&r>=0);
  return {working:live.length>0,rate:rates.length?rates.reduce((a,b)=>a+b,0):null};
 }
 
 export function baseLights(root:HTMLElement,data:WireCockpitData):{lights:BaseLight[];sockets:{x:number;cw:number}[]} {
  const box=root.getBoundingClientRect(),k=box.width?root.offsetWidth/box.width:1;
- const keys=new Set(cockpitMembers(data).map(m=>m.key));
+ const members=cockpitMembers(data),keys=new Set(members.map(m=>m.key));
  const lights:BaseLight[]=[];
  for(const key of root.querySelectorAll<HTMLElement>('.eng-keys .ek[data-sub]')){
   const id=key.dataset.sub??'',member=key.dataset.scope??'';
@@ -42,7 +54,7 @@ export function baseLights(root:HTMLElement,data:WireCockpitData):{lights:BaseLi
   const r=(column??key).getBoundingClientRect();if(!r.width)continue;
   const vendor=key.querySelector<HTMLElement>('.bl')?.style.getPropertyValue('--v').trim()??'';
   const level=[...(column?.querySelectorAll<HTMLElement>('.qcell')??[])].map(c=>['ok','mid','low'].find(l=>c.classList.contains('lv-'+l))).filter((l):l is string=>!!l).sort((a,b)=>RANK[b]-RANK[a])[0];
-  const grey=!!column?.classList.contains('grey'),live=keys.has(member)?running(data,member):{working:false,rate:null};
+  const grey=!!column?.classList.contains('grey'),live=keys.has(member)?running(data,members,member):{working:false,rate:null};
   const state=grey?'stale':live.working?'work':'idle',cw=r.width*k;
   lights.push({key:member,col:id,x:(r.left+r.width/2-box.left)*k,w:Math.max(8,cw-2*INSET),cw,colour:COLOUR.test(vendor)?vendor:'#7d868e',
    fuel:level?FUEL[level]:'#7d868e',state,rate:live.rate,len:state==='work'?flameLength(live.rate):0});

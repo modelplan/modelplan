@@ -144,8 +144,8 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 /* Flame (owner D73): only the official edition draws it (its mask is released art); the community edition has none.
    It steps with the study's plume timing (--fd per bell, steps(1,end), alternate), only on an active, open page and
    never under the host's or the system's Reduce Motion, when it stays still. */
-.bz-plume{display:none;position:absolute;left:50%;transform:translateX(-50%);transform-origin:50% 0;pointer-events:none}
-@keyframes cockpit-bell-plume{0%{transform:translateX(-50%) scaleY(.94);opacity:.8}55%{transform:translateX(-50%) scaleY(1);opacity:1}100%{transform:translateX(-50%) scaleY(.97);opacity:.9}}
+.bz-plume{display:none;position:absolute;left:50%;transform:translateX(-50%);transform-origin:50% 0;pointer-events:none;contain:paint}
+@keyframes cockpit-bell-plume{0%{transform:translateX(-50%) scaleY(.94);opacity:.82}55%{transform:translateX(-50%) scaleY(1);opacity:1}100%{transform:translateX(-50%) scaleY(.97);opacity:.9}}
 @media (prefers-reduced-motion:no-preference){
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-plume{animation:cockpit-bell-plume var(--fd,.2s) steps(1,end) var(--fo,0s) infinite alternate!important}
 }

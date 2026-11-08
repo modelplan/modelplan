@@ -11,7 +11,8 @@ async function open(page,{tier='tall',reduceMotion=false}={}){
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const data=visualFixture().data;
- // One running session belongs to the first subscription; the other running session has no verified ref.
+ // The Codex session carries the first subscription's verified ref; the running Claude session has none and joins
+ // Claude's only subscription (session-binding rule, #761); the idle session lights nothing.
  data.details.sessions[0]={...data.details.sessions[0],subscriptionRef:data.projection.rows[0].accounts[0].subscriptionRef,rate:120};
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion},shell:{...shell,tier}}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
@@ -41,13 +42,13 @@ for(const tier of ['tall','compact'])test(`G3-47 ${tier}: one bell per column in
   expect(b.top).toBeGreaterThanOrEqual(v.rootBottom-0.5);
   expect(b.image).toContain('assets/bells/bell-silver-2x.png');
  }
- expect(v.bells.map(b=>b.cls)).toEqual(v.bells.map((_,i)=>i===0?'bz work':'bz idle'));
+ expect(v.bells.map(b=>b.cls)).toEqual(v.bells.map((_,i)=>i<2?'bz work':'bz idle'));
  expect(v.bells[0].label).toMatch(/working now · 120 t\/s/);
  const sheet=v.bells[0].sheet;
  expect(sheet.anim).toBe('cockpit-mouth-shimmer');
  // CKP-ENG-17: the light fills the mouth and fades out within 5 px past the foot (visible about 3 px), no plume body.
  expect(sheet.bottom).toBeLessThanOrEqual(v.bells[0].top+v.bells[0].h+5.5);
- expect(v.bells.slice(1).every(b=>b.sheet===null)).toBe(true);
+ expect(v.bells[1].sheet).not.toBeNull();expect(v.bells.slice(2).every(b=>b.sheet===null)).toBe(true);
 });
 
 test('G3-47 the mouth shimmer stops under Reduce Motion, while hidden and with the shutter closed',async({page})=>{
@@ -68,4 +69,18 @@ test('G3-47 hovering a bell lights its column and shows its name (CKP-ENG-20)',a
  await expect(bell.locator('.bz-tip')).toBeVisible();await expect(bell.locator('.bz-tip')).toContainText('working now');
  expect(await page.locator('.ck-eng .ec.xhl').count()).toBe(1);
  await page.mouse.move(5,5);expect(await page.locator('.ck-eng .ec.xhl').count()).toBe(0);
+});
+
+test('G3-47 a session whose ref names no subscription lights no bell',async({page})=>{
+ await page.setViewportSize({width:636,height:911});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ const data=visualFixture().data;
+ data.details.sessions=data.details.sessions.map(s=>({...s,subscriptionRef:'ffffffffffffffff'}));
+ expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);
+ await page.waitForFunction(()=>document.querySelectorAll('.ck-base .bz').length>0);
+ expect(await page.locator('.ck-base .bz.work').count()).toBe(0);
+ expect(await page.locator('.ck-base .bz-plume,.ck-base .bz-sheet').count()).toBe(0);
 });

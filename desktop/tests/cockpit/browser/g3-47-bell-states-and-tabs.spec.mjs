@@ -9,6 +9,8 @@ function data(){
  const d=visualFixture().data,vk={codex:'openai',claude:'claude',cursor:'cursor',gemini:null};
  for(const r of d.projection.rows)r.vendorKey=vk[r.id]??null;
  d.details.sessions[0]={...d.details.sessions[0],subscriptionRef:d.projection.rows[0].accounts[0].subscriptionRef,rate:120};
+ // Only the Codex session runs here, so one bell works and three show the idle look.
+ d.details.sessions[1]={...d.details.sessions[1],state:'idle'};
  return d;
 }
 async function open(page){
@@ -33,6 +35,10 @@ test('G3-47 subscribed bells match the study; only the working bell lights its m
  expect(bells.map(b=>b.cls)).toEqual(['bz work','bz idle','bz idle','bz idle']);
  for(const b of bells){expect(b.filter).toBe('saturate(0.12) brightness(0.78)');expect(b.image).toContain('assets/bells/bell-silver-2x.png');}
  expect(bells.map(b=>b.sheet)).toEqual([true,false,false,false]);
+ // Hover keeps the study's finish: the column light and the name show it, not a brighter bell.
+ await page.locator('.ck-base .bz').nth(1).hover();
+ expect(await page.locator('.ck-base .bz').nth(1).locator('.bz-line').evaluate(l=>getComputedStyle(l).filter)).toBe('saturate(0.12) brightness(0.78)');
+ await page.mouse.move(5,5);
  const mouth=async b=>firstPixel(await page.screenshot({clip:{x:Math.round(b.x),y:Math.round(b.top+b.h*0.62),width:1,height:1},omitBackground:true}));
  const lit=await mouth(bells[0]);
  expect(lum(lit),`working mouth ${JSON.stringify(lit)}`).toBeGreaterThan(80);expect(lit[0]).toBeGreaterThan(lit[2]+40);

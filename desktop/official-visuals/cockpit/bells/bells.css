@@ -14,7 +14,9 @@
 /* Empty bays: the black/graphite bell, quietly dimmed, unfiltered by the gunmetal transfer. */
 .ck-base .bz-empty .bz-line{filter:brightness(.9)}
 .ck-base .bz-glow{display:none}
-.ck[data-active="true"] .ck-base .bz:hover .bz-line{filter:saturate(.12) brightness(.95)}
+/* Hover keeps the transfer, as on the study, where the shared finish outranks its hover brightening (D70); the
+   column light and the name show the hover (CKP-ENG-20). */
+.ck[data-active="true"] .ck-base .bz:hover .bz-line{filter:saturate(.12) brightness(.78)}
 /* Working (CKP-ENG-17/18): one soft glow fills the inner mouth from the opening down, whiter at the core, fading
    about 3 px past the outer lower rim, in the quota-status colour; no plume body. Geometry measured on the study:
    it starts at bell width x 0.0557, spans the inner mouth (bell width x 0.9033) x 1.08, and runs 5 px past the
