@@ -130,7 +130,7 @@ private actor G350Engine: EngineClient {
             let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
             _ = try await store.update { p in
                 p.showDock = true; p.autoHide = false; p.dockEdge = .right; p.size = size; p.magnification = .subtle
-                p.motion = .on; for _ in 0..<16 { p.onboarding.next() }
+                p.motion = .system; for _ in 0..<16 { p.onboarding.next() }
             }
             let snapshot = try rows([("codex", "openai"), ("claude-code", "claude"), ("zcode", "zhipu")])
             let clock = G350Clock()
