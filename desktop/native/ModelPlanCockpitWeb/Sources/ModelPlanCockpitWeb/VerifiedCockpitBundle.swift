@@ -10,7 +10,8 @@ public enum CockpitBundleError: Error {
 
 /// Caller-pinned build output. Holds hashes and a directory descriptor, never a
 /// second asset cache. Every served file is checked again through no-follow FDs.
-public final class VerifiedCockpitBundle {
+/// Sendable: every stored property is immutable and each read works on its own dup of the descriptor.
+public final class VerifiedCockpitBundle: @unchecked Sendable {
   private struct Manifest: Decodable {
     let schemaVersion: Int
     let edition: String

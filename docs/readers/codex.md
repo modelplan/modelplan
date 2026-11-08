@@ -73,7 +73,7 @@ Subject: [current main adapter](https://github.com/modelplan/modelplan/blob/61ef
 
 ### Budget and stop rules
 
-Exactly initialize/initialized, then one rate-limit read and at most one identity read (identity is omitted when identity is off). These are at most two data RPCs, not a two-HTTP-call proof. The outer operation has a 15-second deadline and kill/reap cleanup. The direct refresh entry now rechecks and reserves the shared persisted provider gate under its lock, independently of a caller checking AccountDue. Success waits five minutes; failures wait 30 minutes. This gate is retained independently of the account capture.
+Exactly initialize/initialized, then one rate-limit read and at most one identity read (identity is omitted when identity is off). These are at most two data RPCs, not a two-HTTP-call proof. The outer operation has a 15-second deadline (25 seconds until Codex has answered once, for a cold start) and kill/reap cleanup. The direct refresh entry now rechecks and reserves the shared persisted provider gate under its lock, independently of a caller checking AccountDue. Success waits five minutes; failures wait 30 minutes. Until Codex has answered once, the first three failures wait 20 seconds, one minute and five minutes instead, so one failed first read does not hide the reading for half an hour. This gate is retained independently of the account capture.
 
 The first terminal RPC/auth/protocol/transport failure stops the listed sequence. No request to renew a token, start inference or consume credits is allowed. Inner runtime retries, HTTP auth codes, redirect behavior and subsequent network calls remain outside this recorder’s proof.
 

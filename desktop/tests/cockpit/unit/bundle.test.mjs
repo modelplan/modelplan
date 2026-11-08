@@ -38,14 +38,21 @@ test('both editions have reproducible bounded manifests; community excludes rese
     // 30 fps capped) frames and is loaded only when the enlarged view opens, never by the page's module graph.
     const scene='runtime/field-scene/cockpit-scene.bundle.js';
     assert.equal(Object.hasOwn(manifest.files,scene),edition==='official',scene);
-    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.js')&&name.startsWith('src/')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/field-scene|cockpit-scene/,name);
+    // Only the field's own page names the scene, and it imports it dynamically (glm-618-2: the ban covers every other file).
+    for(const name of Object.keys(manifest.files).filter(name=>/\.(?:js|html|css)$/.test(name)&&name!==scene&&name!=='src/field-page.js'&&!name.startsWith('runtime/')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/field-scene|cockpit-scene/,name);
+    assert.equal(Object.hasOwn(manifest.files,'field.html'),edition==='official','field.html');
+    if(edition==='official')assert.match(readFileSync(root+'src/field-page.js','utf8'),/await import\(url\)/);
+    else assert.equal(Object.hasOwn(manifest.files,'src/field-page.js'),false);
     for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.js')&&name!==scene))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/,name);
+    if(edition==='official'){assert.ok(Object.hasOwn(manifest.files,'assets/brands/SOURCES.md'));assert.match(readFileSync(root+'NOTICES.txt','utf8'),/Vendor marks: third-party trademarks.*assets\/brands\/SOURCES[.]md/);}
+    else assert.equal(existsSync(root+'assets/brands'),false,'community has no vendor marks');
     const provenance=JSON.parse(readFileSync(root+'prototype/source.json'));
     assert.equal(provenance.sourceCommit,'1d3f82429f1b853314ee120d4bd0007f84fc051d');
     assert.equal(provenance.fixtureAudit.copied,false);
     for(const name of Object.keys(manifest.files)){
       assert.doesNotMatch(name,/workbench-data|three[.]/i);
-      if(name.endsWith('.svg'))assert.ok(edition==='official'&&['assets/detach.svg','assets/put-back.svg'].includes(name),`unapproved SVG: ${name}`);
+      const brands=['openai-white','claude-rounded','zhipu','x-white','qwen','deepseek','kimi-white','minimax','gemini','xiaomi'].map(mark=>`assets/brands/${mark}.svg`);
+      if(name.endsWith('.svg'))assert.ok(edition==='official'&&['assets/detach.svg','assets/put-back.svg',...brands].includes(name),`unapproved SVG: ${name}`);
       // Published U12 PNGs may join the verified pack; no runtime scene code.
       if(name.startsWith('runtime/')&&name!==scene)assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
     }

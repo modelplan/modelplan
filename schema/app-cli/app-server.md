@@ -372,9 +372,10 @@ model carries `id`, `name`, `developerId`, `recommended`, and `efforts`; each
 effort carries `effort`, `label`, `star`, nullable `ability`, `cost`, and `time`,
 plus optional `multiplier` and `provisional`. Missing values stay absent or null;
 no relative multiplier is calculated. The producer uses only current admitted
-readings to select matching vendors, preserves the verified publication model-array
-order, emits at most three models and sets `truncated` when more match. The
-current publication does not contain a global cross-vendor ranking.
+readings to select matching vendors, puts models with a current session first, then
+keeps the verified publication model-array order, emits at most three models and sets
+`truncated` when more match. The current publication does not contain a global
+cross-vendor ranking.
 
 ### Public reset event capability
 
@@ -385,8 +386,11 @@ optional `resetEvents` on the shared rows projection in `rows/subscribe`,
 was unavailable; an empty array means the verified source had no eligible
 records. Older clients never receive the field. This is a public announcement,
 not evidence that any personal quota was reset; acknowledgement and notification
-state belong to the App. The existing publication cache and rows watcher supply
-refresh; no additional fetch is started.
+state belong to the App. The events come from the verified publication cache, and
+the rows watcher picks up a new publication. After the first session starts, the
+server keeps that cache current with the ordinary public publication sync, which
+needs no consent and carries no account data; `--offline` and `--read-only` start
+no fetch. The events themselves start no fetch, and queries read only the cache.
 
 The server also advertises `resetEventLinksV1` when the publication source is
 configured. Clients independently declare it to receive `source.links` on reset

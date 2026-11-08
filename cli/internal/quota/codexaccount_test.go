@@ -93,6 +93,9 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 func TestFailedRefreshWaitsLongerAndOffMeansOff(t *testing.T) {
 	isolateHome(t)
 	cache := t.TempDir()
+	if err := save(cache, &accountSnap{SchemaVersion: 1, ObservedAt: acctNow.Add(-time.Hour), Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := RefreshCodexAccount(context.Background(), cache, "", acctNow); err != nil {
 		t.Fatal(err)
 	}

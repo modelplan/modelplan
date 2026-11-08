@@ -18,12 +18,10 @@ public struct T2GeometryInput: Sendable {
     public let showsPercentages: Bool
     public let along: CGFloat
     public let ignitionAtEnd: Bool
-    /// Owner test option only: each ring sits halfway across the face at its own height.
-    public let centresRings: Bool
     public init(coordinates: T2EdgeCoordinates, diameter: CGFloat = 44,
                 showsPercentages: Bool = true, along: CGFloat = 0.5,
-                ignitionAtEnd: Bool? = nil, centresRings: Bool = false) {
-        self.coordinates = coordinates; self.diameter = diameter; self.centresRings = centresRings
+                ignitionAtEnd: Bool? = nil) {
+        self.coordinates = coordinates; self.diameter = diameter
         self.showsPercentages = showsPercentages; self.along = along
         self.ignitionAtEnd = ignitionAtEnd ?? (coordinates.edge == .bottom)
     }
@@ -51,6 +49,9 @@ public struct T2Geometry: Sendable {
     public let outlineLocal: [CGPoint]
     public let button: CGPoint
     public let grip: CGPoint
+    /// DOCK-3.1-29: the grip's position along the arc and its depth (half the tip width, at least 9).
+    public let gripArc: CGFloat
+    public let gripDepth: CGFloat
     public let buttonOverhang: CGFloat
     public let radius: CGFloat
     public let sliceAngle: CGFloat
@@ -230,7 +231,9 @@ public struct T2Geometry: Sendable {
         let buttonU = (low + high) / 2
         let stations = selected.indices.map { i -> T2Station in
             let slot = selected[i], s = m.positions[i], local = m.local(s, depth)
-            let point = screen(p.centresRings ? CGPoint(x: local.x, y: (m.freeDepth + local.y - depth) / 2) : local)
+            // D48 (owner): each ring sits halfway across the face at its own height. This replaces
+            // the prototype's depth for this property only.
+            let point = screen(CGPoint(x: local.x, y: (m.freeDepth + local.y - depth) / 2))
             let readout = vertical ? CGPoint(x: point.x, y: point.y + d / 2 + 14 * scale +
                 ((slot.subscription?.alias.isEmpty ?? true) ? 0 : 6 * scale)) :
                 CGPoint(x: point.x + d / 2 + 31 * scale, y: point.y)
@@ -239,9 +242,10 @@ public struct T2Geometry: Sendable {
                 readoutCentre: readout, pitch: m.pitches[i])
         }
         let gripS = p.ignitionAtEnd ? m.start + 18 * scale : m.end - 18 * scale
+        let gripDepth = max(9 * scale, m.width(at: gripS) / 2)
         return Self(input: p, stations: stations, shown: visible, overflow: more, outline: localOutline.map(screen),
             outlineLocal: localOutline, button: screen(CGPoint(x: buttonU, y: buttonDepth)),
-            grip: screen(m.local(gripS, max(9 * scale, m.width(at: gripS) / 2), face: true)),
+            grip: screen(m.local(gripS, gripDepth, face: true)), gripArc: gripS, gripDepth: gripDepth,
             buttonOverhang: overhang(buttonU), radius: m.radius, sliceAngle: m.angle, arcLength: m.arcLength,
             span: m.span, gap: gap!, midpoint: midpoint, placementCentre: centre, start: m.start, end: m.end,
             topJoin: m.topJoin, bottomJoin: m.bottomJoin, freeDepth: m.freeDepth, stationDepth: depth,

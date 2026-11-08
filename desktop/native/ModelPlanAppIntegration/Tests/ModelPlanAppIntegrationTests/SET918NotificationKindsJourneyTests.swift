@@ -57,7 +57,7 @@ private actor ForecastCapabilityClient: EngineClient {
             XCTAssertFalse(found.contains { $0.key == .forecast }, "Search finds the hidden forecast kind: \(query)")
         }
         XCTAssertFalse(rows.contains { [.expiring, .stale].contains($0.key) }, "SET-9-18: v1.1 notification kinds must not appear in v1")
-        for query in ["Resets expiring", "Data stopped", "重置即将到期", "数据停止更新"] {
+        for query in ["Resets expiring", "Data stopped", "额外重置即将过期", "数据停止更新"] {
             let found = try SettingsCatalogue.rows(preferences: preferences, context: editor.context, query: query)
             XCTAssertFalse(found.contains { [.expiring, .stale].contains($0.key) }, "Search finds a v1.1 kind: \(query)")
         }

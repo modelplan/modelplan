@@ -36,6 +36,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		return result, err
 	}
 	result.Publication = selectCockpitPublication(published, view.Projection, nil)
+	if appserver.CockpitModelsEnabled(ctx) {
+		result.PublishedModels = allCockpitModels(published)
+	}
 	now := time.Now()
 	redBelow := admission.RedBelow
 	if redBelow == 0 {
@@ -234,9 +237,13 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 				}
 			}
 		}
-		// The existing live ledger does not prove a per-session binding. #410 may
-		// supply that evidence; never substitute a source-wide current binding.
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
+		// The live record's account is the same evidence the working signal binds on. A reference
+		// outside this cockpit's subscriptions stays unbound; never substitute a source-wide one.
+		var subscription *string
+		if session.SubscriptionRef != nil && byRef[*session.SubscriptionRef] != nil {
+			subscription = session.SubscriptionRef
+		}
+		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
 	}
 	inUse := map[string]bool{}
 	for _, session := range result.Sessions {
