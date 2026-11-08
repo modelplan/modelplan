@@ -4,7 +4,12 @@
 // releases the WebGL context. The 180 s idle close and the outside-click close live in the native panel.
 // Low Power Mode (spike 11-08, D63): the page cannot read it, so native passes it in the payload and through `power`
 // on every change. Low power or Reduce Motion mounts the scene quiet; it always renders on demand only.
-// Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) for behaviour; the code is written here.
+// Composition (task 91 round 5, CKP-PORT-11): a transparent panel on the desktop with a frosted card at the left and
+// the scene at the right, masked by the c01 porthole silhouette feathered into the desktop (src/field-shape.ts).
+// A click on bare desktop, including the feathered rim, closes the field.
+// Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) and study website-updates/style.css round 5 for
+// behaviour; the code is written here.
+import {featherShape,type FieldShape} from './field-shape.js';
 import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
 
 interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly lowPower?:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null}
@@ -19,14 +24,24 @@ const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:s
 const webgl=()=>{try{return !!document.createElement('canvas').getContext('webgl2');}catch{return false;}};
 
 function mount(root:HTMLElement) {
- let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,reduceMotion=false,lowPower=false,quiet=false,launches=0;
+ let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,reduceMotion=false,lowPower=false,quiet=false,launches=0,shape:FieldShape|null=null;
  const bar=el('header','field-bar'),stage=el('div','ov-porthole field-stage'),list=el('div','field-list');
  const close=el('button','field-close');close.type='button';close.onclick=()=>post({type:'close'});
  const mineKey=el('button','field-preset'),allKey=el('button','field-preset'),count=el('span','field-count');mineKey.type=allKey.type='button';
  const search=el('input','field-search');search.type='search';
  // CKP-PORT-13: the page names the flown public IDs; native builds the modelplan.ai address and opens it.
  const website=el('button','field-website');website.type='button';website.onclick=()=>post({type:'website',models:fleet().map(m=>m.id)});
- bar.append(mineKey,allKey,search,count,website,close);root.append(bar,stage,list);
+ const card=el('section','field-card');card.append(bar,list);
+ bar.append(mineKey,allKey,search,count,website);root.append(card,stage,close);
+ const shaped=featherShape(new URL('runtime/canopy-c01/window-890-1x.png',document.baseURI).href).then(value=>{
+  if(disposed){value?.dispose();return;}shape=value;if(value)stage.style.setProperty('--field-mask',`url("${value.maskUrl}")`);stage.dataset.shape=value?'feathered':'none';
+ });
+ // Bare desktop closes: the transparent page around the card and scene, and the scene's own feathered rim.
+ root.addEventListener('click',e=>{
+  if(!e.isTrusted)return;
+  const t=e.target as Element;
+  if(t===root||(stage.contains(t)&&shape?.bare(stage.getBoundingClientRect(),e.clientX,e.clientY)))post({type:'close'});
+ });
  const fleet=()=>fieldFleet(models,chosen);
  const refresh=()=>{
   const flown=fleet();if(focus===null||!flown.some(m=>m.id===focus))focus=flown[0]?.id??null;
@@ -50,6 +65,7 @@ function mount(root:HTMLElement) {
   host.append(canvas,document.createElementNS('http://www.w3.org/2000/svg','svg'),plates,voyage);host.children[1]!.setAttribute('class','wb-leaders');stage.replaceChildren(host);
   const url='../runtime/field-scene/cockpit-scene.bundle.js';
   const {mountWorkbenchField}=await import(url) as {mountWorkbenchField(host:HTMLElement,options:Record<string,unknown>):Scene};
+  await shaped;// the silhouette is in place before the first frame, so the scene never shows as a rectangle
   if(disposed||launch!==launches)return;
   const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;quiet=reduceMotion||lowPower;
   scene=mountWorkbenchField(host,{models:flown,focus,quiet,showPath:true,language,onDemand:true,noIntro:true,
@@ -78,7 +94,7 @@ function mount(root:HTMLElement) {
   stats():FieldStats|null {
    const s=scene?.stats?.();return scene?{lowPower,quiet,frames:s?.frames??0,scheduled:!!s?.scheduled}:null;
   },
-  dispose(){disposed=true;scene?.dispose();scene=null;root.replaceChildren();},
+  dispose(){disposed=true;shape?.dispose();shape=null;scene?.dispose();scene=null;root.replaceChildren();},
  };
 }
 const root=document.getElementById('field');

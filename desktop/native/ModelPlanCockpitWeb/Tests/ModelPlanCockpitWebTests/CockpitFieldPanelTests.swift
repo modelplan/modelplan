@@ -94,4 +94,15 @@ final class CockpitFieldPanelTests: XCTestCase {
     XCTAssertEqual(opened.map(\.absoluteString), ["https://modelplan.ai/?focus=sol-6.1,glm"])
     panel.close()
   }
+  /// CKP-PORT-11 (D63, task 91 round 5): the composition's bounds follow the prototype's fieldFrame.
+  func testCompositionBoundsFollowThePrototypeFrame() {
+    XCTAssertEqual(CockpitFieldPanel.frame(in: NSRect(x: 0, y: 0, width: 1470, height: 919)),
+                   NSRect(x: 73.5, y: 92, width: 1323, height: 735), "a 14-inch laptop: 90% wide, 80% high")
+    XCTAssertEqual(CockpitFieldPanel.frame(in: NSRect(x: 0, y: 0, width: 1024, height: 743)),
+                   NSRect(x: 32, y: 71.5, width: 960, height: 600), "the 960 x 600 floor")
+    XCTAssertEqual(CockpitFieldPanel.frame(in: NSRect(x: 0, y: 0, width: 900, height: 600)),
+                   NSRect(x: 16, y: 16, width: 868, height: 568), "16 pt from every edge on a tiny screen")
+    XCTAssertEqual(CockpitFieldPanel.frame(in: NSRect(x: 2000, y: 25, width: 2560, height: 1415)).size,
+                   NSSize(width: 1440, height: 900))
+  }
 }

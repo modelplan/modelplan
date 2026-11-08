@@ -131,3 +131,28 @@ test('CKP-PORT-13 Chinese link text',async({page})=>{
  await open(page);await show(page,payload(3,{language:'zh'}));
  await expect(page.locator('.field-website')).toHaveText('在网站上看完整舰队 ↗');
 });
+// CKP-PORT-11 (D63): the c01 porthole silhouette feathered ~10% into the desktop, derived from the published
+// window-890-1x.png at open. Reference: alpha samples of the prototype's approved mask (task 91 round 5,
+// feather-masks/A.png, 1000x650), read on the design branch; the mask image itself is not in this repository.
+const featherReference=[[500,325,255],[0,0,0],[999,649,0],[500,0,0],[500,20,63],[500,40,176],[500,65,255],[500,100,255],[0,325,0],[20,325,4],[40,325,83],[65,325,220],[100,325,255],[500,649,0],[500,610,171],[500,585,255],[150,60,188],[850,60,190],[120,600,119],[60,120,73]];
+test('CKP-PORT-11 the feathered silhouette matches the approved mask',async({page})=>{
+ await page.goto('/field.html');
+ const got=await page.evaluate(async points=>{const {featherShape}=await import('./src/field-shape.js');const shape=await featherShape('runtime/canopy-c01/window-890-1x.png');
+  return shape&&{w:shape.width,h:shape.height,url:shape.maskUrl.slice(0,5),samples:points.map(([x,y])=>shape.alpha[y*shape.width+x])};},featherReference);
+ expect(got).not.toBeNull();expect([got.w,got.h,got.url]).toEqual([1000,650,'blob:']);
+ for(const [i,[x,y,want]] of featherReference.entries())expect(Math.abs(got.samples[i]-want),`(${x},${y}) ${got.samples[i]} vs ${want}`).toBeLessThanOrEqual(24);
+});
+test('CKP-PORT-11 the scene is masked by the silhouette; bare desktop and the feathered rim close, the porthole does not',async({page})=>{
+ await page.setViewportSize({width:1323,height:735});await open(page);await show(page,payload());
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ await expect(page.locator('.field-stage')).toHaveAttribute('data-shape','feathered');
+ expect(await page.locator('.field-stage').evaluate(e=>getComputedStyle(e).webkitMaskImage||getComputedStyle(e).maskImage)).toMatch(/^url\("blob:/);
+ expect(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+ const closes=()=>page.evaluate(()=>window.posted.filter(x=>x==='close').length);
+ const stage=await page.locator('.field-stage').boundingBox(),card=await page.locator('.field-card').boundingBox();
+ expect(card.x).toBe(0);expect(card.width).toBe(430);expect(stage.x).toBe(458);expect(stage.width/stage.height).toBeCloseTo(1000/650,1);
+ await page.mouse.click(stage.x+stage.width/2,stage.y+stage.height/2);expect(await closes()).toBe(0);
+ await page.mouse.click(card.x+card.width/2,card.y+card.height-8);expect(await closes()).toBe(0);
+ await page.mouse.click(stage.x+3,stage.y+3);expect(await closes()).toBe(1);
+ await page.mouse.click(440,4);expect(await closes()).toBe(2);
+});
