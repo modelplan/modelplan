@@ -3,6 +3,7 @@ package rows
 
 import (
 	"testing"
+	"time"
 )
 
 func hasSurface(r Row, s Surface) bool {
@@ -86,6 +87,40 @@ func setReader(in *Input, id string, detected, reader bool) {
 	for i := range in.Catalogue {
 		if in.Catalogue[i].ToolID == id {
 			in.Catalogue[i].Detected, in.Catalogue[i].ReaderExists = detected, reader
+		}
+	}
+}
+
+// The other side of G3-38: rows that are not unreadable keep their ring.
+func TestG338RowsThatAreNotUnreadableKeepTheirRing(t *testing.T) {
+	failedWithReading := Input{Catalogue: []CatalogueEntry{oracleTool("cursor", true)}, Consents: oracleAllowed("cursor"),
+		Profiles: []ProfileState{{ToolID: "cursor", ProfileKey: "u1", LatestAttempt: AttemptResultFailed, AttemptedAt: oracleTime(-time.Minute),
+			ObservedAt: oracleTime(-10 * time.Minute), WithinFreshness: true, FreshUntil: oracleTime(time.Hour),
+			LastFailure: &FailureInput{Code: "network", At: oracleTime(-time.Minute)}}},
+		Accounts: []AccountInput{oracleAccount("cursor", "u1", oracleWindow())}}
+	stale := Input{Catalogue: []CatalogueEntry{oracleTool("kimi", true)}, Consents: oracleAllowed("kimi"),
+		Profiles: []ProfileState{{ToolID: "kimi", ProfileKey: "k1", LatestAttempt: AttemptResultSucceeded, AttemptedAt: oracleTime(-5 * time.Hour),
+			ObservedAt: oracleTime(-5 * time.Hour), WithinFreshness: false, FreshUntil: oracleTime(-time.Hour)}},
+		Accounts: []AccountInput{oracleAccount("kimi", "k1", oracleWindow())}}
+	for _, tc := range []struct {
+		name string
+		in   Input
+		row  string
+	}{
+		{"pending first read", Input{Catalogue: []CatalogueEntry{oracleTool("gemini", true)}, Consents: oracleAllowed("gemini")}, "gemini"},
+		{"failed read that kept a reading", failedWithReading, "cursor"},
+		{"stale reading", stale, "kimi"},
+		{"manual plan", Input{DeclaredPlanIDs: []string{"team-plan"}}, "declared:team-plan"},
+	} {
+		in := tc.in
+		in.Now, in.ConsentGeneration = oracleNow, 7
+		out := Build(in)
+		if err := Validate(in, out); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		row := oracleRow(t, out, tc.row)
+		if row == nil || !oracleHas(row, SurfaceDock) {
+			t.Errorf("%s: lost its ring: %+v", tc.name, row)
 		}
 	}
 }
