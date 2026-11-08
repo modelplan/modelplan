@@ -751,7 +751,7 @@ actor EntrySyntheticClient: EngineClient {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let snapshot = try Self.rows(weekly: 75, reserveBalance: 19_613.9573653333)
+        let snapshot = try Self.rows(weekly: 75, reserveBalance: 19_613.9573653333, reserveUnit: "other")
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
             visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
         var pointer = CGPoint(x: 700, y: 450)
@@ -773,9 +773,10 @@ actor EntrySyntheticClient: EngineClient {
         elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
         XCTAssertFalse(dock.card.isHidden)
         XCTAssertNil(dock.card.visibleHintForChecks("reserve"), "no hint until the pointer is on the row")
-        XCTAssertEqual(dock.card.rowHelpForChecks("reserve"), "↺ extra resets left · then top-up credits")
+        // An unclassified unit (open string, here "other") makes no claim: not "top-up credits", not "balance".
+        XCTAssertEqual(dock.card.rowHelpForChecks("reserve"), "↺ extra resets left · then other reserve")
         dock.card.hoverRowForChecks("reserve", inside: true)
-        XCTAssertEqual(dock.card.visibleHintForChecks("reserve"), "↺ extra resets left · then top-up credits")
+        XCTAssertEqual(dock.card.visibleHintForChecks("reserve"), "↺ extra resets left · then other reserve")
         dock.card.hoverRowForChecks("reserve", inside: false)
         XCTAssertNil(dock.card.visibleHintForChecks("reserve"))
         func tooltips(_ root: NSView) -> [String] { (root.toolTip.map { [$0] } ?? []) + root.subviews.flatMap(tooltips) }
@@ -783,7 +784,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(tooltips(dock.card), [], "DOCK-3.6-18: the hint is card text, not a native tooltip")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         dock.card.hoverRowForChecks("reserve", inside: true)
-        XCTAssertEqual(dock.card.visibleHintForChecks("reserve"), "↺ 剩余额外重置次数 · 之后是充值点数")
+        XCTAssertEqual(dock.card.visibleHintForChecks("reserve"), "↺ 剩余额外重置次数 · 之后是其他额度")
     }
 
     func testResetSourceURLRejectsUnsafeAddressParts() throws {

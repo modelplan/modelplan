@@ -92,7 +92,7 @@ public struct DockContentRow: Sendable {
         let reserve = DockCardRow(id: "reserve", kind: .reserve, label: credits?.label ?? (english ? "Reserve" : "储备"),
             value: [count?.value ?? "", credits?.value ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
             detail: notes.joined(separator: " · "),
-            hint: Self.reserveHint(hasResets: count != nil, hasCredits: credits != nil, isMoney: credits?.label == "Balance" || credits?.label == "余额", english: english))
+            hint: Self.reserveHint(hasResets: count != nil, hasCredits: credits != nil, creditsClass: credits?.hint ?? "", english: english))
         var placed = false
         return additionalRows.flatMap { row -> [DockCardRow] in
             guard row.id == "reset-count" || row.id == "credits" else { return [row] }
@@ -102,13 +102,24 @@ public struct DockContentRow: Sendable {
         }
     }
     /// What the reserve line's figures mean, in the card (the line shows only "↺1 · 3,903").
-    /// A money balance (the provider labels it "Balance"/"余额") is not top-up credits and says so.
-    static func reserveHint(hasResets: Bool, hasCredits: Bool, isMoney: Bool = false, english: Bool) -> String {
-        let credits = isMoney ? (english ? "balance" : "账户余额") : (english ? "top-up credits" : "充值点数")
+    /// `creditsClass` is the producer's classification carried on the credits row ("credits", "money" or "" when the unit is unclassified).
+    /// Only classified rows name what the figure is; an unclassified unit stays neutral.
+    static func reserveHint(hasResets: Bool, hasCredits: Bool, creditsClass: String = "", english: Bool) -> String {
+        let credits: String
+        switch creditsClass {
+        case "money": credits = english ? "balance" : "账户余额"
+        case "credits": credits = english ? "top-up credits" : "充值点数"
+        default: credits = english ? "other reserve" : "其他额度"
+        }
         switch (hasResets, hasCredits) {
         case (true, true): return english ? "↺ extra resets left · then " + credits : "↺ 剩余额外重置次数 · 之后是" + credits
         case (true, false): return english ? "↺ extra resets left" : "↺ 剩余额外重置次数"
-        case (false, true): return isMoney ? (english ? "Account balance left" : "剩余账户余额") : (english ? "Top-up credits left" : "剩余充值点数")
+        case (false, true):
+            switch creditsClass {
+            case "money": return english ? "Account balance left" : "剩余账户余额"
+            case "credits": return english ? "Top-up credits left" : "剩余充值点数"
+            default: return english ? "Other reserve left" : "剩余其他额度"
+            }
         case (false, false): return ""
         }
     }
