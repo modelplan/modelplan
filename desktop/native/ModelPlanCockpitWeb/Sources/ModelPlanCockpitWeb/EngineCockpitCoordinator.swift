@@ -81,6 +81,11 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var memoryPressured = false
   private var releasingWarmPage = false
   private var memorySource: (any DispatchSourceMemoryPressure)?
+  /// G3-42 timing lines: hidden pages built this launch, when the current one was built, and whether the
+  /// fresh reply of the current open has been logged.
+  private var warmBuilds = 0
+  private var warmBuiltAt: TimeInterval?
+  private var freshLogged = true
   #if MODELPLAN_TEST_ONLY_SPI
   /// Names each step of a prewarm and an open, in order, for timing tests. Never engine data.
   public var verificationTrace: ((String) -> Void)?
@@ -150,6 +155,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       if !presented {
         // The prewarmed page: the click only shows it. Its scope starts as a new page's does.
         presented = true
+        freshLogged = false
+        CockpitTimingLog.record("open page=\(page.queryTicket == nil ? "warm-loading" : "warm-ready") clickMs=\(CockpitTimingLog.sinceClick())")
         trace("open.warm")
         retireScopeFromAnotherDay()
         page.updateScope(selectedScope)
@@ -163,6 +170,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       onUnavailable?(.pageCreation(CockpitFailureLog.errorName(error))); return
     }
     presented = true
+    freshLogged = false
+    CockpitTimingLog.record("open page=cold clickMs=\(CockpitTimingLog.sinceClick())")
     trace("open.cold")
     page = newPage
     retireScopeFromAnotherDay()
@@ -177,11 +186,14 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     pageGeneration = generation
     newPage.onReady = { [weak self] in
       guard let self, self.pageGeneration == generation else { return }
+      if !self.presented { CockpitTimingLog.record("prewarm ready buildMs=\(self.warmBuiltAt.map { CockpitTimingLog.ms(since: $0) } ?? -1)") }
+      else { CockpitTimingLog.record("open ready clickMs=\(CockpitTimingLog.sinceClick())") }
       self.trace(self.presented ? "page.ready" : "warm.ready")
       self.refresh()
     }
     newPage.onShown = { [weak self] in
       guard let self, self.pageGeneration == generation, self.presented else { return }
+      CockpitTimingLog.record("open shown clickMs=\(CockpitTimingLog.sinceClick())")
       self.trace("page.shown")
       self.showLastReply()
       // A query already running was asked after this page loaded; its reply is fresh.
@@ -199,7 +211,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       let wasPresented = self.presented
       self.presented = false
       if wasPresented { self.onClosed?() }
-      else if !self.releasingWarmPage { self.warmFailures += 1 }
+      else if !self.releasingWarmPage {
+        self.warmFailures += 1
+        CockpitTimingLog.record("prewarm ended failures=\(self.warmFailures)")
+      }
       self.schedulePrewarm()
     }
     return newPage
@@ -210,6 +225,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       let context = try? Self.bridgeContext(delivery), ticket.context == context else { return }
     scopeMembers = CockpitMemberScopes.keys(last.data)
     if CockpitMemberScopes.isIndexedFallback(selectedScope) || !scopeMembers.contains(selectedScope) { selectedScope = "all" }
+    CockpitTimingLog.record("open display=last clickMs=\(CockpitTimingLog.sinceClick())")
     trace("display.last")
     page.display(last.data, ticket: ticket)
     page.updateScope(selectedScope)
@@ -231,6 +247,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     do {
       let warm = try makeWiredPage(context)
       page = warm
+      warmBuilds += 1; warmBuiltAt = CockpitTimingLog.now
+      CockpitTimingLog.record("prewarm build n=\(warmBuilds)")
       trace("warm.start")
       warm.prewarm()
     } catch {
@@ -253,6 +271,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     cancelQuery()
     page = nil; pageGeneration = nil; scopeMembers.removeAll()
     warm.discard()
+    CockpitTimingLog.record("prewarm released")
     trace("warm.released")
   }
   /// Under memory pressure the hidden page goes; it comes back once the system reports normal again.
@@ -381,6 +400,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       {
         lastReply = (delivery, reply.envelope.data)
         trace(presented ? "query.reply" : "warm.reply")
+        if !presented { CockpitTimingLog.record("prewarm last-reply buildMs=\(warmBuiltAt.map { CockpitTimingLog.ms(since: $0) } ?? -1)") }
+        else if !freshLogged { freshLogged = true; CockpitTimingLog.record("open display=fresh clickMs=\(CockpitTimingLog.sinceClick())") }
         if presented {
           scopeMembers=CockpitMemberScopes.keys(reply.envelope.data)
           if CockpitMemberScopes.isIndexedFallback(selectedScope) || !scopeMembers.contains(selectedScope) { selectedScope="all" }

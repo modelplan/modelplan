@@ -232,4 +232,45 @@ final class CoordinatorPrewarmTests: XCTestCase {
     XCTAssertEqual(pages, 0)
     await coordinator.shutdown()
   }
+
+  /// G3-42: the timing log shows, in a packaged build, that the hidden page was made and how long the click
+  /// took to show data. Each line is a stage name with counts and milliseconds, never data.
+  @MainActor func testTimingLogShowsThePrewarmAndTheOpenStagesWithoutData() async throws {
+    var pages: [WarmProbe] = [], lines: [String] = []
+    let saved = CockpitTimingLog.verificationLine
+    CockpitTimingLog.verificationLine = { lines.append($0) }
+    defer { CockpitTimingLog.verificationLine = saved }
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.prewarmDelay = .zero
+    coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    CockpitTimingLog.markClick()
+    coordinator.open()
+    await settle { await client.requests == 2 }
+    await coordinator.consume(try reply(session))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    func stage(_ prefix: String) -> String? { lines.first { $0.hasPrefix(prefix) } }
+    XCTAssertNotNil(stage("prewarm build n=1"), "\(lines)")
+    XCTAssertNotNil(stage("prewarm ready buildMs="), "\(lines)")
+    XCTAssertNotNil(stage("prewarm last-reply buildMs="), "\(lines)")
+    XCTAssertNotNil(stage("open page=warm-ready clickMs="), "the click found the hidden page loaded: \(lines)")
+    XCTAssertNotNil(stage("open shown clickMs="), "\(lines)")
+    XCTAssertNotNil(stage("open display=last clickMs="), "\(lines)")
+    XCTAssertNotNil(stage("open display=fresh clickMs="), "\(lines)")
+    XCTAssertEqual(lines.filter { $0.hasPrefix("open display=fresh") }.count, 1, "one fresh line per open")
+    let order = ["prewarm build", "prewarm ready", "prewarm last-reply", "open page=", "open shown", "open display=last", "open display=fresh"]
+      .map { prefix in lines.firstIndex { $0.hasPrefix(prefix) } ?? -1 }
+    XCTAssertEqual(order, order.sorted(), "stages in order: \(lines)")
+    let shape = try NSRegularExpression(pattern: "^(prewarm|open) [a-z-]+(=[a-z-]+)?( [a-zA-Z]+=-?[0-9a-z-]+)*$")
+    for line in lines {
+      XCTAssertNotNil(shape.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)), "names and numbers only: \(line)")
+      XCTAssertFalse(line.contains(session.sessionID), line)
+    }
+    await coordinator.shutdown(); await client.complete()
+  }
 }

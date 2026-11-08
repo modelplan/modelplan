@@ -266,6 +266,8 @@ struct CockpitUnavailableNotice {
     func show() {
         wantsVisible=true
         guard showTask == nil else { return }
+        // G3-42: open stages in the timing log are measured from here, before the settings hop.
+        CockpitTimingLog.markClick()
         composition.dock.setCockpitPresentationBlocked(true)
         showTask=Task { @MainActor [weak self] in
             guard let self else { return }

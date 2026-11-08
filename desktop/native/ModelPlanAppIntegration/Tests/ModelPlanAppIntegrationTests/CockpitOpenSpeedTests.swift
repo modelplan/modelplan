@@ -90,6 +90,10 @@ extension CommunityCockpitEntryTests {
         var layouts: [ObjectIdentifier: [String]] = [:]
         var trace: [(step: String, at: ContinuousClock.Instant)] = []
         var log: [String] = []
+        var timing: [(line: String, at: ContinuousClock.Instant)] = []
+        func timed(_ prefix: String, after: ContinuousClock.Instant) -> String? {
+            timing.first { $0.line.hasPrefix(prefix) && $0.at > after }?.line
+        }
         func traced(_ step: String, after: ContinuousClock.Instant) -> ContinuousClock.Instant? {
             trace.first { $0.step == step && $0.at > after }?.at
         }
@@ -108,15 +112,18 @@ extension CommunityCockpitEntryTests {
         let probe = OpenProbe()
         let saved = (CommunityCockpitApplicationFactory.verificationPage, CommunityCockpitApplicationFactory.verificationCockpitTrace,
                      CommunityCockpitApplicationFactory.verificationConsoleNotice, CockpitFailureLog.verificationLine,
-                     CommunityCockpitApplicationFactory.verificationPrewarm)
+                     CommunityCockpitApplicationFactory.verificationPrewarm, CockpitTimingLog.verificationLine)
         CommunityCockpitApplicationFactory.verificationPrewarm = prewarm
         CommunityCockpitApplicationFactory.verificationCockpitTrace = { probe.trace.append((step: $0, at: ContinuousClock.now)) }
         // A failed open asks for a notice; record it instead of a modal alert.
         CommunityCockpitApplicationFactory.verificationConsoleNotice = { _ in probe.log.append("notice") }
         CockpitFailureLog.verificationLine = { probe.log.append($0) }
+        CockpitTimingLog.verificationLine = { probe.timing.append((line: $0, at: ContinuousClock.now)) }
         CommunityCockpitApplicationFactory.verificationPage = { [weak probe] page in
             let id = ObjectIdentifier(page)
             probe?.made.append(page)
+            // At launch a busy WebKit process can answer the hidden state late; the first hidden page must survive it.
+            if prewarm, probe?.made.count == 1 { page.verificationHoldHiddenVisibilityReceipt = true }
             let built = ContinuousClock.now
             page.verificationWarmPainted = { [weak probe] painted in
                 probe?.log.append("warmPaint painted=\(painted) sinceBuiltMs=\(Self.ms(built))")
@@ -140,6 +147,7 @@ extension CommunityCockpitEntryTests {
             CommunityCockpitApplicationFactory.verificationConsoleNotice = saved.2
             CockpitFailureLog.verificationLine = saved.3
             CommunityCockpitApplicationFactory.verificationPrewarm = saved.4
+            CockpitTimingLog.verificationLine = saved.5
         }
         func kib(_ sample: [Int32: Int]) -> Int { sample.values.filter { $0 > 0 }.reduce(0, +) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
@@ -150,7 +158,10 @@ extension CommunityCockpitEntryTests {
         let launch = ContinuousClock.now
         await entry.prepare()
         await entry.composition.start()
-        defer { print("G3-42-LOG \(label) " + probe.log.joined(separator: " | ")) }
+        defer {
+            print("G3-42-LOG \(label) " + probe.log.joined(separator: " | "))
+            print("G3-42-TIMINGLOG \(label) " + probe.timing.map(\.line).joined(separator: " | "))
+        }
         do {
             for _ in 0..<1500 where entry.composition.store.snapshot.delivery == nil { try await Task.sleep(for: .milliseconds(10)) }
             let session = try XCTUnwrap(entry.composition.store.snapshot.delivery != nil ? ContinuousClock.now : nil, "\(label): the engine session is up")
@@ -170,6 +181,14 @@ extension CommunityCockpitEntryTests {
                 XCTAssertFalse(warm.window?.isVisible ?? true, "the hidden page is out of view once its warm paint ends")
                 XCTAssertFalse(warm.window?.isKeyWindow ?? true, "and never takes focus")
                 XCTAssertTrue(probe.renders(warm, after: launch).isEmpty, "nothing is rendered into a hidden page")
+                // Past the 2 s visibility deadline: a late hidden-state receipt does not fail the hidden page.
+                if let ready = probe.traced("warm.ready", after: launch), Self.ms(ready) < 2500 {
+                    try await Task.sleep(for: .milliseconds(2500 - Self.ms(ready)))
+                }
+                XCTAssertFalse(probe.log.contains { $0.hasPrefix("page-failure") }, "the hidden page is not failed: \(probe.log)")
+                XCTAssertTrue(probe.made.count == 1 && warm.verificationWebView != nil, "the first hidden page is kept, not rebuilt")
+                XCTAssertNotNil(probe.timed("prewarm hidden-visibility-late", after: launch), "the late receipt is logged")
+                XCTAssertNotNil(probe.timed("prewarm warm-paint painted=", after: launch), "the warm paint is logged")
                 let memoryWarm = Self.webKitFootprints()
                 print("G3-42-PREWARM sessionMs=\(Self.ms(launch, session)) launchToWarmReadyMs=\(probe.traced("warm.ready", after: launch).map { Self.ms(launch, $0) } ?? -1) "
                     + "launchToLastReplyMs=\(probe.traced("warm.reply", after: launch).map { Self.ms(launch, $0) } ?? -1) "
@@ -210,6 +229,10 @@ extension CommunityCockpitEntryTests {
                 if prewarm {
                     XCTAssertEqual(probe.made.count, pagesBefore, "run \(run): the click shows the prewarmed page and builds none")
                     XCTAssertNotNil(probe.traced("open.warm", after: click), "run \(run)")
+                    // The packaged build's own record of the same open, measured from the click in the console.
+                    XCTAssertNotNil(probe.timed("open page=warm-ready", after: click), "run \(run): \(probe.timing.map(\.line))")
+                    let rendered = try XCTUnwrap(probe.timed("open rendered n=1 clickMs=", after: click), "run \(run)")
+                    XCTAssertLessThan(try XCTUnwrap(Int(rendered.split(separator: "=").last ?? "")), 800, "run \(run): \(rendered)")
                     let first = try XCTUnwrap(renders.first?.at, "run \(run): the shown page renders data")
                     XCTAssertLessThan(Self.ms(click, first), 800, "run \(run): a click shows the cockpit with data without a WebKit cold start")
                     let shownLast = try XCTUnwrap(lastShown, "run \(run): the last reply is shown first")
@@ -234,6 +257,21 @@ extension CommunityCockpitEntryTests {
                 closedAt = .now
             }
             if prewarm {
+                // As the packaged walkthrough does: open again soon after a close, while the next page may still load.
+                try await Task.sleep(for: .milliseconds(1000))
+                let pagesBefore = probe.made.count, click = ContinuousClock.now
+                entry.showConsole()
+                for _ in 0..<5000 {
+                    if let page = probe.made.last, !probe.renders(page, after: click).isEmpty || page.verificationWebView == nil { break }
+                    try await Task.sleep(for: .milliseconds(2))
+                }
+                let page = try XCTUnwrap(probe.made.last)
+                print("G3-42-SOON pageBuiltByClick=\(probe.made.count > pagesBefore) "
+                    + probe.timing.filter { $0.at > click }.map(\.line).joined(separator: " | "))
+                XCTAssertFalse(probe.renders(page, after: click).isEmpty, "an open soon after a close still shows data")
+                page.requestClose()
+                for _ in 0..<300 where page.verificationWebView != nil { try await Task.sleep(for: .milliseconds(10)) }
+                closedAt = .now
                 for _ in 0..<3000 where probe.traced("warm.ready", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
                 print("G3-42-IDLE webKitFootprintKiB=\(kib(Self.webKitFootprints())) pagesBuilt=\(probe.made.count)")
             }
