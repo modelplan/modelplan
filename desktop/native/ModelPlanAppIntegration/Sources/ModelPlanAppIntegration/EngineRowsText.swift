@@ -53,3 +53,14 @@ enum EngineRowsText {
         "读数不可用，请在设置中检查读取服务连接。")
     static let waitingForFresh = SettingsText("Waiting for current readings. Refresh to retry.", "等待读数更新，可刷新重试。")
 }
+
+/// Right-click menus (cockpit, widget, status item). Terms follow the shared glossary and Settings.
+extension EngineRowsText {
+    static let resetPosition = SettingsText("Reset Position", "重置位置")
+    static let widgetSize = SettingsText("Quota Widget Size", "额度挂件大小")
+    static let sizeSmall = SettingsText("Small", "小")
+    static let sizeMedium = SettingsText("Medium", "中")
+    static let sizeLarge = SettingsText("Large", "大")
+    static let help = SettingsText("Help…", "说明…")
+    static let closeWindow = SettingsText("Close Window", "关闭窗口")
+}

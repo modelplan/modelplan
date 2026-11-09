@@ -121,6 +121,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var web: WKWebView?
   /// G3-55: set by the first main-frame navigation of this web view; later ones (Reload) are cancelled.
   private var pageLoadStarted = false
+  /// The app's own right-click menu for the page. Nil shows nothing; WebKit's menu never appears.
+  public var contextMenuProvider: (() -> NSMenu?)?
   private let proxy = MessageProxy()
   private var observers: [NSObjectProtocol] = []
   private var freshnessObservers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -379,7 +381,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       configureVerification?(config)
     #endif
     let view = CockpitWebView(frame: .zero, configuration: config)
-    view.contextMenuProvider = { [weak self] in self?.contextMenu() }
+    view.menuProvider = { [weak self] in self?.contextMenu() }
     menuTarget.fire = { [weak self] in self?.toggleAttachment() }
     pageLoadStarted = false
     // The initial v2 load applies appearance and shell before a page can paint.
@@ -398,7 +400,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     root.addSubview(view)
     let drag = CockpitTitleDrag(frame: .zero)
     drag.event = { [weak self] phase, point in self?.titleDrag(phase, point: point) }
-    drag.contextMenuProvider = { [weak self] in self?.contextMenu() }
+    drag.contextMenu = { [weak view] event in view?.rightMouseDown(with: event) }
     root.addSubview(drag); dragRegion = drag
     panel.contentView = root
     self.window = panel
@@ -796,6 +798,25 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     dragRegion?.frame = .init(x: 64, y: fit.rootHeight + 2, width: 390, height: 28)
     publishAppearance()
   }
+  /// Context menu "Reset position": a dragged-out cockpit goes back under the menu bar icon.
+  public func resetPosition() { setAttached(true) }
+  /// Context menu "Help…": shows the page's Option help map (Esc or a click dismisses it). The page shows
+  /// it only while it is the key window, so a cockpit that is not key is made key first and the page is
+  /// given a moment to learn it.
+  public func showHelpMap() {
+    guard bridge.ready, web != nil, let window else { return }
+    if window.isKeyWindow { dispatchHelpMap(); return }
+    window.makeKeyAndOrderFront(nil)
+    Task { @MainActor [weak self] in
+      for _ in 0..<10 where self?.window?.isKeyWindow != true { try? await Task.sleep(for: .milliseconds(30)) }
+      try? await Task.sleep(for: .milliseconds(150)) // visibility reaches the page by message
+      self?.dispatchHelpMap()
+    }
+  }
+  private func dispatchHelpMap() {
+    guard !ending, bridge.ready, let web else { return }
+    web.callAsyncJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Alt'}))", arguments: [:], in: nil, in: .page, completionHandler: nil)
+  }
   func toggleShutter() {
     if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
   }
@@ -825,11 +846,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   func contextMenu() -> NSMenu? {
     guard window != nil, !ending, closeTask == nil else { return nil }
     let zh = appearance.locale == .zhCN, detached = shellSession.detached
-    let menu = NSMenu(); menu.autoenablesItems = false
+    // The host's menu (Settings, Reset Position, size, Help) with the detach / put-back item on top.
+    let menu = contextMenuProvider?() ?? NSMenu(); menu.autoenablesItems = false
     let item = NSMenuItem(title: detached ? (zh ? "放回" : "Put back") : (zh ? "分离" : "Detach"),
                           action: #selector(CockpitMenuTarget.perform(_:)), keyEquivalent: "")
     item.target = menuTarget; item.identifier = NSUserInterfaceItemIdentifier("cockpit.attachment")
-    menu.addItem(item)
+    if !menu.items.isEmpty { menu.insertItem(.separator(), at: 0) }
+    menu.insertItem(item, at: 0)
     return menu
   }
   /// D88: the detach / put-back key on screen, once the open has settled and no drag is moving the window.
@@ -899,6 +922,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     snapGuide?.order(.below, relativeTo: window.windowNumber)
   }
   private func cancelDrag() {
+    dragRegion?.resetDragState()
     snapGuide?.orderOut(nil)
     guard let start = dragStart else { return }; dragStart = nil
     let changed = shellSession.detached != start.detached
@@ -1028,17 +1052,52 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { true }
 }
+/// The drag area of the expanded cockpit's top strip. Hovering it shows an open hand (closed while
+/// dragging) and a faint grip of dots, drawn here with no art; nothing shows without hover.
 @MainActor final class CockpitTitleDrag: NSView {
   enum Phase { case began, moved, ended, cancelled }
   var event: ((Phase, CGPoint) -> Void)?
-  /// D88: the title strip shows the cockpit's own menu, as the page does.
-  var contextMenuProvider: (() -> NSMenu?)?
+  /// Right-click on the strip reaches the web view's own context menu.
+  var contextMenu: ((NSEvent) -> Void)?
+  private(set) var isHovered = false { didSet { if isHovered != oldValue { needsDisplay = true } } }
+  private(set) var isDragging = false {
+    didSet { if isDragging != oldValue { needsDisplay = true; window?.invalidateCursorRects(for: self) } }
+  }
+  /// What the pointer shows over the strip: an open hand, a closed hand while dragging.
+  func resetDragState() { isDragging = false }
+  var currentCursor: NSCursor { isDragging ? .closedHand : .openHand }
+  /// The grip is visible only while hovered or dragging.
+  var showsGrip: Bool { isHovered || isDragging }
   override var acceptsFirstResponder: Bool { true }
-  override func menu(for event: NSEvent) -> NSMenu? { contextMenuProvider?() }
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    trackingAreas.forEach(removeTrackingArea)
+    addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil))
+  }
+  override func resetCursorRects() { addCursorRect(bounds, cursor: currentCursor) }
+  override func mouseEntered(with event: NSEvent) { isHovered = true }
+  override func mouseExited(with event: NSEvent) { isHovered = false }
   private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? .zero }
-  override func mouseDown(with event: NSEvent) { window?.makeFirstResponder(self); self.event?(.began, point(event)) }
+  override func mouseDown(with event: NSEvent) {
+    window?.makeFirstResponder(self); isDragging = true; currentCursor.set(); self.event?(.began, point(event))
+  }
   override func mouseDragged(with event: NSEvent) { self.event?(.moved, point(event)) }
-  override func mouseUp(with event: NSEvent) { self.event?(.ended, point(event)) }
-  override func cancelOperation(_ sender: Any?) { event?(.cancelled, .zero) }
-  override func keyDown(with event: NSEvent) { if event.keyCode == 53 { self.event?(.cancelled, .zero) } else { super.keyDown(with: event) } }
+  override func mouseUp(with event: NSEvent) {
+    isDragging = false; currentCursor.set(); self.event?(.ended, point(event))
+  }
+  override func rightMouseDown(with event: NSEvent) { contextMenu?(event) }
+  override func cancelOperation(_ sender: Any?) { isDragging = false; event?(.cancelled, .zero) }
+  override func keyDown(with event: NSEvent) {
+    if event.keyCode == 53 { isDragging = false; self.event?(.cancelled, .zero) } else { super.keyDown(with: event) }
+  }
+  override func draw(_ dirtyRect: NSRect) {
+    guard showsGrip else { return }
+    NSColor(white: 1, alpha: isDragging ? 0.34 : 0.22).setFill()
+    let dot: CGFloat = 3, gap: CGFloat = 5, columns = 6, rows = 2
+    let width = CGFloat(columns) * dot + CGFloat(columns - 1) * gap, height = CGFloat(rows) * dot + CGFloat(rows - 1) * gap
+    let origin = CGPoint(x: bounds.midX - width / 2, y: bounds.midY - height / 2)
+    for row in 0..<rows { for column in 0..<columns {
+      NSBezierPath(ovalIn: NSRect(x: origin.x + CGFloat(column) * (dot + gap), y: origin.y + CGFloat(row) * (dot + gap), width: dot, height: dot)).fill()
+    } }
+  }
 }

@@ -216,6 +216,8 @@ struct DockHelpInteraction: Equatable {
         }
     }
     public var showSettings: (() -> Void)?
+    /// Widget context menu "Reset Position"; the app host supplies it.
+    public var resetPosition: (() -> Void)?
     var openCardSourceURL: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
     /// G3-28: the widget menu's Auto-Collapse item. The app writes the same stored setting
     /// as Settings' auto-collapse switch; without an app the preview applies nothing.
@@ -1925,6 +1927,10 @@ struct DockHelpInteraction: Equatable {
                            action: available && requestAutoCollapse != nil ? { [weak self] in self?.toggleAutoCollapseFromMenu(!autoCollapse) } : nil))
         items.append(.init(title: EngineRowsText.settings.value(preferences.language), accessibilityID: "dock.menu.settings",
                            action: available ? { [weak self] in self?.openSettings() } : nil))
+        if resetPosition != nil {
+            items.append(.init(title: EngineRowsText.resetPosition.value(preferences.language), accessibilityID: "dock.menu.resetPosition",
+                               action: available ? { [weak self] in self?.resetPosition?() } : nil))
+        }
         items.append(.init(title: nil))
         items.append(.init(title: quit, accessibilityID: "dock.menu.quit",
                            target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))

@@ -188,18 +188,15 @@ import XCTest
     XCTAssertEqual(CockpitWindowController.entranceStart(.growFromIcon, reduceMotion: false, detached: false, icon: icon), icon)
   }
 
-  /// G3-55 stays: WebKit's own items never show; with the app's menu a right-click shows only its item.
+  /// G3-55 stays: WebKit's own items never show, and the app's menu (with Detach / Put back on top) comes from the controller.
   func testD88RightClickMenuIsTheAppsOwnWithoutReload() throws {
     let view = CockpitWebView(frame: .zero, configuration: WKWebViewConfiguration())
-    view.contextMenuProvider = {
-      let menu = NSMenu(); menu.addItem(withTitle: "Detach", action: nil, keyEquivalent: ""); return menu
-    }
     let event = try XCTUnwrap(NSEvent.mouseEvent(with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
       windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
-    XCTAssertEqual(view.menu(for: event)?.items.map(\.title), ["Detach"])
+    XCTAssertNil(view.menu(for: event), "the view never hands WebKit a menu of its own")
     let webKit = NSMenu()
     for title in ["Reload", "Back", "Inspect Element"] { webKit.addItem(withTitle: title, action: nil, keyEquivalent: "") }
     view.willOpenMenu(webKit, with: event)
-    XCTAssertEqual(webKit.items.map(\.title), ["Detach"], "only the app's item, never Reload")
+    XCTAssertEqual(webKit.items.map(\.title), [], "no Reload or other WebKit item")
   }
 }
