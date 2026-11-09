@@ -12,4 +12,4 @@ Copyright (c) 2026 ModelPlan. The owner approved publishing these exact base-bel
 | assets/bell-silver-2x.png | 4852 B | 162x20 | `64c7f01181fc2507a1815542fbbf40ff68c7d2c6f9eae6afa4453621d2cac309` |
 | assets/mouth-plume-mask.png | 19504 B | 768x160 | `21bf35595a24bce7c0e66e16e2d8bbe9b1a627455d7d96b6860305a52ccffa56` |
 
-The page uses bell-night 2x/3x for empty bays and bell-silver 2x for subscribed bells. The working light is the mouth glow of CKP-ENG-17 (no plume), so `mouth-plume-mask.png` and the 1x rasters are published with the set but not referenced.
+The page uses bell-night 2x/3x for empty bays and bell-silver 2x for subscribed bells. The working light is the mouth glow of CKP-ENG-17 (no plume, D85), so `mouth-plume-mask.png` and the 1x rasters are published with the set but not referenced or bundled.

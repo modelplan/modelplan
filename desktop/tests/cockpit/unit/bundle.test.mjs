@@ -29,10 +29,8 @@ test('both editions have reproducible bounded manifests; community excludes rese
       const flicker='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker{animation:cockpit-porthole-flicker .43s ease-in-out 0s infinite alternate!important}';
       // CKP-ENG-19 / MOT-2.3-05: the working base mouth shimmer, stepped and gated the same way.
       const shimmer='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet{animation:cockpit-mouth-shimmer 1.73s steps(10,end) var(--fo,0s) infinite!important}\n}';
-      // Owner D73: the working bell flame, stepped with the study's plume timing and gated the same way.
-      const plume='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-plume{animation:cockpit-bell-plume var(--fd,.2s) steps(1,end) var(--fo,0s) infinite alternate!important}\n}';
-      if(name==='cockpit.css'){assert.equal(css.split(cursor).length-1,1,'one scoped running-cursor animation');assert.equal(css.split(flicker).length-1,1,'one gated porthole flicker');assert.equal(css.split(shimmer).length-1,1,'one gated base mouth shimmer');assert.equal(css.split(plume).length-1,1,'one gated bell flame');}
-      assert.doesNotMatch(css.replace(cursor,'').replace(flicker,'').replace(shimmer,'').replace(plume,''),/\binfinite\b/i,name);
+      if(name==='cockpit.css'){assert.equal(css.split(cursor).length-1,1,'one scoped running-cursor animation');assert.equal(css.split(flicker).length-1,1,'one gated porthole flicker');assert.equal(css.split(shimmer).length-1,1,'one gated base mouth shimmer');}
+      assert.doesNotMatch(css.replace(cursor,'').replace(flicker,'').replace(shimmer,''),/\binfinite\b/i,name);
     }
     const html=readFileSync(root+'index.html','utf8');
     for(const rule of ["connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(rule));

@@ -25,7 +25,7 @@ const read=page=>page.evaluate(()=>{
  const cols=[...document.querySelectorAll('.eng-keys .ek[data-sub]')].map(k=>{const c=[...document.querySelectorAll('.ck-eng .ec[data-col]')].find(e=>e.dataset.col===k.dataset.sub);const r=c.getBoundingClientRect();return {x:r.left+r.width/2,w:r.width};});
  const bells=[...document.querySelectorAll('.ck-base .bz')].map(b=>{const l=b.querySelector('.bz-line'),r=l.getBoundingClientRect(),s=b.querySelector('.bz-sheet'),st=s&&getComputedStyle(s),q=s?.getBoundingClientRect();
   return {cls:b.className,label:b.getAttribute('aria-label'),x:r.left+r.width/2,w:r.width,h:r.height,top:r.top,image:getComputedStyle(l).backgroundImage,
-   sheet:s?{anim:st.animationName,mask:st.maskImage||st.webkitMaskImage,bottom:q.bottom}:null};});
+   sheet:s?{anim:st.animationName,mask:st.maskImage||st.webkitMaskImage,bottom:q.bottom,top:q.top,w:s.offsetWidth,h:s.offsetHeight,opacity:Number(st.opacity)}:null,plumes:b.querySelectorAll('.bz-plume').length};});
  const b=base?.getBoundingClientRect();
  return {rootBottom:box.bottom,base:b?{top:b.top,height:b.height}:null,cols,bells,empty:document.querySelectorAll('.ck-base .bz-empty').length,bays:document.querySelectorAll('.ck-eng .eng-cols .ec-bay').length};
 });
@@ -48,6 +48,12 @@ for(const tier of ['tall','compact'])test(`G3-47 ${tier}: one bell per column in
  expect(sheet.anim).toBe('cockpit-mouth-shimmer');
  // CKP-ENG-17: the light fills the mouth and fades out within 5 px past the foot (visible about 3 px), no plume body.
  expect(sheet.bottom).toBeLessThanOrEqual(v.bells[0].top+v.bells[0].h+5.5);
+ // D85 (owner chose the prototype glow): no flame or plume element, and the glow box is the study's: starts at bell width x
+ // 0.05574, is bell width x 0.9033 x 1.08 wide, bell height - top + 5 px tall, at 60 % paint.
+ expect(v.bells.every(b=>b.plumes===0)).toBe(true);
+ {const bw=v.bells[0].w,top=bw*.05574;
+  expect(sheet.top-v.bells[0].top).toBeCloseTo(top,0);expect(sheet.w).toBeCloseTo(bw*.9033*1.08,0);
+  expect(sheet.h).toBeCloseTo(v.bells[0].h-top+5,0);expect(sheet.opacity).toBeGreaterThan(.55);expect(sheet.opacity).toBeLessThan(.65);}
  expect(v.bells[1].sheet).not.toBeNull();expect(v.bells.slice(2).every(b=>b.sheet===null)).toBe(true);
 });
 

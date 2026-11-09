@@ -77,8 +77,8 @@ export function mountPrototypeBase(root:HTMLElement,data:()=>WireCockpitData|nul
    for(const [k,v] of [['left',px(z.x)],['--w',px(z.w)],['--cw',px(z.cw)],['--v',z.colour],['--fuel',z.fuel],['--len',z.len+'px'],
     ['--fd',(.19+(j*37%5)*.017).toFixed(3)+'s'],['--fo',(-(j*53%7)*.023).toFixed(3)+'s']] as const)b.style.setProperty(k,v);
    const glow=document.createElement('i');glow.className='bz-glow';const line=document.createElement('i');line.className='bz-line';b.append(glow,line);
-   // D73: a working bell burns a faint flame from its mouth, under the mouth glow.
-   if(z.state==='work'){const plume=document.createElement('i');plume.className='bz-plume';const sheet=document.createElement('i');sheet.className='bz-sheet';b.append(plume,sheet);}
+   // D85: a working bell shows the study's in-mouth glow only; no flame or plume.
+   if(z.state==='work'){const sheet=document.createElement('i');sheet.className='bz-sheet';b.append(sheet);}
    // CKP-ENG-20: hovering lights the column and shows the name (text only).
    const tip=document.createElement('span');tip.className='bz-tip';tip.setAttribute('aria-hidden','true');tip.textContent=label(z);b.append(tip);
    const column=()=>[...root.querySelectorAll<HTMLElement>('.ck-eng .ec[data-col]')].find(e=>e.dataset.col===z.col);

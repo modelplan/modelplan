@@ -83,7 +83,7 @@ if (official) {
   await cp(resolve(strip,'SOURCES.md'),resolve(output,'assets/SOURCES.md'));
   css+='\n'+stripCss.toString('utf8');
   // G3-47: the released base-bell rasters (owner 2026-11-08), each checked against the reserved-visuals registry.
-  const bells=resolve(assets,'cockpit/bells'),bellFiles=['bell-night-2x.png','bell-night-3x.png','bell-silver-2x.png','mouth-plume-mask.png'];
+  const bells=resolve(assets,'cockpit/bells'),bellFiles=['bell-night-2x.png','bell-night-3x.png','bell-silver-2x.png'];
   await mkdir(resolve(output,'assets/bells'),{recursive:true});
   for(const name of bellFiles){
     const bytes=await readFile(resolve(bells,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/bells/assets/'+name];
