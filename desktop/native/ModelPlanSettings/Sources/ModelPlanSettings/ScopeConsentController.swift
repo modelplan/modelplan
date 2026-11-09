@@ -105,6 +105,8 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     }
     public var canInspect: Bool { commands.isReady && inspectionToken == nil && activeRequestToken == nil }
     private var claudeRowState: RowsState?, keychainLater = false
+    /// G3-67: the engine's own consent per tool row, from the accepted rows; nil until the first rows are accepted.
+    private var rowConsent: [String: RowsConsent]?
     public func canChoose(_ id: String) -> Bool {
         guard canMutate, let scope = facts?.scopes.first(where: { $0.scope == id }) else { return false }
         return scope.route.isKnown && scope.route != .knownUnknown && scope.detected && !scope.retired && scope.disabledReason == nil && scope.state != .allowed && !scope.cleanupPending
@@ -193,12 +195,15 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     public func receiveAcceptedRows(_ value: WireRowsSnapshot) {
         rowsSummary = value.projection.rowsSummary
         claudeRowState = value.projection.rows.first { $0.id == "claude" }?.state
+        var consents: [String: RowsConsent] = [:]
+        for row in value.projection.rows where row.kind == .tool { consents[row.id] = row.consent }
+        rowConsent = consents
         changed()
     }
     public func clearAcceptedPrivateState() {
         lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []
         activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil;diagnosticsPresentation=nil; notice = .none
-        facts = nil; rowsSummary = nil; claudeRowState = nil; keychainLater = false; selectedIDs = []; phase = .idle; changed()
+        facts = nil; rowsSummary = nil; claudeRowState = nil; rowConsent = nil; keychainLater = false; selectedIDs = []; phase = .idle; changed()
     }
     /// D41: Claude Code's saved-login path, when it is here and usable.
     private var claudeSavedLogin: WireConsentScope? {
@@ -235,7 +240,18 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
             scope.route != .browserSession && !scope.retired && scope.disabledReason == nil
     }
     /// Whether ModelPlan reads this path now: explicitly allowed or on by default.
-    public func isReading(_ id: String) -> Bool { isAllowed(id) || isOnByDefault(id) }
+    /// G3-67: a path that is only on by the compiled default counts as read when the engine's rows agree (consent
+    /// implicit or allowed for that tool). A default the engine does not admit (Claude's Keychain-only login, a
+    /// missing ZCode key file, Kiro, which has no default grant) is shown off instead of ticked. Before any rows
+    /// are accepted the compiled default stands.
+    public func isReading(_ id: String) -> Bool { isAllowed(id) || (isOnByDefault(id) && engineAdmitsDefault(id)) }
+    private func engineAdmitsDefault(_ id: String) -> Bool {
+        guard let rowConsent, let tool = facts?.scopes.first(where: { $0.scope == id })?.tool else { return true }
+        switch rowConsent[tool] {
+        case .some(.implicit), .some(.allowed): return true
+        default: return false
+        }
+    }
     public func choose(_ id: String, selected: Bool) {
         guard canChoose(id) else { return }
         if selected { selectedIDs.insert(id) } else { selectedIDs.remove(id) }; phase = .idle; changed()
