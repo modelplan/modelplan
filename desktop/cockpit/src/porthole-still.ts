@@ -48,10 +48,10 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   const base=new URL(pack.base,document.baseURI).href;let painted='';
   // The ⤢ key sits inside the glass of the c01 canopy, never on its frame (owner, 11-09). Positions are measured on the
   // canopy aperture mask (runtime/canopy-c01/aperture-<layout>-1x.png, in the port's page coordinates): at least 8 px of
-  // glass on every side at both layouts, in both themes, and clear of the HUD at the left. At 890 the right and top
-  // insets from the curved edge are about equal (16 and 15 px); the 640 band is only ~44 px of glass, so the key sits
-  // further left, centred in it. Offsets are from the port's padding box.
-  const BIG_KEY={890:{right:42,top:24},640:{right:74,top:0}} as const;
+  // glass on every side at both layouts, in both themes, and clear of the HUD at the left. Measured against the final
+  // masks of the redrawn canopy (D74, #801): the clearance is 8.1 px at 890 and 8.0 px at 640. Offsets are from the port's
+  // padding box.
+  const BIG_KEY={890:{right:38,top:52},640:{right:38,top:7}} as const;
   const placeBig=()=>{
     if(!big||!port)return;const size=22;if(!port.clientWidth||!port.clientHeight)return;
     const at=BIG_KEY[cockpit.dataset.layout==='640'?640:890];

@@ -309,3 +309,40 @@ type PluginInstallParams struct {
 	Tool    PluginTool `json:"tool"`
 	Offline bool       `json:"offline,omitempty" null:"coalesced"`
 }
+
+// HistoryImportStartParams starts the local usage-history import (metadata only, from the
+// harness logs on this machine). Days is 7, 30 or 90 (1..371 accepted); FirstRun marks the import
+// that follows the first-run consent, which runs once.
+type HistoryImportStartParams struct {
+	Days     int  `json:"days" schema:"minimum=1,maximum=371"`
+	FirstRun bool `json:"firstRun"`
+}
+
+// HistoryImportSource is one source's outcome; it carries no path or id.
+type HistoryImportSource struct {
+	Source string                    `json:"source"`
+	Status HistoryImportSourceStatus `json:"status"`
+	Turns  int                       `json:"turns" schema:"minimum=0"`
+}
+
+// HistoryImportCoverage is what imported.json covers for one source, in local days.
+type HistoryImportCoverage struct {
+	Source  string `json:"source"`
+	From    string `json:"from"`
+	Through string `json:"through"`
+	Rows    int    `json:"rows" schema:"minimum=0"`
+}
+
+// HistoryImportStatus is the read-only progress and state of the import. Files counts log files
+// read so far of those to read; it never names one.
+type HistoryImportStatus struct {
+	SchemaVersion int                     `json:"schemaVersion" schema:"minimum=1,maximum=1"`
+	Phase         HistoryImportPhase      `json:"phase"`
+	Days          int                     `json:"days" schema:"minimum=0,maximum=371"`
+	FilesDone     int                     `json:"filesDone" schema:"minimum=0"`
+	FilesTotal    int                     `json:"filesTotal" schema:"minimum=0"`
+	FirstRunDone  bool                    `json:"firstRunDone"`
+	ImportedRows  int                     `json:"importedRows" schema:"minimum=0"`
+	Coverage      []HistoryImportCoverage `json:"coverage"`
+	Sources       []HistoryImportSource   `json:"sources"`
+}

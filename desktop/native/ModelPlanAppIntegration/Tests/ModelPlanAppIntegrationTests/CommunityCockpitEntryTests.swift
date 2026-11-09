@@ -497,6 +497,10 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertTrue(payload.contains(#""focus":null"#) || !payload.contains(#""focus""#),"No rocket clicked, no focus")
         XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(focusName:"Synthetic")).contains(#""focus":"synthetic-model""#),"D63: the clicked rocket's name resolves to its published ID")
         XCTAssertFalse(try XCTUnwrap(surface.fieldPayload(focusName:"Not published")).contains("Not published"),"An unknown name focuses nothing")
+        // CKP-PORT-11D: the payload is exactly presentation plus published models; no account or local field is in it.
+        let object=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(payload.utf8)) as? [String:Any])
+        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","models","mine","focus"]),"only presentation and published models: \(object.keys.sorted())")
+        for forbidden in ["account","email","subscriptionRef","usedPercent","remaining","projectName","token"] { XCTAssertFalse(payload.contains(forbidden),"no \(forbidden) in the field payload") }
         surface.handle(.openField)
         XCTAssertTrue(surface.fieldIsOpen)
         surface.hide()

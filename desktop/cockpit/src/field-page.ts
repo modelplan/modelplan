@@ -2,7 +2,12 @@
 // The enlarged launch field: a page of its own in a separate native panel, official edition only. The reserved
 // scene loads with a dynamic import when the view opens, and the panel destroys this page on close, which
 // releases the WebGL context. The 180 s idle close and the outside-click close live in the native panel.
-// Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) for behaviour; the code is written here.
+// Composition (task 91 round 5, CKP-PORT-11): a transparent panel on the desktop with a frosted card at the left and
+// the scene at the right, masked by the c01 porthole silhouette feathered into the desktop (src/field-shape.ts).
+// A click on bare desktop, including the feathered rim, closes the field.
+// Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) and study website-updates/style.css round 5 for
+// behaviour; the code is written here.
+import {featherShape,type FieldShape} from './field-shape.js';
 import {layoutFieldAxes} from './field-axes.js';
 import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
 import {shortLabel} from '../study/rocket-r1/short-label.js';
@@ -15,15 +20,34 @@ const words={en:{close:'Close',mine:'Mine',all:'All',search:'Search models',noGl
  zh:{close:'关闭',mine:'我的',all:'全部',search:'搜索模型',noGl:'3D 视图需要 WebGL，当前不可用。',empty:'暂无已发布模型。'}} as const;
 const post=(message:Record<string,unknown>)=>(window.webkit?.messageHandlers as Record<string,{postMessage(m:string):void}>|undefined)?.field?.postMessage(JSON.stringify(message));
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
-const webgl=()=>{try{return !!document.createElement('canvas').getContext('webgl2');}catch{return false;}};
+// CKP-PORT-11G: the probe's context is released at once, so the scene's is the only live WebGL context while the field is open.
+const webgl=()=>{try{const gl=document.createElement('canvas').getContext('webgl2');if(!gl)return false;gl.getExtension('WEBGL_lose_context')?.loseContext();return true;}catch{return false;}};
 
 function mount(root:HTMLElement) {
- let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,stopAxes=()=>{};
+ let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,shape:FieldShape|null=null,stopAxes=()=>{};
  const bar=el('header','field-bar'),stage=el('div','ov-porthole field-stage'),list=el('div','field-list');
  const close=el('button','field-close');close.type='button';close.onclick=()=>post({type:'close'});
  const mineKey=el('button','field-preset'),allKey=el('button','field-preset'),count=el('span','field-count');mineKey.type=allKey.type='button';
  const search=el('input','field-search');search.type='search';
- bar.append(mineKey,allKey,search,count,close);root.append(bar,stage,list);
+ const card=el('section','field-card');card.append(bar,list);
+ bar.append(mineKey,allKey,search,count);root.append(card,stage,close);
+ const shaped=featherShape(new URL('runtime/canopy-c01/window-890-1x.png',document.baseURI).href).then(value=>{
+  if(disposed){value?.dispose();return;}shape=value;if(value)stage.style.setProperty('--field-mask',`url("${value.maskUrl}")`);stage.dataset.shape=value?'feathered':'none';
+ });
+ // A transparent WKWebView cannot blur the desktop behind it, so the native panel puts a behind-window blur under the
+ // card; it learns where the card is (CSS px = points) on every layout change.
+ let reported='';
+ const reportCard=()=>{
+  const r=card.getBoundingClientRect(),message={type:'card',x:r.x,y:r.y,width:r.width,height:r.height,radius:12},key=JSON.stringify(message);
+  if(r.width&&key!==reported){reported=key;post(message);}
+ };
+ const cardWatch=new ResizeObserver(reportCard);cardWatch.observe(card);cardWatch.observe(root);
+ // Bare desktop closes: the transparent page around the card and scene, and the scene's own feathered rim.
+ root.addEventListener('click',e=>{
+  if(!e.isTrusted)return;
+  const t=e.target as Element;
+  if(t===root||(stage.contains(t)&&shape?.bare(stage.getBoundingClientRect(),e.clientX,e.clientY)))post({type:'close'});
+ });
  const fleet=()=>fieldFleet(models,chosen);
  const refresh=()=>{
   const flown=fleet();if(focus===null||!flown.some(m=>m.id===focus))focus=flown[0]?.id??null;
@@ -53,14 +77,15 @@ function mount(root:HTMLElement) {
    host.append(canvas,document.createElementNS('http://www.w3.org/2000/svg','svg'),plates,voyage);host.children[1]!.setAttribute('class','wb-leaders');stage.replaceChildren(host);
    const url='../runtime/field-scene/cockpit-scene.bundle.js';
    const {mountWorkbenchField}=await import(url) as {mountWorkbenchField(host:HTMLElement,options:Record<string,unknown>):Scene};
+   await shaped;// the silhouette is in place before the first frame, so the scene never shows as a rectangle
    if(disposed)return;
    const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;
    scene=mountWorkbenchField(host,{models:flown,focus,quiet:value.reduceMotion,showPath:true,language,onDemand:true,noIntro:true,
     onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{scene=null;fallback(w.noGl);}});
-   if(scene)stopAxes=layoutFieldAxes(host);
+   if(scene)stopAxes=layoutFieldAxes(host,shape?.span);
    scene?.renderFor?.(1400);refresh();post({type:'ready'});
   },
-  dispose(){disposed=true;stopAxes();scene?.dispose();scene=null;root.replaceChildren();},
+  dispose(){disposed=true;stopAxes();cardWatch.disconnect();shape?.dispose();shape=null;scene?.dispose();scene=null;root.replaceChildren();},
  };
 }
 const root=document.getElementById('field');
