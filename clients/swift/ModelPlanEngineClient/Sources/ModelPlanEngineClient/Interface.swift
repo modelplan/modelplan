@@ -107,6 +107,8 @@ public protocol EngineClient: Actor {
     /// This does not grant scope, reserve validity or cancel an OS operation.
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool
     func supportsCapability(_ capability: String) async -> Bool
+    /// The server version from the accepted initialize reply of the current session; nil until one is accepted.
+    func acceptedServerVersion() async -> String?
     func start() async throws -> EngineDeliveryContext
     func stop() async
     func retry() async throws -> EngineDeliveryContext
@@ -138,6 +140,7 @@ extension EngineClient {
         throw EngineClientError.unsupportedCapability
     }
     public func supportsCapability(_ capability: String) async -> Bool { false }
+    public func acceptedServerVersion() async -> String? { nil }
     public func refresh(_ request: WireRefreshRequestParams, timeout: Duration?,
                         prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion {
         // A client without the pre-send seam must not invent a correlation ID.

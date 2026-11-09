@@ -125,6 +125,8 @@ public struct FirstRunTool: Sendable, Equatable {
     }
     public var canInspect: Bool { commands.isReady && inspectionToken == nil && activeRequestToken == nil }
     private var claudeRowState: RowsState?, keychainLater = false
+    /// G3-67: the engine's own consent per tool row, from the accepted rows; nil until the first rows are accepted.
+    private var rowConsent: [String: RowsConsent]?
     public func canChoose(_ id: String) -> Bool {
         guard canMutate, let scope = facts?.scopes.first(where: { $0.scope == id }) else { return false }
         return scope.route.isKnown && scope.route != .knownUnknown && scope.detected && !scope.retired && scope.disabledReason == nil && scope.state != .allowed && !scope.cleanupPending
@@ -215,12 +217,15 @@ public struct FirstRunTool: Sendable, Equatable {
         claudeRowState = value.projection.rows.first { $0.id == "claude" }?.state
         rowCodes = Dictionary(value.projection.rows.map { ($0.id, $0.reason.code) }, uniquingKeysWith: { first, _ in first })
         rowStates = Dictionary(value.projection.rows.map { ($0.id, $0.state) }, uniquingKeysWith: { first, _ in first })
+        var consents: [String: RowsConsent] = [:]
+        for row in value.projection.rows where row.kind == .tool { consents[row.id] = row.consent }
+        rowConsent = consents
         changed()
     }
     public func clearAcceptedPrivateState() {
         lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []
         activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil;diagnosticsPresentation=nil; notice = .none
-        facts = nil; rowsSummary = nil; claudeRowState = nil; keychainLater = false; selectedIDs = []; phase = .idle
+        facts = nil; rowsSummary = nil; claudeRowState = nil; rowConsent = nil; keychainLater = false; selectedIDs = []; phase = .idle
         firstRunToolChoices = [:]; rowCodes = [:]; rowStates = [:]; changed()
     }
     /// D41: Claude Code's saved-login path, when it is here and usable.
@@ -258,7 +263,18 @@ public struct FirstRunTool: Sendable, Equatable {
             scope.route != .browserSession && !scope.retired && scope.disabledReason == nil
     }
     /// Whether ModelPlan reads this path now: explicitly allowed or on by default.
-    public func isReading(_ id: String) -> Bool { isAllowed(id) || isOnByDefault(id) }
+    /// G3-67: a path that is only on by the compiled default counts as read when the engine's rows agree (consent
+    /// implicit or allowed for that tool). A default the engine does not admit (Claude's Keychain-only login, a
+    /// missing ZCode key file, Kiro, which has no default grant) is shown off instead of ticked. Before any rows
+    /// are accepted the compiled default stands.
+    public func isReading(_ id: String) -> Bool { isAllowed(id) || (isOnByDefault(id) && engineAdmitsDefault(id)) }
+    private func engineAdmitsDefault(_ id: String) -> Bool {
+        guard let rowConsent, let tool = facts?.scopes.first(where: { $0.scope == id })?.tool else { return true }
+        switch rowConsent[tool] {
+        case .some(.implicit), .some(.allowed): return true
+        default: return false
+        }
+    }
     public func choose(_ id: String, selected: Bool) {
         guard canChoose(id) else { return }
         if selected { selectedIDs.insert(id) } else { selectedIDs.remove(id) }; phase = .idle; changed()

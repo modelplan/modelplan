@@ -231,7 +231,7 @@ extension ProcessEngineClient {
                        !meetsMinimumServerVersion(result.data.serverVersion, minimum: minimum) {
                         protocolMismatch(); return
                     }
-                    capabilities = Set(result.data.capabilities); handshaken = true
+                    capabilities = Set(result.data.capabilities); serverVersion = result.data.serverVersion; handshaken = true
                     finishRequest(key)
                     if !adopt(EngineConsentFloor(storeEpoch: envelope.storeEpoch, generation: envelope.consentGeneration)) {
                         epochUncertain = true; invalidate(.epochChanged, next: nil)
