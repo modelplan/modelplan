@@ -253,13 +253,18 @@
     {
       "id": "s-unreadable-no-ring",
       "title": "Unreadable subscription has no ring",
-      "expected": "Gemini is detected (tool marker) but its login is expired, so it cannot be read: the widget shows rings for Claude Code, Codex and the declared plans, and none for Gemini (G3-38). The first-run list in the first step shows Gemini.",
+      "expected": "Claude Code is detected (tool marker) but has no login or Keychain on the runner, so it cannot be read. Its ring may show '--' while the first read is pending; once the read has failed the widget shows no ring for it (G3-38), while it is still listed on the first-run page and in the cockpit's own tab. Rings for Codex and the declared plans stay. Gemini (expired login) is recorded in the tree for comparison.",
       "requires": [
         "widget-found"
       ],
       "actions": [
         {
           "op": "park"
+        },
+        {
+          "op": "awaitAbsent",
+          "target": "ax:dock.subscription.claude#unknown",
+          "timeout": 90
         },
         {
           "op": "wait",
@@ -272,13 +277,10 @@
       },
       "checks": [
         {
-          "exists": "label:Claude Code"
+          "absent": "label:Claude Code"
         },
         {
           "exists": "label:Codex"
-        },
-        {
-          "absent": "label^:Gemini"
         },
         {
           "countAtLeast": {
@@ -1397,7 +1399,7 @@
     {
       "id": "s-bells-working",
       "title": "Bells with a working glow",
-      "expected": "A Claude Code session of the seeded profile is running (its transcript gets a turn every few seconds): its bell reads 'working now' and glows under its engine column; the record strip lists the running session (checklist 8).",
+      "expected": "A Codex session of the seeded profile is running (its rollout gets a tool call every few seconds): the Codex bell reads 'working now' and glows under its engine column; the record strip lists the running session (checklist 8).",
       "requires": [
         "s-bells-idle"
       ],
@@ -1428,6 +1430,11 @@
       },
       "checks": [
         {
+          "anyExists": [
+            "label~:Codex · working now"
+          ]
+        },
+        {
           "exists": "label~:working now"
         },
         {
@@ -1452,7 +1459,7 @@
     {
       "id": "s-tab-marks",
       "title": "Vendor marks on the tabs",
-      "expected": "The OpenAI (Codex) and Claude Code tab marks measure about the same by glyph bounds; the pictures of both tabs are kept (checklist 15).",
+      "expected": "The OpenAI (Codex) and Gemini CLI tab marks measure about the same by glyph bounds; the pictures of both tabs are kept (checklist 15).",
       "requires": [
         "cockpit-open"
       ],
@@ -1473,7 +1480,7 @@
           "markSizes": {
             "targets": [
               "label^:Codex ·",
-              "label^:Claude Code ·"
+              "label^:Gemini CLI ·"
             ],
             "within": 0.35
           }
@@ -2487,7 +2494,7 @@
           "op": "dragTo",
           "point": [
             0.04,
-            0.25
+            0.92
           ],
           "seconds": 1.2
         },

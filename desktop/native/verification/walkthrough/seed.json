@@ -42,21 +42,8 @@
     "reserveCredits": 420,
     "resetCards": 2
   },
-  "claude": {
-    "model": "claude-opus-5-5",
-    "accountUuid": "synthetic-account-001",
-    "organizationUuid": "synthetic-org-001",
-    "fiveHour": {
-      "usedPercent": 38,
-      "resetMinutes": 140
-    },
-    "sevenDay": {
-      "usedPercent": 27,
-      "resetMinutes": 5000
-    }
-  },
   "gemini": {
-    "note": "Detected, expired login: unreadable, so no ring (G3-38).",
+    "note": "Detected, login unusable: unreadable.",
     "expiredMinutesAgo": 600
   },
   "markers": [
@@ -76,8 +63,8 @@
     "days": 7,
     "models": [
       {
-        "source": "claude-code",
-        "model": "claude-opus-5-5",
+        "source": "codex",
+        "model": "gpt-6-astra",
         "effort": "high",
         "requests": [
           30,
@@ -99,8 +86,8 @@
         ]
       },
       {
-        "source": "claude-code",
-        "model": "claude-sonnet-5-5",
+        "source": "codex",
+        "model": "gpt-6.1-terra",
         "effort": "medium",
         "requests": [
           60,
@@ -123,5 +110,10 @@
       }
     ],
     "sessions": 8
+  },
+  "session": {
+    "source": "codex",
+    "model": "gpt-6-astra",
+    "effort": "high"
   }
 }

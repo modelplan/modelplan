@@ -144,12 +144,6 @@ class Seed(unittest.TestCase):
         body = answer[answer.index('{"id":2,"result":') + len('{"id":2,"result":'):answer.rindex("}'")]
         self.assertEqual(json.loads(body)["rateLimitsByLimitId"]["codex"]["planType"], "pro")
 
-    def test_claude_status_line_input_has_both_windows_in_the_future(self):
-        value = w.claude_statusline(self.SEED, self.NOW)
-        limits = value["rate_limits"]
-        self.assertEqual(limits["five_hour"]["used_percentage"], 38)
-        self.assertGreater(limits["seven_day"]["resets_at"], self.NOW.timestamp())
-
     def test_perf_ledger_has_seven_days_and_enough_sessions_for_six_ranked_rows(self):
         ledger = w.perf_ledger(self.SEED, self.NOW, {"storeEpoch": "e"})
         self.assertEqual(ledger["schemaVersion"], 1)
@@ -164,23 +158,24 @@ class Seed(unittest.TestCase):
         self.assertTrue(all(m.startswith(".") for m in self.SEED["markers"]))
         self.assertIn("codex.runtime_usage", self.SEED["consent"])
 
-    def test_live_session_ends_on_a_tool_result_so_the_turn_is_still_running(self):
-        lines = [json.loads(line) for line in w.live_session_lines(self.NOW, 3, "/x/alpha", "claude-opus-5-5").splitlines()]
-        self.assertEqual(lines[0]["type"], "user")
-        self.assertEqual(lines[-1]["message"]["content"][0]["type"], "tool_result")
-        self.assertEqual(sum(1 for line in lines if line["type"] == "assistant"), 3)
-        self.assertTrue(all(line["timestamp"] <= w.stamp_micro(self.NOW + datetime.timedelta(seconds=1)) for line in lines))
-        more = w.live_session_lines(self.NOW, 2, "/x/alpha", "m", offset=3)
-        self.assertNotIn('"parentUuid"', more)  # only the first call opens the turn with the prompt
+    def test_live_session_ends_on_a_tool_call_so_the_turn_is_still_running(self):
+        lines = [json.loads(line) for line in w.live_session_lines(self.NOW, 3, "/x/alpha", "gpt-6-astra").splitlines()]
+        self.assertEqual(lines[0]["payload"]["type"], "task_started")
+        self.assertEqual(lines[1]["payload"]["model"], "gpt-6-astra")
+        self.assertEqual(lines[-1]["payload"]["type"], "function_call")
+        self.assertTrue(all(line["timestamp"] <= w.stamp_micro(self.NOW) for line in lines))
+        more = w.live_session_lines(self.NOW, 2, "/x/alpha", "m", first=False)
+        self.assertNotIn("task_started", more)
 
-    def test_live_session_writes_under_the_claude_projects_folder_of_the_profile(self):
+    def test_live_session_writes_a_rollout_under_the_codex_sessions_folder_of_the_profile(self):
         with tempfile.TemporaryDirectory() as home:
             session = w.LiveSession(Path(home), self.SEED, clock=lambda: self.NOW.timestamp())
             session.append(2)
             session.append(2)
             text = session.path.read_text(encoding="utf-8")
-            self.assertEqual(session.path.parent.parent.name, "projects")
-            self.assertEqual(text.count('"type": "assistant"'), 4)
+            self.assertIn(".codex/sessions/2026/01/01", str(session.path))
+            self.assertEqual(text.count("task_started"), 1)
+            self.assertEqual(text.count("function_call"), 4)
             self.assertTrue((Path(session.cwd) / ".git").is_dir())
 
     def test_child_gets_the_synthetic_home_and_only_the_stand_in_runtime_of_the_runner(self):
@@ -453,7 +448,7 @@ class NewChecks(unittest.TestCase):
 
     def test_region_differs_from_an_earlier_region_and_marks_are_measured_by_glyph(self):
         tree = {"windows": [{"frame": [0, 0, 400, 300], "label": "ModelPlan Cockpit", "children": [
-            {"frame": [10, 10, 100, 26], "label": "Codex · Shortcut key 1"}, {"frame": [120, 10, 100, 26], "label": "Claude Code · Shortcut key 2"}]}]}
+            {"frame": [10, 10, 100, 26], "label": "Codex · Shortcut key 1"}, {"frame": [120, 10, 100, 26], "label": "Gemini CLI · Shortcut key 2"}]}]}
 
         class Pixels(FakeHost):
             glyphs = [{"width": 14, "height": 14}, {"width": 13, "height": 15}]
@@ -468,7 +463,7 @@ class NewChecks(unittest.TestCase):
             {"id": "idle", "title": "t", "expected": "e", "checks": [{"regionShot": {"target": "label:ModelPlan Cockpit", "at": [0, 0.9, 1, 0.1]}}]},
             {"id": "busy", "title": "t", "expected": "e", "checks": [
                 {"regionDiffers": {"target": "label:ModelPlan Cockpit", "at": [0, 0.9, 1, 0.1], "step": "idle", "min": 0.005}},
-                {"markSizes": {"targets": ["label^:Codex ·", "label^:Claude Code ·"], "within": 0.35}}]}])
+                {"markSizes": {"targets": ["label^:Codex ·", "label^:Gemini CLI ·"], "within": 0.35}}]}])
         first, second = walk.walk_steps()
         self.assertEqual((first["status"], second["status"]), ("pass", "pass"), second.get("reason"))
         self.assertEqual(second["measures"]["marks"]["label^:Codex ·"]["width"], 14)
@@ -479,7 +474,7 @@ class NewChecks(unittest.TestCase):
             {"id": "idle", "title": "t", "expected": "e", "checks": [{"regionShot": {"target": "label:ModelPlan Cockpit", "at": [0, 0.9, 1, 0.1]}}]},
             {"id": "busy", "title": "t", "expected": "e", "checks": [
                 {"regionDiffers": {"target": "label:ModelPlan Cockpit", "at": [0, 0.9, 1, 0.1], "step": "idle", "min": 0.005}},
-                {"markSizes": {"targets": ["label^:Codex ·", "label^:Claude Code ·"], "within": 0.35}}]}])
+                {"markSizes": {"targets": ["label^:Codex ·", "label^:Gemini CLI ·"], "within": 0.35}}]}])
         _, bad = walk2.walk_steps()
         self.assertEqual(bad["status"], "fail")
         self.assertIn("looks the same", bad["reason"])

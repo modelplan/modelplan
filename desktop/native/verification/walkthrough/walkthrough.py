@@ -480,7 +480,7 @@ class Walkthrough:
 
 
     def op_startSession(self, _):
-        """Start the running Claude Code session of the synthetic profile (it keeps going until the walk ends)."""
+        """Start the running Codex session of the synthetic profile (it keeps going until the walk ends)."""
         if self.home is None:
             raise WalkthroughError("no profile to write a session into")
         if self.live is None:
@@ -805,15 +805,6 @@ def codex_runtime_script(seed, now):
     return STUB_CODEX % {"plan": codex["plan"], "limits": json.dumps(limits, separators=(",", ":"))}
 
 
-def claude_statusline(seed, now):
-    """What Claude Code's status line hands the bundled CLI: the real input of the Claude quota reading."""
-    claude = seed["claude"]
-    epoch = lambda minutes: int((now + datetime.timedelta(minutes=minutes)).timestamp())
-    return {"session_id": "synthetic-walkthrough", "model": {"id": claude["model"]},
-            "rate_limits": {"five_hour": {"used_percentage": claude["fiveHour"]["usedPercent"], "resets_at": epoch(claude["fiveHour"]["resetMinutes"])},
-                            "seven_day": {"used_percentage": claude["sevenDay"]["usedPercent"], "resets_at": epoch(claude["sevenDay"]["resetMinutes"])}}}
-
-
 def short_ref(*parts):
     return hashlib.sha256("\x00".join(parts).encode()).hexdigest()[:16]
 
@@ -828,7 +819,7 @@ def perf_ledger(seed, now, consent):
             day = (now - datetime.timedelta(days=back)).strftime("%Y-%m-%d")
             requests, tokens = model["requests"][back], model["tokens"][back]
             rows.append({"grantEpoch": epoch, "day": day, "source": model["source"], "model": model["model"], "effortStatus": "reported",
-                         "effort": model["effort"], "parser": "claude-transcript/1", "eligibility": "gen-v1",
+                         "effort": model["effort"], "parser": "codex-rollout/1", "eligibility": "gen-v1",
                          "observedRequests": requests, "observedOutputTokens": tokens,
                          "eligibleRequests": requests, "eligibleOutputTokens": tokens, "genMs": tokens * 12,
                          "turns": max(1, requests // 6), "turnMs": tokens * 20, "turnOutputTokens": tokens,
@@ -845,52 +836,50 @@ def perf_ledger(seed, now, consent):
     return {"schemaVersion": 1, "since": stamp(now - datetime.timedelta(days=history["days"] + 1)), "rows": rows, "sessions": sessions}
 
 
-def live_session_lines(now, count, cwd, model, offset=0):
-    """Claude Code transcript lines of a turn that is still running: a prompt, then pairs of an assistant request
-    (stopped for a tool) and the tool result. The last line is a result, so the turn has not ended."""
-    at = lambda seconds: stamp_micro(now + datetime.timedelta(seconds=seconds))
-    lines = []
-    if offset == 0:
-        lines.append({"parentUuid": None, "isSidechain": False, "type": "user", "cwd": cwd,
-                      "message": {"role": "user", "content": "a synthetic question"}, "uuid": "u0", "timestamp": at(-count * 3 - 2)})
-    for i in range(count):
-        base = -(count - i) * 3
-        lines.append({"isSidechain": False, "type": "assistant", "cwd": cwd, "requestId": "req-%d" % (offset + i), "effort": "high",
-                      "thinkingDurationMs": 1000, "message": {"model": model, "role": "assistant", "content": [{"type": "thinking", "thinking": "hmm"}],
-                      "stop_reason": "tool_use", "usage": {"input_tokens": 5, "output_tokens": 100, "speed": ""}}, "timestamp": at(base)})
-        lines.append({"isSidechain": False, "type": "user", "cwd": cwd, "message": {"role": "user", "content": [
-            {"tool_use_id": "x", "type": "tool_result", "content": "said"}]}, "timestamp": at(base + 1)})
-    return "".join(json.dumps(line) + "\n" for line in lines)
-
-
 def stamp_micro(moment):
     return moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
+def live_session_lines(now, count, cwd, model, effort="high", first=True):
+    """Codex rollout lines of a turn that is still running: it starts, names its model, then keeps calling tools
+    (the last line is a tool call, so the turn has not ended). Same shapes as the app-server's own live tests."""
+    lines = []
+    if first:
+        lines.append({"timestamp": stamp_micro(now - datetime.timedelta(seconds=count * 3 + 2)), "type": "event_msg", "payload": {"type": "task_started"}})
+        lines.append({"timestamp": stamp_micro(now - datetime.timedelta(seconds=count * 3 + 1)), "type": "turn_context",
+                      "payload": {"model": model, "effort": effort, "cwd": cwd}})
+    for i in range(count):
+        lines.append({"timestamp": stamp_micro(now - datetime.timedelta(seconds=(count - i) * 3)), "type": "response_item", "payload": {"type": "function_call"}})
+    return "".join(json.dumps(line) + "\n" for line in lines)
+
+
 class LiveSession:
-    """One Claude Code session that keeps running while the walk goes on: a transcript under .claude/projects that
-    gets a few more turns every few seconds. The app reads it as it reads a real one (a session is live for five
-    minutes after its last record)."""
+    """One Codex session that keeps running while the walk goes on: a rollout under .codex/sessions that gets
+    another tool call every few seconds, so the app reads a running turn bound to the Codex account (a session
+    is live for five minutes after its last record)."""
     EVERY = 8
 
-    def __init__(self, home, seed, clock=time.time, sleep=time.sleep):
-        project = Path(home) / ".claude/projects/-synthetic-walkthrough"
-        project.mkdir(parents=True, exist_ok=True)
+    def __init__(self, home, seed, clock=time.time):
+        self.clock = clock
+        today = datetime.datetime.fromtimestamp(clock(), datetime.timezone.utc)
+        folder = Path(home) / ".codex/sessions" / today.strftime("%Y/%m/%d")
+        folder.mkdir(parents=True, exist_ok=True)
         self.cwd = str(Path(home) / "alpha")
         (Path(self.cwd) / ".git").mkdir(parents=True, exist_ok=True)
-        self.path, self.model, self.clock, self.sleep = project / "live.jsonl", seed["claude"]["model"], clock, sleep
+        self.path, self.model, self.effort = folder / "rollout-synthetic-walkthrough.jsonl", seed["session"]["model"], seed["session"]["effort"]
         self.written, self.stopping, self.thread = 0, threading.Event(), None
 
     def append(self, count):
         now = datetime.datetime.fromtimestamp(self.clock(), datetime.timezone.utc)
         with self.path.open("a", encoding="utf-8") as stream:
-            stream.write(live_session_lines(now, count, self.cwd, self.model, self.written))
+            stream.write(live_session_lines(now, count, self.cwd, self.model, self.effort, first=self.written == 0))
         self.written += count
 
     def start(self):
         if self.thread is not None:
             return
-        self.append(5)
+        self.append(4)
+
         def keep():
             while not self.stopping.wait(self.EVERY):
                 self.append(2)
@@ -919,10 +908,10 @@ def seed_profile(host, cli, home, seed, now):
 
     - tool markers (`~/.claude`, `~/.codex`, ...), which the first-run page detects;
     - `consent grant` of the local-history and usage scopes, as the first-run page records them;
-    - Claude Code: `.claude.json` identity and the status-line input (`modelplan statusline`), the real source of its quota;
+    - Claude Code: a marker only. Nothing can read its quota here (no login, no Keychain), so it is the unreadable subscription (G3-38);
     - Codex: a stand-in `codex` executable (MODELPLAN_CODEX) answering `account/rateLimits/read`: one window nearly
       used up and a reserve balance (the reserve card line);
-    - Gemini: an expired login, so the subscription is detected and unreadable (no ring, G3-38);
+    - Gemini: an expired login, a second detected tool that cannot be read;
     - declared plans in `local.json` (manual rings);
     - the performance ledger with seven days of sessions, and later a running session (`LiveSession`).
     """
@@ -933,8 +922,6 @@ def seed_profile(host, cli, home, seed, now):
     env = child_environment(home)
     (home / "bin/codex").write_text(codex_runtime_script(seed, now), encoding="utf-8")
     (home / "bin/codex").chmod(0o755)
-    claude = seed["claude"]
-    (home / ".claude.json").write_text(json.dumps({"oauthAccount": {"accountUuid": claude["accountUuid"], "organizationUuid": claude["organizationUuid"]}}), encoding="utf-8")
     expired = int((now - datetime.timedelta(minutes=seed["gemini"]["expiredMinutesAgo"])).timestamp() * 1000)
     (home / ".gemini/oauth_creds.json").write_text(json.dumps({"access_token": "synthetic-not-a-token", "expiry_date": expired}), encoding="utf-8")
     consent_call(host, cli, env, ["init"])
@@ -947,9 +934,6 @@ def seed_profile(host, cli, home, seed, now):
     config = home / ".config/modelplan"
     config.mkdir(parents=True, exist_ok=True)
     (config / "local.json").write_text(json.dumps(declared_quota(seed, now)), encoding="utf-8")
-    status = host.run([str(cli), "statusline"], env, stdin=json.dumps(claude_statusline(seed, now)))
-    if status.returncode != 0:
-        raise WalkthroughError("statusline failed: " + (status.stderr or "")[:200])
     observed = home / "Library/Caches/modelplan/observed"
     observed.mkdir(parents=True, exist_ok=True)
     (observed / "perf.json").write_text(json.dumps(perf_ledger(seed, now, after)), encoding="utf-8")
