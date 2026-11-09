@@ -24,6 +24,26 @@ def widget(grip_y, ring_ys):
     return {"role": "AXWindow", "frame": [0.0, 100.0, 90.0, 300.0], "children": children}
 
 
+class DragStripTests(unittest.TestCase):
+    """G3-43: the drag starts inside the app's title drag region, whatever the window scale and shape."""
+    def start(self, frame):
+        window = {"role": "AXWindow", "title": "ModelPlan Cockpit", "frame": frame, "children": []}
+        host = FakeHost(tree={"windows": [window]})
+        walk = w.Walkthrough.__new__(w.Walkthrough)
+        walk.host = host
+        walk.need = lambda target: window
+        walk.op_dragStrip({"window": "x", "by": [-320, 40]})
+        return next(call for call in host.calls if call[0] == "down")[1:]
+
+    def test_point_is_inside_the_drag_region_at_any_scale(self):
+        for scale, root in ((1.0, 877), (0.85, 877), (0.75, 877), (1.0, 691), (1.0, 627)):
+            x0, y0 = 300.0, 120.0
+            x, y = self.start([x0, y0, 636 * scale, (root + 34) * scale])
+            strip_top = {877: 225, 691: 45, 627: 57}[root]
+            self.assertGreaterEqual((x - x0) / scale, 24); self.assertLessEqual((x - x0) / scale, 24 + 216)
+            self.assertGreaterEqual((y - y0) / scale, strip_top - 3); self.assertLessEqual((y - y0) / scale, strip_top + 29)
+
+
 class FakeHost:
     def __init__(self, tree=None, windows=(), stats=None):
         self.tree, self.windows, self.calls, self.clock = tree or {}, list(windows), [], 0.0
