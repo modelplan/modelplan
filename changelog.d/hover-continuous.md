@@ -1,2 +1,3 @@
 - Quota Widget: hover magnification now stays on across the whole unit (ring, percentage and the gap between them) instead of dipping in the gap (G3-73).
 - Quota Widget: the percentage number under each ring is about 2 pt larger (13 x D/52, was 11 x D/52), same font and weight (G3-74).
+- Quota Widget: hover magnification is concentric (the ring alone grows 1.15x about its own centre, no travel; the label stays put) (G3-74).

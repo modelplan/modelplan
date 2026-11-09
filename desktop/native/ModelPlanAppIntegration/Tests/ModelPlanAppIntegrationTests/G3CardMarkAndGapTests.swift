@@ -231,7 +231,9 @@ private actor G350Engine: EngineClient {
             XCTAssertEqual(pose.scale, 1.15, accuracy: 0.001, label)
             let ring = screenRect(try XCTUnwrap(view.cardRingAnchor(id), label))
             XCTAssertEqual(ring.width, resting.width * 1.15, accuracy: 0.01, "\(label): the anchor is the magnified ring")
-            XCTAssertLessThan(ring.minX, resting.minX - 6 * unit, "\(label): the magnified ring reaches towards the card")
+            XCTAssertEqual(ring.midX, resting.midX, accuracy: 0.01, "\(label): G3-74 concentric, no travel")
+            XCTAssertEqual(ring.midY, resting.midY, accuracy: 0.01, label)
+            XCTAssertLessThan(ring.minX, resting.minX, "\(label): the magnified ring grows towards the card")
             let plate = try XCTUnwrap(dock.cardPlateForChecks, "\(label): a card is shown")
             let arrow = try XCTUnwrap(dock.cardArrowForChecks, "\(label): the arrow is shown")
             let tip = try XCTUnwrap(arrow.max { $0.x < $1.x })
@@ -318,6 +320,71 @@ private actor G350Engine: EngineClient {
             try move(to: CGPoint(x: view.bounds.maxX + 50, y: view.bounds.maxY + 50))
             XCTAssertNil(view.nozzlePosesForChecks[id], "\(label): off the widget the pose resets")
             await app.stopLifecycle(); dock.close()
+        }
+    }
+
+    /// G3-74 (owner, deviation from DOCK-3.8-01): subtle magnification is concentric. The ring centre stays
+    /// fixed at 1.15x, and at S, M and L on every allowed edge the grown ring stays inside the
+    /// panel, and clear of the neighbouring rings and labels. The label does not magnify: its frame and font size are unchanged.
+    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighbours() async throws {
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            for size in SettingsSize.allCases {
+                let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g374-" + UUID().uuidString)
+                addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+                let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+                _ = try await store.update { p in
+                    p.showDock = true; p.autoHide = false; p.dockEdge = edge; p.size = size; p.magnification = .subtle
+                    p.motion = .system; for _ in 0..<16 { p.onboarding.next() }
+                }
+                let snapshot = try rows([("codex", "openai"), ("claude-code", "claude"), ("zcode", "zhipu")])
+                let clock = G350Clock()
+                let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795), backingScale: 2)
+                let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: true, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+                    dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
+                    deadlineNow: { [clock] in clock.wall }, deadlineElapsed: { [clock] in clock.elapsed },
+                    makeClient: { _, target in G350Engine(store: target, rows: snapshot) }, makeSettingsSurface: { _ in G350NoWindowSurface() },
+                    isolatedResetNotificationLedger: profile.appendingPathComponent("reset-notifications.json"), activateSettings: {})
+                app.makeFirstRunSurface = { _ in G350NoWindowSurface() }
+                app.makeFirstRunSurfaceWithConsent = { _, _ in G350NoWindowSurface() }
+                await app.prepare()
+                app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+                app.allowDockPresentation()
+                let dock = app.composition.dock, view = dock.dockView, label = "\(edge) \(size.rawValue)"
+                for _ in 0..<1000 {
+                    if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == 3, view.window != nil { break }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                let skin = try XCTUnwrap(view.presentedSkinForChecks, label), origin = view.layoutOriginForChecks
+                let units = skin.stations.filter { $0.subscriptionID != nil }
+                XCTAssertEqual(units.count, 3, label)
+                func rest(_ id: String) throws -> CGRect { try XCTUnwrap(view.cardRingAnchor(id), label) }
+                var resting = [String: CGRect](), restingReadouts = [String: CGRect?]()
+                for u in units { resting[u.subscriptionID!] = try rest(u.subscriptionID!); restingReadouts[u.subscriptionID!] = view.helpReadoutAnchor(u.subscriptionID!) }
+                let events = try XCTUnwrap(view.nozzleEventDelegate, label)
+                for hovered in units {
+                    let id = hovered.subscriptionID!
+                    events.hoverNozzle(nil); events.hoverNozzle(id)
+                    clock.elapsed += 0.6; clock.wall.addTimeInterval(0.6); dock.interactionControllerForChecks?.refresh()
+                    let pose = try XCTUnwrap(view.nozzlePosesForChecks[id], label)
+                    XCTAssertEqual(pose.scale, 1.15, accuracy: 0.001, label)
+                    XCTAssertEqual(pose.offset, .zero, label)
+                    let ring = try rest(id), base = try XCTUnwrap(resting[id])
+                    XCTAssertEqual(ring.midX, base.midX, accuracy: 0.01, "\(label): centre fixed"); XCTAssertEqual(ring.midY, base.midY, accuracy: 0.01, label)
+                    XCTAssertEqual(ring.width, base.width * 1.15, accuracy: 0.01, label)
+                    func local(_ r: CGRect) -> CGRect { r.offsetBy(dx: -origin.x, dy: -origin.y) }
+                    let mine = [ring]
+                    for r in mine { XCTAssertTrue(view.bounds.contains(r), "\(label): \(r) clipped by the panel \(view.bounds)") }
+                    // The label is not magnified: same font size, and its painted frame is the resting one.
+                    XCTAssertEqual(skin.text.size, 13 * size.nozzleDiameter / 52, accuracy: 0.001, label)
+                    XCTAssertEqual(view.helpReadoutAnchor(id), (restingReadouts[id] ?? nil), "\(label): label frame unchanged while hovered")
+                    for other in units where other.subscriptionID != id {
+                        let theirs = [try XCTUnwrap(resting[other.subscriptionID!]), local(other.readout)]
+                        for a in mine { for b in theirs { XCTAssertFalse(a.intersects(b), "\(label): \(a) overlaps neighbour \(b)") } }
+                    }
+                }
+                events.hoverNozzle(nil)
+                await app.stopLifecycle(); dock.close()
+            }
         }
     }
 
