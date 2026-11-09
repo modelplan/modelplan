@@ -10,7 +10,7 @@ import ModelPlanDock
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
-private actor RouteClient: EngineClient {
+actor RouteClient: EngineClient { // internal: the real-page size test (OwnerTestCockpitPageTests) routes through it too
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
     var stops=0
     var holdCockpit=false
