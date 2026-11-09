@@ -23,6 +23,15 @@ public enum CockpitUnavailableReason: Equatable, Sendable {
 /// One line per cockpit failure, for the unified log and for stderr, which a test run keeps as
 /// app.log. Callers pass code paths and counters only, never engine data or an error's text.
 public enum CockpitFailureLog {
+  /// Milliseconds since this process started, or -1 when the system will not say. Lets a failure line show how early in
+  /// the launch it happened.
+  public static var msSinceLaunch: Int {
+    var info = kinfo_proc(), size = MemoryLayout<kinfo_proc>.stride
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    guard sysctl(&mib, 3, &info, &size, nil, 0) == 0 else { return -1 }
+    let start = info.kp_proc.p_un.__p_starttime
+    return max(0, Int((Date().timeIntervalSince1970 - (Double(start.tv_sec) + Double(start.tv_usec) / 1e6)) * 1000))
+  }
   private static let logger = Logger(subsystem: "org.modelplan.community", category: "cockpit")
   // A pipe whose reader has gone must not raise SIGPIPE for the sake of a log line.
   private static let stderrPrepared: Void = { _ = fcntl(STDERR_FILENO, F_SETNOSIGPIPE, 1) }()

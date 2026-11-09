@@ -32,7 +32,11 @@ extension CommunityCockpitEntryTests {
         XCTAssertEqual(notices.count,1,"The failed open still asks for the recovery notice")
         XCTAssertEqual(notices.first?.history,false)
         XCTAssertEqual(notices.first?.actions,[.settings,.dockReadings,.cancel])
-        XCTAssertEqual(lines,["unavailable path=open.noDelivery wantsVisible=true foreground=true pageOpened=false"])
+        XCTAssertEqual(lines.count,1)
+        let line=lines.first ?? ""
+        XCTAssertTrue(line.hasPrefix("unavailable path=open.noDelivery wantsVisible=true foreground=true pageOpened=false "),line)
+        XCTAssertTrue(line.contains("sinceLaunchMs="),"The line says how early in the launch it happened")
+        XCTAssertTrue(line.contains("engine=[client=true delivery=false"),"and the engine's state")
         await app.composition.stop()
     }
 

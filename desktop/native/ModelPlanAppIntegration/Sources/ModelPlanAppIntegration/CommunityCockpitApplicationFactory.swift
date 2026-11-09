@@ -239,6 +239,9 @@ struct CockpitUnavailableNotice {
     /// Counts successful page opens; a notice is dropped when one happened after the failure it was raised for.
     private var openCount = 0
     private var noticeTask: Task<Void,Never>?
+    private var rebuilding = false
+    private var rebuilds = 0
+    static let maxRebuilds = 2
     init(owner:CockpitConsoleOwner,composition:EngineDockMenuComposition,
          isForeground: @escaping @MainActor () -> Bool = { NSApp.isActive },
          activate: @escaping @MainActor () -> Void = { if !NSApp.isActive { NSApplication.shared.activate() } },
@@ -256,6 +259,16 @@ struct CockpitUnavailableNotice {
         }
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
+            if self.rebuilding, self.wantsVisible, self.noticeTask != nil {
+                // A failed page inside the grace period: keep the presentation and build the page again.
+                self.pageOpened=false
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(for:.milliseconds(150))
+                    guard let self,self.rebuilding,self.wantsVisible,self.noticeTask != nil else { return }
+                    self.owner.coordinator?.open()
+                }
+                return
+            }
             self.wantsVisible = false
             self.onShowingChanged?()
             self.fieldPanel?.close()
@@ -302,7 +315,7 @@ struct CockpitUnavailableNotice {
     }
     func show() {
         wantsVisible=true
-        noticeTask?.cancel(); noticeTask=nil // a new click starts its own grace period
+        noticeTask?.cancel(); noticeTask=nil; rebuilding=false; rebuilds=0 // a new click starts its own grace period
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
         CockpitTimingLog.markClick()
@@ -340,28 +353,31 @@ struct CockpitUnavailableNotice {
         pageOpened = false
         fallback?.hide()
     }
-    /// G3-66: a failure is only worth a notice when it lasts. An open that finds the engine without its first
-    /// context is retried until the context arrives, and any failure is dropped when a later open succeeds
-    /// within the grace period. The log line is written for every failure.
+    /// G3-66: a failure is only worth a notice when it lasts. The log line is written for every failure, with the
+    /// path, the time since launch and the engine's state. An open that finds no engine context yet is completed
+    /// by the first context (the coordinator keeps it pending); a failed page is rebuilt and reopened while the
+    /// window stays up. A later successful open drops the notice; a failure that outlasts the grace period, or
+    /// that keeps repeating, is announced.
     private func unavailable(path:String,history:Bool=false) {
-        if noticeTask != nil, !history { return } // a retry of the open already being waited on
+        if noticeTask != nil, !history, !path.hasPrefix("page.") { return } // the open already being waited on
         let initiatedInForeground=isForeground()
         // A failure in the background or after a close shows nothing, so the log is all there is.
-        CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened)")
+        CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened) "
+            + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] rebuilds=\(rebuilds)")
         guard wantsVisible else { return }
         if history { presentNotice(history:true,initiatedInForeground:initiatedInForeground); return }
-        let epoch=openCount,retries=path == "open.noDelivery"
+        if path.hasPrefix("page.") {
+            rebuilds += 1
+            if rebuilds > Self.maxRebuilds { noticeTask?.cancel(); noticeTask=nil; presentNotice(history:false,initiatedInForeground:initiatedInForeground); return }
+            rebuilding=true // the coordinator's close that follows must not retire the presentation
+        }
+        guard noticeTask == nil else { return }
+        let epoch=openCount
         noticeTask=Task { @MainActor [weak self] in
             guard let self else { return }
-            let clock=ContinuousClock(),deadline=clock.now.advanced(by:self.noticeGrace)
-            while clock.now < deadline {
-                try? await Task.sleep(for:.milliseconds(100))
-                guard !Task.isCancelled else { return }
-                if self.openCount != epoch { break }
-                if retries, self.wantsVisible { self.owner.coordinator?.open() } // no context yet: opens as soon as one exists
-            }
+            try? await Task.sleep(for:self.noticeGrace)
             guard !Task.isCancelled else { return }
-            self.noticeTask=nil
+            self.noticeTask=nil; self.rebuilding=false
             guard self.openCount == epoch else { return } // recovered: nothing to tell the user
             self.presentNotice(history:false,initiatedInForeground:initiatedInForeground)
         }

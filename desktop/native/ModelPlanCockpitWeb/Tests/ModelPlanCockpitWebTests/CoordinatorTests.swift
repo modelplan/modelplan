@@ -110,6 +110,44 @@ final class CoordinatorTests: XCTestCase {
     await coordinator.shutdown(); await client.stop()
   }
 
+  /// G3-66, startup order: a click before the engine has its first context is not lost. The first context opens the
+  /// page at once (well inside 300 ms), the content follows its reply, and nothing further is reported unavailable.
+  @MainActor func testClickDuringEngineStartOpensWhenTheFirstContextArrives() async {
+    var pages: [PageProbe] = [], unavailable: [CockpitUnavailableReason] = [], opened = 0
+    let coordinator = EngineCockpitCoordinator { let page = PageProbe($0); pages.append(page); return page }
+    let client = HeldClient(); coordinator.bind(client: client)
+    coordinator.onUnavailable = { unavailable.append($0) }
+    coordinator.onOpened = { opened += 1 }
+    coordinator.open()
+    XCTAssertEqual(pages.count, 0); XCTAssertFalse(coordinator.presented)
+    XCTAssertTrue(coordinator.diagnosticState.contains("delivery=false"))
+    XCTAssertTrue(coordinator.diagnosticState.contains("pendingOpen=true"))
+    let start = ContinuousClock.now
+    await coordinator.consume(.context(EngineDeliveryContext(
+      sessionID: "s-" + UUID().uuidString.lowercased(),
+      floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)))
+    XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(300))
+    XCTAssertEqual(pages.count, 1, "The pending open builds the page as soon as the context exists")
+    XCTAssertTrue(coordinator.presented)
+    XCTAssertEqual(opened, 1)
+    XCTAssertEqual(unavailable, [.noDelivery], "Only the open before the engine was ready; no second failure")
+    XCTAssertTrue(coordinator.diagnosticState.contains("pendingOpen=false"))
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  @MainActor func testClosingBeforeTheEngineIsReadyCancelsThePendingOpen() async {
+    var pages = 0
+    let coordinator = EngineCockpitCoordinator { pages += 1; return PageProbe($0) }
+    let client = HeldClient(); coordinator.bind(client: client)
+    coordinator.open(); coordinator.close()
+    await coordinator.consume(.context(EngineDeliveryContext(
+      sessionID: "s-" + UUID().uuidString.lowercased(),
+      floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)))
+    XCTAssertFalse(coordinator.presented)
+    XCTAssertTrue(pages <= 1, "At most a prewarmed page, never a presented one")
+    await coordinator.shutdown(); await client.stop()
+  }
+
   @MainActor func testUnavailableNamesThePathThatFailed() async {
     var unavailable: [CockpitUnavailableReason] = []
     let coordinator = EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
