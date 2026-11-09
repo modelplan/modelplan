@@ -272,7 +272,7 @@ public enum EntranceChecks {
             try run.near(open.tailRect.centre.x, 1117, 1, "tail centred on the tail point x")
             try run.near(open.tailRect.centre.y, 900, 1, "tail centred on the tail point y")
             try run.expect(openFacts.noseInFront && openFacts.noseY >= 26 + 12, "nose on screen: \(openFacts.noseY)")
-            try run.near(openFacts.noseY, 176, 0.05 * 956, "nose where the storyboard still has it")
+            try run.near(openFacts.topY, 176, 0.05 * 956, "rocket top where the storyboard still has it")
             try run.near(openFacts.axisTiltDegrees, 0, 0.5, "rocket upright")
             var lastTurn = Double.infinity
             for i in 0...30 {

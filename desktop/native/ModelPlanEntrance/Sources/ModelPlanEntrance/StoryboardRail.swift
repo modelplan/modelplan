@@ -26,6 +26,8 @@ public struct StoryboardRailInput: Equatable, Sendable {
 }
 
 public struct StoryboardPoseFacts: Equatable, Sendable {
+    /// Top edge of the projected rocket (nose tip or canopy), the storyboard's `topY`.
+    public let topY: Double
     public let noseY: Double
     public let noseInFront: Bool
     /// Projected rocket axis (tail plate centre to nose tip) from vertical, degrees.
@@ -97,7 +99,11 @@ public struct StoryboardRail: Sendable {
             guard n.inFront, n.point.y >= li.menuBarHeight + 12, n.point.y < base.point.y else { continue }
             let tilt = atan2(n.point.x - base.point.x, base.point.y - n.point.y) * 180 / Double.pi
             guard abs(tilt) <= 5 else { continue }
-            let score = abs(n.point.y - noseTarget)
+            // The storyboard measures the silhouette's top edge; seen from below and in front, the canopy on the
+            // nose capsule can rise above the nose tip, so match the higher of the two.
+            let top = Self.silhouetteTop(camera, geometry: geometry, rise: 0)
+            guard top >= li.menuBarHeight + 12 else { continue }
+            let score = abs(top - noseTarget)
             if best == nil || score < best!.score { best = (camera, angle, score) }
         }
         // Fallback (never expected on supported screens): the steepest pose that keeps the tail on its point.
@@ -169,9 +175,15 @@ public struct StoryboardRail: Sendable {
             .filter(\.inFront)
         let low = axis.first ?? nose, high = axis.last ?? nose
         let hull = Self.convexHull(geometry.glassVertices.map { camera.project(.init($0.x, $0.y + rise, $0.z)).point })
-        return .init(noseY: nose.point.y, noseInFront: nose.inFront,
+        return .init(topY: Self.silhouetteTop(camera, geometry: geometry, rise: rise), noseY: nose.point.y, noseInFront: nose.inFront,
                      axisTiltDegrees: atan2(high.point.x - low.point.x, max(1e-9, low.point.y - high.point.y)) * 180 / Double.pi,
                      windowHull: hull, windowIoU: Self.iou(hull, aperturePolygon, step: 2))
+    }
+
+    /// Top edge of the projected rocket (nose tip and canopy glass), viewport y.
+    static func silhouetteTop(_ camera: EntranceCamera, geometry: RocketGeometry, rise: Double) -> Double {
+        let points = [EntranceVector(0, geometry.height + rise, 0)] + geometry.glassVertices.map { EntranceVector($0.x, $0.y + rise, $0.z) }
+        return points.map { camera.project($0) }.filter(\.inFront).map(\.point.y).min() ?? .infinity
     }
 
     // MARK: - Solvers

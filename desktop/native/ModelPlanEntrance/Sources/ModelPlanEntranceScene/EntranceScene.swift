@@ -52,6 +52,19 @@ public final class EntranceScene {
         let root = Entity()
         root.addChild(stage)
         StandInRocket.build(into: stage, tail: plan.tail, parts: parts, theme: plan.scenario.theme, flat: flat)
+        if !flat {
+            // Look mode: a top-left key light like the reference studio rig, plus warm firelight from the base.
+            let key = DirectionalLight()
+            key.light.intensity = plan.scenario.theme == .night ? 3000 : 6000
+            key.look(at: [0, 7, 0], from: [-8, 15, 10], relativeTo: nil)
+            root.addChild(key)
+            let fire = PointLight()
+            fire.light.color = .init(red: 1, green: 0.59, blue: 0.25, alpha: 1)
+            fire.light.intensity = 40000
+            fire.light.attenuationRadius = 11.5
+            fire.position = [-2.4, -0.8, 3.8]
+            stage.addChild(fire)
+        }
         renderer.entities.append(root)
         renderer.entities.append(camera)
         renderer.activeCamera = camera
@@ -72,7 +85,7 @@ public final class EntranceScene {
         camera.camera.far = Float(EntranceCamera.far)
 
         let width = Int(plan.canvas.width.rounded(.up)), height = Int(plan.canvas.height.rounded(.up))
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm_srgb, width: width, height: height, mipmapped: false)
         descriptor.usage = [.renderTarget, .shaderRead, .shaderWrite]
         descriptor.storageMode = .shared
         guard let texture = device.makeTexture(descriptor: descriptor) else { throw SceneError.textureAllocation }
