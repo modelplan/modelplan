@@ -159,6 +159,7 @@ import WebKit
     parts.scheme = "https"; parts.host = "modelplan.ai"; parts.path = "/"
     parts.queryItems = [URLQueryItem(name: "focus", value: models.joined(separator: ","))]
     return parts.url
+  }
   private func placeCard(_ message: [String: Any]) {
     guard let cardBlur, let bounds = cardBlur.superview?.bounds else { return }
     let number = { (key: String) in (message[key] as? NSNumber)?.doubleValue }
