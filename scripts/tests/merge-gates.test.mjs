@@ -226,7 +226,7 @@ test("GLM-out fallback: (sonnet) DESIGN/GLMREV pass only inside the window, exac
   const r = evalFb({ comments: [merge, gOk], files: seam });
   assert.equal(r.state, R.SUCCESS);
   assert.deepEqual(r.glmFallback, ["GLMREV (sonnet)"]);
-  assert.match(r.why, /GLM-out fallback: GLMREV \(sonnet\)/);
+  assert.match(r.why, /via GLMREV \(sonnet\)/);
   assert.equal(evalFb({ comments: [merge, gOk], files: seam, now: after }).state, R.PENDING, "expired window");
   assert.equal(evalFb({ comments: [merge, gOk], files: seam, u: null }).state, R.PENDING, "no window");
   assert.equal(evalFb({ comments: [merge, comment(`GLMREV (sonnet): OK @ ${OLD}`)], files: seam }).state, R.PENDING, "other head");
@@ -273,6 +273,31 @@ test("GLM-out fallback mixing: a (sonnet) pass/OK only at the exact head and nev
   assert.equal(evalFb({ comments: [merge, g("GLMREV (sonnet): ISSUES"), g("GLMREV-ACCEPTED")], files: seam }).state, R.SUCCESS, "ACCEPTED lifts");
   assert.equal(evalFb({ comments: [merge, g("GLMREV: ISSUES"), g("GLMREV: OK")], files: seam }).state, R.SUCCESS, "GLM-only: latest wins");
   assert.equal(evalFb({ comments: [merge, g("GLMREV (sonnet): OK"), g("GLMREV: ISSUES")], files: seam }).state, R.FAILURE, "a later ISSUES wins");
+});
+
+test("DESIGN-ACCEPTED: coordinator lift of a GLM or (sonnet) DESIGN fail, exact head, trusted comment first line only", () => {
+  const until = Date.parse("2026-11-14T12:17:50Z"), now = Date.parse("2026-11-09T12:00:00Z");
+  const evalD = ({ comments, reviews = [], verified = () => false, u = until }) =>
+    R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: [file("desktop/native/ModelPlanSettings/Pane.swift")], runs: greenCi, statuses: [], verifiedEdge: verified, conf, glmFallbackUntil: u, now });
+  const merge = comment(v("merge")), glm = comment(`GLMREV: OK @ ${H}`);
+  const gFail = comment(`Design-conformance review (GLM) @ ${H}\nDESIGN: fail @ ${H}`);
+  const sFail = comment(`Design-conformance review (sonnet) @ ${H}\nDESIGN (sonnet): fail @ ${H}`);
+  const ok = evalD({ comments: [merge, glm, gFail, comment(`DESIGN-ACCEPTED @ ${H}\n\nCoordinator: out of scope.`)] });
+  assert.equal(ok.state, R.SUCCESS);
+  assert.match(ok.why, /via DESIGN-ACCEPTED/);
+  assert.equal(evalD({ comments: [merge, glm, sFail, comment(`DESIGN-ACCEPTED @ ${H}`)], u: null }).state, R.SUCCESS, "lifts a sonnet fail, window not needed");
+  const lift = comment(`DESIGN-ACCEPTED @ ${H}`), laterFail = comment(`Design-conformance review (GLM) @ ${H}\nDESIGN: fail @ ${H}`);
+  assert.equal(evalD({ comments: [merge, glm, lift, laterFail] }).state, R.FAILURE, "a later fail wins again");
+  assert.equal(evalD({ comments: [merge, glm] }).state, R.PENDING);
+  assert.equal(evalD({ comments: [merge, glm, comment(`DESIGN-ACCEPTED @ ${H}`)] }).state, R.SUCCESS, "also stands in for a missing pass");
+  for (const [why, c, rv] of [
+    ["carried head", [comment(`DESIGN-ACCEPTED @ ${OLD}`), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], []],
+    ["short sha", [comment(`DESIGN-ACCEPTED @ ${H.slice(0, 12)}`)], []],
+    ["not the first line", [comment(`note\nDESIGN-ACCEPTED @ ${H}`)], []],
+    ["untrusted", [comment(`DESIGN-ACCEPTED @ ${H}`, { login: "guanbear", id: 1 })], []],
+    ["inside a design review", [comment(`Design-conformance review (sonnet) @ ${H}\nDESIGN-ACCEPTED @ ${H}`)], []],
+    ["a review, not a comment", [], [review(`DESIGN-ACCEPTED @ ${H}`)]],
+  ]) assert.equal(evalD({ comments: [merge, glm, gFail, ...c], reviews: rv, verified: () => true }).state, R.FAILURE, why);
 });
 
 test("CI at the head: newest run per workflow, parse-time failures, statuses, anchor workflow", () => {

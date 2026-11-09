@@ -198,7 +198,11 @@ const fallbackCounts = (fb, x) => !!fb && fb.until != null && fb.now < fb.until 
 export function designVerdict(items, head, carried, fb = null) {
   const at = new Set([head, ...carried]);
   let r = null, src = null, failSeen = false, sonnetFail = false;
+  const lift = new RegExp(`^DESIGN-ACCEPTED @ ${head}(\\s|$)`);
   for (const x of items) {
+    // Coordinator lift (owner decision 2026-11-09): a trusted comment that starts with "DESIGN-ACCEPTED @ <head>"
+    // clears every earlier GLM or (sonnet) fail at that exact head (never carried); a later fail wins again.
+    if (x.kind === "comment" && lift.test(x.body)) { r = "pass"; src = "accepted"; failSeen = sonnetFail = false; continue; }
     if (!x.body.startsWith("Design-conformance review")) continue;
     for (const l of lines(x.body)) {
       const m = /^DESIGN( \(sonnet\))?: (pass|fail) @ ([0-9a-f]{40})\b/.exec(l);
@@ -210,6 +214,7 @@ export function designVerdict(items, head, carried, fb = null) {
     }
   }
   if (r === "pass" && src === "sonnet") fb?.used?.push("DESIGN (sonnet)");
+  if (r === "pass" && src === "accepted") fb?.used?.push("DESIGN-ACCEPTED");
   return r;
 }
 
@@ -533,7 +538,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (ci.state === FAILURE) return res(FAILURE, ci.why, extra);
   if (missing.length) return res(PENDING, `tier ${tier}: needs ${missing.join(", ")}`, extra);
   if (ci.state === PENDING) return res(PENDING, ci.why, extra);
-  return res(SUCCESS, `tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}${fb.used.length ? ` (GLM-out fallback: ${fb.used.join(", ")})` : ""}`, extra);
+  return res(SUCCESS, `tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}${fb.used.length ? ` (via ${fb.used.join(", ")})` : ""}`, extra);
 }
 
 // ---- One merge-group commit ----
