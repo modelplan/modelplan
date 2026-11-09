@@ -50,6 +50,24 @@ final class EntranceSceneRenderTests: XCTestCase {
             .intersection(CGRect(x: 0, y: 0, width: viewport.width, height: viewport.height))
     }
 
+    /// The core's expected on-screen silhouette of the filled tail disc: dense samples of the disc, projected,
+    /// keeping only those inside the viewport (a clipped ellipse is narrower than its clipped bounding box).
+    private func visibleTailDisc(_ pose: LiftOffPose) -> CGRect? {
+        let vp = pose.camera.viewport
+        var points: [EntrancePoint] = []
+        for ring in 1...24 {
+            let r = LiftOffRail.tailRingRadius * Double(ring) / 24
+            for i in 0..<256 {
+                let a = 2 * Double.pi * Double(i) / 256
+                let p = pose.camera.project(.init(sin(a) * r, TailLayout.plateY + pose.rise, cos(a) * r)).point
+                if p.x >= 0, p.x < vp.width, p.y >= 0, p.y < vp.height { points.append(p) }
+            }
+        }
+        guard !points.isEmpty else { return nil }
+        let b = EntranceRect.bounds(points)
+        return CGRect(x: b.left, y: b.top, width: b.width, height: b.height)
+    }
+
     private func assertNear(_ actual: CGRect, _ expected: CGRect, tolerance: CGFloat, _ what: String,
                             file: StaticString = #filePath, line: UInt = #line) {
         let t = max(tolerance, 0.01 * max(expected.width, expected.height))
@@ -70,7 +88,8 @@ final class EntranceSceneRenderTests: XCTestCase {
             XCTAssertTrue(pose.tailInFront)
             XCTAssertEqual(frame.image.width, Int(pose.camera.viewport.width))
             let rendered = try XCTUnwrap(silhouette(frame.image), "tail ring not drawn at \(progress)")
-            assertNear(rendered, clipped(pose.tailRect, pose.camera.viewport), tolerance: 2, "tail ring at \(progress)")
+            let expected = try XCTUnwrap(visibleTailDisc(pose))
+            assertNear(rendered, expected, tolerance: 2, "tail ring at \(progress)")
         }
     }
 

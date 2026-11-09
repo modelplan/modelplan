@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Pure-Swift entrance checks. They run on Linux (`swift run ModelPlanEntranceChecks`, no Mac runner) and on
-// the Mac through `ModelPlanEntranceTests`, which calls the same suite. Goldens marked REF were produced by
-// the approved web reference's own code (Three.js r1xx, the scene.js camera path) for the same inputs with the
-// neutral stand-in glass; see `ReferenceGoldens`.
+// the Mac through `ModelPlanEntranceTests`, which calls the same suite.
+// Reference rule (owner 2026-11-09): the storyboard is the truth for the flight. Groups tagged STORYBOARD
+// assert storyboard rules. The camera-path numbers in `ReferenceGoldens` come from the web prototype's
+// scene.js (PROVISIONAL): they only prove the port is faithful and will be replaced once the owner rules on
+// the prototype deviations (spec entrance-prototype-deviations.md, F1-F8).
 import Foundation
 import ModelPlanEntrance
 
@@ -51,7 +53,7 @@ public enum ReferenceGoldens {
         public let pitch: Double, turn: Double, rise: Double
     }
 
-    /// REF poses (rail-golden.mjs, design/entrance-storyboard-20261025 dc9a1b52d camera code). Tail rects are
+    /// PROVISIONAL prototype poses (rail-golden.mjs over the dc9a1b52d scene.js camera code). Tail rects are
     /// omitted where part of the ring is behind the camera (the reference's numbers there are meaningless).
     public static let poses: [Pose] = [
         .init(t: 0, camera: [2.582596, -6.227439, 4.133017], fov: 32, shift: [0.496591, -0.919944],
@@ -74,7 +76,7 @@ public enum EntranceChecks {
     public static func run() -> EntranceCheckRun {
         let run = EntranceCheckRun()
 
-        run.group("timeline: roll clamps and stage boundaries (REF timeline.test.mjs)") {
+        run.group("STORYBOARD timeline: roll clamps and stage boundaries") {
             for (distance, roll) in [(100.0, 0.35), (800, 0.5), (3000, 0.7)] {
                 let line = EntranceTimeline(distance: distance)
                 try run.near(line.roll, roll, 1e-12, "roll for \(distance)")
@@ -122,7 +124,7 @@ public enum EntranceChecks {
             for i in 1...100 { let v = EntranceEasing.easeOut(Double(i) / 100); try run.expect(v >= last, "ease-out monotone"); last = v }
         }
 
-        run.group("tail layout: visible IDs in dock order, shapes, no overlaps, dock cap (CKP-ENT-05)") {
+        run.group("STORYBOARD tail layout: visible IDs in dock order, shapes, no overlaps, dock cap (CKP-ENT-05)") {
             for n in [1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 32] {
                 let ids = (0..<n).map { "sub-\($0)" }, slots = TailLayout.slots(for: ids)
                 try run.expect(slots.map(\.id) == ids, "order for \(n)")
@@ -145,7 +147,7 @@ public enum EntranceChecks {
             try run.near(TailLayout.slots(for: ["a", "b", "c", "d"])[0].angle, Double.pi / 4, 1e-12, "square is rotated 45°")
         }
 
-        run.group("lift-off rail matches the web reference camera (REF goldens)") {
+        run.group("PROVISIONAL lift-off rail ports the prototype camera faithfully (not storyboard truth)") {
             let rail = LiftOffRail(input: ReferenceGoldens.liftOff)
             try run.near(rail.startDistance, ReferenceGoldens.startDistance, 1e-5, "start distance")
             try run.near(rail.endDistance, ReferenceGoldens.endDistance, 1e-5, "end distance")
@@ -168,7 +170,7 @@ public enum EntranceChecks {
             }
         }
 
-        run.group("lift-off rules: handoff size, nose up, turn stops at 70 %, no levelling, window lands on the aperture") {
+        run.group("STORYBOARD lift-off rules: handoff size, nose up, turn stops, no levelling, window lands on the aperture") {
             let rail = LiftOffRail(input: ReferenceGoldens.liftOff), first = rail.pose(at: 0), last = rail.pose(at: 1)
             try run.near(first.tailRect.width, 496, 0.01, "tail starts at the handoff diameter")
             try run.near(first.tailRect.centre.x, 1100, 0.01, "tail centred on the tail point x")
