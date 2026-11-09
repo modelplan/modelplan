@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 09bec3aa8af975dfb325f5aac54073f413c79d23f71c790d54b23920897427f4
+// Schema SHA-256: 494821c8217baeb9cc6ebc5117cc957552127eb8cd175231f6af096c8cf5d275
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -157,6 +157,7 @@ export type WireCockpitPublication = {
   readonly "publicationId": string;
   readonly "publishedAt": string;
   readonly "source": string;
+  readonly "speedTiers"?: ReadonlyArray<WireCockpitSpeedTier>;
   readonly "truncated": boolean;
 };
 
@@ -228,6 +229,42 @@ export type WireCockpitSourceHistory = {
   readonly "recent30d": WireCockpitHistorySums;
   readonly "recent7d": WireCockpitHistorySums;
   readonly "source": string;
+};
+
+export type WireCockpitSpeedBilling = {
+  readonly "account": string;
+  readonly "basis": string;
+  readonly "billsTo": string;
+  readonly "ratio": number;
+};
+
+export type WireCockpitSpeedEligibility = {
+  readonly "note": string;
+  readonly "plans": ReadonlyArray<string>;
+};
+
+export type WireCockpitSpeedRatio = {
+  readonly "qualifier": string;
+  readonly "ratio": number | null;
+};
+
+export type WireCockpitSpeedTier = {
+  readonly "billing": ReadonlyArray<WireCockpitSpeedBilling>;
+  readonly "caveats": ReadonlyArray<string>;
+  readonly "eligibility": WireCockpitSpeedEligibility;
+  readonly "harness": string;
+  readonly "id": string;
+  readonly "label": string;
+  readonly "models": ReadonlyArray<WireCockpitSpeedTierModel>;
+  readonly "sources": ReadonlyArray<string>;
+  readonly "tier": string;
+  readonly "toggle": string;
+};
+
+export type WireCockpitSpeedTierModel = {
+  readonly "modelId": string | null;
+  readonly "speed": WireCockpitSpeedRatio;
+  readonly "vendorModelId": string;
 };
 
 export type WireCockpitSubscription = {
@@ -1275,6 +1312,13 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "minLength": 1,
         "type": "string"
       },
+      "speedTiers": {
+        "items": {
+          "$ref": "#/$defs/CockpitSpeedTier"
+        },
+        "maxItems": 32,
+        "type": "array"
+      },
       "truncated": {
         "type": "boolean"
       }
@@ -1647,6 +1691,176 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "bindingBasis",
       "recent7d",
       "recent30d"
+    ],
+    "type": "object"
+  },
+  "CockpitSpeedBilling": {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "maxLength": 32,
+        "type": "string"
+      },
+      "basis": {
+        "maxLength": 32,
+        "type": "string"
+      },
+      "billsTo": {
+        "maxLength": 32,
+        "type": "string"
+      },
+      "ratio": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "account",
+      "billsTo",
+      "basis",
+      "ratio"
+    ],
+    "type": "object"
+  },
+  "CockpitSpeedEligibility": {
+    "additionalProperties": false,
+    "properties": {
+      "note": {
+        "maxLength": 500,
+        "type": "string"
+      },
+      "plans": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 32,
+        "type": "array"
+      }
+    },
+    "required": [
+      "plans",
+      "note"
+    ],
+    "type": "object"
+  },
+  "CockpitSpeedRatio": {
+    "additionalProperties": false,
+    "properties": {
+      "qualifier": {
+        "maxLength": 32,
+        "type": "string"
+      },
+      "ratio": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "ratio",
+      "qualifier"
+    ],
+    "type": "object"
+  },
+  "CockpitSpeedTier": {
+    "additionalProperties": false,
+    "properties": {
+      "billing": {
+        "items": {
+          "$ref": "#/$defs/CockpitSpeedBilling"
+        },
+        "maxItems": 8,
+        "type": "array"
+      },
+      "caveats": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 16,
+        "type": "array"
+      },
+      "eligibility": {
+        "$ref": "#/$defs/CockpitSpeedEligibility"
+      },
+      "harness": {
+        "maxLength": 64,
+        "type": "string"
+      },
+      "id": {
+        "maxLength": 128,
+        "type": "string"
+      },
+      "label": {
+        "maxLength": 128,
+        "type": "string"
+      },
+      "models": {
+        "items": {
+          "$ref": "#/$defs/CockpitSpeedTierModel"
+        },
+        "maxItems": 256,
+        "type": "array"
+      },
+      "sources": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 16,
+        "type": "array"
+      },
+      "tier": {
+        "maxLength": 64,
+        "type": "string"
+      },
+      "toggle": {
+        "maxLength": 128,
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "harness",
+      "tier",
+      "label",
+      "toggle",
+      "eligibility",
+      "models",
+      "billing",
+      "caveats",
+      "sources"
+    ],
+    "type": "object"
+  },
+  "CockpitSpeedTierModel": {
+    "additionalProperties": false,
+    "properties": {
+      "modelId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "maxLength": 128
+      },
+      "speed": {
+        "$ref": "#/$defs/CockpitSpeedRatio"
+      },
+      "vendorModelId": {
+        "maxLength": 128,
+        "type": "string"
+      }
+    },
+    "required": [
+      "vendorModelId",
+      "modelId",
+      "speed"
     ],
     "type": "object"
   },
