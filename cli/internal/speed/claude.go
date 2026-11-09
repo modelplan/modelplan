@@ -59,6 +59,9 @@ type claudeParser struct {
 	done       []turn
 	sidechains bool
 	probe      liveProbe
+	// The importer's cross-file dedupe: request ids already counted from earlier files of the run
+	// (a resumed session copies its messages into a new file), and the ones this file has.
+	prior, mine map[string]bool
 }
 
 // idleDone: a turn whose last reply ended it and nothing followed for this long is finished, even
@@ -106,6 +109,12 @@ func (p *claudeParser) line(off, end int64, b []byte) {
 		u := l.Message.Usage
 		if t == nil || u == nil || l.Message.Model == "" || l.Message.Model == "<synthetic>" {
 			return
+		}
+		if id := l.RequestID; id != "" && p.prior != nil {
+			if p.prior[id] && !p.mine[id] {
+				return // already counted from another file
+			}
+			p.mine[id] = true
 		}
 		n := len(t.reqs)
 		if n == 0 || t.reqs[n-1].id != l.RequestID || l.RequestID == "" {

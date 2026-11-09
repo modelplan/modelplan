@@ -87,14 +87,23 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 #cockpit .website-link:hover,#cockpit .website-link:focus-visible{color:var(--lcd-ink)}
 #cockpit .sp-h .website-link{margin-left:auto;flex:none}
 
-/* The enlarged launch field's own page (src/field-page.ts). */
-body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
-#field{display:grid;grid-template-rows:36px minmax(0,1fr) 120px;height:100vh}
-.field-bar{display:flex;align-items:center;gap:8px;padding:0 10px}
+/* The enlarged launch field's own page (src/field-page.ts): a transparent composition on the desktop (task 91 round 5).
+   A frosted card at the left; the scene at the right, masked by the feathered c01 silhouette (src/field-shape.ts). */
+html:has(body.field-page),body.field-page{background:transparent}
+body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
+/* The scene's plates and ticks use the prototype's LCD and silk faces (rocket.css .ov-porthole .wb-plates), whose
+   variables live on #cockpit and #overlay in the prototype; the field page's root carries the same values. */
+#field{position:relative;height:100vh;--field-card-top:max(20px,calc((100vh - 664px)/2));
+ --f-silk:'DM Sans','PingFang SC','Noto Sans SC',system-ui,sans-serif;--f-lcd:'JetBrains Mono','PingFang SC','Noto Sans SC',ui-monospace,monospace;
+ --text:var(--lcd-ink);--muted:var(--lcd-muted);--gold:var(--gold-lcd);font:11px/1.3 var(--f-silk)}
+.field-card{position:absolute;left:0;top:50%;transform:translateY(-50%);width:430px;height:min(664px,calc(100% - 40px));box-sizing:border-box;display:flex;flex-direction:column;min-height:0;padding:11px;border:1px solid #ffffff24;border-radius:12px;background:linear-gradient(145deg,#101723c9,#101217b8);box-shadow:0 12px 28px #0003;backdrop-filter:blur(18px) saturate(1.1);-webkit-backdrop-filter:blur(18px) saturate(1.1);color:#fff3df;z-index:6;overflow:hidden}
+.field-bar{display:flex;align-items:center;gap:8px;flex:none;min-height:34px}
 .field-bar .field-count{margin-left:auto;font-size:11px}
-.field-stage{position:relative;min-height:0;overflow:hidden}
-.field-stage .nogl{padding:16px;font-size:12px}
-.field-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:2px 10px;padding:6px 10px;overflow:auto;font-size:11px}
+.field-stage{position:absolute;left:458px;right:0;top:50%;transform:translateY(-50%);aspect-ratio:1000/650;max-height:100%;overflow:hidden;background:transparent;mask-image:var(--field-mask);-webkit-mask-image:var(--field-mask);mask-size:100% 100%;-webkit-mask-size:100% 100%;mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat}
+.field-stage .nogl{padding:16px;font-size:12px;position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.field-close{position:absolute;left:438px;top:calc(var(--field-card-top) - 8px);width:24px;height:24px;padding:0;border:0;border-radius:50%;background:#14151799;color:#e9eaeb;font-size:21px;line-height:1;cursor:pointer;z-index:7}
+.field-close:focus-visible{outline:1px solid #f6d38a;outline-offset:2px}
+.field-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:2px 10px;padding:6px 0;overflow:auto;font-size:11px;flex:1;min-height:0;align-content:start}
 .field-row{display:flex;align-items:center;gap:6px}
 /* Axis labels in screen-space lanes (src/field-axes.ts; prototype study style.css task 91 rounds 4-5). Unplaced ticks stay hidden
    so the scene's own overlapping projection never flashes before the first layout. */
@@ -109,7 +118,7 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 #cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:radial-gradient(closest-side,#0b0f13cc 62%,#0b0f1300)}
 #cockpit .hud-b .hud-chart{width:180px;height:86px;padding:4px 9px 5px}
 #cockpit .hud-b .hud-list{width:117px;height:74px;padding:0;gap:0;overflow:hidden}
-#cockpit[data-layout] .hud.hud-strip{left:40px;top:-5px;width:216px;height:30px;display:block;background:linear-gradient(90deg,#0b0f1300,#0b0f13cc 12% 88%,#0b0f1300)}
+#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:linear-gradient(90deg,#0b0f1300,#0b0f13cc 12% 88%,#0b0f1300)}
 #cockpit .hud .hp{display:flex;align-items:baseline;gap:3px;padding:0 2px;min-width:0;background:none;border:0;color:inherit;font-size:10px;line-height:12px;cursor:pointer}
 #cockpit .hud .hp b{overflow:visible;text-overflow:clip;font-size:10px}
 #cockpit .hud .hp-rec{white-space:nowrap;margin-left:auto}
@@ -126,6 +135,14 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 #cockpit .ck-tape{pointer-events:auto}
 #cockpit .dk-fad .fd-ch.xhl .fd-indicator{color:var(--lcd-ink)}
 #cockpit .ec.xhl,#cockpit .ek.xhl{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcd-ink) 40%,transparent)}
+/* QA 11-08 (G3-48, CKP-PORT-04/08): the tall HUD follows the study's hud-selection style. Six 12 px rows fill the 74 px
+   list (names 10 px, ranks and effort 9 px); the list widens only as far as a complete name needs, inside the HUD. */
+#cockpit .hud-b .hud-list{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(6,12px);width:max-content;min-width:117px;max-width:174px;height:74px;box-sizing:border-box;padding:1px 2px 1px 4px;align-content:start}
+#cockpit .hud-b .hp{display:grid;grid-template-columns:9px auto auto;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
+#cockpit .hud-b .hp b{font:500 10px/12px var(--f-lcd);overflow:hidden;text-overflow:ellipsis;min-width:0}
+#cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-n{color:var(--muted,#8a96a0)}
+.hud-axis{fill:none;stroke:#e9edf030;stroke-width:.7}.hud-axis-label{font:400 9px var(--f-silk);fill:#aab6bf}
+.hud-rank{font:500 9px var(--f-lcd);fill:#f3e8d5}.hud-rank.dominated{fill:#aab6bf}
 
 /* G3-47 base row (CKP-ENG-15..20, CKP-SHELL-13; study entrance.css and base.js): one light per visible subscription
    under its engine column, in the 34 px reserve below the root, and a dim socket under each empty bay. The official
@@ -165,8 +182,8 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
    and below it one continuous plain wall runs from the canopy foot to the aft plate (22 px), tiled from 9 px; no
    crown plate, cone band or record panel is drawn. The wall tile is the study's canopy-h1 lower skin and the aft
    plate the released r3 plain plate of the official edition; the community edition has none and stays neutral. */
-#cockpit{--hull-wall-top:216px;--hull-clip-top:216px}
-:root[data-profile="compact"] #cockpit{--hull-wall-top:48px;--hull-clip-top:48px}
+#cockpit{--hull-wall-top:244px;--hull-clip-top:244px}
+:root[data-profile="compact"] #cockpit{--hull-wall-top:56px;--hull-clip-top:56px}
 :root #cockpit[data-shell="closed"]{--hull-wall-top:30px;--hull-clip-top:30px}
 :root[data-theme="night"] #cockpit .ck-shell :is(.hull-crown,.hull-cone,.hull-lower,.hull-record){display:none}
 :root[data-theme="night"] #cockpit .ck-shell .hull-upper{top:var(--hull-wall-top);bottom:22px;height:auto;background-image:var(--hull-wall);background-size:636px 32px;background-position:50% 9px;background-repeat:repeat-y}

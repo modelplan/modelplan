@@ -71,7 +71,7 @@ func forgetLocalSpeedLedgers(cache, tool string) error {
 		return errors.New("readings busy; retry cleanup")
 	}
 	defer unlock()
-	for _, name := range []string{"speed.json", "perf.json", "daily-long.json"} {
+	for _, name := range []string{"speed.json", "perf.json", "daily-long.json", "imported.json"} {
 		if err := filterCachedSource(filepath.Join(observed, name), name, tool, true); err != nil {
 			return err
 		}
