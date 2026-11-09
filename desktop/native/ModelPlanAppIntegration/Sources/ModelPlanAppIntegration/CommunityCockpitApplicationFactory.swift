@@ -319,7 +319,7 @@ struct CockpitUnavailableNotice {
         case .openField:openField()
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
-        case .shutterToggle,.scopeSelect,.cautionAck:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()

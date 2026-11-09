@@ -56,9 +56,11 @@ test('native compact forced closure and later tall layout preserve action gates'
  expect(await receive(send('shell',{...shell,tier:'tall'}))).toBe(true);
  await expect(page.locator('#cockpit')).toHaveAttribute('data-layout','890');await expect(page.locator('#cockpit')).toHaveAttribute('data-shell','open');
  await expect(page.locator('[data-shutter]')).toBeEnabled();
- await expect(page.locator('[data-detach]')).toHaveCount(0);
- await page.getByRole('button',{name:'Close',exact:true}).click();
- expect(await page.evaluate(()=>window.__messages.filter(m=>m.type==='action').map(m=>m.action))).toEqual(['close']);
+ await page.getByRole('button',{name:'Detach',exact:true}).click();
+ expect(await page.evaluate(()=>window.__messages.filter(m=>m.type==='action').map(m=>m.action))).toEqual(['detach']);
+ expect(await receive(send('shell',{...shell,tier:'tall',attached:false}))).toBe(true);
+ await page.getByRole('button',{name:'Put back',exact:true}).click();
+ expect(await page.evaluate(()=>window.__messages.filter(m=>m.type==='action').map(m=>m.action))).toEqual(['detach','putBack']);
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN',redBelow:25}))).toBe(true);
  await expect(page.getByRole('button',{name:'关闭',exact:true})).toBeVisible();
 });

@@ -75,7 +75,7 @@ public struct CockpitVisibility: Equatable, Sendable {
   var active: Bool { visible && !occluded && key }
 }
 public enum CockpitIntent: Equatable, Sendable {
-  case chooseSetup, openSettings, close, shutterToggle, openField
+  case chooseSetup, openSettings, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
   case scopeSelect(String)
   /// G3-56: the caution identities the owner has acknowledged by pressing the lamp. The coordinator keeps them.
@@ -483,6 +483,8 @@ public final class CockpitBridgeState {
         guard let ids = m["ids"] as? [String], CockpitCautionIdentities.valid(ids) else { throw CockpitBridgeError.invalidMessage }
         intent = .cautionAck(ids)
       case "close": intent = .close
+      case "detach": intent = .detach
+      case "putBack": intent = .putBack
       case "shutterToggle": intent = .shutterToggle
       case "openField": intent = .openField
       case "openHistory":

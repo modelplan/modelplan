@@ -482,6 +482,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         waiter?.resume()
       case .action(let intent):
         switch intent {
+        case .detach: setAttached(false)
+        case .putBack: setAttached(true)
         case .shutterToggle:
           toggleShutter()
         case .close: closeAnimated()
@@ -720,9 +722,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   func toggleShutter() {
     if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
   }
-  /// Returns a dragged-out cockpit to the menu bar anchor. The only way home is the drag snap.
-  private func snapHome() { setAttached(true) }
-  /// Drag detach and snap-home share this; the shell-session tests also call it directly (there is no strip key).
   func setAttached(_ attached: Bool) {
     guard let window, shellSession.detached == attached else { return }
     if !attached {
@@ -764,7 +763,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       guard shellSession.detached else { return }
       if let (_, _) = environment(), let home = layout?.frame,
          hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40 {
-        snapHome()
+        setAttached(true)
       } else { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     case .cancelled: cancelDrag()
     }

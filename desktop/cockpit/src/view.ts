@@ -24,7 +24,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  let lastRenderedAt=0;const retiredUnstableScopes=new Set<string>();
  let hudSelected:string|null=null;const hudOptions=()=>({scope:nativeShell?.scope??'all',now:lastRenderedAt,selected:hudSelected,closed:nativeShell?.profile==='closed'});
  let selectedRedBelow=effectiveRedBelow(undefined);const redBelow=()=>selectedRedBelow;
- const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow);const tape=mountPrototypeTape(root,{knows:ref=>deck.knowsSession(ref),hover(session){deck.highlightSession(session?.sessionRef??null);const key=session?.subscriptionRef??null;for(const el of root.querySelectorAll<HTMLElement>('[data-col]'))el.classList.toggle('xhl',!!key&&el.dataset.col===key);},select(session){if(!active)return;const key=session.subscriptionRef;if(key&&[...root.querySelectorAll<HTMLElement>('.ek[data-sub]')].some(el=>el.dataset.sub===key)){retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);deck.scope(key);}deck.selectSession(session.sessionRef);}});
+ const noMenu=(e:Event)=>e.preventDefault();document.addEventListener('contextmenu',noMenu);const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active,()=>nativeShell?.attached??true);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow);const tape=mountPrototypeTape(root,{knows:ref=>deck.knowsSession(ref),hover(session){deck.highlightSession(session?.sessionRef??null);const key=session?.subscriptionRef??null;for(const el of root.querySelectorAll<HTMLElement>('[data-col]'))el.classList.toggle('xhl',!!key&&el.dataset.col===key);},select(session){if(!active)return;const key=session.subscriptionRef;if(key&&[...root.querySelectorAll<HTMLElement>('.ek[data-sub]')].some(el=>el.dataset.sub===key)){retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);deck.scope(key);}deck.selectSession(session.sessionRef);}});
  // G3-47: base bells under the engine columns; repainted from the drawn engine table.
  const base=mountPrototypeBase(root,()=>lastData,z=>{
   const member=lastData?cockpitMembers(lastData).find(m=>m.key===z.key):undefined,name=member?(locale==='en'?member.row.name.en:member.row.name.zh):'';
@@ -45,12 +45,12 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  shutter.onpointerup=e=>{if(!drag||drag.id!==e.pointerId)return;const d=drag;drag=null;shutter.style.removeProperty('--shutter-travel');if(d.moved){suppressClick=true;requestShutter(d.start+(e.clientX-d.x)/d.scale>=50);}};
  const cancelDrag=()=>{drag=null;shutter.style.removeProperty('--shutter-travel');};shutter.onpointercancel=cancelDrag;shutter.onlostpointercapture=cancelDrag;
  shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.key==='ArrowLeft'||e.key==='Home'?false:null;if(target!==null&&e.isTrusted){e.preventDefault();requestShutter(target);}};
- const close=root.querySelector<HTMLButtonElement>('[data-close]')!;
- const noMenu=(e:Event)=>e.preventDefault();document.addEventListener('contextmenu',noMenu);
- frame.settings.classList.add('s6-strip-key');close.classList.add('s6-strip-key');
+ const attach=root.querySelector<HTMLButtonElement>('[data-detach]')!,close=root.querySelector<HTMLButtonElement>('[data-close]')!;
+ frame.settings.classList.add('s6-strip-key');attach.classList.add('s6-strip-key');close.classList.add('s6-strip-key');
  const cap=element('section',undefined,'s6-closed-cap');cap.hidden=true;
  cap.style.pointerEvents='auto';cap.style.gridRow='1';cap.style.gridColumn='1';cap.style.alignSelf='end';cap.style.padding='12px';cap.style.background='var(--port-bg)';cap.style.borderRadius='8px';
  const reason=element('span');reason.id='s6-closed-reason';reason.setAttribute('role','status');cap.append(reason);root.append(cap);
+ attach.onclick=e=>{if(e.isTrusted&&nativeShell)action(nativeShell.attached?'detach':'putBack');};
  close.onclick=e=>{if(e.isTrusted)action('close');};
  const unwireHud=wireHud(frame.hud,id=>{hudSelected=id;deck.showTune(id);if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());});
  let showProjectNames=true;
@@ -58,11 +58,11 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  function shellControls(){
   const zh=locale==='zh-CN', closed=nativeShell?.profile==='closed', forced=!!nativeShell?.forcedClosed;
   const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.setAttribute('aria-label',alert.classList.contains('lit')?(zh?'告警激活':'Alert active'):(zh?'告警未激活':'Alert inactive'));
-  close.setAttribute('aria-label',zh?'关闭':'Close');
+  attach.setAttribute('aria-pressed',String(!nativeShell?.attached));attach.setAttribute('aria-label',nativeShell?.attached?(zh?'分离':'Detach'):(zh?'放回':'Put back'));close.setAttribute('aria-label',zh?'关闭':'Close');
   reason.textContent=forced?(zh?'窗口高度不足，无法打开':'Not enough window height to open'):'';
   shutter.setAttribute('aria-label',zh?'舷窗快门':'Porthole shutter');shutter.setAttribute('aria-pressed',String(closed));shutter.setAttribute('aria-describedby',reason.id);shutter.title=reason.textContent;shutter.disabled=!active||!nativeShell||forced;
-  close.hidden=!nativeShell;
-  close.disabled=!active||!nativeShell;
+  attach.hidden=!nativeShell;close.hidden=!nativeShell;
+  attach.disabled=!active||!nativeShell;close.disabled=!active||!nativeShell;
   cap.hidden=!closed;cap.style.display=closed?'block':'none';
   root.querySelector<HTMLElement>('.ck-portrow')!.style.visibility=closed?'hidden':'';
   root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?(tier==='tall'?691:609):(tier==='tall'?877:627))+'px');
@@ -150,6 +150,6 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
   active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}},
-  dispose(){if(disposed)return;disposed=true;base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  dispose(){if(disposed)return;disposed=true;base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }
