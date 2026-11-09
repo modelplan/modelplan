@@ -50,6 +50,9 @@ public struct HelpUIMapInput: Equatable, Sendable {
     public var secondarySourceFrame: CGRect?
     /// Current host facts not represented by P02's fixed directory, e.g. visible 0/1–6 shortcut facts.
     public var supplements: [HelpUIMapSupplement] = []
+    /// Each leader is one straight line from its caption to the nearest edge of its target, as in the study,
+    /// instead of a routed path. The host guarantees the captions are placed so that the lines do not cross.
+    public var straightLeaders = false
     public init(mode: HelpUIMapMode = .hidden, surface: HelpMapSurface = .cockpit,
                 regionAnchors: [HelpMapRegion: String] = [:], columns: [CGRect] = [], header: CGRect = .zero) {
         self.mode = mode; self.surface = surface; self.regionAnchors = regionAnchors; self.columns = columns; self.header = header
