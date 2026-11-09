@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 494821c8217baeb9cc6ebc5117cc957552127eb8cd175231f6af096c8cf5d275
+// Schema SHA-256: 52fdba2152bb8792c5b0d84849e0a7580acd689ac8729628264d7faf61ed2e13
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -173,6 +173,7 @@ export type WireCockpitPublicationEffort = {
 };
 
 export type WireCockpitPublicationModel = {
+  readonly "defaultSelected"?: boolean | null;
   readonly "developerId": string;
   readonly "efforts": ReadonlyArray<WireCockpitPublicationEffort>;
   readonly "id": string;
@@ -1405,6 +1406,16 @@ export const definitions: Readonly<Record<string, Schema>> = {
   "CockpitPublicationModel": {
     "additionalProperties": false,
     "properties": {
+      "defaultSelected": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "developerId": {
         "maxLength": 128,
         "minLength": 1,

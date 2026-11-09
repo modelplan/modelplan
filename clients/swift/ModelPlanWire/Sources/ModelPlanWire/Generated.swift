@@ -2610,19 +2610,22 @@ public struct WireCockpitPublicationModel: Codable, Sendable {
     public let `developerId`: String
     public let `recommended`: String
     public let `efforts`: [WireCockpitPublicationEffort]
+    public let `defaultSelected`: Bool?
     private enum CodingKeys: String, CodingKey {
         case `id`
         case `name`
         case `developerId`
         case `recommended`
         case `efforts`
+        case `defaultSelected`
     }
-    public init(`id`: String, `name`: String, `developerId`: String, `recommended`: String, `efforts`: [WireCockpitPublicationEffort]) throws {
+    public init(`id`: String, `name`: String, `developerId`: String, `recommended`: String, `efforts`: [WireCockpitPublicationEffort], `defaultSelected`: Bool? = nil) throws {
         self.`id` = `id`
         self.`name` = `name`
         self.`developerId` = `developerId`
         self.`recommended` = `recommended`
         self.`efforts` = `efforts`
+        self.`defaultSelected` = `defaultSelected`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -2632,6 +2635,8 @@ public struct WireCockpitPublicationModel: Codable, Sendable {
         self.`developerId` = try c.decode(String.self, forKey: .`developerId`)
         self.`recommended` = try c.decode(String.self, forKey: .`recommended`)
         self.`efforts` = try c.decode([WireCockpitPublicationEffort].self, forKey: .`efforts`)
+        if c.contains(.`defaultSelected`), try c.decodeNil(forKey: .`defaultSelected`) { throw WireDecodeError.invalidIdentity }
+        self.`defaultSelected` = try c.decodeIfPresent(Bool.self, forKey: .`defaultSelected`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -2642,6 +2647,7 @@ public struct WireCockpitPublicationModel: Codable, Sendable {
         try c.encode(`developerId`, forKey: .`developerId`)
         try c.encode(`recommended`, forKey: .`recommended`)
         try c.encode(`efforts`, forKey: .`efforts`)
+        try c.encodeIfPresent(`defaultSelected`, forKey: .`defaultSelected`)
     }
     private func validate() throws {
         try WireValidation.identity(`id`)

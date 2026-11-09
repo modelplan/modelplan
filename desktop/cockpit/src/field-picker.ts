@@ -9,7 +9,7 @@
 import {FIELD_LIMIT,type FieldModel} from './field-model.js';
 
 export type Language='en'|'zh';
-export type Preset='mine'|'all'|'custom';
+export type Preset='mine'|'site'|'all'|'custom';
 export interface PickerView {
  readonly language:Language;readonly models:readonly FieldModel[];readonly chosen:ReadonlySet<string>;
  readonly preset:Preset;readonly focus:string|null;
@@ -17,22 +17,22 @@ export interface PickerView {
  readonly mine:readonly string[];
 }
 export interface PickerActions {
- preset(next:'mine'|'all'):void;toggle(id:string,on:boolean):void;focus(id:string):void;website():void;folded(folded:boolean):void;
+ preset(next:'mine'|'site'|'all'):void;toggle(id:string,on:boolean):void;focus(id:string):void;website():void;folded(folded:boolean):void;
 }
 
 const words={
- en:{title:'Pick models',mine:'My subscriptions',all:'All',search:'Search',searchLabel:'Search models',reset:'Reset to My subscriptions',
+ en:{title:'Pick models',mine:'My subscriptions',site:'Site picks',all:'All',search:'Search',searchLabel:'Search models',reset:'Reset to My subscriptions',
   empty:'No matching models',onField:'on field',atStar:'on field · at each ★',roster:'My subscriptions first',more:'MORE PUBLIC MODELS',ability:'Ability',cost:'Cost',
   limit:'10 rocket limit · retract one to add another',local:'Field-local choice',compare:'Compare ↗',compareLabel:'Full fleet on the website',
   collapse:'Collapse model picker',focus:'Focus',launch:'Launch',retract:'Retract',presets:'Presets',picker:'Which engine · model picker',
   chartEmpty:'Select at least two models to compare.',chartLabel:'Ability and cost of each model at its effort',costAxis:'Cost → (vs cheapest, log)',abilityAxis:'↑ Ability',
-  dominated:'Outclassed'},
- zh:{title:'选模型',mine:'我的订阅',all:'全部',search:'搜索模型',searchLabel:'搜索模型',reset:'重置为我的订阅',
+  dominated:'Outclassed',strongest:'Strongest',cheapest:'Cheapest'},
+ zh:{title:'选模型',mine:'我的订阅',site:'网站推荐',all:'全部',search:'搜索模型',searchLabel:'搜索模型',reset:'重置为我的订阅',
   empty:'没有匹配的模型',onField:'台上场',atStar:'台上场 · 各自 ★ 推荐档',roster:'我的订阅优先',more:'其他公开模型',ability:'能力',cost:'成本',
   limit:'最多 10 台 · 先撤回一台再加入',local:'仅此发射场',compare:'网站对比 ↗',compareLabel:'在网站上看完整舰队',
   collapse:'收起选模型',focus:'定位',launch:'加入',retract:'撤回',presets:'快捷选择',picker:'选哪台 · 模型选择',
   chartEmpty:'选至少两个模型以对比。',chartLabel:'各模型推荐档的能力与成本',costAxis:'成本 →（相对最省，对数）',abilityAxis:'↑ 能力',
-  dominated:'被比下去'},
+  dominated:'被比下去',strongest:'最强',cheapest:'最省'},
 } as const;
 
 // Makers by the publication's developer ID (the scene maps zhipuai to zhipu): display name, mark under
@@ -54,6 +54,19 @@ const times=(v:number)=>`×${v.toFixed(v<10?1:0)}`;
 const ability=(m:FieldModel)=>m.sel[1],cost=(m:FieldModel)=>m.sel[2];
 
 /** For each model at its ★ effort, the cheapest model that is at least as able and no dearer, and better in one. */
+/** D92: the study's recommendation labels, worked out from the models now on the field. Needs two or more models. Strongest is
+ *  the highest ability and Cheapest the lowest priced cost (a model with no cost is never Cheapest); a tie gives every tied
+ *  model the label, and a field where all models tie gets none. "Best value" is a published verdict in the study, not a rule
+ *  it computes, so it is not derived here. */
+export function fieldTags(flown:readonly FieldModel[]):Map<string,('strongest'|'cheapest')[]> {
+ const tags=new Map<string,('strongest'|'cheapest')[]>(),add=(m:FieldModel,t:'strongest'|'cheapest')=>tags.set(m.id,[...(tags.get(m.id)??[]),t]);
+ if(flown.length<2)return tags;
+ const top=Math.max(...flown.map(ability)),topped=flown.filter(m=>ability(m)===top);
+ if(topped.length<flown.length)for(const m of topped)add(m,'strongest');
+ const priced=flown.filter(m=>cost(m)>0);
+ if(priced.length>=2){const low=Math.min(...priced.map(cost)),lows=priced.filter(m=>cost(m)===low);if(lows.length<priced.length)for(const m of lows)add(m,'cheapest');}
+ return tags;
+}
 export function outclassedBy(models:readonly FieldModel[]):Map<string,FieldModel> {
  const out=new Map<string,FieldModel>();
  for(const m of models){
@@ -113,7 +126,7 @@ export function createFieldPicker(actions:PickerActions):FieldPicker {
   if(!view)return;
   const v=view,w=words[v.language],flown=v.models.filter(m=>v.chosen.has(m.id)),count=flown.length,full=count>=FIELD_LIMIT;
   const priced=v.models.filter(m=>cost(m)>0),cheapest=[...priced].sort((a,b)=>cost(a)-cost(b))[0],base=cheapest?cost(cheapest):1;
-  const beaten=outclassedBy(v.models),aTop=Math.max(1,...v.models.map(ability)),xTop=Math.max(2,...priced.map(m=>cost(m)/base));
+  const tagged=fieldTags(flown),beaten=outclassedBy(v.models),aTop=Math.max(1,...v.models.map(ability)),xTop=Math.max(2,...priced.map(m=>cost(m)/base));
   // The prototype ranks published recommendations first; the app has no such verdicts, so my subscriptions' models
   // lead, then the other public models, and the outclassed sink to the end; each group strongest first.
   const q=query.trim().toLowerCase(),mine=new Set(v.mine);
@@ -131,9 +144,9 @@ export function createFieldPicker(actions:PickerActions):FieldPicker {
     `<div class="field-row-top"><button type="button" class="field-model-focus sp-cr-name" data-field-focus="${esc(m.id)}" ${blocked?'disabled':''} aria-label="${w.focus} ${esc(m.name)}">`+
     `<span class="sp-tile">${tile}</span><span class="field-full-name"><span class="field-vendor-name">${esc(mk.name)}</span><b>${esc(m.name)}</b></span><em>★ ${esc(m.rec)}</em></button>`+
     `<button type="button" class="field-launch-lamp" data-fleet-model="${esc(m.id)}" aria-pressed="${on}" aria-label="${on?w.retract:w.launch} ${esc(m.name)}" ${blocked?'disabled':''}>${on?'✓':'+'}</button></div>`+
-    `<div class="sp-cr-tags">${out?`<i class="tag-dominated">${w.dominated}</i>`:''}</div><div class="sp-cr-bars">${bars}</div></article>`;
+    `<div class="sp-cr-tags">${(tagged.get(m.id)??[]).map(t=>`<i class="tag-${t}">${w[t]}</i>`).join('')}${out?`<i class="tag-dominated">${w.dominated}</i>`:''}</div><div class="sp-cr-bars">${bars}</div></article>`;
   }).join('');
-  const presets=(['mine','all'] as const).map(id=>`<button type="button" data-field-preset="${id}" aria-pressed="${v.preset===id}">${w[id]}</button>`).join('');
+  const presets=(['mine','site','all'] as const).filter(id=>id!=='site'||v.models.some(m=>m.site===true)).map(id=>`<button type="button" data-field-preset="${id}" aria-pressed="${v.preset===id}">${w[id]}</button>`).join('');
   card.setAttribute('aria-label',w.picker);card.hidden=folded;
   card.innerHTML=`<div class="field-picker-controls"><div class="field-presets" role="group" aria-label="${w.presets}">${presets}</div>`+
    `<label class="field-search"><span aria-hidden="true">⌕</span><input type="search" data-field-search value="${esc(query)}" placeholder="${w.search}" aria-label="${w.searchLabel}"></label></div>`+
@@ -153,7 +166,7 @@ export function createFieldPicker(actions:PickerActions):FieldPicker {
  card.addEventListener('click',e=>{
   const t=(e.target as Element).closest('button,[data-field-focus]');if(!t||(t as HTMLButtonElement).disabled)return;
   const d=(t as HTMLElement).dataset;
-  if(d.fieldPreset==='mine'||d.fieldPreset==='all'){query='';actions.preset(d.fieldPreset);}
+  if(d.fieldPreset==='mine'||d.fieldPreset==='site'||d.fieldPreset==='all'){query='';actions.preset(d.fieldPreset);}
   else if(d.fleetModel)actions.toggle(d.fleetModel,t.getAttribute('aria-pressed')!=='true');
   else if(d.fieldFocus)actions.focus(d.fieldFocus);
   else if(t.hasAttribute('data-fleet-done')){folded=true;draw();actions.folded(true);}

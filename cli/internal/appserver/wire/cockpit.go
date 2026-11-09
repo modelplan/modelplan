@@ -143,6 +143,8 @@ type CockpitPublicationModel struct {
 	DeveloperID string                     `json:"developerId" schema:"minLength=1,maxLength=128"`
 	Recommended string                     `json:"recommended" schema:"maxLength=64"`
 	Efforts     []CockpitPublicationEffort `json:"efforts" schema:"maxItems=32"`
+	// DefaultSelected marks the website's default focus set (the field's Site picks tab); absent when the publication has none.
+	DefaultSelected *bool `json:"defaultSelected,omitempty" null:"forbidden"`
 }
 type CockpitPublicationEffort struct {
 	Effort      string   `json:"effort" schema:"minLength=1,maxLength=64"`

@@ -49,6 +49,7 @@ type Model struct {
 	DeveloperID     string              `json:"developerId"`
 	Recommended     string              `json:"recommended"` // native effort key
 	Default         bool                `json:"default,omitempty"`
+	DefaultSelected *bool               `json:"defaultSelected,omitempty"` // the website's default focus set (D93); absent in older publications
 	HarnessIDs      map[string][]string `json:"harnessIds,omitempty"`
 	HarnessEvidence *HarnessEvidence    `json:"harnessEvidence"`
 	Efforts         []Effort            `json:"efforts"`

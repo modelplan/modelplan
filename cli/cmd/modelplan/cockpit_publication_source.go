@@ -51,7 +51,7 @@ func publishedCockpitModel(m digest.Model) (wire.CockpitPublicationModel, bool) 
 	if !validText(m.ID, 128, true) || !validText(m.Name, 200, true) || !validText(m.DeveloperID, 128, true) || !validText(m.Recommended, 64, false) || len(m.Efforts) > 32 {
 		return wire.CockpitPublicationModel{}, false
 	}
-	out := wire.CockpitPublicationModel{ID: m.ID, Name: m.Name, DeveloperID: m.DeveloperID, Recommended: m.Recommended, Efforts: []wire.CockpitPublicationEffort{}}
+	out := wire.CockpitPublicationModel{ID: m.ID, Name: m.Name, DeveloperID: m.DeveloperID, Recommended: m.Recommended, Efforts: []wire.CockpitPublicationEffort{}, DefaultSelected: m.DefaultSelected}
 	for _, e := range m.Efforts {
 		if !validText(e.Effort, 64, true) || !validText(e.Label, 64, false) {
 			return wire.CockpitPublicationModel{}, false

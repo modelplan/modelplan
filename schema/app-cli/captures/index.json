@@ -937,7 +937,16 @@
     {
       "file": "WireCockpitPublicationModel.json",
       "type": "WireCockpitPublicationModel",
-      "optional": [],
+      "optional": [
+        {
+          "field": "defaultSelected",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
       "required": [
         "id",
         "name",

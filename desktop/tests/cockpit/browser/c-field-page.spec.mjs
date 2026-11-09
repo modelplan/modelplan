@@ -71,14 +71,14 @@ test('item 6 rows: maker, name, ★ effort, ability and cost bars; my subscripti
  await expect(page.locator('.field-model-row.on')).toHaveAttribute('data-field-row','m4');
  await expect(page.locator('.field-roster-heading span')).toHaveText('4/10 on field');
 });
-test('item 6 v1 shows only the derivable verdict: outclassed models carry the tag and sink; no published-only tags (D71)',async({page})=>{
+test('item 6 v1 shows the derivable verdicts: Strongest and Cheapest by the field (D92), outclassed models carry the tag and sink; no published-only tags (D71)',async({page})=>{
  await page.setViewportSize({width:1323,height:735});await open(page);
  const m=(id,name,ability,cost)=>({id,name,developerId:'openai',recommended:'high',efforts:[{effort:'high',label:'High',star:true,ability,cost,time:30}]});
  await show(page,JSON.stringify({language:'en',reduceMotion:true,mine:['a','b','c'],focus:null,models:[m('a','Alpha',50,.4),m('b','Beta',45,.8),m('c','Gamma',30,.1)]}));
  await expect(rows(page)).toHaveCount(3);
  await expect(rows(page).last()).toHaveAttribute('data-field-row','b');await expect(rows(page).last()).toHaveClass(/dominated/);
- await expect(page.locator('.sp-cr-tags i')).toHaveText(['Outclassed']);
- await expect(page.locator('.tag-strongest,.tag-best_value,.tag-cheapest,.tag-equivalent_costlier')).toHaveCount(0);
+ await expect(page.locator('.sp-cr-tags i')).toHaveText(['Strongest','Cheapest','Outclassed']);
+ await expect(page.locator('.tag-best_value,.tag-equivalent_costlier')).toHaveCount(0);
  // The chart: one dot per rocket on the field, the gold frontier through the undominated ones, a dotted line from Beta to Alpha.
  await expect(page.locator('.field-frontier .sp-which-dot')).toHaveCount(3);
  await expect(page.locator('.field-frontier path.field-front')).toHaveCount(1);
@@ -195,6 +195,65 @@ test('D63 a focused rocket outside my models joins the field and takes the focus
 });
 // CKP-PORT-13 (D63): "Full fleet on the website ↗". The page never sends a URL: it names the flown public model IDs
 // and native builds the modelplan.ai address (prototype website-updates/links.js fleetUrl, the site's focus query).
+// D92: Strongest / Cheapest are worked out from the models on the field (en and zh); ties tag every tied model; a model with
+// no cost is never Cheapest; fewer than two priced models, or all tied, gives no label. Best value is a published verdict.
+const tagModel=(id,ability,cost)=>({id,name:'Tag '+id,developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability,cost,time:30}]});
+const tagRows=async page=>{await page.waitForSelector('.field-model-row');return page.evaluate(()=>Object.fromEntries([...document.querySelectorAll('.field-model-row')].map(r=>[r.dataset.fieldRow,[...r.querySelectorAll('.sp-cr-tags i:not(.tag-dominated)')].map(i=>i.className.replace('tag-','')+':'+i.textContent)])));};
+async function tagged(page,models,mine,language='en'){await open(page);await show(page,JSON.stringify({language,reduceMotion:true,models,mine,focus:null}));return tagRows(page);}
+test('D92 Strongest is the highest ability and Cheapest the lowest cost among the models on the field',async({page})=>{
+ const rows=await tagged(page,[tagModel('a',50,2),tagModel('b',60,3),tagModel('c',40,1),tagModel('d',99,.1)],['a','b','c']);
+ expect(rows).toEqual({a:[],b:['strongest:Strongest'],c:['cheapest:Cheapest'],d:[]});// d is not on the field, so it neither wins nor gets a label
+});
+test('D92 the Chinese labels',async({page})=>{
+ const rows=await tagged(page,[tagModel('a',50,2),tagModel('b',60,3),tagModel('c',40,1)],['a','b','c'],'zh');
+ expect(rows.b).toEqual(['strongest:最强']);expect(rows.c).toEqual(['cheapest:最省']);
+});
+test('D92 ties tag every tied model, and a field that all tie gets no label',async({page})=>{
+ expect(await tagged(page,[tagModel('a',60,2),tagModel('b',60,3),tagModel('c',40,2)],['a','b','c'])).toEqual({a:['strongest:Strongest','cheapest:Cheapest'],b:['strongest:Strongest'],c:['cheapest:Cheapest']});
+ expect(await tagged(page,[tagModel('a',60,2),tagModel('b',60,2)],['a','b'])).toEqual({a:[],b:[]});
+});
+test('D92 a model with no published cost leaves the field and is never labelled; one priced model gives no Cheapest',async({page})=>{
+ const unpriced={id:'a',name:'Tag a',developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:99,cost:null,time:30}]};
+ expect(await tagged(page,[unpriced,tagModel('b',60,3),tagModel('c',40,1)],['a','b','c'])).toEqual({b:['strongest:Strongest'],c:['cheapest:Cheapest']});
+ expect(await tagged(page,[unpriced,tagModel('b',60,3)],['a','b'])).toEqual({b:[]});
+ expect(await tagged(page,[tagModel('a',50,3)],['a'])).toEqual({a:[]});
+});
+test('D92 the labels follow the field as models join and leave',async({page})=>{
+ await tagged(page,[tagModel('a',50,2),tagModel('b',60,3),tagModel('c',40,1)],['a','c']);
+ expect(await tagRows(page)).toEqual({a:['strongest:Strongest'],b:[],c:['cheapest:Cheapest']});
+ await page.locator('[data-fleet-model="b"]').click();
+ expect(await tagRows(page)).toEqual({a:[],b:['strongest:Strongest'],c:['cheapest:Cheapest']});
+});
+// D93: the Site picks tab is the website's default focus set (`defaultSelected` on the published model), between
+// My subscriptions and All; it is hidden for a publication without that field (an older CLI) and capped at ten.
+const siteModels=(n,picked)=>Array.from({length:n},(_,i)=>({...tagModel('s'+i,40+i,.1*(i+1)),...(picked===null?{}:{defaultSelected:picked.includes(i)})}));
+const siteField=async(page,models,language='en')=>{await open(page);await show(page,JSON.stringify({language,reduceMotion:true,models,mine:['s0'],focus:null}));await page.waitForSelector('.field-model-row');};
+const flownIds=page=>page.evaluate(()=>[...document.querySelectorAll('.field-model-row[data-on="true"]')].map(r=>r.dataset.fieldRow).sort((a,b)=>a.localeCompare(b,'en',{numeric:true})));
+test('D93 Site picks lists exactly the defaultSelected models, between My subscriptions and All',async({page})=>{
+ await siteField(page,siteModels(8,[1,3,4]));
+ await expect(page.locator('[data-field-preset]')).toHaveText(['My subscriptions','Site picks','All']);
+ expect(await flownIds(page)).toEqual(['s0']);
+ await page.locator('[data-field-preset="site"]').click();
+ await expect(page.locator('[data-field-preset="site"]')).toHaveAttribute('aria-pressed','true');
+ expect(await flownIds(page)).toEqual(['s1','s3','s4']);
+ await page.locator('[data-field-preset="all"]').click();expect(await flownIds(page)).toHaveLength(8);
+});
+test('D93 Site picks is capped at ten, in publication order',async({page})=>{
+ await siteField(page,siteModels(14,[...Array(13).keys()].map(i=>i+1)));
+ await page.locator('[data-field-preset="site"]').click();
+ expect(await flownIds(page)).toEqual(Array.from({length:10},(_,i)=>'s'+(i+1)));
+ await expect(page.locator('.field-count,.field-roster-heading span').first()).toBeVisible();
+});
+test('D93 the tab is hidden when the publication has no defaultSelected, or none is selected',async({page})=>{
+ await siteField(page,siteModels(6,null));
+ await expect(page.locator('[data-field-preset]')).toHaveText(['My subscriptions','All']);
+ await siteField(page,siteModels(6,[]));
+ await expect(page.locator('[data-field-preset]')).toHaveText(['My subscriptions','All']);
+});
+test('D93 the Chinese label',async({page})=>{
+ await siteField(page,siteModels(6,[2]),'zh');
+ await expect(page.locator('[data-field-preset]')).toHaveText(['我的订阅','网站推荐','全部']);
+});
 test('CKP-PORT-13 the website link names the flown fleet and the host builds the address',async({page})=>{
  await page.addInitScript(()=>{window.sent=[];});
  await open(page);

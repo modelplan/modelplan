@@ -33,7 +33,7 @@ function mount(root:HTMLElement) {
  const close=el('button','field-close');close.type='button';close.onclick=()=>post({type:'close'});
  const mineIds=()=>mine.length?mine:models.map(m=>m.id);
  const picker=createFieldPicker({
-  preset(next){preset=next;chosen=new Set((next==='mine'?mineIds():models.map(m=>m.id)).slice(0,FIELD_LIMIT));refresh();},
+  preset(next){preset=next;chosen=new Set((next==='mine'?mineIds():next==='site'?models.filter(m=>m.site===true).map(m=>m.id):models.map(m=>m.id)).slice(0,FIELD_LIMIT));refresh();},
   toggle(id,on){if(on&&chosen.size>=FIELD_LIMIT)return;if(on)chosen.add(id);else chosen.delete(id);preset='custom';refresh();},
   // A row of a model not on the field launches it when there is room; either way it takes the focus.
   focus(id){if(!chosen.has(id)){if(chosen.size>=FIELD_LIMIT)return;chosen.add(id);preset='custom';}focus=id;refresh();},
