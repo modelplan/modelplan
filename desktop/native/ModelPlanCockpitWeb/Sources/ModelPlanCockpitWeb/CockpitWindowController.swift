@@ -238,6 +238,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     public var verificationShellState: CockpitShellState? { currentShell }
     public var verificationRootHeight: CGFloat? { layout?.rootHeight }
+    public var verificationDragRegion: NSView? { dragRegion }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
@@ -303,6 +304,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       configureVerification?(config)
     #endif
     let view = WKWebView(frame: .zero, configuration: config)
+    // Owner review 11-08 / CKP-SHELL-25: only the hull and canopy are drawn; the web view paints no backing of its
+    // own, so the clear panel shows the desktop around the transparent page.
+    view.setValue(false, forKey: "drawsBackground")
+    view.underPageBackgroundColor = .clear
     // The initial v2 load applies appearance and shell before a page can paint.
     view.isHidden = true
     view.navigationDelegate = self
@@ -477,7 +482,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         case .detach: setAttached(false)
         case .putBack: setAttached(true)
         case .shutterToggle:
-          if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+          toggleShutter()
         case .close: closeAnimated()
         default: onIntent?(intent)
         }
@@ -705,10 +710,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     window.setFrame(frame, display: true)
     window.contentView?.setBoundsSize(.init(width: 636, height: fit.rootHeight + 34))
     web?.frame = .init(x: 0, y: 0, width: 636, height: fit.rootHeight + 34)
-    dragRegion?.frame = .init(x: 64, y: fit.rootHeight + 2, width: 390, height: 28)
+    dragRegion?.frame = fit.titleDragFrame
     publishAppearance()
   }
-  private func setAttached(_ attached: Bool) {
+  func toggleShutter() {
+    if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+  }
+  func setAttached(_ attached: Bool) {
     guard let window, shellSession.detached == attached else { return }
     if !attached {
       shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
@@ -791,7 +799,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       return event
     }
   }
-  private func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType) {
+  func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType) {
     guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
     // The owned tray completes one toggle on mouse-up. Its mouse-down is not
     // a competing outside dismissal, including with Reduce Motion/long holds.
