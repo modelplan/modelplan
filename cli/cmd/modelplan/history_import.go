@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
@@ -38,19 +39,7 @@ func historyImportCmd(stdout, stderr io.Writer, st *store.Store, c common, doImp
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	opts := speed.ImportOptions{Days: days, Now: time.Now(), Auto: firstRun,
-		Guard: func(tool string, write func() error) error { return consent.LocalWrite(tool, write) }}
-	if consent.Allowed("claude", consent.Local) {
-		home, _ := os.UserHomeDir()
-		dir := os.Getenv("CLAUDE_CONFIG_DIR")
-		if dir == "" {
-			dir = filepath.Join(home, ".claude")
-		}
-		opts.Claude = &speed.ImportRoot{Dir: dir}
-	}
-	if consent.Allowed("codex", consent.Local) {
-		opts.Codex = &speed.ImportRoot{Dir: quotaPaths(st).CodexHome, Background: func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }}
-	}
+	opts := importOptions(st, days, firstRun, time.Now())
 	res, err := speed.Import(ctx, st.Dir, opts)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -75,3 +64,50 @@ func say(c common, en, zh string) string {
 	}
 	return zh
 }
+
+// importOptions: the roots of the tools the user granted history consent for, each write under the
+// consent fence. A tool without consent gets no root and is reported as skipped.
+func importOptions(st *store.Store, days int, firstRun bool, now time.Time) speed.ImportOptions {
+	opts := speed.ImportOptions{Days: days, Now: now, Auto: firstRun,
+		Guard: func(tool string, write func() error) error { return consent.LocalWrite(tool, write) }}
+	if consent.Allowed("claude", consent.Local) {
+		home, _ := os.UserHomeDir()
+		dir := os.Getenv("CLAUDE_CONFIG_DIR")
+		if dir == "" {
+			dir = filepath.Join(home, ".claude")
+		}
+		opts.Claude = &speed.ImportRoot{Dir: dir}
+	}
+	if consent.Allowed("codex", consent.Local) {
+		opts.Codex = &speed.ImportRoot{Dir: quotaPaths(st).CodexHome, Background: func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }}
+	}
+	return opts
+}
+
+// importEngine adapts the importer to the app-server's history/import_* methods.
+type importEngine struct{ st *store.Store }
+
+func (e importEngine) Run(ctx context.Context, days int, firstRun bool, progress func(done, total int)) ([]wire.HistoryImportSource, error) {
+	if firstRun && !speed.NeedsAutoImport(e.st.Dir) {
+		return []wire.HistoryImportSource{}, nil
+	}
+	opts := importOptions(e.st, days, firstRun, time.Now())
+	opts.Progress = progress
+	res, err := speed.Import(ctx, e.st.Dir, opts)
+	out := make([]wire.HistoryImportSource, 0, len(res.Sources))
+	for _, s := range res.Sources {
+		out = append(out, wire.HistoryImportSource{Source: s.Source, Status: wire.HistoryImportSourceStatus(s.Status), Turns: s.Turns})
+	}
+	return out, err
+}
+
+func (e importEngine) State() wire.HistoryImportStatus {
+	s := speed.ImportStatus(e.st.Dir)
+	out := wire.HistoryImportStatus{FirstRunDone: s.AutoRan, ImportedRows: s.Rows, Coverage: []wire.HistoryImportCoverage{}}
+	for _, c := range s.Coverage {
+		out.Coverage = append(out.Coverage, wire.HistoryImportCoverage{Source: c.Source, From: c.From, Through: c.Through, Rows: c.Rows})
+	}
+	return out
+}
+
+func (e importEngine) Remove() error { return speed.RemoveImported(e.st.Dir) }

@@ -366,3 +366,24 @@ func TestImportAfterRevokeAndRegrantStartsOver(t *testing.T) {
 		}
 	}
 }
+
+func TestImportReportsProgressAndStatusWithoutReadingLogs(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	f.claudeLog("b.jsonl", -2)
+	f.codexLog("rollout-a.jsonl", -2)
+	var last [2]int
+	calls := 0
+	_, err := Import(context.Background(), f.cache, ImportOptions{Claude: &ImportRoot{Dir: f.claude}, Codex: &ImportRoot{Dir: f.home}, Now: f.now, Admission: both(), Auto: true,
+		Progress: func(done, total int) { calls++; last = [2]int{done, total} }})
+	if err != nil || last != [2]int{3, 3} || calls < 4 {
+		t.Fatalf("progress %v after %d calls, %v", last, calls, err)
+	}
+	// status reads only imported.json: remove the logs and it still answers
+	os.RemoveAll(f.claude)
+	os.RemoveAll(f.home)
+	st := ImportStatus(f.cache)
+	if !st.AutoRan || st.Rows == 0 || len(st.Coverage) != 2 || st.Coverage[0].Source != "claude-code" || st.Coverage[0].Through != day(f.now.Add(-time.Second)) {
+		t.Fatalf("%+v", st)
+	}
+}

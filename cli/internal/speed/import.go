@@ -113,6 +113,9 @@ type ImportOptions struct {
 	// Admission: the consent in force; nil reads the current one. A source without its history
 	// grant is skipped.
 	Admission *consent.Admission
+	// Progress, when set, is called with the number of log files read so far and the total to read
+	// (counted before the first read), from the importing goroutine.
+	Progress func(done, total int)
 	// Guard runs a source's write under the caller's consent fence (consent.LocalWrite); nil runs
 	// it directly.
 	Guard func(source string, write func() error) error
@@ -144,6 +147,7 @@ type importJob struct {
 	newP   func() parser
 	parser string
 	ranges []span
+	list   []string
 	rows   []PerfRow
 	turns  int
 	status string
@@ -202,12 +206,20 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		active = append(active, j)
 	}
 	// One pass per source: files that may hold turns of a missing range.
+	prog := &importProgress{fn: o.Progress}
+	for _, j := range active {
+		if len(j.ranges) > 0 {
+			j.list = j.files(j.earliest())
+			prog.total += len(j.list)
+		}
+	}
+	prog.report()
 	for _, j := range active {
 		if len(j.ranges) == 0 {
 			j.status = StatusImported
 			continue
 		}
-		if err := j.read(ctx); err != nil {
+		if err := j.read(ctx, prog); err != nil {
 			if ctx.Err() != nil {
 				res.Cancelled = true
 				return res, nil
@@ -270,18 +282,35 @@ func missing(c Span, from, cutoff time.Time) []span {
 	return out
 }
 
-func (j *importJob) read(ctx context.Context) error {
-	earliest := j.ranges[0].lo
+type importProgress struct {
+	fn          func(done, total int)
+	done, total int
+}
+
+func (p *importProgress) report() {
+	if p.fn != nil {
+		p.fn(p.done, p.total)
+	}
+}
+
+func (j *importJob) earliest() time.Time {
+	e := j.ranges[0].lo
 	for _, r := range j.ranges {
-		if r.lo.Before(earliest) {
-			earliest = r.lo
+		if r.lo.Before(e) {
+			e = r.lo
 		}
 	}
+	return e
+}
+
+func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 	tmp := &PerfLedger{}
-	for _, p := range j.files(earliest) {
+	for _, p := range j.list {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		prog.done++
+		prog.report()
 		if j.root.Background != nil && j.source == "codex" && j.root.Background(p) {
 			continue
 		}
@@ -583,4 +612,43 @@ func mustDay(d string) time.Time {
 		return time.Now()
 	}
 	return t
+}
+
+// ImportCoverage is what the importer has covered for one source: local days, no paths.
+type ImportCoverage struct {
+	Source  string
+	From    string // first local day, YYYY-MM-DD
+	Through string // last local day, YYYY-MM-DD
+	Rows    int
+}
+
+// ImportState is the read-only view Settings shows: nothing is read from the logs.
+type ImportState struct {
+	AutoRan  bool
+	Rows     int
+	Coverage []ImportCoverage
+}
+
+// ImportStatus reads imported.json only.
+func ImportStatus(cache string) ImportState {
+	l, ok := LoadImported(cache)
+	st := ImportState{Coverage: []ImportCoverage{}}
+	if !ok {
+		return st
+	}
+	st.AutoRan, st.Rows = l.AutoRan != nil, len(l.Rows)
+	for _, src := range []string{"claude-code", "codex"} {
+		c, has := l.Coverage[src]
+		if !has {
+			continue
+		}
+		n := 0
+		for _, r := range l.Rows {
+			if r.Source == src {
+				n++
+			}
+		}
+		st.Coverage = append(st.Coverage, ImportCoverage{Source: src, From: day(c.From), Through: day(c.Through.Add(-time.Second)), Rows: n})
+	}
+	return st
 }
