@@ -16,6 +16,7 @@ import re
 import shutil
 import hashlib
 import socket
+import traceback
 import subprocess
 import sys
 import threading
@@ -731,7 +732,7 @@ class Walkthrough:
         except WalkthroughError as error:
             reasons.append(str(error))
         except Exception as error:  # A harness fault is this step's failure, not the end of the manifest.
-            reasons.append("harness error: %s: %s" % (type(error).__name__, error))
+            reasons.append("harness error: %s: %s (%s)" % (type(error).__name__, error, where(error)))
         if self.measures:
             record["measures"] = dict(self.measures)
         if skipped:
@@ -772,7 +773,7 @@ class Walkthrough:
                 except WalkthroughError as error:
                     reasons.append(str(error))
                 except Exception as error:
-                    reasons.append("harness error in check: %s: %s" % (type(error).__name__, error))
+                    reasons.append("harness error in check: %s: %s (%s)" % (type(error).__name__, error, where(error)))
         record.update(status="fail" if reasons else "pass", reason="; ".join(reasons) or None,
                       seconds=round(self.host.now() - started, 2))
         if reasons and step.get("awaiting"):
@@ -1313,6 +1314,12 @@ def run(args, host):
     failed = failures(manifest)
     print("not passed: " + (", ".join(failed) or "none"), flush=True)
     return 1 if failed else 0
+
+
+def where(error):
+    """Function and line where a harness error was raised, so a hosted-Mac failure can be read without a rerun."""
+    frames = traceback.extract_tb(error.__traceback__)
+    return "%s:%d" % (frames[-1].name, frames[-1].lineno) if frames else "unknown"
 
 
 def machine_summary(manifest):
