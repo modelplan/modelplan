@@ -70,6 +70,10 @@ import WebKit
     panel.appearance = NSAppearance(named: .darkAqua); panel.delegate = self
     let view = WKWebView(frame: NSRect(origin: .zero, size: frame.size), configuration: config)
     view.autoresizingMask = [.width, .height]; view.allowsBackForwardNavigationGestures = false
+    // The panel is clear, so the web view paints no backing of its own either (as the cockpit shell does); otherwise the page's
+    // transparent body still sits on an opaque rectangle and the card's behind-window blur is covered.
+    view.setValue(false, forKey: "drawsBackground")
+    view.underPageBackgroundColor = .clear
     let blur = NSVisualEffectView(frame: .zero)
     blur.material = .hudWindow; blur.blendingMode = .behindWindow; blur.state = .active; blur.isHidden = true
     blur.wantsLayer = true; blur.layer?.masksToBounds = true
