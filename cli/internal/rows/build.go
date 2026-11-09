@@ -318,17 +318,12 @@ func buildCandidate(in Input, c *candidate) Row {
 	return row
 }
 
-// unreadable: the row holds no value and its state says nothing is being read. A pending row
-// (first read under way, or reader busy) is not here: it will have a reading shortly.
+// unreadable: the row holds no value. G3-38 (D76): a subscription with no reading has no ring from
+// the first frame, whatever the state: not signed in, unsupported login, waiting for consent or
+// the first read (pending), a reader error with no reading ever. It gets its ring when a reading
+// arrives. A row that once had a reading keeps it (retained) and so is not here.
 func unreadable(row Row) bool {
-	if hasValue(row.Accounts) {
-		return false
-	}
-	switch row.State {
-	case StateOff, StateNeedsAction, StateNeedsConsent, StateUnsupported, StateNeedsKeychain, StateFailed:
-		return true
-	}
-	return false
+	return !hasValue(row.Accounts)
 }
 
 func profileFailure(p ProfileState) Code {

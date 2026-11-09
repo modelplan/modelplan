@@ -14,7 +14,7 @@ import (
 // G3-21 through the normal entry: the real `modelplan app-server` binary on a fresh profile
 // (no consent file, owner decision 2026-11-06) where ZCode is installed only under the
 // zcode-app-cli layout (a `zcode-cli` launcher and ~/.local/share/zcode-community). The
-// app's rows/subscribe must list ZCode as a Dock row, not drop it as undetected. No provider
+// app's rows/subscribe must list ZCode as a row (no ring until it has a reading), not drop it as undetected. No provider
 // key is written, so nothing is read or sent; the reading itself is covered in-process by
 // TestG321FreshProfileReadsZCodeCodingPlanByDefault.
 func TestG321FreshProfileZCodeIsARowThroughAppServer(t *testing.T) {
@@ -54,12 +54,14 @@ func TestG321FreshProfileZCodeIsARowThroughAppServer(t *testing.T) {
 		}
 		t.Fatalf("installed ZCode has no row on a fresh profile; rows=%v", ids)
 	}
-	dock := false
+	// G3-38 (D76): no reading yet means no ring, but the row is listed in the menu and Settings.
+	menu, dock := false, false
 	for _, s := range zcode.Surfaces {
+		menu = menu || s == rows.SurfaceMenu
 		dock = dock || s == rows.SurfaceDock
 	}
-	if !dock {
-		t.Fatalf("installed ZCode is not a Dock row: surfaces=%v consent=%s", zcode.Surfaces, zcode.Consent)
+	if !menu || dock {
+		t.Fatalf("installed ZCode with no reading must be listed without a ring: surfaces=%v consent=%s", zcode.Surfaces, zcode.Consent)
 	}
 	if zcode.Consent == rows.ConsentDenied {
 		t.Fatalf("fresh-profile ZCode consent = %s", zcode.Consent)

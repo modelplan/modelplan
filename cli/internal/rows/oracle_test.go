@@ -120,10 +120,10 @@ func TestDesignOracle(t *testing.T) {
 
 		{name: "successful read with no windows is empty", in: Input{Catalogue: []CatalogueEntry{oracleTool("kimi", true)}, Consents: oracleAllowed("kimi"),
 			Profiles: []ProfileState{oracleFresh("kimi", "k1")}, Accounts: []AccountInput{oracleAccount("kimi", "k1")}},
-			want: []oracleWant{{row: "kimi", state: StateEmpty, code: CodeNoUsageWindows, dock: true}}},
+			want: []oracleWant{{row: "kimi", state: StateEmpty, code: CodeNoUsageWindows, dock: false}}},
 
 		{name: "allowed, never read is pending", in: Input{Catalogue: []CatalogueEntry{oracleTool("gemini", true)}, Consents: oracleAllowed("gemini")},
-			want: []oracleWant{{row: "gemini", state: StatePending, code: CodeNotReadYet, dock: true}}},
+			want: []oracleWant{{row: "gemini", state: StatePending, code: CodeNotReadYet, dock: false}}},
 
 		{name: "allowed but uninstalled and readerless: tool_not_found beats no_reader", in: Input{Catalogue: []CatalogueEntry{{ToolID: "amp", Detected: false, ReaderExists: false}}, Consents: oracleAllowed("amp")},
 			want: []oracleWant{{row: "amp", state: StateNeedsAction, code: CodeToolNotFound, dock: false}}},

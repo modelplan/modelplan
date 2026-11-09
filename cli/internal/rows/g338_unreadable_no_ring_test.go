@@ -67,9 +67,6 @@ func TestG338UnreadableToolsHaveNoDockRing(t *testing.T) {
 		}
 		for _, id := range []string{"claude", "zai"} {
 			row := rowByID(t, out, id)
-			if row.State == StatePending {
-				continue // the reason does not apply to this tool; a first read is under way
-			}
 			if hasSurface(row, SurfaceDock) {
 				t.Errorf("%s: unreadable %s keeps a Dock ring (state %s, code %s)", name, id, row.State, row.Reason.Code)
 			}
@@ -107,7 +104,6 @@ func TestG338RowsThatAreNotUnreadableKeepTheirRing(t *testing.T) {
 		in   Input
 		row  string
 	}{
-		{"pending first read", Input{Catalogue: []CatalogueEntry{oracleTool("gemini", true)}, Consents: oracleAllowed("gemini")}, "gemini"},
 		{"failed read that kept a reading", failedWithReading, "cursor"},
 		{"stale reading", stale, "kimi"},
 		{"manual plan", Input{DeclaredPlanIDs: []string{"team-plan"}}, "declared:team-plan"},
@@ -123,4 +119,62 @@ func TestG338RowsThatAreNotUnreadableKeepTheirRing(t *testing.T) {
 			t.Errorf("%s: lost its ring: %+v", tc.name, row)
 		}
 	}
+}
+
+// The walkthrough defect: a tool still waiting on its first read (pending, nothing read yet) has no
+// ring either, from the first frame; it still has its Settings and menu listing with the reason.
+func TestG338WaitingForFirstReadHasNoRingFromTheStart(t *testing.T) {
+	in := Input{Catalogue: []CatalogueEntry{oracleTool("gemini", true), oracleTool("claude", true)},
+		Consents: append(oracleAllowed("gemini"), oracleAllowed("claude")...), Now: oracleNow, ConsentGeneration: 7}
+	out := Build(in)
+	if err := Validate(in, out); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"gemini", "claude"} {
+		row := oracleRow(t, out, id)
+		if row == nil || row.State != StatePending || oracleHas(row, SurfaceDock) || !oracleHas(row, SurfaceSettings) || !oracleHas(row, SurfaceMenu) {
+			t.Errorf("%s: want pending, listed, no ring: %+v", id, row)
+		}
+	}
+}
+
+// Normal entry, D-13: launch with an unreadable Gemini (login unsupported) and a Claude Code that
+// has not finished its first read. Neither shows a ring at t=0 or after the first read fails; both
+// stay listed with their reason. The readable Codex keeps its ring throughout.
+func TestG338LaunchWalkNeitherUnreadableToolEverHasARing(t *testing.T) {
+	launch := func(at time.Time, profiles ...ProfileState) Input {
+		in := sampleInput()
+		in.Now = at
+		for _, id := range []string{"gemini", "claude"} {
+			in.Catalogue = append(in.Catalogue, CatalogueEntry{ToolID: id, Detected: true, ReaderExists: true})
+			in.Consents = append(in.Consents, ConsentRecord{ToolID: id, Generation: 7, State: ConsentAllowed})
+		}
+		in.Profiles = append(in.Profiles, profiles...)
+		return in
+	}
+	check := func(label string, in Input, reasons map[string]Code) {
+		out := Build(in)
+		if err := Validate(in, out); err != nil {
+			t.Fatalf("%s: %v", label, err)
+		}
+		if !hasSurface(rowByID(t, out, "codex"), SurfaceDock) {
+			t.Errorf("%s: the readable tool lost its ring", label)
+		}
+		for id, code := range reasons {
+			row := rowByID(t, out, id)
+			if hasSurface(row, SurfaceDock) || !hasSurface(row, SurfaceSettings) || !hasSurface(row, SurfaceMenu) {
+				t.Errorf("%s: %s surfaces %v, want menu+settings only", label, id, row.Surfaces)
+			}
+			if row.Reason.Code != code || row.Reason.Text.EN == "" {
+				t.Errorf("%s: %s reason %s, want %s", label, id, row.Reason.Code, code)
+			}
+		}
+	}
+	check("t=0", launch(testNow), map[string]Code{"gemini": CodeNotReadYet, "claude": CodeNotReadYet})
+	fail := func(id, code string) ProfileState {
+		return ProfileState{ToolID: id, ProfileKey: id + "-p", LatestAttempt: AttemptResultFailed, AttemptedAt: ptr(testNow),
+			LastFailure: &FailureInput{Code: code, At: ptr(testNow)}}
+	}
+	check("after first read", launch(testNow.Add(time.Minute), fail("gemini", "unsupported_login"), fail("claude", "expired")),
+		map[string]Code{"gemini": CodeUnsupportedLogin, "claude": CodeLoginExpired})
 }
