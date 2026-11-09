@@ -209,7 +209,7 @@ public actor ProcessEngineClient: EngineClient {
             child = process
             let params = try WireInitializeParams(sessionId: sessionID, protocolVersion: WireProtocol.version,
                 appVersion: configuration.applicationVersion,
-                capabilities: ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "cockpitDetailsV1", "cockpitForecastV1", "cockpitHistoryV1", "cockpitModelsV1", "publication", "plugin_install", "resetEvents", "memberRefreshV1", "windowSourcesV1", "resetEventLinksV1"] + (credentialAgent == nil ? [] : ["credentials"]))
+                capabilities: ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "cockpitDetailsV1", "cockpitForecastV1", "cockpitHistoryV1", "cockpitModelsV1", "publication", "plugin_install", "history_import_v1", "resetEvents", "memberRefreshV1", "windowSourcesV1", "resetEventLinksV1"] + (credentialAgent == nil ? [] : ["credentials"]))
             _ = try enqueue("initialize", params: wireJSON(params), purpose: .initialize, timeout: runtime.requestTimeout)
         } catch {
             failStarts(error as? EngineClientError ?? .invalidConfiguration)
@@ -402,7 +402,7 @@ public actor ProcessEngineClient: EngineClient {
 
     func request<T: Encodable & Sendable>(_ method: String, _ params: T, timeout: Duration?, grant: WireConsentGrantParams? = nil, userAction: EngineUserAction? = nil, pluginTool: WirePluginTool? = nil, prepared: (@Sendable (WireRequestID) async -> Void)? = nil) async throws -> EngineRequestCompletion {
         guard handshaken, child != nil, epochProbe == nil, !epochUncertain else { throw EngineClientError.notReady }
-        if let capability = ["rows/subscribe": "rows", "consent/get": "consent", "consent/grant": "consent", "history/query": "history", "cockpit/query": "cockpit", "publication/get": "publication", "plugin/install": "plugin_install", "refresh/request": "refresh", "diagnostics/get": "diagnostics"][method], !capabilities.contains(capability) { throw EngineClientError.unsupportedCapability }
+        if let capability = ["rows/subscribe": "rows", "consent/get": "consent", "consent/grant": "consent", "history/query": "history", "cockpit/query": "cockpit", "publication/get": "publication", "plugin/install": "plugin_install", "history/import_start": "history_import_v1", "history/import_status": "history_import_v1", "history/import_cancel": "history_import_v1", "history/import_remove": "history_import_v1", "refresh/request": "refresh", "diagnostics/get": "diagnostics"][method], !capabilities.contains(capability) { throw EngineClientError.unsupportedCapability }
         if Task.isCancelled { throw EngineClientError.interrupted(.notSent) }
         let maximum: Duration = method == "plugin/install" ? .seconds(120) : runtime.requestTimeout
         let bound = min(timeout ?? maximum, maximum)
@@ -451,6 +451,12 @@ public actor ProcessEngineClient: EngineClient {
     public func publication(timeout: Duration? = nil) async throws -> EngineRequestCompletion {
         try await request("publication/get", WireEmpty(), timeout: timeout)
     }
+    public func historyImportStart(_ value: WireHistoryImportStartParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion {
+        try await request("history/import_start", value, timeout: timeout)
+    }
+    public func historyImportStatus(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("history/import_status", WireEmpty(), timeout: timeout) }
+    public func historyImportCancel(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("history/import_cancel", WireEmpty(), timeout: timeout) }
+    public func historyImportRemove(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("history/import_remove", WireEmpty(), timeout: timeout) }
 }
 
 final class RequestCancellation: @unchecked Sendable {
