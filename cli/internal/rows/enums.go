@@ -143,6 +143,7 @@ const (
 	CodeCatalogueRetired              Code = "catalogue_retired"
 	CodeHTTP401                       Code = "http_401"
 	CodeUnsupportedLogin              Code = "unsupported_login"
+	CodeNotSignedIn                   Code = "not_signed_in"
 	CodePrivacyBlocked                Code = "privacy_blocked"
 	CodeCatalogueOff                  Code = "catalogue_off"
 	CodeNotAdmitted                   Code = "not_admitted"

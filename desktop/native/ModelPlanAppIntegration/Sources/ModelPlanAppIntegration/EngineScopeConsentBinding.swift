@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -25,6 +26,7 @@ import ModelPlanWire
             guard let snapshot = store?.snapshot, case .ready = snapshot.connection else { return false }
             return true
         }, makeGrant: { intent in try factory.make(intent) })
+        entry.markImage = { ScopeConsentMarks.image(for: $0) }
         store.attach(self)
     }
     /// D90: saving a key is an explicit user action for that provider, so its reading scope is
