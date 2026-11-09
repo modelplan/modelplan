@@ -47,6 +47,10 @@ class FakeHost:
     def capture(self, path, rect=None):
         Path(path).write_bytes(b"png")
 
+    def capture_window(self, path, window_id):
+        self.calls.append(("capture_window", window_id))
+        Path(path).write_bytes(b"png")
+
     def sleep(self, seconds):
         self.clock += seconds
 
@@ -149,8 +153,11 @@ class Script(unittest.TestCase):
         for index, step in enumerate(self.STEPS):
             self.assertTrue(step["title"] and step["expected"])
             self.assertTrue(set(step.get("requires", [])) <= set(ids[:index]), step["id"])
-            for action in step.get("actions", []):
+            actions = list(step.get("actions", []))
+            while actions:
+                action = actions.pop()
                 self.assertTrue(hasattr(w.Walkthrough, "op_" + action["op"]), action["op"])
+                actions.extend(action.get("then", []))
 
     def test_covers_the_agreed_walkthrough(self):
         ids = {s["id"] for s in self.STEPS}
@@ -189,6 +196,17 @@ class Steps(unittest.TestCase):
         for key in ("file", "crop", "tree"):
             self.assertTrue((self.out / record[key]).exists())
 
+    def test_window_shot_captures_the_smallest_window_holding_the_target(self):
+        host = FakeHost({"windows": [{"frame": [0, 0, 900, 900], "children": [{"id": "x", "frame": [110, 110, 20, 20]}]}]},
+                        windows=[{"id": 7, "onScreen": True, "bounds": [0, 0, 900, 900]},
+                                 {"id": 9, "onScreen": True, "bounds": [100, 100, 300, 300]},
+                                 {"id": 11, "onScreen": False, "bounds": [105, 105, 50, 50]}])
+        step = {"id": "s", "title": "t", "expected": "e", "shot": {"window": "ax:x"}}
+        record = walker(host, self.out, [step]).walk_steps()[0]
+        self.assertIn(("capture_window", 9), host.calls)
+        self.assertEqual(record["window"]["bounds"], [100, 100, 300, 300])
+        self.assertTrue((self.out / record["window"]["file"]).exists())
+
     def test_a_failed_action_is_still_photographed_and_blocks_dependents(self):
         steps = [{"id": "a", "title": "t", "expected": "e", "actions": [{"op": "click", "target": "ax:gone"}]},
                  {"id": "b", "title": "t", "expected": "e", "requires": ["a"]}]
@@ -198,6 +216,32 @@ class Steps(unittest.TestCase):
         self.assertTrue((self.out / first["file"]).exists())
         self.assertEqual((second["status"], second["file"]), ("not-run", None))
         self.assertEqual(second["reason"], "needs a")
+
+    def test_when_runs_nested_actions_only_for_the_flow_on_screen(self):
+        tree = {"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "pick", "frame": [1, 1, 2, 2]},
+                                                                  {"id": "tool.a", "frame": [3, 3, 2, 2]}]}]}
+        host = FakeHost(tree)
+        walk = walker(host, self.out, [])
+        walk.op_when({"op": "when", "present": "ax:pick", "then": [{"op": "click", "target": "ax^:tool."}]})
+        walk.op_when({"op": "when", "absent": "ax:pick", "then": [{"op": "click", "target": "ax:gone"}]})
+        walk.op_when({"op": "when", "present": "ax:gone", "then": [{"op": "click", "target": "ax:gone"}]})
+        self.assertEqual([c for c in host.calls if c[0] == "click"], [("click", 4.0, 4.0)])
+
+    def test_when_equals_reads_the_control_value(self):
+        tree = {"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "on", "value": "On", "frame": [1, 1, 2, 2]},
+                                                                  {"id": "off", "value": "Off", "frame": [5, 5, 2, 2]}]}]}
+        host = FakeHost(tree)
+        walk = walker(host, self.out, [])
+        walk.op_when({"op": "when", "equals": {"target": "ax:off", "value": "On"}, "then": [{"op": "click", "target": "ax:off"}]})
+        walk.op_when({"op": "when", "equals": {"target": "ax:on", "value": "On"}, "then": [{"op": "click", "target": "ax:on"}]})
+        self.assertEqual([c for c in host.calls if c[0] == "click"], [("click", 2.0, 2.0)])
+
+    def test_await_absent_fails_when_the_target_stays(self):
+        host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "looking", "frame": [1, 1, 2, 2]}]}]})
+        walk = walker(host, self.out, [])
+        walk.op_awaitAbsent({"target": "ax:gone"})
+        with self.assertRaises(w.WalkthroughError):
+            walk.op_awaitAbsent({"target": "ax:looking", "timeout": 2})
 
     def test_blank_render_fails(self):
         host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "id": "x"}]}, stats={"colours": 2, "dominantShare": 0.99})
@@ -304,6 +348,67 @@ class Guard(unittest.TestCase):
         with mock.patch.dict(os.environ, {"RUNNER_ENVIRONMENT": "self-hosted"}):
             with self.assertRaises(SystemExit):
                 w.run(args, FakeHost())
+
+
+class CrashReportRedactionTests(unittest.TestCase):
+    def sample(self):
+        header = {"app_name": "ModelPlan", "app_version": "1.0", "incident_id": "6F0E2C1A-1111-2222-3333-444455556666"}
+        body = {"procPath": "/Users/alice/Library/Developer/ModelPlan.app/Contents/MacOS/ModelPlan", "userID": 501,
+                "hostName": "alices-mbp.local", "crashReporterKey": "ABCDEF12-3456-7890-ABCD-EF1234567890",
+                "bundleInfo": {"CFBundleShortVersionString": "1.0", "CFBundleVersion": "14"},
+                "exception": {"type": "EXC_BAD_ACCESS", "signal": "SIGSEGV", "codes": "0x0000000000000001, 0x0000000000000000"},
+                "usedImages": [{"name": "ModelPlan", "path": "/Users/alice/ModelPlan.app/Contents/MacOS/ModelPlan",
+                                "uuid": "11111111-2222-3333-4444-555555555555"},
+                               {"name": "libsystem_kernel.dylib", "path": "/usr/lib/system/libsystem_kernel.dylib"}],
+                "faultingThread": 1,
+                "threads": [{"frames": [{"imageIndex": 1, "imageOffset": 1}]},
+                            {"frames": [{"imageIndex": 0, "imageOffset": 4096, "symbol": "Cockpit.draw", "symbolLocation": 12},
+                                        {"imageIndex": 1, "imageOffset": 77, "symbol": "mach_msg"}]}]}
+        return json.dumps(header) + "\n" + json.dumps(body)
+
+    def test_redacts_identifying_text_and_keeps_crashing_frames(self):
+        out = w.redact_crash_report(self.sample(), ["alice", "alices-mbp.local"])
+        text = json.dumps(out)
+        for leaked in ("alice", "/Users", "alices-mbp", "11111111-2222", "6F0E2C1A", "ABCDEF12", "procPath", "501"):
+            self.assertNotIn(leaked, text)
+        self.assertEqual(out["exceptionType"], "EXC_BAD_ACCESS")
+        self.assertEqual(out["appVersion"], "1.0")
+        self.assertEqual([f["symbol"] for f in out["frames"]], ["Cockpit.draw", "mach_msg"])
+        self.assertEqual(out["frames"][0]["image"], "ModelPlan")
+        self.assertEqual(out["frames"][0]["imageOffset"], 4096)
+
+    def test_scrub_text_removes_paths_uuids_and_names(self):
+        text = w.scrub_text("at /Users/bob/x/y.swift:3 id 11111111-2222-3333-4444-555555555555 host mac-1", ["bob", "mac-1"])
+        for leaked in ("/Users", "bob", "11111111", "mac-1"):
+            self.assertNotIn(leaked, text)
+
+    def test_keep_writes_only_redacted_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home, out = Path(tmp) / "alice", Path(tmp) / "out"
+            reports = home / "Library/Logs/DiagnosticReports"
+            reports.mkdir(parents=True)
+            out.mkdir()
+            (reports / (w.APP_EXECUTABLE + "-1.ips")).write_text(self.sample(), encoding="utf-8")
+            w.keep_crash_reports(home, [w.APP_EXECUTABLE + "-1.ips"], out)
+            files = list((out / "crash-reports").iterdir())
+            self.assertEqual([f.suffix for f in files], [".json"])
+            self.assertNotIn("alice", files[0].read_text(encoding="utf-8"))
+
+    def test_spaced_and_non_ascii_names_leave_no_fragment(self):
+        for name in ("John Smith", "J\u00fcrgen M\u00fcller", "\u5f20\u4f1f"):
+            body = json.loads(self.sample().split("\n", 1)[1])
+            body["exception"]["type"] = "crash by " + name
+            body["threads"][1]["frames"][0]["symbol"] = "open %s.txt" % name
+            raw = "{}\n" + json.dumps(body)
+            out = w.redact_crash_report(raw, [name])
+            text = json.dumps(out, ensure_ascii=False) + json.dumps(out)
+            for part in [name] + name.split():
+                self.assertNotIn(part, text)
+            self.assertEqual(out["frames"][0]["image"], "ModelPlan")
+        self.assertNotIn("Smith", w.scrub_text("hello smith", ["John Smith"]))
+
+    def test_unparseable_report_leaves_no_raw_text(self):
+        self.assertIsNone(w.redact_crash_report("not json /Users/alice"))
 
 
 if __name__ == "__main__":
