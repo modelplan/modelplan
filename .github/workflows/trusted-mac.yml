@@ -143,8 +143,15 @@ jobs:
     steps:
     - name: Refuse the GUI Mac
       shell: bash
+      env:
+        MAC_GUI_LEND: ${{ vars.MAC_GUI_LEND }}
       run: |
-        case "${RUNNER_NAME:-}" in *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;; esac
+        # D94: a GUI runner is refused, except modelplan-mac-gui-2 while MAC_GUI_LEND is enabled; the V1 host never.
+        case "${RUNNER_NAME:-}" in
+          modelplan-mac-arm64-1) echo "::error::this job must not run on the V1 host ($RUNNER_NAME)"; exit 1;;
+          modelplan-mac-gui-2) if [ "${MAC_GUI_LEND:-}" != enabled ]; then echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1; fi; echo "GUI Mac lent to a non-GUI job (D94)";;
+          *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;;
+        esac
         echo "runner: ${RUNNER_NAME:-unknown} (${RUNNER_ENVIRONMENT:-unknown})"
     - uses: actions/checkout@v4
       with:
@@ -262,8 +269,15 @@ jobs:
     steps:
     - name: Refuse the GUI Mac
       shell: bash
+      env:
+        MAC_GUI_LEND: ${{ vars.MAC_GUI_LEND }}
       run: |
-        case "${RUNNER_NAME:-}" in *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;; esac
+        # D94: a GUI runner is refused, except modelplan-mac-gui-2 while MAC_GUI_LEND is enabled; the V1 host never.
+        case "${RUNNER_NAME:-}" in
+          modelplan-mac-arm64-1) echo "::error::this job must not run on the V1 host ($RUNNER_NAME)"; exit 1;;
+          modelplan-mac-gui-2) if [ "${MAC_GUI_LEND:-}" != enabled ]; then echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1; fi; echo "GUI Mac lent to a non-GUI job (D94)";;
+          *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;;
+        esac
         echo "runner: ${RUNNER_NAME:-unknown} (${RUNNER_ENVIRONMENT:-unknown})"
     - uses: actions/checkout@v4
       with:
@@ -354,8 +368,15 @@ jobs:
     steps:
     - name: Refuse the GUI Mac
       shell: bash
+      env:
+        MAC_GUI_LEND: ${{ vars.MAC_GUI_LEND }}
       run: |
-        case "${RUNNER_NAME:-}" in *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;; esac
+        # D94: a GUI runner is refused, except modelplan-mac-gui-2 while MAC_GUI_LEND is enabled; the V1 host never.
+        case "${RUNNER_NAME:-}" in
+          modelplan-mac-arm64-1) echo "::error::this job must not run on the V1 host ($RUNNER_NAME)"; exit 1;;
+          modelplan-mac-gui-2) if [ "${MAC_GUI_LEND:-}" != enabled ]; then echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1; fi; echo "GUI Mac lent to a non-GUI job (D94)";;
+          *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;;
+        esac
         echo "runner: ${RUNNER_NAME:-unknown} (${RUNNER_ENVIRONMENT:-unknown})"
     - uses: actions/checkout@v4
       with:
@@ -415,8 +436,15 @@ jobs:
     steps:
     - name: Refuse the GUI Mac
       shell: bash
+      env:
+        MAC_GUI_LEND: ${{ vars.MAC_GUI_LEND }}
       run: |
-        case "${RUNNER_NAME:-}" in *gui*) echo "::error::u11-native must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;; esac
+        # D94: a GUI runner is refused, except modelplan-mac-gui-2 while MAC_GUI_LEND is enabled; the V1 host never.
+        case "${RUNNER_NAME:-}" in
+          modelplan-mac-arm64-1) echo "::error::this job must not run on the V1 host ($RUNNER_NAME)"; exit 1;;
+          modelplan-mac-gui-2) if [ "${MAC_GUI_LEND:-}" != enabled ]; then echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1; fi; echo "GUI Mac lent to a non-GUI job (D94)";;
+          *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;;
+        esac
         echo "runner: ${RUNNER_NAME:-unknown} (${RUNNER_ENVIRONMENT:-unknown})"; sw_vers; launchctl managername
     - uses: actions/checkout@v4
       with:
@@ -503,8 +531,15 @@ jobs:
     steps:
     - name: Refuse the GUI Mac
       shell: bash
+      env:
+        MAC_GUI_LEND: ${{ vars.MAC_GUI_LEND }}
       run: |
-        case "${RUNNER_NAME:-}" in *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;; esac
+        # D94: a GUI runner is refused, except modelplan-mac-gui-2 while MAC_GUI_LEND is enabled; the V1 host never.
+        case "${RUNNER_NAME:-}" in
+          modelplan-mac-arm64-1) echo "::error::this job must not run on the V1 host ($RUNNER_NAME)"; exit 1;;
+          modelplan-mac-gui-2) if [ "${MAC_GUI_LEND:-}" != enabled ]; then echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1; fi; echo "GUI Mac lent to a non-GUI job (D94)";;
+          *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;;
+        esac
         echo "runner: ${RUNNER_NAME:-unknown} (${RUNNER_ENVIRONMENT:-unknown})"
     - name: Validate native runner execution
       shell: bash

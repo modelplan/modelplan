@@ -55,7 +55,8 @@ jobs:
   gates:
     # Decided before a runner is taken; an event that cannot change a gate starts no job.
     # - issue_comment: a trusted comment that carries (or, edited or deleted, carried) a gate marker. rules.mjs
-    #   reads markers on any line of a comment (VERDICT, VERDICT-CARRY, VERIFIED, EVIDENCE-DEFERRED) and DESIGN
+    #   reads markers on any line of a comment (VERDICT, VERDICT-CARRY, VERIFIED, EVIDENCE-DEFERRED), AUTO-VERIFIED (D97,
+    #   first line; 'VERIFIED:' below matches it) and DESIGN
     #   under a "Design-conformance review" first line, so this matches the marker anywhere, not only at the start.
     #   contains() ignores case, a superset of the rules' case-sensitive markers. Any other comment cannot change
     #   the result, and every later event re-reads all comments anyway.
