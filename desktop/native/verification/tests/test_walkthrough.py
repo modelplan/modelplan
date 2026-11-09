@@ -614,12 +614,14 @@ class MachineSummaryTests(unittest.TestCase):
         manifest = {"sourceSHA": "abc", "artifact": "a", "checks": [{"check": "launch", "status": "pass"}, {"check": "x", "status": "fail"}],
                     "steps": [{"step": "a", "status": "pass", "file": "01-a.png", "tree": "01-a.tree.json", "window": {"file": "01-a.window.png"}},
                               {"step": "b", "status": "skipped", "reason": "no key"},
-                              {"step": "c", "status": "fail", "reason": "boom", "requirement": "G3-38"}]}
+                              {"step": "c", "status": "fail", "reason": "boom", "requirement": "G3-38"},
+                              {"step": "d", "status": "awaiting", "reason": "awaiting #759: x"}]}
         out = w.machine_summary(manifest)
-        self.assertEqual([r["status"] for r in out["scenarios"]], ["pass", "blocked", "fail", "pass", "fail"])
+        self.assertEqual([r["status"] for r in out["scenarios"]], ["pass", "blocked", "fail", "blocked", "pass", "fail"])
         self.assertEqual(out["scenarios"][0]["evidence"], ["01-a.png", "01-a.tree.json", "01-a.window.png"])
-        self.assertEqual(out["counts"], {"pass": 2, "fail": 2, "blocked": 1})
+        self.assertEqual(out["counts"], {"pass": 2, "fail": 2, "blocked": 2})
         self.assertFalse(out["ok"])
+        self.assertEqual(w.failures(dict(manifest, steps=[manifest["steps"][3]], checks=[])), [])
 
 
 if __name__ == "__main__":

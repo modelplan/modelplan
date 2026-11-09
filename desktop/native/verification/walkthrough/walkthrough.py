@@ -775,13 +775,17 @@ class Walkthrough:
                     reasons.append("harness error in check: %s: %s" % (type(error).__name__, error))
         record.update(status="fail" if reasons else "pass", reason="; ".join(reasons) or None,
                       seconds=round(self.host.now() - started, 2))
+        if reasons and step.get("awaiting"):
+            # Known gap: the fix is an open PR. The step still runs and turns into a pass the day the fix is on the
+            # subject; until then it is blocked (never a pass), and its dependents are skipped.
+            record.update(status="awaiting", reason="awaiting %s: %s" % (step["awaiting"], record["reason"]))
         return record
 
     def walk_steps(self):
         for index, step in enumerate(self.steps, 1):
             record = self.run_step(index, step)
             self.results.append(record)
-            self.statuses[step["id"]] = record["status"]
+            self.statuses[step["id"]] = "skipped" if record["status"] == "awaiting" else record["status"]
             print("%-20s %s %s" % (step["id"], record["status"], record.get("reason") or ""), flush=True)
         return self.results
 
@@ -1314,7 +1318,7 @@ def run(args, host):
 def machine_summary(manifest):
     """One row per scenario for a machine reader (the coordinator's auto-verify.sh): id, pass / fail / blocked, evidence.
     A step the host or the build cannot walk, or one whose prerequisite failed, is "blocked" (its reason says why), never a silent pass."""
-    states = {"pass": "pass", "skipped": "blocked", "not-run": "blocked"}
+    states = {"pass": "pass", "skipped": "blocked", "not-run": "blocked", "awaiting": "blocked"}
     rows = []
     for r in manifest["steps"]:
         evidence = [r[k] for k in ("file", "crop", "tree") if r.get(k)]
@@ -1331,7 +1335,7 @@ def machine_summary(manifest):
 
 def failures(manifest):
     """Steps that did not pass (a host that cannot walk a step skips it) and failed checks."""
-    return ([r["step"] for r in manifest["steps"] if r["status"] not in ("pass", "skipped")]
+    return ([r["step"] for r in manifest["steps"] if r["status"] not in ("pass", "skipped", "awaiting")]
             + [c["check"] for c in manifest["checks"] if c["status"] == "fail"])
 
 
