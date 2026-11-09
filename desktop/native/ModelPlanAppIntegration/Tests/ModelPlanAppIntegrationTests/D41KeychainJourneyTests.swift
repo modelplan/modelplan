@@ -62,9 +62,23 @@ private actor D41Engine: EngineClient {
         var projection = try XCTUnwrap(json["projection"] as? [String: Any])
         var row = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
         row["id"] = "claude"; row["vendorKey"] = "claude"; row["name"] = ["en": "Claude Code", "zh": "Claude Code"]
-        row["state"] = state; row["consent"] = "implicit"; row["surfaces"] = ["dock", "menu", "settings"]
+        row["state"] = state; row["consent"] = "implicit"
+        if state == "needs_keychain" {
+            // What the engine emits since G3-38: no value, so no Dock ring. The Keychain prompt is
+            // reached through Settings and the menu (D87 puts fix actions in Settings rows).
+            row["surfaces"] = ["menu", "settings"]; row["accounts"] = []
+            row["nextStep"] = ["action": "open_settings_keychain", "text": ["en": "Allow Keychain for Claude Code in Settings", "zh": "在设置中允许 Claude Code 访问钥匙串"]]
+        } else if state == "pending" {
+            // G3-38: a tool waiting for its first read has no ring; the Dock summary says so at t=0.
+            row["surfaces"] = ["menu", "settings"]; row["accounts"] = []
+            row["nextStep"] = ["action": "none", "text": ["en": "Wait for the next available reading", "zh": "等待下一次可用读数"]]
+            projection["rowsSummary"] = ["state": "pending", "reason": ["code": "not_read_yet", "text": ["en": "Waiting for the first reading", "zh": "等待首次读取"]],
+                                         "text": ["en": "Reading Claude Code…", "zh": "正在读取 Claude Code…"], "nextStep": NSNull()]
+        } else {
+            row["surfaces"] = ["dock", "menu", "settings"]; row.removeValue(forKey: "nextStep")
+        }
         row["reason"] = ["code": code, "text": ["en": "engine text", "zh": "engine text"]]
-        row["expiresAt"] = "2099-01-01T00:00:00Z"; row.removeValue(forKey: "stateAfterExpiry"); row.removeValue(forKey: "nextStep")
+        row["expiresAt"] = "2099-01-01T00:00:00Z"; row.removeValue(forKey: "stateAfterExpiry")
         projection["rows"] = [row]
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
@@ -81,7 +95,7 @@ private actor D41Engine: EngineClient {
             makeClient: { _, target in let value = D41Engine(store: target, facts: consent, rows: snapshot); holder.engine = value; return value }, activateSettings: {})
         await app.prepare(); await app.composition.start()
         let controller = app.scopeConsentEntry.controller
-        for _ in 0..<500 where controller.facts == nil || (app.composition.accountMembers.members.isEmpty) { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<500 where controller.facts == nil || controller.rowsSummary == nil || (rowState == "fresh" && app.composition.accountMembers.members.isEmpty) { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNotNil(controller.facts)
         addTeardownBlock { @MainActor in await app.composition.stop(); app.composition.dock.close() }
         return (app, try XCTUnwrap(holder.engine))
@@ -131,9 +145,8 @@ private actor D41Engine: EngineClient {
         XCTAssertTrue(grants.isEmpty, "Later records nothing and starts no read")
         XCTAssertNotNil(view("scope.keychain.needed", in: app.scopeConsentEntry.view), "Data & Privacy states the need")
         XCTAssertNotNil(view("scope.keychain.allow", in: app.scopeConsentEntry.view), "with the same button")
-        let content = try card(app)
-        XCTAssertEqual(content.stateLabel, "Keychain access needed")
-        XCTAssertEqual(content.actionLabel, "Allow reading")
+        XCTAssertTrue(app.scopeConsentEntry.controller.needsKeychainAccess, "the standing state is in Settings")
+        XCTAssertTrue(app.composition.accountMembers.members.isEmpty, "an unreadable Claude row has no Dock ring or card")
     }
 
     func testDeniedIsShownAndNotAskedAgain() async throws {
@@ -141,7 +154,7 @@ private actor D41Engine: EngineClient {
         let sheet = try app.scopeConsentEntry.makeFirstRunView(language: .english)
         XCTAssertNil(view("scope.firstRun.keychain", in: sheet), "a refusal is not asked again")
         XCTAssertNotNil(view("scope.keychain.needed", in: app.scopeConsentEntry.view))
-        XCTAssertEqual(try card(app).actionLabel, "Allow reading")
+        XCTAssertNotNil(view("scope.keychain.allow", in: app.scopeConsentEntry.view), "Settings carries the button")
         let grants = await engine.recorded()
         XCTAssertTrue(grants.isEmpty)
         // The same button is how a refusal is reversed.
@@ -154,6 +167,16 @@ private actor D41Engine: EngineClient {
         let (app, _) = try await launch(keychain: "unset", rowState: "fresh", code: "ok")
         XCTAssertFalse(app.scopeConsentEntry.controller.asksForKeychainOnFirstRun)
         XCTAssertFalse(app.scopeConsentEntry.controller.needsKeychainAccess)
-        XCTAssertEqual(try card(app).actionLabel, "")
+    }
+
+    /// G3-38: at t=0 a tool waiting for its first read has no ring, and the Dock says it is being read
+    /// rather than that no readings are available.
+    func testDockSaysReadingAtTimeZero() async throws {
+        let (app, _) = try await launch(keychain: "unset", rowState: "pending", code: "not_read_yet")
+        XCTAssertTrue(app.composition.accountMembers.members.isEmpty, "no ring for a tool not read yet")
+        let text = try XCTUnwrap(app.composition.presentedContent.emptyText)
+        XCTAssertEqual(text, "Reading Claude Code…")
+        XCTAssertFalse(text.contains("No readings"))
+        XCTAssertFalse(text.contains("Settings"), "the reading summary does not send the user to consent settings")
     }
 }

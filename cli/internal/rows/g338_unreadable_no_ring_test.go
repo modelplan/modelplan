@@ -6,15 +6,6 @@ import (
 	"time"
 )
 
-func hasSurface(r Row, s Surface) bool {
-	for _, x := range r.Surfaces {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
 // G3-38 (owner decision D76): a detected subscription that cannot be read has no Dock ring, for
 // every unreadable reason. First run, Settings and the menu keep listing it with its reason.
 // One synthetic profile: Codex readable, Claude Code and ZCode unreadable for the same reason.
@@ -177,4 +168,70 @@ func TestG338LaunchWalkNeitherUnreadableToolEverHasARing(t *testing.T) {
 	}
 	check("after first read", launch(testNow.Add(time.Minute), fail("gemini", "unsupported_login"), fail("claude", "expired")),
 		map[string]Code{"gemini": CodeUnsupportedLogin, "claude": CodeLoginExpired})
+}
+
+// G3-38: with every tool off the Dock, the Dock summary says what is going on. It never claims
+// there are no readings while a first read is under way, and it names the user action otherwise.
+func TestG338DockSummaryForToolsWithoutARing(t *testing.T) {
+	add := func(in *Input, id string, make func(in *Input, id string)) {
+		in.Catalogue = append(in.Catalogue, CatalogueEntry{ToolID: id, Detected: true, ReaderExists: true})
+		in.Consents = append(in.Consents, ConsentRecord{ToolID: id, Generation: 7, State: ConsentAllowed})
+		if make != nil {
+			make(in, id)
+		}
+	}
+	build := func(in Input) Projection {
+		out := Build(in)
+		if err := Validate(in, out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	t.Run("pending only", func(t *testing.T) {
+		in := Input{Now: testNow, ConsentGeneration: 7}
+		add(&in, "claude", nil)
+		add(&in, "zai", nil)
+		s := build(in).RowsSummary
+		if s.State != SummaryStatePending || s.Reason.Code != CodeNotReadYet || s.NextStep != nil {
+			t.Fatalf("%+v", s)
+		}
+		if s.Text.EN == "" || s.Text.EN[:8] != "Reading " || s.Text.ZH[:len("正在读取 ")] != "正在读取 " {
+			t.Fatalf("%+v", s.Text)
+		}
+	})
+	t.Run("action needed", func(t *testing.T) {
+		in := Input{Now: testNow, ConsentGeneration: 7}
+		add(&in, "claude", func(in *Input, id string) {
+			in.KeychainBlocks = append(in.KeychainBlocks, KeychainBlock{ToolID: id, Blocked: true, Status: "denied"})
+		})
+		s := build(in).RowsSummary
+		if s.State != SummaryStateEmpty || s.Reason.Code == CodeNoDockRows || s.NextStep == nil || s.NextStep.Action != ActionOpenSettingsKeychain {
+			t.Fatalf("%+v", s)
+		}
+		if s.Text.EN == summaryTexts[CodeNoDockRows].EN {
+			t.Fatalf("names no action: %+v", s.Text)
+		}
+	})
+	t.Run("sign in needed", func(t *testing.T) {
+		in := Input{Now: testNow, ConsentGeneration: 7}
+		add(&in, "claude", func(in *Input, id string) {
+			in.Profiles = append(in.Profiles, ProfileState{ToolID: id, ProfileKey: id + "-p", LatestAttempt: AttemptResultFailed,
+				AttemptedAt: ptr(testNow), LastFailure: &FailureInput{Code: "expired", At: ptr(testNow)}})
+		})
+		s := build(in).RowsSummary
+		if s.NextStep == nil || s.NextStep.Action != ActionOpenTool {
+			t.Fatalf("%+v", s)
+		}
+	})
+	t.Run("nothing detected or allowed", func(t *testing.T) {
+		in := Input{Now: testNow, ConsentGeneration: 7}
+		add(&in, "claude", func(in *Input, id string) {
+			setReader(in, id, false, false)
+			in.Consents[0].State = ConsentDenied
+		})
+		s := build(in).RowsSummary
+		if s.State == SummaryStatePending || (s.State == SummaryStateEmpty && s.Reason.Code != CodeNoDockRows) {
+			t.Fatalf("%+v", s)
+		}
+	})
 }

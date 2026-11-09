@@ -3,6 +3,7 @@ package rows
 
 import (
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -441,13 +442,19 @@ func summary(in Input, rows []Row, allowed, declared int) RowsSummary {
 	default:
 		usable := false
 		for _, row := range rows {
-			for _, surface := range row.Surfaces {
-				if surface == SurfaceDock && (hasValue(row.Accounts) || row.NextStep != nil && row.NextStep.Action != ActionNone) {
-					usable = true
-				}
+			// Tool rows without a value have no Dock surface (G3-38), so only a value counts for a
+			// tool; a declared row may still carry a next step.
+			if hasSurface(row, SurfaceDock) && (hasValue(row.Accounts) || row.Kind != KindTool && row.NextStep != nil && row.NextStep.Action != ActionNone) {
+				usable = true
 			}
 		}
 		if !usable {
+			if names := summaryReadingNames(rows); len(names) > 0 {
+				return readingSummary(names)
+			}
+			if step, names := summaryActionNeeded(rows); step != nil {
+				return actionSummary(rows, step, names)
+			}
 			state, code = SummaryStateEmpty, CodeNoDockRows
 		}
 	}
@@ -457,6 +464,82 @@ func summary(in Input, rows []Row, allowed, declared int) RowsSummary {
 		result.NextStep = &NextStep{Action: ActionOpenSettingsConsent, Text: actionTexts[ActionOpenSettingsConsent]}
 	}
 	return result
+}
+
+func hasSurface(row Row, s Surface) bool {
+	for _, x := range row.Surfaces {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// summaryTool: an allowed tool that holds no value. These are the rows G3-38 keeps off the Dock.
+func summaryTool(row Row) bool {
+	return row.Kind == KindTool && permitted(row.Consent) && row.Reason.Code != CodeCleanupPending && !hasValue(row.Accounts)
+}
+
+// summaryReadingNames lists the allowed tools still waiting for their first read.
+func summaryReadingNames(rows []Row) []Name {
+	var names []Name
+	for _, row := range rows {
+		if summaryTool(row) && row.State == StatePending && (row.Reason.Code == CodeNotReadYet || row.Reason.Code == CodeReaderBusy) {
+			names = append(names, row.Name)
+		}
+	}
+	return names
+}
+
+func joinNames(names []Name) Text {
+	var en, zh []string
+	for _, n := range names {
+		en, zh = append(en, n.EN), append(zh, n.ZH)
+	}
+	return Text{EN: strings.Join(en, ", "), ZH: strings.Join(zh, "、")}
+}
+
+func readingSummary(names []Name) RowsSummary {
+	j := joinNames(names)
+	text := Text{EN: "Reading " + j.EN + "…", ZH: "正在读取 " + j.ZH + "…"}
+	return RowsSummary{State: SummaryStatePending, Reason: Reason{Code: CodeNotReadYet, Text: outcomes[CodeNotReadYet].Text}, Text: text}
+}
+
+// summaryActionNeeded finds the first user action (sign in, allow Keychain, install) among the
+// allowed tools with no value, and the names of every tool that needs that same action.
+func summaryActionNeeded(rows []Row) (*NextStep, []Name) {
+	var step *NextStep
+	var names []Name
+	for _, row := range rows {
+		if !summaryTool(row) || row.NextStep == nil {
+			continue
+		}
+		switch row.NextStep.Action {
+		case ActionOpenTool, ActionOpenSettingsKeychain, ActionInstallRuntime:
+		default:
+			continue
+		}
+		if step == nil {
+			step = &NextStep{Action: row.NextStep.Action, Text: row.NextStep.Text}
+		}
+		if row.NextStep.Action == step.Action {
+			names = append(names, row.Name)
+		}
+	}
+	return step, names
+}
+
+func actionSummary(rows []Row, step *NextStep, names []Name) RowsSummary {
+	j := joinNames(names)
+	text := Text{EN: j.EN + ": " + step.Text.EN, ZH: j.ZH + "：" + step.Text.ZH}
+	var reason Reason
+	for _, row := range rows {
+		if summaryTool(row) && row.NextStep != nil && row.NextStep.Action == step.Action {
+			reason = row.Reason
+			break
+		}
+	}
+	return RowsSummary{State: SummaryStateEmpty, Reason: reason, Text: text, NextStep: step}
 }
 
 func hasValue(accounts []Account) bool {

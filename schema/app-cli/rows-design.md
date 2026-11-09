@@ -95,8 +95,13 @@ Not in rows v1: reset `cards` (local.json reset reminders). They stay on `accoun
 rowsSummary
   state         ok | readers_off | no_consent | empty | pending
                 pending = the publication check failed closed; declared rows still show
-  reason        {code, text {en, zh}} (codes: ok, readers_off, no_consent, no_dock_rows, consent_changed)
-                empty = something is allowed or declared, but no row has a Dock surface with a value or a next step (for example every allowed tool is unsupported); text says so and nextStep opens Settings
+  reason        {code, text {en, zh}} (codes: ok, readers_off, no_consent, no_dock_rows, consent_changed, not_read_yet, and the reason code of a tool that needs an action)
+                A tool with no value has no Dock surface (G3-38), so the Dock summary speaks for those tools:
+                pending + not_read_yet  = allowed tools still waiting for their first read; text is
+                  "Reading {tool names}…" / "正在读取 {tool names}…", nextStep is null (never consent settings)
+                empty + the row's reason code = allowed tools need a user action (sign in, allow Keychain, install);
+                  text names the tools and the action, nextStep is that action (open_tool, open_settings_keychain, install_runtime)
+                empty + no_dock_rows = nothing is detected or allowed to read, and no tool is waiting or needs an action; nextStep opens Settings
   text          {en, zh}
   nextStep      as above
 ```
