@@ -54,6 +54,8 @@ private actor HeldClient: EngineClient {
   var displays = 0, privateVisible = false, pauseClear = false
   var scopeUpdates:[(String,Bool)]=[]
   func updateScope(_ key:String) { scopeUpdates.append((key,privateVisible)) }
+  var restoredCautions:[[String]]=[]
+  func setAckedCautions(_ ids:[String]) { restoredCautions.append(ids) }
   var clearWaiter: CheckedContinuation<Void, Never>?
   var sequence = 0
   init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
@@ -277,6 +279,39 @@ extension CoordinatorTests {
     for _ in 0..<100 { if await client.requests==3 { break };await Task.yield() }
     await client.complete();await coordinator.joinCurrentQueryForVerification()
     await coordinator.shutdown();await client.stop()
+  }
+  /// G3-56: the caution identities the page reports are kept by the app's memory and handed to the next page, including
+  /// one made by a new coordinator (an app restart); a store change forgets them.
+  @MainActor final class CautionMemoryProbe: CockpitCautionMemory {
+    var saved:[String]
+    init(_ saved:[String]) { self.saved=saved }
+    func load()->[String] { saved }
+    func save(_ ids:[String]) { saved=ids }
+  }
+  @MainActor func testAcknowledgedCautionsRoundTripThroughTheAppsMemoryAcrossARestart() async throws {
+    let first=#"["0000000000000001","session:18000:main:main","red"]"#,second=#"["0000000000000001","session:604800:main:main","amber"]"#
+    let memory=CautionMemoryProbe([first])
+    var pages:[PageProbe]=[]
+    let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
+    coordinator.cautionMemory=memory
+    let client=HeldClient();coordinator.bind(client:client)
+    let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+    await coordinator.consume(.context(delivery));coordinator.open()
+    XCTAssertEqual(pages.last?.restoredCautions,[[first]],"The page is given what the app remembered before it loads")
+    pages.last?.onIntent?(.cautionAck([first,second]))
+    XCTAssertEqual(memory.saved,[first,second],"A press the page reports is saved by the app")
+    XCTAssertEqual(coordinator.ackedCautions,[first,second])
+    pages.last?.onIntent?(.cautionAck(["bad\u{7}id"]))
+    XCTAssertEqual(memory.saved,[first,second],"An id with a control character is not kept")
+    await coordinator.shutdown()
+    // A new coordinator over the same memory is an app restart.
+    var again:[PageProbe]=[]
+    let restarted=EngineCockpitCoordinator { context in let page=PageProbe(context);again.append(page);return page }
+    restarted.cautionMemory=memory
+    let client2=HeldClient();restarted.bind(client:client2)
+    await restarted.consume(.context(delivery));restarted.open()
+    XCTAssertEqual(again.last?.restoredCautions,[[first,second]])
+    await restarted.shutdown()
   }
   @MainActor func testScopeIsValidatedRetainedOnReopenAndClearedAtPrivacyBarrier() async throws {
     var pages:[PageProbe]=[]

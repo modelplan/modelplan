@@ -305,6 +305,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       configureVerification?(config)
     #endif
     let view = WKWebView(frame: .zero, configuration: config)
+    // Owner review 11-08 / CKP-SHELL-25: only the hull and canopy are drawn; the web view paints no backing of its
+    // own, so the clear panel shows the desktop around the transparent page.
+    view.setValue(false, forKey: "drawsBackground")
+    view.underPageBackgroundColor = .clear
     // The initial v2 load applies appearance and shell before a page can paint.
     view.isHidden = true
     view.navigationDelegate = self
@@ -479,7 +483,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         case .detach: setAttached(false)
         case .putBack: setAttached(true)
         case .shutterToggle:
-          if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+          toggleShutter()
         case .close: closeAnimated()
         default: onIntent?(intent)
         }
@@ -635,6 +639,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   ) { fail(.provisionalNavigationFailed) }
   public func windowWillClose(_ notification: Notification) { discard() }
   public func windowDidResignKey(_ notification: Notification) { cancelDrag() }
+  public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func updateScope(_ key:String) {
     guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
     scope=key; publishAppearance()
@@ -720,7 +725,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     dragRegion?.frame = fit.scaledTitleDragFrame
     publishAppearance()
   }
-  private func setAttached(_ attached: Bool) {
+  func toggleShutter() {
+    if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+  }
+  func setAttached(_ attached: Bool) {
     guard let window, shellSession.detached == attached else { return }
     if !attached {
       shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
@@ -803,7 +811,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       return event
     }
   }
-  private func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType) {
+  func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType) {
     guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
     // The owned tray completes one toggle on mouse-up. Its mouse-down is not
     // a competing outside dismissal, including with Reduce Motion/long holds.

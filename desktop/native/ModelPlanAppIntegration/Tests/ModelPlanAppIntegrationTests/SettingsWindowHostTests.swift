@@ -130,7 +130,7 @@ import ModelPlanEngineClient
     func testNormalEntrySettingsMenuAndWidgetActionShareTheWindow() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let surface = TestSettingsSurface()
         var builds = 0
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -163,7 +163,7 @@ import ModelPlanEngineClient
     func testNormalEntryApplicationMenuDispatchesCommandComma() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-key-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let surface = TestSettingsSurface()
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
@@ -202,7 +202,7 @@ import ModelPlanEngineClient
     func testNormalEntryDoesNotOfferUpdateActionWithAnAdvertisedCapability() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("no-updates-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
             dockEnvironment: normalEntryTestEnvironment, activateSettings: {})

@@ -18,8 +18,8 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: test-build-walkthrough-${{ github.run_id }}
-  cancel-in-progress: false
+  group: test-build-walkthrough-${{ (github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release')) && format('dispatch-{0}', github.ref) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release') }}
 jobs:
   walkthrough:
     runs-on: macos-15

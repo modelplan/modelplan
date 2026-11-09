@@ -107,6 +107,8 @@ public enum AliasDisplay {
     }
 }
 
+/// D56 (owner 2026-11-08): the `toggleDock` slot (`dockShortcut`) is the Find Quota Widget shortcut.
+/// The stored key and case keep their names so a recorded chord keeps working.
 public enum ShortcutAction: String, Sendable { case openCockpit, toggleDock }
 public enum ShortcutRegistration: Equatable, Sendable { case notRequested, registered, conflict, denied, unavailable }
 public struct ShortcutPolicy: Sendable {

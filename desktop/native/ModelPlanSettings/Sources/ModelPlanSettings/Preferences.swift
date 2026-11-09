@@ -80,7 +80,9 @@ public struct SettingsPreferences: Codable, Sendable {
     public var effectiveRedBelow: Int { Self.redBelowChoices.contains(redBelow) ? redBelow : 25 }
     public var sliverAlert = true
     public var showDock = true
-    public var autoHide = false
+    /// D56 (owner 2026-11-08): a fresh install, or a saved file without this key, starts collapsed.
+    /// A saved value, either way, is kept as it is.
+    public var autoHide = true
     public var revealMilliseconds = 150
     public var magnification: HoverMagnification = .subtle
     public var showOverFullscreen = false

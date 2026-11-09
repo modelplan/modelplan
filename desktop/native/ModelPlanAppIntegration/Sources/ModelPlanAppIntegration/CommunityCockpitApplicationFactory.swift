@@ -75,6 +75,7 @@ import ModelPlanDock
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
                 coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
                 coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
+                coordinator.cautionMemory = FileCockpitCautionMemory(url: settingsStore.directory.appendingPathComponent("cockpit-cautions.json"))
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
@@ -184,6 +185,9 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         else { throw CockpitBridgeError.unavailable }
         let verified=try verifiedBundle ?? Self.admit(bundle:bundle,pins:CommunityCockpitApplicationFactory.manifestPins)
         verifiedBundle=verified
+        return makePage(context:context,verified:verified)
+    }
+    func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
@@ -209,6 +213,25 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     func save(_ value: (key: String, day: String)?) {
         guard let value else { try? FileManager.default.removeItem(at: url); return }
         guard let data = try? JSONSerialization.data(withJSONObject: ["scope": value.key, "day": value.day], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+/// G3-56: the acknowledged caution identities in one small file beside the settings. Opaque ids only, no readings.
+@MainActor final class FileCockpitCautionMemory: CockpitCautionMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> [String] {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 16 * 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let ids = value["acked"] as? [String], CockpitCautionIdentities.valid(ids) else { return [] }
+        return ids
+    }
+    func save(_ ids: [String]) {
+        guard !ids.isEmpty else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["acked": ids], options: [.sortedKeys]) else { return }
         try? data.write(to: url, options: .atomic)
     }
 }
@@ -275,7 +298,7 @@ struct CockpitUnavailableNotice {
         case .openField:openField()
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()
