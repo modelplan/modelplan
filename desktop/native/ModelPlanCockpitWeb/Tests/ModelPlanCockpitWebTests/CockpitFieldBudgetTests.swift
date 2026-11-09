@@ -133,6 +133,8 @@ final class CockpitFieldBudgetTests: XCTestCase {
         XCTAssertFalse(window.isOpaque, "the field's panel is not opaque")
         XCTAssertEqual(window.backgroundColor.alphaComponent, 0, "the panel's background is clear")
         XCTAssertFalse(window.hasShadow, "no rectangular window shadow")
+        XCTAssertEqual(web.value(forKey: "drawsBackground") as? Bool, false, "the web view paints no backing of its own")
+        XCTAssertEqual(web.underPageBackgroundColor.alphaComponent, 0, "nothing opaque under the page")
         XCTAssertEqual(shape, "feathered", "the scene is masked by the feathered c01 silhouette")
         XCTAssertNotNil(panel.cardBlurFrame, "the frosted card has its behind-window blur")
         let config = WKSnapshotConfiguration(); config.afterScreenUpdates = true
