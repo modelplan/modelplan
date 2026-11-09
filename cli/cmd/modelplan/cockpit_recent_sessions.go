@@ -41,8 +41,14 @@ func cockpitRecentSessions(sessions []speed.PerfSession, allowed map[string]bool
 	out := make([]wire.CockpitRecentSession, 0, len(recent))
 	for _, session := range recent {
 		entry := wire.CockpitRecentSession{SessionRef: session.Ref, Source: session.Source, Model: "unknown", LastObservedAt: session.LastAt.UTC()}
-		if n := len(session.Days); n > 0 {
-			last := session.Days[n-1]
+		if len(session.Days) > 0 {
+			// The newest recorded day by date, not the last one read: a log read out of order must not reverse it.
+			last := session.Days[0]
+			for _, d := range session.Days[1:] {
+				if d.Day >= last.Day {
+					last = d
+				}
+			}
 			entry.Model = cockpitModelID(last.Model, session.Source, models)
 			switch last.Effort {
 			case "low", "medium", "high", "xhigh", "max", "ultra":
