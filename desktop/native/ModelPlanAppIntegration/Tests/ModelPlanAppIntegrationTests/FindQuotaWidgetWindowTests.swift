@@ -5,7 +5,7 @@ import XCTest
 
 /// D56 Find Quota Widget, the native overlay (GUI leg): one click-through window over the widget's
 /// whole display, above the menu bar, on the current Space including a full-screen one; it never
-/// becomes key, never takes a mouse event, and leaves a ringed hole over the widget.
+/// becomes key, never takes a mouse event, and leaves a feathered hole over the widget.
 @MainActor final class FindQuotaWidgetWindowTests: XCTestCase {
     private func target() throws -> QuotaWidgetSpotlightTarget {
         _ = NSApplication.shared

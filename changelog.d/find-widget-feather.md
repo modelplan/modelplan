@@ -1,0 +1,1 @@
+Find Quota Widget no longer draws a bright ring around the widget. The clearing now has a soft, feathered edge that fades smoothly into the dim, so it reads as a gentle spotlight instead of a hard frame.

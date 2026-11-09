@@ -2,8 +2,8 @@
 import AppKit
 
 /// D56 Find Quota Widget (owner 2026-11-08). The widget slides out if it is collapsed; the rest of
-/// its display, menu bar included, dims to about 60 % within 0.2 s with a soft bright ring around
-/// the widget; it holds about 1.5 s, then fades. Any click or key ends it at once. The overlay
+/// its display, menu bar included, dims to about 60 % within 0.2 s with a soft feathered clearing
+/// around the widget (no ring, no stroke); it holds about 1.5 s, then fades. Any click or key ends it at once. The overlay
 /// never takes mouse events. With Reduce Motion there is no slide or fade: dim, then restore.
 struct QuotaWidgetSpotlightTarget: Equatable {
     /// The widget's painted hull on screen, in global AppKit coordinates.
@@ -28,9 +28,14 @@ enum QuotaWidgetSpotlightStyle {
     static let dimAlpha: CGFloat = 0.4
     static let holePadding: CGFloat = 8
     static let holeCornerRadius: CGFloat = 12
-    static let ringWidth: CGFloat = 2
-    static let ringAlpha: CGFloat = 0.9
-    static let ringGlowRadius: CGFloat = 10
+    /// The clearing's edge is not a line: dimming rises smoothly from none at the hole's edge to
+    /// `dimAlpha` this many points further out.
+    static let featherRadius: CGFloat = 24
+    /// Dim alpha at `distance` points outside the hole's edge (zero or less: inside, undimmed).
+    static func dimAlpha(atDistance distance: CGFloat) -> CGFloat {
+        let t = min(1, max(0, distance / featherRadius))
+        return dimAlpha * t * t * (3 - 2 * t)
+    }
     /// The undimmed hole: the widget plus padding, kept on its display.
     static func hole(for target: QuotaWidgetSpotlightTarget) -> CGRect {
         target.widget.insetBy(dx: -holePadding, dy: -holePadding).intersection(target.display)
@@ -208,52 +213,110 @@ private final class QuotaWidgetSpotlightPanel: NSPanel {
 }
 
 final class QuotaWidgetSpotlightView: NSView {
-    private let dim = CAShapeLayer(), ring = CAShapeLayer()
+    /// Flat dim everywhere beyond the feather; the feather layer carries the soft edge.
+    private let dim = CAShapeLayer(), feather = CALayer()
     var hole: CGRect = .zero { didSet { layoutLayers() } }
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         dim.fillRule = .evenOdd
         dim.fillColor = NSColor.black.withAlphaComponent(QuotaWidgetSpotlightStyle.dimAlpha).cgColor
-        ring.fillColor = NSColor.clear.cgColor
-        ring.strokeColor = NSColor.white.withAlphaComponent(QuotaWidgetSpotlightStyle.ringAlpha).cgColor
-        ring.lineWidth = QuotaWidgetSpotlightStyle.ringWidth
-        ring.shadowColor = NSColor.white.cgColor; ring.shadowOpacity = 0.9
-        ring.shadowRadius = QuotaWidgetSpotlightStyle.ringGlowRadius; ring.shadowOffset = .zero
-        layer?.addSublayer(dim); layer?.addSublayer(ring)
+        dim.strokeColor = nil; dim.lineWidth = 0
+        feather.magnificationFilter = .linear
+        layer?.addSublayer(dim); layer?.addSublayer(feather)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func layout() { super.layout(); layoutLayers() }
     override var frame: NSRect { didSet { layoutLayers() } }
     var dimAlphaForChecks: CGFloat { dim.fillColor.flatMap { NSColor(cgColor: $0)?.alphaComponent } ?? 0 }
-    /// What is drawn, for checks: the dim layer, the hole it cuts and the ring around it.
+    /// What is drawn, for checks: no stroke or border anywhere, and the feathered edge.
     struct DrawnForChecks {
-        let dimAlpha: CGFloat, ringWidth: CGFloat, ringAlpha: CGFloat, ringIsWhite: Bool
-        let glowRadius: CGFloat, glowOpacity: Float, ringBounds: CGRect?
-        let ringContainsHoleCentre: Bool, dimContainsHoleCentre: Bool, dimContainsCorner: Bool
+        let dimAlpha: CGFloat, featherRadius: CGFloat
+        let hasStrokeOrBorder: Bool, hasShadow: Bool
+        let featherFrame: CGRect?, featherHasImage: Bool
+        let dimContainsHoleCentre: Bool, dimContainsCorner: Bool
+        /// Dim alpha at a point in view coordinates, from the image actually drawn (nil outside it).
+        let alphaAt: (CGPoint) -> CGFloat?
     }
     var drawnForChecks: DrawnForChecks {
-        let ringColor = ring.strokeColor.flatMap { NSColor(cgColor: $0)?.usingColorSpace(.deviceRGB) }
         let centre = CGPoint(x: hole.midX, y: hole.midY)
-        return .init(dimAlpha: dimAlphaForChecks, ringWidth: ring.lineWidth, ringAlpha: ringColor?.alphaComponent ?? 0,
-                     ringIsWhite: ringColor.map { $0.redComponent == 1 && $0.greenComponent == 1 && $0.blueComponent == 1 } ?? false,
-                     glowRadius: ring.shadowRadius, glowOpacity: ring.shadowOpacity, ringBounds: ring.path?.boundingBox,
-                     ringContainsHoleCentre: ring.path?.contains(centre) ?? false,
+        let layers: [CALayer] = [dim, feather, layer].compactMap { $0 }
+        let stroked = layers.contains { l in
+            l.borderWidth > 0 || ((l as? CAShapeLayer).map { $0.strokeColor != nil && $0.lineWidth > 0 } ?? false)
+        }
+        let image = feather.contents.map { $0 as! CGImage }
+        let frame = feather.frame
+        return .init(dimAlpha: dimAlphaForChecks, featherRadius: QuotaWidgetSpotlightStyle.featherRadius,
+                     hasStrokeOrBorder: stroked, hasShadow: layers.contains { $0.shadowOpacity > 0 },
+                     featherFrame: image == nil ? nil : frame, featherHasImage: image != nil,
                      dimContainsHoleCentre: dim.path?.contains(centre, using: .evenOdd) ?? false,
-                     dimContainsCorner: dim.path?.contains(CGPoint(x: 1, y: 1), using: .evenOdd) ?? false)
+                     dimContainsCorner: dim.path?.contains(CGPoint(x: 1, y: 1), using: .evenOdd) ?? false,
+                     alphaAt: { point in
+                         guard let image, frame.contains(point) else { return nil }
+                         return Self.alpha(of: image, atFraction: CGPoint(x: (point.x - frame.minX) / frame.width,
+                                                                          y: (point.y - frame.minY) / frame.height))
+                     })
     }
+
     private func layoutLayers() {
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        dim.frame = bounds; ring.frame = bounds
-        // CGPath requires a corner no larger than half the side.
-        let radius = max(0, min(QuotaWidgetSpotlightStyle.holeCornerRadius, hole.width / 2, hole.height / 2))
-        let rounded = CGPath(roundedRect: hole, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        defer { CATransaction.commit() }
+        dim.frame = bounds
+        guard !hole.isEmpty else {
+            let path = CGMutablePath(); path.addRect(bounds)
+            dim.path = path; feather.contents = nil; feather.frame = .zero
+            return
+        }
+        // The flat dim stops where the feather has reached full strength, so the two meet unseen.
+        let reach = QuotaWidgetSpotlightStyle.featherRadius
+        let outer = hole.insetBy(dx: -reach, dy: -reach)
         let path = CGMutablePath(); path.addRect(bounds)
-        if !hole.isEmpty { path.addPath(rounded) }
+        path.addRect(outer.intersection(bounds))
         dim.path = path
-        ring.path = hole.isEmpty ? nil : rounded
-        CATransaction.commit()
+        let region = outer.intersection(bounds)
+        let scale = max(1, window?.backingScaleFactor ?? 2)
+        feather.contentsScale = scale
+        feather.frame = region
+        feather.contents = Self.featherImage(region: region, hole: hole, scale: scale)
+    }
+
+    /// Distance from `point` to the rounded rectangle's edge; negative inside.
+    static func distance(from point: CGPoint, toRounded rect: CGRect, radius: CGFloat) -> CGFloat {
+        let r = max(0, min(radius, rect.width / 2, rect.height / 2))
+        let dx = abs(point.x - rect.midX) - (rect.width / 2 - r)
+        let dy = abs(point.y - rect.midY) - (rect.height / 2 - r)
+        return hypot(max(dx, 0), max(dy, 0)) + min(max(dx, dy), 0) - r
+    }
+
+    /// Black with the feathered alpha, premultiplied, covering `region` (view points, y up).
+    static func featherImage(region: CGRect, hole: CGRect, scale: CGFloat) -> CGImage? {
+        let w = max(1, Int((region.width * scale).rounded())), h = max(1, Int((region.height * scale).rounded()))
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        let radius = QuotaWidgetSpotlightStyle.holeCornerRadius
+        for row in 0..<h {
+            // Image row 0 is the top; view y grows upward.
+            let y = region.maxY - (CGFloat(row) + 0.5) / scale
+            for column in 0..<w {
+                let x = region.minX + (CGFloat(column) + 0.5) / scale
+                let d = distance(from: CGPoint(x: x, y: y), toRounded: hole, radius: radius)
+                let alpha = QuotaWidgetSpotlightStyle.dimAlpha(atDistance: d)
+                bytes[(row * w + column) * 4 + 3] = UInt8((alpha * 255).rounded())
+            }
+        }
+        let space = CGColorSpaceCreateDeviceRGB()
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: space,
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
+
+    /// Alpha of the image at a fractional position (0...1, y up in view terms).
+    static func alpha(of image: CGImage, atFraction f: CGPoint) -> CGFloat? {
+        guard let data = image.dataProvider?.data, let ptr = CFDataGetBytePtr(data) else { return nil }
+        let column = min(image.width - 1, max(0, Int(f.x * CGFloat(image.width))))
+        let row = min(image.height - 1, max(0, Int((1 - f.y) * CGFloat(image.height))))
+        return CGFloat(ptr[row * image.bytesPerRow + column * 4 + 3]) / 255
     }
 }
 
