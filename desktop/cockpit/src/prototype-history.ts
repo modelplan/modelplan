@@ -70,18 +70,3 @@ export function resetHistory(data:WireCockpitData|null|undefined,ref:string|null
  for(const e of data?.details?.resetEvents??[])if(e.rowId===rowId&&e.status==='confirmed'){const at=Date.parse(e.publishedAt);if(Number.isFinite(at))for(const kind of new Set(rows.map(r=>r.kind)))rows.push({kind,at,source:'official'});}
  return rows.sort((a,b)=>b.at-a.at);
 }
-
-/** CKP-ENG-25: the last seven local days of output tokens for one subscription's linked tools, today last. Every day
- *  must carry an observation: one missing day leaves the whole sparkline unplotted, never a zero or a guessed value. */
-export function weekUsage(data:WireCockpitData|null|undefined,ref:string|null|undefined,now:number):number[]|null{
- const h=data?.history;if(!h||h.coverage!=='local-history'||!ref)return null;
- const sources=h.subscriptions.find(s=>s.subscriptionRef===ref)?.sources;if(!sources?.length)return null;
- const linked=new Set(sources.map(s=>s.source)),byDay=new Map<string,number>();
- for(const b of h.daily)if(linked.has(b.source))byDay.set(b.at,(byDay.get(b.at)??0)+b.observedOutputTokens);
- const end=new Date(now),values:number[]=[];
- for(let back=6;back>=0;back--){
-  const v=byDay.get(dayKey(new Date(end.getFullYear(),end.getMonth(),end.getDate()-back).getTime()));
-  if(v===undefined||!Number.isFinite(v)||v<0)return null;values.push(v);
- }
- return values;
-}
