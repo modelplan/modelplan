@@ -604,9 +604,9 @@ var harnessIdsSchema = z3.object({
   api: ids2,
   "claude-code": ids2,
   codex: ids2,
-  "gemini-cli": ids2.optional(),
+  gemini: ids2.optional(),
   antigravity: ids2.optional(),
-  "grok-build": ids2.optional(),
+  grok: ids2.optional(),
   copilot: ids2.optional(),
   kimi: ids2.optional()
 }).strict();
