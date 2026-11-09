@@ -198,8 +198,8 @@
     },
     {
       "file": "canopy-c01/canopy-640-1x.png",
-      "sha256": "dd0e9545c57f31464d902e0a8c8ff97f3ba03dfebd92f0a8831ebc9249612156",
-      "bytes": 16906,
+      "sha256": "53db14a0bdb6c660fd32485b998275aeefc2f475c56cfa9592df8299027bfba3",
+      "bytes": 16918,
       "size": {
         "width": 636,
         "height": 56
@@ -250,8 +250,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-640-1x.png",
-      "sha256": "c34fa9dc42848c85145ee69f2734d7693c131051358307d3826a9cec16b8d2df",
-      "bytes": 2434,
+      "sha256": "f84b3964a9cf2c9f14dd06c631f6163a9cf1fba7c6487ec509c861ee998091c5",
+      "bytes": 2453,
       "size": {
         "width": 636,
         "height": 56
@@ -263,8 +263,8 @@
     },
     {
       "file": "canopy-c01/canopy-640-2x.png",
-      "sha256": "84b4e617cb365e31248ed4925828ee29f6eca56f8a175f4ac82ea7a73c415f91",
-      "bytes": 49695,
+      "sha256": "6e1a0bd8b52489842f508aa6960a2b426039eb42e052cb114293b65661a0a9ca",
+      "bytes": 49503,
       "size": {
         "width": 1272,
         "height": 112
@@ -315,8 +315,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-640-2x.png",
-      "sha256": "6f8bb5f172631845985ba8ce8d6fee7cf0bd4857bcf26043bb94a7fcb783556b",
-      "bytes": 5296,
+      "sha256": "9bb166572ca7cb32d095ee0ae5a84af407b57219b5cdff3c210eb27d21a3aaab",
+      "bytes": 5267,
       "size": {
         "width": 1272,
         "height": 112
@@ -328,8 +328,8 @@
     },
     {
       "file": "canopy-c01/canopy-890-1x.png",
-      "sha256": "2734f0e37e186ed7eadbed841049ac0c535daa90c4e700774a2d8ba59409ee59",
-      "bytes": 58962,
+      "sha256": "4a5328cb1bdc7266afe0b4b8ddd34928bacbb512c8b96e076cc9501d4db88596",
+      "bytes": 58887,
       "size": {
         "width": 636,
         "height": 244
@@ -380,8 +380,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-1x.png",
-      "sha256": "1d513df040c2278e86ae582f915c574c40e0e77cc6a7e6e62a0a3240eddc1aab",
-      "bytes": 5450,
+      "sha256": "746c93a6d642db31df6df76b32e412f375ae22578ba7f4245abbe25308a075f9",
+      "bytes": 5440,
       "size": {
         "width": 636,
         "height": 244
@@ -393,8 +393,8 @@
     },
     {
       "file": "canopy-c01/canopy-890-2x.png",
-      "sha256": "9f01edcfdf8f9ca2d9509bfacebcd4de51fcf672038317d95dd8bd95e99f3a94",
-      "bytes": 197247,
+      "sha256": "9c4084237432630c8e4b47f47552a2d1764cc47bc89678aa25238332b037078c",
+      "bytes": 196237,
       "size": {
         "width": 1272,
         "height": 488
@@ -445,8 +445,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-2x.png",
-      "sha256": "9ec5987a5ded8a50cb296ce485ae5bb8d130fc0b78ea5aa86d45c61477ecaf35",
-      "bytes": 12775,
+      "sha256": "0fdb3279a62af728d86d7df1b568834d5a82dd2db9ff64696c88f9d4eb373c6b",
+      "bytes": 12720,
       "size": {
         "width": 1272,
         "height": 488
