@@ -8,21 +8,21 @@ final class ShellLayoutTests: XCTestCase {
             anchor: .init(x: 800, y: height + 50, width: 20, height: 22), shutterClosed: closed))
     }
     func testDiscreteProfilesAndExactRoots() throws {
-        XCTAssertEqual(try fit(1000).rootHeight, 877)
+        XCTAssertEqual(try fit(1000).rootHeight, 905)
         XCTAssertEqual(try fit(1000, closed: true).rootHeight, 691)
-        XCTAssertEqual(try fit(800).rootHeight, 627)
+        XCTAssertEqual(try fit(800).rootHeight, 655)
         XCTAssertEqual(try fit(800, closed: true).rootHeight, 609)
-        XCTAssertEqual(try fit(956).profile, .full)
-        XCTAssertEqual(try fit(955).profile, .compact)
+        XCTAssertEqual(try fit(984).profile, .full)
+        XCTAssertEqual(try fit(983).profile, .compact)
     }
     func testNativeShellTierAndForcedClosedBoundary() throws {
-        let forced = try fit(705).shellState(attached: true)
+        let forced = try fit(733).shellState(attached: true)
         XCTAssertEqual(forced.profile, .closed); XCTAssertEqual(forced.tier, .compact)
         XCTAssertTrue(forced.forcedClosed)
-        let fitting = try fit(706).shellState(attached: true)
+        let fitting = try fit(734).shellState(attached: true)
         XCTAssertEqual(fitting.profile, .open); XCTAssertEqual(fitting.tier, .compact)
         XCTAssertFalse(fitting.forcedClosed)
-        XCTAssertEqual(try fit(956).shellState(attached: false).tier, .tall)
+        XCTAssertEqual(try fit(984).shellState(attached: false).tier, .tall)
     }
     func testShortAndNarrowDisplaysScaleTheWholeRootIncludingBaseReserve() throws {
         let value = try fit(500, width: 400)

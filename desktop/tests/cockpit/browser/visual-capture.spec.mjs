@@ -12,8 +12,8 @@ import {fileURLToPath} from 'node:url';
 const OUT=fileURLToPath(new URL('../../../cockpit/.tmp/test-results/visual-capture/',import.meta.url));
 const SELECTORS=['.ck','.ck-shell','.ck-head','.ck-portrow','.ck-port','.ck-eng','.eng-keys','.ck-deck','.ck-tape','.ck-base',
  '.ck-base .bz','.ck-base .bz-empty','.ck-base .bz-line','.eng-keys .ek','.eng-keys .ek .bl','.ck-booster'];
-// state: tier, profile, theme, viewport height (636 wide; the tall root is 877 plus the 34 px base row).
-const STATES={'cockpit-tall-night':['tall','open','night',911],'cockpit-short-night':['compact','open','night',661],
+// state: tier, profile, theme, viewport height (636 wide; the tall root is 905 plus the 34 px base row).
+const STATES={'cockpit-tall-night':['tall','open','night',939],'cockpit-short-night':['compact','open','night',689],
  'cockpit-closed-night':['tall','closed','night',725]};
 
 for(const [name,[tier,profile,theme,height]] of Object.entries(STATES))
