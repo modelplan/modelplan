@@ -47,6 +47,10 @@ class FakeHost:
     def capture(self, path, rect=None):
         Path(path).write_bytes(b"png")
 
+    def run(self, command, env, stdin=None, timeout=120):
+        self.calls.append(("run", command))
+        return mock.Mock(returncode=0, stdout=json.dumps({"storeEpoch": "e", "generation": 1}), stderr="")
+
     def capture_window(self, path, window_id):
         self.calls.append(("capture_window", window_id))
         Path(path).write_bytes(b"png")
@@ -180,6 +184,23 @@ class Seed(unittest.TestCase):
             self.assertEqual(text.count("task_started"), 1)
             self.assertEqual(text.count("function_call_output"), 4)
             self.assertTrue((Path(session.cwd) / ".git").is_dir())
+
+    def test_live_record_lands_in_the_ledger_atomically_and_replaces_itself(self):
+        with tempfile.TemporaryDirectory() as home:
+            observed = Path(home) / "Library/Caches/modelplan/observed"
+            observed.mkdir(parents=True)
+            (observed / "perf.json").write_text(json.dumps(w.perf_ledger(self.SEED, self.NOW, {"storeEpoch": "e"})), encoding="utf-8")
+            session = w.LiveSession(Path(home), self.SEED, clock=lambda: self.NOW.timestamp())
+            session.record = ("e", "0123456789abcdef")
+            session.append(2)
+            session.append(2)
+            ledger = json.loads((observed / "perf.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(ledger["live"]), 1)
+            live = ledger["live"][0]
+            self.assertTrue(live["running"])
+            self.assertEqual((live["subscriptionRef"], live["source"], live["grantEpoch"]["storeEpoch"]), ("0123456789abcdef", "codex", "e"))
+            self.assertEqual(len(ledger["sessions"]), 8)  # the history stays
+            self.assertFalse((observed / "perf.json.walkthrough").exists())
 
     def test_child_gets_the_synthetic_home_and_only_the_stand_in_runtime_of_the_runner(self):
         env = w.child_environment(Path("profile"))

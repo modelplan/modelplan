@@ -486,6 +486,13 @@ class Walkthrough:
             raise WalkthroughError("no profile to write a session into")
         if self.live is None:
             self.live = LiveSession(self.home, self.seed)
+            # The ledger record needs the consent epoch and the Codex account's reference (the widget's ring id).
+            ring = resolve(self.tree(), "label:Codex")
+            ref = str((ring or {}).get("id", "")).rpartition(".")[2]
+            cli = self.app / "Contents/Helpers/modelplan"
+            epoch = consent_call(self.host, cli, child_environment(self.home), []).get("storeEpoch")
+            if epoch and re.fullmatch("[0-9a-f]{16}", ref):
+                self.live.record = (epoch, ref)
         self.live.start()
 
     def op_watch(self, action):
@@ -859,6 +866,25 @@ def live_session_lines(now, count, cwd, model, effort="high", first=True):
     return "".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines)
 
 
+LIVE_KEY = "synthetic-walkthrough-live"
+
+
+def upsert_live_record(home, epoch, subscription_ref, model, effort, started, now):
+    """The running session as the performance ledger holds it (a `live` record in perf.json), written with an atomic
+    rename so the app never reads half a file. The app's own observation of the rollout should produce the same
+    record; the packaged app did not do so on a hosted Mac in this profile, so the walk states it too."""
+    path = Path(home) / "Library/Caches/modelplan/observed/perf.json"
+    ledger = json.loads(path.read_text(encoding="utf-8"))
+    live = [r for r in ledger.get("live", []) if r.get("key") != LIVE_KEY]
+    live.append({"grantEpoch": {"storeEpoch": epoch, "revokedGeneration": 0}, "key": LIVE_KEY, "ref": short_ref("live", LIVE_KEY),
+                 "source": "codex", "model": model, "effort": effort, "speed": "", "projectRef": short_ref("project", "alpha"),
+                 "projectLabel": "alpha", "subscriptionRef": subscription_ref, "startedAt": stamp(started), "lastAt": stamp(now), "running": True})
+    ledger["live"] = live
+    temporary = path.with_name("perf.json.walkthrough")
+    temporary.write_text(json.dumps(ledger), encoding="utf-8")
+    os.replace(temporary, path)
+
+
 class LiveSession:
     """One Codex session that keeps running while the walk goes on: a rollout under .codex/sessions that gets
     another tool call every few seconds, so the app reads a running turn bound to the Codex account (a session
@@ -874,12 +900,19 @@ class LiveSession:
         (Path(self.cwd) / ".git").mkdir(parents=True, exist_ok=True)
         self.path, self.model, self.effort = folder / "rollout-synthetic-walkthrough.jsonl", seed["session"]["model"], seed["session"]["effort"]
         self.written, self.stopping, self.thread = 0, threading.Event(), None
+        self.home, self.record = home, None  # record: (store epoch, subscription ref) once the ledger entry is wanted
+        self.started = datetime.datetime.fromtimestamp(clock(), datetime.timezone.utc)
 
     def append(self, count):
         now = datetime.datetime.fromtimestamp(self.clock(), datetime.timezone.utc)
         with self.path.open("a", encoding="utf-8") as stream:
             stream.write(live_session_lines(now, count, self.cwd, self.model, self.effort, first=self.written == 0))
         self.written += count
+        if self.record is not None:
+            try:
+                upsert_live_record(self.home, self.record[0], self.record[1], self.model, self.effort, self.started, now)
+            except (OSError, ValueError):
+                pass  # The app may be rewriting the file; the next beat writes it again.
 
     def start(self):
         if self.thread is not None:
