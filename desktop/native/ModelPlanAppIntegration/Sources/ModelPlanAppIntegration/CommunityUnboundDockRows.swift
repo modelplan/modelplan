@@ -88,11 +88,10 @@ public struct DockContentRow: Sendable {
         var seen = Set<String>()
         let notes = ([expiryText] + [count?.detail ?? "", credits?.detail ?? ""].flatMap { $0.components(separatedBy: " · ") })
             .filter { !$0.isEmpty && seen.insert($0).inserted }
-        // The prototype has no money row: a money balance keeps its own name on the one line.
-        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: credits?.label ?? (english ? "Reserve" : "储备"),
-            value: [count?.value ?? "", credits?.value ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
-            detail: notes.joined(separator: " · "),
-            hint: Self.reserveHint(hasResets: count != nil, hasCredits: credits != nil, creditsClass: credits?.hint ?? "", english: english))
+        // The line is plain labelled text ("Resets 1 · Credits 19,614"), never an icon plus bare figures and never swapped on hover.
+        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: english ? "Reserve" : "储备",
+            value: Self.reserveText(resets: count?.value, credits: credits?.value, creditsClass: credits?.hint ?? "", creditsLabel: credits?.label ?? "", english: english),
+            detail: notes.joined(separator: " · "))
         var placed = false
         return additionalRows.flatMap { row -> [DockCardRow] in
             guard row.id == "reset-count" || row.id == "credits" else { return [row] }
@@ -101,27 +100,25 @@ public struct DockContentRow: Sendable {
             return [reserve]
         }
     }
-    /// What the reserve line's figures mean, in the card (the line shows only "↺1 · 3,903").
-    /// `creditsClass` is the producer's classification carried on the credits row ("credits", "money" or "" when the unit is unclassified).
-    /// Only classified rows name what the figure is; an unclassified unit stays neutral.
-    static func reserveHint(hasResets: Bool, hasCredits: Bool, creditsClass: String = "", english: Bool) -> String {
-        let credits: String
-        switch creditsClass {
-        case "money": credits = english ? "balance" : "账户余额"
-        case "credits": credits = english ? "top-up credits" : "充值点数"
-        default: credits = english ? "other reserve" : "其他额度"
+    /// The reserve line's text with each figure named. `resets` is the reset-count row's value ("↺1");
+    /// `creditsClass` is the producer's classification on the credits row ("credits", "money" or "" when the unit is unclassified).
+    /// Only a classified figure is called Credits or Balance; an unclassified unit keeps the row's own neutral name and its unit text.
+    static func reserveText(resets: String?, credits: String?, creditsClass: String = "", creditsLabel: String = "", english: Bool) -> String {
+        var parts = [String]()
+        if let resets {
+            let number = String(resets.drop { $0 == "↺" })
+            parts.append((english ? "Resets " : "重置次数 ") + (number.isEmpty ? "--" : number))
         }
-        switch (hasResets, hasCredits) {
-        case (true, true): return english ? "↺ extra resets left · then " + credits : "↺ 剩余额外重置次数 · 之后是" + credits
-        case (true, false): return english ? "↺ extra resets left" : "↺ 剩余额外重置次数"
-        case (false, true):
+        if let credits {
             switch creditsClass {
-            case "money": return english ? "Account balance left" : "剩余账户余额"
-            case "credits": return english ? "Top-up credits left" : "剩余充值点数"
-            default: return english ? "Other reserve left" : "剩余其他额度"
+            case "money": parts.append((english ? "Balance " : "余额 ") + credits)
+            case "credits":
+                let number = credits.replacingOccurrences(of: english ? " credits" : " 点数", with: "")
+                parts.append((english ? "Credits " : "点数 ") + number)
+            default: parts.append(creditsLabel.isEmpty ? credits : creditsLabel + " " + credits)
             }
-        case (false, false): return ""
         }
+        return parts.joined(separator: " · ")
     }
     public func resetDetails(at now:Date,english:Bool,selectedWindowID:String?=nil) -> [String:String] {
         let selectedObservation = selectedWindowID.map { observationText(for: $0, at: now, english: english) }
