@@ -90,7 +90,7 @@ test('THM-2.4-02 night metal and inks hold their values',async({page})=>{
 for(const theme of ['night','day'])test(`COL-2.1-12/17 brand red stays out of every painted surface in ${theme}`,async({page})=>{
  const fx=reading();await open(page,fx.data,theme);await renderVisualDeck(page,fx,'en');
  const seen=[];
- for(const name of ['Overview','Subscription','Effort','Breakdown']){await page.getByRole('button',{name,exact:true}).click();seen.push(...await paints(page));}
+ for(const name of ['Overview','Subscription','Models','Breakdown']){await page.getByRole('button',{name,exact:true}).click();seen.push(...await paints(page));}
  await page.keyboard.down('Alt');seen.push(...await paints(page));await page.keyboard.up('Alt');
  expect(seen.length).toBeGreaterThan(200);
  // The only cockpit place for it is the Plan wordmark, which the strip draws as approved art rather than CSS paint.

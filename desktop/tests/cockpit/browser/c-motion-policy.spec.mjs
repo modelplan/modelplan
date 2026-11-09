@@ -43,7 +43,7 @@ test('MOT-2.3-01 only the allowed cockpit motions are live, and they run while t
  const lamp=page.locator('[data-caution]');await expect(lamp).toHaveClass(/\bflash\b/);
  const states=[];states.push(await motions(page));
  await page.keyboard.down('Alt');states.push(await motions(page));await page.keyboard.up('Alt');
- for(const name of ['Subscription','Effort','Breakdown']){await page.getByRole('button',{name,exact:true}).click();states.push(await motions(page));}
+ for(const name of ['Subscription','Models','Breakdown']){await page.getByRole('button',{name,exact:true}).click();states.push(await motions(page));}
  for(const list of states)expect(disallowed(list)).toEqual([]);
  const names=new Set(states.flat().map(m=>m.animation));
  expect(names.has('cockpit-running-cursor')).toBe(true);

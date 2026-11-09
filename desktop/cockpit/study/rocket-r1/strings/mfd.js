@@ -5,7 +5,7 @@ register('mfd', {
   // page keys (top bezel) and the return line (spec 6, 2.5)
   pOverview: ['silk', '总览', 'Overview'],
   pSub: ["lcd", "订阅", "Subscription"],
-  pTune: ['silk', '档位', 'Effort'],
+  pTune: ['silk', '模型', 'Models'],
   pWhere: ['silk', '去向', 'Breakdown'],
   back: ['line', '‹ 返回 {p}', '‹ Back to {p}'],
   backAria: ['aria', '返回{p}（Esc）', 'Back to {p} (Esc)'],
@@ -89,7 +89,7 @@ register('mfd', {
   peakNow: ['lcd', '进行中', 'now'],
   noReading: ['lcd', '无读数', 'No reading'],
   quotaOnly: ['lcd', '仅额度', 'Quota only'],
-  // 档位: the recommendation chart (FrontierChart style)
+  // 模型: the recommendation chart (FrontierChart style)
   ability: ['silk', '能力', 'Ability'],
   cost: ['silk', '成本', 'Cost'],
   frontierAria: ['aria', '能力与成本：金线是前沿，★ 是推荐档位', 'Ability against cost: gold line = frontier, ★ = recommended effort'],

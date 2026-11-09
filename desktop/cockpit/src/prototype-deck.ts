@@ -26,7 +26,7 @@ import {comparison,compareKeys,compareView,type CompareArgs} from '../study/rock
 import '../study/rocket-r1/strings/mfd.js';
 type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
-const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,en:'Overview',zh:'总览'}),Object.freeze({module:plans,en:'Subscription',zh:'订阅'}),Object.freeze({module:tune,en:'Effort',zh:'档位'}),Object.freeze({module:where,en:'Breakdown',zh:'去向'})]);
+const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,en:'Overview',zh:'总览'}),Object.freeze({module:plans,en:'Subscription',zh:'订阅'}),Object.freeze({module:tune,en:'Models',zh:'模型'}),Object.freeze({module:where,en:'Breakdown',zh:'去向'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
 export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined)){
  const scale=root.querySelector<HTMLElement>('.fd-scale')!,channels=root.querySelector<HTMLElement>('.fd-chs')!,mfd=root.querySelector<HTMLElement>('.dk-mfd')!;

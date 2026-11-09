@@ -229,7 +229,7 @@ test('CKP-ENTRY-03 opens on usage with no comparison when publication is absent'
 
 test('CKP-MFD-02 four page keys select and light the current page in both languages',async({page})=>{
  const {send,receive}=await open(page);const buttons=page.locator('.mfd-pk .pk');await expect(buttons).toHaveCount(4);
- for(const labels of [['Overview','Subscription','Effort','Breakdown'],['总览','订阅','档位','去向']]){
+ for(const labels of [['Overview','Subscription','Models','Breakdown'],['总览','订阅','模型','去向']]){
   for(const [i,label] of labels.entries()){const key=buttons.nth(i);await expect(key).toHaveAttribute('aria-label',label);await key.click();await expect(key).toHaveAttribute('aria-pressed','true');await expect(key).toHaveClass(/\bon\b/);await expect(buttons.locator('.pk-led')).toHaveCount(4);const activeColor=await key.locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor);for(let j=0;j<4;j++)if(i!==j){await expect(buttons.nth(j)).toHaveAttribute('aria-pressed','false');expect(await buttons.nth(j).locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor)).not.toBe(activeColor);}}
   if(labels[0]==='Overview')expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
  }
@@ -358,7 +358,7 @@ test('CKP-STRIP-06 ALERT under a healthy selected subscription lists the other s
  // Esc returns; a second lamp press returns; a page key leaves the view for that page.
  await lamp.click();await expect(list).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('.pg-sub')).toBeVisible();
  await lamp.click();await expect(list).toBeVisible();await lamp.click();await expect(page.locator('.pg-sub')).toBeVisible();
- await lamp.click();await expect(list).toBeVisible();await page.getByRole('button',{name:'Effort',exact:true}).click();await expect(page.locator('.pg-tune')).toBeVisible();
+ await lamp.click();await expect(list).toBeVisible();await page.getByRole('button',{name:'Models',exact:true}).click();await expect(page.locator('.pg-tune')).toBeVisible();
 });
 test('CKP-STRIP-06 ALERT reveals a critical subscription on another engine page',async({page})=>{
  const {lamp}=await alertScope(page,7);await expect(lamp).toHaveClass(/\bred\b/);await expect(page.locator('.eng-keys')).not.toContainText('Synthetic 6');

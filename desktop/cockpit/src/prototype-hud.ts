@@ -26,10 +26,13 @@ export function publishedFleet(data:WireCockpitData|null|undefined,scope='all',n
  const published=data?.details?.publishedModels??[],developerOf=new Map(published.map(m=>[m.id,m.developerId]));
  const members=data?cockpitMembers(data):[],member=scope==='all'?null:members.find(m=>m.key===scope)??null;
  if(scope!=='all'&&!member)return [];
- const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt);return (!member||sessionMember(members,s)?.key===member.key)&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
+ // D86: "All" is the union of the user's own subscriptions, never the whole published field. A model counts when its
+ // developer is one of those subscriptions' developers, or a session bound to one of them used it this week.
+ const owned=member?[member]:members;
+ const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt),bound=sessionMember(members,s);return (member?bound?.key===member.key:bound!==null&&bound!==undefined)&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
  const latest=new Map<string,string|null>();for(const s of recent)if(!latest.has(s.model))latest.set(s.model,s.effort);
- const developer=member?toolDevelopers[member.row.id]:undefined;
- const candidates=published.flatMap(m=>{const f=fieldModel(m,shortLabel);return f&&(!member||developerOf.get(m.id)===developer||latest.has(m.id))?[f]:[];});
+ const developers=new Set(owned.flatMap(m=>toolDevelopers[m.row.id]?[toolDevelopers[m.row.id]!]:[]));
+ const candidates=published.flatMap(m=>{const f=fieldModel(m,shortLabel);return f&&(developers.has(developerOf.get(m.id)??'')||latest.has(m.id))?[f]:[];});
  const beaten=(m:FieldModel)=>candidates.some(n=>n.id!==m.id&&n.sel[2]>0&&m.sel[2]>0&&n.sel[1]>=m.sel[1]&&n.sel[2]<=m.sel[2]&&(n.sel[1]>m.sel[1]||n.sel[2]<m.sel[2]));
  const models=candidates.map((m):HudModel=>({...m,dominated:beaten(m),...(latest.has(m.id)?{latestEffort:latest.get(m.id)??null}:{})}));
  const byId=new Map(models.map(m=>[m.id,m]));
@@ -79,7 +82,7 @@ export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,co
  }
  host.append(list);
 }
-/** A row or point opens the model on 档位; hovering one tells the porthole which rocket to light. */
+/** A row or point opens the model on 模型; hovering one tells the porthole which rocket to light. */
 export function wireHud(host:HTMLElement,pick:(id:string)=>void):()=>void {
  const controller=new AbortController(),{signal}=controller,idOf=(e:Event)=>(e.target as Element).closest?.('[data-hud-model]')?.getAttribute('data-hud-model')??null;
  const hover=(name:string|null)=>host.dispatchEvent(new CustomEvent('hud-hover',{detail:name,bubbles:true})),nameOf=(e:Event)=>(e.target as Element).closest?.('[data-hud-name]')?.getAttribute('data-hud-name')??null;

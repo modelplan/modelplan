@@ -1,6 +1,6 @@
 import {websiteWords,modelUrl,methodologyUrl} from './public-helpers.js';
 import {secondaryLink} from './public-helpers.js';
-// 档位: the shared scope selection, including eligible older versions actually used in the last week.
+// 模型: the shared scope selection, including eligible older versions actually used in the last week.
 // The HUD opens this page as a view
 // (return rule). Pure view (spec 2.6).
 import {t} from '../i18n.js';
