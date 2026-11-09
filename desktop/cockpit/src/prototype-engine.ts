@@ -12,7 +12,8 @@ import {engineModel} from '../study/rocket-r1/engine-model.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-const palette:Readonly<Record<string,{colour:string;logo:string}>>={openai:{colour:'#6aa8ff',logo:'openai'},claude:{colour:'#ff9a6a',logo:'claude'},cursor:{colour:'#eef2f6',logo:'cursor'},copilot:{colour:'#c08cff',logo:'copilot'},kimi:{colour:'#ff8fcf',logo:'kimi'},glm:{colour:'#8f7dff',logo:'zai-white'},opencode:{colour:'#b5d65a',logo:'opencode'}};
+// Vendor marks are the bundled official-edition files under assets/brands/ (third-party marks, SOURCES.md).
+const palette:Readonly<Record<string,{colour:string;logo:string}>>={openai:{colour:'#6aa8ff',logo:'openai-white.svg'},claude:{colour:'#ff9a6a',logo:'claude-rounded.svg'},cursor:{colour:'#eef2f6',logo:'cursor.svg'},copilot:{colour:'#c08cff',logo:'copilot.svg'},kimi:{colour:'#ff8fcf',logo:'kimi-white.svg'},glm:{colour:'#8f7dff',logo:'zai-white.svg'},opencode:{colour:'#b5d65a',logo:'opencode.svg'}};
 const finite=(v:number|null)=>v!==null&&Number.isFinite(v)?v:null;
 const role=(w:WireWindow)=>w.role==='session'&&w.durationSeconds===18000?'5h':w.role==='weekly'&&w.durationSeconds===604800?'week':w.role==='daily'?'day':w.role==='monthly'?'month':'other';
 const general=(w:WireWindow)=>!w.modelScope&&w.poolKey==='main'&&(w.role==='session'?(w.limitKey==='main'||w.limitKey==='five_hour'):w.role==='weekly'?(w.limitKey==='main'||w.limitKey==='weekly'):false);
@@ -36,7 +37,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
   const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?'../../vendor-marks/'+brand.logo+'.svg':'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
+  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?brand.logo:'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
@@ -48,7 +49,8 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  let renderedNow=initialNow;
  const paint=(time?:number)=>{
   if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:'left',redAt:redBelow(),ack:null,lang:locale,now};
-  const model=engineModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now});
+  const model=engineModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));// Unknown vendors have no mark: drop the study's neutral placeholder before parsing so nothing is requested.
+  host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
   // Keep the selected source-window identity in memory, never in rendered HTML.
   for(const [index,column] of [...host.querySelectorAll<HTMLElement>('.eng-cols > .ec[data-col]')].entries()){const rendered=model.cols[index];for(const cell of column.querySelectorAll<HTMLElement>('.qcell[data-row]')){const identity=rendered?.cells?.[cell.dataset.row??'']?.focusIdentity;if(typeof identity==='string')focusIdentities.set(cell,identity);}}
   // Inline style attributes from the study HTML are blocked by the host CSP.
@@ -77,6 +79,17 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  };
  const choosePage=(element:Element)=>{const led=element.closest<HTMLElement>('.eng-led[data-page]');if(!led||!host.contains(led))return false;const requested=Number(led.dataset.page);if(Number.isInteger(requested)&&requested>=0&&requested<Math.ceil(members.length/6)){page=requested;paint();}return true;};
  host.onkeydown=e=>{if(e.isTrusted&&(e.key==='Enter'||e.key===' ')&&choosePage(e.target as Element))e.preventDefault();};
+ // Owner D76: the Reserve label's hint, in the MFD's floating LCD tip style (study mfd.css .mfd-tip), on hover or focus.
+ // Text only and never takes pointer events; the label also carries it as its accessible name.
+ const hint=document.createElement('div');hint.className='mfd-tip eng-hint';hint.setAttribute('role','tooltip');hint.hidden=true;
+ const hideHint=()=>{hint.hidden=true;hint.replaceChildren();hint.remove();};
+ const showHint=(target:EventTarget|null)=>{const label=target instanceof Element?target.closest<HTMLElement>('.lb-r[data-tip]'):null;if(!label||!host.contains(label)){hideHint();return;}
+  hint.replaceChildren(...(label.dataset.tip??'').split('\n').filter(Boolean).map((line,i)=>{const e=document.createElement('span');if(!i)e.className='h';e.textContent=line;return e;}));
+  (root.querySelector('#cockpit')??document.body).append(hint);hint.hidden=false;const r=label.getBoundingClientRect(),w=hint.offsetWidth,h=hint.offsetHeight;
+  // Above the label, so it never covers the reserve values beside it.
+  hint.style.left=Math.max(4,Math.min(window.innerWidth-w-4,r.left))+'px';hint.style.top=Math.max(4,r.top-h-4)+'px';};
+ host.addEventListener('pointerover',e=>showHint(e.target));host.addEventListener('pointerleave',hideHint);
+ host.addEventListener('focusin',e=>showHint(e.target));host.addEventListener('focusout',hideHint);
  host.onclick=e=>{if(!e.isTrusted)return;if(choosePage(e.target as Element))return;const b=(e.target as Element).closest<HTMLButtonElement>('button');if(!b||!host.contains(b))return;
   if(b.hasAttribute('data-add-subscription')){onAdd();return;}
   if(b.hasAttribute('data-all')){if(onSelect('all')){scope='';paint();}return;}

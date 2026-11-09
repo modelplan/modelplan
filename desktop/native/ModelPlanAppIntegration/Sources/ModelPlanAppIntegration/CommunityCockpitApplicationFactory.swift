@@ -23,10 +23,10 @@ import ModelPlanDock
 
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
-    public static let manifestPins = [
-        "community":"e6cc1ae6405ccac49907b7b5dfce7641b89c411fa3b20833837b79393d6cff78",
-        "official":"00949a9b64ff659474200e1c3cd865fefa981d157b59a4722856d40c0396234d",
-    ]
+    /// The manifest SHA-256 of each canonical cockpit edition. Never committed: whoever compiles the App first builds
+    /// the editions and runs check-bundle-pins.py, which writes CockpitBundlePins.generated.swift from those exact
+    /// bytes. Without that file the App has no pins and admits no cockpit page.
+    public static let manifestPins = CockpitBuildPins.manifest
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
@@ -75,6 +75,7 @@ import ModelPlanDock
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
                 coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
                 coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
+                coordinator.cautionMemory = FileCockpitCautionMemory(url: settingsStore.directory.appendingPathComponent("cockpit-cautions.json"))
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
@@ -104,6 +105,12 @@ import ModelPlanDock
         return application
     }
 }
+
+/// Build-time cockpit pins. The gitignored CockpitBundlePins.generated.swift declares `manifest` on
+/// CockpitBuildPins itself, which takes precedence over this empty default; without it nothing is admitted.
+protocol CockpitBuildPinSource {}
+extension CockpitBuildPinSource { static var manifest: [String: String] { [:] } }
+enum CockpitBuildPins: CockpitBuildPinSource {}
 
 @MainActor final class CockpitConsoleOwner {
     let bundle: URL
@@ -176,6 +183,9 @@ import ModelPlanDock
         else { throw CockpitBridgeError.unavailable }
         let verified=try verifiedBundle ?? Self.admit(bundle:bundle,pins:CommunityCockpitApplicationFactory.manifestPins)
         verifiedBundle=verified
+        return makePage(context:context,verified:verified)
+    }
+    func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
@@ -201,6 +211,25 @@ import ModelPlanDock
     func save(_ value: (key: String, day: String)?) {
         guard let value else { try? FileManager.default.removeItem(at: url); return }
         guard let data = try? JSONSerialization.data(withJSONObject: ["scope": value.key, "day": value.day], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+/// G3-56: the acknowledged caution identities in one small file beside the settings. Opaque ids only, no readings.
+@MainActor final class FileCockpitCautionMemory: CockpitCautionMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> [String] {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 16 * 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let ids = value["acked"] as? [String], CockpitCautionIdentities.valid(ids) else { return [] }
+        return ids
+    }
+    func save(_ ids: [String]) {
+        guard !ids.isEmpty else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["acked": ids], options: [.sortedKeys]) else { return }
         try? data.write(to: url, options: .atomic)
     }
 }
@@ -267,7 +296,7 @@ struct CockpitUnavailableNotice {
         case .openField:openField()
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()

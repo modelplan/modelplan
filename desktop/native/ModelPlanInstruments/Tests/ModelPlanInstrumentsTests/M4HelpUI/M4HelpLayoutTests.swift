@@ -112,4 +112,11 @@ final class M4HelpLayoutTests:XCTestCase {
         input.map.supplements=[.init(id:HelpMapRegion.window.rawValue,anchorID:HelpMapRegion.window.rawValue,text:"Duplicate")]
         XCTAssertEqual(HelpUILayout.make(input,measure:M4HelpFixtures.measure).unresolvedMapIDs,["invalidInput"])
     }
+    func testStraightSegmentCrossingIsStrictlyInsideTheRectangle() {
+        let r=CGRect(x:100,y:100,width:50,height:50)
+        XCTAssertTrue(HelpUIGeometry.segmentCrosses(.init(x:90,y:90),.init(x:160,y:160),rect:r))
+        XCTAssertFalse(HelpUIGeometry.segmentCrosses(.init(x:90,y:90),.init(x:160,y:90),rect:r))
+        XCTAssertFalse(HelpUIGeometry.segmentCrosses(.init(x:0,y:0),.init(x:90,y:99),rect:r))
+        XCTAssertFalse(HelpUIGeometry.segmentCrosses(.init(x:100,y:90),.init(x:100,y:160),rect:r),"along an edge is not through the inside")
+    }
 }
