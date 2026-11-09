@@ -1296,22 +1296,26 @@ func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, 
 	observeLive(st, codexHome, refs, quota.Report{ConsentStoreEpoch: fence.StoreEpoch, ConsentGeneration: fence.Generation}, now)
 }
 
+// observeLive records the live sessions of each tool whose local-history scope is allowed. The
+// scopes are independent: a profile that allowed only Codex local history still gets its live Codex
+// sessions (before, a missing Claude Code scope switched off every tool's live records).
 func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time) {
-	// Each harness's logs are read under its own grant: a Codex-only user still gets live Codex sessions (owner
-	// build 13), and Claude Code's logs stay unread without its grant. An empty home disables that root.
-	claudeAllowed, codexAllowed := consent.Allowed("claude", consent.Local), consent.Allowed("codex", consent.Local)
-	if speed.Off() || !claudeAllowed && !codexAllowed {
+	if speed.Off() {
 		return
 	}
-	claude := ""
-	if claudeAllowed {
-		home, _ := os.UserHomeDir()
-		if claude = os.Getenv("CLAUDE_CONFIG_DIR"); claude == "" {
-			claude = filepath.Join(home, ".claude")
-		}
+	home, _ := os.UserHomeDir()
+	claude := os.Getenv("CLAUDE_CONFIG_DIR")
+	if claude == "" {
+		claude = filepath.Join(home, ".claude")
 	}
-	if !codexAllowed {
+	if !consent.Allowed("claude", consent.Local) {
+		claude = ""
+	}
+	if !consent.Allowed("codex", consent.Local) {
 		codexHome = ""
+	}
+	if claude == "" && codexHome == "" {
+		return
 	}
 	reportWrite(report, func() error {
 		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, codexHome, now), projectLabels(), refs, now)

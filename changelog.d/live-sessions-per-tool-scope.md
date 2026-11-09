@@ -1,0 +1,1 @@
+Live sessions are recorded for each tool whose local-history permission is on. Before, a missing Claude Code permission stopped the live Codex sessions from being recorded, so the cockpit's running rows, the 7-day sessions and the bells stayed empty.
