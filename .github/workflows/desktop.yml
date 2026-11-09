@@ -1,4 +1,7 @@
 name: desktop
+# A dispatch with pr=<N> names the run after the PR (the runs API carries no inputs; the coordinator finds the run by
+# this title). Empty for every other run, so GitHub's default title stays.
+run-name: "${{ inputs.pr && format('desktop PR #{0} merged with main', inputs.pr) || '' }}"
 on:
   push:
     branches: [main]
@@ -32,6 +35,10 @@ on:
         type: choice
         options: [default, hosted, owner-mac]
         default: default
+      pr:
+        description: "PR number: build and test the PR merged with current main (refs/pull/<pr>/merge) instead of the dispatched ref (D112). The native legs run in the pinned trusted-mac.yml, which checks out the dispatched commit: dispatch from a branch at the merge commit to cover them too"
+        type: string
+        default: ""
 permissions:
   contents: read
 # A branch dispatch dedupes per branch (a newer dispatch cancels the older one); main, release and tag runs
@@ -41,6 +48,51 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release')) }}
 
 jobs:
+  # Dispatch with pr=<N> only (D112): resolve refs/pull/<N>/merge once, so every job below builds the same commit
+  # even if main moves during the run. The merge must contain the PR's current head. A closed, conflicting or
+  # unresolvable PR fails here, and the jobs that need this one do not run (they never fall back to the dispatched
+  # ref silently).
+  pr-ref:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.pr != '' && !inputs.mac_ci_probe }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.merge.outputs.sha }}
+      head: ${{ steps.merge.outputs.head }}
+    steps:
+      - id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ inputs.pr }}
+          DISPATCHED: ${{ github.sha }}
+        run: |
+          set -eu
+          case $PR in ''|*[!0-9]*) echo "::error::pr must be a PR number, got '$PR'"; exit 1;; esac
+          # GitHub computes the merge commit lazily: poll until mergeable is known.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            j=$(gh api "repos/$REPO/pulls/$PR")
+            [ "$(jq -r .mergeable <<<"$j")" != null ] && break
+            sleep 6
+          done
+          [ "$(jq -r .state <<<"$j")" = open ] || { echo "::error::PR #$PR is not open"; exit 1; }
+          [ "$(jq -r .mergeable <<<"$j")" = true ] || { echo "::error::PR #$PR does not merge cleanly with main (mergeable=$(jq -r .mergeable <<<"$j")): merge main into it first"; exit 1; }
+          head=$(jq -r .head.sha <<<"$j")
+          sha=$(git ls-remote "https://github.com/$REPO" "refs/pull/$PR/merge" | cut -f1)
+          [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no refs/pull/$PR/merge"; exit 1; }
+          gh api "repos/$REPO/commits/$sha" --jq '.parents[].sha' | grep -qx "$head" \
+            || { echo "::error::refs/pull/$PR/merge ($sha) does not contain the PR head $head yet; dispatch again"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "head=$head" >> "$GITHUB_OUTPUT"
+          { echo "PR #$PR head $head merged with main: $sha"
+            if [ "$DISPATCHED" != "$sha" ]; then
+              echo
+              echo "The native legs (trusted-mac.yml, pinned) test the dispatched commit $DISPATCHED, not this merge."
+            fi; } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$DISPATCHED" = "$sha" ] || echo "::warning::native legs test the dispatched commit $DISPATCHED; only the jobs in desktop.yml test the merge $sha"
+
   # Merge queue only: the queue is what tests "PR + latest main", because a PR no longer has to merge
   # main first. merge_group has no paths filter, so this job applies the pull_request list above: a
   # group that adds nothing under those paths, or whose tree is the PR head's tree (the head already
@@ -76,14 +128,16 @@ jobs:
           fi
 
   app:
-    needs: queue-scope
-    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    needs: [queue-scope, pr-ref]
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: desktop
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.pr && needs.pr-ref.outputs.sha || '' }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -101,8 +155,8 @@ jobs:
           grep -q '"edition": "community"' app/dist/build-edition.json
           cmp app/dist/app.css app/style.css
   shell:
-    needs: queue-scope
-    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    needs: [queue-scope, pr-ref]
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # The Rust shell on Linux (a supported Tauri target): format, unit tests, a debug build.
     runs-on: ubuntu-latest
     defaults:
@@ -110,6 +164,8 @@ jobs:
         working-directory: desktop
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.pr && needs.pr-ref.outputs.sha || '' }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -128,20 +184,22 @@ jobs:
       - working-directory: desktop/src-tauri
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
   native-partition:
-    needs: queue-scope
-    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    needs: [queue-scope, pr-ref]
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # Static rules for the GUI/headless split of the native XCTest suite, on Linux, before any Mac
     # job: a class may run on the ordinary Mac runner only if its source uses no window server.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.pr && needs.pr-ref.outputs.sha || '' }}
       - run: python3 -m unittest discover -s desktop/native/tools/ci -p 'test_*.py' -v
       - run: python3 desktop/native/tools/ci/native_test_partition.py check
 
   cockpit-pins:
-    needs: queue-scope
-    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    needs: [queue-scope, pr-ref]
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # Cockpit admission pins are never committed (D69): they are generated from the canonical build wherever the
     # App is compiled (package-neutral.sh, U11 native). On every PR head, main push and merge-queue group, build
     # both editions twice from this tree, require byte-identical output, check the reserved-visuals register, and
@@ -150,6 +208,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.pr && needs.pr-ref.outputs.sha || '' }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -173,8 +233,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-    needs: queue-scope
-    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    needs: [queue-scope, pr-ref]
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -185,8 +245,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # Build the exact PR head, not the synthetic merge commit: the artifact name, BUILD.txt and
-          # the bundle's ModelPlanPublicSource must all name the tree that was actually built.
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # the bundle's ModelPlanPublicSource must all name the tree that was actually built. A pr=<N>
+          # dispatch builds the resolved merge commit and names that instead (D112).
+          ref: ${{ inputs.pr && needs.pr-ref.outputs.sha || github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         if: ${{ inputs.owner_test }}
         with:
@@ -230,7 +291,7 @@ jobs:
         if: always()
         env:
           # The PR head, not the synthetic merge commit a pull_request run checks out.
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_SHA: ${{ inputs.pr && needs.pr-ref.outputs.sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           app="$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app"
           [ -d "$app" ] || { echo "no packaged native app"; exit 0; }
@@ -250,7 +311,7 @@ jobs:
         if: always()
         with:
           # preflight.py: native-app-test-<sha> is the owner test flavour (cockpit entry open, PF-08).
-          name: native-app-${{ inputs.owner_test && 'test' || 'unverified' }}-${{ github.event.pull_request.head.sha || github.sha }}
+          name: native-app-${{ inputs.owner_test && 'test' || 'unverified' }}-${{ inputs.pr && needs.pr-ref.outputs.sha || github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/native-app/
           if-no-files-found: warn
           retention-days: 3

@@ -686,6 +686,25 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
   for (const p of prPathList) assert.match(p.replace(/\*\*$/, "x"), scope, `queue-scope misses ${p}`);
   assert.doesNotMatch("docs/mac-ci.md", scope);
   assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: queue-scope/);
+  // D112: every other queue workflow is Linux-only and decides with its own pull_request path list.
+  for (const path of R.QUEUE_WORKFLOWS.filter((p) => !/\/(ci|desktop)\.yml$/.test(p))) {
+    const text = readFileSync(join(root, path), "utf8");
+    assert.doesNotMatch(text, /macos|trusted-mac\.yml/i, `${path}: no Mac time in the merge queue`);
+    const block = /^  pull_request:\n    paths:\n((?:      - .*\n)+)/m.exec(text);
+    assert.ok(block, `${path}: pull_request paths list`);
+    const list = block[1].trim().split("\n").map((l) => l.replace(/^\s*- /, "").replace(/^['"]|['"]$/g, ""));
+    const re = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(text)[1]);
+    for (const p of list) assert.match(p.replace(/\*\*$/, "x"), re, `${path}: queue-scope misses ${p}`);
+    assert.doesNotMatch("docs/unrelated.md", re, `${path}: queue-scope is too wide`);
+    const jobs = text.slice(text.indexOf("\njobs:\n"));
+    const names = [...jobs.matchAll(/^  ([a-z0-9-]+):\n/gm)].map((m) => m[1]);
+    assert.ok(names.includes("queue-scope") && names.length >= 2, `${path}: queue-scope plus the checked job(s)`);
+    for (const job of names.filter((n) => n !== "queue-scope")) {
+      const body = new RegExp(`^  ${job}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(jobs)[1];
+      assert.match(body, /needs: queue-scope/, `${path}: ${job} must wait for queue-scope`);
+      assert.match(body, /needs\.queue-scope\.outputs\.run == 'true'/, `${path}: ${job} must follow queue-scope`);
+    }
+  }
   const probe = readFileSync(join(root, ".github/workflows/merge-gates-probe.yml"), "utf8");
   assert.match(probe, /pull_request:\s*\n\s*types:\s*\[[^\]]*\bedited\b/, "PR title/body edits must re-evaluate evidence");
   const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");

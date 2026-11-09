@@ -21,7 +21,14 @@ export const SELF_WORKFLOWS = Object.freeze([".github/workflows/merge-gates.yml"
 export const ANCHOR_WORKFLOW = ".github/workflows/ci.yml";
 // Workflows that must pass on the merge-group commit itself (they have a merge_group trigger). desktop.yml
 // carries the Mac build and native-headless checks; its queue-scope job skips them for a group outside its paths.
-export const QUEUE_WORKFLOWS = Object.freeze([".github/workflows/ci.yml", ".github/workflows/desktop.yml"]);
+// The Linux-only path-filtered workflows (D112, 11-09: #801 + #764 each passed alone and broke main's U11 cockpit
+// web together) run in the queue too; each has a queue-scope job with its pull_request path list, so it always
+// produces a run (skipped jobs count as green) and no group can finish before it has started.
+export const QUEUE_WORKFLOWS = Object.freeze([
+  ".github/workflows/ci.yml", ".github/workflows/desktop.yml",
+  ".github/workflows/u11-cockpit.yml", ".github/workflows/official-visuals.yml", ".github/workflows/u11a-aggregate.yml",
+  ".github/workflows/u14-harness.yml", ".github/workflows/transport-fuzz.yml",
+]);
 const SHA = /^[0-9a-f]{40}$/;
 
 export const PENDING = "pending";

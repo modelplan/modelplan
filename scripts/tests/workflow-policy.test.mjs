@@ -279,3 +279,23 @@ test("D94: non-GUI jobs refuse GUI runners unless gui-2 is lent; the V1 host is 
   assert.ok(workflowProblems("on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    env:\n      X: ${{ vars.MAC_GUI_LEND }}\n", ".github/workflows/other.yml").includes("GUI lending switch outside trusted-mac.yml"));
   assert.deepEqual(workflowProblems(reusable, ".github/workflows/trusted-mac.yml"), []);
 });
+
+test("desktop.yml pr=<N> dispatch builds refs/pull/<N>/merge in every job it owns (D112)", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  assert.match(text, /^      pr:\n        description: .*\n        type: string\n        default: ""$/m, "workflow_dispatch input pr");
+  assert.match(text, /^run-name: "\$\{\{ inputs\.pr && format\('desktop PR #\{0\} merged with main', inputs\.pr\) \|\| '' \}\}"$/m,
+    "the coordinator finds a pr dispatch by its title; other runs keep GitHub's default title");
+  const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
+  const resolver = job("pr-ref");
+  assert.match(resolver, /if: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.pr != '' /);
+  assert.match(resolver, /refs\/pull\/\$PR\/merge/);
+  assert.match(resolver, /grep -qx "\$head"/, "the merge must contain the PR's current head");
+  for (const name of ["app", "shell", "native-partition", "cockpit-pins", "app-smoke"]) {
+    const body = job(name);
+    assert.match(body, /needs: \[queue-scope, pr-ref\]/, `${name} needs pr-ref`);
+    assert.match(body, /if: \$\{\{ !cancelled\(\) && \(!inputs\.pr \|\| needs\.pr-ref\.result == 'success'\) && /, `${name} never falls back to the dispatched ref`);
+    assert.match(body, /- uses: actions\/checkout@v4\n        with:\n(?:          .*\n)*?          ref: \$\{\{ inputs\.pr && needs\.pr-ref\.outputs\.sha \|\| /, `${name} checks out the merge`);
+  }
+  // trusted-mac.yml is SHA-pinned and takes no ref: its callers stay unchanged and test the dispatched commit.
+  for (const name of ["native", "native-hosted", "native-owner-gui", "native-headless"]) assert.doesNotMatch(job(name), /pr-ref|inputs\.pr/, name);
+});
