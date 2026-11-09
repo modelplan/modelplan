@@ -1750,6 +1750,28 @@
       ]
     },
     {
+      "file": "WireReaderKeyParams.json",
+      "type": "WireReaderKeyParams",
+      "optional": [],
+      "required": [
+        "provider",
+        "region",
+        "key"
+      ]
+    },
+    {
+      "file": "WireReaderKeyResult.json",
+      "type": "WireReaderKeyResult",
+      "optional": [],
+      "required": [
+        "schemaVersion",
+        "provider",
+        "region",
+        "present",
+        "outcome"
+      ]
+    },
+    {
       "file": "WireRefreshDecision.json",
       "type": "WireRefreshDecision",
       "optional": [],

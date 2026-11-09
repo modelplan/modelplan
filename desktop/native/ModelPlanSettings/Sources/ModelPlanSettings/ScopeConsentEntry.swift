@@ -12,6 +12,8 @@ import ModelPlanWire
     private let buildSigning:ScopeConsentBuildSigning
     private weak var firstRunView:SettingsScopeConsentView?
     public enum PresentationError:Error { case mutationInProgress }
+    /// D90: the engine seam for the optional manual key. Setting it shows the key area in Settings.
+    public var readerKeys: ReaderKeyBackend? { didSet { view.readerKeys = readerKeys } }
 
     public init(client: any EngineClient, ready: @escaping @MainActor () -> Bool,
                 makeGrant: (@MainActor (ScopeConsentIntent) throws -> WireConsentGrantParams)? = nil,

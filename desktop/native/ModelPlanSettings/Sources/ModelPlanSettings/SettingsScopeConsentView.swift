@@ -28,6 +28,11 @@ import ModelPlanWire
     private var observer: UUID?
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
+    private var keySection: ReaderKeySection?
+    /// D90: the optional manual key area. Set by the app when the engine supports it.
+    public var readerKeys: ReaderKeyBackend? {
+        didSet { if keySection != nil { keySection?.dismiss(); keySection = nil }; render() }
+    }
     public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
                 buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false) {
         self.controller = controller; self.language = language;self.buildSigning=buildSigning; self.firstRun = firstRun
@@ -39,7 +44,7 @@ import ModelPlanWire
     /// Follow the shared Settings editor language without changing any draft.
     public func apply(language: SettingsLanguage) {
         guard self.language != language else { return }
-        self.language = language; render()
+        self.language = language; keySection?.apply(language: language); render()
     }
     /// Retire this presentation before detaching it from the accepted-event sink.
     public func retirePresentation() {
@@ -48,6 +53,7 @@ import ModelPlanWire
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
         }
         buttons = []
+        keySection?.dismiss()
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
@@ -196,6 +202,13 @@ import ModelPlanWire
                 case .unknown: label(.init("The plugin result is not recognized. Check the target tool.", "无法识别插件结果，请在目标工具中检查。"))
                 }
             }
+        }
+        if !firstRun, let backend = readerKeys {
+            gap()
+            let section = keySection ?? ReaderKeySection(backend: backend, language: language)
+            keySection = section
+            addArrangedSubview(section)
+            section.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
         }
         gap()
         guard let facts = controller.facts else {

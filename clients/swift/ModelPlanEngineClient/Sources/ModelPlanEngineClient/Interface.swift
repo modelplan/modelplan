@@ -18,7 +18,12 @@ public enum EngineInvalidationReason: Sendable, Equatable {
 }
 
 public enum EngineFeature: Sendable, Equatable {
-    case rows, consent, history, cockpit, publication, pluginInstall, diagnostics
+    case rows, consent, history, cockpit, publication, pluginInstall, diagnostics, readerKey
+}
+
+/// D90: the three manual-key methods. The key travels only in the request params.
+public enum EngineReaderKeyMethod: String, Sendable, Equatable {
+    case set = "readerkey/set", test = "readerkey/test", remove = "readerkey/remove", status = "readerkey/status"
 }
 
 public enum EngineRequestDisposition: Sendable, Equatable {
@@ -51,6 +56,7 @@ public enum EngineResponse: Sendable {
     case pluginInstall(EngineReply<WirePluginInstallResult>)
     case publication(EngineReply<WirePublicationResult>)
     case diagnostics(EngineReply<WireDiagnostics>)
+    case readerKey(EngineReply<WireReaderKeyResult>)
 }
 
 public enum EngineClientEvent: Sendable {
@@ -121,9 +127,16 @@ public protocol EngineClient: Actor {
                        timeout: Duration?) async throws -> EngineRequestCompletion
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion
+    func readerKey(_ method: EngineReaderKeyMethod, _ params: WireReaderKeyParams,
+                   timeout: Duration?) async throws -> EngineRequestCompletion
 }
 
 extension EngineClient {
+    /// A client without the manual-key methods reports them unsupported.
+    public func readerKey(_ method: EngineReaderKeyMethod, _ params: WireReaderKeyParams,
+                          timeout: Duration?) async throws -> EngineRequestCompletion {
+        throw EngineClientError.unsupportedCapability
+    }
     public func supportsCapability(_ capability: String) async -> Bool { false }
     public func refresh(_ request: WireRefreshRequestParams, timeout: Duration?,
                         prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion {

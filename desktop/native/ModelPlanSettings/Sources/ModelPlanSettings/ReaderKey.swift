@@ -79,11 +79,14 @@ public struct ReaderKeyReply: Equatable, Sendable {
 
 /// The engine seam: `readerkey/set`, `readerkey/test` and `readerkey/remove`. `key` is nil to test
 /// the key already stored.
-public protocol ReaderKeyBackend: Sendable {
+@MainActor public protocol ReaderKeyBackend: AnyObject {
     func status(_ provider: ReaderKeyProvider) async -> ReaderKeyStatus
     func set(_ provider: ReaderKeyProvider, key: String, region: ReaderKeyRegion?) async -> ReaderKeyReply
     func test(_ provider: ReaderKeyProvider, key: String?, region: ReaderKeyRegion?) async -> ReaderKeyReply
     func remove(_ provider: ReaderKeyProvider) async -> ReaderKeyReply
+    /// Saving a key is the user's explicit choice to have this provider read: grant its consent
+    /// through the existing grant path. Returns false when the grant could not be requested.
+    func allowReading(_ provider: ReaderKeyProvider) async -> Bool
 }
 
 /// State of one key entry. The typed text lives only here, and is cleared after a successful save,
@@ -92,20 +95,22 @@ public protocol ReaderKeyBackend: Sendable {
     public let provider: ReaderKeyProvider
     public private(set) var typed = ""
     public var region: ReaderKeyRegion = .global {
-        didSet { if region != oldValue { message = nil; onChange?() } }
+        didSet { if region != oldValue { verifiedKey = nil; message = nil; onChange?() } }
     }
     public private(set) var status = ReaderKeyStatus(present: false, region: nil)
     public private(set) var message: SettingsText?
     public private(set) var isBusy = false
     public var onChange: (() -> Void)?
     private let backend: ReaderKeyBackend
+    /// The typed text that last passed a Test.
+    private var verifiedKey: String?
 
     public init(provider: ReaderKeyProvider, backend: ReaderKeyBackend) { self.provider = provider; self.backend = backend }
 
     private var trimmed: String { typed.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var effectiveRegion: ReaderKeyRegion? { provider.hasRegion ? region : nil }
 
-    public func setTyped(_ text: String) { typed = text; message = nil; onChange?() }
+    public func setTyped(_ text: String) { typed = text; message = nil; if text.trimmingCharacters(in: .whitespacesAndNewlines) != verifiedKey { verifiedKey = nil }; onChange?() }
     /// Test is available with a typed key, or with a saved one when the field is empty.
     public var canTest: Bool { !isBusy && (!trimmed.isEmpty || status.present) }
     public var canSave: Bool { !isBusy && !trimmed.isEmpty }
@@ -122,15 +127,28 @@ public protocol ReaderKeyBackend: Sendable {
         let key: String? = trimmed.isEmpty ? nil : trimmed
         begin()
         let reply = await backend.test(provider, key: key, region: effectiveRegion)
+        if reply.outcome == .ok, let key { verifiedKey = key }
         finish(reply)
     }
+    /// Save tests the key first (unless this exact text just passed a Test), saves only a key that
+    /// works, then grants the provider's consent so it starts reading without a second step.
     public func save() async {
         guard canSave else { return }
         let key = trimmed
         begin()
+        if verifiedKey != key {
+            let check = await backend.test(provider, key: key, region: effectiveRegion)
+            guard check.outcome == .ok else { finish(check); return }
+            verifiedKey = key
+        }
         let reply = await backend.set(provider, key: key, region: effectiveRegion)
-        if reply.outcome == .saved { typed = "" }
-        finish(reply)
+        guard reply.outcome == .saved else { finish(reply); return }
+        typed = ""; verifiedKey = nil
+        let allowed = await backend.allowReading(provider)
+        isBusy = false; status = reply.status
+        message = allowed ? ReaderKeyOutcome.saved.message
+            : .init("Key saved, but ModelPlan could not turn reading on. Allow it under Permissions.", "密钥已保存，但未能开启读取。请在“权限”里允许。")
+        onChange?()
     }
     public func remove() async {
         guard canRemove else { return }
@@ -140,7 +158,7 @@ public protocol ReaderKeyBackend: Sendable {
         finish(reply)
     }
     /// Drop the typed key, for example when Settings closes.
-    public func dismiss() { typed = ""; message = nil; onChange?() }
+    public func dismiss() { typed = ""; verifiedKey = nil; message = nil; onChange?() }
 
     private func begin() { isBusy = true; message = nil; onChange?() }
     private func finish(_ reply: ReaderKeyReply) {

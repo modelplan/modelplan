@@ -80,3 +80,38 @@ import AppKit
         result.isHidden = result.stringValue.isEmpty
     }
 }
+
+/// The whole optional "add a key" area: a heading, one sentence, and one entry per key-only provider.
+/// Created once per host and reused, so re-rendering the host never clears what is being typed.
+@MainActor final class ReaderKeySection: NSStackView {
+    private let entries: [ReaderKeyEntryView]
+    private let heading = NSTextField(wrappingLabelWithString: "")
+    private let note = NSTextField(wrappingLabelWithString: "")
+    private var language: SettingsLanguage
+
+    init(backend: ReaderKeyBackend, language: SettingsLanguage) {
+        self.language = language
+        entries = ReaderKeyProvider.allCases.map { ReaderKeyEntryView(entry: .init(provider: $0, backend: backend), language: language) }
+        super.init(frame: .zero)
+        orientation = .vertical; alignment = .leading; spacing = 8
+        setAccessibilityIdentifier("readerkey.section")
+        heading.font = .systemFont(ofSize: 13, weight: .semibold)
+        note.font = .systemFont(ofSize: 12); note.textColor = .secondaryLabelColor
+        addArrangedSubview(heading); addArrangedSubview(note)
+        for entry in entries { addArrangedSubview(entry) }
+        refresh()
+        for entry in entries { let model = entry.entry; Task { @MainActor in await model.load() } }
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
+
+    func apply(language: SettingsLanguage) {
+        self.language = language; for entry in entries { entry.apply(language: language) }; refresh()
+    }
+    func dismiss() { for entry in entries { entry.entry.dismiss() } }
+    private func refresh() {
+        heading.stringValue = language == .english ? "Add a key (optional)" : "添加密钥（可选）"
+        note.stringValue = language == .english
+            ? "Sign-ins found on this Mac are used first. Enter a key only when none is found."
+            : "会先使用本机上已找到的登录；没有可用登录时再输入密钥。"
+    }
+}

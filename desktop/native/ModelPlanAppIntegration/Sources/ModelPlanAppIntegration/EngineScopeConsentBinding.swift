@@ -9,6 +9,7 @@ import ModelPlanWire
 @MainActor final class EngineScopeConsentBinding: EngineStoreEventSink {
     let entry: ScopeConsentEntry
     private let store: EngineStore
+    private let commands: EngineClientScopeConsentCommands
     init(composition: EngineDockMenuComposition) {
         let store = composition.store
         self.store = store
@@ -16,11 +17,24 @@ import ModelPlanWire
             guard let snapshot = store?.snapshot else { return (nil, nil) }
             return (snapshot.delivery, snapshot.acceptedConsent)
         }
+        commands = EngineClientScopeConsentCommands(client: composition.client, ready: { [weak store] in
+            guard let snapshot = store?.snapshot, case .ready = snapshot.connection else { return false }
+            return true
+        }, makeGrant: { intent in try factory.make(intent) })
         entry = ScopeConsentEntry(client: composition.client, ready: { [weak store] in
             guard let snapshot = store?.snapshot, case .ready = snapshot.connection else { return false }
             return true
         }, makeGrant: { intent in try factory.make(intent) })
         store.attach(self)
+    }
+    /// D90: saving a key is an explicit user action for that provider, so its reading scope is
+    /// allowed through the same grant path as the Permissions list. Nothing else is touched.
+    func allow(scope: String) async -> Bool {
+        guard commands.canMutate else { return false }
+        do {
+            _ = try await commands.grant(.init(mutation: .allow(scopes: [scope], keychain: [])), userAction: .init(id: UUID()))
+            return true
+        } catch { return false }
     }
     func clearPrivateViews(_ invalidation: EngineInvalidation) {
         entry.clearPrivateViews()

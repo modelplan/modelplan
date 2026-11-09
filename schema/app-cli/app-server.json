@@ -3306,6 +3306,117 @@
       ],
       "type": "object"
     },
+    "ReaderKeyParams": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "zai",
+            "opencodego"
+          ],
+          "type": "string"
+        },
+        "region": {
+          "enum": [
+            "none",
+            "global",
+            "china"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "region",
+        "key"
+      ],
+      "type": "object"
+    },
+    "ReaderKeyResult": {
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "enum": [
+            "saved",
+            "removed",
+            "ok",
+            "key_refused",
+            "plan_lapsed",
+            "no_key",
+            "unreachable",
+            "failed",
+            "not_accepted"
+          ],
+          "type": "string"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "provider": {
+          "enum": [
+            "zai",
+            "opencodego"
+          ],
+          "type": "string"
+        },
+        "region": {
+          "enum": [
+            "none",
+            "global",
+            "china"
+          ],
+          "type": "string"
+        },
+        "schemaVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "provider",
+        "region",
+        "present",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "ReaderKeyResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/ReaderKeyResult"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
     "Reason": {
       "additionalProperties": false,
       "properties": {
@@ -3813,6 +3924,102 @@
               "const": "2.0"
             },
             "method": {
+              "const": "readerkey/remove"
+            },
+            "params": {
+              "$ref": "#/$defs/ReaderKeyParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "readerkey/set"
+            },
+            "params": {
+              "$ref": "#/$defs/ReaderKeyParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "readerkey/status"
+            },
+            "params": {
+              "$ref": "#/$defs/ReaderKeyParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "readerkey/test"
+            },
+            "params": {
+              "$ref": "#/$defs/ReaderKeyParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
               "const": "refresh/request"
             },
             "params": {
@@ -4165,6 +4372,9 @@
                 },
                 {
                   "$ref": "#/$defs/MemberRefreshResultEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/ReaderKeyResultEnvelope"
                 },
                 {
                   "$ref": "#/$defs/RefreshResultEnvelope"

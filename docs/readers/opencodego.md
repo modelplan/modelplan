@@ -12,14 +12,15 @@
 The usage object’s required rolling five-hour meter and supported weekly/monthly meters: supplied percentages or used/limit counters and relative/absolute reset fields. Unknown optional monthly values are omitted; no prepaid balance, spend, request allowance or total is inferred.
 
 - [CodexBar@ee890b5f](https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/Providers/OpenCodeGo/OpenCodeGoUsageFetcher.swift): Key-auth usage API plus optional console/browser/billing enrichment. The existing ModelPlan port selects the API usage subset, not the larger source waterfall.
-- [Pulse@78eddaaf](https://github.com/qunqin24/Pulse/blob/78eddaaf9f19bc17c5a5446aee8d98724961b8f9/Docs/providers/opencode-go.md): Key-auth usage and optional console-cookie workspace/history routes. ModelPlan does not import OpenCode’s auth store or browser session and does not fetch request logs.
+- [Pulse@78eddaaf](https://github.com/qunqin24/Pulse/blob/78eddaaf9f19bc17c5a5446aee8d98724961b8f9/Docs/providers/opencode-go.md): Key-auth usage and optional console-cookie workspace/history routes. ModelPlan (owner decision D90, 2026-11-09) reads OpenCode’s own saved login read-only as the third key source, but still no browser session, and does not fetch request logs.
 
 ## Candidate paths
 
 | Path | Carrier | Auth | Endpoint status | Side effects | Red-line check |
 | --- | --- | --- | --- | --- | --- |
-| Explicit ModelPlan key | H | K | Undocumented compatibility usage GET | One request | Chosen |
-| Borrow OpenCode auth store | L → H | K / other saved auth | Different source capability | Reads another tool’s credential store | Not selected |
+| Key you enter in the app (manual key) | H | K | Undocumented compatibility usage GET | One request | Chosen, first source (D90) |
+| Explicit ModelPlan key (OPENCODE_API_KEY or the selected variable) | H | K | Same GET | One request | Chosen, second source |
+| OpenCode’s own saved login (v2 SQLite `credential` table, else `auth.json` `opencode-go`) | L → H | K / OAuth access token | Same GET | Reads one saved credential, read-only, never written or refreshed | Chosen, third source (D90 reverses the earlier “Not selected”) |
 | Console session/billing/history | S → H | C | Undocumented console paths | Browser/session and multi-request capability | Excluded |
 | Local OpenCode history | S | none | Local | Token history only | Separate capability; not account quota |
 
@@ -47,9 +48,9 @@ All listed URLs use HTTPS. GET bodies are empty. URL queries are forbidden. Head
 
 ### Authentication source and refresh
 
-Only OPENCODE_API_KEY or the ModelPlan-selected environment variable, after explicit key-source consent. No OpenCode auth.json, browser cookie, device flow, workspace-header search or another provider’s key is read.
+In order: (1) the key the user entered in Settings, kept in a 0600 file in the app support directory and sent only to opencode.ai; (2) OPENCODE_API_KEY or the ModelPlan-selected environment variable; (3) OpenCode’s own saved login, read-only: the CLI’s SQLite database (honouring XDG_DATA_HOME and OPENCODE_DB; the active `opencode-go` row, else `opencode`; two active rows for one integration are refused; an OAuth access token only while unexpired), else the `opencode-go` entry of `auth.json`. The existing OpenCode Go key consent scope covers all three; saving a key in the app also grants it. No browser cookie, device flow, workspace-header search or another provider’s key is read. The key goes only to the compiled opencode.ai host and is never logged, cached or shown.
 
-Refresh behavior: None. The key is not renewed or persisted, no browser sign-in is started and no inference/billing/history request is used to test it.
+Refresh behavior: None. A key from the environment or OpenCode’s login is not renewed or persisted by ModelPlan (only a key the user enters is stored, as above), no browser sign-in is started and no inference/billing/history request is used to test it.
 
 ### Budget and stop rules
 

@@ -219,3 +219,35 @@ const (
 	ForecastCycleAverage ForecastBasis = "cycle-average"
 	ForecastNoBasis      ForecastBasis = "none"
 )
+
+// ReaderKeyProvider names a provider that takes a user-entered key (D90).
+type ReaderKeyProvider string
+
+const (
+	ReaderKeyZai        ReaderKeyProvider = "zai"
+	ReaderKeyOpenCodeGo ReaderKeyProvider = "opencodego"
+)
+
+// ReaderKeyRegion is the site the key belongs to. "none" is for providers without a choice.
+type ReaderKeyRegion string
+
+const (
+	ReaderKeyRegionNone   ReaderKeyRegion = "none"
+	ReaderKeyRegionGlobal ReaderKeyRegion = "global"
+	ReaderKeyRegionChina  ReaderKeyRegion = "china"
+)
+
+// ReaderKeyOutcome is the one fixed word a readerkey/* call answers with.
+type ReaderKeyOutcome string
+
+const (
+	ReaderKeySaved       ReaderKeyOutcome = "saved"
+	ReaderKeyRemoved     ReaderKeyOutcome = "removed"
+	ReaderKeyOK          ReaderKeyOutcome = "ok"
+	ReaderKeyRefused     ReaderKeyOutcome = "key_refused"
+	ReaderKeyPlanLapsed  ReaderKeyOutcome = "plan_lapsed"
+	ReaderKeyNoKey       ReaderKeyOutcome = "no_key"
+	ReaderKeyUnreachable ReaderKeyOutcome = "unreachable"
+	ReaderKeyFailed      ReaderKeyOutcome = "failed"
+	ReaderKeyNotAccepted ReaderKeyOutcome = "not_accepted"
+)

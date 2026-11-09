@@ -6,11 +6,13 @@ import XCTest
 /// Synthetic keys only.
 private let fakeKey = "fake-test-key-0001"
 
-private actor FakeKeyBackend: ReaderKeyBackend {
+@MainActor private final class FakeKeyBackend: ReaderKeyBackend {
     struct Call: Equatable { let verb: String; let key: String?; let region: ReaderKeyRegion? }
     private(set) var calls: [Call] = []
+    private(set) var allowed: [ReaderKeyProvider] = []
     private var stored: ReaderKeyStatus
     var testOutcome: ReaderKeyOutcome = .ok
+    var allowResult = true
     init(stored: ReaderKeyStatus = .init(present: false, region: nil)) { self.stored = stored }
     func setTestOutcome(_ outcome: ReaderKeyOutcome) { testOutcome = outcome }
     func status(_ provider: ReaderKeyProvider) async -> ReaderKeyStatus { stored }
@@ -25,6 +27,7 @@ private actor FakeKeyBackend: ReaderKeyBackend {
         calls.append(.init(verb: "remove", key: nil, region: nil)); stored = .init(present: false, region: nil)
         return .init(outcome: .removed, status: stored)
     }
+    func allowReading(_ provider: ReaderKeyProvider) async -> Bool { allowed.append(provider); return allowResult }
 }
 
 @MainActor final class ReaderKeyTests: XCTestCase {
@@ -68,8 +71,9 @@ private actor FakeKeyBackend: ReaderKeyBackend {
         view.entry.region = .china
         type(view, "  " + fakeKey + "\n")
         await view.entry.save()
-        let calls = await backend.calls
-        XCTAssertEqual(calls, [.init(verb: "set", key: fakeKey, region: .china)])
+        let calls = backend.calls
+        XCTAssertEqual(calls, [.init(verb: "test", key: fakeKey, region: .china), .init(verb: "set", key: fakeKey, region: .china)], "Save tests the key first")
+        XCTAssertEqual(backend.allowed, [.zai], "a saved key turns that provider on")
         XCTAssertEqual(find(view, "readerkey.zai.field", as: NSSecureTextField.self)?.stringValue, "", "the typed key must not stay on screen")
         XCTAssertEqual(view.entry.typed, "")
         XCTAssertTrue(button(view, "remove").isEnabled)
@@ -80,18 +84,37 @@ private actor FakeKeyBackend: ReaderKeyBackend {
         let view = made(.zai, backend)
         await view.entry.load()
         XCTAssertTrue(button(view, "test").isEnabled, "a saved key can be tested with an empty field")
-        await backend.setTestOutcome(.keyRefused)
+        backend.setTestOutcome(.keyRefused)
         await view.entry.test()
         let refused = find(view, "readerkey.zai.result", as: NSTextField.self)?.stringValue
-        await backend.setTestOutcome(.planLapsed)
+        backend.setTestOutcome(.planLapsed)
         type(view, fakeKey)
         await view.entry.test()
         let lapsed = find(view, "readerkey.zai.result", as: NSTextField.self)?.stringValue
         XCTAssertNotEqual(refused, lapsed)
         XCTAssertEqual(refused, ReaderKeyOutcome.keyRefused.message.english)
         XCTAssertEqual(lapsed, ReaderKeyOutcome.planLapsed.message.english)
-        let calls = await backend.calls
+        let calls = backend.calls
         XCTAssertEqual(calls.map(\.key), [nil, fakeKey])
+    }
+    func testSaveAfterAnOkTestDoesNotTestAgainAndABadKeyIsNeverSaved() async {
+        let backend = FakeKeyBackend()
+        let view = made(.zai, backend)
+        type(view, fakeKey); await view.entry.test(); await view.entry.save()
+        XCTAssertEqual(backend.calls.map(\.verb), ["test", "set"])
+        let bad = FakeKeyBackend(); bad.setTestOutcome(.keyRefused)
+        let other = made(.zai, bad)
+        type(other, fakeKey); await other.entry.save()
+        XCTAssertEqual(bad.calls.map(\.verb), ["test"], "a refused key is not saved")
+        XCTAssertTrue(bad.allowed.isEmpty)
+        XCTAssertEqual(find(other, "readerkey.zai.result", as: NSTextField.self)?.stringValue, ReaderKeyOutcome.keyRefused.message.english)
+    }
+    func testFailedConsentGrantIsReportedNotHidden() async {
+        let backend = FakeKeyBackend(); backend.allowResult = false
+        let view = made(.opencodego, backend)
+        type(view, fakeKey); await view.entry.save()
+        XCTAssertTrue(find(view, "readerkey.opencodego.result", as: NSTextField.self)!.stringValue.contains("Permissions"))
+        XCTAssertTrue(backend.calls.map(\.verb).contains("set"))
     }
     func testRemoveDropsTheSavedKey() async {
         let backend = FakeKeyBackend(stored: .init(present: true, region: .china))
@@ -99,7 +122,7 @@ private actor FakeKeyBackend: ReaderKeyBackend {
         await view.entry.load()
         XCTAssertEqual(view.entry.region, .china, "the saved region comes back")
         await view.entry.remove()
-        let calls = await backend.calls
+        let calls = backend.calls
         XCTAssertEqual(calls.map(\.verb), ["remove"])
         XCTAssertFalse(button(view, "remove").isEnabled)
     }
@@ -108,9 +131,9 @@ private actor FakeKeyBackend: ReaderKeyBackend {
         let view = made(.opencodego, backend)
         type(view, fakeKey)
         button(view, "save").invoke?()
-        for _ in 0..<500 { if await !backend.calls.isEmpty { break }; await Task.yield() }
-        let calls = await backend.calls
-        XCTAssertEqual(calls, [.init(verb: "set", key: fakeKey, region: nil)])
+        for _ in 0..<500 { if backend.calls.count >= 2 { break }; await Task.yield() }
+        let calls = backend.calls
+        XCTAssertEqual(calls, [.init(verb: "test", key: fakeKey, region: nil), .init(verb: "set", key: fakeKey, region: nil)])
     }
     func testHelpLineAndBothLanguages() {
         let zh = made(.zai, FakeKeyBackend(), language: .chinese)

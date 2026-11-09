@@ -54,7 +54,7 @@ func goWireTypes() map[string]reflect.Type {
 		reflect.TypeFor[wire.Request](), reflect.TypeFor[wire.Success[wire.RowsSnapshot]](), reflect.TypeFor[wire.Failure](), reflect.TypeFor[wire.Notification[wire.RowsSnapshot]](),
 		reflect.TypeFor[wire.InitializeParams](), reflect.TypeFor[wire.InitializeResult](), reflect.TypeFor[wire.Empty](), reflect.TypeFor[wire.CancelParams](),
 		reflect.TypeFor[wire.ConsentFacts](), reflect.TypeFor[wire.ConsentGrantParams](), reflect.TypeFor[wire.ConsentReceipt](), reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](),
-		reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.MemberRefreshResult](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](),
+		reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.MemberRefreshResult](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.ReaderKeyParams](), reflect.TypeFor[wire.ReaderKeyResult](),
 		reflect.TypeFor[wire.HistoryQueryParams](), reflect.TypeFor[wire.HistoryPage](), reflect.TypeFor[wire.CockpitQueryParams](), reflect.TypeFor[wire.Diagnostics](), reflect.TypeFor[wire.Health](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[rows.Projection](),
 	} {
 		visit(typ)

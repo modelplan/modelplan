@@ -157,7 +157,11 @@ func TestManualKeyZaiRegionRouting(t *testing.T) {
 
 func TestManualKeyOutcomes(t *testing.T) {
 	isolateHome(t)
-	for _, c := range []struct{ name, provider, host, body string; code int; want string }{
+	for _, c := range []struct {
+		name, provider, host, body string
+		code                       int
+		want                       string
+	}{
 		{"zai ok", "zai", "api.z.ai", zaiOKBody, 200, ManualKeyOK},
 		{"zai wrong-shape key", "zai", "api.z.ai", "", 401, ManualKeyRefused},
 		{"zai unknown key", "zai", "api.z.ai", `{"code":1000,"success":false,"msg":"身份验证失败"}`, 200, ManualKeyRefused},
@@ -296,7 +300,11 @@ func TestOpenCodeGoSourceOrder(t *testing.T) {
 		}
 		return ks.seen()
 	}
-	for _, c := range []struct{ name string; manual, env, login bool; want string }{
+	for _, c := range []struct {
+		name               string
+		manual, env, login bool
+		want               string
+	}{
 		{"manual beats env and login", true, true, true, fakeZaiKey},
 		{"env beats login", false, true, true, fakeOtherKey},
 		{"login last", false, false, true, fakeGoKey},

@@ -192,6 +192,7 @@ struct StatusNoticePresentation {
             if self.composition.provider.dockContent.status == .cleared { self.unavailableMemberRefreshes.removeAll() }
             self.updateMemberRefreshCapability()
             self.updateForecastProducerCapability()
+            self.updateReaderKeyCapability()
             self.updateSettingsContext(); self.renderMenu(); self.console?.render()
             #if MODELPLAN_U6_DRIVE
             if self.composition.provider.dockContent.status == .cleared { self.driveGuard?.recordClear() }
@@ -213,6 +214,24 @@ struct StatusNoticePresentation {
             let supported = await self.composition.client.supportsCapability("memberRefreshV1")
             guard !self.terminating, self.composition.client.isCurrent(delivery), self.memberRefreshAdapter == nil else { return }
             if supported { self.memberRefreshAdapter = AppServerMemberRefreshAdapter(client: self.composition.client, store: self.composition.store) }
+        }
+    }
+    /// D90: the manual key area shows only while the connected engine negotiated `reader_key`.
+    private var readerKeyBackend: AppServerReaderKeyBackend?
+    private func updateReaderKeyCapability() {
+        guard let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery) else {
+            if readerKeyBackend != nil { readerKeyBackend = nil; scopeBinding.entry.readerKeys = nil }
+            return
+        }
+        guard readerKeyBackend == nil else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let supported = await self.composition.client.supportsCapability("reader_key")
+            guard supported, !self.terminating, self.composition.client.isCurrent(delivery), self.readerKeyBackend == nil else { return }
+            let binding = self.scopeBinding
+            let backend = AppServerReaderKeyBackend(client: self.composition.client, store: self.composition.store, allow: { scope in await binding.allow(scope: scope) })
+            self.readerKeyBackend = backend
+            binding.entry.readerKeys = backend
         }
     }
     /// SET-9-29: capabilities are fixed per engine session, so each session asks once. The

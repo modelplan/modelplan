@@ -48,7 +48,7 @@ All listed URLs use HTTPS. GET bodies are empty. URL queries are forbidden. Head
 
 ### Authentication source and refresh
 
-Environment source: Z_AI_API_KEY or the explicitly selected variable. Config source: the one locally selected Claude Code settings.json, matching its Coding Plan base URL, reads ANTHROPIC_AUTH_TOKEN before ANTHROPIC_API_KEY. The base URL only selects a compiled region; it is never used as the quota request URL. Symlinks, arbitrary ports/userinfo/query/fragment/foreign bases are refused. OpenCode auth/provider parsing is present but absent from the production selection branch.
+Source order (D90, 2026-11-09): (1) a key the user entered in Settings with a Global/China choice, kept in a 0600 file in the app support directory and sent only to the compiled host of that region; (2) the detected sources below. A detected base URL that is not one of the compiled official endpoints is refused with cause `region_refused` and its key is never read or sent. Environment source: Z_AI_API_KEY or the explicitly selected variable. Config source: the one locally selected Claude Code settings.json, matching its Coding Plan base URL, reads ANTHROPIC_AUTH_TOKEN before ANTHROPIC_API_KEY. The base URL only selects a compiled region; it is never used as the quota request URL. Symlinks, arbitrary ports/userinfo/query/fragment/foreign bases are refused. OpenCode auth/provider parsing is present but absent from the production selection branch.
 
 Refresh behavior: None. The key is never renewed, repaired, copied into a credential store or used for an inference probe. Expiry/entitlement failure is reported without searching other auth slots or regions.
 

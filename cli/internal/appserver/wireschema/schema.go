@@ -71,6 +71,8 @@ func Generate(root string) ([]byte, error) {
 	// spelling of generic instantiations.
 	roots := map[string]reflect.Type{
 		"PluginInstallParams":  reflect.TypeFor[wire.PluginInstallParams](),
+		"ReaderKeyParams":      reflect.TypeFor[wire.ReaderKeyParams](),
+		"ReaderKeyResult":      reflect.TypeFor[wire.ReaderKeyResult](),
 		"PublicationResult":    reflect.TypeFor[wire.PublicationResult](),
 		"PluginInstallResult":  reflect.TypeFor[wire.PluginInstallResult](),
 		"InitializeParams":     reflect.TypeFor[wire.InitializeParams](),
@@ -160,7 +162,7 @@ func Generate(root string) ([]byte, error) {
 	errorProps["id"] = object{"anyOf": []any{object{"$ref": "#/$defs/RequestID"}, object{"type": "null"}}}
 
 	incoming := []any{}
-	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "CockpitQueryParams", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams"}
+	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "CockpitQueryParams", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams", "readerkey/set": "ReaderKeyParams", "readerkey/test": "ReaderKeyParams", "readerkey/remove": "ReaderKeyParams", "readerkey/status": "ReaderKeyParams"}
 	for _, method := range sortedKeys(requestMethods) {
 		param := requestMethods[method]
 		props := object{"jsonrpc": object{"const": wire.JSONRPC}, "method": object{"const": method}, "id": object{"$ref": "#/$defs/RequestID"}}
@@ -180,7 +182,7 @@ func Generate(root string) ([]byte, error) {
 	}
 	b.defs["Request"] = object{"oneOf": incoming}
 	envelopes := []any{}
-	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult", "PublicationResult", "MemberRefreshResult"} {
+	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult", "PublicationResult", "MemberRefreshResult", "ReaderKeyResult"} {
 		env := b.schema(reflect.TypeFor[wire.Envelope[wire.Empty]](), false).(object)
 		env["properties"].(object)["data"] = object{"$ref": "#/$defs/" + name}
 		b.defs[name+"Envelope"] = env

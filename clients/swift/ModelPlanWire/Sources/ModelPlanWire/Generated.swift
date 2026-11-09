@@ -4635,6 +4635,174 @@ public struct WireRPCError: Codable, Sendable {
     }
 }
 
+public enum WireReaderKeyOutcome: Codable, Sendable, Equatable {
+    case `saved`
+    case `removed`
+    case `ok`
+    case `keyRefused`
+    case `planLapsed`
+    case `noKey`
+    case `unreachable`
+    case `failed`
+    case `notAccepted`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "saved": self = .`saved`
+        case "removed": self = .`removed`
+        case "ok": self = .`ok`
+        case "key_refused": self = .`keyRefused`
+        case "plan_lapsed": self = .`planLapsed`
+        case "no_key": self = .`noKey`
+        case "unreachable": self = .`unreachable`
+        case "failed": self = .`failed`
+        case "not_accepted": self = .`notAccepted`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`saved`: return "saved"
+        case .`removed`: return "removed"
+        case .`ok`: return "ok"
+        case .`keyRefused`: return "key_refused"
+        case .`planLapsed`: return "plan_lapsed"
+        case .`noKey`: return "no_key"
+        case .`unreachable`: return "unreachable"
+        case .`failed`: return "failed"
+        case .`notAccepted`: return "not_accepted"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public struct WireReaderKeyParams: Codable, Sendable {
+    public let `provider`: WireReaderKeyProvider
+    public let `region`: WireReaderKeyRegion
+    public let `key`: String
+    private enum CodingKeys: String, CodingKey {
+        case `provider`
+        case `region`
+        case `key`
+    }
+    public init(`provider`: WireReaderKeyProvider, `region`: WireReaderKeyRegion, `key`: String) throws {
+        self.`provider` = `provider`
+        self.`region` = `region`
+        self.`key` = `key`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`provider` = try c.decode(WireReaderKeyProvider.self, forKey: .`provider`)
+        self.`region` = try c.decode(WireReaderKeyRegion.self, forKey: .`region`)
+        self.`key` = try c.decode(String.self, forKey: .`key`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`provider`, forKey: .`provider`)
+        try c.encode(`region`, forKey: .`region`)
+        try c.encode(`key`, forKey: .`key`)
+    }
+    private func validate() throws {
+    }
+}
+
+public enum WireReaderKeyProvider: Codable, Sendable, Equatable {
+    case `zai`
+    case `opencodego`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "zai": self = .`zai`
+        case "opencodego": self = .`opencodego`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`zai`: return "zai"
+        case .`opencodego`: return "opencodego"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public enum WireReaderKeyRegion: Codable, Sendable, Equatable {
+    case `none`
+    case `global`
+    case `china`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "none": self = .`none`
+        case "global": self = .`global`
+        case "china": self = .`china`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`none`: return "none"
+        case .`global`: return "global"
+        case .`china`: return "china"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public struct WireReaderKeyResult: Codable, Sendable {
+    public let `schemaVersion`: Int
+    public let `provider`: WireReaderKeyProvider
+    public let `region`: WireReaderKeyRegion
+    public let `present`: Bool
+    public let `outcome`: WireReaderKeyOutcome
+    private enum CodingKeys: String, CodingKey {
+        case `schemaVersion`
+        case `provider`
+        case `region`
+        case `present`
+        case `outcome`
+    }
+    public init(`schemaVersion`: Int, `provider`: WireReaderKeyProvider, `region`: WireReaderKeyRegion, `present`: Bool, `outcome`: WireReaderKeyOutcome) throws {
+        self.`schemaVersion` = `schemaVersion`
+        self.`provider` = `provider`
+        self.`region` = `region`
+        self.`present` = `present`
+        self.`outcome` = `outcome`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`schemaVersion` = try c.decode(Int.self, forKey: .`schemaVersion`)
+        self.`provider` = try c.decode(WireReaderKeyProvider.self, forKey: .`provider`)
+        self.`region` = try c.decode(WireReaderKeyRegion.self, forKey: .`region`)
+        self.`present` = try c.decode(Bool.self, forKey: .`present`)
+        self.`outcome` = try c.decode(WireReaderKeyOutcome.self, forKey: .`outcome`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`schemaVersion`, forKey: .`schemaVersion`)
+        try c.encode(`provider`, forKey: .`provider`)
+        try c.encode(`region`, forKey: .`region`)
+        try c.encode(`present`, forKey: .`present`)
+        try c.encode(`outcome`, forKey: .`outcome`)
+    }
+    private func validate() throws {
+        guard `schemaVersion` >= 1 else { throw WireDecodeError.invalidBound }
+        guard `schemaVersion` <= 1 else { throw WireDecodeError.invalidBound }
+    }
+}
+
 public enum WireReceiptCode: Codable, Sendable, Equatable {
     case `ok`
     case `cleanupPending`

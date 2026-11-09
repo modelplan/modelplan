@@ -124,6 +124,7 @@ Notification:
 | `credentials/result` | app → server | Outcome, and the token on success | first candidate |
 | `refresh/request` | app → server | Ask for refreshes within the shared budget | first candidate |
 | `plugin/install` | app → server | Same contract as `plugin install --json` | first candidate |
+| `readerkey/set`, `readerkey/test`, `readerkey/remove`, `readerkey/status` | app → server | Manual key for GLM or OpenCode Go (D90). One `ReaderKeyParams` (`provider`, `region`, `key`), one `ReaderKeyResult` (`present`, `region`, one outcome word). The key travels only in set and test params, is stored in a 0600 file in the app support directory, is sent only to the official host of its region, and is never echoed. Capability `reader_key` | first candidate |
 | `diagnostics/get` | app → server | Sanitized engine health and per-scope state codes | first candidate |
 | `engine/health` | server → app | `ok`, `degraded` or `recovering`, with a code | first candidate |
 | `history/query` | app → server | Paged history items for one scope; fenced, see below | cockpit |
