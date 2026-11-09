@@ -2,7 +2,8 @@
 import Foundation
 
 public struct DockCardRow:Equatable,Sendable {
-    public enum Kind:Equatable,Sendable {case quota,extraQuota,reserve,statistic,notice}
+    /// `event`: a plain sentence under the readout (prototype card.js .cd-events), such as D65's used-up line.
+    public enum Kind:Equatable,Sendable {case quota,extraQuota,reserve,statistic,notice,event}
     public let id:String,kind:Kind,label:String,value:String,detail:String
     public let remainingFraction:Double?,tone:DockQuotaStatus
     /// The window the ring shows: lit row and ink label (face.css .selected-window).
