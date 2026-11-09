@@ -102,7 +102,9 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let window=try XCTUnwrap(first.window)
         first.setAttached(false)
         first.toggleShutter()
-        let origin=CGPoint(x:window.frame.minX-20,y:window.frame.minY-20)
+        // The scaled cockpit (D51) fills the room above the Dock, so the open window's bottom edge is the screen's lowest allowed y;
+        // move up, not down, or the remembered origin would be clamped back and the position could not be told from a clamp.
+        let origin=CGPoint(x:window.frame.minX-20,y:window.frame.minY+20)
         window.setFrameOrigin(origin)
         first.discard()
         let second=owner.makePage(context:context,verified:bundle)
@@ -146,7 +148,9 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let first=try XCTUnwrap(pages.first)
         let window=try XCTUnwrap(first.window)
         first.setAttached(false);first.toggleShutter()
-        let origin=CGPoint(x:window.frame.minX-20,y:window.frame.minY-20)
+        // The scaled cockpit (D51) fills the room above the Dock, so the open window's bottom edge is the screen's lowest allowed y;
+        // move up, not down, or the remembered origin would be clamped back and the position could not be told from a clamp.
+        let origin=CGPoint(x:window.frame.minX-20,y:window.frame.minY+20)
         window.setFrameOrigin(origin)
         app.toggleConsole() // G3-40: only the status icon toggles; the menu item only opens
         for _ in 0..<200 where !first.bridge.disposed { try await Task.sleep(for:.milliseconds(10)) }
