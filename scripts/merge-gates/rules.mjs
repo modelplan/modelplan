@@ -171,18 +171,38 @@ export function verdicts(items, head, carried) {
   return lanes;
 }
 
+// ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
+// While the GLM quota is out, a Claude Sonnet reviewer stands in for GLM under its own label:
+// "DESIGN (sonnet): pass|fail @ <sha>" and "GLMREV (sonnet): OK|ISSUES @ <sha>". A (sonnet) pass/OK counts only
+// inside a time-boxed window (the repository variable GLM_FALLBACK_UNTIL, the GLM reset time) and only when it was
+// posted before the window closed; a (sonnet) fail/ISSUES always counts. Outside the window, only GLM markers count.
+export const GLM_FALLBACK_MAX_MS = 8 * 24 * 3600 * 1000;
+// parseFallbackUntil("2026-11-14T12:17:50Z", now) -> epoch ms, or null when unset, malformed or too far ahead.
+export function parseFallbackUntil(value, now) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value)) return null;
+  const t = Date.parse(value);
+  if (!Number.isFinite(t) || t > now + GLM_FALLBACK_MAX_MS) return null;
+  return t;
+}
+// fb: {until: epoch ms | null, now: epoch ms, used: [] (markers that counted are pushed here)}.
+const fallbackCounts = (fb, x) => !!fb && fb.until != null && fb.now < fb.until && Date.parse(x.at) < fb.until;
+
 // "DESIGN: pass|fail @ <40 hex>" counts only in a trusted comment or review whose body starts with
 // "Design-conformance review"; latest wins; carries over the same verified edges as verdicts.
-export function designVerdict(items, head, carried) {
+// "DESIGN (sonnet): ..." is the GLM-out fallback form (see above).
+export function designVerdict(items, head, carried, fb = null) {
   const at = new Set([head, ...carried]);
-  let r = null;
+  let r = null, src = null;
   for (const x of items) {
     if (!x.body.startsWith("Design-conformance review")) continue;
     for (const l of lines(x.body)) {
-      const m = /^DESIGN: (pass|fail) @ ([0-9a-f]{40})\b/.exec(l);
-      if (m && at.has(m[2])) r = m[1];
+      const m = /^DESIGN( \(sonnet\))?: (pass|fail) @ ([0-9a-f]{40})\b/.exec(l);
+      if (!m || !at.has(m[3])) continue;
+      if (m[1] && m[2] === "pass" && !fallbackCounts(fb, x)) continue;
+      r = m[2]; src = m[1] ? "sonnet" : "glm";
     }
   }
+  if (r === "pass" && src === "sonnet") fb?.used?.push("DESIGN (sonnet)");
   return r;
 }
 
@@ -191,13 +211,17 @@ export function designVerdict(items, head, carried) {
 const GLM_SCOPE_RE = /^(desktop\/native\/|cli\/|clients\/swift\/|schema\/app-cli\/)/;
 export const glmInScope = (paths) => paths.some((p) => GLM_SCOPE_RE.test(p));
 
-export function glmVerdict(items, head) {
-  let r = null;
-  const re = new RegExp(`^(GLMREV: (OK|ISSUES)|GLMREV-ACCEPTED) @ ${head}(\\s|$)`);
+// "GLMREV (sonnet): OK|ISSUES @ <head>" is the GLM-out fallback form (see above).
+export function glmVerdict(items, head, fb = null) {
+  let r = null, src = null;
+  const re = new RegExp(`^(GLMREV( \\(sonnet\\))?: (OK|ISSUES)|GLMREV-ACCEPTED) @ ${head}(\\s|$)`);
   for (const x of items) if (x.kind === "comment") {
     const m = re.exec(x.body);
-    if (m) r = m[2] === "ISSUES" ? "issues" : "ok";
+    if (!m) continue;
+    if (m[2] && m[3] === "OK" && !fallbackCounts(fb, x)) continue;
+    r = m[3] === "ISSUES" ? "issues" : "ok"; src = m[2] ? "sonnet" : "glm";
   }
+  if (r === "ok" && src === "sonnet") fb?.used?.push("GLMREV (sonnet)");
   return r;
 }
 
@@ -441,7 +465,8 @@ export function dataSyncProblem({ pr, files, items, sync }) {
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
 // verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null }) {
+// glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -466,7 +491,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
   const carried = carryChain(carryEdges(items), head, verifiedEdge);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried };
+  const fb = { until: glmFallbackUntil, now, used: [] };
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, glmFallback: fb.used };
 
   let lanes = verdicts(items, head, carried);
   // Owner 2026-11-04 tier split: on tier 2 a macrev (Terra) verdict is advice, not a gate.
@@ -481,12 +507,12 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (tier === 2 && lanes.get("(macrev2)") !== "merge" && lanes.get("(sonnet)") !== "merge") missing.push("VERDICT (macrev2) or (sonnet) merge");
   if (tier === 1 && ![...lanes.values()].includes("merge")) missing.push("a VERDICT merge");
   if (design.touching) {
-    const d = designVerdict(items, head, carried);
+    const d = designVerdict(items, head, carried, fb);
     if (d === "fail") return res(FAILURE, `DESIGN fail (${design.surfaces.join(",")})`, extra);
     if (d !== "pass") missing.push("DESIGN pass");
   }
   if (tier !== 0 && glmInScope(paths)) {
-    const g = glmVerdict(items, head);
+    const g = glmVerdict(items, head, fb);
     if (g === "issues") return res(FAILURE, "GLMREV ISSUES at head", extra);
     if (g !== "ok") missing.push("GLMREV OK or ACCEPTED");
   }
@@ -497,7 +523,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (ci.state === FAILURE) return res(FAILURE, ci.why, extra);
   if (missing.length) return res(PENDING, `tier ${tier}: needs ${missing.join(", ")}`, extra);
   if (ci.state === PENDING) return res(PENDING, ci.why, extra);
-  return res(SUCCESS, `tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`, extra);
+  return res(SUCCESS, `tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}${fb.used.length ? ` (GLM-out fallback: ${fb.used.join(", ")})` : ""}`, extra);
 }
 
 // ---- One merge-group commit ----

@@ -71,10 +71,10 @@ jobs:
     if: >-
       ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login == 'guanbear'
       && (contains(github.event.comment.body, 'VERDICT') || contains(github.event.comment.body, 'GLMREV')
-      || contains(github.event.comment.body, 'DESIGN:') || contains(github.event.comment.body, 'REVIEW-TIER:')
+      || contains(github.event.comment.body, 'DESIGN:') || contains(github.event.comment.body, 'DESIGN (sonnet):') || contains(github.event.comment.body, 'REVIEW-TIER:')
       || contains(github.event.comment.body, 'VERIFIED:') || contains(github.event.comment.body, 'EVIDENCE-DEFERRED:')
       || contains(github.event.changes.body.from, 'VERDICT') || contains(github.event.changes.body.from, 'GLMREV')
-      || contains(github.event.changes.body.from, 'DESIGN:') || contains(github.event.changes.body.from, 'REVIEW-TIER:')
+      || contains(github.event.changes.body.from, 'DESIGN:') || contains(github.event.changes.body.from, 'DESIGN (sonnet):') || contains(github.event.changes.body.from, 'REVIEW-TIER:')
       || contains(github.event.changes.body.from, 'VERIFIED:') || contains(github.event.changes.body.from, 'EVIDENCE-DEFERRED:')))
       || (github.event_name == 'workflow_run' && contains(fromJSON('["pull_request","pull_request_review","merge_group"]'), github.event.workflow_run.event)
       && (github.event.workflow_run.conclusion != 'cancelled' || github.event.workflow_run.event == 'merge_group'
@@ -102,3 +102,5 @@ jobs:
       - run: node scripts/merge-gates/evaluate.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # GLM-out fallback window (rules.mjs): unset = closed, so (sonnet) DESIGN/GLMREV markers never pass.
+          GLM_FALLBACK_UNTIL: ${{ vars.GLM_FALLBACK_UNTIL }}
