@@ -135,3 +135,34 @@ test('QA 11-08 the axis labels of the enlarged field never overlap and stay insi
   for(const b of boxes)if(a!==b)expect(a.r<=b.x||b.r<=a.x||a.b<=b.y||b.b<=a.y,a.text+' / '+b.text).toBe(true);
  }
 });
+
+// CKP-PORT-11G: while the field is open there is one WebGL context. The page's capability probe releases its own, so only
+// the scene's remains. A counting stand-in for getContext makes this checkable whether or not the browser has WebGL.
+test('CKP-PORT-11G the capability probe releases its WebGL context, leaving at most the scene\'s while the field is open',async({page})=>{
+ await page.addInitScript(()=>{
+  window.glContexts=[];
+  HTMLCanvasElement.prototype.getContext=function(type){
+   if(!/webgl/.test(String(type)))return null;
+   const gl={lost:false,isContextLost(){return this.lost;},getExtension(name){return name==='WEBGL_lose_context'?{loseContext:()=>{gl.lost=true;}}:null;}};
+   window.glContexts.push(gl);return gl;
+  };
+ });
+ await open(page);expect(await show(page,payload(12))).toBe(true);
+ await page.waitForFunction(()=>window.glContexts.length>=1);
+ await page.waitForTimeout(500);
+ const live=await page.evaluate(()=>window.glContexts.filter(g=>!g.isContextLost()).length);
+ expect(live).toBeLessThanOrEqual(1);
+});
+
+// CKP-PORT-11D: only public data enters the field. The host's payload carries presentation and published models; the page
+// keeps nothing else and never asks the host for account or local readings.
+test('CKP-PORT-11D the field page takes only public model data and posts only its fixed events',async({page})=>{
+ await open(page);
+ const withPrivate=JSON.stringify({...JSON.parse(payload(4)),account:'someone@example.invalid',subscriptionRef:'secret-ref',usedPercent:73,projectName:'private'});
+ expect(await show(page,withPrivate)).toBe(true);
+ await page.waitForTimeout(300);
+ const text=await page.evaluate(()=>document.documentElement.innerText+document.documentElement.outerHTML);
+ for(const secret of ['someone@example.invalid','secret-ref','private'])expect(text).not.toContain(secret);
+ const posted=await page.evaluate(()=>window.posted);
+ for(const type of posted)expect(['loaded','ready','activity','card','close','failed']).toContain(type);
+});
