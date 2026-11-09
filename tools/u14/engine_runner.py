@@ -224,7 +224,14 @@ def empty_states(binary, home, fault_binary):
             projection = fresh_rows(engine, patience)
             if empty == 'pending':
                 projection = await_pending(engine, projection, patience)
-            require(projection['rowsSummary']['state'] == empty, 'wrong-empty-summary-' + empty)
+            # G3-38: on the plain synthetic home the detected, allowed tools are waiting for their
+            # first read, so the Dock summary is "Reading ..." (pending), never "no readings".
+            # A true empty / no_dock_rows is covered by the rows unit tests (an allowed tool with
+            # no reader).
+            expected = 'pending' if empty == 'empty' else empty
+            require(projection['rowsSummary']['state'] == expected, 'wrong-empty-summary-' + empty)
+            if empty == 'empty':
+                require(projection['rowsSummary']['text']['en'].startswith('Reading ') and not projection['rowsSummary'].get('nextStep'), 'wrong-reading-summary')
             require(bool(projection['rowsSummary']['text']['en']) and bool(projection['rowsSummary']['text']['zh']), 'empty-summary-without-text')
             if empty in ('readers_off', 'pending'):
                 require(all(not row['accounts'] for row in projection['rows']), 'private-values-in-off-or-pending-state')

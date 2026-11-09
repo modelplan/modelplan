@@ -235,3 +235,19 @@ func TestG338DockSummaryForToolsWithoutARing(t *testing.T) {
 		}
 	})
 }
+
+// A true empty / no_dock_rows: an allowed tool that has no reader is neither being read nor does
+// it need an action the user can take.
+func TestG338NoDockRowsWhenAllowedToolHasNoReader(t *testing.T) {
+	in := Input{Now: testNow, ConsentGeneration: 7}
+	in.Catalogue = append(in.Catalogue, CatalogueEntry{ToolID: "claude", Detected: true, ReaderExists: false})
+	in.Consents = append(in.Consents, ConsentRecord{ToolID: "claude", Generation: 7, State: ConsentAllowed})
+	out := Build(in)
+	if err := Validate(in, out); err != nil {
+		t.Fatal(err)
+	}
+	s := out.RowsSummary
+	if s.State != SummaryStateEmpty || s.Reason.Code != CodeNoDockRows || s.NextStep == nil || s.NextStep.Action != ActionOpenSettingsConsent {
+		t.Fatalf("%+v", s)
+	}
+}
