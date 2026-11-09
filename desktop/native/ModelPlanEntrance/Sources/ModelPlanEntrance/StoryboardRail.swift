@@ -77,7 +77,15 @@ public struct StoryboardRail: Sendable {
             let r = angle * Double.pi / 180
             func cameraAt(_ d: Double) -> EntranceCamera {
                 let position = EntranceVector(0, TailLayout.plateY - d * sin(r), d * cos(r))
-                return Self.aim(position, toPut: tailCentre, at: li.tailPoint, lookingAt: .init(0, geometry.height * 0.5, 0), fov: fov, viewport: vp, shift: shift)
+                var camera = Self.aim(position, toPut: tailCentre, at: li.tailPoint, lookingAt: .init(0, geometry.height * 0.5, 0), fov: fov, viewport: vp, shift: shift)
+                // Centre the projected ring (not the projected disc centre) on the tail point, as the reference does.
+                for _ in 0..<4 {
+                    let ring = camera.projectBounds(solveTail), disc = camera.project(tailCentre).point
+                    if abs(ring.centre.y - li.tailPoint.y) < 0.05 { break }
+                    camera = Self.aim(position, toPut: tailCentre, at: .init(disc.x, disc.y + li.tailPoint.y - ring.centre.y),
+                                      lookingAt: .init(0, geometry.height * 0.5, 0), fov: fov, viewport: vp, shift: shift)
+                }
+                return camera
             }
             var lo = 1.5, hi = 120.0
             for _ in 0..<40 {
