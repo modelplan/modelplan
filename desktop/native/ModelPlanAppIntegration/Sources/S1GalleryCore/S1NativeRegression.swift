@@ -102,7 +102,7 @@ import ModelPlanOfficialDock
         _ = NSApplication.shared
         let root = URL(fileURLWithPath: baselinePath, isDirectory: true)
         let fixtureBytes = try Data(contentsOf: root.appendingPathComponent("fixtures.json"))
-        guard hash(fixtureBytes) == "d18463289ff11d69859b7e2c0dc1b695f6b8609c7f7d73b7b81d9531ad4775fe" else { throw Failure.fixture("manifest hash") }
+        guard hash(fixtureBytes) == "2420fa76413d30feda3fe809072f22ce1ff7fd07178c2c6780c41fbc09f30ba4" else { throw Failure.fixture("manifest hash") }
         let fixture = try JSONDecoder().decode(Fixture.self, from: fixtureBytes)
         guard fixture.schemaVersion == 1, fixture.sourceCommit == "fc87088f2c3e67d9ab0aefc2f9f90d6c315b6657",
               fixture.prototypeSourceCommit == "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
@@ -116,8 +116,6 @@ import ModelPlanOfficialDock
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("s1-regression-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
-        let regenerate = ProcessInfo.processInfo.environment["MODELPLAN_S1_REGENERATE_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
-        if let regenerate { try FileManager.default.createDirectory(at: regenerate, withIntermediateDirectories: true) }
         var worstMean = 0.0, worstTile = 0.0
         for (index, item) in fixture.captures.enumerated() {
             let reference = try verified(item.file, hash: item.sha256, root: root)
@@ -136,17 +134,10 @@ import ModelPlanOfficialDock
             guard zip(actualBounds, item.skinBounds).allSatisfy({ abs($0 - $1) <= 0.01 }),
                   host.registeredConsoleButtonForChecks != nil else { throw Failure.geometry(item.file + " bounds/control") }
             let report = try S1PixelReport.make(reference: reference, image: image, skin: skin, capture: item.galleryCapture, singleWindowIDs: [])
-            if let regenerate {
-                // Baseline refresh (G3-74, D48): write the CI actuals of every capture outside the tolerance.
-                do { _ = try compare(reference, report.native, name: item.file); print("KEEP \(item.file)") }
-                catch { try report.native.write(to: regenerate.appendingPathComponent(item.file)); print("REGENERATED \(item.file) sha256=\(hash(report.native))") }
-                continue
-            }
             let (mean, tile) = try compare(reference, report.native, name: item.file)
             worstMean = max(worstMean, mean); worstTile = max(worstTile, tile)
             print("PASS \(item.file) mean=\(mean) worstTile=\(tile)")
         }
-        if regenerate != nil { return }
         let empty = fixture.emptyCases[0]
         let emptyReference = try verified(empty.file, hash: empty.sha256, root: root)
         let (emptyImage, emptyBounds) = try await renderEmpty()
