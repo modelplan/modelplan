@@ -162,6 +162,26 @@ private actor D41Engine: EngineClient {
         XCTAssertEqual(after.first?.keychain?[Self.scope], .allow)
     }
 
+    /// D87 slice 9: a card whose reading failed for a named cause no longer says only "Settings": its action links to
+    /// that subscription's row, which shows the same reason from the shared table. Only the Keychain card asks for the Keychain.
+    func testACardCauseLinksToItsSubscriptionsRow() async throws {
+        let (app, engine) = try await launch(keychain: "allow", rowState: "failed", code: "timeout")
+        XCTAssertEqual(try card(app).actionLabel, "Open in Settings")
+        XCTAssertFalse(app.scopeConsentEntry.controller.needsKeychainAccess, "this card is not the Keychain card")
+        XCTAssertNotNil(app.composition.dock.cardActionRequested, "the card action is wired")
+        let member = try XCTUnwrap(app.composition.accountMembers.members.first?.id)
+        let settings = app.scopeConsentEntry.view
+        settings.apply(language: .english)
+        settings.setSubscriptionRows(SubscriptionRowsContext(
+            subscriptions: [SettingsSubscription(id: member, name: .init("Claude Code", "Claude Code"), vendor: "claude", source: .unavailable, causeCode: "timeout")],
+            orderedIDs: [member], hiddenIDs: [], canSave: true))
+        settings.revealSubscriptionRow(member)
+        XCTAssertNotNil(view("subscriptions.row." + member, in: settings), "the row the card links to exists")
+        XCTAssertEqual((view("subscriptions.status." + member, in: settings) as? NSTextField)?.stringValue, "The reading timed out; it will retry on its own")
+        let grants = await engine.recorded()
+        XCTAssertTrue(grants.isEmpty, "linking to a row asks the system for nothing")
+    }
+
     func testALoginThatAlreadyReadsAsksNothing() async throws {
         let (app, _) = try await launch(keychain: "unset", rowState: "fresh", code: "ok")
         XCTAssertFalse(app.scopeConsentEntry.controller.asksForKeychainOnFirstRun)

@@ -23,6 +23,8 @@ public struct EngineMenuRefreshResult {
     public let provider: EngineDockMenuProvider
     public let dock: StaticDockPreviewHost
     private let adapter: EngineDockContentProvider
+    /// D87: whether the manual key entry is available; the card then says "Add key" like the Settings row.
+    public var keyEntryAvailable: () -> Bool { get { adapter.keyEntryAvailable } set { adapter.keyEntryAvailable = newValue } }
     private let admittedCache = HostPairedContentCache()
     private var deadlineLifecycleSuspended = false
     private var pendingProjectionReplacement = false

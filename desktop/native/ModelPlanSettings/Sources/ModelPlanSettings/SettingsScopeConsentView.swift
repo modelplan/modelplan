@@ -35,6 +35,15 @@ import ModelPlanWire
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
     private var keySection: ReaderKeySection?
+    /// D87 slice 6/7: the Subscriptions rows. Nil context keeps the plain per-tool list (first run, direct drives).
+    private var rowsContext: SubscriptionRowsContext?
+    private var rowsSignature: String?
+    private var rowsView: SubscriptionRowsView?
+    private var notInstalledExpanded = false
+    private var fixNotices: [String: SettingsText] = [:]
+    private var highlightedRowID: String?
+    /// What the app can do for a row: visibility, order and the two fixes that need the engine.
+    public var rowActions = SubscriptionRowActions()
     /// D90: the optional manual key area. Set by the app when the engine supports it.
     public var readerKeys: ReaderKeyBackend? {
         didSet { if keySection != nil { keySection?.dismiss(); keySection = nil }; render() }
@@ -51,6 +60,22 @@ import ModelPlanWire
     }
     /// The app supplies its checked marks after the view exists; draw them as soon as they arrive.
     public func setMarkImage(_ value: (@MainActor (String) -> NSImage?)?) { markImage = value; render() }
+    /// The host pushes the subscriptions, their shared order and hidden set whenever they change.
+    public func setSubscriptionRows(_ context: SubscriptionRowsContext?) {
+        guard compactTools, context?.signature != rowsSignature else { return }
+        rowsSignature = context?.signature; rowsContext = context; render()
+    }
+    /// D87 slice 9: a widget card's reason links here. Mark the subscription's row for a few seconds and scroll to it.
+    public func revealSubscriptionRow(_ id: String) {
+        guard compactTools else { return }
+        highlightedRowID = id; render()
+        layoutSubtreeIfNeeded(); rowsView?.scrollToRow(id)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self, self.highlightedRowID == id else { return }
+            self.highlightedRowID = nil; self.render()
+        }
+    }
     /// Show or hide the per-path rows of the compact Settings page.
     public func setPathDetailsExpanded(_ expanded: Bool) {
         guard pathDetailsExpanded != expanded else { return }
@@ -68,6 +93,7 @@ import ModelPlanWire
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
         }
         buttons = []
+        rowsView?.retire(); rowsView = nil
         keySection?.dismiss()
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
@@ -309,9 +335,12 @@ import ModelPlanWire
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
         }
         buttons = []
+        rowsView?.retire(); rowsView = nil
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         wrappingLabels = []
         if firstRun { renderFirstRunChooser(); return }
+        let rowsMode = compactTools && rowsContext != nil
+        if rowsMode, let context = rowsContext { renderSubscriptionRows(context); gap() }
         label(.init("Reading permissions", "读取权限"), heading: true)
         label(Self.activityDisclosure, secondary: true)
         if controller.needsKeychainAccess {
@@ -382,11 +411,13 @@ import ModelPlanWire
             label(.init("No saved or detected reading paths are available. Choose Check current permissions after connecting the engine.", "暂无已保存或已检测的读取路径，连接引擎后可点“检查当前权限”。"))
         }
         if compactTools {
-            for (index, tool) in controller.settingsTools.enumerated() {
-                if index > 0 { separator() }
-                toolRow(tool, settings: true)
+            if !rowsMode {
+                for (index, tool) in controller.settingsTools.enumerated() {
+                    if index > 0 { separator() }
+                    toolRow(tool, settings: true)
+                }
+                gap()
             }
-            gap()
             if !facts.scopes.isEmpty { line([synchronousButton(pathDetailsExpanded ? .init("Hide reading paths", "收起读取路径") : .init("Show reading paths and saved permissions", "展开读取路径与已保存权限"),
                                     id: "scope.details.toggle") { [weak self] in
                 guard let self else { return }; self.setPathDetailsExpanded(!self.pathDetailsExpanded)
@@ -447,6 +478,10 @@ import ModelPlanWire
             line([synchronousButton(.init("Select all available paths", "全选可授权路径"), id: "scope.selectAll", enabled: controller.canMutate) { [weak self] in self?.controller.selectAll() },
                   synchronousButton(.init("Allow selected paths…", "授权所选路径…"), id: "scope.allowSelected", enabled: controller.canRequestAllow) { [weak self] in self?.controller.requestAllow() }])
         }
+        if !rowsMode { renderConfirmation(facts) }
+    }
+    /// The existing confirmation for a pending change (Add, a tool choice, revoke, forget).
+    private func renderConfirmation(_ facts: WireConsentFacts) {
         if case .confirmation(let confirmation) = controller.phase {
             let ids = Set(confirmation.intent.allowIDs + confirmation.intent.denyIDs + confirmation.intent.forgetIDs)
             if compactTools, case .choose = confirmation.intent.mutation {
@@ -465,5 +500,109 @@ import ModelPlanWire
             line([button(.init("Confirm", "确认"), id: "scope.confirm") { [weak self] in await self?.controller.confirm(confirmation.id) },
                   synchronousButton(.init("Cancel", "取消"), id: "scope.cancel") { [weak self] in self?.controller.cancelConfirmation() }])
         }
+    }
+    /// D87 slice 6/7: build the row model from the host's context and the controller's accepted facts, and show it.
+    private func renderSubscriptionRows(_ context: SubscriptionRowsContext) {
+        if let facts = controller.facts { renderConfirmation(facts) }
+        let model = SubscriptionRowModel.build(
+            subscriptions: context.subscriptions, orderedIDs: context.orderedIDs, hiddenIDs: context.hiddenIDs,
+            tools: controller.settingsTools, facts: controller.toolRowFacts, isReading: { [controller] in controller.isToolReading($0) },
+            keyEntryAvailable: readerKeys != nil, name: { Self.toolName($0) })
+        var handlers = SubscriptionRowsView.Handlers()
+        handlers.setVisible = { [weak self] id, visible in self?.rowActions.setVisible?(id, visible) }
+        handlers.move = { [weak self] id, delta in self?.rowActions.move?(id, delta) }
+        handlers.fix = { [weak self] row in self?.performFix(row) }
+        handlers.add = { [weak self] tool in _ = self?.controller.requestToolChoice(tool, on: true) }
+        handlers.toggleNotInstalled = { [weak self] in
+            guard let self else { return }; self.notInstalledExpanded.toggle(); self.render()
+        }
+        let view = SubscriptionRowsView(.init(
+            model: model, language: language, mark: { [weak self] in self?.markView($0) ?? NSView() }, toolName: { Self.toolName($0) },
+            lockedReason: { id in context.subscriptions.first { $0.id == id }?.persistenceDisabledReason },
+            canMutate: controller.canMutate, canSave: context.canSave,
+            fixAvailable: { [weak self] row in self?.canPerformFix(row) ?? false },
+            notInstalledExpanded: notInstalledExpanded, notices: fixNotices, handlers: handlers, highlightedID: highlightedRowID))
+        rowsView = view
+        addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+    }
+    private func canPerformFix(_ row: SubscriptionRow) -> Bool {
+        guard let fix = row.fix else { return false }
+        switch fix.target {
+        case .allowKeychain: return controller.canMutate
+        case .retry: return rowActions.retry != nil
+        case .chooseToolLocation: return rowActions.chooseLocation != nil
+        case .addKey: return readerKeys != nil
+        case .installTool, .installNode, .explain: return SubscriptionFixLauncher.url(for: fix.target, tool: row.tool) != nil
+        case .openTool: return true
+        case .openSettings: return true
+        }
+    }
+    /// One press, one fix. Every target is either handled here, by the host, or shown disabled.
+    private func performFix(_ row: SubscriptionRow) {
+        guard let fix = row.fix, canPerformFix(row) else { return }
+        fixNotices[row.id] = nil
+        switch fix.target {
+        case .allowKeychain: Task { await controller.allowKeychain() }
+        case .retry: rowActions.retry?(row.tool)
+        case .chooseToolLocation: rowActions.chooseLocation?(row.tool)
+        case .addKey: if let section = keySection { section.scrollToVisible(section.bounds) }
+        case .installTool, .installNode, .explain:
+            if let url = SubscriptionFixLauncher.url(for: fix.target, tool: row.tool) { NSWorkspace.shared.open(url) }
+        case .openTool:
+            if !SubscriptionFixLauncher.openApplication(for: row.tool) {
+                fixNotices[row.id] = .init("Could not find the app on this Mac.", "在这台 Mac 上找不到这个应用。"); render()
+            }
+        case .openSettings: pathDetailsExpanded = true; render()
+        }
+    }
+}
+
+/// The subscriptions, their shared order and the hidden set, as the Settings window knows them.
+public struct SubscriptionRowsContext {
+    public let subscriptions: [SettingsSubscription]
+    public let orderedIDs: [String]
+    public let hiddenIDs: Set<String>
+    /// False while another change is still saving.
+    public let canSave: Bool
+    public init(subscriptions: [SettingsSubscription], orderedIDs: [String], hiddenIDs: Set<String>, canSave: Bool) {
+        self.subscriptions = subscriptions; self.orderedIDs = orderedIDs; self.hiddenIDs = hiddenIDs; self.canSave = canSave
+    }
+    var signature: String {
+        subscriptions.map { [$0.id, $0.name.english, $0.plan, $0.vendor, $0.source.rawValue, $0.causeCode ?? "", $0.isUnstable ? "u" : "s"].joined(separator: "\u{1F}") }
+            .joined(separator: "\u{1E}") + "|" + orderedIDs.joined(separator: ",") + "|" + hiddenIDs.sorted().joined(separator: ",") + "|" + (canSave ? "1" : "0")
+    }
+}
+
+/// What the host does for the rows. A nil closure shows that action disabled.
+public struct SubscriptionRowActions {
+    public var setVisible: (@MainActor (String, Bool) -> Void)?
+    /// A subscription id and -1 (up) or +1 (down).
+    public var move: (@MainActor (String, Int) -> Void)?
+    public var retry: (@MainActor (String) -> Void)?
+    public var chooseLocation: (@MainActor (String) -> Void)?
+    public init() {}
+}
+
+/// Opening a tool or a help page for a fix action. Nothing here reads or writes a credential.
+@MainActor enum SubscriptionFixLauncher {
+    static func url(for target: ReaderCauseTarget, tool: String) -> URL? {
+        switch target {
+        case .installNode: return URL(string: "https://nodejs.org/en/download")
+        case .installTool: return tool == "kiro" ? URL(string: "https://kiro.dev/cli/") : nil
+        case .explain: return tool == "kiro" ? URL(string: "https://kiro.dev/docs/cli/") : SettingsAbout.consentHelpURL
+        default: return nil
+        }
+    }
+    private static let appNames = ["zai": "ZCode", "opencodego": "OpenCode", "opencode": "OpenCode", "claude": "Claude", "codex": "Codex",
+                                   "cursor": "Cursor", "kimi": "Kimi", "grok": "Grok", "gemini": "Gemini"]
+    static func openApplication(for tool: String) -> Bool {
+        guard let name = appNames[tool] else { return false }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        for folder in ["/Applications", home + "/Applications"] {
+            let path = folder + "/" + name + ".app"
+            if FileManager.default.fileExists(atPath: path) { return NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+        }
+        return false
     }
 }

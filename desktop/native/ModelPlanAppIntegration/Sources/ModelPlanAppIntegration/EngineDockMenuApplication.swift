@@ -390,7 +390,22 @@ struct StatusNoticePresentation {
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
-        composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
+        composition.keyEntryAvailable = { [weak self] in self?.readerKeyBackend != nil }
+        // D87 slice 9: the Keychain card still asks for Keychain access; any other cause opens its Subscriptions row.
+        composition.dock.cardActionRequested = { [weak self] id in
+            guard let self else { return }
+            let vendor = self.settings.editor.context.subscriptions.first { $0.id == id }?.vendor
+            if self.scopeConsentEntry.controller.needsKeychainAccess, vendor == nil || vendor == "claude" {
+                Task { await self.scopeConsentEntry.controller.allowKeychain() }
+            } else {
+                Task {
+                    await self.settingsHost.present(paneID: "subscriptions", origin: .userInitiated)
+                    self.scopeConsentEntry.view.revealSubscriptionRow(id)
+                }
+            }
+        }
+        // D87 slice 6: a row's "Retry" asks the engine for one foreground refresh, the same request as the menu's.
+        scopeConsentEntry.view.rowActions.retry = { [weak self] _ in Task { await self?.composition.refresh() } }
         context.loginServiceObserved = true
         context.notificationServiceObserved = true
         // The choice stays visible; a service macOS refuses gets an honest reason and the fallback row.

@@ -306,6 +306,7 @@ enum SettingsWords {
         glass.isHidden = effective.reduceTransparency
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         scopeConsentEntry?.view.apply(language: language)
+        updateSubscriptionRows(snapshot)
         let connectionContent: NSView = scopeConsentEntry?.view ?? connectionsView
         let connectionsWereHidden = connectionContent.isHidden
         connectionContent.isHidden = query.isEmpty ? selectedPaneID != "subscriptions"
@@ -387,6 +388,29 @@ enum SettingsWords {
             status.stringValue = SettingsWords.text("Settings are unavailable. Check the supplied subscription data.", "设置暂不可用，请检查订阅数据。", language)
             status.isHidden = false
         }
+    }
+    /// D87 slice 6: feed the Subscriptions rows the shared order and hidden set, and wire their visibility and
+    /// order buttons to the same edits the catalogue rows use. Nothing here touches reading consent.
+    private func updateSubscriptionRows(_ snapshot: SettingsSnapshot) {
+        guard let view = scopeConsentEntry?.view else { return }
+        let subscriptions = editor.context.subscriptions
+        let ordered = (try? snapshot.preferences.presentedSubscriptionIDs(subscriptions.map(\.id), includingHidden: true)) ?? subscriptions.map(\.id)
+        view.rowActions.setVisible = { [weak self] id, visible in
+            guard let self else { return }
+            self.submit(operation: { [editor = self.editor] in try await editor.commit(SettingsB21Edit.visible(id, visible)) })
+        }
+        view.rowActions.move = { [weak self] id, delta in
+            guard let self, let current = self.editor.snapshot else { return }
+            let stable = self.editor.context.subscriptions.filter { !$0.isUnstable }.map(\.id)
+            guard let order = try? current.preferences.presentedSubscriptionIDs(stable, includingHidden: true),
+                  let from = order.firstIndex(of: id), order.indices.contains(from + delta) else { return }
+            self.submit(operation: { [editor = self.editor] in
+                try await editor.commit(SettingsB21Edit.moveSubscription(id, to: from + delta, expectedOrder: order))
+            })
+        }
+        view.setSubscriptionRows(SubscriptionRowsContext(subscriptions: subscriptions, orderedIDs: ordered,
+                                                         hiddenIDs: snapshot.preferences.subscriptions.hiddenIDs,
+                                                         canSave: !editor.isSaving && !pendingEdit))
     }
     private func owns(_ sender: NSView & SettingsOwnedControl) -> Bool {
         guard sender.isEnabled, !sender.isRetired,

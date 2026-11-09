@@ -125,6 +125,8 @@ public enum EngineDeadlineFacts {
     /// Consumers must discard session placement and scope for these members on every refresh.
     public private(set) var memberInstability:[String:Bool] = [:]
     public var language="en"
+    /// D87: whether the manual key entry (D90) is available, so a missing key reads "Add key" on the card as in Settings.
+    public var keyEntryAvailable: () -> Bool = { false }
     private var english:Bool { language == "en" }
     private func text(_ value:RowsText) -> String { english ? value.en : value.zh }
     private func text(_ value:RowsName) -> String { english ? value.en : value.zh }
@@ -263,6 +265,8 @@ public enum EngineDeadlineFacts {
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
                 sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,resetCountExpiry:resetCount?.expiry,links: preferred.map(resetEventLinks) ?? [],windowObservations:observations,cardReadingState:cardState)
             if needsKeychain { reasons[member.id]?.actionLabel = english ? "Allow reading" : "允许读取" }
+            // D87 slice 9: any other named cause links to that subscription's row in Settings.
+            else if cause != nil { reasons[member.id]?.actionLabel = english ? "Open in Settings" : "在设置中处理" }
         }
         let status: String
         switch value.status {
@@ -432,13 +436,13 @@ public enum EngineDeadlineFacts {
         let name = member.name(english: english)
         if row.state == .stale || account.valueState == .retained,
            let failure = account.lastFailure,
-           let entry = ReaderCauseTable.entry(code: failure.code.rawValue, tool: row.id, toolName: name),
+           let entry = ReaderCauseTable.entry(code: failure.code.rawValue, tool: row.id, toolName: name, keyEntryAvailable: keyEntryAvailable()),
            let observed = date(account.observedAt) {
             return (ReaderCauseTable.staleLine(entry: entry, ageSeconds: Int(max(0, now.timeIntervalSince(observed))), language: language),
                     entry.action.value(language))
         }
         guard row.state == .failed || row.state == .needsAction,
-              let entry = ReaderCauseTable.entry(code: message(row, now: now).0.code.rawValue, tool: row.id, toolName: name) else { return nil }
+              let entry = ReaderCauseTable.entry(code: message(row, now: now).0.code.rawValue, tool: row.id, toolName: name, keyEntryAvailable: keyEntryAvailable()) else { return nil }
         return (entry.reason.value(language), entry.action.value(language))
     }
     private func message(_ row: RowsRow, now: Date) -> (RowsReason, RowsNextStep?) {
