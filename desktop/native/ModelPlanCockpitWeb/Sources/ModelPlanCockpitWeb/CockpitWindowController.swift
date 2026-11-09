@@ -545,7 +545,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         case .detach: setAttached(false)
         case .putBack: setAttached(true)
         case .shutterToggle:
-          if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+          toggleShutter()
         case .close: closeAnimated()
         default: onIntent?(intent)
         }
@@ -783,6 +783,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     web?.frame = .init(x: 0, y: 0, width: 636, height: fit.rootHeight + 34)
     dragRegion?.frame = .init(x: 64, y: fit.rootHeight + 2, width: 390, height: 28)
     publishAppearance()
+  }
+  func toggleShutter() {
+    if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
   }
   public var isAttached: Bool { !shellSession.detached }
   /// D88: the detach key (attached) or the put-back key (detached) in the same strip slot; dropping a drag
