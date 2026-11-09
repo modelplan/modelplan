@@ -422,7 +422,7 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		j.status = StatusNoConsent
 		return nil
 	}
-	unlock, ok := lock(cache, "perf.lock")
+	unlock, ok := lockWait(cache, "perf.lock")
 	if !ok {
 		return errors.New("readings busy; retry the import")
 	}
@@ -472,7 +472,7 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 }
 
 func markAutoRan(cache string, now time.Time) error {
-	unlock, ok := lock(cache, "perf.lock")
+	unlock, ok := lockWait(cache, "perf.lock")
 	if !ok {
 		return errors.New("readings busy; retry the import")
 	}
@@ -503,7 +503,7 @@ func writeImported(cache string, led ImportLedger) error {
 // RemoveImported deletes exactly the imported rows and their coverage ("Remove imported history").
 // The first-run marker stays so the import is not started again on its own.
 func RemoveImported(cache string) error {
-	unlock, ok := lock(cache, "perf.lock")
+	unlock, ok := lockWait(cache, "perf.lock")
 	if !ok {
 		return errors.New("readings busy; retry")
 	}
@@ -651,4 +651,16 @@ func ImportStatus(cache string) ImportState {
 		st.Coverage = append(st.Coverage, ImportCoverage{Source: src, From: day(c.From), Through: day(c.Through.Add(-time.Second)), Rows: n})
 	}
 	return st
+}
+
+// lockWait: the live observers hold perf.lock only for a moment, so an import waits a few seconds for
+// it instead of failing.
+func lockWait(cache, name string) (func(), bool) {
+	for i := 0; i < 50; i++ {
+		if unlock, ok := lock(cache, name); ok {
+			return unlock, true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil, false
 }
