@@ -96,7 +96,8 @@ test("LBL-2.2-06 string length budgets", todo("LBL-2.2-06"), () => {
 
 const englishTokensAllowed = ["ALERT", "MCP", "Codex", "GLM", "ZCode", "Z.ai", "OpenCode", "Cursor", "Copilot",
   "Qwen", "Kimi", "Kiro", "Grok", "MiniMax", "Gemini", "Claude", "Antigravity", "Amp", "Droid", "token", "Token",
-  "API", "JSON", "CLI", "3D", "Esc", "Escape", "macOS", "Mac", "MIT"];
+  "API", "JSON", "CLI", "3D", "Esc", "Escape", "macOS", "Mac", "MIT",
+  "Go", "Node.js", "api.z.ai", "z.ai", "open.bigmodel.cn", "bigmodel.cn", "opencode.ai"];
 const englishPhrasesAllowed = ["Claude Code", "ModelPlan", "Model Plan", "Intel"];
 test("LBL-2.2-07 no English inside the Chinese UI except ALERT, model names and units", todo("LBL-2.2-07"), () => {
   const bad = [];

@@ -54,6 +54,7 @@
     {
       "admitted": "yes",
       "beta": true,
+      "cause": "parse_error",
       "consent": "granted",
       "detected": "yes",
       "last": "unknown",

@@ -507,14 +507,16 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 	}
 	if err := send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{
 		"clientInfo": map[string]any{"name": "modelplan", "title": "modelplan quota", "version": "1"}, "capabilities": map[string]any{"experimentalApi": true}}}); err != nil {
-		return nil, err
+		// The runtime exited before it read the request: its pipe is closed, the same cause as a
+		// closed stream while waiting.
+		return nil, codeError("closed", "closed")
 	}
 	if _, err := wait(1); err != nil {
 		return nil, err
 	}
 	_ = send(map[string]any{"jsonrpc": "2.0", "method": "initialized"})
 	if err := send(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": map[string]any{}}); err != nil {
-		return nil, err
+		return nil, codeError("closed", "closed")
 	}
 	raw, err := wait(2)
 	if err != nil {
