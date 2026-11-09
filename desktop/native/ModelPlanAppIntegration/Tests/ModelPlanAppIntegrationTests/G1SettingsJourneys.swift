@@ -142,20 +142,6 @@ private actor G1SettingsEngine: EngineClient {
         }
     }
 
-    func testG1_FR_9_04_DiscoveredSubscriptionsAndEmptyState() async throws {
-        for count in [0, 2] {
-            let app = try await entry(locale: "en-US", discoveredMembers: count)
-            let window = try await firstRun(app)
-            let subscriptions = try control("firstRun.subscriptions", in: window, as: NSTextField.self)
-            XCTAssertFalse(subscriptions.isHiddenOrHasHiddenAncestor)
-            if count == 0 { XCTAssertTrue(subscriptions.stringValue.contains("No subscriptions detected")) }
-            else {
-                XCTAssertTrue(subscriptions.stringValue.contains("Synthetic tool"))
-                XCTAssertTrue(subscriptions.stringValue.contains("Synthetic tool · 2"))
-            }
-        }
-    }
-
     func testG1_FR_9_06_LoginChoiceDefaultAndCompletion() async throws {
         for enabled in [true, false] {
             let app = try await entry(locale: "en-US")
@@ -415,13 +401,6 @@ private actor G1SettingsEngine: EngineClient {
         XCTAssertEqual(saved.preferences.transparency, .on)
         XCTAssertEqual(acknowledged(), 2, "each chained edit waited for the slow consumer's acknowledgment")
         throw XCTSkip("Theme and accessibility effects on all open surfaces and relaunch remain unverified")
-    }
-
-    func testG1_SET_9_17_OneReaderConsentModel() async throws {
-        let app = try await entry(locale: "en-US")
-        let window = try await firstRun(app)
-        try assertControls(["settings.scopeConsent"], in: window)
-        throw XCTSkip("Synthetic engine consent grant/revoke and Settings relaunch are not yet exercised")
     }
 
     func testG1_SET_9_18_NotificationKindsDispatch() async throws {

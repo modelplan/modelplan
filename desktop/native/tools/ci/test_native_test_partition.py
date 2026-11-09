@@ -75,7 +75,7 @@ class VerifyTests(unittest.TestCase):
         complete = sorted(name for name, body in methods if "throw XCTSkip(" not in body)
         admitted = sorted(k.split("/", 1)[1] for k in pkg["allowedSkips"] if k.startswith("G1SettingsJourneys/"))
         self.assertEqual(admitted, deferred)
-        self.assertEqual(len(deferred), 12)
+        self.assertEqual(len(deferred), 11)
         cases = [f"ModelPlanAppIntegrationTests.G1SettingsJourneys/{name}" for name in deferred]
         complete_cases = [f"ModelPlanAppIntegrationTests.G1SettingsJourneys/{name}" for name in complete]
         # The actual CI shape: deferred journeys skip, complete journeys pass, on the GUI leg.

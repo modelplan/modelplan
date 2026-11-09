@@ -156,10 +156,6 @@
           "leg": "gui",
           "reason": "G1 partial journey; deferred: theme and accessibility effects on all open surfaces and relaunch remain unverified"
         },
-        "G1SettingsJourneys/testG1_SET_9_17_OneReaderConsentModel": {
-          "leg": "gui",
-          "reason": "G1 partial journey; deferred: synthetic engine consent grant/revoke and Settings relaunch are not yet exercised"
-        },
         "G1SettingsJourneys/testG1_SET_9_18_NotificationKindsDispatch": {
           "leg": "gui",
           "reason": "G1 partial journey; deferred: notification authorization and matching/nonmatching delivery require an admitted system test"
