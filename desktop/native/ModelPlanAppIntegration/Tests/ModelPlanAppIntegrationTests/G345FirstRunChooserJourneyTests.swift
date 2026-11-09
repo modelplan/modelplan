@@ -129,12 +129,18 @@ private actor G345Engine: EngineClient {
             XCTAssertFalse(mark.isTemplate, "\(tool): a coloured tile is drawn as the file is")
             let cg = try XCTUnwrap(mark.cgImage(forProposedRect: nil, context: nil, hints: nil), tool)
             let rep = NSBitmapImageRep(cgImage: cg)
-            var coloured = 0
+            var coloured = 0, dark = 0, light = 0
             for y in stride(from: 0, to: rep.pixelsHigh, by: 2) { for x in stride(from: 0, to: rep.pixelsWide, by: 2) {
                 guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), c.alphaComponent > 0.5 else { continue }
-                if max(c.redComponent, c.greenComponent, c.blueComponent) - min(c.redComponent, c.greenComponent, c.blueComponent) > 0.2 { coloured += 1 }
+                let high = max(c.redComponent, c.greenComponent, c.blueComponent), low = min(c.redComponent, c.greenComponent, c.blueComponent)
+                if high - low > 0.2 { coloured += 1 }
+                if high < 0.2 { dark += 1 }
+                if low > 0.8 { light += 1 }
             } }
-            XCTAssertGreaterThan(coloured, 20, "\(tool): the mark carries colour, not a plain block")
+            // The marks are filled tiles with a white glyph: Zhipu's tile is near-black (never chromatic), Kiro's is purple.
+            // So assert the tile and the glyph as two populations; a plain block or a missing glyph fails.
+            XCTAssertGreaterThan(light, 20, "\(tool): the white glyph is drawn")
+            XCTAssertGreaterThan(tool == "zai" ? dark : coloured, 20, "\(tool): the tile keeps its own colour, not a plain block")
         }
         XCTAssertTrue(try XCTUnwrap(ScopeConsentMarks.image(for: "cursor")).isTemplate, "one-colour marks still follow the label colour")
         let (app, _) = try await launch(locale: "en-US")
