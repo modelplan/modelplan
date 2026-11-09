@@ -914,6 +914,13 @@
           "minLength": 1,
           "type": "string"
         },
+        "speedTiers": {
+          "items": {
+            "$ref": "#/$defs/CockpitSpeedTier"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
         "truncated": {
           "type": "boolean"
         }
@@ -1286,6 +1293,176 @@
         "bindingBasis",
         "recent7d",
         "recent30d"
+      ],
+      "type": "object"
+    },
+    "CockpitSpeedBilling": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "billsTo": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "ratio": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "account",
+        "billsTo",
+        "basis",
+        "ratio"
+      ],
+      "type": "object"
+    },
+    "CockpitSpeedEligibility": {
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "plans": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        }
+      },
+      "required": [
+        "plans",
+        "note"
+      ],
+      "type": "object"
+    },
+    "CockpitSpeedRatio": {
+      "additionalProperties": false,
+      "properties": {
+        "qualifier": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ratio",
+        "qualifier"
+      ],
+      "type": "object"
+    },
+    "CockpitSpeedTier": {
+      "additionalProperties": false,
+      "properties": {
+        "billing": {
+          "items": {
+            "$ref": "#/$defs/CockpitSpeedBilling"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "eligibility": {
+          "$ref": "#/$defs/CockpitSpeedEligibility"
+        },
+        "harness": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/CockpitSpeedTierModel"
+          },
+          "maxItems": 256,
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "tier": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "toggle": {
+          "maxLength": 128,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "harness",
+        "tier",
+        "label",
+        "toggle",
+        "eligibility",
+        "models",
+        "billing",
+        "caveats",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "CockpitSpeedTierModel": {
+      "additionalProperties": false,
+      "properties": {
+        "modelId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxLength": 128
+        },
+        "speed": {
+          "$ref": "#/$defs/CockpitSpeedRatio"
+        },
+        "vendorModelId": {
+          "maxLength": 128,
+          "type": "string"
+        }
+      },
+      "required": [
+        "vendorModelId",
+        "modelId",
+        "speed"
       ],
       "type": "object"
     },

@@ -11,13 +11,13 @@ import ModelPlanWire
 /// Nothing on the machine is read.
 private actor G345Engine: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
-    let store: EngineStore, facts: WireConsentFacts, rows: WireRowsSnapshot
+    let store: EngineStore, facts: WireConsentFacts?, rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "g345", floor: .init(storeEpoch: "g345", generation: 1), revision: 1)
     var grants: [WireConsentGrantParams] = []
-    init(store: EngineStore, facts: WireConsentFacts, rows: WireRowsSnapshot) { self.store = store; self.facts = facts; self.rows = rows }
+    init(store: EngineStore, facts: WireConsentFacts?, rows: WireRowsSnapshot) { self.store = store; self.facts = facts; self.rows = rows }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context))); await store.consume(.context(context))
-        await store.consume(.consentChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: facts), delivery: context)))
+        if let facts { await store.consume(.consentChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: facts), delivery: context))) }
         return context
     }
     func recorded() -> [WireConsentGrantParams] { grants }
@@ -49,7 +49,7 @@ private actor G345Engine: EngineClient {
     }
     /// Claude Code (local history, saved login), Codex (local history, runtime), Cursor (local history,
     /// saved login, browser session), ZCode (saved key) are detected; Gemini is not.
-    private func facts(keychain: Set<String> = ["claude.account_usage.saved_login"], detectedOnly: Set<String>? = nil) throws -> WireConsentFacts {
+    private func facts(keychain: Set<String> = ["claude.account_usage.saved_login"], detectedOnly: Set<String>? = nil, browserOnlyTool: Bool = false) throws -> WireConsentFacts {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures().appendingPathComponent("WireConsentFacts.json"))) as? [String: Any])
         let base = try XCTUnwrap((object["scopes"] as? [[String: Any]])?.first)
         let paths: [(String, String, String, Bool, Bool)] = [
@@ -62,7 +62,7 @@ private actor G345Engine: EngineClient {
             ("cursor.account_usage.browser_session", "cursor", "browser_session", false, true),
             ("zai.account_usage.api_key", "zai", "api_key_api", true, true),
             ("gemini.local_history", "gemini", "local_log", true, false),
-        ]
+        ] + (browserOnlyTool ? [("kimi.account_usage.browser_session", "kimi", "browser_session", false, true)] : [])
         object["scopes"] = paths.map { id, tool, route, defaultCheck, detected -> [String: Any] in
             var scope = base
             scope["scope"] = id; scope["tool"] = tool; scope["route"] = route; scope["state"] = "unset"
@@ -90,11 +90,11 @@ private actor G345Engine: EngineClient {
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
-    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"], detectedOnly: Set<String>? = nil) async throws -> (EngineDockMenuApplication, G345Engine) {
+    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"], detectedOnly: Set<String>? = nil, browserOnlyTool: Bool = false, loadFacts: Bool = true) async throws -> (EngineDockMenuApplication, G345Engine) {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g345-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
-        let consent = try facts(keychain: keychain, detectedOnly: detectedOnly), snapshot = try rows()
+        let consent: WireConsentFacts? = try loadFacts ? facts(keychain: keychain, detectedOnly: detectedOnly, browserOnlyTool: browserOnlyTool) : nil, snapshot = try rows()
         final class Holder: @unchecked Sendable { var engine: G345Engine? }
         let holder = Holder()
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]),
@@ -102,8 +102,10 @@ private actor G345Engine: EngineClient {
             makeClient: { _, target in let value = G345Engine(store: target, facts: consent, rows: snapshot); holder.engine = value; return value }, activateSettings: {})
         await app.prepare(); await app.composition.start()
         let controller = app.scopeConsentEntry.controller
-        for _ in 0..<500 where controller.facts == nil || controller.rowsSummary == nil { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertNotNil(controller.facts)
+        if loadFacts {
+            for _ in 0..<500 where controller.facts == nil || controller.rowsSummary == nil { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertNotNil(controller.facts)
+        }
         addTeardownBlock { @MainActor in await app.composition.stop(); app.composition.dock.close() }
         return (app, try XCTUnwrap(holder.engine))
     }
@@ -298,5 +300,35 @@ private actor G345Engine: EngineClient {
         let privacy = try find("firstRun.privacy", in: zhWindow, as: NSTextField.self), line = try find("firstRun.recommendations", in: zhWindow, as: NSTextField.self)
         XCTAssertFalse(line.isHiddenOrHasHiddenAncestor)
         XCTAssertGreaterThan(privacy.convert(privacy.bounds, to: nil).minY, line.convert(line.bounds, to: nil).maxY - 0.5, "the line sits under the privacy line")
+    }
+
+    /// A detected tool with only browser-session paths is never read here, so its row gives a plain
+    /// reason and no "Reads ..." line, beside a disabled, unticked box.
+    func testToolWithOnlyBrowserSessionPathsSaysItCannotBeReadInsteadOfReads() async throws {
+        for (locale, reason) in [("en-US", "can't read this tool's sign-in"), ("zh-CN", "暂不支持读取这个工具")] {
+            let (app, _) = try await launch(locale: locale, browserOnlyTool: true)
+            let window = try await firstRun(app)
+            let box = try find("scope.firstRun.tool.kimi", in: window, as: NSButton.self)
+            XCTAssertFalse(box.isEnabled); XCTAssertEqual(box.state, .off)
+            XCTAssertTrue(try text("scope.firstRun.status.kimi", in: window).contains(reason), locale)
+            XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.firstRun.reads.kimi" }, "no read line for a tool that is not read")
+            XCTAssertTrue(try find("firstRun.done", in: window, as: NSButton.self).isEnabled, "an unreadable tool does not block Done")
+            window.close()
+        }
+    }
+
+    /// While the tools are still being found the chooser has its own heading, and the subscriptions
+    /// summary is not shown beside it.
+    func testChooserHasItsOwnHeadingAndNoSubscriptionsSummaryWhileLoading() async throws {
+        for (locale, heading) in [("en-US", "Choose which tools ModelPlan reads"), ("zh-CN", "选择要读取的工具")] {
+            let (app, _) = try await launch(locale: locale, loadFacts: false)
+            XCTAssertNil(app.scopeConsentEntry.controller.facts)
+            let window = try await firstRun(app)
+            XCTAssertEqual(try text("scope.firstRun.heading", in: window), heading)
+            XCTAssertNotNil(try? find("scope.firstRun.looking", in: window, as: NSTextField.self), "still looking for tools")
+            XCTAssertTrue(try find("firstRun.subscriptions", in: window, as: NSView.self).isHiddenOrHasHiddenAncestor, "no subscriptions summary while loading")
+            XCTAssertFalse(views(try XCTUnwrap(window.contentView)).compactMap { ($0 as? NSTextField)?.stringValue }.contains { $0 == "Subscriptions" || $0 == "订阅" })
+            window.close()
+        }
     }
 }

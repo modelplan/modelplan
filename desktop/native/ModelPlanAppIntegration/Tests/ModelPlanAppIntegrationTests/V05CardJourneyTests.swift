@@ -63,7 +63,7 @@ private actor V05SyntheticClient: EngineClient {
         projection["rows"] = rows; projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
         let snapshot = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
         XCTAssertEqual(snapshot.projection.invalidRowCount, 0)
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
         let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-01-01T00:00:00Z"))
         let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 80, width: 1440, height: 820))
         var pointer = CGPoint(x: 700, y: 450), elapsed = 0.0

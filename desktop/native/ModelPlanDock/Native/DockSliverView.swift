@@ -17,13 +17,19 @@ public struct DockSliverNoticeMark: Equatable {
 }
 
 /// One member's registered pitch. A nil role means no alert paint over the neutral body.
+/// `from...through` is the pitch inside the strip; `span` is the whole pitch when it reaches past
+/// an end of the strip (the prototype centres the segment on the ring and lets the strip clip it).
 public struct DockSliverQuotaInput {
+    /// G3-51: the prototype's segment opacity (face.css .sl-segment, opacity .4).
+    public static let alertOpacity: Double = 0.4
     public let subscriptionID: String, remainingPercent: Double?, quotaRole: DockQuotaStatus?, ink: DockInk?
     public let from: Double, through: Double, opacity: Double
-    public init(subscriptionID:String,remainingPercent:Double?,quotaRole:DockQuotaStatus?,ink:DockInk?,from:Double,through:Double,opacity:Double=0.18) {
+    public let span: ClosedRange<Double>
+    public init(subscriptionID:String,remainingPercent:Double?,quotaRole:DockQuotaStatus?,ink:DockInk?,from:Double,through:Double,
+                span:ClosedRange<Double>?=nil,opacity:Double=DockSliverQuotaInput.alertOpacity) {
         self.subscriptionID=subscriptionID;self.remainingPercent=remainingPercent;self.quotaRole=quotaRole
         self.ink=quotaRole == nil ? nil:ink;self.opacity=quotaRole == nil ? 0:opacity
-        self.from=from;self.through=through
+        self.from=from;self.through=through;self.span=span ?? from...through
     }
 }
 /// Registered member pitch and alert paint. Nil role/zero opacity means no quota overlay.
@@ -34,8 +40,11 @@ public struct DockSliverResolvedColorSegment: Equatable {
     public let remainingPercent: Double?
     public let quotaRole: DockQuotaStatus?
     public let opacity: Double
-    public init(from:Double,through:Double,rgbaHex:String,remainingPercent:Double?,quotaRole:DockQuotaStatus?,subscriptionID:String?=nil,opacity:Double=1) {
+    /// The whole pitch the glow is laid out over; it contains `from...through`.
+    public let span: ClosedRange<Double>
+    public init(from:Double,through:Double,rgbaHex:String,remainingPercent:Double?,quotaRole:DockQuotaStatus?,subscriptionID:String?=nil,opacity:Double=1,span:ClosedRange<Double>?=nil) {
         self.from=from;self.through=through;self.rgbaHex=rgbaHex;self.remainingPercent=remainingPercent;self.quotaRole=quotaRole;self.subscriptionID=subscriptionID;self.opacity=opacity
+        self.span=span ?? from...through
     }
 }
 
@@ -65,6 +74,9 @@ public struct DockSliverResolvedColorSegment: Equatable {
               quotaReadings.allSatisfy({ value in
                 guard !value.subscriptionID.isEmpty, value.subscriptionID.utf8.count <= 256,
                       value.from.isFinite, value.through.isFinite, 0 <= value.from, value.from < value.through, value.through <= 1,
+                      value.span.lowerBound.isFinite, value.span.upperBound.isFinite,
+                      value.span.lowerBound <= value.from, value.through <= value.span.upperBound,
+                      value.span.upperBound - value.span.lowerBound <= 2,
                       value.remainingPercent.map({ $0.isFinite && (0...100).contains($0) }) ?? true else { return false }
                 if let role=value.quotaRole {
                     return (role == .warning || role == .critical) && value.remainingPercent != nil && value.ink?.valid == true && value.opacity.isFinite && value.opacity > 0 && value.opacity < 1
@@ -105,7 +117,7 @@ public struct DockSliverResolvedColorSegment: Equatable {
         }
         quotaDrawing = quotaReadings.map { value in
             let hex = value.ink.map { ink in String(format:"#%02X%02X%02X%02X",Int((ink.r*255).rounded()),Int((ink.g*255).rounded()),Int((ink.b*255).rounded()),Int((ink.a*255).rounded())) } ?? ""
-            let segment = DockSliverResolvedColorSegment(from:value.from,through:value.through,rgbaHex:hex,remainingPercent:value.remainingPercent,quotaRole:value.quotaRole,subscriptionID:value.subscriptionID,opacity:value.opacity)
+            let segment = DockSliverResolvedColorSegment(from:value.from,through:value.through,rgbaHex:hex,remainingPercent:value.remainingPercent,quotaRole:value.quotaRole,subscriptionID:value.subscriptionID,opacity:value.opacity,span:value.span)
             return (segment,value.ink)
         }
         self.scale=scale;frame.size=logicalSize;failed=false;setAccessibilityElement(true);setAccessibilityEnabled(onReveal != nil);setAccessibilityLabel(accessibilityLabel)
@@ -128,7 +140,9 @@ public struct DockSliverResolvedColorSegment: Equatable {
         graphics.cgContext.setShouldAntialias(true)
         if let image{NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.copy,fraction:1,respectFlipped:true,hints:nil)}
         else{drawNeutralMetal(in:graphics.cgContext)}
-        // The body stays neutral. Alert paint is faint, static, and limited to the registered pitch.
+        // The body stays neutral. Alert paint is a static glow limited to the registered pitch.
+        // G3-51: as the prototype (face.css .sl-segment): a gradient along the strip over the whole
+        // pitch, clear at both ends and full ink from 40 % to 60 %, painted at opacity .4.
         // Overflow members share a physical pitch: paint its highest severity once, without accumulating alpha.
         let c = graphics.cgContext
         var paints = [PitchKey:Int]()
@@ -147,7 +161,13 @@ public struct DockSliverResolvedColorSegment: Equatable {
                 let rect = horizontal
                     ? CGRect(x:bounds.minX+bounds.width*from,y:bounds.minY,width:bounds.width*(through-from),height:bounds.height)
                     : CGRect(x:bounds.minX,y:bounds.minY+bounds.height*from,width:bounds.width,height:bounds.height*(through-from))
-                c.setAlpha(value.segment.opacity); c.setFillColor(ink.cg); c.fill(rect)
+                let length = horizontal ? bounds.width : bounds.height, origin = horizontal ? bounds.minX : bounds.minY
+                let start = origin + length * CGFloat(value.segment.span.lowerBound), end = origin + length * CGFloat(value.segment.span.upperBound)
+                guard let gradient = Self.alertGlow(ink) else { continue }
+                c.saveGState(); c.clip(to: rect); c.setAlpha(value.segment.opacity)
+                c.drawLinearGradient(gradient, start: horizontal ? CGPoint(x: start, y: bounds.midY) : CGPoint(x: bounds.midX, y: start),
+                                     end: horizontal ? CGPoint(x: end, y: bounds.midY) : CGPoint(x: bounds.midX, y: end), options: [])
+                c.restoreGState()
             }
         }
         c.restoreGState()
@@ -170,6 +190,12 @@ public struct DockSliverResolvedColorSegment: Equatable {
             } else { c.setFillColor(color); c.fillEllipse(in: rect) }
             c.restoreGState()
         }
+    }
+    /// The prototype's segment gradient: transparent 0 %, ink 40 %, ink 60 %, transparent 100 %.
+    static func alertGlow(_ ink: DockInk) -> CGGradient? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let solid = ink.cg, clear = solid.copy(alpha: 0) ?? solid
+        return CGGradient(colorsSpace: space, colors: [clear, solid, solid, clear] as CFArray, locations: [0, 0.4, 0.6, 1])
     }
     /// One transient brightness flash on a projected mark; the persistent dot remains in this painter.
     @discardableResult public func pulseNotice(_ key: DockNoticeKey) -> Bool {

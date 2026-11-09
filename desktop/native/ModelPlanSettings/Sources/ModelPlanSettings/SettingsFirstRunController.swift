@@ -163,8 +163,8 @@ import AppKit
             connectionsView.isHidden = scopeConsentEntry != nil
             scopePresentation?.apply(language: language)
             readerStack.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable
-            // G3-45: with the reading choices on the page, its tool list replaces this summary.
-            subscriptions.isHidden = editor.connections.isAvailable || scopeConsentEntry?.controller.facts != nil
+            // G3-45: with the reading choices on the page, they replace this summary, also while the tools load.
+            subscriptions.isHidden = editor.connections.isAvailable || scopeConsentEntry != nil
             subscriptions.stringValue = page.subscriptions.isEmpty
                 ? SettingsWords.text("No subscriptions detected yet. You can finish now.", "尚未检测到订阅，可以直接完成。", language)
                 : SettingsWords.text("Subscriptions detected", "已检测到的订阅", language) + "\n" + page.subscriptions.map { [$0.name.value(language),$0.plan].filter { !$0.isEmpty }.joined(separator: " · ") }.joined(separator: "\n")
