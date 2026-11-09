@@ -55,6 +55,19 @@ jobs:
         run: swift test --package-path desktop/official-visuals/dock --scratch-path .tmp/official-dock-tests --jobs 2
       - name: Generic material seam (no GUI)
         run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --filter '(T2MaterialSeamTests|OfficialDockEntryJourneyTests|S1GalleryTests|ZaiMarkSwitchTests|DockWorkingHostInjectionTests|DockContentProviderTests)' --jobs 2
+      - name: Regenerate baselines (temporary, G3-74)
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        env:
+          MODELPLAN_S1_REGRESSION_BASELINES: ${{ github.workspace }}/desktop/official-visuals/dock/RegressionBaselines
+          MODELPLAN_S1_REGENERATE_DIR: ${{ github.workspace }}/.tmp/regenerated
+        run: swift run --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --jobs 2 S1Gallery
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: regenerated-baselines
+          path: .tmp/regenerated
+          if-no-files-found: warn
       - name: Owner-accepted native Dock regression (no GUI)
         env:
           MODELPLAN_S1_REGRESSION_BASELINES: ${{ github.workspace }}/desktop/official-visuals/dock/RegressionBaselines

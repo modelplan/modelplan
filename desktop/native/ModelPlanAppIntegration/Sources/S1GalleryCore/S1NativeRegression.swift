@@ -116,6 +116,8 @@ import ModelPlanOfficialDock
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("s1-regression-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
+        let regenerate = ProcessInfo.processInfo.environment["MODELPLAN_S1_REGENERATE_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        if let regenerate { try FileManager.default.createDirectory(at: regenerate, withIntermediateDirectories: true) }
         var worstMean = 0.0, worstTile = 0.0
         for (index, item) in fixture.captures.enumerated() {
             let reference = try verified(item.file, hash: item.sha256, root: root)
@@ -134,10 +136,17 @@ import ModelPlanOfficialDock
             guard zip(actualBounds, item.skinBounds).allSatisfy({ abs($0 - $1) <= 0.01 }),
                   host.registeredConsoleButtonForChecks != nil else { throw Failure.geometry(item.file + " bounds/control") }
             let report = try S1PixelReport.make(reference: reference, image: image, skin: skin, capture: item.galleryCapture, singleWindowIDs: [])
+            if let regenerate {
+                // Baseline refresh (G3-74, D48): write the CI actuals of every capture outside the tolerance.
+                do { _ = try compare(reference, report.native, name: item.file); print("KEEP \(item.file)") }
+                catch { try report.native.write(to: regenerate.appendingPathComponent(item.file)); print("REGENERATED \(item.file) sha256=\(hash(report.native))") }
+                continue
+            }
             let (mean, tile) = try compare(reference, report.native, name: item.file)
             worstMean = max(worstMean, mean); worstTile = max(worstTile, tile)
             print("PASS \(item.file) mean=\(mean) worstTile=\(tile)")
         }
+        if regenerate != nil { return }
         let empty = fixture.emptyCases[0]
         let emptyReference = try verified(empty.file, hash: empty.sha256, root: root)
         let (emptyImage, emptyBounds) = try await renderEmpty()
