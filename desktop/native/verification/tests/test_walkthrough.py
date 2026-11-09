@@ -276,7 +276,11 @@ class Script(unittest.TestCase):
         self.assertEqual(working["actions"][0]["op"], "startSession")
 
     def test_open_at_login_is_unticked_only_once_and_before_done(self):
-        presses = [s["id"] for s in self.STEPS for a in s.get("actions", []) if a.get("op") == "press" and a.get("value") == "firstRun.login"]
+        def flat(actions):
+            for a in actions:
+                yield a
+                yield from flat(a.get("then", []))
+        presses = [s["id"] for s in self.STEPS for a in flat(s.get("actions", [])) if a.get("op") == "press" and a.get("value") == "firstRun.login"]
         self.assertEqual(presses, ["first-run-login-off"])
 
     def test_the_seed_has_a_ring_at_zero(self):
@@ -540,6 +544,29 @@ class NewChecks(unittest.TestCase):
         with_key = FakeHost({"windows": [{"frame": [0, 0, 90, 90], "children": [{"label": "Detach", "frame": [1, 1, 5, 5]}]}]})
         self.assertEqual(walker(with_key, self.out, steps).walk_steps()[0]["status"], "pass")
 
+    def test_a_helper_fault_on_the_only_if_probe_fails_that_step_and_the_walk_goes_on(self):
+        class Faulty(FakeHost):
+            probes = 0
+            def helper(self, *arguments):
+                if arguments[0] == "tree":
+                    Faulty.probes += 1
+                    if Faulty.probes == 1:
+                        raise TypeError("boom")
+                return super().helper(*arguments)
+        host = Faulty({"windows": [{"frame": [0, 0, 9, 9], "children": []}]})
+        steps = [{"id": "a", "title": "t", "expected": "e", "onlyIf": "label:Detach"},
+                 {"id": "b", "title": "t", "expected": "e"}]
+        first, second = walker(host, self.out, steps).walk_steps()
+        self.assertEqual(first["status"], "fail"); self.assertIn("harness error", first["reason"])
+        self.assertEqual(second["status"], "pass")
+
+    def test_open_at_login_is_pressed_only_when_it_reads_on(self):
+        steps = [s for s in json.loads((ROOT / "steps.json").read_text(encoding="utf-8"))["steps"] if s["id"] == "first-run-login-off"]
+        for value, pressed in (("1", 1), ("0", 0)):
+            host = FakeHost({"windows": [{"frame": [0, 0, 90, 90], "children": [{"id": "firstRun.login", "value": value, "frame": [1, 1, 5, 5]}]}]})
+            walker(host, self.out, [dict(steps[0], checks=[], shot={}, requires=[])]).walk_steps()
+            self.assertEqual(sum(1 for c in host.calls if c[0] == "press"), pressed, value)
+
     def test_the_session_op_needs_a_profile_and_starts_one_thread_once(self):
         walk = walker(FakeHost({}), self.out, [])
         with self.assertRaises(w.WalkthroughError):
@@ -639,6 +666,9 @@ class MachineSummaryTests(unittest.TestCase):
         out = w.machine_summary(manifest)
         self.assertEqual([r["status"] for r in out["scenarios"]], ["pass", "blocked", "fail", "blocked", "pass", "fail"])
         self.assertEqual(out["scenarios"][0]["evidence"], ["01-a.png", "01-a.tree.json", "01-a.window.png"])
+        kept = w.machine_summary({"checks": [], "steps": [{"step": "r", "status": "pass", "region": "02-r.region.png",
+                                  "measures": {"marks": {"t": {"file": "03-m.tab-0.png"}}}}]})
+        self.assertEqual(kept["scenarios"][0]["evidence"], ["02-r.region.png", "03-m.tab-0.png"])
         self.assertEqual(out["counts"], {"pass": 2, "fail": 2, "blocked": 2})
         self.assertFalse(out["ok"])
         self.assertEqual(w.failures(dict(manifest, steps=[manifest["steps"][3]], checks=[])), [])

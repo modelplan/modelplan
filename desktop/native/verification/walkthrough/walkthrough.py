@@ -726,10 +726,16 @@ class Walkthrough:
         started = self.host.now()
         reasons, skipped = [], None
         only_if = step.get("onlyIf")
-        if only_if and resolve(self.tree(), only_if) is None:
-            # A control that only some builds have (the detach key, D88): a build without it skips the step.
-            record.update(status="skipped", reason="this build has no " + only_if, seconds=0)
-            return record
+        if only_if:
+            try:
+                absent = resolve(self.tree(), only_if) is None
+            except Exception as error:  # a helper fault fails this step only; the walk goes on
+                record.update(status="fail", reason="harness error: %s" % type(error).__name__, seconds=0)
+                return record
+            if absent:
+                # A control that only some builds have (the detach key, D88): a build without it skips the step.
+                record.update(status="skipped", reason="this build has no " + only_if, seconds=0)
+                return record
         self.measures = {}
         self.window_baseline = window_ids(self.windows())
         try:
@@ -1336,7 +1342,8 @@ def machine_summary(manifest):
     states = {"pass": "pass", "skipped": "blocked", "not-run": "blocked", "awaiting": "blocked"}
     rows = []
     for r in manifest["steps"]:
-        evidence = [r[k] for k in ("file", "crop", "tree") if r.get(k)]
+        evidence = [r[k] for k in ("file", "crop", "tree", "region") if r.get(k)]
+        evidence += [m["file"] for m in ((r.get("measures") or {}).get("marks") or {}).values() if isinstance(m, dict) and m.get("file")]
         if isinstance(r.get("window"), dict) and r["window"].get("file"):
             evidence.append(r["window"]["file"])
         rows.append({"id": r["step"], "status": states.get(r["status"], "fail"), "reason": r.get("reason") or "",

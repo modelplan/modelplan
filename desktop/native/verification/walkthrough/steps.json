@@ -4,7 +4,7 @@
     {
       "id": "first-run-window",
       "title": "First-run window",
-      "expected": "The Set up ModelPlan window lists the tools found in the seeded profile (Claude Code, Codex, Gemini, ZCode, Kiro markers), with one notice line (D27: no per-tool checkboxes from build 15; the earlier tool rows still pass) (checklist 3); Open at login is on by default; the widget is visible beside it.",
+      "expected": "The Set up ModelPlan window lists the tools found in the seeded profile (Claude Code as a marker only, Codex, Gemini, ZCode, Kiro), with one notice line (D27: no per-tool checkboxes from build 15; the earlier tool rows still pass) (checklist 3); Open at login is on by default; the widget is visible beside it.",
       "actions": [
         {
           "op": "await",
@@ -39,6 +39,12 @@
         },
         {
           "exists": "ax:firstRun.done"
+        },
+        {
+          "valueIs": {
+            "target": "ax:firstRun.login",
+            "is": "1"
+          }
         }
       ],
       "requirement": "checklist 3",
@@ -53,9 +59,18 @@
       ],
       "actions": [
         {
-          "op": "press",
-          "by": "id",
-          "value": "firstRun.login"
+          "op": "when",
+          "equals": {
+            "target": "ax:firstRun.login",
+            "value": "1"
+          },
+          "then": [
+            {
+              "op": "press",
+              "by": "id",
+              "value": "firstRun.login"
+            }
+          ]
         },
         {
           "op": "wait",
@@ -2730,7 +2745,7 @@
     {
       "id": "cockpit-drag-title",
       "title": "Cockpit dragged by its title strip (14b: no detach key)",
-      "expected": "Dragging the left part of the title strip moves the detached window (G3-43).",
+      "expected": "Dragging the title strip's drag region moves the detached window (G3-43); the step checks only that the window moved.",
       "requires": [
         "s-reset-open-cockpit"
       ],
@@ -2820,7 +2835,8 @@
           }
         }
       ],
-      "requirement": "checklist 6"
+      "requirement": "checklist 6",
+      "awaiting": "#794"
     },
     {
       "id": "cockpit-close",
@@ -2921,7 +2937,7 @@
     {
       "id": "air-1470x956",
       "title": "Cockpit at 1470x956, Dock at the bottom",
-      "expected": "On a 1470x956 screen (MacBook Air M2/M3 default) the full cockpit fits between the menu bar and the Dock (G3-39). Hosted Macs offer no 1470x956, so the walk uses 1280x960: nearly the same height, which is what decides the fit.",
+      "expected": "On a 1470x956 screen (MacBook Air M2/M3 default) the full cockpit fits between the menu bar and the Dock (G3-39). Hosted Macs offer no 1470x956, so the step is skipped there.",
       "actions": [
         {
           "op": "toggleCockpit",

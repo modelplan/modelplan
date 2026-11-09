@@ -36,8 +36,12 @@ The packaged app has no scenario input, so the profile is seeded through the fil
 reads, in a fresh `HOME` (`CFFIXED_USER_HOME` too):
 
 - `.config/modelplan/local.json`: declared plans, as the Dock real-server journeys write it.
-- `Library/Caches/modelplan/observed/codex-account.json`: a Codex reading, bound to a real `consent grant`
-  of `codex.runtime_usage` in that profile, as `DockQuotaWindowsRealServerTests` writes it.
+- `Library/Caches/modelplan/observed/perf.json`: seven days of session history and the running session (a `live`
+  record), written atomically and stamped with the grant, as the performance ledger holds it.
+- Codex: a stand-in `codex` executable (`MODELPLAN_CODEX`, the seam declared in `schema/app-cli/child-environment.json`)
+  answering the rate-limit read with invented numbers: one window nearly used up and a reserve balance.
+- Claude Code: a marker only. Nothing can read its quota here (no login, no Keychain), so it is the unreadable
+  subscription (G3-38). Gemini has an expired login and ZCode an account login; both are detected, not read.
 
 `seed.json` holds the invented values. No credential exists in the profile, so no reader can reach a provider,
 and the runner's Keychain is empty. Never put real readings here.
@@ -59,19 +63,24 @@ itself (see `publication-fresh-profile` below). That is the only network use, an
 Steps named `j-*` walk the prototype's interaction journeys (tab scope, MFD pages, option keys, press a fader strip,
 return from a comparison, ALERT lamp, Esc order). They carry few hard checks on purpose: each step's `tree.json` is
 compared with the prototype journey by a separate feature checker (PASS / BROKEN / MISSING per feature). Targets accept
-`label^:` (starts with) and `label~:` (contains); `clickFirst` clicks the first of several targets that is on screen.
+`label^:` (starts with), `label~:` (contains), `value~:` and `help~:` (the value or help text contains); `clickFirst` clicks the first of several targets that is on screen.
 
 ## Output
 
+The job also uploads `walkthrough-summary.json` (artifact `walkthrough-summary`): one row per step and check with
+`status` (`pass`, `fail`, `blocked`), `reason`, `requirement` and `evidence` (the full and cropped pictures, the tree, the
+window capture, kept region pictures and tab-mark pictures), for the coordinator's auto-verify.
+
 `manifest.json` has `sourceSHA`, `artifact`, `host` (display, permissions and GPU; no user name) and:
 
-- `steps[]`: `step`, `title`, `expected`, `prototype`, `status` (`pass`, `fail`, `not-run`, `skipped`), `reason`,
+- `steps[]`: `step`, `title`, `expected`, `prototype`, `status` (`pass`, `fail`, `not-run`, `skipped`, `awaiting`), `reason`,
   `seconds` (how long the step took), `measures` (numbers a step records, below), `file` (full screen), `crop`
   (the named surface, when there is one), `window` (for steps whose `shot` names one: the app window holding that
   surface, captured alone with its alpha by `screencapture -o -l`, with its `bounds`; the visual comparison against
   the prototype reads it, so a clear window is transparent there and an opaque backing is not) and `tree`
-  (accessibility state then). `skipped` means this host cannot
-  walk the step, such as a display mode it does not offer; it does not fail the job.
+  (accessibility state then). `skipped` means this host or build cannot
+  walk the step (a display mode it does not offer, an `onlyIf` control the build lacks, or a step it needs was skipped); it
+  does not fail the job. `awaiting` is a step that names a pending PR in `awaiting`; its failure does not fail the job.
 - `checks[]`: `check`, `status`, `detail`. These need no judgement.
 
 `pass` on a step means only that its actions ran and its scripted checks held. Whether the picture looks right
@@ -92,7 +101,7 @@ screen, for the help map), `fits` (inside the visible area between the menu bar 
 photographed with an exhausted subscription. A hidden menu bar icon is not walked here: a hosted display has no
 notch, so nothing can cover the icon. Each step may name its owner ledger `requirement`.
 
-Scripted checks: `publication-sync`, `launch`, `reader-first-reading` (seconds to the first reading on the widget),
+Scripted checks: `publication-sync`, `launch`, `reader-first-reading` (info: seconds to the first reading on the widget; the pass/fail coverage is `restart-launch`),
 `alive-after-walk`, `widget-ax-frames`, `doctor-readers` (`modelplan doctor readers` before shutdown, kept as
 `doctor-readers.json`), `reader-refresh-timing` (`--refresh`), `quit` (through the real menu item, no signal),
 `restart-launch`, `restart-no-first-run`, `restart-widget-place` (edge, width and centre along the edge; not height), `restart-station-late` (info: height differs after relaunch, a station appeared late, G3-36 family), `restart-readings`, `restart-quit`,
@@ -102,6 +111,7 @@ Status `info` records a fact without passing or failing the job:
 
 - `publication-fresh-profile`: a second profile that nothing syncs gets 120 seconds with the app running and
   the cockpit open; records whether public data arrived and what the cockpit shows (`fresh-profile-cockpit.png`).
+- `seed-evidence`: the synthetic refs and counts the seed wrote (no values from a real profile).
 - `restart-first-use-hint`: whether a new window appeared within 15 seconds of the relaunch.
 
 `widget-ax-frames` carries the evidence for mirrored frames: the frame the app reports for the critical ring,
