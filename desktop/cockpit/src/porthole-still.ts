@@ -46,13 +46,16 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
   cockpit.addEventListener('hud-hover',lit,{signal:opener.signal});
   const host=document.createElement('div');host.className='ck-still';host.setAttribute('aria-hidden','true');field.prepend(host);
   const base=new URL(pack.base,document.baseURI).href;let painted='';
-  // Prototype placeBigKey: 22 px, 40 px in from the right and 36 px down at night (12 px on a short port); by day it
-  // sits 17 px in, just under the canopy arch (border-radius 38% / 18%).
+  // The ⤢ key sits inside the glass of the c01 canopy, never on its frame (owner, 11-09). Positions are measured on the
+  // canopy aperture mask (runtime/canopy-c01/aperture-<layout>-1x.png, in the port's page coordinates): at least 8 px of
+  // glass on every side at both layouts, in both themes, and clear of the HUD at the left. At 890 the right and top
+  // insets from the curved edge are about equal (16 and 15 px); the 640 band is only ~44 px of glass, so the key sits
+  // further left, centred in it. Offsets are from the port's padding box.
+  const BIG_KEY={890:{right:42,top:24},640:{right:74,top:0}} as const;
   const placeBig=()=>{
-    if(!big||!port)return;const W=port.clientWidth,H=port.clientHeight,size=22;if(!W||!H)return;
-    let right=40,top=H<80?12:36;
-    if(document.documentElement.dataset.theme==='day'){right=17;const rx=.38*W,ry=.18*H,dx=Math.max(0,rx-right);top=Math.ceil(ry*(1-Math.sqrt(Math.max(0,1-(dx/rx)**2))))+3;}
-    Object.assign(big.style,{right:right+'px',top:top+'px',width:size+'px',height:size+'px',display:'grid',placeItems:'center',zIndex:'3'});
+    if(!big||!port)return;const size=22;if(!port.clientWidth||!port.clientHeight)return;
+    const at=BIG_KEY[cockpit.dataset.layout==='640'?640:890];
+    Object.assign(big.style,{right:at.right+'px',top:at.top+'px',width:size+'px',height:size+'px',display:'grid',placeItems:'center',zIndex:'3'});
   };
   const paint=()=>{
     placeBig();
