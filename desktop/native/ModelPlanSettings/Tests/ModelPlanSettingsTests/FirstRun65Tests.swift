@@ -10,8 +10,8 @@ final class FirstRun65Tests: XCTestCase {
     }
     func testFirstRunPublicRecommendationIsLocalized() throws {
         let page = try FirstRunPage(preferences: SettingsPreferences(), context: SettingsPageContext())
-        XCTAssertEqual(page.publicRecommendation.value(.english), "Recommendations use public data.")
-        XCTAssertEqual(page.publicRecommendation.value(.chinese), "推荐基于公开数据。")
+        XCTAssertEqual(page.publicRecommendation.value(.english), "Recommendations use ModelPlan's published model data; your usage never leaves this Mac.")
+        XCTAssertEqual(page.publicRecommendation.value(.chinese), "推荐用的是 ModelPlan 公开发布的模型数据，不会上传你的使用记录。")
     }
     func testV1ExplorationRequiresARealHelpMap() throws {
         let preferences = SettingsPreferences()
