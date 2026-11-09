@@ -292,6 +292,36 @@ import ModelPlanSettings
         XCTAssertEqual(opens, 1); XCTAssertNil(host.nativePanel)
     }
 
+    /// D87 slice 4 (ledger G3-72): a Codex snapshot that failed for a missing Node.js says so on the card
+    /// instead of the lumped "Reading unavailable".
+    func testD87CodexRuntimeMissingShowsNeedNodeOnTheActualHostCard() async throws {
+        _ = NSApplication.shared
+        let value = try snapshot(sources: [["source": "codex-account", "status": "binary_found_but_runtime_missing",
+                                            "reason": "Install Node.js, or make node available beside the tool CLI, then retry in Settings",
+                                            "errorCode": "runtime_missing"]])
+        let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
+        defer { host.close() }
+        var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
+        host.updateDockConsent(try consent(["codex"])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
+        let row = try XCTUnwrap(model(value, consent: try consent(["codex"])).inputs.first)
+        XCTAssertTrue(model(value, consent: try consent(["codex"])).presentationRows.values.allSatisfy { $0.reason.contains("需要 Node.js") && !$0.reason.contains("Reading unavailable") })
+        try presentSyntheticHostCard(host, id: row.id)
+        func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
+        let labels = views(host.card).compactMap { $0 as? NSTextField }
+        XCTAssertTrue(labels.contains { $0.stringValue.contains("需要 Node.js") }, "the card names the cause")
+        XCTAssertFalse(labels.contains { $0.stringValue.contains("Reading unavailable") })
+    }
+    func testD87CardCauseComesFromTheEngineCodeNotTheLumpedReason() throws {
+        for (code, expected) in [("not_found", "命令"), ("timeout", "读取超时"), ("rpc_error", "后台服务出错"), ("closed", "意外退出")] {
+            let value = try snapshot(sources: [["source": "codex-account", "status": "error", "errorCode": code]])
+            let row = try XCTUnwrap(model(value, consent: try consent(["codex"])).presentationRows.values.first)
+            XCTAssertTrue(row.reason.contains(expected), "\(code): \(row.reason)")
+            XCTAssertFalse(row.reason.contains("Reading unavailable"))
+        }
+        let generic = try snapshot(sources: [["source": "native:grok", "status": "error", "reason": "reader_error"]])
+        XCTAssertTrue(try XCTUnwrap(model(generic, consent: try consent(["grok"])).presentationRows.values.first).reason.contains("Reading unavailable"))
+    }
+
     func testH37ActualHumanSourceReasonsDoNotOverrideMachineStatusOnHost() async throws {
         _ = NSApplication.shared
         for (provider, status, human, expected) in [

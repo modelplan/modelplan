@@ -492,6 +492,10 @@ public enum RowsCode: Codable, Sendable, Equatable {
     case `http5xx`
     case `network`
     case `timeout`
+    case `notFound`
+    case `rpcError`
+    case `closed`
+    case `regionRefused`
     case `other`
     case `readersOff`
     case `noConsent`
@@ -544,6 +548,10 @@ public enum RowsCode: Codable, Sendable, Equatable {
         case "http_5xx": self = .`http5xx`
         case "network": self = .`network`
         case "timeout": self = .`timeout`
+        case "not_found": self = .`notFound`
+        case "rpc_error": self = .`rpcError`
+        case "closed": self = .`closed`
+        case "region_refused": self = .`regionRefused`
         case "other": self = .`other`
         case "readers_off": self = .`readersOff`
         case "no_consent": self = .`noConsent`
@@ -598,6 +606,10 @@ public enum RowsCode: Codable, Sendable, Equatable {
         case .`http5xx`: return "http_5xx"
         case .`network`: return "network"
         case .`timeout`: return "timeout"
+        case .`notFound`: return "not_found"
+        case .`rpcError`: return "rpc_error"
+        case .`closed`: return "closed"
+        case .`regionRefused`: return "region_refused"
         case .`other`: return "other"
         case .`readersOff`: return "readers_off"
         case .`noConsent`: return "no_consent"

@@ -206,6 +206,8 @@ public struct SourceStatus: Decodable, Sendable {
     public let source: String
     public let status: String
     public let reason: String?
+    /// The engine's fixed failure code (D87); display mapping lives in ReaderCauseTable.
+    public let errorCode: String?
 }
 
 public struct ConnectionStage: Decodable, Sendable {

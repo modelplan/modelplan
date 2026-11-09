@@ -155,7 +155,7 @@ Then the rules apply in order:
 | 3 | tool missing from the machine, or retired | needs_action | tool_not_found, catalogue_retired |
 | 4 | no reader exists for the tool | unsupported | no_reader |
 | 5 | the credential read is **actually blocked** by the credential store (Keychain unset/denied/canceled/not found/unavailable/confirmation needed, and no readable credentials file), and C is empty | needs_keychain | keychain_unset, keychain_denied, keychain_canceled, keychain_not_found, keychain_unavailable, keychain_confirmation_needed |
-| 6 | C and R both empty, and the latest attempt failed | failed / needs_action | reader error codes; login_expired, runtime_missing and http_401 give needs_action |
+| 6 | C and R both empty, and the latest attempt failed | failed / needs_action | reader error codes (D87 cause codes: not_found, runtime_missing, timeout, rpc_error, closed, key_missing for no_key, region_refused); login_expired, runtime_missing, not_found, region_refused and http_401 give needs_action |
 | 7 | C and R both empty, and the latest attempt succeeded with no windows | empty | no_usage_windows |
 | 8 | C and R both empty, and there was no attempt yet, or the reader is busy or cooling down | pending | not_read_yet, reader_busy, no_manual_reading |
 | 9 | R is not empty | stale | stale_reading or observation_time_unknown (the original error stays only in that account's `lastFailure`) |
@@ -187,12 +187,13 @@ The closed set of codes, with the state and next-step action each one gives:
 | login_expired | needs_action | open_tool |
 | runtime_missing | needs_action | install_runtime |
 | update_required | needs_action | update_cli |
-| key_missing, tool_not_found, catalogue_retired, http_401, unsupported_login | needs_action | open_settings_consent |
+| key_missing, tool_not_found, not_found, catalogue_retired, http_401, unsupported_login | needs_action | open_settings_consent |
+| region_refused | needs_action (the configured address is a third-party relay; nothing to retry) | none |
 | privacy_blocked, catalogue_off, not_admitted, codexbar_not_audited, codexbar_not_read, codexbar_access_unknown, browser_session_consent_required | off | open_settings_consent |
 | policy_pending | off | open_settings_consent |
 | no_reader | unsupported | none |
 | cleanup_pending | off (Settings surface only) | open_settings_consent |
-| file_missing, file_unreadable, parse_error, schema_changed, http_403, http_429, http_5xx, network, timeout | failed (row 6, when there is no value; with a retained value the row is stale and the code lives in `lastFailure`) | refresh |
+| file_missing, file_unreadable, parse_error, schema_changed, http_403, http_429, http_5xx, network, timeout, rpc_error, closed | failed (row 6, when there is no value; with a retained value the row is stale and the code lives in `lastFailure`) | refresh |
 | other | failed | refresh |
 
 `policy_pending` intentionally disables an unapproved read path independently of saved user consent. It vetoes retained values, offers no retry or refresh, and Settings explains that the scope is awaiting approval. It is not a reader failure.

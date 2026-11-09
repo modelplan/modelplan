@@ -42,14 +42,17 @@ public struct SettingsSubscription: Sendable {
     public let modelNames: [String], toolNames: [String]
     public let source: SubscriptionSourceState
     public let isUnstable: Bool
+    /// The engine's fixed failure code for this subscription's source, if it failed (D87); text comes from ReaderCauseTable.
+    public let causeCode: String?
     public var persistenceDisabledReason: SettingsText? {
         isUnstable ? .init("Unverified account — changes can't be saved yet", "未验证账号，暂不能保存设置") : nil
     }
     public init(id: String, name: SettingsText, plan: String = "", vendor: String = "",
                 modelNames: [String] = [], toolNames: [String] = [], source: SubscriptionSourceState = .unavailable,
-                isUnstable: Bool = false) {
+                isUnstable: Bool = false, causeCode: String? = nil) {
         self.id = id; self.name = name; self.plan = plan; self.vendor = vendor
         self.modelNames = modelNames; self.toolNames = toolNames; self.source = source; self.isUnstable = isUnstable
+        self.causeCode = causeCode
     }
 }
 public enum CLIReadState: String, Sendable { case ready, unavailable, denied, stale }
@@ -411,7 +414,10 @@ public enum SettingsCatalogue {
         case .forecast, .reset, .official, .expiring, .stale: return .toggle(p.notifications.kinds.contains(NotificationKind(rawValue: k.rawValue)!))
         case .visible: return perSub(options: ["true", "false"]) { String(!p.subscriptions.hiddenIDs.contains($0.id)) }
         case .alias: return perSub { p.subscriptionSettings[$0.id]?.alias ?? "" }
-        case .source: return perSub { $0.source.rawValue }
+        case .source: return perSub { sub in
+            guard let code = sub.causeCode, let entry = ReaderCauseTable.entry(code: code, tool: sub.vendor, toolName: sub.name.value(p.language)) else { return sub.source.rawValue }
+            return entry.reason.value(p.language) + " · " + entry.action.value(p.language)
+        }
         case .projectNames: return .toggle(p.showProjectNames)
         case .retention: return .text("sessions=35d; dailyTotals=371d; owner=CLI")
         case .clearCLI: return .action(nil)

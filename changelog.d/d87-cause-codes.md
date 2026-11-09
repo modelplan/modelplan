@@ -1,0 +1,1 @@
+A failed reading now says why. The engine carries a fixed cause code per row and account (command not found, Node.js missing, timeout, background service error or closed, no key, relay address refused), `doctor readers` prints it with Codex's last ten failures, and the widget card and Settings show one plain reason and next step per cause instead of "Reading unavailable".

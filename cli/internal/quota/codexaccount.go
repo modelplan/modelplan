@@ -101,6 +101,44 @@ type accountSnap struct {
 	// itself keeps the status, time and back-off; the retained windows keep the row (and its ring)
 	// alive as a stale reading instead of being thrown away.
 	Good *accountSnap `json:"good,omitempty"`
+	// Failures: the last accountFailureRing failed reads, oldest first, kept across later good
+	// reads so a cause is not lost once a read succeeds again. Fixed codes and times only.
+	Failures []accountFailure `json:"failures,omitempty"`
+}
+
+// accountFailureRing is how many recent failures the snapshot keeps.
+const accountFailureRing = 10
+
+// accountFailure is one failed read: its fixed cause code, when it happened, and how long the
+// failing streak had lasted by then (0 for the first failure of a streak). No text or data.
+type accountFailure struct {
+	Code          string    `json:"code"`
+	At            time.Time `json:"at"`
+	StreakSeconds int64     `json:"streakSeconds"`
+}
+
+// nextFailures carries the previous ring forward and, for a failed read, appends this failure.
+func nextFailures(previous *accountSnap, s *accountSnap, now time.Time) []accountFailure {
+	var ring []accountFailure
+	streakStart := now
+	if previous != nil {
+		ring = append(ring, previous.Failures...)
+		if previous.Status != "ok" && len(previous.Failures) > 0 {
+			last := previous.Failures[len(previous.Failures)-1]
+			streakStart = last.At.Add(-time.Duration(last.StreakSeconds) * time.Second)
+		}
+	}
+	if s.Status != "ok" {
+		secs := int64(now.Sub(streakStart) / time.Second)
+		if secs < 0 {
+			secs = 0
+		}
+		ring = append(ring, accountFailure{Code: s.failureCode(), At: now.UTC(), StreakSeconds: secs})
+	}
+	if len(ring) > accountFailureRing {
+		ring = ring[len(ring)-accountFailureRing:]
+	}
+	return ring
 }
 
 // retainGood is the last good reading a new failure carries forward: the previous snapshot if it
@@ -118,14 +156,17 @@ func retainGood(previous *accountSnap, now time.Time) *accountSnap {
 	}
 	kept := *good
 	kept.Good = nil
+	kept.Failures = nil
 	return &kept
 }
 
 // failureCode is the public reason word of a failed snapshot.
 func (s *accountSnap) failureCode() string {
 	switch {
-	case s.Status == toolcli.RuntimeMissing || s.ErrorCode == "runtime_missing" || s.Error == "codex not found":
+	case s.Status == toolcli.RuntimeMissing || s.ErrorCode == "runtime_missing":
 		return "runtime_missing"
+	case s.ErrorCode == "" && s.Error == "codex not found": // snapshots written before the code existed
+		return "not_found"
 	case s.ErrorCode != "":
 		return ReaderErrorCode(s.ErrorCode)
 	}
@@ -281,6 +322,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	previous := (*accountSnap)(nil)
 	commit := func(s *accountSnap) error {
 		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
+		s.Failures = nextFailures(previous, s, now)
 		wait := AccountEvery
 		if s.Status != "ok" {
 			if awaitingFirstRead(previous) {
@@ -323,7 +365,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		return err
 	}
 	if codex == "" {
-		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found", ErrorCode: "runtime_missing"})
+		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found", ErrorCode: "not_found"})
 	}
 	if !consent.CurrentFence(state.Fence()) {
 		return errors.New("consent changed; refresh stopped")
@@ -454,14 +496,14 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 				continue
 			}
 			if m.Error != nil {
-				return nil, codeError("other", "other")
+				return nil, codeError("rpc_error", "rpc_error")
 			}
 			return m.Result, nil
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, errors.New("codex app-server closed")
+		return nil, codeError("closed", "closed")
 	}
 	if err := send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{
 		"clientInfo": map[string]any{"name": "modelplan", "title": "modelplan quota", "version": "1"}, "capabilities": map[string]any{"experimentalApi": true}}}); err != nil {

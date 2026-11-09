@@ -257,8 +257,9 @@ public enum EngineDeadlineFacts {
                 : nil
             // D41: one plain sentence and one button, whatever the Keychain outcome was.
             let needsKeychain = row.id == "claude" && row.state == .needsKeychain
-            reasons[member.id] = .init(input: input, reason: needsKeychain ? (english ? "Keychain access needed" : "需要允许读取钥匙串") : text(message.0.text),
-                nextStep: message.1.map { text($0.text) } ?? "",
+            let cause = needsKeychain ? nil : causeLine(member, now: context.now)
+            reasons[member.id] = .init(input: input, reason: needsKeychain ? (english ? "Keychain access needed" : "需要允许读取钥匙串") : cause?.reason ?? text(message.0.text),
+                nextStep: cause?.nextStep ?? message.1.map { text($0.text) } ?? "",
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
                 sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,resetCountExpiry:resetCount?.expiry,links: preferred.map(resetEventLinks) ?? [],windowObservations:observations,cardReadingState:cardState)
             if needsKeychain { reasons[member.id]?.actionLabel = english ? "Allow reading" : "允许读取" }
@@ -280,7 +281,8 @@ public enum EngineDeadlineFacts {
         let subscriptions=members.map { member in SettingsSubscription(id:member.id,
             name:.init(member.name(english:true),member.name(english:false)),
             plan:member.account.plan.name.map{text($0)} ?? "",vendor:member.row.vendorKey ?? "",
-            source:sourceState(member,now:context.now),isUnstable:!member.isStable) }
+            source:sourceState(member,now:context.now),isUnstable:!member.isStable,
+            causeCode:(member.row.state == .failed || member.row.state == .needsAction) ? message(member.row, now: context.now).0.code.rawValue : member.account.lastFailure?.code.rawValue) }
         let content = DockContent(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
         verifiedWindows = passWindows; recomputeDeadline = passDeadline
@@ -420,6 +422,24 @@ public enum EngineDeadlineFacts {
         case .other: return english ? "Other source" : "其他来源"
         case .none, .unknown: return sourceName(.knownUnknown)
         }
+    }
+    /// D87 slice 4: a failed or stale row says its own cause from the shared table, in place of the
+    /// engine's generic sentence. A stale reading names its age and the cause of the failed refresh.
+    /// A code without a table entry returns nil and keeps the engine's text.
+    private func causeLine(_ member: EngineAccountMember, now: Date) -> (reason: String, nextStep: String)? {
+        let row = member.row, account = member.account
+        let language: SettingsLanguage = english ? .english : .chinese
+        let name = member.name(english: english)
+        if row.state == .stale || account.valueState == .retained,
+           let failure = account.lastFailure,
+           let entry = ReaderCauseTable.entry(code: failure.code.rawValue, tool: row.id, toolName: name),
+           let observed = date(account.observedAt) {
+            return (ReaderCauseTable.staleLine(entry: entry, ageSeconds: Int(max(0, now.timeIntervalSince(observed))), language: language),
+                    entry.action.value(language))
+        }
+        guard row.state == .failed || row.state == .needsAction,
+              let entry = ReaderCauseTable.entry(code: message(row, now: now).0.code.rawValue, tool: row.id, toolName: name) else { return nil }
+        return (entry.reason.value(language), entry.action.value(language))
     }
     private func message(_ row: RowsRow, now: Date) -> (RowsReason, RowsNextStep?) {
         if let expiry = date(row.expiresAt), now >= expiry, let after = row.stateAfterExpiry {

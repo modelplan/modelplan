@@ -191,6 +191,11 @@
         "timeout",
         "runtime_missing",
         "unsupported_login",
+        "not_found",
+        "rpc_error",
+        "closed",
+        "no_key",
+        "region_refused",
         "other"
       ]
     },
