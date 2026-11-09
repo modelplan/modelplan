@@ -187,19 +187,26 @@ export function parseFallbackUntil(value, now) {
 // fb: {until: epoch ms | null, now: epoch ms, used: [] (markers that counted are pushed here)}.
 const fallbackCounts = (fb, x) => !!fb && fb.until != null && fb.now < fb.until && Date.parse(x.at) < fb.until;
 
+// Mixing rules (review of #813): a (sonnet) pass/OK counts only at the EXACT head (never over a carry edge), only
+// inside the window, and never over a fail/ISSUES from either reviewer seen earlier at that head. A (sonnet)
+// fail/ISSUES always counts and stays blocking against a later GLM pass/OK; only GLMREV-ACCEPTED (the coordinator's
+// explicit lift) clears an ISSUES. GLM-only sequences keep "latest wins".
+
 // "DESIGN: pass|fail @ <40 hex>" counts only in a trusted comment or review whose body starts with
 // "Design-conformance review"; latest wins; carries over the same verified edges as verdicts.
 // "DESIGN (sonnet): ..." is the GLM-out fallback form (see above).
 export function designVerdict(items, head, carried, fb = null) {
   const at = new Set([head, ...carried]);
-  let r = null, src = null;
+  let r = null, src = null, failSeen = false, sonnetFail = false;
   for (const x of items) {
     if (!x.body.startsWith("Design-conformance review")) continue;
     for (const l of lines(x.body)) {
       const m = /^DESIGN( \(sonnet\))?: (pass|fail) @ ([0-9a-f]{40})\b/.exec(l);
       if (!m || !at.has(m[3])) continue;
-      if (m[1] && m[2] === "pass" && !fallbackCounts(fb, x)) continue;
-      r = m[2]; src = m[1] ? "sonnet" : "glm";
+      const sonnet = !!m[1];
+      if (m[2] === "fail") { r = "fail"; src = sonnet ? "sonnet" : "glm"; failSeen = true; sonnetFail ||= sonnet; continue; }
+      if (sonnet ? m[3] !== head || failSeen || !fallbackCounts(fb, x) : sonnetFail) continue;
+      r = "pass"; src = sonnet ? "sonnet" : "glm";
     }
   }
   if (r === "pass" && src === "sonnet") fb?.used?.push("DESIGN (sonnet)");
@@ -211,15 +218,18 @@ export function designVerdict(items, head, carried, fb = null) {
 const GLM_SCOPE_RE = /^(desktop\/native\/|cli\/|clients\/swift\/|schema\/app-cli\/)/;
 export const glmInScope = (paths) => paths.some((p) => GLM_SCOPE_RE.test(p));
 
-// "GLMREV (sonnet): OK|ISSUES @ <head>" is the GLM-out fallback form (see above).
+// "GLMREV (sonnet): OK|ISSUES @ <head>" is the GLM-out fallback form (see the mixing rules above).
 export function glmVerdict(items, head, fb = null) {
-  let r = null, src = null;
+  let r = null, src = null, issuesSeen = false, sonnetIssues = false;
   const re = new RegExp(`^(GLMREV( \\(sonnet\\))?: (OK|ISSUES)|GLMREV-ACCEPTED) @ ${head}(\\s|$)`);
   for (const x of items) if (x.kind === "comment") {
     const m = re.exec(x.body);
     if (!m) continue;
-    if (m[2] && m[3] === "OK" && !fallbackCounts(fb, x)) continue;
-    r = m[3] === "ISSUES" ? "issues" : "ok"; src = m[2] ? "sonnet" : "glm";
+    const sonnet = !!m[2];
+    if (m[3] === "ISSUES") { r = "issues"; src = sonnet ? "sonnet" : "glm"; issuesSeen = true; sonnetIssues ||= sonnet; continue; }
+    if (!m[3]) { r = "ok"; src = "glm"; issuesSeen = sonnetIssues = false; continue; }   // GLMREV-ACCEPTED lifts
+    if (sonnet ? issuesSeen || !fallbackCounts(fb, x) : sonnetIssues) continue;
+    r = "ok"; src = sonnet ? "sonnet" : "glm";
   }
   if (r === "ok" && src === "sonnet") fb?.used?.push("GLMREV (sonnet)");
   return r;
