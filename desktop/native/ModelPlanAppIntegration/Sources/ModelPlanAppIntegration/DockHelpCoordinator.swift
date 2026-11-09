@@ -232,9 +232,10 @@ struct DockStatusHelpDismissal {
             anchors.append(.init(id: "status.menu", region: .sliver, rect: local(status.frame), visible: true, caption: caption))
         } else { mapStatusFrame = nil }
         let blockers = (dock?.dockHelpMapBlockingRects(surface) ?? []).map(local)
+        let avoid = (dock?.dockHelpMapAvoidRects(surface) ?? []).map(local)
         let language: InstrumentLanguage = application.latest?.effective.language == .chinese ? .chinese : .english
         guard var input = DockRequestedHelpLayout.make(session: surface.layoutID, viewport: viewport.size,
-                language: language, anchors: anchors, blocked: blockers, recipe: composition.layer.recipeProvider,
+                language: language, anchors: anchors, blocked: blockers, avoid: avoid, recipe: composition.layer.recipeProvider,
                 refreshAvailable: dock?.ringRefreshAvailable == true) else {
             finishMap(); return false
         }

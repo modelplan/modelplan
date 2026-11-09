@@ -779,8 +779,10 @@ struct StatusNoticePresentation {
             // G3-22: an icon-only item takes the square menu-bar length (was 32 pt for a 16 pt image);
             // a percentage title keeps a variable length. The autosave name keeps a ⌘-dragged position.
             let iconOnly = button.title.isEmpty && button.image != nil
-            button.imagePosition = iconOnly ? .imageOnly : .imageLeading
-            status?.length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            let position: NSControl.ImagePosition = iconOnly ? .imageOnly : .imageLeading
+            if button.imagePosition != position { button.imagePosition = position }
+            let length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            if status?.length != length { status?.length = length }
             // MENU-06: place the dot after the title is set, against the icon, not the text end.
             noticeIndicator.attach(to: button)
         }
@@ -796,8 +798,11 @@ struct StatusNoticePresentation {
     }
     static let statusFallbackTitle = "MP"
     static func configureStatusButton(_ button:NSButton,image:NSImage?,barThickness:CGFloat) {
-        let sized=image?.copy() as? NSImage
         let side=min(16,max(0,barThickness.isFinite ? barThickness : 0))
+        // Every menu render calls this; a button that already shows the image at this size is left alone, so a
+        // refresh does not re-measure the item (and move the notice dot) while the pointer is on it.
+        if image != nil,let current=button.image,current.isTemplate,current.size == NSSize(width:side,height:side),button.imageScaling == .scaleProportionallyDown{return}
+        let sized=image?.copy() as? NSImage
         sized?.size=NSSize(width:side,height:side);sized?.isTemplate=true
         button.image=sized;button.imageScaling = .scaleProportionallyDown;button.imagePosition = .imageLeading
     }
@@ -809,12 +814,18 @@ struct StatusNoticePresentation {
     func applyStatusContent(to button: NSButton, detail: String) {
         let title = composition.menuPresentation.title
         // Never let the item collapse to zero width when the template image is unavailable.
-        button.title = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
+        // Only changed values are written: re-setting the same title or position makes the item re-measure itself.
+        let shownTitle = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
+        if button.title != shownTitle { button.title = shownTitle }
         // With no image the fallback title is the whole item; image-only would hide it.
-        if button.image != nil { button.imagePosition = title.isEmpty ? .imageOnly : .imageLeading }
+        if button.image != nil {
+            let position: NSControl.ImagePosition = title.isEmpty ? .imageOnly : .imageLeading
+            if button.imagePosition != position { button.imagePosition = position }
+        }
         statusTooltip = detail
-        button.toolTip = statusTooltipHidden ? nil : detail
-        button.setAccessibilityHelp(detail)
+        let tooltip = statusTooltipHidden ? nil : detail
+        if button.toolTip != tooltip { button.toolTip = tooltip }
+        if button.accessibilityHelp() != detail { button.setAccessibilityHelp(detail) }
     }
     /// G3-49: the icon's tooltip sits above every app window and drew over the porthole when a click left the
     /// pointer on the icon. While the cockpit is showing the icon has no tooltip; the accessible help stays.
