@@ -438,7 +438,7 @@ class Walkthrough:
         """Only the critical ring paints red, so its reported frame should hold the red pixels."""
         raw = self.host.helper("tree", self.pid)
         window = resolve(raw, "window-of:ax:dock.grip.0")
-        node = resolve(raw, "ax:dock.subscription.declared:synthetic-critical#manual")
+        node = resolve(raw, "ax:dock.subscription.declared:synthetic-empty#manual")
         if window is None or node is None:
             raise WalkthroughError("critical ring not on screen")
         evidence = {"reportedFrame": node["frame"], "windowFrame": window["frame"]}
@@ -741,7 +741,13 @@ class Walkthrough:
         window = step.get("shot", {}).get("window")
         if window:
             # The app window that holds the target, captured alone with its alpha (visual comparison evidence).
-            node = {"frame": self.remembered} if window == "remembered" and self.remembered else resolve(tree, window)
+            if window == "remembered-edge" and self.remembered:
+                # The collapsed sliver is a thin window on the edge where the widget was: look there, not at the old centre.
+                x, y, w, h = self.remembered
+                edge = x + 2 if x < self.screen[0] / 2 else x + w - 2
+                node = {"frame": [edge - 1, y + h / 2, 2, 2]}
+            else:
+                node = {"frame": self.remembered} if window == "remembered" and self.remembered else resolve(tree, window)
             shot = node and self.window_holding(node["frame"])
             if shot is not None:
                 self.host.capture_window(self.out / (name + ".window.png"), shot["id"])

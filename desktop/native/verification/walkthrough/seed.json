@@ -8,16 +8,6 @@
       "resetMinutes": 120
     },
     {
-      "planId": "synthetic-mid",
-      "remainingPercent": 50,
-      "resetMinutes": 95
-    },
-    {
-      "planId": "synthetic-critical",
-      "remainingPercent": 12,
-      "resetMinutes": 40
-    },
-    {
       "planId": "synthetic-empty",
       "remainingPercent": 0,
       "resetMinutes": 25

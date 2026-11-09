@@ -157,6 +157,10 @@ class Seed(unittest.TestCase):
         self.assertTrue(all(len(x["ref"]) == 16 and len(x["projectRef"]) == 16 for x in ledger["sessions"]))
         self.assertLess(datetime.datetime.strptime(ledger["since"], "%Y-%m-%dT%H:%M:%SZ"), self.NOW.replace(tzinfo=None) - datetime.timedelta(days=7))
 
+    def test_the_fixture_has_four_subscriptions_like_the_prototype_columns(self):
+        # Codex (runtime stand-in) + Gemini (unreadable, a placeholder ring) + the declared plans.
+        self.assertEqual(len(self.SEED["declared"]) + 2, 4)
+
     def test_seed_marks_three_or_more_tools_for_the_first_run_list(self):
         self.assertGreaterEqual(len(self.SEED["markers"]), 3)
         self.assertTrue(all(m.startswith(".") for m in self.SEED["markers"]))

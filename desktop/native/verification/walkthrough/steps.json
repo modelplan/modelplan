@@ -283,7 +283,7 @@
         {
           "countAtLeast": {
             "target": "ax^:dock.subscription.",
-            "min": 5
+            "min": 4
           }
         }
       ],
@@ -853,7 +853,7 @@
     {
       "id": "widget-collapse",
       "title": "Widget collapsed to the sliver",
-      "expected": "Auto-Collapse from the widget's right-click menu folds the widget into the edge sliver once the pointer leaves. A ring at 0% must be obvious on the sliver (the prototype glows red).",
+      "expected": "Auto-Collapse from the widget's right-click menu folds the widget into the edge sliver once the pointer leaves. A ring at 0% must be obvious on the sliver (the prototype glows red). The sliver's own window is captured (.window.png, alpha kept) for the G3-58 comparison with the prototype's red.",
       "prototype": "dock study prototype, collapsed sliver",
       "requires": [
         "widget-shown-again"
@@ -887,7 +887,7 @@
       ],
       "shot": {
         "crop": "remembered",
-        "window": "remembered"
+        "window": "remembered-edge"
       },
       "checks": [
         {
