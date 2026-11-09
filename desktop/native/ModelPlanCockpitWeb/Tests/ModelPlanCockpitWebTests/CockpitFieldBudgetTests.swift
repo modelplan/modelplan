@@ -77,11 +77,16 @@ final class CockpitFieldBudgetTests: XCTestCase {
   /// Synthetic public models only: four makers, three efforts each, ★ at Med.
   private static func payload() throws -> String {
     let makers = ["openai", "anthropic", "zhipuai", "google"]
-    let models: [[String: Any]] = (0..<17).map { i in
-      ["id": "synthetic-\(i)", "name": "Synthetic \(i)", "developerId": makers[i % makers.count], "recommended": "medium",
-       "efforts": [["effort": "low", "label": "Low", "star": false, "ability": 28 + i, "cost": 0.05 * Double(i + 1), "time": 20],
-                   ["effort": "medium", "label": "Med", "star": true, "ability": 34 + i, "cost": 0.1 * Double(i + 1), "time": 40],
-                   ["effort": "high", "label": "High", "star": false, "ability": 38 + i, "cost": 0.3 * Double(i + 1), "time": 90]]]
+    var models: [[String: Any]] = []
+    for i in 0..<17 {
+      let fi = Double(i + 1)
+      let low: [String: Any] = ["effort": "low", "label": "Low", "star": false, "ability": 28 + i, "cost": 0.05 * fi, "time": 20]
+      let med: [String: Any] = ["effort": "medium", "label": "Med", "star": true, "ability": 34 + i, "cost": 0.1 * fi, "time": 40]
+      let high: [String: Any] = ["effort": "high", "label": "High", "star": false, "ability": 38 + i, "cost": 0.3 * fi, "time": 90]
+      let efforts: [[String: Any]] = [low, med, high]
+      let model: [String: Any] = ["id": "synthetic-\(i)", "name": "Synthetic \(i)", "developerId": makers[i % makers.count],
+                                  "recommended": "medium", "efforts": efforts]
+      models.append(model)
     }
     let value: [String: Any] = ["language": "en", "reduceMotion": false, "models": models,
                                 "mine": ["synthetic-1", "synthetic-2", "synthetic-5", "synthetic-8", "synthetic-11", "synthetic-14"], "focus": NSNull()]
