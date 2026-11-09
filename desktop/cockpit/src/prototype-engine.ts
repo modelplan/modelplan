@@ -50,8 +50,8 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:'left',redAt:redBelow(),ack:null,lang:locale,now};
   const model=engineModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now});
   // D95: with fewer than three subscriptions only the first empty bay offers a quiet add affordance (its own label text);
-  // the others stay plain. It uses the bay button's label, so no new copy and no new art.
-  if(members.length<3){const bay=host.querySelector<HTMLElement>('.eng-cols > .ec-bay');const label=bay?.getAttribute('aria-label');if(bay&&label){const text=document.createElement('span');text.className='ec-add';text.textContent=label;bay.append(text);}}
+  // the others stay plain. An etched plus (drawn in CSS) with the bay button's own label under it; no new copy or art.
+  if(members.length<3){const bay=host.querySelector<HTMLElement>('.eng-cols > .ec-bay');const label=bay?.getAttribute('aria-label');if(bay&&label){const text=document.createElement('span'),plus=document.createElement('span'),name=document.createElement('span');text.className='ec-add';plus.className='ec-plus';plus.setAttribute('aria-hidden','true');name.className='ec-add-label';name.textContent=label.replace(/^[＋+]\s*/,'');text.append(plus,name);bay.append(text);}}
   // Keep the selected source-window identity in memory, never in rendered HTML.
   for(const [index,column] of [...host.querySelectorAll<HTMLElement>('.eng-cols > .ec[data-col]')].entries()){const rendered=model.cols[index];for(const cell of column.querySelectorAll<HTMLElement>('.qcell[data-row]')){const identity=rendered?.cells?.[cell.dataset.row??'']?.focusIdentity;if(typeof identity==='string')focusIdentities.set(cell,identity);}}
   // Inline style attributes from the study HTML are blocked by the host CSP.

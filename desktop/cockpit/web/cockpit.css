@@ -123,8 +123,14 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 /* The comparison title never gives way to its note or links (current unknown made it "Compare …"). */
 .dk-mfd .cmp-h .mfd-title{flex:none}.dk-mfd .cmp-h .cmp-note{min-width:0;overflow:hidden;text-overflow:ellipsis}.dk-mfd .cmp-header-links{min-width:0;overflow:hidden}
 
-/* D95: the first empty engine bay carries a quiet add affordance in the axis-label tone; no border or button chrome.
-   Hover and keyboard focus raise it slightly. */
+/* D95: the first empty engine bay carries a quiet add affordance: an etched plus (CSS only, 1.5 px strokes, a dark line
+   above and a faint highlight below, as if engraved) with the bay's own label small under it. Both sit in the axis-label
+   tone at half strength; hover and keyboard focus raise them. No border or button chrome. */
 .ck-eng .ec-bay{cursor:default}
-.ck-eng .ec-bay .ec-add{position:absolute;left:0;right:0;top:8px;text-align:center;font:10px/1 var(--f-lcd);color:var(--lcd-muted);opacity:.7;pointer-events:none;transition:none}
-.ck-eng .ec-bay:is(:hover,:focus-visible) .ec-add{color:var(--lcd-ink);opacity:.85}
+.ck-eng .ec-bay .ec-add{position:absolute;left:0;right:0;top:calc(50% - 24px);display:flex;flex-direction:column;align-items:center;gap:12px;font:10px/1 var(--f-lcd);color:var(--lcd-muted);opacity:.5;pointer-events:none;transition:none}
+.ck-eng .ec-bay .ec-plus{position:relative;display:block;width:20px;height:20px;color:color-mix(in srgb,var(--lcd-muted) 60%,#000);filter:drop-shadow(0 1px 0 #ffffff2e) drop-shadow(0 -1px 0 #000a)}
+.ck-eng .ec-bay .ec-plus::before,.ck-eng .ec-bay .ec-plus::after{content:"";position:absolute;left:50%;top:50%;background:currentColor;border-radius:.75px}
+.ck-eng .ec-bay .ec-plus::before{width:20px;height:1.5px;margin:-.75px 0 0 -10px}
+.ck-eng .ec-bay .ec-plus::after{width:1.5px;height:20px;margin:-10px 0 0 -.75px}
+:root[data-theme="day"] .ck-eng .ec-bay .ec-plus{color:color-mix(in srgb,var(--lcd-muted) 70%,#000);filter:drop-shadow(0 1px 0 #ffffffb0) drop-shadow(0 -1px 0 #0003)}
+.ck-eng .ec-bay:is(:hover,:focus-visible) .ec-add{opacity:.8}
