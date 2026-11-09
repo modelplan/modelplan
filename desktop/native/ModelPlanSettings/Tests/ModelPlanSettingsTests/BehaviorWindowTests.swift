@@ -220,6 +220,8 @@ import XCTest
         let editor = try await makeEditor()
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
         await controller.prepare(); controller.selectPane("dock")
+        XCTAssertNil(controller.orderControl, "G3-68: the order control is not in the Quota Widget pane")
+        controller.selectPane("subscriptions")
         let live = controller.editor, order = try XCTUnwrap(controller.orderControl)
         let moved = expectation(description: "arrow reorder persisted")
         live.onCommit = { _, _ in moved.fulfill() }
