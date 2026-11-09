@@ -63,6 +63,23 @@ import ModelPlanWire
         addTeardownBlock { @MainActor in firstRunWindow.close() }
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
         func firstRunViews() throws -> [NSView] { descendants(try XCTUnwrap(firstRunWindow.contentView)) }
+        // Review evidence for the first-run sheet (G3-24, G3-25), collected with the Dock visual probes.
+        func writeReviewRender(_ language: String) throws {
+            let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
+            let output = root.appendingPathComponent("dock-instrument-checks/dock-visual/first-run", isDirectory: true)
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            let view = try XCTUnwrap(firstRunWindow.contentView)
+            view.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: output.appendingPathComponent("first-run-" + language + ".png"))
+        }
+        try writeReviewRender("en")
+        _ = try await first.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        try await Task.sleep(for: .milliseconds(200))
+        try writeReviewRender("zh")
+        _ = try await first.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
+        try await Task.sleep(for: .milliseconds(200))
         let scopeView = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "settings.scopeConsent" } as? SettingsScopeConsentView)
         XCTAssertFalse(scopeView.isHiddenOrHasHiddenAncestor)
         XCTAssertFalse(scopeView === first.scopeConsentEntry.view, "First run must not steal the Settings view")

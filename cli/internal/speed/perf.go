@@ -116,6 +116,8 @@ type PerfRow struct {
 	TurnTokensHist           Hist  `json:"turnTokensHist,omitempty"`
 	// LastAt: when the newest sample in the row completed (UTC, to the minute).
 	LastAt *time.Time `json:"lastAt,omitempty"`
+	// Origin: "import" on rows the history importer made (import.go); empty on live rows.
+	Origin string `json:"origin,omitempty"`
 }
 
 // PerfPath is the ledger file.
@@ -276,6 +278,12 @@ func (l *PerfLedger) add(source, parser string, t turn) {
 	if t.at.IsZero() || t.at.Before(l.Since) || t.at.Before(grantStart(l.admission, source)) {
 		return // started before the ledger did
 	}
+	l.addTurn(source, parser, t, true)
+}
+
+// addTurn counts one finished turn without the live ledger's start and grant checks; the history
+// importer (import.go) uses it for turns that predate both. hourly: also feed the hourly view.
+func (l *PerfLedger) addTurn(source, parser string, t turn, hourly bool) {
 	d := day(t.at)
 	for _, q := range t.all {
 		if q.cfg.model == "" {
@@ -285,7 +293,9 @@ func (l *PerfLedger) add(source, parser string, t turn) {
 		r.TokenKinds.add(q.TokenKinds, r.ObservedRequests == 0)
 		r.ObservedRequests++
 		r.ObservedOutputTokens += q.out
-		l.addHourly(source, q, t.at)
+		if hourly {
+			l.addHourly(source, q, t.at)
+		}
 		if q.ttft > 0 && q.ttft <= maxTTFT {
 			r.TTFTMs = r.TTFTMs.add(float64(q.ttft.Milliseconds()))
 		}

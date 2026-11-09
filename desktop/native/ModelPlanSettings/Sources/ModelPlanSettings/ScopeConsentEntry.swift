@@ -10,6 +10,8 @@ import ModelPlanWire
     public let controller: ScopeConsentController
     public let view: SettingsScopeConsentView
     private let buildSigning:ScopeConsentBuildSigning
+    /// The product entry attaches the local-history import here; Settings shows it when present.
+    public var historyImport: HistoryImportModel?
     private weak var firstRunView:SettingsScopeConsentView?
     public enum PresentationError:Error { case mutationInProgress }
 
@@ -42,6 +44,7 @@ import ModelPlanWire
 
     /// Only call from the owner’s accepted event fanout, synchronously on the main actor.
     public func acceptedFacts(_ facts: WireConsentFacts) { controller.receiveAcceptedFacts(facts) }
+    public func acceptedHistoryImport(_ status: WireHistoryImportStatus) { historyImport?.receive(status) }
     public func acceptedRows(_ rows: WireRowsSnapshot) { controller.receiveAcceptedRows(rows) }
     public func acceptedPluginResult(requestID: WireRequestID, result: WirePluginInstallResult) {
         controller.receiveAcceptedPluginResult(requestID: requestID, result: result)
