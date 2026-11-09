@@ -95,6 +95,9 @@ func (e importEngine) Run(ctx context.Context, days int, firstRun bool, progress
 	opts := importOptions(e.st, days, firstRun, time.Now())
 	opts.Progress = progress
 	res, err := speed.Import(ctx, e.st.Dir, opts)
+	if err == nil && res.Cancelled {
+		err = context.Canceled // nothing was written
+	}
 	out := make([]wire.HistoryImportSource, 0, len(res.Sources))
 	for _, s := range res.Sources {
 		out = append(out, wire.HistoryImportSource{Source: s.Source, Status: wire.HistoryImportSourceStatus(s.Status), Turns: s.Turns})

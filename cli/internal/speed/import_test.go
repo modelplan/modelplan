@@ -387,3 +387,49 @@ func TestImportReportsProgressAndStatusWithoutReadingLogs(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 }
+
+func TestImportCancelledAfterReadsBeforeCommitWritesNothing(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	ctx, cancel := context.WithCancel(context.Background())
+	// the cancel arrives after every read and before the write: Progress reports the last file, Guard runs at commit
+	res, err := Import(ctx, f.cache, ImportOptions{Claude: &ImportRoot{Dir: f.claude}, Now: f.now, Admission: both(), Auto: true,
+		Guard: func(tool string, write func() error) error { cancel(); return write() }})
+	if err != nil || !res.Cancelled {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if _, err := os.Stat(ImportPath(f.cache)); err == nil {
+		t.Fatal("a cancelled import wrote imported.json")
+	}
+	if !NeedsAutoImport(f.cache) {
+		t.Fatal("a cancelled first-run import must not count as run")
+	}
+	// cancelled before the first write, between reads and commit
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	res, err = Import(ctx2, f.cache, ImportOptions{Claude: &ImportRoot{Dir: f.claude}, Now: f.now, Admission: both(),
+		Progress: func(done, total int) {
+			if done == total && total > 0 {
+				cancel2()
+			}
+		}})
+	if err != nil || !res.Cancelled {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if _, err := os.Stat(ImportPath(f.cache)); err == nil {
+		t.Fatal("wrote after a late cancel")
+	}
+}
+
+func TestImportCountsAResumedSessionsRequestOnceAcrossFiles(t *testing.T) {
+	f := newFixture(t)
+	// the same assistant request id appears in both files (a resumed session copies its messages)
+	f.claudeLog("a.jsonl", -3)
+	f.claudeLog("b.jsonl", -3)
+	// and a request with a fresh id only in b
+	writeLines(t, filepath.Join(f.claude, "projects", canaryPath, "b.jsonl"), claudeTurnAt(-2*dayS, "fresh-request", "claude-fixture")...)
+	f.run(30, both())
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 2 {
+		t.Fatalf("want 2 requests (one shared, one fresh), got %d", r)
+	}
+}

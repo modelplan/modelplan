@@ -236,11 +236,22 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		}
 		res.Sources = append(res.Sources, SourceResult{Source: j.source, Status: j.status, Turns: j.turns})
 	}
+	// A cancel that arrives after the reads and before the first write still writes nothing.
+	if ctx.Err() != nil {
+		res.Cancelled = true
+		return res, nil
+	}
 	// Commit, source by source, each under its own consent fence.
 	committed := false
 	for _, j := range active {
 		j := j
-		write := func() error { return commitImport(cache, j, o.Auto, now, adm, &committed) }
+		write := func() error {
+			if !committed && ctx.Err() != nil { // checked again under the fence, just before the write
+				res.Cancelled = true
+				return nil
+			}
+			return commitImport(cache, j, o.Auto, now, adm, &committed)
+		}
 		var err error
 		if o.Guard != nil {
 			err = o.Guard(consentTool(j.source), write)
@@ -250,6 +261,9 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		if err != nil {
 			return res, err
 		}
+	}
+	if res.Cancelled {
+		return res, nil
 	}
 	if !committed && o.Auto {
 		return res, markAutoRan(cache, now)
@@ -305,6 +319,7 @@ func (j *importJob) earliest() time.Time {
 
 func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 	tmp := &PerfLedger{}
+	seen := map[string]bool{} // Claude request ids counted so far in this run
 	for _, p := range j.list {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -314,12 +329,23 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 		if j.root.Background != nil && j.source == "codex" && j.root.Background(p) {
 			continue
 		}
-		turns, err := readWhole(ctx, p, j.newP())
+		parser := j.newP()
+		var cp *claudeParser
+		if c, ok := parser.(*claudeParser); ok {
+			cp = c
+			c.prior, c.mine = seen, map[string]bool{}
+		}
+		turns, err := readWhole(ctx, p, parser)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			continue // unreadable file: skipped
+		}
+		if cp != nil {
+			for id := range cp.mine {
+				seen[id] = true
+			}
 		}
 		for _, t := range turns {
 			if t.at.IsZero() || !j.inRange(t.at) {

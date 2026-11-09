@@ -4,6 +4,7 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
@@ -81,7 +82,7 @@ func (c *ImportController) start(p wire.HistoryImportStartParams) error {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		switch {
-		case ctx.Err() != nil:
+		case errors.Is(err, context.Canceled):
 			c.phase = wire.ImportCancelled
 		case err != nil:
 			c.phase = wire.ImportFailed
