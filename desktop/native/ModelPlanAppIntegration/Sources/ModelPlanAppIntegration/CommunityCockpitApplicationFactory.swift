@@ -184,6 +184,9 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         else { throw CockpitBridgeError.unavailable }
         let verified=try verifiedBundle ?? Self.admit(bundle:bundle,pins:CommunityCockpitApplicationFactory.manifestPins)
         verifiedBundle=verified
+        return makePage(context:context,verified:verified)
+    }
+    func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
