@@ -37,6 +37,25 @@ final class T2SkinValueTests: XCTestCase {
         }
     }
 
+    /// G3-74 (owner, build 14b): the percentage number is larger than the prototype's 11 (13 x D/52, about
+    /// +2 pt at the reference size), same font and weight, and a full "100%" still fits the 56 x D/52 readout
+    /// box with room for the notice dot, at S, M and L, without clipping.
+    func testPercentageNumberIsLargerAndStillFitsAtEverySize() throws {
+        for diameter in [CGFloat(36), 44, 52] {
+            let (station, value) = try skin(diameter), unit = diameter / 52
+            XCTAssertEqual(value.text.size, 13 * unit, accuracy: 1e-6, "D\(diameter)")
+            XCTAssertEqual(value.text.weight, 400); XCTAssertGreaterThan(value.text.size, 11 * unit)
+            let font = CTFontCreateUIFontForLanguage(.userFixedPitch, value.text.size, nil)!
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: "100%", attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
+            var a: CGFloat = 0, d: CGFloat = 0, l: CGFloat = 0
+            let width = CGFloat(CTLineGetTypographicBounds(line, &a, &d, &l))
+            XCTAssertLessThanOrEqual(width, station.readout.width * 0.7, "D\(diameter): 100% fits the box")
+            // The notice dot sits 22 units right of the centre and is 12 wide: the text must end before it.
+            XCTAssertLessThanOrEqual(width / 2, (22 - 6) * unit, "D\(diameter): clear of the notice dot")
+            XCTAssertLessThanOrEqual(CTFontGetCapHeight(font), station.readout.height, "D\(diameter): glyphs fit the box height")
+        }
+    }
+
     func testReadoutBoxScalesWithTheNozzle() throws {
         for diameter in [CGFloat(36), 44, 52] {
             let box = try skin(diameter).station.readout
