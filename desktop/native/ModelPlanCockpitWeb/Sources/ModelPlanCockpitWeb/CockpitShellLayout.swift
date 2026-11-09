@@ -49,7 +49,9 @@ public struct CockpitShellLayout: Equatable, Sendable {
         guard available > 0 else { return nil }
         // The chosen size, or less when the screen is too short or narrow for it.
         let chosen = size.scale(screenWidth: screenWidth ?? usable.width)
-        func fitting(_ root: CGFloat) -> CGFloat { min(chosen, usable.width / Self.width, available / (root + Self.baseReserve)) }
+        // Whole points (G3-65): the window is rounded up to whole points below, so the scale fits the whole points the screen has.
+        let room = CGSize(width: usable.width.rounded(.down), height: available.rounded(.down))
+        func fitting(_ root: CGFloat) -> CGFloat { min(chosen, room.width / Self.width, room.height / (root + Self.baseReserve)) }
         var profile = CockpitAppearance.Profile.full, forcedClosed = false
         var scale = fitting(877)
         if scale < Self.minimumFullScale {
@@ -62,7 +64,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let closed = shutterClosed || forcedClosed
         let height: CGFloat = profile == .full ? (closed ? 691 : 877) : (closed ? 609 : 627)
         // The scale follows the open root, so closing the shutter never resizes the strip or the canopy.
-        let canvas = CGSize(width: Self.width * scale, height: (height + Self.baseReserve) * scale)
+        let canvas = windowSize(scale: scale, rootHeight: height)
         let x = attachedX(anchor: anchor, width: canvas.width, scale: scale, usable: usable)
         return Self(profile: profile, shutterClosed: closed, forcedClosed: forcedClosed, scale: scale, rootHeight: height,
                     frame: CGRect(x: x, y: top - canvas.height, width: canvas.width, height: canvas.height), sizeFellBack: fellBack)
@@ -77,15 +79,31 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public static func attachedX(anchor: CGRect, width: CGFloat, scale: CGFloat, usable: CGRect) -> CGFloat {
         max(usable.minX, min(anchor.minX - 8 * scale, usable.maxX - width))
     }
+    /// G3-65: the window for a page canvas at `scale`, rounded UP to whole points. The hull's lower side walls are
+    /// painted across the whole 636 CSS px canvas, edge to edge, with no transparent gutter. WebKit sizes a WKWebView's
+    /// page in whole points, dropping the fraction, so a 636 x 0.85 = 540.6 pt window gave the page 540 pt = 635.3 CSS px;
+    /// the 620 px shell, centred by `margin: 0 auto`, then lost the outer columns of both side walls. Rounding up gives
+    /// the page at least 636 x (root + reserve) CSS px at every scale: 80 % is 509 pt, 85 % 541, 90 % 573, 100 % 636.
+    public static func windowSize(scale: CGFloat, rootHeight: CGFloat) -> CGSize {
+        func up(_ value: CGFloat) -> CGFloat { (value - 1e-6).rounded(.up) }
+        return CGSize(width: up(width * scale), height: up((rootHeight + baseReserve) * scale))
+    }
     /// The page canvas in CSS px: the root plus the base reserve.
     public var pageSize: CGSize { .init(width: Self.width, height: rootHeight + Self.baseReserve) }
+    /// G3-65: what the page really lays out in, CSS px: the whole-point window divided by the page zoom.
+    /// Never narrower or shorter than `pageSize`, so no painted hull pixel falls outside the window.
+    public var pageViewport: CGSize { .init(width: frame.width / scale, height: frame.height / scale) }
     /// G3-43 / CKP-SHELL-04: the free left of the title strip in page px with Y up; the window uses
     /// `scaledTitleDragFrame`. It stops short of the shutter so buttons keep their own input. Strip tops are the page's, shared with the study.
     public var titleDragFrame: CGRect {
         let stripTop: CGFloat = shutterClosed ? 45 : (profile == .full ? 225 : 57)
         return CGRect(x: 24, y: rootHeight + 34 - stripTop - 29, width: 216, height: 32)
     }
-    public var scaledTitleDragFrame: CGRect { titleDragFrame.applying(.init(scaleX: scale, y: scale)) }
+    /// In window points, Y up. The page is laid out from the window's top edge, so the strip keeps its place below
+    /// the top when the window is rounded up to whole points (G3-65).
+    public var scaledTitleDragFrame: CGRect {
+        titleDragFrame.applying(.init(scaleX: scale, y: scale)).offsetBy(dx: 0, dy: frame.height - pageSize.height * scale)
+    }
 
     public func shellState(attached: Bool, scope: String = "all") -> CockpitShellState {
         .init(closed: shutterClosed, attached: attached, forcedClosed: forcedClosed,

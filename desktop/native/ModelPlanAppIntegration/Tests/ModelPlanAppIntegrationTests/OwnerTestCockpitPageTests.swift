@@ -463,5 +463,61 @@ extension CommunityCockpitEntryTests {
             XCTAssertTrue(shutter?.isDescendant(of: web) == true, "\(name): the shutter press reaches the page")
         }
     }
+
+    /// G3-65 / C-04 on the real page and panel (owner, MacBook Air 1470x956 at the Auto 85 %, builds 13 and 14b): the
+    /// hull's side walls were cut on both sides. The lower walls are painted across the whole 636 CSS px canvas, and a
+    /// 540.6 pt window gave WebKit a 540 pt page, 635.3 CSS px. At Auto and at 80/85/90/100 %, on the Air with the
+    /// Dock and on a 1280x800 screen, every painted hull part must lie inside the page the window really shows.
+    @MainActor func testG3_65WindowHoldsTheWholePaintedHullAtEveryScale() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let screens: [(String, CGRect, [CockpitSize])] = [
+            ("1470x956 Air, Dock at the bottom", CGRect(x: 0, y: 70, width: 1470, height: 849), [.automatic, .percent80, .percent90, .percent100, .percent85]),
+            ("1280x800, Dock at the bottom", CGRect(x: 0, y: 70, width: 1280, height: 705), [.automatic]),
+        ]
+        for (screen, usable, sizes) in screens {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("g365-" + UUID().uuidString).resolvingSymlinksInPath()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+            let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+            let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+            let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+            defer { page.discard() }
+            page.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.maxX - 340, y: usable.maxY, width: 28, height: 24))
+            page.open()
+            let window = try XCTUnwrap(page.window), web = try XCTUnwrap(page.verificationWebView)
+            for size in sizes {
+                let name = "\(screen), \(size.rawValue)"
+                if size != .automatic { page.updateAppearance(.init(theme: .night, locale: .en, profile: .full, size: size)) }
+                let layout = try XCTUnwrap(page.verificationLayout), scale = layout.scale
+                // Wait for the page to lay out at this zoom: its viewport times the zoom is the web view's width.
+                var box: [String: Double]?
+                let deadline = ContinuousClock.now + .seconds(30)
+                while ContinuousClock.now < deadline {
+                    let script = "(()=>{const parts=[...document.querySelectorAll('.ck-shell :is(.hull-crown,.hull-upper,.hull-cone,.hull-lower,.hull-record)')].filter(e=>getComputedStyle(e).display!=='none').map(e=>e.getBoundingClientRect()).filter(r=>r.width>0&&r.height>0);if(!parts.length||!document.documentElement.dataset.profile)return null;return {left:Math.min(...parts.map(r=>r.left)),right:Math.max(...parts.map(r=>r.right)),hull:Math.max(...parts.map(r=>r.width)),viewport:visualViewport.width,inner:innerWidth}})()"
+                    box = (try? await web.evaluateJavaScript(script)) as? [String: Double]
+                    if let box, abs(box["viewport"]! * scale - web.frame.width) < 1 { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                let hull = try XCTUnwrap(box, "\(name): the hull must be painted")
+                XCTAssertEqual(web.pageZoom, scale, accuracy: 1e-6, name)
+                // The window and the web view are whole points: WebKit would drop a fraction.
+                XCTAssertEqual(window.frame.width, window.frame.width.rounded(), name)
+                XCTAssertEqual(web.frame.width, window.frame.width, name)
+                XCTAssertGreaterThanOrEqual(web.frame.width, 636 * scale, name)
+                // The painted hull spans the 636 px canvas, and all of it is inside the page the window shows.
+                XCTAssertEqual(hull["hull"]!, 636, accuracy: 0.5, "\(name): the lower walls span the canvas")
+                XCTAssertGreaterThanOrEqual(hull["inner"]!, 636, "\(name): the page is at least the hull wide")
+                XCTAssertGreaterThanOrEqual(hull["left"]!, -0.01, "\(name): the left wall is not cut")
+                XCTAssertLessThanOrEqual(hull["right"]!, hull["viewport"]! + 0.01, "\(name): the right wall is not cut")
+                XCTAssertLessThanOrEqual(hull["right"]! * scale, web.frame.width + 0.01, "\(name): the right wall is inside the window")
+            }
+        }
+    }
     #endif
 }
