@@ -127,6 +127,8 @@ import ModelPlanWire
         label(text, secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.notice")
         label(Self.activityDisclosure, secondary: true)
+        label(HistoryImportText.firstRunLine, secondary: true)
+        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.import")
         guard controller.asksForKeychainOnFirstRun else { return }
         gap()
         label(.init("Claude Code keeps its login in the Keychain. Reading its quota needs your permission once: macOS will ask, please choose \"Always Allow\".",
