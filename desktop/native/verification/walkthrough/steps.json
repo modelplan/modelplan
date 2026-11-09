@@ -724,6 +724,39 @@
       ]
     },
     {
+      "id": "first-use-hint-close",
+      "title": "First-use hint closed",
+      "expected": "On main the hint for a concealed widget is the Settings window on Quota Widget (Show Quota Widget: Off). The walk closes it so later steps see only the windows they drive; a build that shows a card instead has nothing to close.",
+      "requires": [
+        "first-use-hint"
+      ],
+      "actions": [
+        {
+          "op": "when",
+          "present": "ax:settings.sidebar",
+          "then": [
+            {
+              "op": "click",
+              "target": "subrole:AXCloseButton"
+            },
+            {
+              "op": "wait",
+              "seconds": 1
+            }
+          ]
+        },
+        {
+          "op": "park"
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "absent": "ax:settings.sidebar"
+        }
+      ]
+    },
+    {
       "id": "widget-shown-again",
       "title": "Widget shown again",
       "expected": "Show Quota Widget brings the widget back at its snapped place. The changed-pixel share against drag-snap is recorded, not asserted (animated critical rings change it).",
