@@ -118,9 +118,10 @@ import ModelPlanWire
     /// Mac with a checkbox, says what is read and whether macOS may ask for the Keychain, and shows
     /// why a tool cannot be read. Done sends the choices as the one first-run consent.
     private func renderFirstRunChooser() {
-        label(.init("Subscriptions", "订阅"), heading: true)
-        label(.init("Choose which tools ModelPlan reads. Your choice is saved when you press Done; you can change it later in Settings › Data & Privacy.",
-                    "选择 ModelPlan 要读取哪些工具。点“完成”后保存选择，之后可在 设置 › 数据与隐私 中更改。"), secondary: true)
+        label(.init("Choose which tools ModelPlan reads", "选择要读取的工具"), heading: true)
+        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.heading")
+        label(.init("Your choice is saved when you press Done; you can change it later in Settings › Data & Privacy.",
+                    "点“完成”后保存选择，之后可在 设置 › 数据与隐私 中更改。"), secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.notice")
         let tools = controller.firstRunTools
         if controller.facts == nil {
@@ -178,9 +179,12 @@ import ModelPlanWire
             field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
         // An unsupported login is not read at all, so its row says only why (D52).
-        if tool.block != .unsupportedLogin { line(Self.readLine(tool), id: "scope.firstRun.reads." + id) }
+        if tool.canRead { line(Self.readLine(tool), id: "scope.firstRun.reads." + id) }
         if let block = tool.block {
             line(Self.blockLine(block, tool: id), id: "scope.firstRun.status." + id, color: .systemOrange)
+        } else if !tool.canRead {
+            // Only browser-session or unrecognised paths: never describe a read that will not happen.
+            line(Self.unreadableLine, id: "scope.firstRun.status." + id)
         }
         let row = NSStackView(views: [box, mark, column]); row.orientation = .horizontal; row.alignment = .top; row.spacing = 10
         row.setAccessibilityIdentifier("scope.firstRun.row." + id)
@@ -216,6 +220,7 @@ import ModelPlanWire
                      "opencode": "OpenCode", "kiro": "Kiro", "amp": "Amp", "droid": "Droid", "antigravity": "Antigravity", "minimax": "MiniMax"]
         return names[tool].map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
     }
+    static let unreadableLine = SettingsText("ModelPlan can't read this tool's sign-in on this Mac yet.", "暂不支持读取这个工具在本机的登录。")
     private static let noKeychain = SettingsText(" No Keychain prompt.", "不会弹出钥匙串授权。")
     private static let mayAskKeychain = SettingsText(" macOS may ask once for Keychain access; choose \u{201C}Always Allow\u{201D}.",
                                                      "macOS 可能会询问一次钥匙串权限，请选“始终允许”。")
