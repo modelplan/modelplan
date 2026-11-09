@@ -161,8 +161,8 @@ public struct HelpCatalog: Sendable {
             title = copy("订阅标识", "Subscription identity")
             basis = copy("颜色标识订阅，不表示正在用或额度告警。", "This colour identifies the subscription; it does not indicate work or quota alerts.")
         case .base:
-            title = copy("火焰与喷口", "Flame and mouth")
-            basis = copy("细线标识订阅，有火焰才表示正在生成。", "The line identifies the subscription and a flame means it is working now.")
+            title = copy("喷口光", "Mouth glow")
+            basis = copy("喷口标识订阅，喷口亮着才表示正在生成。", "The bell identifies the subscription and a lit mouth means it is working now.")
         case .session:
             title = copy("会话", "Session")
             basis = copy("按一下在公共屏查看这次会话。", "Press to view this session on the Main screen.")

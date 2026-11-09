@@ -101,6 +101,52 @@ test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothin
   assert.equal(R.evidenceState(ledger, R.feed([comment(`EVIDENCE-DEFERRED: D-02 @ ${H} issue=470`)]), H).state, R.PENDING);
 });
 
+test("D97 AUTO-VERIFIED: trusted first line at the exact head clears the listed scenarios, ledger and G3 rows included", () => {
+  const docs = [file("docs/evidence.md")];
+  const ledger = (body) => pr({ title: "Fix G3-07", body: `Ledger: G3-07\n${body}` });
+  const av = (ids, sha = H, gates = "ci,gui,review") => `AUTO-VERIFIED: ${ids} @ ${sha} gates=${gates}`;
+  assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(`${av("V-01, V-02")}\n\nchecked`)] }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-07, V-01, V-02"), files: docs, comments: [comment(av("G3-07 V-01 V-02"))] }).state, R.SUCCESS, "G3 row and space-separated IDs");
+  for (const gates of R.AUTO_VERIFIED_GATES)
+    assert.equal(evalPr({ p: ledger("Scenarios: V-01"), files: docs, comments: [comment(av("V-01", H, gates))] }).state, R.SUCCESS, gates);
+  // Mixed with a coordinator VERIFIED line and a #470 deferral.
+  assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02, V-03"), files: docs, comments: [comment(av("V-01")), comment(`VERIFIED: V-02 @ ${H} evidence=/x/y`), comment(`EVIDENCE-DEFERRED: V-03 @ ${H} issue=470`)] }).state, R.SUCCESS);
+  // A Scenarios line without a ledger row (real-Mac tier) is cleared the same way.
+  assert.equal(evalPr({ p: pr({ title: "Ordinary", body: "Scenarios: C-10" }), files: docs, comments: [comment(av("C-10"))] }).state, R.SUCCESS);
+
+  const pending = (comments, why, p = ledger("Scenarios: V-01, V-02")) => {
+    const r = evalPr({ p, files: docs, comments });
+    assert.equal(r.state, R.PENDING, why);
+    return r;
+  };
+  pending([comment(av("V-01, V-02", OLD))], "old head");
+  assert.match(pending([comment(av("V-01, V-02"))], "a new head invalidates it", pr({ title: "Fix G3-07", body: "Scenarios: V-01, V-02", head: { sha: OLD, ref: "feature/x", repo: { full_name: "modelplan/modelplan" } } })).why, /V-01, V-02/);
+  pending([comment(av("V-01, V-02"), { login: "mallory", id: 1 })], "untrusted login");
+  pending([comment(av("V-01, V-02"), { login: "guanbear", id: 1 })], "recycled login");
+  pending([comment(`notes first\n${av("V-01, V-02")}`)], "not the first line");
+  assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, reviews: [review(av("V-01, V-02"))] }).state, R.PENDING, "a review is not a comment");
+  pending([comment(` ${av("V-01, V-02")}`)], "leading space");
+  for (const gates of ["ci,review", "gui,review", "ci,gui", "review,gui,ci", "ci,gui,review,visual,design", "ci,gui,review,", "ci,gui,review,extra", "ci,gui,review,walkthrough", ""])
+    pending([comment(av("V-01, V-02", H, gates))], `gates=${gates}`);
+  pending([comment(av("V-01, V-02", H.slice(0, 12), "ci,gui,review,design,visual"))], "short sha");
+  pending([comment(av("V-01, V-02", H.toUpperCase()))], "upper-case sha");
+  pending([comment(`${av("V-01, V-02")} trailing`)], "trailing text");
+  pending([comment(av("V-01, v-02"))], "malformed ID");
+  assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(av("V-01, V-02", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }).state, R.PENDING, "never carried");
+  assert.match(pending([comment(av("V-01"))], "only the listed ID").why, /evidence pending: V-02$/);
+
+  // Design-touching PR: the line must name design (evidence-gate.sh NEED_D).
+  const designFiles = [file("desktop/cockpit/src/field-page.ts")];
+  assert.equal(R.designTouch(designFiles, conf).touching, true);
+  const designEv = (gates) => R.evidenceState(ledger("Scenarios: V-01"), R.feed([comment(av("V-01", H, gates))]), H, new Map(), { designTouching: true }).state;
+  assert.equal(designEv("ci,gui,review"), R.PENDING);
+  assert.equal(designEv("ci,gui,review,visual"), R.PENDING);
+  assert.equal(designEv("ci,gui,review,design"), R.SUCCESS);
+  assert.equal(designEv("ci,gui,review,design,visual"), R.SUCCESS);
+  assert.match(evalPr({ p: ledger("Scenarios: V-01"), files: designFiles, comments: [comment(av("V-01"))] }).why, /evidence pending: V-01/);
+  assert.doesNotMatch(evalPr({ p: ledger("Scenarios: V-01"), files: designFiles, comments: [comment(av("V-01", H, "ci,gui,review,design"))] }).why, /evidence pending/);
+});
+
 test("PR admission: trusted same-repo PRs into main only; drafts wait", () => {
   assert.equal(evalPr({ p: pr({ user: { login: "x", id: 1 } }) }).state, R.FAILURE);
   assert.equal(evalPr({ p: pr({ head: { sha: H, repo: { full_name: "fork/modelplan" } } }) }).state, R.FAILURE);

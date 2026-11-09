@@ -12,6 +12,7 @@ const ALLOWED_ANIMATIONS=new Set([
  'cockpit-running-cursor', // CKP-STRIP-10 running-row cursor
  'cockpit-state-pulse',   // two finite lamp-dot pulses on a state change (no idle loop)
  'cockpit-porthole-flicker', // owner D39/D-H flame flicker; active, open and no Reduce Motion only
+ 'cockpit-mouth-shimmer', // CKP-ENG-19 base mouth light, working subscriptions only; same gates
 ]);
 // Selector fragment -> transitioned properties allowed on it (interaction feedback and fader glide).
 const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],[/\bshutter-(blind|thumb)\b/,['width','transform']]];
