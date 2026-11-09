@@ -4029,6 +4029,238 @@ public enum WireHealthState: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
+public struct WireHistoryImportCoverage: Codable, Sendable {
+    public let `source`: String
+    public let `from`: String
+    public let `through`: String
+    public let `rows`: Int
+    private enum CodingKeys: String, CodingKey {
+        case `source`
+        case `from`
+        case `through`
+        case `rows`
+    }
+    public init(`source`: String, `from`: String, `through`: String, `rows`: Int) throws {
+        self.`source` = `source`
+        self.`from` = `from`
+        self.`through` = `through`
+        self.`rows` = `rows`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`source` = try c.decode(String.self, forKey: .`source`)
+        self.`from` = try c.decode(String.self, forKey: .`from`)
+        self.`through` = try c.decode(String.self, forKey: .`through`)
+        self.`rows` = try c.decode(Int.self, forKey: .`rows`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`source`, forKey: .`source`)
+        try c.encode(`from`, forKey: .`from`)
+        try c.encode(`through`, forKey: .`through`)
+        try c.encode(`rows`, forKey: .`rows`)
+    }
+    private func validate() throws {
+        guard `rows` >= 0 else { throw WireDecodeError.invalidBound }
+    }
+}
+
+public enum WireHistoryImportPhase: Codable, Sendable, Equatable {
+    case `idle`
+    case `running`
+    case `done`
+    case `cancelled`
+    case `failed`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "idle": self = .`idle`
+        case "running": self = .`running`
+        case "done": self = .`done`
+        case "cancelled": self = .`cancelled`
+        case "failed": self = .`failed`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`idle`: return "idle"
+        case .`running`: return "running"
+        case .`done`: return "done"
+        case .`cancelled`: return "cancelled"
+        case .`failed`: return "failed"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public struct WireHistoryImportSource: Codable, Sendable {
+    public let `source`: String
+    public let `status`: WireHistoryImportSourceStatus
+    public let `turns`: Int
+    private enum CodingKeys: String, CodingKey {
+        case `source`
+        case `status`
+        case `turns`
+    }
+    public init(`source`: String, `status`: WireHistoryImportSourceStatus, `turns`: Int) throws {
+        self.`source` = `source`
+        self.`status` = `status`
+        self.`turns` = `turns`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`source` = try c.decode(String.self, forKey: .`source`)
+        self.`status` = try c.decode(WireHistoryImportSourceStatus.self, forKey: .`status`)
+        self.`turns` = try c.decode(Int.self, forKey: .`turns`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`source`, forKey: .`source`)
+        try c.encode(`status`, forKey: .`status`)
+        try c.encode(`turns`, forKey: .`turns`)
+    }
+    private func validate() throws {
+        guard `turns` >= 0 else { throw WireDecodeError.invalidBound }
+    }
+}
+
+public enum WireHistoryImportSourceStatus: Codable, Sendable, Equatable {
+    case `imported`
+    case `skippedNoConsent`
+    case `nothingFound`
+    case `off`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "imported": self = .`imported`
+        case "skipped_no_consent": self = .`skippedNoConsent`
+        case "nothing_found": self = .`nothingFound`
+        case "off": self = .`off`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`imported`: return "imported"
+        case .`skippedNoConsent`: return "skipped_no_consent"
+        case .`nothingFound`: return "nothing_found"
+        case .`off`: return "off"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public struct WireHistoryImportStartParams: Codable, Sendable {
+    public let `days`: Int
+    public let `firstRun`: Bool
+    private enum CodingKeys: String, CodingKey {
+        case `days`
+        case `firstRun`
+    }
+    public init(`days`: Int, `firstRun`: Bool) throws {
+        self.`days` = `days`
+        self.`firstRun` = `firstRun`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`days` = try c.decode(Int.self, forKey: .`days`)
+        self.`firstRun` = try c.decode(Bool.self, forKey: .`firstRun`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`days`, forKey: .`days`)
+        try c.encode(`firstRun`, forKey: .`firstRun`)
+    }
+    private func validate() throws {
+        guard `days` >= 1 else { throw WireDecodeError.invalidBound }
+        guard `days` <= 371 else { throw WireDecodeError.invalidBound }
+    }
+}
+
+public struct WireHistoryImportStatus: Codable, Sendable {
+    public let `schemaVersion`: Int
+    public let `phase`: WireHistoryImportPhase
+    public let `days`: Int
+    public let `filesDone`: Int
+    public let `filesTotal`: Int
+    public let `firstRunDone`: Bool
+    public let `importedRows`: Int
+    public let `coverage`: [WireHistoryImportCoverage]
+    public let `sources`: [WireHistoryImportSource]
+    private enum CodingKeys: String, CodingKey {
+        case `schemaVersion`
+        case `phase`
+        case `days`
+        case `filesDone`
+        case `filesTotal`
+        case `firstRunDone`
+        case `importedRows`
+        case `coverage`
+        case `sources`
+    }
+    public init(`schemaVersion`: Int, `phase`: WireHistoryImportPhase, `days`: Int, `filesDone`: Int, `filesTotal`: Int, `firstRunDone`: Bool, `importedRows`: Int, `coverage`: [WireHistoryImportCoverage], `sources`: [WireHistoryImportSource]) throws {
+        self.`schemaVersion` = `schemaVersion`
+        self.`phase` = `phase`
+        self.`days` = `days`
+        self.`filesDone` = `filesDone`
+        self.`filesTotal` = `filesTotal`
+        self.`firstRunDone` = `firstRunDone`
+        self.`importedRows` = `importedRows`
+        self.`coverage` = `coverage`
+        self.`sources` = `sources`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`schemaVersion` = try c.decode(Int.self, forKey: .`schemaVersion`)
+        self.`phase` = try c.decode(WireHistoryImportPhase.self, forKey: .`phase`)
+        self.`days` = try c.decode(Int.self, forKey: .`days`)
+        self.`filesDone` = try c.decode(Int.self, forKey: .`filesDone`)
+        self.`filesTotal` = try c.decode(Int.self, forKey: .`filesTotal`)
+        self.`firstRunDone` = try c.decode(Bool.self, forKey: .`firstRunDone`)
+        self.`importedRows` = try c.decode(Int.self, forKey: .`importedRows`)
+        self.`coverage` = try c.decode([WireHistoryImportCoverage].self, forKey: .`coverage`)
+        self.`sources` = try c.decode([WireHistoryImportSource].self, forKey: .`sources`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`schemaVersion`, forKey: .`schemaVersion`)
+        try c.encode(`phase`, forKey: .`phase`)
+        try c.encode(`days`, forKey: .`days`)
+        try c.encode(`filesDone`, forKey: .`filesDone`)
+        try c.encode(`filesTotal`, forKey: .`filesTotal`)
+        try c.encode(`firstRunDone`, forKey: .`firstRunDone`)
+        try c.encode(`importedRows`, forKey: .`importedRows`)
+        try c.encode(`coverage`, forKey: .`coverage`)
+        try c.encode(`sources`, forKey: .`sources`)
+    }
+    private func validate() throws {
+        guard `schemaVersion` >= 1 else { throw WireDecodeError.invalidBound }
+        guard `schemaVersion` <= 1 else { throw WireDecodeError.invalidBound }
+        guard `days` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `days` <= 371 else { throw WireDecodeError.invalidBound }
+        guard `filesDone` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `filesTotal` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `importedRows` >= 0 else { throw WireDecodeError.invalidBound }
+    }
+}
+
 public struct WireHistoryItem: Codable, Sendable {
     public let `at`: WireTimestamp
     public let `model`: String?

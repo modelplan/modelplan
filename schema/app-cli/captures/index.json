@@ -1555,6 +1555,52 @@
       ]
     },
     {
+      "file": "WireHistoryImportCoverage.json",
+      "type": "WireHistoryImportCoverage",
+      "optional": [],
+      "required": [
+        "source",
+        "from",
+        "through",
+        "rows"
+      ]
+    },
+    {
+      "file": "WireHistoryImportSource.json",
+      "type": "WireHistoryImportSource",
+      "optional": [],
+      "required": [
+        "source",
+        "status",
+        "turns"
+      ]
+    },
+    {
+      "file": "WireHistoryImportStartParams.json",
+      "type": "WireHistoryImportStartParams",
+      "optional": [],
+      "required": [
+        "days",
+        "firstRun"
+      ]
+    },
+    {
+      "file": "WireHistoryImportStatus.json",
+      "type": "WireHistoryImportStatus",
+      "optional": [],
+      "required": [
+        "schemaVersion",
+        "phase",
+        "days",
+        "filesDone",
+        "filesTotal",
+        "firstRunDone",
+        "importedRows",
+        "coverage",
+        "sources"
+      ]
+    },
+    {
       "file": "WireHistoryItem.json",
       "type": "WireHistoryItem",
       "optional": [

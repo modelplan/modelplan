@@ -219,3 +219,24 @@ const (
 	ForecastCycleAverage ForecastBasis = "cycle-average"
 	ForecastNoBasis      ForecastBasis = "none"
 )
+
+// HistoryImportPhase is the importer's state as the app shows it.
+type HistoryImportPhase string
+
+const (
+	ImportIdle      HistoryImportPhase = "idle"
+	ImportRunning   HistoryImportPhase = "running"
+	ImportDone      HistoryImportPhase = "done"
+	ImportCancelled HistoryImportPhase = "cancelled"
+	ImportFailed    HistoryImportPhase = "failed"
+)
+
+// HistoryImportSourceStatus is one source's outcome in a finished import.
+type HistoryImportSourceStatus string
+
+const (
+	ImportSourceImported  HistoryImportSourceStatus = "imported"
+	ImportSourceNoConsent HistoryImportSourceStatus = "skipped_no_consent"
+	ImportSourceNothing   HistoryImportSourceStatus = "nothing_found"
+	ImportSourceOff       HistoryImportSourceStatus = "off"
+)
