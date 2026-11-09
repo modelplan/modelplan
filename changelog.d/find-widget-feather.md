@@ -1,1 +1,1 @@
-Find Quota Widget no longer draws a bright ring around the widget. The clearing now has a soft, feathered edge that fades smoothly into the dim, so it reads as a gentle spotlight instead of a hard frame.
+Find Quota Widget no longer draws a bright ring around the widget. The clearing now has a soft, feathered edge that fades smoothly into the dim, with a gentle glow in your accent colour just outside it so the widget still stands out on a dark desktop; the glow fades in once (not with Reduce Motion) and is a little stronger with Increase Contrast.

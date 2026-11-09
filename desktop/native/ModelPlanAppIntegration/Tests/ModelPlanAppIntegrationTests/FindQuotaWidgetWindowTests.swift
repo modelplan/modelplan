@@ -53,18 +53,36 @@ import XCTest
         XCTAssertFalse(window.isVisible, "ordered out once the fade ends")
     }
 
-    /// Evidence: the overlay over a light and a dark desktop fill, with a stand-in widget in the hole,
-    /// written to dock-visual/find-overlay (uploaded with the other dock-visual captures).
+    /// Evidence and check: the overlay over a light and a dark desktop fill, and with Increase Contrast, with a
+    /// stand-in widget in the hole; written to dock-visual/find-overlay (uploaded with the other dock-visual
+    /// captures). The accent halo must read against the dimmed surroundings on both fills.
     func testD56WritesTheFeatheredOverlayOverLightAndDarkFills() throws {
         _ = NSApplication.shared
         let display = CGRect(x: 0, y: 0, width: 640, height: 480)
         let widget = CGRect(x: 540, y: 80, width: 64, height: 320)
         let target = QuotaWidgetSpotlightTarget(widget: widget, display: display, displayID: "capture")
+        let hole = QuotaWidgetSpotlightStyle.hole(for: target)
         let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
         let out = root.appendingPathComponent("dock-instrument-checks/dock-visual/find-overlay", isDirectory: true)
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-        for (name, fill) in [("light", NSColor(srgbRed: 0.93, green: 0.94, blue: 0.96, alpha: 1)),
-                             ("dark", NSColor(srgbRed: 0.12, green: 0.13, blue: 0.15, alpha: 1))] {
+        func luma(_ bitmap: NSBitmapImageRep, x: CGFloat, y: CGFloat) -> CGFloat {
+            let scale = CGFloat(bitmap.pixelsWide) / display.width
+            let c = bitmap.colorAt(x: Int(x * scale), y: Int((display.height - y) * scale))?.usingColorSpace(.sRGB)
+            return c.map { 0.2126 * $0.redComponent + 0.7152 * $0.greenComponent + 0.0722 * $0.blueComponent } ?? 0
+        }
+        /// Mean luminance of the halo band (2 to 12 pt outside the hole's left edge) and of the dimmed area beyond the feather.
+        func bandAndSurround(_ bitmap: NSBitmapImageRep) -> (band: CGFloat, surround: CGFloat) {
+            let y = hole.midY
+            let band = (2...12).map { luma(bitmap, x: hole.minX - CGFloat($0), y: y) }
+            let surround = (40...60).map { luma(bitmap, x: hole.minX - CGFloat($0), y: y) }
+            return (band.reduce(0, +) / CGFloat(band.count), surround.reduce(0, +) / CGFloat(surround.count))
+        }
+        for (name, fill, dark, contrast) in [
+            ("light-normal", NSColor(srgbRed: 0.93, green: 0.94, blue: 0.96, alpha: 1), false, false),
+            ("dark-normal", NSColor(srgbRed: 0.12, green: 0.13, blue: 0.15, alpha: 1), true, false),
+            ("dark-increase-contrast", NSColor(srgbRed: 0.12, green: 0.13, blue: 0.15, alpha: 1), true, true),
+            ("light-increase-contrast", NSColor(srgbRed: 0.93, green: 0.94, blue: 0.96, alpha: 1), false, true),
+        ] {
             let canvas = NSView(frame: display)
             canvas.wantsLayer = true
             canvas.layer?.backgroundColor = fill.cgColor
@@ -74,11 +92,38 @@ import XCTest
             stand.layer?.cornerRadius = 10
             canvas.addSubview(stand)
             let overlay = QuotaWidgetSpotlightView(frame: display)
-            overlay.hole = QuotaWidgetSpotlightStyle.hole(for: target)
+            overlay.backdropIsDark = dark; overlay.increaseContrast = contrast
+            overlay.hole = hole
             canvas.addSubview(overlay)
+            let drawn = overlay.drawnForChecks
+            XCTAssertFalse(drawn.hasStrokeOrBorder, "the halo is a glow, never a ring")
+            XCTAssertFalse(drawn.hasShadow)
             let bitmap = try XCTUnwrap(canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds))
             canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
-            try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: out.appendingPathComponent("find-overlay-\(name)-normal.png"))
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: out.appendingPathComponent("find-overlay-\(name).png"))
+            let (band, surround) = bandAndSurround(bitmap)
+            if dark {
+                // The dimmed dark desktop is about 0.07 luminance; the accent glow must lift the band clearly above it.
+                XCTAssertGreaterThan(band - surround, 0.04, "\(name): the halo reads on a dark desktop (band \(band), around \(surround))")
+            } else {
+                // On a light desktop the glow tints rather than brightens: it must still differ clearly.
+                XCTAssertGreaterThan(abs(band - surround), 0.02, "\(name): the halo is visible on a light desktop (band \(band), around \(surround))")
+            }
+        }
+    }
+
+    func testD56HaloIsAFeatherNotARing() {
+        let peak = QuotaWidgetSpotlightStyle.haloPeak(dark: true, increaseContrast: false)
+        XCTAssertEqual(peak, 0.35, accuracy: 0.001)
+        XCTAssertLessThan(QuotaWidgetSpotlightStyle.haloPeak(dark: false, increaseContrast: false), peak, "weaker on light")
+        XCTAssertGreaterThan(QuotaWidgetSpotlightStyle.haloPeak(dark: true, increaseContrast: true), peak, "Increase Contrast: a bit stronger")
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.haloAlpha(atDistance: 0, peak: peak), peak, accuracy: 0.001, "starts at the gap edge")
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.haloAlpha(atDistance: 20, peak: peak), 0, accuracy: 0.001, "gone after the 20 pt feather")
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.haloAlpha(atDistance: -6, peak: peak), 0, accuracy: 0.001, "no hard edge inside either")
+        var last = peak
+        for d in stride(from: CGFloat(0), through: 20, by: 1) {
+            let a = QuotaWidgetSpotlightStyle.haloAlpha(atDistance: d, peak: peak)
+            XCTAssertLessThanOrEqual(a, last + 0.0001); last = a
         }
     }
 }

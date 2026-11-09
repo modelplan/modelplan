@@ -36,6 +36,22 @@ enum QuotaWidgetSpotlightStyle {
         let t = min(1, max(0, distance / featherRadius))
         return dimAlpha * t * t * (3 - 2 * t)
     }
+    /// A soft accent-coloured glow that follows the hole: full strength at the hole's edge, gone `haloRadius`
+    /// points out, and a few points inside so there is no hard edge. A glow, never a stroke or ring.
+    static let haloRadius: CGFloat = 20
+    static let haloInnerFade: CGFloat = 6
+    static let haloPulse: TimeInterval = 0.6
+    /// Peak alpha: stronger on a dark desktop (dimming it changes little), weaker on a light one; Increase Contrast adds a bit.
+    static func haloPeak(dark: Bool, increaseContrast: Bool) -> CGFloat {
+        let base: CGFloat = dark ? 0.35 : 0.22
+        return increaseContrast ? min(0.45, base * 1.3) : base
+    }
+    /// Halo alpha at `distance` points outside the hole's edge (negative: inside).
+    static func haloAlpha(atDistance d: CGFloat, peak: CGFloat) -> CGFloat {
+        func smooth(_ t: CGFloat) -> CGFloat { let c = min(1, max(0, t)); return c * c * (3 - 2 * c) }
+        if d < 0 { return peak * smooth((d + haloInnerFade) / haloInnerFade) }
+        return peak * smooth(1 - d / haloRadius)
+    }
     /// The undimmed hole: the widget plus padding, kept on its display.
     static func hole(for target: QuotaWidgetSpotlightTarget) -> CGRect {
         target.widget.insetBy(dx: -holePadding, dy: -holePadding).intersection(target.display)
@@ -168,6 +184,7 @@ enum QuotaWidgetSpotlightEnd: Equatable { case timeout, input, withdrawn, unavai
         view.hole = hole.offsetBy(dx: -target.display.minX, dy: -target.display.minY)
         panel.alphaValue = fadeIn > 0 ? 0 : 1
         panel.orderFrontRegardless()
+        view.pulseHalo(duration: fadeIn > 0 ? QuotaWidgetSpotlightStyle.haloPulse : 0)
         guard fadeIn > 0 else { return }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = fadeIn
@@ -214,8 +231,24 @@ private final class QuotaWidgetSpotlightPanel: NSPanel {
 
 final class QuotaWidgetSpotlightView: NSView {
     /// Flat dim everywhere beyond the feather; the feather layer carries the soft edge.
-    private let dim = CAShapeLayer(), feather = CALayer()
+    private let dim = CAShapeLayer(), feather = CALayer(), halo = CALayer()
     var hole: CGRect = .zero { didSet { layoutLayers() } }
+    /// Whether the desktop under the widget is dark. nil: follow the effective appearance (the window server's
+    /// pixels need Screen Recording permission, which a find command must not ask for).
+    var backdropIsDark: Bool? { didSet { layoutLayers() } }
+    var increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast { didSet { layoutLayers() } }
+    private var isDark: Bool {
+        backdropIsDark ?? (effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+    }
+    /// One gentle fade-in of the glow; none under Reduce Motion (duration 0).
+    func pulseHalo(duration: TimeInterval) {
+        halo.removeAllAnimations()
+        guard duration > 0 else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0; fade.toValue = 1; fade.duration = duration
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        halo.add(fade, forKey: "haloPulse")
+    }
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -223,7 +256,8 @@ final class QuotaWidgetSpotlightView: NSView {
         dim.fillColor = NSColor.black.withAlphaComponent(QuotaWidgetSpotlightStyle.dimAlpha).cgColor
         dim.strokeColor = nil; dim.lineWidth = 0
         feather.magnificationFilter = .linear
-        layer?.addSublayer(dim); layer?.addSublayer(feather)
+        halo.magnificationFilter = .linear
+        layer?.addSublayer(dim); layer?.addSublayer(feather); layer?.addSublayer(halo)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -241,7 +275,7 @@ final class QuotaWidgetSpotlightView: NSView {
     }
     var drawnForChecks: DrawnForChecks {
         let centre = CGPoint(x: hole.midX, y: hole.midY)
-        let layers: [CALayer] = [dim, feather, layer].compactMap { $0 }
+        let layers: [CALayer] = [dim, feather, halo, layer].compactMap { $0 }
         let stroked = layers.contains { l in
             l.borderWidth > 0 || ((l as? CAShapeLayer).map { $0.strokeColor != nil && $0.lineWidth > 0 } ?? false)
         }
@@ -265,7 +299,7 @@ final class QuotaWidgetSpotlightView: NSView {
         dim.frame = bounds
         guard !hole.isEmpty else {
             let path = CGMutablePath(); path.addRect(bounds)
-            dim.path = path; feather.contents = nil; feather.frame = .zero
+            dim.path = path; feather.contents = nil; feather.frame = .zero; halo.contents = nil; halo.frame = .zero
             return
         }
         // The flat dim stops where the feather has reached full strength, so the two meet unseen.
@@ -279,6 +313,10 @@ final class QuotaWidgetSpotlightView: NSView {
         feather.contentsScale = scale
         feather.frame = region
         feather.contents = Self.featherImage(region: region, hole: hole, scale: scale)
+        halo.contentsScale = scale
+        halo.frame = region
+        halo.contents = Self.haloImage(region: region, hole: hole, scale: scale,
+                                       peak: QuotaWidgetSpotlightStyle.haloPeak(dark: isDark, increaseContrast: increaseContrast))
     }
 
     /// Distance from `point` to the rounded rectangle's edge; negative inside.
@@ -307,6 +345,31 @@ final class QuotaWidgetSpotlightView: NSView {
         let space = CGColorSpaceCreateDeviceRGB()
         guard let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
         return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: space,
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
+
+    /// The accent colour with the halo's alpha, premultiplied, covering `region`.
+    static func haloImage(region: CGRect, hole: CGRect, scale: CGFloat, peak: CGFloat) -> CGImage? {
+        let w = max(1, Int((region.width * scale).rounded())), h = max(1, Int((region.height * scale).rounded()))
+        let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? NSColor.systemBlue.usingColorSpace(.sRGB)!
+        let rgb = [accent.redComponent, accent.greenComponent, accent.blueComponent]
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        let radius = QuotaWidgetSpotlightStyle.holeCornerRadius
+        for row in 0..<h {
+            let y = region.maxY - (CGFloat(row) + 0.5) / scale
+            for column in 0..<w {
+                let x = region.minX + (CGFloat(column) + 0.5) / scale
+                let d = distance(from: CGPoint(x: x, y: y), toRounded: hole, radius: radius)
+                let alpha = QuotaWidgetSpotlightStyle.haloAlpha(atDistance: d, peak: peak)
+                let i = (row * w + column) * 4
+                for c in 0..<3 { bytes[i + c] = UInt8((rgb[c] * alpha * 255).rounded()) }
+                bytes[i + 3] = UInt8((alpha * 255).rounded())
+            }
+        }
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
                        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
                        provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
