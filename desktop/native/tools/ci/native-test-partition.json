@@ -44,7 +44,6 @@
         "CancellationPresentationTests",
         "CanonicalConnectionBackendTests",
         "CockpitInstrumentCompositionTests",
-        "CommunityCockpitEntryTests",
         "CommunityContextHelpTests",
         "CommunityEmptyReaderMenuTests",
         "CommunityFieldProductionWiringTests",
@@ -71,6 +70,7 @@
         "DockWakePolicyTests",
         "EngineDesignConformanceTests",
         "EngineDockInteractionBindingTests",
+        "FindQuotaWidgetJourneyTests",
         "HintExecutionHostTests",
         "HostPairedProjectionTests",
         "InstrumentHelpCompositionTests",
@@ -105,27 +105,27 @@
       ],
       "allowedSkips": {
         "CommunityCockpitEntryTests/testCockpitStaysWithinItsCPUAndMemoryBudgetOpenAndClosed": {
-          "leg": "headless",
+          "leg": "gui",
           "reason": "needs the canonical official cockpit build and MODELPLAN_TEST_ONLY_SPI, which U11 native supplies"
         },
         "CommunityCockpitEntryTests/testG313RealCLIRecoversRetainedWeeklyCard": {
-          "leg": "headless",
+          "leg": "gui",
           "reason": "requires the synthetic real CLI supplied and required by the U11 workflow"
         },
         "CommunityCockpitEntryTests/testNormalEntryRejectsOutdatedCLI": {
-          "leg": "headless",
+          "leg": "gui",
           "reason": "needs the real synthetic-test CLI, which the native job does not build; U11 builds and supplies it"
         },
         "CommunityCockpitEntryTests/testNormalEntryReceivesCockpitDetailsFromRealAppServer": {
-          "leg": "headless",
+          "leg": "gui",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"
         },
         "CommunityCockpitEntryTests/testNormalEntryKeepsTheScopeForTheDayAndStartsTheNextDayAtAll": {
-          "leg": "headless",
+          "leg": "gui",
           "reason": "needs the real synthetic-test CLI, which the native job does not build; U11 builds and supplies it"
         },
         "CommunityCockpitEntryTests/testProductionPinsAdmitCanonicalBundles": {
-          "leg": "headless",
+          "leg": "gui",
           "reason": "needs both canonical cockpit editions built and their generated pins compiled in (check-bundle-pins.py), which U11 native supplies"
         },
         "S1GalleryTests/testProduceOffscreenGallery": {

@@ -872,7 +872,16 @@
     {
       "file": "WireCockpitPublication.json",
       "type": "WireCockpitPublication",
-      "optional": [],
+      "optional": [
+        {
+          "field": "speedTiers",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
       "required": [
         "contractVersion",
         "publicationId",
@@ -1131,6 +1140,78 @@
         "bindingBasis",
         "recent7d",
         "recent30d"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedBilling.json",
+      "type": "WireCockpitSpeedBilling",
+      "optional": [],
+      "required": [
+        "account",
+        "billsTo",
+        "basis",
+        "ratio"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedEligibility.json",
+      "type": "WireCockpitSpeedEligibility",
+      "optional": [],
+      "required": [
+        "plans",
+        "note"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedRatio.json",
+      "type": "WireCockpitSpeedRatio",
+      "optional": [
+        {
+          "field": "ratio",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "qualifier"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedTier.json",
+      "type": "WireCockpitSpeedTier",
+      "optional": [],
+      "required": [
+        "id",
+        "harness",
+        "tier",
+        "label",
+        "toggle",
+        "eligibility",
+        "models",
+        "billing",
+        "caveats",
+        "sources"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedTierModel.json",
+      "type": "WireCockpitSpeedTierModel",
+      "optional": [
+        {
+          "field": "modelId",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "vendorModelId",
+        "speed"
       ]
     },
     {
