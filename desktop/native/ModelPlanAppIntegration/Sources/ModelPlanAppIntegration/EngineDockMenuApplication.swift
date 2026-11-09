@@ -231,6 +231,17 @@ struct StatusNoticePresentation {
             self.settings.update(context: context)
         }
     }
+    private var engineServerVersion: String?
+    /// The accepted server version is asked once per change; a different answer refreshes About.
+    private func refreshEngineServerVersion() {
+        Task { @MainActor [weak self] in
+            guard let self, !self.terminating else { return }
+            let version = await self.composition.client.acceptedServerVersion()
+            guard version != self.engineServerVersion, version != nil else { return }
+            self.engineServerVersion = version
+            self.updateSettingsContext()
+        }
+    }
     private func updateSettingsContext() {
         let ready: Bool
         if case .ready = composition.store.snapshot.connection { ready = true } else { ready = false }
@@ -241,12 +252,22 @@ struct StatusNoticePresentation {
                          source: row.sourceName.isEmpty ? nil : .init(EngineDockContentProvider.sourceName(member.account.route, english: true), EngineDockContentProvider.sourceName(member.account.route, english: false)),
                          lastRead: row.originalObservedAt, nextRefresh: nil)
         }
-        guard ready != lastAboutConnectionReady || readers != settings.editor.context.readerDiagnostics else { return }
+        // G3-67: About's copied diagnostics come from the running engine: the server version of the accepted hello, the
+        // tools whose consent is allowed, and the coarse classes of the accepted row reasons.
+        let snapshot = composition.store.snapshot
+        var about = settings.editor.context.about
+        about.cliState = contextSource.make(engineReady: ready).about.cliState
+        about.applyEngineFacts(cliVersion: ready ? engineServerVersion : nil,
+                               allowedTools: (snapshot.consent?.scopes ?? []).filter { $0.state == .allowed && !$0.retired }.map(\.tool),
+                               reasonCodes: (snapshot.rows?.projection.rows ?? []).map(\.reason.code))
+        if ready { refreshEngineServerVersion() } else { engineServerVersion = nil }
+        guard ready != lastAboutConnectionReady || readers != settings.editor.context.readerDiagnostics
+                || about.diagnosticText != settings.editor.context.about.diagnosticText else { return }
         lastAboutConnectionReady = ready
         // Preserve Dock-owned catalogue, display and placement facts when the
         // engine connection changes; only About's CLI readiness comes from here.
         var context = settings.editor.context
-        context.about.cliState = contextSource.make(engineReady: ready).about.cliState
+        context.about = about
         context.readerDiagnostics = readers
         settings.update(context: context)
     }

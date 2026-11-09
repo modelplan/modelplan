@@ -62,6 +62,7 @@ public actor ProcessEngineClient: EngineClient {
     var deliveredSequence: UInt64?
     var deliveredRowRevision: UInt64?
     var capabilities: Set<String> = []
+    var serverVersion: String?
     var handshaken = false
     var gateClosed = true
     var epochUncertain = false
@@ -132,6 +133,10 @@ public actor ProcessEngineClient: EngineClient {
         handshaken && !gateClosed && capabilities.contains(capability)
     }
 
+    public func acceptedServerVersion() async -> String? {
+        handshaken && !gateClosed ? serverVersion : nil
+    }
+
     public func start() async throws -> EngineDeliveryContext {
         if Task.isCancelled { throw EngineClientError.interrupted(.notSent) }
         guard !consumerBlocked && !requiresRetry && !stopping else { throw EngineClientError.notReady }
@@ -200,7 +205,7 @@ public actor ProcessEngineClient: EngineClient {
             sessionID = "s-" + UUID().uuidString.lowercased()
             let token = UUID()
             handshaken = false; sequence = nil; deliveredSequence = nil; deliveredRowRevision = nil; gateClosed = true
-            retiredEpochs.removeAll(); capabilities.removeAll(); facts = nil
+            retiredEpochs.removeAll(); capabilities.removeAll(); serverVersion = nil; facts = nil
             seenCredentialOperations.removeAll()
             emit(.connection(.starting))
             let process = try EngineProcess(id: token, configuration: configuration, writeTimeout: runtime.writeTimeout,

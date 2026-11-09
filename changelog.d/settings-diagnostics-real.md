@@ -1,0 +1,1 @@
+Settings > About "Copy diagnostics" now describes the running engine: the CLI version comes from the engine the app accepted, readers lists the tools whose reading is allowed, and errors lists the coarse classes of the current row reasons (fixed names only, never paths, accounts or text). An owner test build shows its own CLI version instead of "unknown".

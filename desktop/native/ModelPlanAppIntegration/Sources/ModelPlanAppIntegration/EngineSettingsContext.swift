@@ -7,7 +7,10 @@ import ModelPlanSettings
     private let base: SettingsPageContext
     private let identityMatches: Bool
     init(bundle: URL, executable: URL) {
-        identityMatches = executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL && CommunityConsentBundleIdentity.matches(bundle: bundle)
+        // G3-67: an owner test build carries a helper built outside the release pins, so it is accepted by its own marker
+        // and pins (the same rule the cockpit page uses) and still shows its version in About.
+        identityMatches = executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL
+            && (CommunityConsentBundleIdentity.matches(bundle: bundle) || CommunityConsentBundleIdentity.matchesOwnerTest(bundle: bundle))
         var context = CommunityApplicationFactory.makeSettingsContext(bundle: bundle, availability: .unverified)
         context.configureV1NormalEntry()
         // The normal Dock applies the pin to the selected member's paint, and the status item
