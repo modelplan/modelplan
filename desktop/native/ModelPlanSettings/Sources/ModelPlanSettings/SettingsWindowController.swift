@@ -127,6 +127,7 @@ enum SettingsWords {
     private let stack = NSStackView()
     private lazy var connectionsView = SettingsConnectionsView(editor: editor)
     private let scopeConsentEntry: ScopeConsentEntry?
+    private var historyImportView: SettingsHistoryImportView?
     private let heading = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
     private let empty = NSTextField(wrappingLabelWithString: "")
@@ -239,6 +240,11 @@ enum SettingsWords {
         let connectionContent: NSView = scopeConsentEntry?.view ?? connectionsView
         stack.addArrangedSubview(connectionContent)
         connectionContent.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        if let model = scopeConsentEntry?.historyImport {
+            let view = SettingsHistoryImportView(model: model, language: language)
+            historyImportView = view; stack.addArrangedSubview(view)
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
         NSLayoutConstraint.activate([
             side.leadingAnchor.constraint(equalTo: root.leadingAnchor), side.topAnchor.constraint(equalTo: root.topAnchor),
             side.bottomAnchor.constraint(equalTo: root.bottomAnchor), side.widthAnchor.constraint(equalToConstant: 236),
@@ -297,6 +303,12 @@ enum SettingsWords {
         let connectionsWereHidden = connectionContent.isHidden
         connectionContent.isHidden = query.isEmpty ? selectedPaneID != "subscriptions"
             : !["connect", "tool", "plugin", "连接", "工具", "插件", "订阅"].contains(where: { query.localizedCaseInsensitiveContains($0) })
+        if let view = historyImportView {
+            view.apply(language: language)
+            view.isHidden = query.isEmpty ? selectedPaneID != "privacy"
+                : !["import", "history", "usage", "导入", "历史", "使用"].contains(where: { query.localizedCaseInsensitiveContains($0) })
+            if !view.isHidden, scopeConsentEntry?.historyImport?.status == nil { Task { await scopeConsentEntry?.historyImport?.refreshIfNeeded() } }
+        }
         if scopeConsentEntry == nil {
             if connectionContent.isHidden && !connectionsWereHidden { connectionsView.suspend() }
             connectionsView.apply(language: language)
@@ -334,7 +346,7 @@ enum SettingsWords {
                 for (index, key) in keys.enumerated() {
                     let row = rows[key] ?? SettingsNativeRow(key: key); rows[key] = row
                     if row.superview !== stack {
-                        stack.insertArrangedSubview(row, at: index + 4)
+                        stack.insertArrangedSubview(row, at: index + (historyImportView == nil ? 4 : 5))
                         row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
                     }
                 }
