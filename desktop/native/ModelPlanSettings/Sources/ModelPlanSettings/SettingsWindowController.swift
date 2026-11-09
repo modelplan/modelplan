@@ -331,6 +331,8 @@ enum SettingsWords {
                 .filter { row in
                     return !editor.connections.isAvailable || (row.key != .detectedReaders && row.key != .optionalReaders)
                 }
+                // D87/D89: with the Subscriptions rows, visibility and order live in the rows, not in separate controls.
+                .filter { row in scopeConsentEntry == nil || (row.key != .visible && row.key != .order) }
             let ordered = try snapshot.preferences.presentedSubscriptionIDs(editor.context.subscriptions.map(\.id), includingHidden: true)
             let inputs = SettingsDiagrams.inputs(snapshot.preferences, orderedIDs: ordered, lastChangedSubscriptionID: editor.lastChangedSubscriptionID)
             let diagrams: [SettingKey: SettingsDiagramInput] = [.dockEdge: inputs[0], .showPercentages: inputs[1], .autoHide: inputs[2], .size: inputs[3], .percentagePin: inputs[4]]
@@ -399,6 +401,10 @@ enum SettingsWords {
             guard let self else { return }
             self.submit(operation: { [editor = self.editor] in try await editor.commit(SettingsB21Edit.visible(id, visible)) })
         }
+        view.rowActions.resetOrder = { [weak self] in
+            guard let self else { return }
+            self.submit(operation: { [editor = self.editor] in try await editor.commit(SettingsB21Edit.resetOrder) })
+        }
         view.rowActions.move = { [weak self] id, delta in
             guard let self, let current = self.editor.snapshot else { return }
             let stable = self.editor.context.subscriptions.filter { !$0.isUnstable }.map(\.id)
@@ -410,7 +416,8 @@ enum SettingsWords {
         }
         view.setSubscriptionRows(SubscriptionRowsContext(subscriptions: subscriptions, orderedIDs: ordered,
                                                          hiddenIDs: snapshot.preferences.subscriptions.hiddenIDs,
-                                                         canSave: !editor.isSaving && !pendingEdit))
+                                                         canSave: !editor.isSaving && !pendingEdit,
+                                                         canResetOrder: !snapshot.preferences.subscriptions.order.isEmpty))
     }
     private func owns(_ sender: NSView & SettingsOwnedControl) -> Bool {
         guard sender.isEnabled, !sender.isRetired,

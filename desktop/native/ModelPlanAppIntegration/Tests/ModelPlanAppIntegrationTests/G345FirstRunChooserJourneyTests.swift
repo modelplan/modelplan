@@ -14,6 +14,7 @@ private actor G345Engine: EngineClient {
     let store: EngineStore, facts: WireConsentFacts, rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "g345", floor: .init(storeEpoch: "g345", generation: 1), revision: 1)
     var grants: [WireConsentGrantParams] = []
+    var refreshes = 0
     /// What the engine shows once a tool is allowed: the rows then include that tool (nil: rows never change).
     let rowsAfterAllow: WireRowsSnapshot?
     init(store: EngineStore, facts: WireConsentFacts, rows: WireRowsSnapshot, rowsAfterAllow: WireRowsSnapshot? = nil) {
@@ -25,6 +26,7 @@ private actor G345Engine: EngineClient {
         return context
     }
     func recorded() -> [WireConsentGrantParams] { grants }
+    func refreshCount() -> Int { refreshes }
     func retry() async throws -> EngineDeliveryContext { try await start() }
     func stop() async {}
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion {
@@ -39,7 +41,7 @@ private actor G345Engine: EngineClient {
         }
         return .init(requestID: .string(request.requestId))
     }
-    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { refreshes += 1; throw EngineClientError.unsupportedCapability }
     func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
@@ -248,13 +250,14 @@ private actor G345Engine: EngineClient {
         let (app, engine) = try await launch(locale: "en-US")
         let settings = app.scopeConsentEntry.view, controller = app.scopeConsentEntry.controller
         settings.apply(language: .english)
-        var visibility: [(String, Bool)] = [], moves: [(String, Int)] = []
+        var visibility: [(String, Bool)] = [], moves: [(String, Int)] = [], resets = 0
+        settings.rowActions.resetOrder = { resets += 1 }
         settings.rowActions.setVisible = { id, visible in visibility.append((id, visible)) }
         settings.rowActions.move = { id, delta in moves.append((id, delta)) }
         settings.setSubscriptionRows(SubscriptionRowsContext(
             subscriptions: [SettingsSubscription(id: "codex", name: .init("Codex", "Codex"), plan: "Pro", vendor: "codex", source: .fresh),
                             SettingsSubscription(id: "grok1", name: .init("Grok", "Grok"), vendor: "grok", source: .unavailable, causeCode: "timeout")],
-            orderedIDs: ["codex", "grok1"], hiddenIDs: ["grok1"], canSave: true))
+            orderedIDs: ["codex", "grok1"], hiddenIDs: ["grok1"], canSave: true, canResetOrder: true))
         func button(_ id: String) throws -> NSButton { try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == id } as? NSButton, "Missing \(id)") }
         func label(_ id: String) throws -> String { try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == id } as? NSTextField, "Missing \(id)").stringValue }
         XCTAssertEqual(try label("subscriptions.status.codex"), "Reading works")
@@ -270,6 +273,10 @@ private actor G345Engine: EngineClient {
         try button("subscriptions.down.codex").performClick(nil)
         XCTAssertEqual(visibility.map { "\($0.0):\($0.1)" }, ["grok1:true"])
         XCTAssertEqual(moves.map { "\($0.0):\($0.1)" }, ["codex:1"])
+        // D89: the grip sits next to up and down, and "Reset order" sits below the list.
+        for id in ["codex", "grok1"] { _ = try button("subscriptions.drag." + id) }
+        try button("subscriptions.resetOrder").performClick(nil)
+        XCTAssertEqual(resets, 1)
         if case .idle = controller.phase {} else { XCTFail("visibility and order never ask for or change reading consent") }
         let grantsBefore = await engine.recorded(); XCTAssertTrue(grantsBefore.isEmpty)
         // Detected, not added: Cursor can be added; signed-out Claude Code and ZCode (account login) cannot yet.
@@ -292,6 +299,37 @@ private actor G345Engine: EngineClient {
         await controller.confirm(confirmation.id)
         let grants = await engine.recorded()
         XCTAssertEqual(grants.first?.allow, ["cursor.account_usage.saved_login", "cursor.local_history"])
+    }
+
+    /// D89: a row's Retry reaches the engine as one refresh request, through the real entry.
+    func testRetryOnARowAsksTheEngineToRefresh() async throws {
+        let (app, engine) = try await launch(locale: "en-US")
+        let settings = app.scopeConsentEntry.view
+        settings.apply(language: .english)
+        settings.setSubscriptionRows(SubscriptionRowsContext(
+            subscriptions: [SettingsSubscription(id: "grok1", name: .init("Grok", "Grok"), vendor: "grok", source: .unavailable, causeCode: "timeout")],
+            orderedIDs: ["grok1"], hiddenIDs: [], canSave: true))
+        let retry = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.fix.grok1" } as? NSButton, "Retry is offered")
+        XCTAssertEqual(retry.title, "Retry now"); XCTAssertTrue(retry.isEnabled)
+        let before = await engine.refreshCount()
+        retry.performClick(nil)
+        var after = before
+        for _ in 0..<300 where after == before { try await Task.sleep(for: .milliseconds(10)); after = await engine.refreshCount() }
+        XCTAssertEqual(after, before + 1, "one press, one engine refresh")
+    }
+
+    /// D89: with no engine path setting, a missing Codex command shows a hint and the install page, never a path chooser.
+    func testMissingCodexShowsAnInstallHintNotAPathChooser() async throws {
+        let (app, _) = try await launch(locale: "en-US")
+        let settings = app.scopeConsentEntry.view
+        settings.apply(language: .english)
+        settings.setSubscriptionRows(SubscriptionRowsContext(
+            subscriptions: [SettingsSubscription(id: "codex", name: .init("Codex", "Codex"), vendor: "codex", source: .unavailable, causeCode: "not_found")],
+            orderedIDs: ["codex"], hiddenIDs: [], canSave: true))
+        let status = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.status.codex" } as? NSTextField)
+        XCTAssertEqual(status.stringValue, "Install the Codex CLI, or make sure Codex runs from a terminal")
+        let fix = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.fix.codex" } as? NSButton)
+        XCTAssertEqual(fix.title, "Open install page"); XCTAssertTrue(fix.isEnabled, "the link is live, not a disabled button")
     }
 
     func testFirstRunListsDetectedToolsAndDoneSendsTheChoices() async throws {

@@ -511,6 +511,7 @@ import ModelPlanWire
         var handlers = SubscriptionRowsView.Handlers()
         handlers.setVisible = { [weak self] id, visible in self?.rowActions.setVisible?(id, visible) }
         handlers.move = { [weak self] id, delta in self?.rowActions.move?(id, delta) }
+        handlers.resetOrder = { [weak self] in self?.rowActions.resetOrder?() }
         handlers.fix = { [weak self] row in self?.performFix(row) }
         handlers.add = { [weak self] tool in _ = self?.controller.requestToolChoice(tool, on: true) }
         handlers.toggleNotInstalled = { [weak self] in
@@ -519,7 +520,7 @@ import ModelPlanWire
         let view = SubscriptionRowsView(.init(
             model: model, language: language, mark: { [weak self] in self?.markView($0) ?? NSView() }, toolName: { Self.toolName($0) },
             lockedReason: { id in context.subscriptions.first { $0.id == id }?.persistenceDisabledReason },
-            canMutate: controller.canMutate, canSave: context.canSave,
+            canMutate: controller.canMutate, canSave: context.canSave, canResetOrder: context.canResetOrder && rowActions.resetOrder != nil,
             fixAvailable: { [weak self] row in self?.canPerformFix(row) ?? false },
             notInstalledExpanded: notInstalledExpanded, notices: fixNotices, handlers: handlers, highlightedID: highlightedRowID))
         rowsView = view
@@ -531,7 +532,6 @@ import ModelPlanWire
         switch fix.target {
         case .allowKeychain: return controller.canMutate
         case .retry: return rowActions.retry != nil
-        case .chooseToolLocation: return rowActions.chooseLocation != nil
         case .addKey: return readerKeys != nil
         case .installTool, .installNode, .explain: return SubscriptionFixLauncher.url(for: fix.target, tool: row.tool) != nil
         case .openTool: return true
@@ -545,7 +545,6 @@ import ModelPlanWire
         switch fix.target {
         case .allowKeychain: Task { await controller.allowKeychain() }
         case .retry: rowActions.retry?(row.tool)
-        case .chooseToolLocation: rowActions.chooseLocation?(row.tool)
         case .addKey: if let section = keySection { section.scrollToVisible(section.bounds) }
         case .installTool, .installNode, .explain:
             if let url = SubscriptionFixLauncher.url(for: fix.target, tool: row.tool) { NSWorkspace.shared.open(url) }
@@ -565,12 +564,14 @@ public struct SubscriptionRowsContext {
     public let hiddenIDs: Set<String>
     /// False while another change is still saving.
     public let canSave: Bool
-    public init(subscriptions: [SettingsSubscription], orderedIDs: [String], hiddenIDs: Set<String>, canSave: Bool) {
-        self.subscriptions = subscriptions; self.orderedIDs = orderedIDs; self.hiddenIDs = hiddenIDs; self.canSave = canSave
+    /// A saved order exists, so "Reset order" has something to do.
+    public let canResetOrder: Bool
+    public init(subscriptions: [SettingsSubscription], orderedIDs: [String], hiddenIDs: Set<String>, canSave: Bool, canResetOrder: Bool = false) {
+        self.subscriptions = subscriptions; self.orderedIDs = orderedIDs; self.hiddenIDs = hiddenIDs; self.canSave = canSave; self.canResetOrder = canResetOrder
     }
     var signature: String {
         subscriptions.map { [$0.id, $0.name.english, $0.plan, $0.vendor, $0.source.rawValue, $0.causeCode ?? "", $0.isUnstable ? "u" : "s"].joined(separator: "\u{1F}") }
-            .joined(separator: "\u{1E}") + "|" + orderedIDs.joined(separator: ",") + "|" + hiddenIDs.sorted().joined(separator: ",") + "|" + (canSave ? "1" : "0")
+            .joined(separator: "\u{1E}") + "|" + orderedIDs.joined(separator: ",") + "|" + hiddenIDs.sorted().joined(separator: ",") + "|" + (canSave ? "1" : "0") + (canResetOrder ? "r" : "")
     }
 }
 
@@ -580,7 +581,7 @@ public struct SubscriptionRowActions {
     /// A subscription id and -1 (up) or +1 (down).
     public var move: (@MainActor (String, Int) -> Void)?
     public var retry: (@MainActor (String) -> Void)?
-    public var chooseLocation: (@MainActor (String) -> Void)?
+    public var resetOrder: (@MainActor () -> Void)?
     public init() {}
 }
 
@@ -589,7 +590,12 @@ public struct SubscriptionRowActions {
     static func url(for target: ReaderCauseTarget, tool: String) -> URL? {
         switch target {
         case .installNode: return URL(string: "https://nodejs.org/en/download")
-        case .installTool: return tool == "kiro" ? URL(string: "https://kiro.dev/cli/") : nil
+        case .installTool:
+            switch tool {
+            case "kiro": return URL(string: "https://kiro.dev/cli/")
+            case "codex": return URL(string: "https://developers.openai.com/codex/cli")
+            default: return nil
+            }
         case .explain: return tool == "kiro" ? URL(string: "https://kiro.dev/docs/cli/") : SettingsAbout.consentHelpURL
         default: return nil
         }

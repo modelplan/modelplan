@@ -9,6 +9,7 @@ import AppKit
     struct Handlers {
         var setVisible: (String, Bool) -> Void = { _, _ in }
         var move: (String, Int) -> Void = { _, _ in }
+        var resetOrder: () -> Void = {}
         var fix: (SubscriptionRow) -> Void = { _ in }
         var add: (String) -> Void = { _ in }
         var toggleNotInstalled: () -> Void = {}
@@ -22,6 +23,8 @@ import AppKit
         var lockedReason: (String) -> SettingsText?
         var canMutate: Bool
         var canSave: Bool
+        /// A saved order exists, so Reset order is available.
+        var canResetOrder: Bool
         /// Whether the app can perform this row's fix action now; false shows the button disabled.
         var fixAvailable: (SubscriptionRow) -> Bool
         var notInstalledExpanded: Bool
@@ -91,6 +94,11 @@ import AppKit
             note(.init("Nothing is being read yet. Add a detected tool below.", "目前没有在读取的订阅，可以从下面添加已检测到的工具。"), id: "subscriptions.added.empty")
         }
         for row in model.added { addedRow(row); }
+        if model.added.filter({ !$0.isPending }).count > 1 {
+            let reset = button(.init("Reset order", "恢复默认顺序"), id: "subscriptions.resetOrder",
+                               enabled: configuration.canSave && configuration.canResetOrder) { [handlers = configuration.handlers] in handlers.resetOrder() }
+            addArrangedSubview(reset)
+        }
         if !model.detected.isEmpty {
             if let last = arrangedSubviews.last { setCustomSpacing(16, after: last) }
             heading(.init("Detected, not added", "已检测到，尚未添加"), id: "subscriptions.detected.heading")
@@ -134,7 +142,9 @@ import AppKit
             field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
         column.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let line = NSStackView(views: [mark, column] + trailing)
+        let line = SubscriptionDropRow(frame: .zero)
+        for view in [mark, column] + trailing { line.addArrangedSubview(view) }
+        line.rowID = row.id
         line.orientation = .horizontal; line.alignment = .top; line.spacing = 10
         line.setAccessibilityIdentifier(prefix + "row." + row.id)
         rowViews[row.id] = line
@@ -151,11 +161,16 @@ import AppKit
     private func fixButton(_ row: SubscriptionRow, prefix: String) -> ConnectionButton? {
         guard let fix = row.fix else { return nil }
         let available = configuration.fixAvailable(row)
+        // An action the app cannot perform is not offered (no dead buttons); the status line still says what to do.
+        // Keychain and key entry stay visible while they wait for a moment when the engine can take the change.
+        if !available, fix.target != .allowKeychain, fix.target != .addKey { return nil }
         return button(fix.action, id: prefix + "fix." + row.id, enabled: available,
                       help: .init("Not available in this version yet.", "此版本暂不可用。")) { [handlers = configuration.handlers] in handlers.fix(row) }
     }
 
     private func addedRow(_ row: SubscriptionRow) {
+        // Reading by default, no engine row yet: a status line only, until the row arrives.
+        if row.isPending { _ = rowShell(row, prefix: "subscriptions.", trailing: []); return }
         let locked = configuration.lockedReason(row.id)
         let editable = configuration.canSave && locked == nil
         var trailing: [NSView] = []
@@ -170,8 +185,20 @@ import AppKit
         let down = button(.init("↓", "↓"), id: "subscriptions.down." + row.id, enabled: editable && row.canMoveDown) { [handlers = configuration.handlers] in handlers.move(row.id, 1) }
         up.setAccessibilityLabel(language == .english ? "Move \(row.name.english) up" : "上移 \(row.name.chinese)")
         down.setAccessibilityLabel(language == .english ? "Move \(row.name.english) down" : "下移 \(row.name.chinese)")
-        trailing.append(contentsOf: [up, down])
-        _ = rowShell(row, prefix: "subscriptions.", trailing: trailing)
+        let handle = SubscriptionDragHandle()
+        handle.rowID = row.id; handle.isDragEnabled = editable
+        handle.setAccessibilityIdentifier("subscriptions.drag." + row.id)
+        handle.setAccessibilityLabel(language == .english ? "Drag to reorder \(row.name.english)" : "拖动以调整 \(row.name.chinese) 的顺序")
+        trailing.append(contentsOf: [handle, up, down])
+        let column = rowShell(row, prefix: "subscriptions.", trailing: trailing)
+        if let line = column.superview as? SubscriptionDropRow {
+            let positions = Dictionary(configuration.model.added.compactMap { r in r.position.map { (r.id, $0) } }, uniquingKeysWith: { first, _ in first })
+            let move = configuration.handlers.move
+            line.onDrop = { source, target in
+                guard editable, let from = positions[source], let to = positions[target], from != to else { return }
+                move(source, to - from)
+            }
+        }
     }
 
     private func detectedRow(_ row: SubscriptionRow) {
@@ -186,5 +213,53 @@ import AppKit
 
     private func notInstalledRow(_ row: SubscriptionRow) {
         _ = rowShell(row, prefix: "subscriptions.", trailing: [])
+    }
+}
+
+/// The grip on an added row. Dragging it onto another row moves the subscription there (the same shared order as up and down).
+@MainActor final class SubscriptionDragHandle: NSImageView, NSDraggingSource {
+    static let dragType = NSPasteboard.PasteboardType("ai.modelplan.settings.subscription-row")
+    var rowID = ""
+    var isDragEnabled = true
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 16, height: 20))
+        image = NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: nil)
+        contentTintColor = .secondaryLabelColor; imageScaling = .scaleProportionallyDown
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: 16).isActive = true
+        heightAnchor.constraint(equalToConstant: 20).isActive = true
+        alphaValue = 0.8
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
+    override func mouseDown(with event: NSEvent) {
+        guard isDragEnabled, !rowID.isEmpty else { return }
+        let item = NSPasteboardItem(); item.setString(rowID, forType: Self.dragType)
+        let dragging = NSDraggingItem(pasteboardWriter: item)
+        dragging.setDraggingFrame(bounds, contents: image)
+        beginDraggingSession(with: [dragging], event: event, source: self)
+    }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .withinApplication ? .move : []
+    }
+}
+
+/// One row line. Added rows accept a dropped handle; every other row ignores drags.
+@MainActor final class SubscriptionDropRow: NSStackView {
+    var rowID = ""
+    /// (dragged id, id of the row it was dropped on); set only on added rows.
+    var onDrop: ((String, String) -> Void)? {
+        didSet { if onDrop != nil { registerForDraggedTypes([SubscriptionDragHandle.dragType]) } else { unregisterDraggedTypes() } }
+    }
+    override init(frame: NSRect) { super.init(frame: frame) }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
+    private func dragged(_ info: NSDraggingInfo) -> String? { info.draggingPasteboard.string(forType: SubscriptionDragHandle.dragType) }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard onDrop != nil, let source = dragged(sender), source != rowID else { return [] }
+        return .move
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { draggingEntered(sender) }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let onDrop, let source = dragged(sender), source != rowID else { return false }
+        onDrop(source, rowID); return true
     }
 }

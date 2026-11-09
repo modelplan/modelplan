@@ -477,3 +477,26 @@ import ModelPlanWire
         XCTAssertNil(view.window, "Offscreen command binding is not real input or L2")
     }
 }
+
+/// D89: dropping a row's grip on another row moves it there; a row that cannot be edited does not accept drops.
+@MainActor final class SubscriptionRowDropTests: XCTestCase {
+    func testDroppingOnAnotherRowMovesByTheDistanceAndPendingRowsHaveNoControls() throws {
+        let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
+            try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1, consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
+        })
+        let controller = ScopeConsentController(commands: commands)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        let view = SettingsScopeConsentView(controller: controller, language: .english, compactTools: true)
+        var moves: [String] = []
+        view.rowActions.move = { id, delta in moves.append("\(id):\(delta)") }
+        view.setSubscriptionRows(SubscriptionRowsContext(
+            subscriptions: ["a", "b", "c"].map { SettingsSubscription(id: $0, name: .init($0, $0), vendor: "v" + $0, source: .fresh) },
+            orderedIDs: ["a", "b", "c"], hiddenIDs: [], canSave: true))
+        func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+        let rows = all(view).compactMap { $0 as? SubscriptionDropRow }
+        let a = try XCTUnwrap(rows.first { $0.rowID == "a" }), c = try XCTUnwrap(rows.first { $0.rowID == "c" })
+        a.onDrop?("c", "a"); c.onDrop?("a", "c"); a.onDrop?("a", "a")
+        XCTAssertEqual(moves, ["c:-2", "a:2"], "the distance in the shared order; dropping on itself does nothing")
+        XCTAssertNotNil(all(view).first { $0.accessibilityIdentifier() == "subscriptions.drag.b" })
+    }
+}
