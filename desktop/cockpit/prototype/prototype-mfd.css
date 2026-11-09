@@ -70,6 +70,7 @@
 .ov-heat .hm{fill:var(--lcd-ink)}
 .ov-heat.vendor .hm{fill:var(--hv)}
 .ov-heat .hm.s0{fill:var(--lcd-ink);fill-opacity:.07}.ov-heat .hm.s1{fill-opacity:.22}.ov-heat .hm.s2{fill-opacity:.42}.ov-heat .hm.s3{fill-opacity:.66}.ov-heat .hm.s4{fill-opacity:.94}
+.ov-heat .hm.imp{opacity:.55}
 .ov-heat .hm.today{stroke:var(--lcd-ink);stroke-width:1}
 .ov-heat .hm:hover{stroke:var(--lcd-ink);stroke-width:1.2}
 .hm-since{position:absolute;left:0;bottom:0;margin:0;font:10px/12px var(--f-lcd);color:var(--muted)}
@@ -257,6 +258,9 @@ dl.ss{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 6px;margin:2
 
 .ov-top .ov-total{font:600 16px/18px var(--f-lcd)}
 .ov-chart .ov-hit{fill:transparent;pointer-events:all}.ov-chart .ov-bar{pointer-events:none}
+.ov-chart .ov-bar.imp{opacity:.5}
+.ov-chart .ov-from{stroke:var(--lcd-rule);stroke-width:1;stroke-dasharray:2 2;fill:none}
+.ov-chart text.ov-from-l{font:10px var(--f-lcd);fill:var(--muted)}
 .ov-chart .ov-grid{stroke:var(--lcd-rule);stroke-dasharray:2 3;stroke-width:.7;fill:none}
 .ov-legend{display:flex;flex-wrap:wrap;gap:2px 8px;flex:none!important;font:10px/12px var(--f-lcd);color:var(--lcd-muted)}
 .ov-legend span{display:flex;align-items:center;gap:4px;white-space:nowrap}.ov-legend i{width:6px;height:6px;display:block;border-radius:1.5px}

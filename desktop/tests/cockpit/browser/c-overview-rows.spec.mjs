@@ -26,7 +26,7 @@ function history(dailyFrom=localDay(39)){
  const data=visualFixture().data,ref=data.projection.rows[0].accounts[0].subscriptionRef;
  data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom,
   subscriptions:[{subscriptionRef:ref,sources:[{source:'codex',bindingBasis:'source-wide-current-binding',recent7d:sums(1),recent30d:sums(1)}]}],
-  models:ranking,tools:ranking,daily:DAYS.map(([back,n])=>({at:localDay(back),source:'codex',observedOutputTokens:n})),hourly:[],
+  models:ranking,tools:ranking,daily:DAYS.map(([back,n])=>({at:localDay(back),source:'codex',origin:'live',observedOutputTokens:n})),hourly:[],
   projects:{recent7d:[],recent30d:[]},cycles:[]};
  return data;
 }
