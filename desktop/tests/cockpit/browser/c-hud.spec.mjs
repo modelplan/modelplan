@@ -3,6 +3,7 @@
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
+import {shortLabel} from '../../../cockpit/study/rocket-r1/short-label.js';
 
 const effort=(key,ability,cost,star=false)=>({effort:key,label:key,star,ability,cost,time:30});
 const model=(id,ability,cost)=>({id,name:'Synthetic '+id,developerId:'openai',recommended:'high',efforts:[effort('low',ability-8,cost/3),effort('high',ability,cost,true)]});
@@ -62,7 +63,26 @@ test('CKP-PORT-08 one point per model at ★, a dashed frontier, dominated dots 
  await open(page,{published:[model('a',40,.1),model('b',50,.3),model('c',35,.9)]});
  await expect(page.locator('.hud-dot')).toHaveCount(3);await expect(page.locator('.hud-dot.dominated')).toHaveCount(1);
  expect((await page.locator('.hud-front').getAttribute('points')).trim().split(/\s+/).length).toBe(2);
- await expect(page.locator('.hud-mini text')).toHaveCount(0);
+ // No names inside: the chart's only text is its two axis captions and the rank digits of the first three points.
+ expect(await page.locator('.hud-mini text').allTextContents()).toEqual(expect.arrayContaining(['Ability ↑','Cost ×']));
+ expect((await page.locator('.hud-mini text.hud-rank').allTextContents()).sort()).toEqual(['1','2','3']);
+ for(const text of await page.locator('.hud-mini text').allTextContents())expect(text).not.toContain('Synthetic');
+});
+// QA 11-08 (G3-48): six rows of real-length names fit the tall HUD whole, and the chart carries the study's axis captions.
+const longNames=['GPT-6 Astra','GPT-6.1 Terra','GPT-6 Luna','Gemini 4 Argon','MiMo-V2.6-Flash','GPT-6.1 Sol'];
+test('CKP-PORT-04 six real-length names fit the tall HUD: no row clipped, no name or effort cut',async({page})=>{
+ await open(page,{published:longNames.map((name,i)=>({...model('n'+i,40+i,.1*(i+1)),name,recommended:'max',efforts:[effort('low',32+i,.03*(i+1)),effort('max',40+i,.1*(i+1),true)]}))});
+ const hud=page.locator('.hud');await expect(hud.locator('.hp')).toHaveCount(6);
+ await expect(hud.locator('.hp b')).toHaveText(longNames.map(name=>shortLabel(name)));// the HUD shows the study's short names (#761)
+ const geometry=await hud.evaluate(h=>{const box=e=>e.getBoundingClientRect(),H=box(h);return [...h.querySelectorAll('.hp')].map(r=>{const b=r.querySelector('b'),rec=r.querySelector('.hp-rec');return {bottom:box(r).bottom-H.bottom,right:box(rec).right-H.right,cut:b.scrollWidth>b.clientWidth+.5,recCut:rec.scrollWidth>rec.clientWidth+.5};});});
+ for(const row of geometry){expect(row.bottom).toBeLessThanOrEqual(0.5);expect(row.right).toBeLessThanOrEqual(0.5);expect(row.cut).toBe(false);expect(row.recCut).toBe(false);}
+ await expect(hud.locator('.hp-rec').nth(4)).toHaveText('★max');
+ await expect(page.locator('.hud-b .hud-axis-label')).toHaveText(['Ability ↑','Cost ×']);
+});
+test('CKP-PORT-04 the axis captions follow the language',async({page})=>{
+ const {send,receive}=await open(page);
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ await expect(page.locator('.hud-b .hud-axis-label')).toHaveText(['能力 ↑','成本 ×']);
 });
 test('CKP-PORT-08 a different current effort is a white dot linked to its ★',async({page})=>{
  await open(page,{published:[model('a',40,.1)],session:{sessionRef:'0000000000000001',source:'Codex',subscriptionRef:null,model:'a',effort:'low',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null}});
