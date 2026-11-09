@@ -7,8 +7,8 @@
     {
       "file": "README.md",
       "kind": "notice",
-      "sha256": "3117aa082672515733d874ce9f4d5cf6ff45331fa4077d1ee06e0d007f7b1337",
-      "bytes": 2446,
+      "sha256": "8c63e58477e064b0302d456db19d20d000e03b357392c4908f27ee25aa4ddd40",
+      "bytes": 2540,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },
@@ -198,8 +198,8 @@
     },
     {
       "file": "canopy-c01/canopy-640-1x.png",
-      "sha256": "97941747d499c74b5add910c56df153590394bd07622c2053aa3432666544793",
-      "bytes": 21481,
+      "sha256": "7828fd72c60ffcc97218ff2f135010e6c1f48415324001a65ed80c97dff3a4ad",
+      "bytes": 21337,
       "size": {
         "width": 636,
         "height": 76
@@ -211,8 +211,8 @@
     },
     {
       "file": "canopy-c01/pane-640-1x.png",
-      "sha256": "e3e7c9715aac72f8c277b7d5d2f567e7742b646377a68c1ccdac4511d6794fd7",
-      "bytes": 18973,
+      "sha256": "460a2d034fb5aa0c4ff69bfc4b15e6d0e954c5c03ba3737c1ccec35960b4942f",
+      "bytes": 19171,
       "size": {
         "width": 636,
         "height": 76
@@ -250,8 +250,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-640-1x.png",
-      "sha256": "42d5de18a69b1e24f106809e3c9ffde4031c5846d7ca303975c3e58fe22d55c5",
-      "bytes": 2702,
+      "sha256": "6d6a90f37472080265bb2478b64f473f1e56e9124d7a1f663b67fc096534573a",
+      "bytes": 2741,
       "size": {
         "width": 636,
         "height": 76
@@ -263,8 +263,8 @@
     },
     {
       "file": "canopy-c01/canopy-640-2x.png",
-      "sha256": "2f0d873be734958598cb94c493d5da70534228e8dfd8220faabca9176359a0b1",
-      "bytes": 65868,
+      "sha256": "38ceaee5903051d1adb2a9a789d85654ec77f8d09c0a47806f8300d9436b0fcb",
+      "bytes": 65415,
       "size": {
         "width": 1272,
         "height": 152
@@ -276,8 +276,8 @@
     },
     {
       "file": "canopy-c01/pane-640-2x.png",
-      "sha256": "e31b76ff789e75fab1de1516e4c99cb7ac6c25c00ac2b4347e80e51c28f23d5c",
-      "bytes": 67298,
+      "sha256": "18495b432e77c4d90f6662c1241d6b58cd635b57b8291ac23c1be938c6f03453",
+      "bytes": 68261,
       "size": {
         "width": 1272,
         "height": 152
@@ -315,8 +315,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-640-2x.png",
-      "sha256": "3f345c9a8278bff351fa1fdcb49c30207bd7b37d47a06841429a2f1124b9b494",
-      "bytes": 5854,
+      "sha256": "ad8e5cbfc99daabb9e9c28732093af0cec2fd1aa2007b0a650225638732965c4",
+      "bytes": 5784,
       "size": {
         "width": 1272,
         "height": 152
@@ -328,8 +328,8 @@
     },
     {
       "file": "canopy-c01/canopy-890-1x.png",
-      "sha256": "d0a6f4eaa772c64ef7c57c522b989bcc1bf005441a2d1f28a746e6a3e42c64ed",
-      "bytes": 59372,
+      "sha256": "0fc3bc136b6e66f26226b075e6a428bdf3b7ae80bca2f2037b1678aa01ac8dc2",
+      "bytes": 58341,
       "size": {
         "width": 636,
         "height": 244
@@ -341,8 +341,8 @@
     },
     {
       "file": "canopy-c01/pane-890-1x.png",
-      "sha256": "c5cfb70e2b23ef5be9d83e382018a47fa0544f2ddb7f7c70aa253a9314510674",
-      "bytes": 59134,
+      "sha256": "b8f1693cad9526267540049421374b22b05eb2fc8009dc3a437d4414473c40ac",
+      "bytes": 58862,
       "size": {
         "width": 636,
         "height": 244
@@ -380,8 +380,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-1x.png",
-      "sha256": "c8072b3726c9075fe8534e7d2237d012a34fb71b1f10380a36ea37056d9de1c4",
-      "bytes": 5663,
+      "sha256": "18697ed42c1ed7aac3444a90742cac7f3fce2d6a1f29128bce5078f7c2b728b3",
+      "bytes": 5387,
       "size": {
         "width": 636,
         "height": 244
@@ -393,8 +393,8 @@
     },
     {
       "file": "canopy-c01/canopy-890-2x.png",
-      "sha256": "b529acccb066fb151904522e7f9b11584f3aff4681551ed5602cf725d8bb5b3f",
-      "bytes": 198094,
+      "sha256": "4d813ba7798ed40479fb0d7104f3aafcb0dd639088c3486a5033b855cb54c737",
+      "bytes": 193686,
       "size": {
         "width": 1272,
         "height": 488
@@ -406,8 +406,8 @@
     },
     {
       "file": "canopy-c01/pane-890-2x.png",
-      "sha256": "5320f2828c4449727559a885187d527901692d90a7da795a036b6a2b315fcd0a",
-      "bytes": 223088,
+      "sha256": "8c30d590bee47b562663194cfcbf262dddfedbd669d765f1e6a00065d06f6c3c",
+      "bytes": 217965,
       "size": {
         "width": 1272,
         "height": 488
@@ -445,8 +445,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-2x.png",
-      "sha256": "55add5381a55b4f2993edd8c4586dd51a65d73348573faa45c1cec986ed81f96",
-      "bytes": 12826,
+      "sha256": "a86febdc07ffa94696bd60746b0d771c23591584657f5494afaa9fa115202e01",
+      "bytes": 12134,
       "size": {
         "width": 1272,
         "height": 488

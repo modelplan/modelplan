@@ -21,8 +21,9 @@ The runtime pack contains:
   final runtime coverage masks. Consumers use the recorded pixel dimensions.
   D74 (2026-11-08): the c01 layers are re-exported from a redrawn master whose top
   arc is completed (extension 80 source px; 890 tier 636x244, 640 tier 636x76).
-  The redrawn master is Codex image generation, normalised onto the approved
-  master; this art is pending owner acceptance and is not final. Layer names and
+  The master is the approved mockup-1 pixels shifted down 80 px, with only the missing
+  top band taken from a Codex image-generated redraw (cross-faded over source rows
+  90-150); this art is pending owner acceptance and is not final. Layer names and
   the 1x/2x sizes are otherwise unchanged.
 
 `manifest.json` binds every file to its SHA-256, byte size, pixel dimensions and
