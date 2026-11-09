@@ -1671,6 +1671,11 @@ struct DockHelpInteraction: Equatable {
         if let overflowPanel, overflowPanel.isVisible { result.append(overflowPanel.frame) }
         return result
     }
+    /// The widget's own panel: Help map captions sit beside it, never over its rings.
+    func dockHelpMapAvoidRects(_ value: DockHelpSurface) -> [CGRect] {
+        guard isCurrentDockHelpSurface(value), let panel else { return [] }
+        return [panel.frame]
+    }
     func dockHelpWindowPolicy(_ value: DockHelpSurface) -> (NSWindow.SharingType, NSWindow.CollectionBehavior)? {
         guard isCurrentDockHelpSurface(value), let panel else { return nil }
         return (panel.sharingType, panel.collectionBehavior)
