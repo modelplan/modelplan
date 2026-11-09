@@ -101,6 +101,52 @@ test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothin
   assert.equal(R.evidenceState(ledger, R.feed([comment(`EVIDENCE-DEFERRED: D-02 @ ${H} issue=470`)]), H).state, R.PENDING);
 });
 
+test("D97 AUTO-VERIFIED: trusted first line at the exact head clears the listed scenarios, ledger and G3 rows included", () => {
+  const docs = [file("docs/evidence.md")];
+  const ledger = (body) => pr({ title: "Fix G3-07", body: `Ledger: G3-07\n${body}` });
+  const av = (ids, sha = H, gates = "ci,gui,review") => `AUTO-VERIFIED: ${ids} @ ${sha} gates=${gates}`;
+  assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(`${av("V-01, V-02")}\n\nchecked`)] }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-07, V-01, V-02"), files: docs, comments: [comment(av("G3-07 V-01 V-02"))] }).state, R.SUCCESS, "G3 row and space-separated IDs");
+  for (const gates of R.AUTO_VERIFIED_GATES)
+    assert.equal(evalPr({ p: ledger("Scenarios: V-01"), files: docs, comments: [comment(av("V-01", H, gates))] }).state, R.SUCCESS, gates);
+  // Mixed with a coordinator VERIFIED line and a #470 deferral.
+  assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02, V-03"), files: docs, comments: [comment(av("V-01")), comment(`VERIFIED: V-02 @ ${H} evidence=/x/y`), comment(`EVIDENCE-DEFERRED: V-03 @ ${H} issue=470`)] }).state, R.SUCCESS);
+  // A Scenarios line without a ledger row (real-Mac tier) is cleared the same way.
+  assert.equal(evalPr({ p: pr({ title: "Ordinary", body: "Scenarios: C-10" }), files: docs, comments: [comment(av("C-10"))] }).state, R.SUCCESS);
+
+  const pending = (comments, why, p = ledger("Scenarios: V-01, V-02")) => {
+    const r = evalPr({ p, files: docs, comments });
+    assert.equal(r.state, R.PENDING, why);
+    return r;
+  };
+  pending([comment(av("V-01, V-02", OLD))], "old head");
+  assert.match(pending([comment(av("V-01, V-02"))], "a new head invalidates it", pr({ title: "Fix G3-07", body: "Scenarios: V-01, V-02", head: { sha: OLD, ref: "feature/x", repo: { full_name: "modelplan/modelplan" } } })).why, /V-01, V-02/);
+  pending([comment(av("V-01, V-02"), { login: "mallory", id: 1 })], "untrusted login");
+  pending([comment(av("V-01, V-02"), { login: "guanbear", id: 1 })], "recycled login");
+  pending([comment(`notes first\n${av("V-01, V-02")}`)], "not the first line");
+  assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, reviews: [review(av("V-01, V-02"))] }).state, R.PENDING, "a review is not a comment");
+  pending([comment(` ${av("V-01, V-02")}`)], "leading space");
+  for (const gates of ["ci,review", "gui,review", "ci,gui", "review,gui,ci", "ci,gui,review,visual,design", "ci,gui,review,", "ci,gui,review,extra", "ci,gui,review,walkthrough", ""])
+    pending([comment(av("V-01, V-02", H, gates))], `gates=${gates}`);
+  pending([comment(av("V-01, V-02", H.slice(0, 12), "ci,gui,review,design,visual"))], "short sha");
+  pending([comment(av("V-01, V-02", H.toUpperCase()))], "upper-case sha");
+  pending([comment(`${av("V-01, V-02")} trailing`)], "trailing text");
+  pending([comment(av("V-01, v-02"))], "malformed ID");
+  assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(av("V-01, V-02", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }).state, R.PENDING, "never carried");
+  assert.match(pending([comment(av("V-01"))], "only the listed ID").why, /evidence pending: V-02$/);
+
+  // Design-touching PR: the line must name design (evidence-gate.sh NEED_D).
+  const designFiles = [file("desktop/cockpit/src/field-page.ts")];
+  assert.equal(R.designTouch(designFiles, conf).touching, true);
+  const designEv = (gates) => R.evidenceState(ledger("Scenarios: V-01"), R.feed([comment(av("V-01", H, gates))]), H, new Map(), { designTouching: true }).state;
+  assert.equal(designEv("ci,gui,review"), R.PENDING);
+  assert.equal(designEv("ci,gui,review,visual"), R.PENDING);
+  assert.equal(designEv("ci,gui,review,design"), R.SUCCESS);
+  assert.equal(designEv("ci,gui,review,design,visual"), R.SUCCESS);
+  assert.match(evalPr({ p: ledger("Scenarios: V-01"), files: designFiles, comments: [comment(av("V-01"))] }).why, /evidence pending: V-01/);
+  assert.doesNotMatch(evalPr({ p: ledger("Scenarios: V-01"), files: designFiles, comments: [comment(av("V-01", H, "ci,gui,review,design"))] }).why, /evidence pending/);
+});
+
 test("PR admission: trusted same-repo PRs into main only; drafts wait", () => {
   assert.equal(evalPr({ p: pr({ user: { login: "x", id: 1 } }) }).state, R.FAILURE);
   assert.equal(evalPr({ p: pr({ head: { sha: H, repo: { full_name: "fork/modelplan" } } }) }).state, R.FAILURE);
@@ -578,4 +624,118 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
   assert.match(jobIf, /conclusion != 'cancelled' \|\| github\.event\.workflow_run\.event == 'merge_group'\n\s+\|\| github\.event\.workflow_run\.pull_requests\[0\]\.head\.sha == github\.event\.workflow_run\.head_sha\)/);
   assert.match(gates, /group: merge-gates-\$\{\{ github\.event\.workflow_run\.conclusion == 'cancelled' && format\('cancelled-\{0\}', github\.event\.workflow_run\.head_sha\)/);
   assert.match(readFileSync(join(root, "scripts/merge-gates/evaluate.mjs"), "utf8"), /cancelledRunSuperseded\(wr, /, "the evaluator re-checks the live head");
+});
+
+// ---- data-sync admission ----
+const BOT = { login: "github-actions[bot]", id: 41898282, type: "Bot" };
+const RUN_ID = 4242;
+const syncPr = (over = {}) => pr({ user: BOT, created_at: "2026-11-08T01:00:05Z", head: { sha: H, ref: `data/sync-0.5.21-${RUN_ID}`, repo: { full_name: "modelplan/modelplan" } }, ...over });
+const syncRun = (over = {}) => ({ id: RUN_ID, path: ".github/workflows/data-sync.yml", event: "schedule", head_branch: "main", head_sha: OLD, created_at: "2026-11-08T01:00:00Z", updated_at: "2026-11-08T01:02:00Z",
+  repository: { full_name: "modelplan/modelplan" }, head_repository: { full_name: "modelplan/modelplan" }, ...over });
+const syncCommit = (over = {}) => ({ sha: H, author: BOT, parents: [{ sha: OLD }], ...over });
+// The dispatched checks data-sync.yml starts on the branch: same repository, no PR list, the PR's branch.
+const syncChecks = (...paths) => (paths.length ? paths : [".github/workflows/ci.yml", ".github/workflows/repo-checks.yml"])
+  .map((path, i) => run(path, "success", i + 1, "completed", { event: "workflow_dispatch", head_branch: `data/sync-0.5.21-${RUN_ID}`, pull_requests: [] }));
+const evalSync = ({ p = syncPr(), files = [file("data/manifest.json"), file("data/plans.json")], comments = [comment(v("merge", H, ""))], run = syncRun(), commit = syncCommit(), runs = syncChecks() } = {}) =>
+  R.evaluatePr({ pr: p, items: R.feed(comments), files, runs, statuses: [], verifiedEdge: () => false, conf, sync: { run, commit } });
+
+test("data-sync: a bot PR from a data-sync.yml run with a trusted exact-head verdict passes without a ci.yml run", () => {
+  const r = evalSync();
+  assert.equal(r.state, R.SUCCESS, r.why);
+  assert.equal(evalSync({ run: syncRun({ event: "workflow_dispatch" }) }).state, R.SUCCESS);
+});
+
+test("data-sync: ci.yml and repo-checks.yml stay required; dispatched runs on the branch count, a fork's or another branch's do not", () => {
+  assert.equal(evalSync({ runs: [] }).state, R.PENDING, "no checks yet");
+  assert.equal(evalSync({ runs: syncChecks(".github/workflows/ci.yml") }).state, R.PENDING, "repo-checks missing");
+  assert.equal(evalSync({ runs: syncChecks(".github/workflows/repo-checks.yml") }).state, R.PENDING, "ci.yml missing");
+  const [ci, rc] = syncChecks();
+  assert.equal(evalSync({ runs: [{ ...ci, head_repository: { full_name: "evil/modelplan" } }, rc] }).state, R.PENDING, "fork run ignored");
+  assert.equal(evalSync({ runs: [{ ...ci, head_branch: "main" }, rc] }).state, R.PENDING, "other branch ignored");
+  assert.equal(evalSync({ runs: [{ ...ci, status: "in_progress", conclusion: null }, rc] }).state, R.PENDING);
+  assert.equal(evalSync({ runs: [ci, { ...rc, conclusion: "failure" }] }).state, R.FAILURE);
+});
+
+test("data-sync: the run is bound to the PR (parent = run head, PR opened during the run) and the file list is not truncated", () => {
+  assert.equal(evalSync({ commit: syncCommit({ parents: [{ sha: "d".repeat(40) }] }) }).state, R.FAILURE, "parent is not the run's checkout");
+  assert.equal(evalSync({ run: syncRun({ head_sha: undefined }) }).state, R.FAILURE);
+  assert.equal(evalSync({ run: syncRun({ updated_at: "2026-11-08T01:00:03Z" }) }).state, R.FAILURE, "PR opened after the run ended");
+  assert.equal(evalSync({ run: syncRun({ created_at: "2026-11-08T01:00:10Z", updated_at: "2026-11-08T01:09:00Z" }) }).state, R.FAILURE, "PR opened before the run started");
+  assert.equal(evalSync({ files: Array.from({ length: R.FILE_LIST_LIMIT }, (_, i) => file(`data/f${i}.json`)) }).state, R.FAILURE, "file list at the API cap");
+  assert.equal(evalSync({ files: Array.from({ length: R.FILE_LIST_LIMIT - 1 }, (_, i) => file(`data/f${i}.json`)) }).state, R.SUCCESS);
+});
+
+test("data-sync: a failing run or status on the head still fails; a block still blocks", () => {
+  assert.equal(evalSync({ runs: [...syncChecks(), run(".github/workflows/u6-engine-store-core.yml", "failure", 9, "completed", { head_branch: `data/sync-0.5.21-${RUN_ID}`, pull_requests: [] })] }).state, R.FAILURE);
+  assert.equal(evalSync({ comments: [comment(v("merge", H, "")), comment(v("block", H, "glm"))] }).state, R.FAILURE);
+});
+
+test("data-sync: a file outside data/ fails, including a rename from outside", () => {
+  assert.equal(evalSync({ files: [file("data/a.json"), file("scripts/data-sync.mjs")] }).state, R.FAILURE);
+  assert.equal(evalSync({ files: [file("data/a.json", { previous_filename: "cli/main.go" })] }).state, R.FAILURE);
+  assert.equal(evalSync({ files: [file("data/../cli/main.go")] }).state, R.FAILURE);
+  assert.equal(evalSync({ files: [file("database/a.json")] }).state, R.FAILURE);
+  assert.equal(evalSync({ files: [] }).state, R.FAILURE);
+});
+
+test("data-sync: a fork fails", () => {
+  const fork = { sha: H, ref: `data/sync-0.5.21-${RUN_ID}`, repo: { full_name: "evil/modelplan" } };
+  assert.equal(evalSync({ p: syncPr({ head: fork }) }).state, R.FAILURE);
+  assert.equal(evalSync({ run: syncRun({ head_repository: { full_name: "evil/modelplan" } }) }).state, R.FAILURE);
+  assert.equal(evalSync({ p: syncPr({ base: { ref: "main", repo: { full_name: "evil/modelplan" } } }) }).state, R.FAILURE);
+});
+
+test("data-sync: a wrong branch name or a run that is not this PR's data-sync run fails", () => {
+  const branch = (ref) => ({ sha: H, ref, repo: { full_name: "modelplan/modelplan" } });
+  for (const ref of ["data/other-0.5.21-4242", "feature/data/sync-0.5.21-4242", "data/sync-0.5.21", "data/sync-0.5.21-4242x", "claude/x"])
+    assert.equal(evalSync({ p: syncPr({ head: branch(ref) }) }).state, R.FAILURE, ref);
+  assert.equal(evalSync({ run: syncRun({ id: 1 }) }).state, R.FAILURE, "run id differs from the branch");
+  assert.equal(evalSync({ run: syncRun({ path: ".github/workflows/ci.yml" }) }).state, R.FAILURE);
+  assert.equal(evalSync({ run: syncRun({ event: "pull_request" }) }).state, R.FAILURE);
+  assert.equal(evalSync({ run: syncRun({ head_branch: "feature/x" }) }).state, R.FAILURE);
+  assert.equal(evalSync({ run: syncRun({ created_at: "2026-11-08T02:00:00Z" }) }).state, R.FAILURE, "run after the PR");
+  assert.equal(evalSync({ run: null }).state, R.FAILURE);
+});
+
+test("data-sync: a missing, stale, foreign or non-merge VERDICT fails", () => {
+  assert.equal(evalSync({ comments: [] }).state, R.FAILURE);
+  assert.equal(evalSync({ comments: [comment(v("merge", OLD, ""))] }).state, R.FAILURE, "stale head");
+  assert.equal(evalSync({ comments: [comment(v("merge", H, ""), { login: "someone", id: 5 })] }).state, R.FAILURE, "not trusted");
+  assert.equal(evalSync({ comments: [comment(v("merge", H, ""), BOT)] }).state, R.FAILURE, "the bot cannot approve itself");
+  assert.equal(evalSync({ comments: [comment(`REVIEW-TIER: 0`)] }).state, R.FAILURE, "tier override is not a verdict");
+});
+
+test("data-sync: an author other than the bot or guanbear fails, and a bot lookalike fails", () => {
+  for (const user of [{ login: "someone", id: 5 }, { login: "github-actions[bot]", id: 1 }, { login: "github-actions", id: 41898282 }, { login: "dependabot[bot]", id: 49699333 }])
+    assert.equal(evalSync({ p: syncPr({ user }) }).state, R.FAILURE, user.login);
+  assert.equal(evalSync({ commit: syncCommit({ author: { login: "someone", id: 5 } }) }).state, R.FAILURE, "head commit author");
+  assert.equal(evalSync({ commit: syncCommit({ author: ME }) }).state, R.FAILURE, "head commit by guanbear on a bot PR");
+  assert.equal(evalSync({ commit: syncCommit({ sha: OLD }) }).state, R.FAILURE, "commit is not the head");
+  assert.equal(evalSync({ commit: syncCommit({ parents: [{}, {}] }) }).state, R.FAILURE, "merge commit");
+  assert.equal(evalSync({ commit: null }).state, R.FAILURE);
+});
+
+test("data-sync: guanbear's own PR and any other PR keep today's rules", () => {
+  assert.equal(evalPr({ files: [file("data/a.json")], comments: [comment(v("merge"))], runs: [] }).state, R.PENDING, "guanbear PR still needs ci.yml");
+  const r = evalPr({ p: pr({ user: { login: "someone", id: 5 } }) });
+  assert.equal(r.state, R.FAILURE);
+  assert.match(r.why, /not a trusted same-repository PR/);
+  assert.equal(R.dataSyncRunId(pr({ user: { login: "someone", id: 5 }, head: { sha: H, ref: "data/sync-1-2", repo: { full_name: "modelplan/modelplan" } } })), null);
+});
+
+test("an action_required run never ran: it is skipped when picking the latest run, so it cannot fail or pass a head", () => {
+  const held = (path, id) => run(path, "action_required", id, "completed", { head_branch: `data/sync-0.5.21-${RUN_ID}` });
+  const checks = syncChecks();
+  // A data-sync PR: newer pull_request runs held for approval next to the executed dispatched runs.
+  const r = evalSync({ runs: [...checks, held(".github/workflows/ci.yml", 50), held(".github/workflows/repo-checks.yml", 51)] });
+  assert.equal(r.state, R.SUCCESS, r.why);
+  // Only held runs: nothing executed, so pending, never success.
+  const only = evalSync({ runs: [held(".github/workflows/ci.yml", 50), held(".github/workflows/repo-checks.yml", 51)] });
+  assert.equal(only.state, R.PENDING, only.why);
+  assert.equal(evalPr({ comments: [comment(v("merge"))], runs: [run(".github/workflows/ci.yml", "action_required", 5)] }).state, R.PENDING, "ordinary PR too");
+  // A held run newer than an executed failure does not hide the failure.
+  const failed = evalSync({ runs: [{ ...checks[0], conclusion: "failure", id: 3 }, checks[1], held(".github/workflows/ci.yml", 60)] });
+  assert.equal(failed.state, R.FAILURE, failed.why);
+  assert.equal(R.ciState([run(".github/workflows/ci.yml", "failure", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.FAILURE);
+  assert.equal(R.ciState([run(".github/workflows/ci.yml", "success", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.SUCCESS);
 });
