@@ -37,9 +37,56 @@ export function workflowProblems(text, path = "") {
     if (path === ".github/workflows/trusted-mac.yml" && raw.trim() === TRUSTED_MAC_ROUTE) return;
     lineProblems(raw, problems);
   };
+  if (path !== ".github/workflows/trusted-mac.yml" && text.includes("MAC_GUI_LEND")) problems.add("GUI lending switch outside trusted-mac.yml");
   for (const raw of text.split("\n")) check(raw);
   if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) check(raw);
   return [...problems];
+}
+
+// GUI lending (owner D94, 2026-11-09). Every non-GUI job of trusted-mac.yml starts with exactly this
+// step. It refuses any runner whose name contains "gui", with one exception: the runner named exactly
+// modelplan-mac-gui-2 while the repository variable MAC_GUI_LEND is "enabled" (the coordinator also adds
+// modelplan-mac-nongui to it only then). The V1 verification host modelplan-mac-arm64-1 is refused by
+// name, whatever the switch says. The step is compared line for line, so a looser pattern (a wildcard
+// exception, a default value, a missing V1 refusal, a switch read from anywhere but vars) fails.
+export const NONGUI_JOBS = ["native-headless", "transport", "sequences", "u11-native", "probe"];
+export const GUI_LEND_GUARD = [
+  "    - name: Refuse the GUI Mac",
+  "      shell: bash",
+  "      env:",
+  "        MAC_GUI_LEND: ${{ vars.MAC_GUI_LEND }}",
+  "      run: |",
+  "        # D94: a GUI runner is refused, except modelplan-mac-gui-2 while MAC_GUI_LEND is enabled; the V1 host never.",
+  '        case "${RUNNER_NAME:-}" in',
+  '          modelplan-mac-arm64-1) echo "::error::this job must not run on the V1 host ($RUNNER_NAME)"; exit 1;;',
+  '          modelplan-mac-gui-2) if [ "${MAC_GUI_LEND:-}" != enabled ]; then echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1; fi; echo "GUI Mac lent to a non-GUI job (D94)";;',
+  '          *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;;',
+  "        esac",
+].join("\n");
+
+// Problems with the GUI guard of trusted-mac.yml: each non-GUI job must open with GUI_LEND_GUARD
+// (followed only by its own non-control lines up to the next step), no GUI job may read the lending
+// switch, and the switch appears nowhere else in the file.
+export function guiGuardProblems(text) {
+  const problems = [];
+  const jobs = new Map(jobBlocks(text).map((j) => [j.name, j.lines]));
+  for (const name of NONGUI_JOBS) {
+    const lines = jobs.get(name);
+    if (!lines) { problems.push(`non-GUI job ${name} is missing`); continue; }
+    const steps = lines.findIndex((l) => l === "    steps:");
+    const want = GUI_LEND_GUARD.split("\n");
+    const got = steps === -1 ? [] : lines.slice(steps + 1, steps + 1 + want.length);
+    if (got.join("\n") !== GUI_LEND_GUARD) { problems.push(`non-GUI job ${name} must open with the exact D94 GUI guard step`); continue; }
+    const rest = lines.slice(steps + 1 + want.length);
+    const next = rest.findIndex((l) => /^    - /.test(l));
+    const tail = next === -1 ? rest : rest.slice(0, next);
+    if (tail.some((l) => !/^        echo "runner: /.test(l)))
+      problems.push(`non-GUI job ${name}: only the runner echo may follow the GUI guard in its step`);
+  }
+  const uses = text.split("\n").filter((l) => l.includes("MAC_GUI_LEND")).length;
+  if (uses !== NONGUI_JOBS.length * 3)
+    problems.push("MAC_GUI_LEND may appear only in the non-GUI jobs' GUI guard");
+  return problems;
 }
 
 // macOS hosted-runner capacity (11-05, R6a/R8a; shape fixed per MACREV2 review of #579 at 0a3a4594,

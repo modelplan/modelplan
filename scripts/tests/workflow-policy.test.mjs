@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
-import { ALLOWED_ROUTES, TRUSTED_MAC_ROUTE, draftGuardProblems, isWorkflowFile, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, GUI_LEND_GUARD, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
+import { spawnSync } from "node:child_process";
 
 test("trusted Mac route is confined to the reviewed reusable workflow path", () => {
   const text = `jobs:\n  check:\n    ${TRUSTED_MAC_ROUTE}\n`;
@@ -222,13 +223,48 @@ test("every owner-Mac route that is not a GUI task needs modelplan-mac-nongui, s
   assert.ok(TRUSTED_MAC_ROUTE.includes("inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' &&"));
   assert.ok(TRUSTED_MAC_ROUTE.includes("((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled')"), "owner GUI tasks still need MAC_CI_GUI");
   const reusable = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
-  for (const job of ["native-headless", "transport", "sequences", "probe", "u11-native"]) {
-    const block = reusable.split(`\n  ${job}:\n`)[1].split(/\n  [a-z0-9-]+:\n/)[0];
-    assert.match(block, /case "\$\{RUNNER_NAME:-\}" in \*gui\*\)/, `${job} refuses a GUI runner`);
-  }
+  assert.deepEqual(guiGuardProblems(reusable), [], "every non-GUI job opens with the D94 GUI guard");
   // Every caller uses one pin, the one that carries this route.
   const dir = new URL("../../.github/workflows/", import.meta.url);
   const pins = new Set();
   for (const f of fs.readdirSync(dir)) for (const m of fs.readFileSync(new URL(f, dir), "utf8").matchAll(/trusted-mac\.yml@([0-9a-f]{40})/g)) pins.add(m[1]);
   assert.equal(pins.size, 1, [...pins].join(" "));
+});
+
+test("D94: non-GUI jobs refuse GUI runners unless gui-2 is lent; the V1 host is never lent", () => {
+  const reusable = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  assert.deepEqual(guiGuardProblems(reusable), []);
+  assert.deepEqual(NONGUI_JOBS.slice().sort(), ["native-headless", "probe", "sequences", "transport", "u11-native"]);
+  // The guard as shell: run the step's script for each runner and switch value.
+  const script = GUI_LEND_GUARD.split("run: |\n")[1].split("\n").map((l) => l.replace(/^ {8}/, "")).join("\n");
+  const run = (name, lend) => spawnSync("bash", ["-c", script], { env: { PATH: process.env.PATH, RUNNER_NAME: name, ...(lend === undefined ? {} : { MAC_GUI_LEND: lend }) } }).status;
+  for (const lend of [undefined, "", "disabled", "Enabled", "enabled "]) assert.equal(run("modelplan-mac-gui-2", lend), 1, `gui-2 refused with MAC_GUI_LEND=${JSON.stringify(lend)}`);
+  assert.equal(run("modelplan-mac-gui-2", "enabled"), 0, "gui-2 accepted while lent");
+  for (const name of ["modelplan-mac-arm64-1", "modelplan-mac-gui-3", "modelplan-mac-gui-2x", "x-modelplan-mac-gui-2", "modelplan-mac-gui"])
+    assert.equal(run(name, "enabled"), 1, `${name} refused even while lending`);
+  for (const name of ["modelplan-mac-arm64-2", "modelplan-mac-arm64-3", "GitHub Actions 12"]) assert.equal(run(name, undefined), 0, `${name} accepted`);
+
+  // Looser or moved guards fail the policy.
+  const loose = [
+    ["modelplan-mac-gui-2) if", "*gui-2*) if"],                                    // wildcard exception
+    ['"${MAC_GUI_LEND:-}" != enabled', '"${MAC_GUI_LEND:-enabled}" != enabled'],   // default-on switch
+    ['"${MAC_GUI_LEND:-}" != enabled', '"${MAC_GUI_LEND:-}" = disabled'],          // anything but disabled lends
+    ["MAC_GUI_LEND: ${{ vars.MAC_GUI_LEND }}", "MAC_GUI_LEND: ${{ inputs.lend }}"], // switch from the caller
+    ['          modelplan-mac-arm64-1) echo "::error::this job must not run on the V1 host ($RUNNER_NAME)"; exit 1;;\n', ""], // V1 refusal dropped
+    ['          *gui*) echo "::error::this job must not run on the GUI Mac ($RUNNER_NAME)"; exit 1;;\n', ""],                 // no general refusal
+  ];
+  for (const [from, to] of loose) {
+    assert.ok(reusable.includes(from), from);
+    assert.ok(guiGuardProblems(reusable.replace(from, to)).length > 0, `accepted a looser guard: ${from} -> ${to}`);
+  }
+  // A guard that is not the first step, or a step that keeps going after it, fails.
+  const job = reusable.split("\n  probe:\n")[1].split(/\n  [a-z0-9-]+:\n/)[0];
+  const moved = job.replace(GUI_LEND_GUARD + "\n", "").replace("    - name: Validate native runner execution", GUI_LEND_GUARD + "\n    - name: Validate native runner execution");
+  assert.ok(guiGuardProblems(reusable.replace(job, moved)).length > 0, "guard after another step");
+  const extended = reusable.replace(GUI_LEND_GUARD + "\n", GUI_LEND_GUARD + "\n        export MAC_GUI_LEND=enabled\n");
+  assert.ok(guiGuardProblems(extended).length > 0, "extra commands in the guard step");
+  // The switch is only read by the non-GUI guards: not by the GUI job, not by another workflow.
+  assert.ok(guiGuardProblems(reusable.replace("  gui-probe:\n", "  gui-probe:\n    env:\n      MAC_GUI_LEND: ${{ vars.MAC_GUI_LEND }}\n")).length > 0);
+  assert.ok(workflowProblems("on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    env:\n      X: ${{ vars.MAC_GUI_LEND }}\n", ".github/workflows/other.yml").includes("GUI lending switch outside trusted-mac.yml"));
+  assert.deepEqual(workflowProblems(reusable, ".github/workflows/trusted-mac.yml"), []);
 });
