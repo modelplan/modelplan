@@ -26,4 +26,47 @@ import ModelPlanSettings
         XCTAssertTrue(presenter.showAndVerify(offer, trial: nil))
         XCTAssertEqual(layer.window?.isVisible, true)
     }
+
+    /// Build 14 walkthrough: Esc did not close the Help map. The map opens the app so its keyboard and
+    /// pointer events reach the monitor, and a real Esc key event and a click outside both dismiss it.
+    func testRequestedMapActivatesTheAppAndEscAndOutsideClickDismissIt() throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let anchor = CGRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY, width: 40, height: 40)
+        let recipe = NeutralHelpUIRecipeProvider()
+        let anchors: [DockRequestedHelpAnchor] = [.init(id: "ring", region: .rings, rect: CGRect(x: 100, y: 100, width: 40, height: 40), visible: true)]
+        var surface = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false, anchors: [:])
+        surface.mapAnchors = [.init(id: "ring", region: .rings, rect: anchor, visible: true)]
+        let layer = HelpUILayerView(recipeProvider: recipe)
+        var activations = 0
+        let presenter = DockHelpPresenter(currentSurface: { surface }, isCurrent: { _ in true }, blockers: { _ in [] },
+            windowPolicy: { _ in (.readOnly, []) }, language: { .english }, accessibility: { (true, true) },
+            copy: { _, _ in nil }, dismiss: { _ in }, activate: { activations += 1 }, layer: layer)
+        addTeardownBlock { @MainActor in presenter.dispose() }
+        func open(_ dismiss: @escaping @MainActor (HelpUIDismissReason?) -> Void) throws {
+            let viewport = try XCTUnwrap(presenter.prepareMap(surface: surface))
+            let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: surface.layoutID, viewport: viewport.size,
+                language: .english, anchors: anchors, blocked: [], recipe: recipe))
+            layer.update(input)
+            XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: dismiss))
+        }
+        func press(_ event: NSEvent?) throws { NSApplication.shared.sendEvent(try XCTUnwrap(event)) }
+        let esc = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)
+        let click = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+        var first: [HelpUIDismissReason?] = [], second: [HelpUIDismissReason?] = []
+        // Showing again replaces the first monitor: one Esc reaches only the newest handler, once.
+        try open { first.append($0) }
+        XCTAssertEqual(activations, 1, "opening the map brings the app forward")
+        XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: { second.append($0) }), "called again without prepareMap")
+        try press(esc)
+        XCTAssertEqual(first, [], "a replaced map's monitor is gone")
+        XCTAssertEqual(second, [.escape], "one Esc press closes the Help map once")
+        // A click outside, on a fresh map.
+        var third: [HelpUIDismissReason?] = []
+        try open { third.append($0) }
+        try press(click)
+        XCTAssertEqual(third, [.pointer], "one click outside closes the Help map once")
+        XCTAssertEqual(second, [.escape], "no earlier monitor answered the click")
+    }
 }

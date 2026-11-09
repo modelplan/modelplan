@@ -19,11 +19,23 @@ const MODELS = {
   'GPT-5.6 Sol': ['Sol 5.6', 'Sol5.6'],
   'GPT-5.6 Luna': ['Luna 5.6', 'Luna5.6', 'Luna'],
   'GPT-5.5': ['GPT-5.5', 'GPT'],
+  'GPT-6.1 Terra': ['Terra 6.1', 'Terra6.1', 'Terra'],
+  'GPT-6 Terra': ['Terra 6', 'Terra6', 'Terra'],
+  'GPT-6.1 Luna': ['Luna 6.1', 'Luna6.1', 'Luna'],
+  'GPT-6.1 Astra': ['Astra 6.1', 'Astra6.1', 'Astra'],
 };
+// Public port (owner build 13): a published name the table does not know yet still gets a short name, so a new release
+// is not cut off on the 56 px LCD. The vendor prefix goes and the version stays: "GPT-6.2 Terra" -> "Terra 6.2",
+// "Claude Opus 6" -> "Opus 6". Anything else keeps its full text.
+function generic(name) {
+  const gpt = /^GPT-(\d+(?:\.\d+)?)\s+([A-Za-z]+)$/.exec(name), claude = /^Claude\s+([A-Za-z]+)\s+(\d+(?:\.\d+)?)$/.exec(name);
+  const m = gpt ? [gpt[2], gpt[1]] : claude ? [claude[1], claude[2]] : null;
+  return m ? [`${m[0]} ${m[1]}`, `${m[0]}${m[1]}`, m[0]] : null;
+}
 const TOOLS = {'Claude Code': ['CLAUDE'], Codex: ['CODEX'], OpenCode: ['OPENCODE']};
 export function shortLabel(name, kind = 'model', fits = label => kind !== 'tool' || label.length <= 8) {
   const table = kind === 'tool' ? TOOLS : MODELS;
   const fallback = kind === 'tool' ? 'TOOL' : 'Model';
   const unknown = kind === 'tool' ? String(name || fallback).split(/\s+/)[0].toUpperCase() : String(name || fallback);
-  return [...(table[name] || [unknown]), fallback].find(fits) || fallback;
+  return [...(table[name] || (kind === 'model' && generic(String(name || ''))) || [unknown]), fallback].find(fits) || fallback;
 }

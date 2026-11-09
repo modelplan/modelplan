@@ -198,10 +198,48 @@ private actor S04SyntheticClient: EngineClient {
         for _ in 0..<300 where mapLayer() == nil { try await Task.sleep(for: .milliseconds(10)) }
         let map = try XCTUnwrap(mapLayer(), "Help presents the map over the visible widget")
         XCTAssertNotNil(app.statusHelpRequestID)
+        // QA 11-08 item 7: no caption over a ring, and every caption has a leader to its target.
+        let presentation = try XCTUnwrap(map.presentation), screen = try XCTUnwrap(map.window).frame
+        let surface = try XCTUnwrap(dock.currentDockHelpSurface)
+        let rings = surface.mapAnchors.filter { $0.id.hasPrefix("dock.rings.") || $0.id.hasPrefix("dock.nozzle.") }.map {
+            CGRect(x: $0.rect.minX - screen.minX, y: screen.maxY - $0.rect.maxY, width: $0.rect.width, height: $0.rect.height)
+        }
+        XCTAssertFalse(rings.isEmpty)
+        XCTAssertFalse(presentation.mapLabels.isEmpty)
+        for label in presentation.mapLabels {
+            XCTAssertFalse(rings.contains { $0.intersects(label.frame) }, "\(label.id) covers a ring")
+            XCTAssertGreaterThanOrEqual(label.leader.count, 2, "\(label.id) has no leader")
+        }
         map.onAction?(.dismissMap(reason: .escape, returnFocusID: nil))
         for _ in 0..<200 where app.statusHelpRequestID != nil { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNil(app.statusHelpRequestID, "the Escape dismissal reaches the status item exactly once")
         XCTAssertNil(mapLayer())
+        await app.composition.stop()
+    }
+
+    /// HINT-9-01 on real panels, normal entry: Help from the status menu draws the map, and every caption
+    /// and the header fit the text field that draws them (read-only: the drawn fields' own cells decide).
+    func testStatusHelpMapCaptionsFitTheFieldsThatDrawThem() async throws {
+        let (app, profile) = try await journeyApplication("hint-fit", onboarded: true, pointer: { nil })
+        defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock
+        for _ in 0..<300 where dock.currentDockHelpSurface == nil || !app.dockHelpInstalled { try await Task.sleep(for: .milliseconds(10)) }
+        let help = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Help…" })
+        _ = try XCTUnwrap(help.target as? NSObject).perform(try XCTUnwrap(help.action), with: help)
+        func mapLayer() -> HelpUILayerView? {
+            NSApplication.shared.windows.filter(\.isVisible).flatMap { $0.contentView.map(descendants) ?? [] }
+                .compactMap { $0 as? HelpUILayerView }.first { $0.presentation?.mapHeader != nil }
+        }
+        for _ in 0..<300 where mapLayer() == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let map = try XCTUnwrap(mapLayer(), "Help presents the map over the visible widget")
+        let fields = descendants(map).compactMap { $0 as? NSTextField }.filter { !$0.isHidden && !$0.stringValue.isEmpty }
+        XCTAssertGreaterThan(fields.count, 3, "the header and the captions are drawn")
+        for field in fields {
+            let needed = try XCTUnwrap(field.cell).cellSize(forBounds: CGRect(x: 0, y: 0, width: field.frame.width, height: 10_000)).height
+            XCTAssertLessThanOrEqual(needed, field.frame.height + 0.5, "caption clipped: \(field.stringValue)")
+        }
+        map.onAction?(.dismissMap(reason: .escape, returnFocusID: nil))
         await app.composition.stop()
     }
     #endif

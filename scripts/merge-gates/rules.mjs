@@ -9,6 +9,8 @@
 // the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
 export const CONTEXT = "modelplan-gates";
+// The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
+export const REPO = "modelplan/modelplan";
 // Every lane posts through this account; anybody can comment on a public repo, so nothing else counts.
 // The numeric id is checked too, so a renamed or recycled login never inherits the trust.
 export const TRUSTED = Object.freeze({ login: "guanbear", id: 11829005 });
@@ -241,12 +243,30 @@ export function tiersFrom(read) {
   try { return parseTiers(read()); } catch { return new Map(); }
 }
 
+// D97 (owner 2026-11-09, changes R13): a ledger PR may land on its automated gates. The coordinator checks them
+// (auto-verify.sh) and posts a trusted comment whose FIRST line is
+//   AUTO-VERIFIED: <scenario IDs, comma or space separated> @ <40-hex head sha> gates=<gates that applied>
+// The gate list is in canonical order and always starts ci,gui,review; design follows when the PR is design-touching
+// (required then, as in evidence-gate.sh), visual when it is visual-touching. The older form with walkthrough still
+// parses. It satisfies exactly the listed IDs (G3 rows and real-Mac tiers included) at that exact head; never carried.
+const AUTO_VERIFIED = /^AUTO-VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}(?:[, ]+[A-Z][A-Z0-9]{0,3}-[0-9]{2})*) @ ([0-9a-f]{40}) gates=([a-z,]+)$/;
+export const AUTO_VERIFIED_GATES = Object.freeze(["ci,gui,review", "ci,gui,review,design", "ci,gui,review,visual",
+  "ci,gui,review,design,visual", "ci,gui,review,design,visual,walkthrough"]);
+
+// The IDs one comment body's first line auto-verifies at `head`, or [] when it is not a valid AUTO-VERIFIED line.
+export function autoVerified(body, head, { designTouching = false } = {}) {
+  const m = AUTO_VERIFIED.exec(lines(body ?? "")[0] ?? "");
+  if (!m || m[2] !== head || !AUTO_VERIFIED_GATES.includes(m[3])) return [];
+  if (designTouching && !m[3].split(",").includes("design")) return [];
+  return m[1].split(/[, ]+/).filter(Boolean);
+}
+
 // Only trusted issue comments count. Evidence is tied to the actual head and is never carried across a merge
 // or other commit. As in evidence-gate.sh (D21): a PR naming a ledger row needs a line for every scenario; any other
 // PR needs one for each scenario that is not on a CI tier, so real-Mac tiers, G3 rows and IDs missing from `tiers`
 // all do. A CI-tier scenario needs no line because evaluatePr requires green CI at the head anyway. #661 landed with
 // C-10 (T3) unaccounted for when only ledger PRs were read here.
-export function evidenceState(pr, items, head, tiers = new Map()) {
+export function evidenceState(pr, items, head, tiers = new Map(), { designTouching = false } = {}) {
   const body = pr.body ?? "";
   const ledger = /g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n"));
   const { ids: scenarios, malformed } = parseScenarios(body);
@@ -255,6 +275,7 @@ export function evidenceState(pr, items, head, tiers = new Map()) {
     : { state: SUCCESS, why: "not an evidence-tier-1 PR" };
   const verified = new Set();
   for (const item of items) if (item.kind === "comment") {
+    for (const id of autoVerified(item.body, head, { designTouching })) verified.add(id);
     for (const line of lines(item.body)) {
       const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
       if (match && match[2] === head) verified.add(match[1]);
@@ -307,25 +328,47 @@ export function trainScenarioGap(pr, members) {
 }
 
 // ---- CI at one commit (merge-when.sh) ----
-// runs: Actions workflow runs whose head_sha is the commit. Only the newest run per workflow counts, so a
+// runs: Actions workflow runs whose head_sha is the commit. A head sha is not unique to us: a fork can open a PR
+// with the same head and produce its own runs, which the head_sha listing returns too. So only runs that
+// `scope` accepts count (prRunScope / queueRunScope below), and of those only the newest run per workflow, so a
 // superseded or re-triggered run never blocks. A run GitHub rejected at parse time (startup_failure) has no
-// jobs and is caught here too. statuses: commit statuses at the commit other than our own context.
+// jobs and is caught here too, and so is a cancelled run (a job past its timeout cancels the whole run): when
+// it is the newest run for the head, the head fails rather than waiting. statuses: commit statuses at the
+// commit other than our own context.
 const OK_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
-export function latestRuns(runs) {
+export function latestRuns(runs, scope = () => true) {
   const by = new Map();
   for (const r of runs) {
-    if (SELF_WORKFLOWS.includes(r.path)) continue;
+    if (SELF_WORKFLOWS.includes(r.path) || !scope(r)) continue;
+    // action_required: GitHub holds the run for approval (a bot-opened or fork PR) and never executes it, so it
+    // proves nothing and must not displace a real run; with no executed run the workflow stays "waiting to start".
+    if (r.status === "completed" && r.conclusion === "action_required") continue;
     const prev = by.get(r.workflow_id);
     if (!prev || r.id > prev.id) by.set(r.workflow_id, r);
   }
   return [...by.values()];
 }
 
-export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW] } = {}) {
-  const latest = latestRuns(runs);
+// A PR head's runs: made in this repository (never a fork's run for the same sha) and owned by this PR. A
+// same-repository run lists its PRs; one that lists none (a manual run on the branch) must be on the PR's branch.
+export function prRunScope(pr) {
+  const repo = pr.base.repo.full_name;
+  return (r) => r.head_repository?.full_name === repo
+    && (r.pull_requests?.length ? r.pull_requests.some((p) => p.number === pr.number) : r.head_branch === pr.head.ref);
+}
+
+// A merge-group commit's runs: the queue's own merge_group runs in this repository.
+export function queueRunScope(repo) {
+  return (r) => r.head_repository?.full_name === repo && r.event === "merge_group"
+    && String(r.head_branch).startsWith("gh-readonly-queue/main/");
+}
+
+export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope } = {}) {
+  const latest = latestRuns(runs, scope);
   const failed = [], waiting = [];
   for (const r of latest) {
     if (r.status !== "completed") waiting.push(r.name);
+    else if (r.conclusion === "cancelled") failed.push(`${r.name} cancelled upstream (timed out or stopped; re-run it)`);
     else if (!OK_CONCLUSIONS.has(r.conclusion)) failed.push(`${r.name} ${r.conclusion}`);
   }
   for (const s of statuses) {
@@ -340,20 +383,80 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW] } = 
   return { state: SUCCESS, why: "checks green" };
 }
 
+// A finished cancelled run re-evaluates its PR only while its head is still the PR head; a run cancelled because
+// a newer push replaced it is skipped, since the newer head's own runs re-evaluate (#767).
+export function cancelledRunSuperseded(run, prHead) {
+  return run.conclusion === "cancelled" && run.head_sha !== prHead;
+}
+
+// ---- Data-sync admission ----
+// .github/workflows/data-sync.yml opens a PR as the github-actions bot. That PR is admitted, instead of failing
+// the trusted-same-repository rule, only when every check below holds; the verdict and CI rules still apply.
+// pr.user is the PR author. `sync` is read by evaluate.mjs: {run: the workflow run named by the branch, commit:
+// the head commit}. A PR that does not pass stays "not a trusted same-repository PR" as before.
+export const DATA_SYNC = Object.freeze({
+  bot: { login: "github-actions[bot]", id: 41898282 },
+  workflow: ".github/workflows/data-sync.yml",
+  repoChecks: ".github/workflows/repo-checks.yml",
+  branch: /^data\/sync-[0-9A-Za-z._+-]+-([0-9]+)$/,
+  runEvents: ["schedule", "workflow_dispatch"],
+});
+const isBot = (u) => !!u && u.login === DATA_SYNC.bot.login && u.id === DATA_SYNC.bot.id;
+
+// The run id the branch name claims, or null when the PR does not look like a data-sync PR at all.
+export function dataSyncRunId(pr) {
+  if (!isBot(pr.user)) return null;
+  const m = DATA_SYNC.branch.exec(pr.head?.ref ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+// Returns null when the PR is an admitted data-sync PR, else the first reason it is not.
+export function dataSyncProblem({ pr, files, items, sync }) {
+  const repo = pr.base?.repo?.full_name;
+  if (!isBot(pr.user)) return "author is not the github-actions bot";
+  if (repo !== REPO || pr.head?.repo?.full_name !== REPO) return `head and base must both be ${REPO}`;
+  if (pr.base.ref !== "main") return "base is not main";
+  const runId = dataSyncRunId(pr);
+  if (!runId) return "branch is not data/sync-<version>-<run id>";
+  const paths = prPaths(files);
+  if (files.length >= FILE_LIST_LIMIT) return "file list may be truncated (API cap)";
+  if (!files.length || paths.some((f) => !f.startsWith("data/") || f.split("/").includes(".."))) return "a changed file is outside data/";
+  const { run, commit } = sync ?? {};
+  if (!run) return "the data-sync run could not be read";
+  if (run.id !== runId || String(run.path ?? "").split("@")[0] !== DATA_SYNC.workflow) return "branch run is not a data-sync.yml run";
+  if (run.repository?.full_name !== REPO || run.head_repository?.full_name !== REPO) return "data-sync run is not from this repository";
+  if (!DATA_SYNC.runEvents.includes(run.event) || run.head_branch !== "main") return "data-sync run was not a scheduled or manual run on main";
+  if (!run.head_sha || !run.created_at || !run.updated_at || !pr.created_at || pr.created_at < run.created_at || pr.created_at > run.updated_at)
+    return "PR was not opened while the data-sync run was running";
+  if (!commit || commit.sha !== pr.head.sha) return "head commit could not be read";
+  if (!isBot(commit.author) || (commit.parents ?? []).length !== 1) return "head commit is not a single commit authored by github-actions";
+  // The commit sits directly on the main commit the run checked out (this also rules out a tag or branch that merely
+  // shares the name "main").
+  if (commit.parents[0].sha !== run.head_sha) return "head commit is not on the commit the data-sync run checked out";
+  if (![...verdicts(items, pr.head.sha, []).values()].includes("merge")) return "needs a trusted VERDICT: merge @ the exact head";
+  return null;
+}
+
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
 // verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
-// tiers: parseTiers().
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map() }) {
+// tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
   if (pr.state !== "open") return res(FAILURE, `PR is ${pr.state}`);
   if (pr.base.ref !== "main") return res(FAILURE, `base is ${pr.base.ref}, not main; coordinator decides`);
   // Only the trusted account's own same-repository PRs land; a stranger's or a fork PR waits for the coordinator.
-  if (!isTrusted(pr.user) || pr.head.repo?.full_name !== pr.base.repo.full_name)
-    return res(FAILURE, "not a trusted same-repository PR; coordinator decides");
-  const evidence = evidenceState(pr, items, head, tiers);
+  // Narrow exception: a data-sync PR from the github-actions bot (dataSyncProblem); the gates below still apply.
+  let dataSync = false;
+  if (!isTrusted(pr.user) || pr.head.repo?.full_name !== pr.base.repo.full_name) {
+    const problem = dataSyncRunId(pr) ? dataSyncProblem({ pr, files, items, sync }) : "not data-sync";
+    if (problem) return res(FAILURE, dataSyncRunId(pr) ? `data-sync PR not admitted: ${problem}` : "not a trusted same-repository PR; coordinator decides");
+    dataSync = true;
+  }
+  const design = designTouch(files, conf);
+  const evidence = evidenceState(pr, items, head, tiers, { designTouching: design.touching });
   if (evidence.state === FAILURE) return res(FAILURE, evidence.why);
   const gap = trainScenarioGap(pr, members);
   if (gap) return res(FAILURE, gap);
@@ -362,7 +465,6 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   const paths = prPaths(files);
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
-  const design = designTouch(files, conf);
   const carried = carryChain(carryEdges(items), head, verifiedEdge);
   const extra = { tier, design: design.touching ? design.surfaces : [], carried };
 
@@ -388,7 +490,10 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
     if (g === "issues") return res(FAILURE, "GLMREV ISSUES at head", extra);
     if (g !== "ok") missing.push("GLMREV OK or ACCEPTED");
   }
-  const ci = ciState(runs, statuses);
+  // A PR opened with the workflow token starts no pull_request run, so data-sync.yml dispatches ci.yml and
+  // repo-checks.yml on the branch; prRunScope accepts those same-repository runs on the PR's branch. Both are
+  // required before an admitted PR can pass.
+  const ci = ciState(runs, statuses, { scope: prRunScope(pr), ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
   if (ci.state === FAILURE) return res(FAILURE, ci.why, extra);
   if (missing.length) return res(PENDING, `tier ${tier}: needs ${missing.join(", ")}`, extra);
   if (ci.state === PENDING) return res(PENDING, ci.why, extra);
@@ -397,15 +502,15 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 
 // ---- One merge-group commit ----
 // steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}}.
-// queueRuns/queueStatuses: CI on the group commit itself.
-export function evaluateGroup({ steps, queueRuns, queueStatuses = [] }) {
+// queueRuns/queueStatuses: CI on the group commit itself; repo: the repository whose queue runs count.
+export function evaluateGroup({ steps, queueRuns, queueStatuses = [], repo = REPO }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
   for (const s of steps) {
     const n = `#${s.pr}`;
     if (!s.mergeProof.ok) return { state: FAILURE, why: `${n}: ${s.mergeProof.why}` };
     if (s.prResult.state !== SUCCESS) return { state: s.prResult.state === PENDING ? FAILURE : s.prResult.state, why: `${n}: ${s.prResult.why}` };
   }
-  const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS });
+  const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo) });
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };
   return { state: SUCCESS, why: `group of ${steps.length}: gates pass` };
 }

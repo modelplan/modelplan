@@ -30,7 +30,7 @@ await cp(resolve(here,'prototype'),resolve(output,'prototype'),{recursive:true})
 const studyModules=[
   'chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','help-routing.js','i18n.js',
   'mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
-  'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/where.js',
+  'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/views.js','mfd-pages/where.js',
   'project-attribution.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
   'strings/mfd.js','strings/review49.js','window-time.js',
 ];
@@ -47,9 +47,10 @@ if (official) {
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
   await cp(resolve(here,'web/field.html'),resolve(output,'field.html'));
-  // D43: the field scene draws vendor marks on its plates and asks for them by these names under ./assets/brands/.
+  // D43: the field scene draws vendor marks on its plates and asks for them by these names under ./assets/brands/;
+  // the engine keys use the same folder (G3-47 review: the key marks pointed at a folder that never shipped).
   const marks=resolve(repo,'desktop/third-party/dock-resources/Resources/Marks'),brands=resolve(output,'assets/brands');await mkdir(brands,{recursive:true});
-  for(const [name,source] of Object.entries({'openai-white.svg':'openai.svg','claude-rounded.svg':'claude.svg','zhipu.svg':'zhipu.svg','x-white.svg':'x.svg','qwen.svg':'qwen.svg','deepseek.svg':'deepseek.svg','kimi-white.svg':'kimi.svg','minimax.svg':'minimax.svg','gemini.svg':'gemini.svg','xiaomi.svg':'xiaomi.svg','SOURCES.md':'SOURCES.md'}))await cp(resolve(marks,source),resolve(brands,name));
+  for(const [name,source] of Object.entries({'openai-white.svg':'openai.svg','claude-rounded.svg':'claude.svg','zhipu.svg':'zhipu.svg','x-white.svg':'x.svg','qwen.svg':'qwen.svg','deepseek.svg':'deepseek.svg','kimi-white.svg':'kimi.svg','minimax.svg':'minimax.svg','gemini.svg':'gemini.svg','xiaomi.svg':'xiaomi.svg','cursor.svg':'cursor.svg','copilot.svg':'copilot.svg','opencode.svg':'opencode.svg','zai-white.svg':'zai-white.svg','SOURCES.md':'SOURCES.md'}))await cp(resolve(marks,source),resolve(brands,name));
   // The CSP forbids fetch, so the porthole still's placement table ships as a module carrying the
   // default public fleet's four projections (src/porthole-still.ts). Derived from the reserved pack,
   // it carries the pack's licence; the community edition gets null below.
@@ -81,6 +82,29 @@ if (official) {
   }
   await cp(resolve(strip,'SOURCES.md'),resolve(output,'assets/SOURCES.md'));
   css+='\n'+stripCss.toString('utf8');
+  // G3-47: the released base-bell rasters (owner 2026-11-08), each checked against the reserved-visuals registry.
+  const bells=resolve(assets,'cockpit/bells'),bellFiles=['bell-night-2x.png','bell-night-3x.png','bell-silver-2x.png'];
+  await mkdir(resolve(output,'assets/bells'),{recursive:true});
+  for(const name of bellFiles){
+    const bytes=await readFile(resolve(bells,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/bells/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit bell resource: '+name);
+    await writeFile(resolve(output,'assets/bells',name),bytes);
+  }
+  await cp(resolve(bells,'SOURCES.md'),resolve(output,'assets/bells/SOURCES.md'));
+  css+='\n'+await readFile(resolve(bells,'bells.css'),'utf8');
+  // D68: the r3 hull's plain plates (owner 2026-11-08), each checked against the reserved-visuals registry.
+  const hull=resolve(assets,'cockpit/hull'),hullFiles=[];
+  for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const h of [890,640])for(const d of ['1x','2x'])hullFiles.push(`${part}-${h}-${d}.png`);
+  hullFiles.push('lower-skin-890-1x.png','lower-skin-890-2x.png'); // side walls: the study's canopy-h1 lower skin
+  hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg'); // closed shell (D72): aft plate and cap slab
+  await mkdir(resolve(output,'assets/hull'),{recursive:true});
+  for(const name of hullFiles){
+    const bytes=await readFile(resolve(hull,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/hull/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit hull resource: '+name);
+    await writeFile(resolve(output,'assets/hull',name),bytes);
+  }
+  await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
+  css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});

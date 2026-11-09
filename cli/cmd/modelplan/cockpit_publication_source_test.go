@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -259,5 +261,40 @@ func TestEligibleCockpitVendorsConsentStates(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestCockpitPublicationCarriesPublishedSpeedTiers(t *testing.T) {
+	const speed = `[{"id":"codex-fast","harness":"codex","tier":"fast","label":"Fast","toggle":"/fast","eligibility":{"plans":["chatgpt-sign-in"],"note":"n"},"models":[{"vendorModelId":"v1","modelId":"m1","speed":{"ratio":1.5,"qualifier":"up-to"}},{"vendorModelId":"v2","modelId":null,"speed":{"ratio":null,"qualifier":"unstated"}}],"billing":[{"account":"subscription","billsTo":"plan-quota","basis":"included-usage","ratio":2}],"caveats":["not-task-time"],"sources":["https://example.test/fast"]}]`
+	d := &digest.Digest{Source: digest.ComponentClient, PublicationID: "0123456789abcdef01234567", PublishedAt: "2026-10-24T12:00:00Z"}
+	if err := json.Unmarshal([]byte(speed), &d.Speed); err != nil {
+		t.Fatal(err)
+	}
+	got := materializeCockpitPublication(d, nil, false)
+	if got == nil || len(got.SpeedTiers) != 1 {
+		t.Fatalf("speed tiers dropped: %+v", got)
+	}
+	out, err := json.Marshal(got.SpeedTiers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want, have any
+	_ = json.Unmarshal([]byte(speed), &want)
+	_ = json.Unmarshal(out, &have)
+	if !reflect.DeepEqual(want, have) {
+		t.Fatalf("shape changed:\n%s\n%s", speed, out)
+	}
+	for _, none := range [][]digest.SpeedTier{nil, {}} {
+		d.Speed = none
+		got = materializeCockpitPublication(d, nil, false)
+		raw, _ := json.Marshal(got)
+		if got == nil || len(got.SpeedTiers) != 0 || bytes.Contains(raw, []byte("speedTiers")) {
+			t.Fatalf("empty speed tiers must be absent: %s", raw)
+		}
+	}
+	bad := math.Inf(1)
+	d.Speed = []digest.SpeedTier{{ID: "x", Billing: []digest.SpeedBilling{{Ratio: bad}}}}
+	if got = materializeCockpitPublication(d, nil, false); got == nil || len(got.SpeedTiers) != 0 {
+		t.Fatalf("non-finite tier admitted: %+v", got)
 	}
 }

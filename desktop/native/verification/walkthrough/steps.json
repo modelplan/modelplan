@@ -4,7 +4,7 @@
     {
       "id": "first-run-window",
       "title": "First-run window",
-      "expected": "The Set up ModelPlan window lists the synthetic subscriptions; the widget is visible beside it.",
+      "expected": "The Set up ModelPlan window lists the synthetic subscriptions (since build 14: one row per tool found, with a checkbox); the widget is visible beside it.",
       "actions": [
         {
           "op": "await",
@@ -12,11 +12,17 @@
           "timeout": 30
         },
         {
+          "op": "awaitAbsent",
+          "target": "ax:scope.firstRun.looking",
+          "timeout": 20
+        },
+        {
           "op": "park"
         }
       ],
       "shot": {
-        "crop": "window-of:ax:firstRun.done"
+        "crop": "window-of:ax:firstRun.done",
+        "window": "window-of:ax:firstRun.done"
       },
       "checks": [
         {
@@ -27,7 +33,7 @@
     {
       "id": "first-run-done",
       "title": "First run finished",
-      "expected": "Done closes the window and the widget stays. No hint is due here: v1 hints are for a concealed widget.",
+      "expected": "Done closes the window and the widget stays. With the tool chooser (build 14) Done needs one tool ticked; a tool found is ticked by default, so the walk ticks one only when the page asks for it. No hint is due here: v1 hints are for a concealed widget.",
       "requires": [
         "first-run-window"
       ],
@@ -36,6 +42,20 @@
           "op": "press",
           "by": "id",
           "value": "firstRun.login"
+        },
+        {
+          "op": "when",
+          "present": "ax:scope.firstRun.pickOne",
+          "then": [
+            {
+              "op": "click",
+              "target": "ax^:scope.firstRun.tool."
+            },
+            {
+              "op": "wait",
+              "seconds": 0.5
+            }
+          ]
         },
         {
           "op": "click",
@@ -57,6 +77,125 @@
       "checks": [
         {
           "absent": "ax:firstRun.done"
+        }
+      ]
+    },
+    {
+      "id": "widget-found",
+      "title": "Widget found and kept out",
+      "expected": "A fresh install starts with the widget collapsed (D56, build 14). The walk turns Auto-Collapse off in Settings > Quota Widget (the widget's own menu cannot be reached while it is collapsed) and uses Find Quota Widget to bring it out, so the rest, card and size steps see the whole widget. A build without Find Quota Widget starts expanded and skips this.",
+      "actions": [
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.2
+        },
+        {
+          "op": "when",
+          "present": "ax:status.findQuotaWidget",
+          "then": [
+            {
+              "op": "press",
+              "by": "title",
+              "value": "Settings…"
+            },
+            {
+              "op": "await",
+              "target": "ax:settings.sidebar",
+              "timeout": 15
+            },
+            {
+              "op": "click",
+              "target": "ax:settings.pane.dock"
+            },
+            {
+              "op": "await",
+              "target": "ax:settings.autoHide",
+              "timeout": 5
+            },
+            {
+              "op": "when",
+              "then": [
+                {
+                  "op": "press",
+                  "by": "id",
+                  "value": "settings.autoHide"
+                },
+                {
+                  "op": "wait",
+                  "seconds": 0.6
+                },
+                {
+                  "op": "press",
+                  "by": "title",
+                  "value": "Off"
+                },
+                {
+                  "op": "wait",
+                  "seconds": 1.5
+                }
+              ],
+              "equals": {
+                "target": "ax:settings.autoHide",
+                "value": "On"
+              }
+            },
+            {
+              "op": "click",
+              "target": "subrole:AXCloseButton"
+            },
+            {
+              "op": "wait",
+              "seconds": 1
+            },
+            {
+              "op": "click",
+              "target": "status-item",
+              "button": "right"
+            },
+            {
+              "op": "wait",
+              "seconds": 1.2
+            },
+            {
+              "op": "press",
+              "by": "id",
+              "value": "status.findQuotaWidget"
+            },
+            {
+              "op": "await",
+              "target": "ax^:dock.subscription.",
+              "timeout": 10
+            }
+          ]
+        },
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 3
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "exists": "ax^:dock.subscription."
+        },
+        {
+          "absent": "ax:settings.sidebar"
         }
       ]
     },
@@ -86,7 +225,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax:dock.grip.0"
+        "crop": "window-of:ax:dock.grip.0",
+        "window": "window-of:ax:dock.grip.0"
       },
       "checks": [
         {
@@ -113,7 +253,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax:dock.grip.0"
+        "crop": "window-of:ax:dock.grip.0",
+        "window": "window-of:ax:dock.grip.0"
       },
       "checks": [
         {
@@ -219,6 +360,213 @@
         },
         {
           "absent": "ax^:dock.card."
+        }
+      ]
+    },
+    {
+      "id": "widget-size-S",
+      "title": "Quota Widget size S",
+      "expected": "Settings > Quota Widget size S resizes the widget; the visual comparison reads its window shot against the prototype's S widget. Taken right after the drag-snap, while all five synthetic rings are still there and the widget is docked on the left edge like the prototype.",
+      "requires": [
+        "drag-snap"
+      ],
+      "actions": [
+        {
+          "op": "when",
+          "absent": "ax:settings.sidebar",
+          "then": [
+            {
+              "op": "click",
+              "target": "status-item",
+              "button": "right"
+            },
+            {
+              "op": "wait",
+              "seconds": 1.2
+            },
+            {
+              "op": "press",
+              "by": "title",
+              "value": "Settings…"
+            },
+            {
+              "op": "await",
+              "target": "ax:settings.sidebar",
+              "timeout": 15
+            }
+          ]
+        },
+        {
+          "op": "when",
+          "absent": "ax:settings.size",
+          "then": [
+            {
+              "op": "click",
+              "target": "ax:settings.pane.dock"
+            },
+            {
+              "op": "await",
+              "target": "ax:settings.size",
+              "timeout": 5
+            }
+          ]
+        },
+        {
+          "op": "press",
+          "by": "id",
+          "value": "settings.size"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.6
+        },
+        {
+          "op": "press",
+          "by": "title",
+          "value": "S"
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0",
+        "window": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "exists": "ax:dock.grip.0"
+        }
+      ]
+    },
+    {
+      "id": "widget-size-L",
+      "title": "Quota Widget size L",
+      "expected": "Settings > Quota Widget size L resizes the widget; the visual comparison reads its window shot against the prototype's L widget.",
+      "requires": [
+        "drag-snap"
+      ],
+      "actions": [
+        {
+          "op": "when",
+          "absent": "ax:settings.size",
+          "then": [
+            {
+              "op": "click",
+              "target": "ax:settings.pane.dock"
+            },
+            {
+              "op": "await",
+              "target": "ax:settings.size",
+              "timeout": 5
+            }
+          ]
+        },
+        {
+          "op": "press",
+          "by": "id",
+          "value": "settings.size"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.6
+        },
+        {
+          "op": "press",
+          "by": "title",
+          "value": "L"
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0",
+        "window": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "exists": "ax:dock.grip.0"
+        }
+      ]
+    },
+    {
+      "id": "widget-size-M",
+      "title": "Quota Widget size back to M",
+      "expected": "Settings > Quota Widget size M restores the default widget.",
+      "requires": [
+        "drag-snap"
+      ],
+      "actions": [
+        {
+          "op": "when",
+          "absent": "ax:settings.size",
+          "then": [
+            {
+              "op": "click",
+              "target": "ax:settings.pane.dock"
+            },
+            {
+              "op": "await",
+              "target": "ax:settings.size",
+              "timeout": 5
+            }
+          ]
+        },
+        {
+          "op": "press",
+          "by": "id",
+          "value": "settings.size"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.6
+        },
+        {
+          "op": "press",
+          "by": "title",
+          "value": "M"
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        },
+        {
+          "op": "click",
+          "target": "subrole:AXCloseButton"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "exists": "ax:dock.grip.0"
         }
       ]
     },
@@ -446,7 +794,8 @@
         }
       ],
       "shot": {
-        "crop": "remembered"
+        "crop": "remembered",
+        "window": "remembered"
       },
       "checks": [
         {
@@ -521,6 +870,139 @@
       ]
     },
     {
+      "id": "widget-out-again",
+      "title": "Widget out again after the collapse steps",
+      "expected": "Recovery, not a feature check: when the collapse steps leave the widget folded (build 14: the widget menu can close before Auto-Collapse is pressed), Auto-Collapse is turned off in Settings and Find Quota Widget brings it out, so the card, cockpit and size steps still see the whole widget.",
+      "actions": [
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        },
+        {
+          "op": "when",
+          "absent": "ax^:dock.subscription.",
+          "then": [
+            {
+              "op": "key",
+              "name": "escape"
+            },
+            {
+              "op": "click",
+              "target": "status-item",
+              "button": "right"
+            },
+            {
+              "op": "wait",
+              "seconds": 1.2
+            },
+            {
+              "op": "when",
+              "present": "ax:status.findQuotaWidget",
+              "then": [
+                {
+                  "op": "press",
+                  "by": "title",
+                  "value": "Settings…"
+                },
+                {
+                  "op": "await",
+                  "target": "ax:settings.sidebar",
+                  "timeout": 15
+                },
+                {
+                  "op": "click",
+                  "target": "ax:settings.pane.dock"
+                },
+                {
+                  "op": "await",
+                  "target": "ax:settings.autoHide",
+                  "timeout": 5
+                },
+                {
+                  "op": "when",
+                  "then": [
+                    {
+                      "op": "press",
+                      "by": "id",
+                      "value": "settings.autoHide"
+                    },
+                    {
+                      "op": "wait",
+                      "seconds": 0.6
+                    },
+                    {
+                      "op": "press",
+                      "by": "title",
+                      "value": "Off"
+                    },
+                    {
+                      "op": "wait",
+                      "seconds": 1.5
+                    }
+                  ],
+                  "equals": {
+                    "target": "ax:settings.autoHide",
+                    "value": "On"
+                  }
+                },
+                {
+                  "op": "click",
+                  "target": "subrole:AXCloseButton"
+                },
+                {
+                  "op": "wait",
+                  "seconds": 1
+                },
+                {
+                  "op": "click",
+                  "target": "status-item",
+                  "button": "right"
+                },
+                {
+                  "op": "wait",
+                  "seconds": 1.2
+                },
+                {
+                  "op": "press",
+                  "by": "id",
+                  "value": "status.findQuotaWidget"
+                },
+                {
+                  "op": "await",
+                  "target": "ax^:dock.subscription.",
+                  "timeout": 10
+                }
+              ]
+            },
+            {
+              "op": "key",
+              "name": "escape"
+            },
+            {
+              "op": "park"
+            },
+            {
+              "op": "wait",
+              "seconds": 3
+            }
+          ]
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "exists": "ax^:dock.subscription."
+        }
+      ]
+    },
+    {
       "id": "popup-card",
       "title": "Popup card",
       "expected": "A click on the top ring opens its card with the synthetic windows and reset times.",
@@ -539,7 +1021,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax^:dock.card."
+        "crop": "window-of:ax^:dock.card.",
+        "window": "window-of:ax^:dock.card."
       },
       "checks": [
         {
@@ -568,7 +1051,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax^:dock.card."
+        "crop": "window-of:ax^:dock.card.",
+        "window": "window-of:ax^:dock.card."
       },
       "checks": [
         {
@@ -623,7 +1107,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:ax^:dock.card."
+        "crop": "window-of:ax^:dock.card.",
+        "window": "window-of:ax^:dock.card."
       },
       "checks": [
         {
@@ -686,7 +1171,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -742,7 +1228,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -775,7 +1262,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1461,7 +1949,8 @@
         }
       ],
       "shot": {
-        "crop": "label:ModelPlan Cockpit"
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1625,7 +2114,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:label:ModelPlan Cockpit"
+        "crop": "window-of:label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1640,7 +2130,7 @@
     {
       "id": "air-1470x956",
       "title": "Cockpit at 1470x956, Dock at the bottom",
-      "expected": "On a 1470x956 screen (MacBook Air M2/M3 default) the full cockpit fits between the menu bar and the Dock (G3-39). Skipped where the host offers no such mode.",
+      "expected": "On a 1470x956 screen (MacBook Air M2/M3 default) the full cockpit fits between the menu bar and the Dock (G3-39). Hosted Macs offer no 1470x956, so the walk uses 1280x960: nearly the same height, which is what decides the fit.",
       "actions": [
         {
           "op": "toggleCockpit",
@@ -1651,6 +2141,12 @@
           "size": [
             1470,
             956
+          ],
+          "fallback": [
+            [
+              1280,
+              960
+            ]
           ]
         },
         {
@@ -1670,7 +2166,8 @@
         }
       ],
       "shot": {
-        "crop": "window-of:label:ModelPlan Cockpit"
+        "crop": "window-of:label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
       },
       "checks": [
         {
@@ -1710,6 +2207,48 @@
         },
         {
           "exists": "ax:dock.grip.0"
+        }
+      ]
+    },
+    {
+      "id": "settings-window",
+      "title": "Settings window",
+      "expected": "Settings… in the status menu opens the Settings window on its first page; the visual comparison reads its window shot.",
+      "actions": [
+        {
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.2
+        },
+        {
+          "op": "press",
+          "by": "title",
+          "value": "Settings…"
+        },
+        {
+          "op": "await",
+          "target": "ax:settings.sidebar",
+          "timeout": 15
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:settings.sidebar",
+        "window": "window-of:ax:settings.sidebar"
+      },
+      "checks": [
+        {
+          "exists": "ax:settings.sidebar"
         }
       ]
     }
