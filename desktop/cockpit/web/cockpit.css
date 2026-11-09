@@ -88,6 +88,11 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 .field-stage .nogl{padding:16px;font-size:12px}
 .field-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:2px 10px;padding:6px 10px;overflow:auto;font-size:11px}
 .field-row{display:flex;align-items:center;gap:6px}
+/* Axis labels in screen-space lanes (src/field-axes.ts; prototype study style.css task 91 rounds 4-5). Unplaced ticks stay hidden
+   so the scene's own overlapping projection never flashes before the first layout. */
+.field-stage .tick3.field-axis-placed{transform:var(--field-axis-position)!important;translate:none!important;opacity:var(--field-axis-opacity)!important;transition:none!important;background:#03060a;border-radius:2px;padding:2px 4px;text-shadow:none;color:#e9edf0}
+.field-stage .tick3.field-axis-placed.time{color:#a2a4a8}
+.field-stage .tick3:not(.field-axis-placed){visibility:hidden}
 .ck-port[role=button]{pointer-events:auto;cursor:zoom-in}
 
 /* HUD B: borderless, on one scrim that fades to nothing at every edge (CKP-PORT-03, 04). The port's padding box starts at (18,14) in the window, so these are the window-local (76,24) and (58,9) less that. */
@@ -130,3 +135,7 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 /* Closed (owner D72), as the study composes it: the cap slab, 620 x 16 at 14 px, in the shared gunmetal tone (task 88). */
 :root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{display:block;left:0;width:620px;top:14px;height:16px;-webkit-mask-image:none;mask-image:none;clip-path:none;background:var(--hull-cap,none) center/620px 16px no-repeat;filter:saturate(.12) brightness(.78)}
 :root[data-theme="night"] #cockpit .ck-deck::before{left:0;right:0;clip-path:inset(0)}
+/* Owner D76: the Reserve hint floats over the page in the MFD tip style. */
+.mfd-tip.eng-hint{position:fixed;z-index:40}
+/* The comparison title never gives way to its note or links (current unknown made it "Compare …"). */
+.dk-mfd .cmp-h .mfd-title{flex:none}.dk-mfd .cmp-h .cmp-note{min-width:0;overflow:hidden;text-overflow:ellipsis}.dk-mfd .cmp-header-links{min-width:0;overflow:hidden}

@@ -66,12 +66,12 @@ class VerifyTests(unittest.TestCase):
         self.assertTrue(any("failed: Mod.Fast/testA" in e for e in
                             partition.verify(PKG, self.expected, log([("Mod.Fast/testA", "failed"), ("Mod.Fast/testEnvGated", "passed")]), "headless")))
 
-    def test_repository_admits_only_the_cli_missing_headless_skip(self):
+    def test_repository_admits_only_the_cli_missing_gui_skip(self):
         pkg = MANIFEST["packages"]["app-integration"]
         case = "ModelPlanAppIntegrationTests.CommunityCockpitEntryTests/testNormalEntryRejectsOutdatedCLI"
-        self.assertEqual(partition.verify(pkg, [case], log([(case, "skipped")]), "headless"), [])
+        self.assertEqual(partition.verify(pkg, [case], log([(case, "skipped")]), "gui"), [])
         self.assertTrue(any("skipped without an allowed-skip entry" in e for e in
-                            partition.verify(pkg, [case], log([(case, "skipped")]), "gui")))
+                            partition.verify(pkg, [case], log([(case, "skipped")]), "headless")))
 
     def test_a_skip_allowed_on_the_other_leg_is_not_allowed_here(self):
         pkg = {**PKG, "headless": ["Fast", "Window"]}
@@ -112,3 +112,50 @@ class CheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+OWNER = {**PKG, "ownerGui": ["Window"],
+         "allowedSkips": {**PKG["allowedSkips"], "FastLater/testOwnerOnly": {"leg": "gui", "reason": "synthetic"}}}
+
+
+class OwnerGuiTests(unittest.TestCase):
+    """D62: the GUI share splits into a hosted part and the classes that need the owner's GUI Mac."""
+
+    def test_hosted_and_owner_legs_split_the_gui_share_exactly(self):
+        _, gui, _ = partition.plan(OWNER, LISTED, "gui")
+        _, hosted, summary = partition.plan(OWNER, LISTED, "hosted-gui")
+        _, owner, _ = partition.plan(OWNER, LISTED, "owner-gui")
+        self.assertEqual(owner, ["Mod.Window/testC", "Mod.Window/testHostedOnly"])
+        self.assertEqual(hosted, ["Mod.FastLater/testB"])
+        self.assertEqual(sorted(hosted + owner), gui)
+        self.assertEqual(summary["owner-gui"], 2)
+
+    def test_owner_and_hosted_legs_use_one_selector(self):
+        hosted, _, _ = partition.plan(OWNER, LISTED, "hosted-gui")
+        owner, _, _ = partition.plan(OWNER, LISTED, "owner-gui")
+        self.assertEqual(hosted, ["--skip", "GeneratedPortTests", "--skip", r"^Mod\.(Fast)/", "--skip", r"^Mod\.(Window)/"])
+        self.assertEqual(owner, ["--skip", "GeneratedPortTests", "--filter", r"^Mod\.(Window)/"])
+
+    def test_no_owner_list_means_no_owner_leg(self):
+        with self.assertRaises(partition.PartitionError):
+            partition.plan(PKG, LISTED, "owner-gui")
+        _, hosted, _ = partition.plan(PKG, LISTED, "hosted-gui")
+        _, gui, _ = partition.plan(PKG, LISTED, "gui")
+        self.assertEqual(hosted, gui)
+
+    def test_gui_skips_count_on_both_halves_of_the_gui_share(self):
+        _, owner, _ = partition.plan(OWNER, LISTED, "owner-gui")
+        self.assertEqual([], partition.verify(OWNER, owner, log([("Mod.Window/testC", "passed"), ("Mod.Window/testHostedOnly", "skipped")]), "owner-gui"))
+        _, hosted, _ = partition.plan(OWNER, LISTED, "hosted-gui")
+        self.assertEqual([], partition.verify(OWNER, hosted, log([("Mod.FastLater/testB", "passed")]), "hosted-gui"))
+
+    def test_owner_list_rules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); (root / "Tests").mkdir()
+            (root / "Tests/A.swift").write_text("class Fast: XCTestCase {}\nclass Window: XCTestCase {}\nclass Other: XCTestCase {}\n")
+            manifest = {**MANIFEST, "packages": {"m": {**OWNER, "allowedSkips": {}, "ownerGui": ["Window", "Fast"]}}}
+            errors = partition.check(root, manifest)
+            self.assertTrue(any("ownerGui" in e and "sorted" in e for e in errors), errors)
+            self.assertTrue(any("both headless and ownerGui" in e for e in errors), errors)
+            manifest["packages"]["m"]["ownerGui"] = ["Missing"]
+            self.assertTrue(any("ownerGui class Missing" in e for e in partition.check(root, manifest)))

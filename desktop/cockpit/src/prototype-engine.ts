@@ -77,6 +77,17 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  };
  const choosePage=(element:Element)=>{const led=element.closest<HTMLElement>('.eng-led[data-page]');if(!led||!host.contains(led))return false;const requested=Number(led.dataset.page);if(Number.isInteger(requested)&&requested>=0&&requested<Math.ceil(members.length/6)){page=requested;paint();}return true;};
  host.onkeydown=e=>{if(e.isTrusted&&(e.key==='Enter'||e.key===' ')&&choosePage(e.target as Element))e.preventDefault();};
+ // Owner D76: the Reserve label's hint, in the MFD's floating LCD tip style (study mfd.css .mfd-tip), on hover or focus.
+ // Text only and never takes pointer events; the label also carries it as its accessible name.
+ const hint=document.createElement('div');hint.className='mfd-tip eng-hint';hint.setAttribute('role','tooltip');hint.hidden=true;
+ const hideHint=()=>{hint.hidden=true;hint.replaceChildren();hint.remove();};
+ const showHint=(target:EventTarget|null)=>{const label=target instanceof Element?target.closest<HTMLElement>('.lb-r[data-tip]'):null;if(!label||!host.contains(label)){hideHint();return;}
+  hint.replaceChildren(...(label.dataset.tip??'').split('\n').filter(Boolean).map((line,i)=>{const e=document.createElement('span');if(!i)e.className='h';e.textContent=line;return e;}));
+  (root.querySelector('#cockpit')??document.body).append(hint);hint.hidden=false;const r=label.getBoundingClientRect(),w=hint.offsetWidth,h=hint.offsetHeight;
+  // Above the label, so it never covers the reserve values beside it.
+  hint.style.left=Math.max(4,Math.min(window.innerWidth-w-4,r.left))+'px';hint.style.top=Math.max(4,r.top-h-4)+'px';};
+ host.addEventListener('pointerover',e=>showHint(e.target));host.addEventListener('pointerleave',hideHint);
+ host.addEventListener('focusin',e=>showHint(e.target));host.addEventListener('focusout',hideHint);
  host.onclick=e=>{if(!e.isTrusted)return;if(choosePage(e.target as Element))return;const b=(e.target as Element).closest<HTMLButtonElement>('button');if(!b||!host.contains(b))return;
   if(b.hasAttribute('data-add-subscription')){onAdd();return;}
   if(b.hasAttribute('data-all')){if(onSelect('all')){scope='';paint();}return;}
