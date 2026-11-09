@@ -163,7 +163,7 @@ import AppKit
         let visibility = button(.init("", ""), id: "subscriptions.visible." + row.id, enabled: editable,
                                 help: locked) { [handlers = configuration.handlers] in handlers.setVisible(row.id, !row.visible) }
         visibility.setButtonType(.switch); visibility.title = ""; visibility.state = row.visible ? .on : .off
-        visibility.setAccessibilityLabel(language == .english ? "Show \(row.name.english) in the widget and cockpit" : "在挂件和驾驶舱显示 \(row.name.chinese)")
+        visibility.setAccessibilityLabel(language == .english ? "Show \(row.name.english) in the Quota Widget and Cockpit" : "在额度挂件和驾驶舱显示 \(row.name.chinese)")
         visibility.toolTip = language == .english ? "Show in the Quota Widget and cockpit (display only)" : "在额度挂件和驾驶舱显示（仅影响显示）"
         trailing.append(visibility)
         let up = button(.init("↑", "↑"), id: "subscriptions.up." + row.id, enabled: editable && row.canMoveUp) { [handlers = configuration.handlers] in handlers.move(row.id, -1) }
