@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import XCTest
 import ModelPlanInstruments
@@ -76,6 +77,63 @@ import ModelPlanSettings
             let result = NeutralHelpUIRecipeProvider().presentation(for: input)
             let label = try XCTUnwrap(result.mapLabels.first { $0.anchorID == "nozzle" })
             XCTAssertEqual(label.text.contains("click to refresh"), available)
+        }
+    }
+
+    /// The packaged map showed "Number: quota left in the window selected for": the label's own
+    /// text field wrapped "this nozzle." onto a second line its frame had no room for. Drawn by the
+    /// real layer, every map caption and the header must fit the field that shows it.
+    private func assertMapTextFits(_ input: HelpUIRenderInput, _ name: String,
+                                   file: StaticString = #filePath, line: UInt = #line) throws {
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let layer = HelpUILayerView()
+        layer.frame = CGRect(origin: .zero, size: input.viewport)
+        layer.update(input)
+        XCTAssertNotNil(layer.presentation?.mapHeader, name, file: file, line: line)
+        let fields = descendants(layer).compactMap { $0 as? NSTextField }.filter { !$0.isHidden && !$0.stringValue.isEmpty }
+        XCTAssertGreaterThan(fields.count, 2, name, file: file, line: line)
+        for field in fields {
+            let needed = try XCTUnwrap(field.cell, file: file, line: line)
+                .cellSize(forBounds: CGRect(x: 0, y: 0, width: field.frame.width, height: 10_000)).height
+            XCTAssertLessThanOrEqual(needed, field.frame.height + 0.5, "\(name): \(field.stringValue)", file: file, line: line)
+        }
+    }
+
+    func testEveryDockMapCaptionFitsTheTextFieldThatDrawsIt() throws {
+        for language in [InstrumentLanguage.english, .chinese] {
+            let regions = HelpMapCatalog(language).entries(for: .dock).map(\.region)
+            let anchors = regions.enumerated().map { index, region in
+                DockRequestedHelpAnchor(id: region.rawValue, region: region,
+                    rect: CGRect(x: 1860, y: 120 + CGFloat(index) * 100, width: 44, height: 44), visible: true)
+            }
+            let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: CGSize(width: 1920, height: 120 + CGFloat(regions.count) * 100 + 80),
+                language: language, anchors: anchors, blocked: [], recipe: NeutralHelpUIRecipeProvider(), refreshAvailable: true))
+            try assertMapTextFits(input, "dock \(language)")
+        }
+    }
+
+    /// The cockpit's Option map, both window profiles, every caption in both languages.
+    func testEveryCockpitMapCaptionFitsTheTextFieldThatDrawsIt() throws {
+        for language in [InstrumentLanguage.english, .chinese] {
+            for profile in [HelpUIProfile.tall890, .compact640] {
+                let height: CGFloat = profile == .tall890 ? 890 : 640
+                let regions = HelpMapCatalog(language).entries(for: .cockpit).map(\.region)
+                var anchors = regions.enumerated().map { index, region in
+                    HelpUIAnchor(id: region.rawValue, rect: CGRect(x: 640, y: 120 + CGFloat(index) * (height - 230) / 15, width: 120, height: 16))
+                }
+                var map = HelpUIMapInput(mode: .heldOption, surface: .cockpit,
+                    regionAnchors: Dictionary(uniqueKeysWithValues: regions.map { ($0, $0.rawValue) }),
+                    columns: profile == .tall890 ? [CGRect(x: 8, y: 116, width: 540, height: height - 124)]
+                        : [CGRect(x: 8, y: 116, width: 260, height: height - 124), CGRect(x: 280, y: 116, width: 260, height: height - 124)],
+                    header: CGRect(x: 8, y: 34, width: 540, height: 70))
+                map.sentenceOverrides[.pin] = language == .chinese ? "分离窗口" : "Detach window"
+                anchors += [HelpUIAnchor(id: "average", rect: CGRect(x: 640, y: height - 90, width: 120, height: 16)),
+                            HelpUIAnchor(id: "live", rect: CGRect(x: 640, y: height - 60, width: 120, height: 16))]
+                map.todayAverageAnchorID = "average"; map.liveSpeedAnchorID = "live"
+                let input = HelpUIRenderInput(sessionID: UUID(), viewport: CGSize(width: 1280, height: height), profile: profile,
+                    language: language, anchors: anchors, liveReadings: anchors.map(\.rect), map: map)
+                try assertMapTextFits(input, "cockpit \(language) \(profile)")
+            }
         }
     }
 
