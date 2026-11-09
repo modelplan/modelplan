@@ -188,6 +188,49 @@ extension CommunityCockpitEntryTests {
         }
     }
 
+    /// CKP-SHELL-25 / owner review 11-08 on the real page and panel: the cockpit window is clear around the hull. The
+    /// panel and the web view paint no backing, and the web view's own rendering of the window is transparent at
+    /// the corners outside the hull silhouette (the owner saw an opaque #1e1e1e slab).
+    @MainActor func testCockpitWindowIsClearOutsideTheHull() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("clear-" + UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+        let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+        let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+        let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+        defer { page.discard() }
+        page.verificationPlacement = (usable: CGRect(x: 0, y: 0, width: 1680, height: 1026), anchor: CGRect(x: 1100, y: 1026, width: 28, height: 24))
+        page.open()
+        let window = try XCTUnwrap(page.window), web = try XCTUnwrap(page.verificationWebView)
+        let deadline = ContinuousClock.now + .seconds(30)
+        var painted = false
+        while !painted, ContinuousClock.now < deadline {
+            painted = ((try? await web.evaluateJavaScript("!!document.documentElement.dataset.profile")) as? Bool) == true
+            if !painted { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        XCTAssertTrue(painted, "the page must be painted")
+        XCTAssertFalse(window.isOpaque, "the panel is not opaque")
+        XCTAssertEqual(window.backgroundColor?.alphaComponent ?? 1, 0, "the panel background is clear")
+        XCTAssertFalse(window.hasShadow, "no window shadow around the hull, as in the study")
+        XCTAssertEqual(web.value(forKey: "drawsBackground") as? Bool, false, "the web view paints no backing")
+        XCTAssertEqual(web.underPageBackgroundColor.alphaComponent, 0, "nothing under the page")
+        // The web view's own rendering of the window: corners and the reserve beside the bells are transparent.
+        let image = try await web.takeSnapshot(configuration: nil)
+        let rep = try XCTUnwrap(image.representations.compactMap { $0 as? NSBitmapImageRep }.first
+            ?? image.cgImage(forProposedRect: nil, context: nil, hints: nil).map { NSBitmapImageRep(cgImage: $0) })
+        let w = rep.pixelsWide, h = rep.pixelsHigh
+        for (x, y) in [(1, 1), (w - 2, 1), (1, h - 2), (w - 2, h - 2)] {
+            XCTAssertEqual(rep.colorAt(x: x, y: y)?.alphaComponent ?? 1, 0, accuracy: 0.01, "alpha at \(x),\(y) of \(w)x\(h)")
+        }
+    }
+
     /// G3-43 / CKP-SHELL-02, -04 on the real page and panel: the drag region covers the strip the page really
     /// painted, leaves the shutter alone, and dragging it detaches and moves the same cockpit.
     @MainActor func testG3_43TitleStripDragDetachesAndMovesTheRealCockpit() async throws {

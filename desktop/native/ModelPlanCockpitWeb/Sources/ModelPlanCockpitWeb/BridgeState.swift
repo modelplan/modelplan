@@ -80,6 +80,8 @@ public enum CockpitIntent: Equatable, Sendable {
   case chooseSetup, openSettings, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
   case scopeSelect(String)
+  /// G3-56: the caution identities the owner has acknowledged by pressing the lamp. The coordinator keeps them.
+  case cautionAck([String])
   case openWebsite(CockpitWebsiteLink)
 }
 /// A typed public page, never a URL from the page: native builds the address from these fields.
@@ -198,6 +200,14 @@ enum FlatReply {
   }
 }
 
+/// The page sends opaque caution identities (a member reference, a window id and a severity). Bounded and printable only.
+public enum CockpitCautionIdentities {
+  public static let maxCount = 64, maxBytes = 200
+  public static func valid(_ ids: [String]) -> Bool {
+    ids.count <= maxCount && ids.allSatisfy { !$0.isEmpty && $0.utf8.count <= maxBytes && $0.utf8.allSatisfy { $0 >= 32 && $0 != 127 } }
+  }
+}
+
 public final class CockpitBridgeState {
   public let pageID: UUID
   public private(set) var context: CockpitEngineContext
@@ -208,6 +218,8 @@ public final class CockpitBridgeState {
   public private(set) var appearanceVersion: Int?
   public var supportsAppearance: Bool { ready && readyCapabilities == Self.requiredCapabilities && appearanceVersion == 2 }
   private var authoritative = true
+  /// G3-56: set before `load`; the page restores its acknowledged cautions from it.
+  public var ackedCautions: [String] = []
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
   private var retiredSessions = Set<UUID>(), retiredEpochs = Set<String>(),
@@ -264,16 +276,17 @@ public final class CockpitBridgeState {
     guard !loaded else { throw CockpitBridgeError.unavailable }
     guard CockpitMemberScopes.isValidKey(shell.scope) else { throw CockpitBridgeError.invalidMessage }
     loaded = true
-    return try envelope(
-      "load",
-      extra: [
-        "appearance": [
-          "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
-          "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
-          "showProjectNames": appearance.showProjectNames,
-        ],
-        "shell": shell.fields, "redBelow": appearance.redBelow,
-      ], receipt: "ready")
+    var extra: [String: Any] = [
+      "appearance": [
+        "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
+        "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
+        "showProjectNames": appearance.showProjectNames,
+      ],
+      "shell": shell.fields, "redBelow": appearance.redBelow,
+    ]
+    // G3-56: sent only when there is something to restore, so a page that has none sees the unchanged contract.
+    if CockpitCautionIdentities.valid(ackedCautions), !ackedCautions.isEmpty { extra["ackedCautions"] = ackedCautions }
+    return try envelope("load", extra: extra, receipt: "ready")
   }
   public func setAppearance(_ appearance: CockpitAppearance, deadlineEligible: Bool = false) throws -> String {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
@@ -452,8 +465,8 @@ public final class CockpitBridgeState {
       // Strict page sequence rejects replays without a lifetime action cap.
       if let earlyDisplay, sequence <= earlyDisplay.sequence { throw CockpitBridgeError.invalidMessage }
       let action = m["action"] as? String
-      let history = action == "openHistory", scope = action == "scopeSelect", website = action == "openWebsite"
-      let extra:Set<String> = history ? ["action","tool"] : scope ? ["action","key"] : website ? ["action","page","value"] : ["action"]
+      let history = action == "openHistory", scope = action == "scopeSelect", website = action == "openWebsite", ack = action == "cautionAck"
+      let extra:Set<String> = history ? ["action","tool"] : scope ? ["action","key"] : website ? ["action","page","value"] : ack ? ["action","ids"] : ["action"]
       guard Set(m.keys) == base.union(extra), ready, !blocked,
         visibility.active
       else { throw CockpitBridgeError.invalidMessage }
@@ -468,6 +481,9 @@ public final class CockpitBridgeState {
       case "openWebsite":
         guard let link = CockpitWebsiteLink(page: m["page"] as? String, value: m["value"] as? String) else { throw CockpitBridgeError.invalidMessage }
         intent = .openWebsite(link)
+      case "cautionAck":
+        guard let ids = m["ids"] as? [String], CockpitCautionIdentities.valid(ids) else { throw CockpitBridgeError.invalidMessage }
+        intent = .cautionAck(ids)
       case "close": intent = .close
       case "detach": intent = .detach
       case "putBack": intent = .putBack

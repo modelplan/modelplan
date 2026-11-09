@@ -40,7 +40,8 @@ test('CKP-MFD-24 the plans link is Chinese in Chinese and absent for an unknown 
  expect(await receive(send('shell',{...shell,scope:member(0)}))).toBe(true);
  await page.getByRole('button',{name:'订阅',exact:true}).click();
  await expect(page.locator('.sp-h a.website-link')).toHaveText('套餐详情 ↗');
- expect(await receive(send('shell',{...shell,scope:member(1)}))).toBe(true);
+ // The visual fixture carries the CLI's real vendor keys (G3-47); Gemini CLI (the fourth row) has none.
+ expect(await receive(send('shell',{...shell,scope:member(3)}))).toBe(true);
  await expect(page.locator('.sp-h b')).toBeVisible();
  await expect(page.locator('.sp-h a.website-link')).toHaveCount(0);
 });
