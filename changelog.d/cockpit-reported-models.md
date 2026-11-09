@@ -1,0 +1,1 @@
+When Codex can list the models the signed-in account may use (its own model list), the cockpit now uses that list first for that subscription's model filter, then the published plan list, then the developer match. Only model ids are read, with the same refresh as the quota reading.

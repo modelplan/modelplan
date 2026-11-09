@@ -171,6 +171,10 @@ type CockpitSubscriptionDetails struct {
 	ResetCounts          []CockpitResetCount `json:"resetCounts" schema:"maxItems=64"`
 	Credits              *CockpitCredits     `json:"credits" null:"coalesced"`
 	Today                []CockpitToday      `json:"today" schema:"maxItems=4"`
+	// ReportedModels (D98) are the published model ids the tool itself lists for this subscription's signed-in
+	// account (Codex model/list), mapped through the published harnessIds. Ids only. Absent when the tool did not
+	// report; the client then uses PlanModels, then the developer match. Present with PublishedModels.
+	ReportedModels []string `json:"reportedModels,omitempty" schema:"maxItems=256" null:"forbidden"`
 }
 type CockpitResetCount struct {
 	Kind      string     `json:"kind"`

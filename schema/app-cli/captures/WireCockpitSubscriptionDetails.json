@@ -36,5 +36,8 @@
       "generationTps": 42.5,
       "bindingBasis": "synthetic"
     }
+  ],
+  "reportedModels": [
+    "synthetic"
   ]
 }

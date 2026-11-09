@@ -3205,6 +3205,7 @@ public struct WireCockpitSubscriptionDetails: Codable, Sendable {
     public let `resetCounts`: [WireCockpitResetCount]
     public let `credits`: WireCockpitCredits?
     public let `today`: [WireCockpitToday]
+    public let `reportedModels`: [String]?
     private enum CodingKeys: String, CodingKey {
         case `resetCountsTruncated`
         case `resetCards`
@@ -3212,14 +3213,16 @@ public struct WireCockpitSubscriptionDetails: Codable, Sendable {
         case `resetCounts`
         case `credits`
         case `today`
+        case `reportedModels`
     }
-    public init(`resetCountsTruncated`: Bool? = nil, `resetCards`: RowsResetCards? = nil, `subscriptionRef`: String, `resetCounts`: [WireCockpitResetCount], `credits`: WireCockpitCredits? = nil, `today`: [WireCockpitToday]) throws {
+    public init(`resetCountsTruncated`: Bool? = nil, `resetCards`: RowsResetCards? = nil, `subscriptionRef`: String, `resetCounts`: [WireCockpitResetCount], `credits`: WireCockpitCredits? = nil, `today`: [WireCockpitToday], `reportedModels`: [String]? = nil) throws {
         self.`resetCountsTruncated` = `resetCountsTruncated`
         self.`resetCards` = `resetCards`
         self.`subscriptionRef` = `subscriptionRef`
         self.`resetCounts` = `resetCounts`
         self.`credits` = `credits`
         self.`today` = `today`
+        self.`reportedModels` = `reportedModels`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -3232,6 +3235,8 @@ public struct WireCockpitSubscriptionDetails: Codable, Sendable {
         self.`resetCounts` = try c.decode([WireCockpitResetCount].self, forKey: .`resetCounts`)
         self.`credits` = try c.decodeIfPresent(WireCockpitCredits.self, forKey: .`credits`)
         self.`today` = try c.decode([WireCockpitToday].self, forKey: .`today`)
+        if c.contains(.`reportedModels`), try c.decodeNil(forKey: .`reportedModels`) { throw WireDecodeError.invalidIdentity }
+        self.`reportedModels` = try c.decodeIfPresent([String].self, forKey: .`reportedModels`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -3243,6 +3248,7 @@ public struct WireCockpitSubscriptionDetails: Codable, Sendable {
         try c.encode(`resetCounts`, forKey: .`resetCounts`)
         try c.encode(`credits`, forKey: .`credits`)
         try c.encode(`today`, forKey: .`today`)
+        try c.encodeIfPresent(`reportedModels`, forKey: .`reportedModels`)
     }
     private func validate() throws {
         try WireValidation.reference(`subscriptionRef`)

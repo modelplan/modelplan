@@ -37,6 +37,11 @@ while IFS= read -r line; do
   case "$line" in
     *'"id":1,'*) echo '{"id":1,"result":{"userAgent":"x"}}' ;;
     *'"method":"account/read"'*) echo '{"id":3,"result":{"account":{"type":"chatgpt","email":"Someone@Example.com","planType":"pro"},"requiresOpenaiAuth":true}}' ;;
+    *'"method":"model/list"'*)
+      case "$line" in
+        *'"cursor"'*) echo "$line" | sed -n 's/.*"id":\([0-9]*\).*/{"id":\1,"result":{"data":[{"id":"p3","model":"native-c","hidden":false}],"nextCursor":null}}/p' ;;
+        *) echo "$line" | sed -n 's/.*"id":\([0-9]*\).*/{"id":\1,"result":{"data":[{"id":"p1","model":"native-b","hidden":false},{"id":"p2","model":"native-hidden","hidden":true},{"id":"p1","model":"native-b","hidden":false},{"id":"p4","model":"native-a","hidden":false}],"nextCursor":"next"}}/p' ;;
+      esac ;;
     *'"method":"account/rateLimits/read"'*) printf '{"id":2,"result":%s}\n' '` + strings.ReplaceAll(result, "\n", "") + `' ;;
   esac
 done
@@ -58,7 +63,7 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls, _ := os.ReadFile(log)
-	if got := strings.Fields(string(calls)); strings.Join(got, ",") != "initialize,initialized,account/rateLimits/read,account/read" {
+	if got := strings.Fields(string(calls)); strings.Join(got, ",") != "initialize,initialized,account/rateLimits/read,account/read,model/list,model/list" {
 		t.Fatalf("calls = %v", got)
 	}
 	b, _ := os.ReadFile(accountPath(cache))
@@ -76,6 +81,10 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 	if s.Status != "ok" || s.Plan != "pro" || len(s.Windows) != 2 || s.Credits.Count != 2 || len(s.Credits.Expiries) != 2 {
 		t.Fatalf("snap = %+v", s)
 	}
+	// D98: the models Codex lists for the account, ids only, paged, hidden and duplicate ones dropped.
+	if got := strings.Join(s.ReportedModels, ","); got != "native-a,native-b,native-c" {
+		t.Fatalf("reportedModels = %q", got)
+	}
 	if AccountDue(cache, acctNow.Add(4*time.Minute)) || !AccountDue(cache, acctNow.Add(5*time.Minute)) {
 		t.Fatal("refresh at most every 5 minutes")
 	}
@@ -85,6 +94,9 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 	}
 	r := Report{}
 	applyAccount(&r, cache, acctNow.Add(2*time.Hour))
+	if got := strings.Join(r.Accounts[0].ReportedModels, ","); got != "native-a,native-b,native-c" {
+		t.Fatalf("account reportedModels = %q", got)
+	}
 	if s := r.Accounts[0].Subscription; s == nil || s.Ref != ref || s.Status != "verified" || s.Basis != "codex-account" {
 		t.Fatalf("binding = %+v", s)
 	}
@@ -493,5 +505,31 @@ func TestRefreshKeepsTheReadingThroughABriefConsentLock(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+// D98: a Codex that never answers model/list (or answers with an error) still gives the quota reading.
+func TestModelListIsBestEffort(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "codex")
+	script := `#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *'"id":1,'*) echo '{"id":1,"result":{}}' ;;
+    *'"method":"account/rateLimits/read"'*) printf '{"id":2,"result":%s}\n' '` + strings.ReplaceAll(acctResponse, "\n", "") + `' ;;
+    *'"method":"model/list"'*) echo '{"id":4,"error":{"code":-32601,"message":"method not found"}}' ;;
+  esac
+done
+`
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
+		t.Fatal(err)
+	}
+	if s := loadAccount(cache); s.Status != "ok" || len(s.Windows) != 2 || len(s.ReportedModels) != 0 {
+		t.Fatalf("snap = %+v", s)
 	}
 }
