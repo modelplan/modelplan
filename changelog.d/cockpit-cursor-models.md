@@ -1,0 +1,1 @@
+Users who opt in (new `cursor.runtime_models` consent scope, off by default) get the model ids from their own `cursor-agent models` in the cockpit: fixed argv, no shell, 15 second timeout, 24 hour cache, ids only. Failures never affect the quota read, and ids map to published models only once reviewed harness aliases exist for Cursor.

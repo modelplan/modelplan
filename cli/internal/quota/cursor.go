@@ -514,7 +514,9 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 		a.SharedPool = unverifiedXSubscription()
 		notice = "Shared-pool link unverified"
 	}
-	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta, Notice: notice}}
+	// D102: opt-in model-id lane; best effort, never affects the quota read above.
+	models := cursorReportedModels(ctx, r.Paths, accountKey, r.Now)
+	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta, Notice: notice, ReportedModels: models}}
 }
 
 func parseCursorPlan(raw []byte) (string, *readerPlanDetails) {

@@ -16,7 +16,7 @@ func Definitions() []ScopeDefinition {
 	for _, id := range []string{
 		ScopeOpenCodeV2LocalHistory, ScopeClaudeLocalHistory, ScopeClaudeAccountUsageSavedLogin,
 		ScopeCodexLocalHistory, ScopeCodexRuntimeUsage,
-		ScopeCursorLocalHistory, ScopeCursorAccountUsageSavedLogin,
+		ScopeCursorLocalHistory, ScopeCursorAccountUsageSavedLogin, ScopeCursorRuntimeModels,
 		ScopeGeminiLocalHistory, ScopeGeminiAccountUsageSavedLogin,
 		ScopeGrokLocalHistory, ScopeGrokAccountUsageSavedLogin,
 		ScopeKimiLocalHistory, ScopeKimiAccountUsageSavedLogin, ScopeKimiAccountUsageAPIKey,
@@ -30,6 +30,8 @@ func Definitions() []ScopeDefinition {
 		switch path {
 		case "local_history":
 			d.Class, d.Route, d.DefaultCheck = Local, "local_log", true
+		case "runtime_models":
+			d.Class, d.Route = Runtime, "runtime_rpc" // runs the tool binary; opt-in, never checked by default
 		case "runtime_usage":
 			d.Class, d.Route, d.DefaultCheck = Runtime, "runtime_rpc", true
 		case "account_usage.saved_login":
