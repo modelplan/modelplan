@@ -51,3 +51,7 @@ test('D63 a full week of record keeps the plain 7-day heading',async({page})=>{
  await page.keyboard.press('1');await page.getByRole('button',{name:'Subscription',exact:true}).click();
  await expect(page.locator('.sp-stats .stat-h')).toHaveText('7-day usage · Linked tools');
 });
+test('D63 a calendar-invalid first day is not shown as a shifted date',async({page})=>{
+ await open(page,fixture({dailyFrom:'2026-02-30'}).data);
+ expect(await label(page)).toBe('30 days');
+});
