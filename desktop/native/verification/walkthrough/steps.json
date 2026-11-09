@@ -1592,7 +1592,7 @@
     {
       "id": "faders",
       "title": "Faders",
-      "expected": "One fader per model; moving one by a detent changes its effort step.",
+      "expected": "One fader per model (at least three). Pulling one opens Compare instead of changing the effort, so the drag itself is s-fader-drag-compare.",
       "prototype": "desktop/cockpit/study/rocket-r1/fader-view.js",
       "requires": [
         "cockpit-open"
@@ -1602,12 +1602,8 @@
           "op": "park"
         },
         {
-          "op": "faderStep",
-          "target": "role:AXSlider"
-        },
-        {
           "op": "wait",
-          "seconds": 1.5
+          "seconds": 1
         }
       ],
       "shot": {
@@ -1615,10 +1611,10 @@
       },
       "checks": [
         {
-          "exists": "role:AXSlider"
-        },
-        {
-          "changed": "role:AXSlider"
+          "countAtLeast": {
+            "target": "role:AXSlider",
+            "min": 3
+          }
         }
       ]
     },

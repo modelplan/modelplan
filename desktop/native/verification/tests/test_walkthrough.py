@@ -609,5 +609,18 @@ class CrashReportRedactionTests(unittest.TestCase):
         self.assertIsNone(w.redact_crash_report("not json /Users/alice"))
 
 
+class MachineSummaryTests(unittest.TestCase):
+    def test_rows_states_and_evidence(self):
+        manifest = {"sourceSHA": "abc", "artifact": "a", "checks": [{"check": "launch", "status": "pass"}, {"check": "x", "status": "fail"}],
+                    "steps": [{"step": "a", "status": "pass", "file": "01-a.png", "tree": "01-a.tree.json", "window": {"file": "01-a.window.png"}},
+                              {"step": "b", "status": "skipped", "reason": "no key"},
+                              {"step": "c", "status": "fail", "reason": "boom", "requirement": "G3-38"}]}
+        out = w.machine_summary(manifest)
+        self.assertEqual([r["status"] for r in out["scenarios"]], ["pass", "blocked", "fail", "pass", "fail"])
+        self.assertEqual(out["scenarios"][0]["evidence"], ["01-a.png", "01-a.tree.json", "01-a.window.png"])
+        self.assertEqual(out["counts"], {"pass": 2, "fail": 2, "blocked": 1})
+        self.assertFalse(out["ok"])
+
+
 if __name__ == "__main__":
     unittest.main()

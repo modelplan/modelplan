@@ -1299,11 +1299,30 @@ def run(args, host):
                 "artifact": args.artifact, "host": host_facts, "steps": walkthrough.results, "checks": checks}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True), encoding="utf-8")
     (out / "SUMMARY.md").write_text(summary(manifest), encoding="utf-8")
+    (out / "walkthrough-summary.json").write_text(json.dumps(machine_summary(manifest), indent=1, sort_keys=True), encoding="utf-8")
     shutil.rmtree(home, ignore_errors=True)
     shutil.rmtree(str(home) + "-fresh", ignore_errors=True)
     failed = failures(manifest)
     print("not passed: " + (", ".join(failed) or "none"), flush=True)
     return 1 if failed else 0
+
+
+def machine_summary(manifest):
+    """One row per scenario for a machine reader (the coordinator's auto-verify.sh): id, pass / fail / blocked, evidence.
+    A step the host or the build cannot walk is "blocked" (its reason says why), never a silent pass."""
+    states = {"pass": "pass", "skipped": "blocked"}
+    rows = []
+    for r in manifest["steps"]:
+        evidence = [r[k] for k in ("file", "crop", "tree") if r.get(k)]
+        if isinstance(r.get("window"), dict) and r["window"].get("file"):
+            evidence.append(r["window"]["file"])
+        rows.append({"id": r["step"], "status": states.get(r["status"], "fail"), "reason": r.get("reason") or "",
+                     "requirement": r.get("requirement"), "evidence": evidence})
+    rows += [{"id": "check:" + c["check"], "status": {"pass": "pass", "info": "pass"}.get(c["status"], "fail"),
+              "reason": "", "requirement": None, "evidence": ["manifest.json"]} for c in manifest["checks"]]
+    counts = {k: sum(1 for x in rows if x["status"] == k) for k in ("pass", "fail", "blocked")}
+    return {"schemaVersion": 1, "sourceSHA": manifest.get("sourceSHA"), "artifact": manifest.get("artifact"),
+            "counts": counts, "ok": counts["fail"] == 0, "scenarios": rows}
 
 
 def failures(manifest):
