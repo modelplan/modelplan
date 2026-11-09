@@ -163,10 +163,14 @@ public struct StoryboardRail: Sendable {
 
     public func facts(at t: Double) -> StoryboardPoseFacts {
         let pose = pose(at: t), camera = pose.camera, rise = pose.rise
-        let nose = camera.project(.init(0, geometry.height + rise, 0)), base = camera.project(.init(0, TailLayout.plateY + rise, 0))
+        let nose = camera.project(.init(0, geometry.height + rise, 0))
+        // The axis segment in front of the camera (the tail may be behind it late in the move).
+        let axis = (0...40).map { i in camera.project(.init(0, TailLayout.plateY + rise + (geometry.height - TailLayout.plateY) * Double(i) / 40, 0)) }
+            .filter(\.inFront)
+        let low = axis.first ?? nose, high = axis.last ?? nose
         let hull = Self.convexHull(geometry.glassVertices.map { camera.project(.init($0.x, $0.y + rise, $0.z)).point })
         return .init(noseY: nose.point.y, noseInFront: nose.inFront,
-                     axisTiltDegrees: atan2(nose.point.x - base.point.x, base.point.y - nose.point.y) * 180 / Double.pi,
+                     axisTiltDegrees: atan2(high.point.x - low.point.x, max(1e-9, low.point.y - high.point.y)) * 180 / Double.pi,
                      windowHull: hull, windowIoU: Self.iou(hull, aperturePolygon, step: 2))
     }
 
