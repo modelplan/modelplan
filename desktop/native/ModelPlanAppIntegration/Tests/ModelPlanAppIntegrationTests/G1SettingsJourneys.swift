@@ -150,8 +150,8 @@ private actor G1SettingsEngine: EngineClient {
             XCTAssertFalse(subscriptions.isHiddenOrHasHiddenAncestor)
             if count == 0 { XCTAssertTrue(subscriptions.stringValue.contains("No subscriptions detected")) }
             else {
-                XCTAssertTrue(subscriptions.stringValue.contains("Account 1"))
-                XCTAssertTrue(subscriptions.stringValue.contains("Account 2"))
+                XCTAssertTrue(subscriptions.stringValue.contains("Synthetic tool"))
+                XCTAssertTrue(subscriptions.stringValue.contains("Synthetic tool · 2"))
             }
         }
     }
