@@ -29,5 +29,5 @@ jobs:
       - name: Build and run the entrance checks
         run: |
           swift --version
-          swift build --package-path desktop/native --product ModelPlanEntranceChecks --jobs 2
-          swift run --package-path desktop/native --skip-build ModelPlanEntranceChecks
+          swift build -c release --package-path desktop/native --product ModelPlanEntranceChecks --jobs 2
+          swift run -c release --package-path desktop/native --skip-build ModelPlanEntranceChecks

@@ -104,11 +104,12 @@ final class EntranceSceneRenderTests: XCTestCase {
             let rendered = try XCTUnwrap(silhouette(frame.image), "glass not drawn at \(progress)")
             assertNear(rendered, clipped(pose.windowRect, pose.camera.viewport), tolerance: 2, "canopy at \(progress)")
         }
-        // The end pose: the window is exactly the aperture's width and centred on it (spec §3.3).
+        // D111 end pose: the window sits on the cockpit column (the constant lens shift) at 1.0-1.3x the aperture width.
         let end = try await scene.render(at: plan.timeline.mapStart)
         let rendered = try XCTUnwrap(silhouette(end.image))
-        XCTAssertEqual(rendered.midX, 1090, accuracy: 2)
-        XCTAssertEqual(rendered.width, 420, accuracy: 4)
+        XCTAssertEqual(rendered.midX, 1100, accuracy: 3)
+        XCTAssertGreaterThanOrEqual(rendered.width, 0.95 * 420)
+        XCTAssertLessThanOrEqual(rendered.width, 1.35 * 420)
     }
 
     /// Slice 2: the native frame at each storyboard key-frame stage is measured and compared structurally with
@@ -117,21 +118,59 @@ final class EntranceSceneRenderTests: XCTestCase {
     func testStoryboardKeyFrameComparisonProducesAReportForEveryEdge() async throws {
         guard #available(macOS 15.0, *) else { throw XCTSkip("the native entrance needs macOS 15") }
         let results = try await StoryboardCapture.run()
-        XCTAssertEqual(results.map(\.edge), ["right", "bottom", "left"])
-        for r in results {
+        XCTAssertEqual(results.count, 9)
+        for r in results where r.shot == "shot3start" {
+            let comparison = try XCTUnwrap(r.comparison)
+            XCTAssertTrue(comparison.posePassed, "D111 opening frame does not match the storyboard pose for \(r.edge): \(comparison.checks.filter { !$0.passed })")
+        }
+        for r in results where r.comparison != nil {
             let measured = try XCTUnwrap(r.measurement, "no silhouette for \(r.edge)")
             XCTAssertGreaterThan(measured.areaFraction, 0.01)
-            let comparison = try XCTUnwrap(r.comparison, "no storyboard key frame for \(r.edge) \(r.shot)")
+            let comparison = try XCTUnwrap(r.comparison)
             XCTAssertEqual(comparison.checks.count, 7)
             for check in comparison.checks where !check.passed {
                 print("STORYBOARD-DIFF \(r.edge) \(r.shot) \(check.name): storyboard \(check.storyboard) native \(check.native) tol \(check.tolerance)")
             }
         }
         let report = try StoryboardCapture.report(results)
+        // CI log copy of the numbers, for the owner comparison boards (no artifacts are uploaded by this job).
+        print("STORYBOARD-REPORT " + (String(data: report, encoding: .utf8) ?? "").replacingOccurrences(of: "\n", with: " "))
         if let dir = ProcessInfo.processInfo.environment["MODELPLAN_ENTRANCE_FRAMES_DIR"] {
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
             try report.write(to: URL(fileURLWithPath: dir).appendingPathComponent("storyboard-comparison.json"))
         }
+    }
+
+    /// Owner comparison frames: the right-edge storyboard scenario at the three shot-3 stages, grey box and night
+    /// look (neutral stand-in only), printed into the CI log as half-size JPEG base64 lines because the GUI job
+    /// uploads no artifacts. A private script turns them into the storyboard-vs-native boards.
+    @MainActor
+    func testOwnerComparisonFramesForTheStoryboardStages() async throws {
+        guard #available(macOS 15.0, *) else { throw XCTSkip("the native entrance needs macOS 15") }
+        let plan = StoryboardScenario.plan(edge: "right")
+        for flat in [true, false] {
+            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: flat)
+            for (shot, t) in StoryboardScenario.stages(plan) {
+                let frame = try await scene.render(at: t)
+                let jpeg = try XCTUnwrap(halfSizeJPEG(frame.image))
+                XCTAssertGreaterThan(jpeg.count, 1000)
+                print("ENTRANCE-FRAME right-\(shot)-\(flat ? "grey" : "night") \(jpeg.base64EncodedString())")
+            }
+        }
+    }
+
+    private func halfSizeJPEG(_ image: CGImage) -> Data? {
+        let w = image.width / 2, h = image.height / 2
+        guard let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let small = context.makeImage() else { return nil }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, small, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 
     /// Renders every 3D frame-match timestamp for both themes; with MODELPLAN_ENTRANCE_FRAMES_DIR set, writes the

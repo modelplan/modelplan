@@ -45,21 +45,34 @@ public struct EntranceFrameFacts: Equatable, Sendable {
     public let rocketOpacity: Double
     /// Nozzle landing progress (0 until the last 150 ms of the map, eased).
     public let landing: Double
+    /// Flame strength (D111.6): full through the rise, going out with the rocket during the window map.
+    public var flameStrength: Double { stage == .liftOff ? 1 : stage == .map ? rocketOpacity : 0 }
 }
+
+/// Which camera drives shot 3: the owner's D111 storyboard camera (default) or the superseded prototype path,
+/// kept only to prove the port of the web reference (provisional goldens).
+public enum EntranceCameraPath: Sendable { case storyboard, prototype }
 
 public struct EntrancePlan: Sendable {
     public let scenario: EntranceScenario
     public let timeline: EntranceTimeline
     public let tail: [TailSlot]
     public let rail: LiftOffRail
+    public let storyboard: StoryboardRail?
 
-    public init(_ scenario: EntranceScenario, geometry: RocketGeometry = .neutralStandIn) {
+    public init(_ scenario: EntranceScenario, geometry: RocketGeometry = .neutralStandIn, camera: EntranceCameraPath = .storyboard,
+                aperture: [EntrancePoint]? = nil, targetNoseY: Double? = nil) {
         self.scenario = scenario
         timeline = EntranceTimeline(distance: scenario.rollDistance, restoreClosed: scenario.restoreClosed,
                                     glide: scenario.glide, beat: scenario.beat)
         tail = TailLayout.slots(for: scenario.dockIDs)
         rail = LiftOffRail(input: scenario.liftOff, geometry: geometry)
+        storyboard = camera == .storyboard
+            ? StoryboardRail(input: .init(liftOff: scenario.liftOff, aperture: aperture, targetNoseY: targetNoseY), geometry: geometry)
+            : nil
     }
+
+    func shot3(_ t: Double) -> LiftOffPose { storyboard?.pose(at: t) ?? rail.pose(at: t) }
 
     public func facts(at t: Double) -> EntranceFrameFacts {
         let position = timeline.position(at: t)
@@ -67,13 +80,13 @@ public struct EntrancePlan: Sendable {
         var rocketOpacity = 1.0, landing = 0.0
         switch position.stage {
         case .countdown, .curl, .roll: pose = nil
-        case .liftOff: pose = rail.pose(at: position.progress)
+        case .liftOff: pose = shot3(position.progress)
         case .map:
-            pose = rail.pose(at: 1)
+            pose = shot3(1)
             rocketOpacity = 1 - position.progress
             landing = EntranceEasing.smootherstep((position.time - timeline.landingStart) / EntranceTimeline.landingDuration)
         case .shutter, .glide, .done:
-            pose = rail.pose(at: 1); rocketOpacity = 0; landing = 1
+            pose = shot3(1); rocketOpacity = 0; landing = 1
         }
         return EntranceFrameFacts(time: position.time, stage: position.stage, progress: position.progress,
                                   countdownDigit: timeline.countdownDigit(at: position.time), theme: scenario.theme,

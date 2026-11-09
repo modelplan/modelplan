@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Slice 2: renders native frames at the storyboard key-frame stages and compares them structurally with the
-// owner-approved storyboard stills (StoryboardKeyframes). Report-only until slice 3 brings the D111 camera;
-// then the shot-3 gates become blocking.
+// owner-approved storyboard stills (StoryboardKeyframes). Slice 3: the D111 camera drives shot 3, and the
+// pose gates (axis, nose height, tail width, column) block at the opening frame.
 #if canImport(RealityKit) && canImport(Metal)
 import CoreGraphics
 import Foundation
@@ -20,10 +20,17 @@ public enum StoryboardScenario {
                      apertureRect: .init(left: cockpitLeft - 8 + 17, top: cockpitTop, width: 601.5, height: 199))
     }
 
-    public static func plan(edge: String) -> EntrancePlan {
+    public static func plan(edge: String, keyframes: StoryboardKeyframes = .approved) -> EntrancePlan {
         // Roll distances from the storyboard boards: right/bottom clamp to 0.35 s, left 0.673 s.
         let distance = edge == "left" ? 1077.1 : 494.2
-        return EntrancePlan(.init(dockIDs: ["claude", "codex", "zcode", "glm"], rollDistance: distance, liftOff: liftOff()))
+        return EntrancePlan(.init(dockIDs: ["claude", "codex", "zcode", "glm"], rollDistance: distance, liftOff: liftOff()),
+                            targetNoseY: keyframes.frame(edge: edge, shot: "shot3start")?.topY)
+    }
+
+    /// Native stages rendered for the owner comparison, with their time inside the plan.
+    public static func stages(_ plan: EntrancePlan) -> [(shot: String, time: Double)] {
+        let t = plan.timeline
+        return [("shot3start", t.liftOffStart), ("shot3mid", t.liftOffStart + 0.3), ("shot3end", t.mapStart)]
     }
 }
 
@@ -41,16 +48,15 @@ public struct StoryboardCaptureResult: @unchecked Sendable {
 public enum StoryboardCapture {
     /// The stages the native 3D scene renders today. Shots 1-2 are 2D overlay work (slice 5) and the final
     /// frame is the web cockpit (slice 6).
-    public static let renderedShots = ["shot3start"]
+    public static let renderedShots = ["shot3start", "shot3mid", "shot3end"]
 
     public static func run(edges: [String] = ["right", "bottom", "left"],
                            keyframes: StoryboardKeyframes = .approved) async throws -> [StoryboardCaptureResult] {
         var results: [StoryboardCaptureResult] = []
         for edge in edges {
-            let plan = StoryboardScenario.plan(edge: edge)
+            let plan = StoryboardScenario.plan(edge: edge, keyframes: keyframes)
             let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: true)
-            for shot in renderedShots {
-                let t = plan.timeline.liftOffStart
+            for (shot, t) in StoryboardScenario.stages(plan) {
                 let frame = try await scene.render(at: t)
                 let measured = measure(frame.image, viewport: StoryboardScenario.viewport)
                 let comparison = keyframes.frame(edge: edge, shot: shot).flatMap { key in

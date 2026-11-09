@@ -131,6 +131,9 @@ public struct KeyframeComparison: Equatable, Sendable, Codable {
     public var shot: String
     public var checks: [Check]
     public var passed: Bool { checks.allSatisfy(\.passed) }
+    /// The checks that do not depend on the rocket's exact silhouette (stand-in vs official model).
+    public static let poseChecks: Set<String> = ["axisFromVertical", "bboxWidth", "centroidX", "topY"]
+    public var posePassed: Bool { checks.filter { Self.poseChecks.contains($0.name) }.allSatisfy(\.passed) }
 
     public static func compare(native: SilhouetteMeasurement, to frame: StoryboardKeyframe,
                                gate: KeyframeGate = .init()) -> KeyframeComparison {

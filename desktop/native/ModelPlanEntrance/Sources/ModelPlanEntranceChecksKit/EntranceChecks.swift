@@ -263,6 +263,37 @@ public enum EntranceChecks {
             var small = frame.measurement; small.areaFraction *= 0.5
             try run.expect(!KeyframeComparison.compare(native: small, to: frame).passed, "half the area fails")
         }
+        run.group("STORYBOARD D111 camera: whole rocket upright at the opening, one body length of lift, one constant lens, window on the aperture") {
+            let input = LiftOffInput(viewport: .init(width: 1470, height: 956), handoffDiameter: 496, tailPoint: .init(1117, 900),
+                                     apertureRect: .init(left: 816, top: 41, width: 601.5, height: 199))
+            let rail = StoryboardRail(input: .init(liftOff: input, targetNoseY: 176))
+            let open = rail.pose(at: 0), openFacts = rail.facts(at: 0)
+            try run.near(open.tailRect.width, 496, 1, "tail at the handoff diameter")
+            try run.near(open.tailRect.centre.x, 1117, 1, "tail centred on the tail point x")
+            try run.near(open.tailRect.centre.y, 900, 1, "tail centred on the tail point y")
+            try run.expect(openFacts.noseInFront && openFacts.noseY >= 26 + 12, "nose on screen: \(openFacts.noseY)")
+            try run.near(openFacts.noseY, 176, 0.05 * 956, "nose where the storyboard still has it")
+            try run.near(openFacts.axisTiltDegrees, 0, 0.5, "rocket upright")
+            var lastTurn = Double.infinity
+            for i in 0...30 {
+                let t = Double(i) / 30, pose = rail.pose(at: t)
+                try run.near(pose.camera.fovDegrees, StoryboardRail.defaultFov, 0, "constant field of view (no zoom)")
+                try run.expect(pose.camera.shift == open.camera.shift, "one constant lens shift (no slide)")
+                try run.expect(pose.camera.pitchDegrees > 10, "camera keeps looking up, never levels (\(pose.camera.pitchDegrees))")
+                try run.expect(pose.turnRemainingDegrees <= lastTurn + 1e-9, "camera turns one way only"); lastTurn = pose.turnRemainingDegrees
+                try run.near(abs(rail.facts(at: t).axisTiltDegrees), 0, 0.5, "rocket stays upright at \(t)")
+            }
+            try run.near(rail.pose(at: 1).rise, 14.2, 1e-9, "lifts one body length")
+            let endFacts = rail.facts(at: 1)
+            try run.expect(abs(EntranceRect.bounds(endFacts.windowHull).centre.x - 1117) < 2, "window on the cockpit column")
+            print("D111 stand-in end IoU vs rect aperture: \(rail.endIoU), elevation \(rail.endElevationDegrees), opening angle \(rail.startAngleDegrees)")
+            try run.expect(rail.endIoU >= 0.55, "stand-in window broadly overlaps the aperture: \(rail.endIoU)")
+            let plan = EntrancePlan(.init(dockIDs: ["a", "b"], rollDistance: 800, liftOff: input))
+            try run.near(plan.facts(at: plan.timeline.liftOffStart + 0.3).flameStrength, 1, 0, "flames full through the rise")
+            try run.near(plan.facts(at: plan.timeline.mapStart + 0.225).flameStrength, 0.5, 1e-9, "flames go out with the map")
+            try run.near(plan.facts(at: plan.timeline.mapEnd).flameStrength, 0, 0, "flames out after the map")
+        }
+
         run.group("rocket source: community builds use the neutral stand-in; a pack's geometry decodes (D109)") {
             try run.expect(RocketModelSource.communityDefault == .neutralStandIn, "community default")
             try run.expect(RocketModelSource.communityDefault.modelURL(for: .night) == nil, "stand-in has no model file")
