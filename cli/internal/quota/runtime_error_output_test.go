@@ -106,7 +106,7 @@ func TestCodexRuntimeErrorOutput(t *testing.T) {
 						t.Fatal("optional identity failure changed quota success")
 					}
 				} else {
-					if err == nil || s == nil || s.Status != "error" || s.Error != "other" {
+					if err == nil || s == nil || s.Status != "error" || s.Error != "rpc_error" {
 						t.Error("fixed failure reason not retained")
 					}
 					if err != nil {
