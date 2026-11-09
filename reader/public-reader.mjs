@@ -600,6 +600,16 @@ var tags = z3.array(
     "dominated"
   ])
 );
+var harnessIdsSchema = z3.object({
+  api: ids2,
+  "claude-code": ids2,
+  codex: ids2,
+  "gemini-cli": ids2.optional(),
+  antigravity: ids2.optional(),
+  "grok-build": ids2.optional(),
+  copilot: ids2.optional(),
+  kimi: ids2.optional()
+}).strict();
 var clientAliasRegistrySchema = z3.object({
   revision: text3,
   checkedAt: text3,
@@ -607,7 +617,7 @@ var clientAliasRegistrySchema = z3.object({
     z3.object({
       modelId: text3,
       sourceModelId: text3,
-      harnessIds: z3.object({ api: ids2, "claude-code": ids2, codex: ids2 }).strict(),
+      harnessIds: harnessIdsSchema,
       sourceUrls: z3.array(z3.url()),
       qualification: text3,
       requiredEndpoints: z3.record(z3.string(), z3.url())
@@ -660,7 +670,7 @@ var clientDigestSchema = z3.object({
       recommended: text3.nullable(),
       // ADR 0033; optional so digests published before it still validate.
       recommendationBasis: z3.enum(["balanced", "single-configuration", "assumed-highest"]).nullable().optional(),
-      harnessIds: z3.object({ api: ids2, "claude-code": ids2, codex: ids2 }).strict(),
+      harnessIds: harnessIdsSchema,
       harnessEvidence: z3.object({
         checkedAt: text3,
         sourceUrls: z3.array(z3.url()),

@@ -124,3 +124,13 @@ test('provisional accepts only true, and other unknown effort fields stay reject
     await assert.rejects(verifyClientDigest(value), /publication_invalid_data_client/);
   }
 });
+
+test('harnessIds accept the optional per-tool keys and still reject unknown keys', async () => {
+  const keys = ['gemini-cli', 'antigravity', 'grok-build', 'copilot', 'kimi'];
+  const ok = await publication(c => {
+    for (const k of keys) c.data.models[0].harnessIds[k] = ['synthetic-slug'];
+  });
+  await verifyClientDigest(ok);
+  const bad = await publication(c => { c.data.models[0].harnessIds['unknown-tool'] = ['x']; });
+  await assert.rejects(() => verifyClientDigest(bad));
+});
