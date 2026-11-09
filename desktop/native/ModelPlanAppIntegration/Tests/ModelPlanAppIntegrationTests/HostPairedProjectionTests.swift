@@ -220,7 +220,7 @@ actor EntrySyntheticClient: EngineClient {
     func testD18NormalOptionArrowsSaveAndAnnounceWithEitherReduceMotionSource() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-keyboard-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, secondWeekly: 55)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -270,7 +270,7 @@ actor EntrySyntheticClient: EngineClient {
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 25, secondWeekly: 20)
         func start() async throws -> EngineDockMenuApplication {
-            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
             let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
                 applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
                 dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
@@ -336,7 +336,7 @@ actor EntrySyntheticClient: EngineClient {
     func testS11PulseBandsReachTheRenderedRingsReadoutsAndCardRows() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-bands-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let fixture = try Self.rows(weekly: 50, secondWeekly: 51)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -392,7 +392,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryReprojectsAtVerifiedDeadlineWithoutNewRowsAndClearsOnRevoke() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z")), elapsed = 0.0
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75)
         var acceptedStore: EngineStore?
@@ -421,7 +421,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryPreservesTwoStableAccountsAndClearsBothOnRevocation() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-multi-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z")), elapsed = 0.0
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, secondWeekly: 33)
         var acceptedStore: EngineStore?
@@ -490,7 +490,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardShowsEachAdmittedWindowsOwnSourceAndAge() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("window-provenance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let readings = try Self.rows(weekly: 75, windowSources: .distinct)
         var elapsed = 0.0
@@ -533,7 +533,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardRetainsAccountProvenanceForRestrictedAndSourceLessMembers() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-restricted-provenance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, secondWeekly: 55, windowSources: .restrictedWithLegacyMember)
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
@@ -606,7 +606,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardResetTimeUsesTheCompactPrototypeFormat() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-copy-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let resets = ISO8601DateFormatter().string(from: wall.addingTimeInterval(2 * 3600 + 14 * 60))
         let snapshot = try Self.rows(weekly: 75, weeklyDeadline: resets)
@@ -633,7 +633,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardShowsAMoneyBalanceWithoutTheRawFloat() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("money-balance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, reserveBalance: 14_207.8550653333, reserveUnit: "money")
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -659,7 +659,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardShowsNoNativeTooltips() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("card-tooltips-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let readings = try Self.rows(weekly: 75, extraWindow: true)
         var elapsed = 0.0
@@ -692,7 +692,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalReserveLabelAndNumberHaveVisibleRoomInBothLanguages() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-extent-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, reserveBalance: 19_613.9573653333)
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
@@ -761,7 +761,7 @@ actor EntrySyntheticClient: EngineClient {
         ] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-expiry-" + UUID().uuidString)
             addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: [language])
+            let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: [language])
             let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T16:00:00Z"))
             var wall = start
             let snapshot = try Self.rows(weekly: 75, resetCardClock: start, resetFacts: .init(count: 1, expiresIn: 12 * 60))
@@ -815,7 +815,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalCardAdmitsOnlyVerifiedResetFactsAndLinks() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-card-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 12, day: 2, hour: 16)))
         let snapshot = try Self.rows(weekly: 75, resetCardClock: wall)
         let officialURL = "https://status.openai.com/incidents/demo-reset"
@@ -937,7 +937,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryMagnifiesNozzleWithoutMovingItsReadout() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-magnification-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         // Keep the tightest window above the 50 % amber band (#562), so the readout is neutral
         // ink, with ink-heavy digits ("58%") like the original 42.5 % fixture had.
@@ -1091,7 +1091,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalMenuKeepsActionsAndLocalizesOneLinePerFailedReader() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-menu-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let healthy = try Self.rows(weekly: 75, secondWeekly: 55)
         let failed = try Self.rows(weekly: 75, secondWeekly: 55, sequence: 8, readerFailed: true)
@@ -1109,8 +1109,8 @@ actor EntrySyntheticClient: EngineClient {
         func items() throws -> [NSMenuItem] {
             try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
         }
-        let english = ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"]
-        let chinese = ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
+        let english = ["Refresh", "Show Quota Widget", "Find Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"]
+        let chinese = ["刷新", "显示额度挂件", "找到额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
         XCTAssertEqual(try items().map(\.title), english)
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try items().map(\.title), chinese)
@@ -1135,7 +1135,7 @@ actor EntrySyntheticClient: EngineClient {
     func testS07NormalEntryDistinguishesPaintedHelpTargetsAndFocus() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-help-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, resetID: "synthetic-dock-help")
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -1214,7 +1214,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-language-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         var interactionElapsed=0.0
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, secondWeekly: 55)
@@ -1265,7 +1265,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryUniqueUnboundMemberUsesSnapshotScopedProofAndClears() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-unbound-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, unbound: true)
         var acceptedStore: EngineStore?
@@ -1288,7 +1288,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalHostCloseCancelsDeadlineAndRetiresCachedContent() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-close-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
@@ -1310,7 +1310,7 @@ actor EntrySyntheticClient: EngineClient {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-display-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let fixture = try Self.rows(weekly: 15, fiveHour: 9)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
@@ -1362,12 +1362,94 @@ actor EntrySyntheticClient: EngineClient {
         assertStatus("")
     }
 
+    /// Build 13 owner review (ledger: none): with the pointer on the menu-bar item the "0%" kept turning into "0".
+    /// Every refresh re-set the title, image and position, and the reset dot was then placed from the button's
+    /// previous bounds, so it landed on the "%" and moved back on the next refresh. A refresh that changes nothing
+    /// now writes nothing, and the dot's place does not depend on the bounds the button happens to hold.
+    func testMenuBarItemDoesNotJumpWhenAnUnchangedReadingIsRefreshed() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-stable-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let fixture = try Self.rows(weekly: 15)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.tightest))
+
+        final class CountingButton: NSButton {
+            var titleWrites = 0, imageWrites = 0, positionWrites = 0
+            override var title: String { didSet { titleWrites += 1 } }
+            override var image: NSImage? { didSet { imageWrites += 1 } }
+            override var imagePosition: NSControl.ImagePosition { didSet { positionWrites += 1 } }
+        }
+        let button = CountingButton()
+        let icon = NSImage(size: .init(width: 16, height: 16))
+        EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+        app.applyStatusContent(to: button, detail: "detail")
+        XCTAssertEqual(button.title, "15%")
+        let (title, image, position) = (button.titleWrites, button.imageWrites, button.positionWrites)
+        for _ in 0..<3 {
+            EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+            app.applyStatusContent(to: button, detail: "detail")
+        }
+        XCTAssertEqual(button.titleWrites, title, "an unchanged title is not written again")
+        XCTAssertEqual(button.imageWrites, image, "an unchanged image is not replaced")
+        XCTAssertEqual(button.positionWrites, position, "an unchanged image position is not written again")
+        XCTAssertEqual(button.title, "15%")
+    }
+
+    /// The reset dot stays on the icon's top right whatever size the button still holds from before a refresh.
+    func testResetDotStaysOnTheIconWhateverBoundsTheButtonHolds() throws {
+        let button = NSButton(frame: .zero)
+        EngineDockMenuApplication.configureStatusButton(button, image: NSImage(size: .init(width: 16, height: 16)), barThickness: 22)
+        button.title = "0%"; button.imagePosition = .imageLeading
+        let dot = DockNoticeIndicatorView(frame: .zero)
+        var placed = [CGFloat]()
+        for width: CGFloat in [14, 48, 96, 240] { // stale: narrower than the content, about right, then much wider
+            button.frame = NSRect(x: 0, y: 0, width: width, height: 22)
+            dot.attach(to: button)
+            placed.append(dot.frame.minX)
+        }
+        XCTAssertEqual(Set(placed.map { ($0 * 2).rounded() }).count, 1, "the dot does not move with the button's bounds: \(placed)")
+        let content = NSRect(x: 0, y: 0, width: ceil(try XCTUnwrap(button.cell).cellSize.width), height: 22)
+        XCTAssertLessThan(dot.frame.maxX, content.maxX - 8, "the dot never sits on the percentage")
+    }
+
+    /// Build 14 crash: placing the reset dot from a copy of the button's cell over-released the button's image, and the
+    /// next render read a freed object. Percentage plus icon is rendered many times, each inside its own autorelease
+    /// pool so any over-release is paid back inside the loop; the image must stay the same object and readable.
+    func testRepeatedPercentPlusIconRendersDoNotOverReleaseTheButtonImage() throws {
+        let button = NSButton(frame: .zero)
+        let icon = NSImage(size: .init(width: 16, height: 16))
+        EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+        button.title = "15%"; button.imagePosition = .imageLeading
+        let dot = DockNoticeIndicatorView(frame: .zero)
+        let identity = ObjectIdentifier(try XCTUnwrap(button.image))
+        for round in 0..<500 {
+            autoreleasepool {
+                EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+                button.frame = NSRect(x: 0, y: 0, width: CGFloat(14 + round % 200), height: 22)
+                dot.attach(to: button)
+                _ = button.cell?.cellSize
+                button.display()
+            }
+        }
+        let after = try XCTUnwrap(button.image, "the image survives repeated renders")
+        XCTAssertEqual(ObjectIdentifier(after), identity, "an unchanged image keeps its identity")
+        XCTAssertEqual(after.size, NSSize(width: 16, height: 16))
+        XCTAssertTrue(after.isTemplate)
+    }
+
     func testV17ExpiredOnlyReadingLeavesAnIconWithoutRevocation() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-expiry-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let iso = ISO8601DateFormatter()
         var wall = try XCTUnwrap(iso.date(from: "2026-12-02T00:00:00Z"))
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let fixture = try Self.rows(weekly: 15, weeklyDeadline: "2026-12-02T00:01:00Z", includeSession: false)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
@@ -1398,7 +1480,7 @@ actor EntrySyntheticClient: EngineClient {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let iso = ISO8601DateFormatter()
         var wall = try XCTUnwrap(iso.date(from: "2026-12-02T00:00:00Z"))
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let fixture = try Self.rows(weekly: 15, fiveHour: 9, weeklyDeadline: "2026-12-02T00:01:00Z", accountFreshUntil: "2028-12-01T00:00:00Z")
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
@@ -1434,7 +1516,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalEntryKeepsLoadingAndFailureOutOfMenusWithoutAdmittedRows() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-first-open-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,

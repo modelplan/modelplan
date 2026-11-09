@@ -1,0 +1,155 @@
+# SPDX-License-Identifier: MIT
+# The small Linux checks that used to be four workflows (source-policy, third-party notices, CLI candidate pin
+# consistency, PR-open gate lint), as one job with named steps, so a PR event takes one runner instead of five.
+# Every step but the third-party notices runs on every event; that one runs when one of its inputs changed.
+# No step is skipped because of the event type: a later event (an edit, a label) cancels the run for the same
+# head, and the run that replaces it must still check that head, or a skipped run would count as green.
+name: repo checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # edited and labeled/unlabeled: the gate lint reads the PR body, the candidate pin check the labels and title.
+    types: [opened, synchronize, reopened, ready_for_review, edited, labeled, unlabeled]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+concurrency:
+  group: repo-checks-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      notices-mac: ${{ steps.scope.outputs.notices-mac }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge commit, as before; full history for the base script, the PR head and the CLI release tags.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scope (which inputs changed)
+        id: scope
+        run: |
+          set -eu
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            echo "notices=true" >> "$GITHUB_OUTPUT"; echo "notices-mac=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # A pull_request checkout is the merge commit, so its first parent is the base.
+          # -z keeps paths Git would otherwise quote, such as non-ASCII names.
+          # notices-mac: the Swift manifests the macOS leg evaluates.
+          if git diff --name-only -z HEAD^1 HEAD | grep -qzE '(^|/)Package\.(swift|resolved)$|^desktop/third-party/|^scripts/third-party-notices\.py$|^scripts/tests/test_third_party_notices\.py$|^\.github/workflows/repo-checks\.yml$'; then
+            echo "notices-mac=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "notices-mac=false" >> "$GITHUB_OUTPUT"
+          fi
+          # notices: everything scripts/third-party-notices.py reads (sources under desktop/, cli/ and clients/, the root
+          # go.work and go.work.sum that steer Go module resolution under cli/,
+          # Swift manifests anywhere, LICENSES/, the release targets in release.yml, the script and its tests).
+          if git diff --name-only -z HEAD^1 HEAD | grep -qzE '^(desktop|cli|clients|LICENSES)/|^go\.work(\.sum)?$|(^|/)Package\.(swift|resolved)$|^\.github/workflows/(release|repo-checks)\.yml$|^scripts/third-party-notices\.py$|^scripts/tests/test_third_party_notices\.py$'; then
+            echo "notices=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "notices=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        if: steps.scope.outputs.notices == 'true'
+        with:
+          go-version: '1.24'
+          cache-dependency-path: cli/go.sum
+
+      # Each check below runs even when an earlier one failed, so one run reports every failure.
+      - name: "source-policy: check-source-policy"
+        if: ${{ !cancelled() }}
+        run: node scripts/check-source-policy.mjs
+      - name: "source-policy: workflow policy tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/workflow-policy.test.mjs
+      - name: "source-policy: changelog tests and fragment check"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/changelog.test.mjs && node scripts/changelog.mjs --check
+      - name: "source-policy: plugin version tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/plugin-versions.test.mjs
+      - name: "source-policy: mac-scope tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/mac-scope.test.mjs
+      - name: "source-policy: merge-gates tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/merge-gates.test.mjs
+      - name: "source-policy: reader tests"
+        if: ${{ !cancelled() }}
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix reader && npm test --prefix reader
+
+      - name: "third-party notices: shipped coverage and generated notices"
+        if: ${{ !cancelled() && steps.scope.outputs.notices == 'true' }}
+        run: python3 scripts/third-party-notices.py
+      - name: "third-party notices: coverage regressions and missing-entry negative controls"
+        if: ${{ !cancelled() && steps.scope.outputs.notices == 'true' }}
+        run: |
+          mkdir -p .tmp/notices
+          TMPDIR="$GITHUB_WORKSPACE/.tmp/notices" python3 -m unittest discover -s scripts/tests -p test_third_party_notices.py -v
+          rm -rf .tmp/notices
+
+      # The candidate pin check judges the PR head itself, not the merge commit.
+      - name: "CLI candidate pin: check out the PR head"
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git worktree add -q --detach "$RUNNER_TEMP/pr-head" "$HEAD_SHA"
+      - name: "CLI candidate pin: test the candidate gate"
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        run: python3 -m unittest discover -s "$RUNNER_TEMP/pr-head/desktop/native/tools/distribution" -p test_cli_pin_consistency.py -v
+      - name: "CLI candidate pin: compare candidate or changed native pin to its release tag"
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        run: python3 "$RUNNER_TEMP/pr-head/desktop/native/tools/distribution/check_cli_pin_consistency.py" --repo "$RUNNER_TEMP/pr-head" --event "$GITHUB_EVENT_PATH"
+
+      - name: "PR-open gate lint: test lint rules"
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        run: python3 -m unittest discover -s scripts/tests -p test_pr_open_gate_lint.py -v
+      - name: "PR-open gate lint: warn on missing design IDs or unlisted staging"
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git show "$BASE_SHA:scripts/pr_open_gate_lint.py" > "$RUNNER_TEMP/pr_open_gate_lint.py" 2>/dev/null; then
+            python3 "$RUNNER_TEMP/pr_open_gate_lint.py"
+          else
+            echo '::warning::PR-open lint is not yet present on the base branch; verify design IDs and #470 staging manually.'
+          fi
+
+  # The third-party notices macOS leg evaluates the Swift manifests. Ready PRs run it only when a manifest or
+  # the notices inputs changed; main pushes and manual runs always do.
+  notices-macos:
+    needs: checks
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'pull_request' || needs.checks.outputs.notices-mac == 'true') }}
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: cli/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: "third-party notices: shipped coverage, generated notices and Swift manifests"
+        run: python3 scripts/third-party-notices.py --swift-manifests
+      - name: "third-party notices: coverage regressions and missing-entry negative controls"
+        run: |
+          mkdir -p .tmp/notices
+          TMPDIR="$GITHUB_WORKSPACE/.tmp/notices" python3 -m unittest discover -s scripts/tests -p test_third_party_notices.py -v
+          rm -rf .tmp/notices

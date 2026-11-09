@@ -133,6 +133,7 @@ import XCTest
             visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
         var pointer = CGPoint(x: 700, y: 450), elapsed = 0.0
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        _ = try await settings.update { $0.autoHide = false } // D56: a fresh profile starts collapsed; these journeys open a card on the expanded widget
         func makeApplication(offline: Bool = false) async -> EngineDockMenuApplication {
             let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-runtime-card",
                 allowedEnvironment: environment, offline: offline), settingsStore: settings, createsNativePanels: false,
@@ -289,6 +290,7 @@ import XCTest
         XCTAssertEqual(directWindow["remainingPercent"] as? Double, Double(initialRemaining))
 
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        _ = try await settings.update { $0.autoHide = false } // D56: a fresh profile starts collapsed; these journeys open a card on the expanded widget
         var pointer = CGPoint(x: 700, y: 450), elapsed = 0.0
         let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-local-card",
             allowedEnvironment: environment, readOnly: true), settingsStore: settings, createsNativePanels: false,
