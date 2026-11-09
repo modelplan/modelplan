@@ -517,7 +517,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			if x.Provider == "cursor" {
 				basis = "cursor-auth"
 			}
-			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding(basis)})
+			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding(basis), ReportedModels: e.ReportedModels})
 		}
 		r.Sources = append(r.Sources, st)
 	}

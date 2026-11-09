@@ -42,7 +42,7 @@ func fetchCopilot(ctx context.Context, _ *http.Client, _, _ string, now time.Tim
 		e.ErrorCode = "runtime_missing"
 		return e
 	}
-	raw, err := askCopilot(ctx, bin)
+	raw, models, err := askCopilotModels(ctx, bin)
 	if err != nil {
 		e.Error = err.Error()
 		e.ErrorCode = errorCode(err)
@@ -57,41 +57,60 @@ func fetchCopilot(ctx context.Context, _ *http.Client, _, _ string, now time.Tim
 		}
 		return e
 	}
-	return parseCopilot(raw, now)
+	e = parseCopilot(raw, now)
+	if e.Status == "ok" {
+		e.ReportedModels = models
+	}
+	return e
 }
 
 func askCopilot(ctx context.Context, bin string) (json.RawMessage, error) {
+	raw, _, err := askCopilotModels(ctx, bin)
+	return raw, err
+}
+
+// askCopilotModels runs the quota read and, after it succeeds, the one extra D99 call (models.list) on the same
+// headless process.
+func askCopilotModels(ctx context.Context, bin string) (json.RawMessage, []string, error) {
 	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
 	cmd, err := toolcli.CommandContext(ctx, bin, "--headless", "--no-auto-update", "--stdio")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	cmd.Stderr = io.Discard
 	cmd.Env = copilotEnvironment(os.Environ())
 	cmd.WaitDelay = time.Second
 	in, err := cmd.StdinPipe()
 	if err != nil {
-		return nil, errors.New("Copilot input unavailable")
+		return nil, nil, errors.New("Copilot input unavailable")
 	}
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, errors.New("Copilot output unavailable")
+		return nil, nil, errors.New("Copilot output unavailable")
 	}
 	if cmd.Start() != nil {
-		return nil, &copilotRPCError{"not_detected"}
+		return nil, nil, &copilotRPCError{"not_detected"}
 	}
 	defer func() { _ = in.Close(); _ = out.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
-	raw, err := copilotQuotaRPC(out, in)
+	raw, models, err := copilotRPC(out, in, true)
 	if ctx.Err() != nil {
-		return nil, codeError("timeout", "Copilot quota read timed out")
+		return nil, nil, codeError("timeout", "Copilot quota read timed out")
 	}
-	return raw, err
+	return raw, models, err
 }
 
 // Copilot uses Content-Length frames, not newline-delimited JSON. The allowlist here is
 // deliberately tiny: the protocol handshake (or legacy ping), then account.getQuota.
 func copilotQuotaRPC(out io.Reader, in io.Writer) (json.RawMessage, error) {
+	raw, _, err := copilotRPC(out, in, false)
+	return raw, err
+}
+
+// copilotRPC is copilotQuotaRPC plus, when withModels is set, the single D99 addition to the allowlist:
+// models.list, asked only after account.getQuota answered, capped at 3 s, slugs only. Its failure, timeout
+// or malformed reply gives no models and never fails the quota read.
+func copilotRPC(out io.Reader, in io.Writer, withModels bool) (json.RawMessage, []string, error) {
 	r := bufio.NewReader(io.LimitReader(out, 4*nativeMaxBody))
 	call := func(id int, method string) (json.RawMessage, int, error) {
 		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": map[string]any{}})
@@ -138,33 +157,50 @@ func copilotQuotaRPC(out io.Reader, in io.Writer) (json.RawMessage, error) {
 		handshake, _, err = call(2, "ping")
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var protocol struct {
 		Version int `json:"protocolVersion"`
 	}
 	if json.Unmarshal(handshake, &protocol) != nil || protocol.Version != 3 {
-		return nil, errors.New("unsupported Copilot runtime protocol (expected 3)")
+		return nil, nil, errors.New("unsupported Copilot runtime protocol (expected 3)")
 	}
 	auth, _, err := call(3, "auth.getStatus")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var status struct {
 		Authenticated bool   `json:"isAuthenticated"`
 		Type          string `json:"authType"`
 	}
 	if json.Unmarshal(auth, &status) != nil {
-		return nil, &copilotRPCError{"upstream_changed"}
+		return nil, nil, &copilotRPCError{"upstream_changed"}
 	}
 	if !status.Authenticated {
-		return nil, &copilotRPCError{"expired_login"}
+		return nil, nil, &copilotRPCError{"expired_login"}
 	}
 	if status.Type != "user" {
-		return nil, &copilotRPCError{"not_supported_yet"}
+		return nil, nil, &copilotRPCError{"not_supported_yet"}
 	}
 	raw, _, err := call(4, "account.getQuota")
-	return raw, err
+	if err != nil || !withModels {
+		return raw, nil, err
+	}
+	done := make(chan []string, 1)
+	go func() {
+		list, _, err := call(5, "models.list")
+		if err != nil {
+			done <- nil
+			return
+		}
+		done <- reportedModelIDs(list)
+	}()
+	select {
+	case models := <-done:
+		return raw, models, nil
+	case <-time.After(reportedModelsTimeout):
+		return raw, nil, nil
+	}
 }
 
 func readCopilotFrame(r *bufio.Reader) ([]byte, error) {

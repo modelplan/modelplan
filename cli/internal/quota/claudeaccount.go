@@ -215,7 +215,8 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		return out
 	}
 	a := &Account{Source: "claude-code", Plan: meta.Plan, Via: "native", ObservedAt: r.Now.UTC(), Windows: windows, Subscription: binding}
-	entry := readerEntry{Status: "ok", Account: a, Metadata: meta}
+	// D99: the model access Claude Code itself cached locally; only that field, read-only, no extra request.
+	entry := readerEntry{Status: "ok", Account: a, Metadata: meta, ReportedModels: claudeModelAccess(r.Profile.AccountFile)}
 	if len(windows) == 0 {
 		entry.Notice = "This plan does not publish quota windows"
 	}

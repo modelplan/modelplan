@@ -45,6 +45,9 @@ The reference links above are source-reported behavior/pitfalls, not new inciden
 | Key, China | GET | api.kimi.com | /coding/v1/usages | Accept, Authorization, User-Agent |
 | Key, international | GET | api.kimi.ai | /coding/v1/usages | Accept, Authorization, User-Agent |
 | Saved login, China only | GET | api.kimi.com | /coding/v1/usages | Accept, Authorization, User-Agent, X-Msh-Platform, X-Msh-Version, X-Msh-Device-Id, X-Msh-Device-Name, X-Msh-Device-Model, X-Msh-Os-Version |
+| Saved login models (D99, after usage succeeded) | GET | api.kimi.com | /coding/v1/models | Same as the saved-login usage request |
+
+The model list is read on the saved-login route only: slugs only, best effort, 3 seconds, never affects the quota read.
 
 All listed URLs use HTTPS. GET bodies are empty. URL queries are forbidden. Header **values are intentionally absent**. Transport-managed names such as `Host` and `Accept-Encoding` may be added below the application guard; ambient cookies, changed authorities/ports, unlisted application headers, extra stages and redirect following are refused.
 

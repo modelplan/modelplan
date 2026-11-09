@@ -317,7 +317,9 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 	if a.SharedPool != nil {
 		notice = "Shared-pool link unverified"
 	}
-	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Notice: notice, Metadata: readerMetadata{CredentialKey: credentialKey, AccountKey: accountKey, VerifiedAt: r.Now.UTC(), Plan: a.Plan}}}
+	// D99: the session-scoped model list on the same host with the same headers; best effort, 3 s.
+	reported := reportedModelsGET(ctx, c, grokHost+"/v1/models", grokHeaders(auth))
+	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Notice: notice, ReportedModels: reported, Metadata: readerMetadata{CredentialKey: credentialKey, AccountKey: accountKey, VerifiedAt: r.Now.UTC(), Plan: a.Plan}}}
 }
 
 type grokCent struct {
@@ -460,18 +462,27 @@ func parseGrokBilling(b grokBilling, now time.Time) (*Account, bool) {
 	return a, len(a.Windows) > 0 || a.Credits != nil || (cfg.Percent != nil && reset != nil)
 }
 
+// grokHeaders are the reader's own headers, shared by the billing call and the D99 model list.
+func grokHeaders(auth grokAuth) map[string]string {
+	return map[string]string{
+		"Authorization":         "Bearer " + auth.Key,
+		"X-XAI-Token-Auth":      "xai-grok-cli",
+		"x-userid":              auth.User,
+		"x-grok-client-version": "0.0.0-modelplan-native-beta",
+		"x-grok-client-mode":    "headless",
+		"User-Agent":            "modelplan",
+		"Accept":                "application/json",
+	}
+}
+
 func grokBillingGet(ctx context.Context, c *http.Client, auth grokAuth, out any, now time.Time) (string, time.Time, string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, grokHost+"/v1/billing?format=credits", nil)
 	if err != nil {
 		return "unavailable", time.Time{}, "other"
 	}
-	req.Header.Set("Authorization", "Bearer "+auth.Key)
-	req.Header.Set("X-XAI-Token-Auth", "xai-grok-cli")
-	req.Header.Set("x-userid", auth.User)
-	req.Header.Set("x-grok-client-version", "0.0.0-modelplan-native-beta")
-	req.Header.Set("x-grok-client-mode", "headless")
-	req.Header.Set("User-Agent", "modelplan")
-	req.Header.Set("Accept", "application/json")
+	for k, v := range grokHeaders(auth) {
+		req.Header.Set(k, v)
+	}
 	client := *c
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

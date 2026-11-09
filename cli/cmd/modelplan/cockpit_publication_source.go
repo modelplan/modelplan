@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"math"
+	"strings"
 	"time"
 	"unicode"
 
@@ -200,6 +201,11 @@ func cockpitPlanModels(d *digest.Digest, published []wire.CockpitPublicationMode
 	}
 	return out
 }
+
+// reportedHarnessKey is the tool key a reported model id is mapped under in the published harnessIds: the
+// account source without its native reader prefix (codex, claude-code, gemini, antigravity, grok, copilot,
+// kimi).
+func reportedHarnessKey(source string) string { return strings.TrimPrefix(source, "native:") }
 
 // reportedPublishedModels maps the native model ids a tool reported (Codex model/list) to published model
 // ids through the published harnessIds for that tool, keeping only published models. An id with no alias is

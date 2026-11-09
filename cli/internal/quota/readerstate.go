@@ -91,6 +91,8 @@ type readerEntry struct {
 	Status              string         `json:"status"`
 	Notice              string         `json:"notice,omitempty"`
 	NextStep            string         `json:"nextStep,omitempty"`
+	// ReportedModels (D99): model slugs the tool lists for this account, read with the quota read; slugs only.
+	ReportedModels []string `json:"reportedModels,omitempty"`
 }
 type readerState struct {
 	// Kept separately so reserving an attempt does not change legacy Sources
@@ -723,6 +725,7 @@ func applyManaged(r *Report, p Paths, provider string, now time.Time) {
 		if e.Account != nil && captureAllowed(p, provider, e.Admission, false) {
 			a := *e.Account
 			a.Beta = true
+			a.ReportedModels = append([]string(nil), e.ReportedModels...)
 			a.Windows = append([]Window(nil), a.Windows...)
 			// Old cached records do not say whether a window was scoped. Preserve
 			// its value on the legacy report path, but never label it plan-wide.

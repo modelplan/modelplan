@@ -124,3 +124,35 @@ func TestAdmissionConcurrentRequestsCannotPassAuthorizationStop(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// D99: the model list is the one extra request on the Grok Build and Kimi saved-login routes: same host, after
+// the usage request, once, no query, no other path.
+func TestAdmissionModelListIsTheOnlyExtraRequest(t *testing.T) {
+	for _, tc := range []struct {
+		scope, host, usage, models string
+	}{
+		{consent.ScopeGrokAccountUsageSavedLogin, "cli-chat-proxy.grok.com", "/v1/billing?format=credits", "/v1/models"},
+		{consent.ScopeKimiAccountUsageSavedLogin, "api.kimi.com", "/coding/v1/usages", "/coding/v1/models"},
+	} {
+		record := readertest.NewTransport(readertest.Response{StatusCode: 200}, readertest.Response{StatusCode: 200})
+		client := &http.Client{Transport: readers.NewReadTransport(tc.scope, record)}
+		base := "https://" + tc.host
+		for _, bad := range []string{base + tc.models + "?x=1", base + tc.models + "/extra", "https://other.example" + tc.models, base + "/v1/chat/completions"} {
+			if err := send(client, "GET", bad); !errors.Is(err, readers.ErrRequestNotAllowed) {
+				t.Fatalf("%s: unlisted request accepted: %s: %v", tc.scope, bad, err)
+			}
+		}
+		if err := send(client, "GET", base+tc.usage); err != nil {
+			t.Fatal(err)
+		}
+		if err := send(client, "GET", base+tc.usage); !errors.Is(err, readers.ErrRequestNotAllowed) {
+			t.Fatalf("%s: the usage request repeated: %v", tc.scope, err)
+		}
+		if err := send(client, "GET", base+tc.models); err != nil {
+			t.Fatal(err)
+		}
+		if err := send(client, "GET", base+tc.models); !errors.Is(err, readers.ErrReadExhausted) {
+			t.Fatalf("%s: a third request allowed: %v", tc.scope, err)
+		}
+	}
+}

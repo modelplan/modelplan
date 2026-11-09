@@ -264,6 +264,11 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Gemini sign-in changed during the read; refresh required"}, Invalidate: true}
 	}
 	a := &Account{Source: "native:gemini", Via: "native", Plan: meta.Plan, ObservedAt: r.Now.UTC(), Windows: windows, Credits: wallet}
+	// D99: the modelIds of the quota buckets just parsed, the tool's own access signal; no extra request.
+	var bucketModels []string
+	for _, b := range quota.Buckets {
+		bucketModels = append(bucketModels, b.Model)
+	}
 	if subject := geminiSubject(credential.IDToken, r.Now); subject != "" {
 		meta.AccountKey = readerHash(r.Paths.Cache, "gemini:account", subject)
 		if !IdentityOff() {
@@ -274,7 +279,7 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 	}
 	// Publish transient metadata only with a complete consistent reading.
 	geminiRemember(projectCacheKey, project, r.Now)
-	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta}}
+	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta, ReportedModels: cleanReportedModels(bucketModels)}}
 }
 
 type geminiAvailableCredit struct {

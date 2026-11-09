@@ -82,7 +82,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			continue
 		}
 		if len(account.ReportedModels) > 0 && len(result.PublishedModels) > 0 {
-			out.ReportedModels = reportedPublishedModels(published, account.Source, account.ReportedModels, result.PublishedModels)
+			out.ReportedModels = reportedPublishedModels(published, reportedHarnessKey(account.Source), account.ReportedModels, result.PublishedModels)
 		}
 		for _, card := range account.Cards {
 			if card.ExpiresAt != nil && !now.Before(*card.ExpiresAt) {

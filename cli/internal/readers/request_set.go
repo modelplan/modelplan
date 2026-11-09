@@ -49,15 +49,33 @@ func requestSet(scope string, r *http.Request) (requestPin, bool) {
 	case consent.ScopeKimiAccountUsageAPIKey:
 		valid = (host == "api.kimi.com" || host == "api.kimi.ai") && path == "/coding/v1/usages"
 	case consent.ScopeKimiAccountUsageSavedLogin:
-		valid = host == "api.kimi.com" && path == "/coding/v1/usages"
+		// D99: the usage call, then the model list on the same host with the same headers (stage 1).
+		p.limit = 2
+		valid = host == "api.kimi.com"
+		switch path {
+		case "/coding/v1/usages":
+		case "/coding/v1/models":
+			p.stage = 1
+		default:
+			valid = false
+		}
 		p.headers = append(p.headers, "X-Msh-Platform", "X-Msh-Version", "X-Msh-Device-Id", "X-Msh-Device-Name", "X-Msh-Device-Model", "X-Msh-Os-Version")
 	case consent.ScopeZaiAccountUsageAPIKey:
 		valid = (host == "api.z.ai" || host == "open.bigmodel.cn") && path == "/api/monitor/usage/quota/limit"
 	case consent.ScopeOpenCodeGoAccountUsageAPIKey:
 		valid = host == "opencode.ai" && path == "/zen/go/v1/usage"
 	case consent.ScopeGrokAccountUsageSavedLogin:
-		valid = host == "cli-chat-proxy.grok.com" && path == "/v1/billing"
-		query = "format=credits"
+		// D99: the billing call, then the model list on the same host with the same headers (stage 1).
+		p.limit = 2
+		valid = host == "cli-chat-proxy.grok.com"
+		switch path {
+		case "/v1/billing":
+			query = "format=credits"
+		case "/v1/models":
+			p.stage = 1
+		default:
+			valid = false
+		}
 		p.headers = append(p.headers, "X-Xai-Token-Auth", "X-Userid", "X-Grok-Client-Version", "X-Grok-Client-Mode")
 	case consent.ScopeGeminiAccountUsageSavedLogin:
 		p.limit, method = 2, http.MethodPost

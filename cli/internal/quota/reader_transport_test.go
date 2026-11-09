@@ -227,6 +227,11 @@ func TestProductionReaderClientsEnforceReadBoundary(t *testing.T) {
 				if status == 307 {
 					expected = readers.ErrRequestNotAllowed
 				}
+				// D99: these two routes allow a model list after the usage request, so a repeated usage
+				// request is refused by the stage order, not by the budget.
+				if status == 200 && (provider == "grok" || provider == "kimi-login") {
+					expected = readers.ErrRequestNotAllowed
+				}
 				if provider == "minimax" && status == 200 {
 					endpoint = "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
 				}

@@ -95,3 +95,5 @@ Existing test references are pinned to the reviewed implementation, not new exec
 - File/HTTP fixtures do not prove app identity, OS prompt suppression, native time-unknown rendering, live vendor behavior or owner-shaped L2.
 - Per-read HTTP auth-stop recording does not establish a persisted cross-read scope latch. Later scheduled reads remain possible after backoff; this is a standard-completion gap.
 - Public source/reference behavior is not a guarantee of server-side no-write/no-charge effects. Catalogue enablement requires the card’s red lines and L2; creating this document supplies neither permission nor a pass.
+
+D99: the models Claude Code itself cached are reported from the local `modelAccessCache` field of `~/.claude.json` (entitled `apiName` slugs only; read-only, no other field decoded, nothing logged). No endpoint is called for this; the undocumented bootstrap endpoint is not used.
