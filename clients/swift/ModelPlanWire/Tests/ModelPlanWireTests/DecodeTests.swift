@@ -93,7 +93,7 @@ final class DecodeTests: XCTestCase {
     func testEveryRealGoCaptureUsesGeneratedProductionDecoder() throws {
         let catalog = try index()
         XCTAssertEqual(catalog.version, 1)
-        XCTAssertEqual(catalog.cases.count, 90)
+        XCTAssertEqual(catalog.cases.count, 92)
         for entry in catalog.cases {
             XCTAssertNoThrow(try decodeCapture(entry.type, data(entry.file)), entry.type)
             var future = try object(entry.file)
