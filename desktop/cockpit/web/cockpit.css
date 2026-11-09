@@ -122,3 +122,14 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 .mfd-tip.eng-hint{position:fixed;z-index:40}
 /* The comparison title never gives way to its note or links (current unknown made it "Compare …"). */
 .dk-mfd .cmp-h .mfd-title{flex:none}.dk-mfd .cmp-h .cmp-note{min-width:0;overflow:hidden;text-overflow:ellipsis}.dk-mfd .cmp-header-links{min-width:0;overflow:hidden}
+
+/* CKP-ENG-25 (owner D37): wide columns for one to three subscriptions add a 7-day history and a reset timeline in the
+   right half of each column; the table keeps the left 52%. Ported from the study's engine-few-paging engine.css. */
+.ck-eng .few-rich .ec>:is(.qcell,.qrow){width:52%;box-sizing:border-box}
+.ck-eng .eng-detail{position:absolute;left:56%;right:7px;top:8px;bottom:8px;display:flex;flex-direction:column;justify-content:space-evenly;gap:10px;pointer-events:none;font:400 11px/13px var(--f-lcd);color:var(--lcd-muted)}
+.ck-eng .eng-detail svg{display:block;width:100%;height:34px;margin-top:5px;overflow:visible;fill:none;stroke:var(--lcd-ink);stroke-width:1;vector-effect:non-scaling-stroke}
+.ck-eng .eng-detail .eng-track{stroke:var(--lcd-rule)}
+.ck-eng .eng-reset svg{height:12px;margin-top:3px}
+.ck-eng .eng-endpoints{display:flex;justify-content:space-between;gap:4px;white-space:nowrap}
+.ck-eng .eng-detail .eng-runout{stroke:var(--st-mid)}
+.ck-eng .eng-runout-label{display:block;margin-top:4px;color:var(--st-mid)}
