@@ -111,7 +111,8 @@ func TestMemberRefreshUsesPersistedFloor(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	data, _ := json.Marshal(map[string]any{"schemaVersion": 1, "observedAt": now, "status": "ok"})
+	granted, _ := consent.Current()
+	data, _ := json.Marshal(map[string]any{"schemaVersion": 1, "observedAt": now, "status": "ok", "admission": granted.CaptureStamp(consent.ScopeCodexRuntimeUsage)})
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +149,8 @@ func TestMemberRefreshPreservesPersistedBackoff(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	data, _ := json.Marshal(map[string]any{"schemaVersion": 1, "observedAt": now, "status": "error"})
+	granted, _ := consent.Current()
+	data, _ := json.Marshal(map[string]any{"schemaVersion": 1, "observedAt": now, "status": "error", "admission": granted.CaptureStamp(consent.ScopeCodexRuntimeUsage)})
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}

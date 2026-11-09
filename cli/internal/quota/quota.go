@@ -76,6 +76,8 @@ type Window struct {
 	ElapsedPercent   *float64 `json:"elapsedPercent"`   // share of the window already elapsed
 	ProjectedPercent *float64 `json:"projectedPercent"` // share used at reset if the current pace holds
 	AgeMinutes       *int     `json:"ageMinutes"`
+	// Stale: this window's reading is older than ObservationFreshness; do not report it as current.
+	Stale bool `json:"stale,omitempty"`
 	// RecentPercentPerHour: how fast the window filled over the last readings (up to 45 minutes,
 	// at least 10), in percentage points per hour; nil without enough fresh readings.
 	RecentPercentPerHour *float64 `json:"recentPercentPerHour"`
@@ -183,6 +185,8 @@ type Account struct {
 	Generation string           `json:"generation,omitempty"` // user: the plan's metering generation, as declared
 	ObservedAt time.Time        `json:"observedAt"`
 	Stale      bool             `json:"stale"`
+	// retained: the newest reading is one kept after a failed refresh; stale until a refresh succeeds.
+	retained   bool
 	Harness    *Harness         `json:"harness,omitempty"`
 	Windows    []Window         `json:"windows"`
 	Cards      []Card           `json:"cards,omitempty"`
@@ -283,7 +287,9 @@ type Report struct {
 	EvaluatedAt       time.Time      `json:"evaluatedAt"`
 	Accounts          []Account      `json:"accounts"`
 	Sources           []SourceStatus `json:"sources"`
-	Note              string         `json:"note"`
+	// Refresh: what `quota --refresh-account` did, so old figures never pass for a fresh reading.
+	Refresh *AccountRefresh `json:"refresh,omitempty"`
+	Note    string          `json:"note"`
 }
 
 const note = "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
@@ -333,7 +339,7 @@ func Read(p Paths, now time.Time) Report {
 
 // Evaluate fills the derived fields and the account's headroom.
 func Evaluate(a *Account, now time.Time) {
-	a.Stale = !a.ObservedAt.IsZero() && now.Sub(a.ObservedAt) > staleAfter
+	a.Stale = a.retained || !a.ObservedAt.IsZero() && now.Sub(a.ObservedAt) > staleAfter
 	for i := range a.Windows {
 		a.Windows[i].evalRequests(now)
 		evalWindow(&a.Windows[i], now)
@@ -411,6 +417,7 @@ func evalWindow(w *Window, now time.Time) {
 		age := int(math.Max(0, now.Sub(w.ObservedAt).Minutes()))
 		w.AgeMinutes = &age
 	}
+	w.Stale = !w.ObservedAt.IsZero() && now.Sub(w.ObservedAt) > staleAfter
 	if w.WindowMinutes == 0 {
 		w.WindowMinutes = defaultMinutes[w.Kind]
 	}

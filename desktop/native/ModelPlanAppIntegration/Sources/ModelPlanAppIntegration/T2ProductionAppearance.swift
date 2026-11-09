@@ -53,7 +53,7 @@ import ModelPlanSettings
             // the resulting local geometry at the saved anchor.
             // The top edge mirrors the bottom-edge layout (A-1106-4): the ignition sits at the same end.
             let input = T2GeometryInput(coordinates: coords, diameter: preferences.size.nozzleDiameter,
-                showsPercentages: preferences.showPercentages, ignitionAtEnd: !vertical, centresRings: view.centresRings)
+                showsPercentages: preferences.showPercentages, ignitionAtEnd: !vertical)
             let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
             let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages,
                                           zaiMarkEnabled: view.zaiMarkEnabled)
@@ -129,11 +129,11 @@ import ModelPlanSettings
             let start = horizontal ? hull.minX:hull.minY, length = horizontal ? hull.width:hull.height
             for station in geometry.stations {
                 let centre = horizontal ? station.centre.x-skin.bounds.minX : station.centre.y-skin.bounds.minY
-                let from = max(0,min(1,Double((centre-station.pitch/2-start)/length)))
-                let through = max(0,min(1,Double((centre+station.pitch/2-start)/length)))
+                let lower = Double((centre-station.pitch/2-start)/length), upper = Double((centre+station.pitch/2-start)/length)
+                let from = max(0,min(1,lower)), through = max(0,min(1,upper))
                 guard from < through else { continue }
                 let members = station.subscription.map { [$0.id] } ?? (station.isOverflow ? geometry.overflow.map(\.id):[])
-                for id in members { result.quotaPitchRanges[id]=from...through }
+                for id in members { result.quotaPitchRanges[id]=from...through; result.quotaPitchSpans[id]=lower...upper }
             }
         }
         return result

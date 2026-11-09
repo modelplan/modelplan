@@ -282,15 +282,17 @@ private actor P1SyntheticEngine: EngineClient {
             let freeDepth = d + 24 * unit
             XCTAssertGreaterThanOrEqual(face.width, freeDepth - 0.5, "\(size) face depth")
             XCTAssertLessThanOrEqual(face.width, freeDepth + 8 * unit + 1.5, "\(size) face depth")
-            // Rings: the first ring's outer edge sits 14 x D/52 from the screen edge (arc adds at most 8 x D/52).
+            // Rings, D48 (owner): each ring sits halfway across the face, so its centre is
+            // (prototype depth + 36 x D/52) / 2 from the screen edge. The prototype's 14..22 x D/52
+            // edge gap becomes 12..16 x D/52 (first ring 12, the 8 x D/52 arc sagitta halved).
             let view = host.dockView
             let ids = host.interactionEnvironment().catalogue
             XCTAssertFalse(ids.isEmpty)
             for id in ids {
                 guard let ring = view.interactionAnchor(id) else { continue }
                 let gap = view.bounds.maxX - ring.maxX
-                XCTAssertGreaterThanOrEqual(gap, 14 * unit - 0.75, "\(size) \(id) ring to screen edge")
-                XCTAssertLessThanOrEqual(gap, 22 * unit + 0.75, "\(size) \(id) ring to screen edge")
+                XCTAssertGreaterThanOrEqual(gap, 12 * unit - 0.75, "\(size) \(id) ring to screen edge (D48)")
+                XCTAssertLessThanOrEqual(gap, 16 * unit + 0.75, "\(size) \(id) ring to screen edge (D48)")
             }
             // The resting raster is opaque in its edge-most column at a station: nothing transparent
             // (strip, wake band) separates the face from the screen edge.
@@ -310,6 +312,8 @@ private actor P1SyntheticEngine: EngineClient {
     }
 
     /// G3-30: ring centres sit across the face depth exactly where the prototype puts them.
+    /// D48 (owner, 2026-11-07) moved each ring to the middle of the face; the oracle stays the
+    /// prototype's and the assertions apply the D48 rule to it.
     /// Oracle values come from the prototype's geometry.js (right edge, percentages on), not from
     /// the native port: ring centre to the screen edge per station, and ring centre to the face's
     /// inner edge = (D/2 + 3s + 7s + D/2 + 14s) - (D/2 + 14s) = D/2 + 10s = 36 x D/52.
@@ -396,8 +400,11 @@ private actor P1SyntheticEngine: EngineClient {
                     let innerEdge = skin.bounds.minX + CGFloat(x + 1) / pixels
                     let inward = station.centre.x - innerEdge
                     report.append("\(label) ring\(index) diameter \(station.diameter) centre-to-screen-edge \(depth) centre-to-inner-edge \(inward) y \(station.centre.y) pitch-prev \(index > 0 ? station.centre.y - stations[index - 1].centre.y : 0)")
-                    XCTAssertEqual(depth, expected[index], accuracy: 0.5, "\(label) ring \(index): centre to screen edge (prototype \(expected[index]))")
-                    XCTAssertEqual(inward, 36 * unit, accuracy: 1.0, "\(label) ring \(index): centre to the face's inner edge")
+                    // D48 (owner): the ring sits halfway across the face. The prototype's face there is
+                    // its ring depth plus 36 x D/52 deep, so both distances become half of that.
+                    let centred = (expected[index] + 36 * unit) / 2
+                    XCTAssertEqual(depth, centred, accuracy: 0.5, "\(label) ring \(index): centre to screen edge (D48 \(centred); prototype \(expected[index]))")
+                    XCTAssertEqual(inward, centred, accuracy: 1.0, "\(label) ring \(index): centre to the face's inner edge (D48)")
                     // The card measures its gap from the painted clock ring (prototype card.js:154-163).
                     let cardRing = try XCTUnwrap(view.cardRingAnchor(try XCTUnwrap(station.subscriptionID)))
                     XCTAssertEqual(cardRing.width, 2 * (26 + 2.2 + 0.75) * unit, accuracy: 0.05, "\(label) card ring")
@@ -446,9 +453,10 @@ private actor P1SyntheticEngine: EngineClient {
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
         let fresh = await store.snapshot().preferences
-        XCTAssertTrue(fresh.showDock); XCTAssertFalse(fresh.autoHide, "Fresh Dock must stay visible until the user opts into hiding")
+        XCTAssertTrue(fresh.showDock); XCTAssertTrue(fresh.autoHide, "D56: a fresh install starts collapsed")
         XCTAssertEqual(fresh.dockEdge, .right); XCTAssertNil(fresh.dockDisplayID)
-        _ = try await store.update { p in for _ in 0..<16 { p.onboarding.next() } }
+        // The rest of this journey starts from a saved "off", which D56 keeps as it is.
+        _ = try await store.update { p in for _ in 0..<16 { p.onboarding.next() }; p.autoHide = false }
         let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
         let entry = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
             dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
@@ -785,34 +793,17 @@ extension P1ExactPlacementTests {
         try await settled("the readout returns") { view.presentedTextMetricsForChecks.contains { $0.text == "20%" } }
     }
 
-    /// Owner test option: a release build neither shows nor applies ring centring; an owner test
-    /// build moves the ring and its percent at once, and back, with no relaunch.
-    func testRingCentringIsAnOwnerTestOptionOnly() async throws {
+    /// D48: the ring is centred in the face by default, with no option. At L the face is 76 pt
+    /// deep at the first ring, so the ring sits 38 pt from the screen edge (the prototype: 40),
+    /// and a stored value of the removed owner test option changes nothing.
+    func testRingSitsHalfwayAcrossTheFaceByDefault() async throws {
+        UserDefaults.standard.set(false, forKey: "ModelPlanOwnerTestRingsCentred")
         addTeardownBlock { UserDefaults.standard.removeObject(forKey: "ModelPlanOwnerTestRingsCentred") }
         let rows = try synthetic([Station(id: "ring", vendorKey: "openai", name: "Codex", accounts: 1, remaining: 76)])
         let (app, view) = try await launch(rows, size: .large, percentages: true, stations: 1, tag: "centring")
-        func station() throws -> DockStationRecipe { try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID != nil }) }
-        func settled(_ what: String, _ predicate: () -> Bool) async throws {
-            for _ in 0..<300 where !predicate() { try await Task.sleep(for: .milliseconds(10)) }
-            XCTAssertTrue(predicate(), what)
-        }
-        let prototype = try station().centre.x, readout = try station().readout.midX
-        XCTAssertFalse(app.ownerTestOptions, "this test bundle is not a sealed owner-test package")
-        XCTAssertNil(app.ownerTestRingItem(.english), "a release build does not show the option")
-        app.setRingsCentred(true)
-        XCTAssertFalse(app.composition.dock.ringsCentred, "a release build does not apply the option")
-        XCTAssertEqual(try station().centre.x, prototype)
-        app.ownerTestOptions = true
-        let item = try XCTUnwrap(app.ownerTestRingItem(.chinese))
-        XCTAssertEqual(item.title, "测试选项：额度圈居中"); XCTAssertEqual(item.checked, false)
-        item.action?()
-        try await settled("the ring moves") { (try? station().centre.x) != prototype }
-        // L: 40 from the screen edge at the first ring, 36 from the inner edge, so 2 pt towards the edge.
-        XCTAssertEqual(try station().centre.x - prototype, 2, accuracy: 0.01)
-        XCTAssertEqual(try station().readout.midX - readout, 2, accuracy: 0.01, "the percent moves with the ring")
-        XCTAssertEqual(app.ownerTestRingItem(.chinese)?.checked, true)
-        app.setRingsCentred(false)
-        try await settled("the ring returns") { (try? station().centre.x) == prototype }
+        let skin = try XCTUnwrap(view.presentedSkinForChecks)
+        let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID != nil })
+        XCTAssertEqual(skin.bounds.maxX - station.centre.x, 38, accuracy: 0.01)
         await app.stopLifecycle(); app.composition.dock.close()
     }
 

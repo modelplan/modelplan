@@ -106,24 +106,26 @@ public struct DockInstrumentReading: Sendable {
 
 /// Truth/identity projection only. Fixed artwork/ring geometry belongs to the injected appearance source.
 public enum DockInstrumentProjection {
+    /// The one rule for whether a window's number may be shown now: every surface reads it through here.
+    public static func admittedRemaining(_ w: DockQuotaWindowInput, in input: DockInstrumentInput, now: Date) -> Double? {
+        switch w.validity {
+        case .inheritAggregate:
+            guard input.dataState == .fresh else { return nil }
+        case .verifiedCurrent(let deadline):
+            // An unavailable/loading source cannot be revived by a window flag.
+            guard input.dataState == .fresh || input.dataState == .stale,
+                  deadline.timeIntervalSinceReferenceDate.isFinite, now < deadline else { return nil }
+        case .unavailable:
+            return nil
+        }
+        guard w.resetsAt.map({$0 > now}) ?? true,
+              let r=w.remainingPercent, r.isFinite, (0...100).contains(r) else {return nil}
+        return r
+    }
     public static func evaluate(_ input: DockInstrumentInput, now: Date, redBelow: Double = 25) throws -> DockInstrumentReading {
         guard !input.id.isEmpty, input.windows.allSatisfy({!$0.id.isEmpty}), Set(input.windows.map(\.id)).count==input.windows.count else {throw DockLogicError.invalidCatalogue}
         guard now.timeIntervalSinceReferenceDate.isFinite, redBelow.isFinite, (0...100).contains(redBelow) else {throw DockLogicError.invalidTime}
-        func value(_ w: DockQuotaWindowInput) -> Double? {
-            switch w.validity {
-            case .inheritAggregate:
-                guard input.dataState == .fresh else { return nil }
-            case .verifiedCurrent(let deadline):
-                // An unavailable/loading source cannot be revived by a window flag.
-                guard input.dataState == .fresh || input.dataState == .stale,
-                      deadline.timeIntervalSinceReferenceDate.isFinite, now < deadline else { return nil }
-            case .unavailable:
-                return nil
-            }
-            guard w.resetsAt.map({$0 > now}) ?? true,
-                  let r=w.remainingPercent, r.isFinite, (0...100).contains(r) else {return nil}
-            return r
-        }
+        func value(_ w: DockQuotaWindowInput) -> Double? { admittedRemaining(w, in: input, now: now) }
         func status(_ r: Double?) -> DockQuotaStatus {
             guard let r else{return .unknown}
             return r <= redBelow ? .critical : r <= 50 ? .warning : .normal

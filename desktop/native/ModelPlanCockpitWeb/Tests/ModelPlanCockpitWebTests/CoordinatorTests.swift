@@ -54,6 +54,8 @@ private actor HeldClient: EngineClient {
   var displays = 0, privateVisible = false, pauseClear = false
   var scopeUpdates:[(String,Bool)]=[]
   func updateScope(_ key:String) { scopeUpdates.append((key,privateVisible)) }
+  var restoredCautions:[[String]]=[]
+  func setAckedCautions(_ ids:[String]) { restoredCautions.append(ids) }
   var clearWaiter: CheckedContinuation<Void, Never>?
   var sequence = 0
   init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
@@ -99,15 +101,47 @@ private actor HeldClient: EngineClient {
 }
 final class CoordinatorTests: XCTestCase {
   @MainActor func testFirstOpenWithoutContextHasUnavailableActionAndNoPage() async {
-    var pages = 0, unavailable = 0
+    var pages = 0, unavailable: [CockpitUnavailableReason] = []
     let coordinator = EngineCockpitCoordinator { pages += 1; return PageProbe($0) }
     let client = HeldClient(); coordinator.bind(client: client)
-    coordinator.onUnavailable = { unavailable += 1 }
+    coordinator.onUnavailable = { unavailable.append($0) }
     coordinator.open()
-    XCTAssertEqual(pages, 0); XCTAssertEqual(unavailable, 1)
+    XCTAssertEqual(pages, 0); XCTAssertEqual(unavailable, [.noDelivery])
     let requests = await client.requests
     XCTAssertEqual(requests, 0)
     await coordinator.shutdown(); await client.stop()
+  }
+
+  @MainActor func testUnavailableNamesThePathThatFailed() async {
+    var unavailable: [CockpitUnavailableReason] = []
+    let coordinator = EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+    coordinator.onUnavailable = { unavailable.append($0) }
+    coordinator.open()
+    let client = HeldClient(); coordinator.bind(client: client)
+    await coordinator.consume(.context(EngineDeliveryContext(
+      sessionID: "s-" + UUID().uuidString.lowercased(),
+      floor: .init(storeEpoch: "synthetic", generation: 3), revision: 2)))
+    coordinator.open()
+    XCTAssertEqual(unavailable.map(\.path), ["open.noClient", "open.pageCreation.unavailable"])
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  @MainActor func testFailureLogSurvivesAClosedStderr() {
+    let saved = dup(STDERR_FILENO)
+    XCTAssertGreaterThanOrEqual(saved, 0)
+    close(STDERR_FILENO)
+    CockpitFailureLog.record("synthetic line with stderr closed")
+    dup2(saved, STDERR_FILENO); close(saved)
+  }
+
+  func testFailureLogKeepsErrorCaseNamesAndDropsTheirValues() {
+    enum Synthetic: Error { case account(String), plain }
+    struct Detailed: Error { let text = "synthetic-account" }
+    XCTAssertEqual(CockpitFailureLog.errorName(Synthetic.account("synthetic-account")), "account")
+    XCTAssertEqual(CockpitFailureLog.errorName(Synthetic.plain), "plain")
+    XCTAssertEqual(CockpitFailureLog.errorName(Detailed()), "Detailed")
+    XCTAssertEqual(CockpitFailureLog.errorName(EngineClientError.mutationOutcomeUnknown(
+      requestID: "synthetic-account", expected: .init(storeEpoch: "synthetic", generation: 1))), "mutationOutcomeUnknown")
   }
 
   @MainActor func testOrderedEngineDeliveryClearAckAndStaleReplyRejection() async throws {
@@ -215,6 +249,69 @@ extension CoordinatorTests {
     XCTAssertTrue(page.requestedClose);XCTAssertFalse(page.discarded)
     coordinator.close();XCTAssertTrue(page.discarded)
     await coordinator.shutdown()
+  }
+  /// CKP-ENTRY-04: reopening the same day keeps the scope; the first open on a later day returns to All.
+  @MainActor func testScopeLastsForTheDayAndReturnsToAllTheNextDay() async throws {
+    var pages:[PageProbe]=[]
+    let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
+    let noon=try XCTUnwrap(Calendar.current.date(from:DateComponents(year:2026,month:11,day:6,hour:12)))
+    var now=noon
+    coordinator.currentDate = { now }
+    let client=HeldClient();coordinator.bind(client:client)
+    let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+    await coordinator.consume(.context(delivery));coordinator.open()
+    for _ in 0..<100 { if await client.requests==1 { break };await Task.yield() }
+    let data=try JSONDecoder().decode(WireCockpitData.self,from:Data(contentsOf:XCTUnwrap(Bundle.module.url(forResource:"cockpit",withExtension:"json",subdirectory:"Fixtures"))))
+    await coordinator.consume(.response(requestID:.string("scope-day"),.cockpit(.init(envelope:try .init(sessionId:delivery.sessionID,storeEpoch:delivery.floor.storeEpoch,consentGeneration:1,data:data),delivery:delivery))))
+    let first=try XCTUnwrap(pages.last)
+    first.onIntent?(.scopeSelect("0123456789abcdef"));XCTAssertEqual(coordinator.selectedScope,"0123456789abcdef")
+    await client.complete();await coordinator.joinCurrentQueryForVerification()
+    coordinator.close()
+    now=noon.addingTimeInterval(6*3600);coordinator.open()
+    XCTAssertEqual(coordinator.selectedScope,"0123456789abcdef","Later the same day keeps the scope")
+    XCTAssertEqual(pages.last?.scopeUpdates.first?.0,"0123456789abcdef")
+    for _ in 0..<100 { if await client.requests==2 { break };await Task.yield() }
+    await client.complete();await coordinator.joinCurrentQueryForVerification()
+    coordinator.close()
+    now=noon.addingTimeInterval(24*3600);coordinator.open()
+    XCTAssertEqual(coordinator.selectedScope,"all","The next day starts at All")
+    XCTAssertEqual(pages.last?.scopeUpdates.first?.0,"all")
+    for _ in 0..<100 { if await client.requests==3 { break };await Task.yield() }
+    await client.complete();await coordinator.joinCurrentQueryForVerification()
+    await coordinator.shutdown();await client.stop()
+  }
+  /// G3-56: the caution identities the page reports are kept by the app's memory and handed to the next page, including
+  /// one made by a new coordinator (an app restart); a store change forgets them.
+  @MainActor final class CautionMemoryProbe: CockpitCautionMemory {
+    var saved:[String]
+    init(_ saved:[String]) { self.saved=saved }
+    func load()->[String] { saved }
+    func save(_ ids:[String]) { saved=ids }
+  }
+  @MainActor func testAcknowledgedCautionsRoundTripThroughTheAppsMemoryAcrossARestart() async throws {
+    let first=#"["0000000000000001","session:18000:main:main","red"]"#,second=#"["0000000000000001","session:604800:main:main","amber"]"#
+    let memory=CautionMemoryProbe([first])
+    var pages:[PageProbe]=[]
+    let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
+    coordinator.cautionMemory=memory
+    let client=HeldClient();coordinator.bind(client:client)
+    let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+    await coordinator.consume(.context(delivery));coordinator.open()
+    XCTAssertEqual(pages.last?.restoredCautions,[[first]],"The page is given what the app remembered before it loads")
+    pages.last?.onIntent?(.cautionAck([first,second]))
+    XCTAssertEqual(memory.saved,[first,second],"A press the page reports is saved by the app")
+    XCTAssertEqual(coordinator.ackedCautions,[first,second])
+    pages.last?.onIntent?(.cautionAck(["bad\u{7}id"]))
+    XCTAssertEqual(memory.saved,[first,second],"An id with a control character is not kept")
+    await coordinator.shutdown()
+    // A new coordinator over the same memory is an app restart.
+    var again:[PageProbe]=[]
+    let restarted=EngineCockpitCoordinator { context in let page=PageProbe(context);again.append(page);return page }
+    restarted.cautionMemory=memory
+    let client2=HeldClient();restarted.bind(client:client2)
+    await restarted.consume(.context(delivery));restarted.open()
+    XCTAssertEqual(again.last?.restoredCautions,[[first,second]])
+    await restarted.shutdown()
   }
   @MainActor func testScopeIsValidatedRetainedOnReopenAndClearedAtPrivacyBarrier() async throws {
     var pages:[PageProbe]=[]

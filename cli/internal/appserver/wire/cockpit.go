@@ -42,6 +42,9 @@ type CockpitDetails struct {
 	SessionCoverage string                       `json:"sessionCoverage"`
 	ResetEvents     []rows.ResetEvent            `json:"resetEvents" schema:"maxItems=64"`
 	Alerts          []CockpitAlert               `json:"alerts" schema:"maxItems=128"`
+	// PublishedModels is present only for a client that negotiated cockpitModelsV1: public
+	// data of every published model, in publication order, with no personal selection.
+	PublishedModels []CockpitPublicationModel `json:"publishedModels,omitempty" schema:"maxItems=256" null:"forbidden"`
 	// Forecasts is present only for a client that negotiated cockpitForecastV1.
 	Forecasts []CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
 }
@@ -99,7 +102,40 @@ type CockpitPublication struct {
 	PublishedAt     time.Time                 `json:"publishedAt"`
 	Source          string                    `json:"source" schema:"minLength=1,maxLength=32"`
 	Models          []CockpitPublicationModel `json:"models" schema:"maxItems=3"`
-	Truncated       bool                      `json:"truncated"`
+	// SpeedTiers is the published client data.speedTiers, unchanged in shape; absent when none are published.
+	SpeedTiers []CockpitSpeedTier `json:"speedTiers,omitempty" schema:"maxItems=32" null:"forbidden"`
+	Truncated  bool               `json:"truncated"`
+}
+type CockpitSpeedTier struct {
+	ID          string                  `json:"id" schema:"maxLength=128"`
+	Harness     string                  `json:"harness" schema:"maxLength=64"`
+	Tier        string                  `json:"tier" schema:"maxLength=64"`
+	Label       string                  `json:"label" schema:"maxLength=128"`
+	Toggle      string                  `json:"toggle" schema:"maxLength=128"`
+	Eligibility CockpitSpeedEligibility `json:"eligibility"`
+	Models      []CockpitSpeedTierModel `json:"models" schema:"maxItems=256"`
+	Billing     []CockpitSpeedBilling   `json:"billing" schema:"maxItems=8"`
+	Caveats     []string                `json:"caveats" schema:"maxItems=16"`
+	Sources     []string                `json:"sources" schema:"maxItems=16"`
+}
+type CockpitSpeedEligibility struct {
+	Plans []string `json:"plans" schema:"maxItems=32"`
+	Note  string   `json:"note" schema:"maxLength=500"`
+}
+type CockpitSpeedTierModel struct {
+	VendorModelID string            `json:"vendorModelId" schema:"maxLength=128"`
+	ModelID       *string           `json:"modelId" null:"coalesced" schema:"maxLength=128"`
+	Speed         CockpitSpeedRatio `json:"speed"`
+}
+type CockpitSpeedRatio struct {
+	Ratio     *float64 `json:"ratio" null:"coalesced"`
+	Qualifier string   `json:"qualifier" schema:"maxLength=32"`
+}
+type CockpitSpeedBilling struct {
+	Account string  `json:"account" schema:"maxLength=32"`
+	BillsTo string  `json:"billsTo" schema:"maxLength=32"`
+	Basis   string  `json:"basis" schema:"maxLength=32"`
+	Ratio   float64 `json:"ratio"`
 }
 type CockpitPublicationModel struct {
 	ID          string                     `json:"id" schema:"minLength=1,maxLength=128"`

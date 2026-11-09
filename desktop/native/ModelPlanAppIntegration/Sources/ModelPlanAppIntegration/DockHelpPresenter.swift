@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanCockpitWeb
 import ModelPlanInstruments
 import ModelPlanSettings
 
@@ -18,13 +19,19 @@ import ModelPlanSettings
     private let accessibility: @MainActor () -> (motion: Bool, transparency: Bool)
     private let copy: @MainActor (FirstUseHintKind, InstrumentLanguage) -> Copy?
     private let dismiss: @MainActor (UUID) -> Void
+    /// Brings this app forward when a requested map opens, so Esc and outside clicks reach the
+    /// local monitor below (a nonactivating panel in an inactive app sees neither).
+    private let activate: @MainActor () -> Void
     private let layer: HelpUILayerView
     private var panel: NSPanel?
     private var eventMonitor: Any?
     private var deactivateObserver: NSObjectProtocol?
+    /// The app that was frontmost before a map activated this one; restored when the map closes.
+    private var previousApp: NSRunningApplication?
     private var currentOffer: HintOffer?
     private var currentExplanationID: String?
     private var currentSurfaceValue: DockHelpSurface?
+    private var currentReducedMotion: Bool?
     private var generation: UInt64 = 0
     private var retired = false
 
@@ -36,11 +43,12 @@ import ModelPlanSettings
          accessibility: @escaping @MainActor () -> (motion: Bool, transparency: Bool),
          copy: @escaping @MainActor (FirstUseHintKind, InstrumentLanguage) -> Copy?,
          dismiss: @escaping @MainActor (UUID) -> Void,
+         activate: @escaping @MainActor () -> Void = { if !NSApp.isActive { NSApplication.shared.activate() } },
          layer: HelpUILayerView) {
         self.currentSurface = currentSurface; self.isCurrent = isCurrent
         self.blockers = blockers; self.windowPolicy = windowPolicy
         self.language = language; self.accessibility = accessibility
-        self.copy = copy; self.dismiss = dismiss
+        self.copy = copy; self.dismiss = dismiss; self.activate = activate
         self.layer = layer
     }
 
@@ -86,6 +94,7 @@ import ModelPlanSettings
         let effective = accessibility()
         input.reduceMotion = motionOverride ?? effective.motion
         input.reduceTransparency = effective.transparency
+        currentReducedMotion = input.reduceMotion
         layer.update(input)
         guard !retired, generation == token, isCurrent(surface),
               let placement = layer.presentation?.card,
@@ -105,23 +114,23 @@ import ModelPlanSettings
         container.addSubview(layer); window.contentView = container
         currentOffer = offer; currentSurfaceValue = surface
         layer.onAction = { [weak self] action in
-            guard let self, !self.retired, self.generation == token,
-                  self.currentOffer == offer, self.currentSurfaceValue == surface, self.isCurrent(surface) else { return }
+            guard let self, !self.retired, self.generation == token, self.currentOffer == offer,
+                  let current = self.currentSurfaceValue, self.isCurrent(current) else { return }
             if case .dismissHint(let id, _) = action, id == offer.id { self.dismiss(id) }
         }
         window.setFrame(screenRect, display: true); window.orderFrontRegardless()
+        // Not this panel's occlusionState: AppKit updates it later, so a panel just ordered in never
+        // reports .visible here. isCurrent carries the settled state of the window the hint belongs to.
         guard !retired, generation == token, currentOffer == offer, currentSurfaceValue == surface,
               isCurrent(surface), window.isVisible, !window.isMiniaturized, window.alphaValue > 0,
               window.sharingType == policy.0, window.collectionBehavior == policy.1,
-              window.occlusionState.contains(.visible),
               layer.visibleRect.contains(rect), layer.presentation?.card == placement else {
             window.orderOut(nil); currentOffer = nil; currentSurfaceValue = nil; return false
         }
         // Observe only this app's events; no global input monitor or new system permission.
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self, weak window] event in
-            guard let self, let window, !self.retired, self.generation == token,
-                  self.currentOffer == offer, self.currentSurfaceValue == surface,
-                  self.isCurrent(surface), window.isVisible else { return event }
+            guard let self, let window, !self.retired, self.generation == token, self.currentOffer == offer,
+                  let current = self.currentSurfaceValue, self.isCurrent(current), window.isVisible else { return event }
             if event.type == .keyDown, event.keyCode == 53 {
                 self.dismiss(offer.id)
                 return nil
@@ -134,6 +143,14 @@ import ModelPlanSettings
 
     func updateAndVerify(_ presentation: HintPresentation) -> Bool {
         guard currentOffer == presentation.offer else { return false }
+        // The surface is republished on most refreshes; ordering the panel out and in each time flashes it.
+        let kind = presentation.offer.kind
+        if let surface = currentSurface(), let shown = currentSurfaceValue, surface.revealID == shown.revealID,
+           surface.visible, !surface.dragging, surface.anchors[kind] == shown.anchors[kind],
+           presentation.reducedMotion == currentReducedMotion, panel?.isVisible == true, isCurrent(surface) {
+            currentSurfaceValue = surface
+            return true
+        }
         return show(presentation.offer, motionOverride: presentation.reducedMotion)
     }
 
@@ -169,9 +186,12 @@ import ModelPlanSettings
               layer.presentation?.mapHeader != nil else { return false }
         let token = generation
         window.orderFrontRegardless()
-        guard window.isVisible, window.alphaValue > 0, window.occlusionState.contains(.visible), isCurrent(surface) else {
+        // As in show: occlusionState lags the order, and isCurrent has the settled state.
+        guard window.isVisible, window.alphaValue > 0, isCurrent(surface) else {
             window.orderOut(nil); return false
         }
+        // A second call replaces the first: one monitor and one observer at a time, never stacked.
+        removeEventMonitor(); removeDeactivateObserver()
         var optionHeld = NSEvent.modifierFlags.contains(.option)
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .flagsChanged]) { [weak self, weak window] event in
             guard let self, let window, window.isVisible, !self.retired, self.generation == token,
@@ -188,6 +208,13 @@ import ModelPlanSettings
         deactivateObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { dismissMap(nil) }
         }
+        // After the observer exists: activating must not read as the app losing focus. Esc and a click
+        // outside the map are local events only while the app is active.
+        if !NSApp.isActive, previousApp == nil {
+            let front = NSWorkspace.shared.frontmostApplication
+            if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
+        }
+        activate()
         return true
     }
 
@@ -250,6 +277,9 @@ import ModelPlanSettings
         generation &+= 1; currentSurfaceValue = nil
         removeEventMonitor(); removeDeactivateObserver()
         panel?.orderOut(nil); layer.removeFromSuperview()
+        // Give focus back only if this app still holds it; a user who switched away keeps their choice.
+        if let previousApp, NSApp.isActive { previousApp.activate() }
+        previousApp = nil
     }
 
     func dispose() {
@@ -266,9 +296,11 @@ import ModelPlanSettings
         if let deactivateObserver { NotificationCenter.default.removeObserver(deactivateObserver); self.deactivateObserver = nil }
     }
 
+    static let overlayLevel = CockpitWindowController.aboveCockpitLevel
     private func makePanel() -> NSPanel {
         let window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        window.isFloatingPanel = true; window.level = .floating; window.isOpaque = false
+        // D49: Help can be asked for while the cockpit is open, so it draws above it.
+        window.isFloatingPanel = true; window.level = Self.overlayLevel; window.isOpaque = false
         window.backgroundColor = .clear; window.hasShadow = false; window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
         return window

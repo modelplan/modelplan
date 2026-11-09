@@ -44,8 +44,6 @@ enum DockGripInk {
     @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }
     /// Skin-space origin of the view's local coordinates (the hover viewport when one is reserved).
     @_spi(DockResourceChecks) public var layoutOriginForChecks: CGPoint { layoutOrigin }
-    /// Set only by the owner-test option; the appearance reads it when it lays out the rings.
-    public var centresRings = false
     @_spi(DockResourceChecks) public var presentedImageForChecks: CGImage? { failed || community ? nil : image }
     /// G3-32: the text runs of the last full render (fallback marks, readouts, aliases).
     @_spi(DockResourceChecks) public private(set) var presentedTextMetricsForChecks: [DockGlyphMetric] = []
@@ -161,12 +159,20 @@ enum DockGripInk {
     /// The painted clock ring (dot circle plus its back stroke) the card measures its gap and
     /// arrow from, not the smaller nozzle box. View-local points; the nozzle box where no
     /// official skin is shown. Prototype: opus-r7/src/rocket-r1/card.js:154-163 (renderedRing).
+    /// G3-50: the ring as painted now, so a hover-magnified ring (its pose: scaled and moved inward)
+    /// keeps the card's gap and the arrow's 2 pt, as the prototype measures the transformed ring
+    /// (card.js refreshCardPlacement after each magnification write).
     public func cardRingAnchor(_ id: String) -> CGRect? {
         guard !community, !failed, let s = skin?.stations.first(where: { $0.subscriptionID == id }) else { return stationRect(id) }
-        let radius = max(s.diameter / 2, s.clock.radius + s.clock.backWidth / 2)
-        return CGRect(x: s.centre.x - radius - layoutOrigin.x, y: s.centre.y - radius - layoutOrigin.y,
+        var radius = max(s.diameter / 2, s.clock.radius + s.clock.backWidth / 2), centre = s.centre
+        if let pose = nozzlePosesForChecks[id], pose.scale.isFinite, pose.scale > 0, pose.offset.x.isFinite, pose.offset.y.isFinite {
+            radius *= pose.scale; centre.x += pose.offset.x; centre.y += pose.offset.y
+        }
+        return CGRect(x: centre.x - radius - layoutOrigin.x, y: centre.y - radius - layoutOrigin.y,
                       width: 2 * radius, height: 2 * radius)
     }
+    /// Called after the painted nozzle poses change, so a shown card can follow its ring.
+    public var onNozzlePosesChanged: (() -> Void)?
     /// Registered visible reading geometry for the Help-map owner, in view-local points.
     public func helpReadoutAnchor(_ id: String) -> CGRect? {
         guard !community, !failed, let skin, readings[id] != nil,
@@ -422,6 +428,9 @@ enum DockGripInk {
     public override var acceptsFirstResponder:Bool{keyboardNavigationEnabled}
     public override func becomeFirstResponder() -> Bool {
         guard keyboardNavigationEnabled, super.becomeFirstResponder() else { return false }
+        // AppKit also hands a clicked view first responder. Only keyboard focus picks a ring: a picked
+        // ring holds its card open, so a click would pin the first ring's card (G3-14).
+        if let event = NSApp.currentEvent?.type, [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event) { return true }
         if keyboardTargetID == nil { keyboardTargetID = orderedIDs.first }
         nozzleEventDelegate?.hoverNozzle(keyboardTargetID)
         return true
@@ -495,7 +504,7 @@ enum DockGripInk {
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
@@ -550,6 +559,7 @@ enum DockGripInk {
         }
         CATransaction.commit()
         needsDisplay = true
+        onNozzlePosesChanged?()
     }
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
@@ -672,13 +682,23 @@ enum DockGripInk {
                       y: station.centre.y-station.diameter/2-layoutOrigin.y, width: station.diameter, height: station.diameter)
     }
     @_spi(DockResourceChecks) public var emptyStationRectForChecks: CGRect? { emptyStationRect }
+    /// AppKit adds a node's parent-space frame to the parent's lower-left corner, whatever the
+    /// parent's isFlipped says, so the top-down rects this view works in have to be turned over.
+    private func accessibilityParentRect(_ rect:CGRect)->CGRect {
+        CGRect(x:rect.minX,y:bounds.height-rect.maxY,width:rect.width,height:rect.height)
+    }
+    // Node frames count from the bottom edge now, so a change of height moves all of them.
+    public override func setFrameSize(_ size:NSSize){
+        let height=frame.height;super.setFrameSize(size)
+        if frame.height != height {refreshNodes()}
+    }
     private func refreshNodes(){
         var children=[DockInstrumentAXNode](),used=Set<String>()
         func append(_ key:String,_ label:String,_ value:String?,_ help:String,_ rect:CGRect,_ action:DockInstrumentAction) {
             let node=nodes[key] ?? DockInstrumentAXNode(),oldValue=node.accessibilityValue() as? String
             node.setAccessibilityRole(.button);node.setAccessibilityParent(self);node.setAccessibilityEnabled(onAction != nil)
             node.setAccessibilityIdentifier("dock."+key);node.setAccessibilityLabel(label);node.setAccessibilityValue(value);node.normalHelp=help
-            node.setAccessibilityFrameInParentSpace(rect);node.press={[weak self,weak node] in
+            node.setAccessibilityFrameInParentSpace(accessibilityParentRect(rect));node.press={[weak self,weak node] in
                 guard let self,let node,self.nodes[key] === node,self.permitsAction?(action,.accessibility) ?? true else{return false}
                 // A gate may synchronously refresh the snapshot; recheck this stable AX node afterward.
                 guard self.nodes[key] === node,let onAction=self.onAction else{return false};onAction(action);return true
@@ -711,7 +731,7 @@ enum DockGripInk {
                 case .forecast:label=zh ? "可能提前耗尽":"May run out before reset"
                 case .resetAnnounced:label=zh ? "已公告额外重置":"Extra reset announced"
                 case .resetConfirmed:label=zh ? "额外重置已确认，等待读数":"Extra reset confirmed; awaiting a reading"
-                case .cardsExpiring:label=zh ? "重置卡即将过期":"Reset card expiring"
+                case .cardsExpiring:label=zh ? "额外重置即将过期":"Resets expiring"
                 case .credits:label=zh ? "正在使用点数":"Using credits"
                 }
                 append("notice."+id,label,nil,label,station.eventRect.offsetBy(dx:-origin.x,dy:-origin.y),.notice(id))
@@ -722,7 +742,7 @@ enum DockGripInk {
             node.setAccessibilityRole(.button); node.setAccessibilityParent(self); node.setAccessibilityEnabled(onEmptyAction != nil)
             node.setAccessibilityIdentifier("dock.empty"); node.setAccessibilityLabel(zh ? "未检测到订阅" : "No subscriptions found")
             node.setAccessibilityHelp(zh ? "打开设置以连接订阅" : "Open Settings to connect a subscription")
-            node.setAccessibilityFrameInParentSpace(rect)
+            node.setAccessibilityFrameInParentSpace(accessibilityParentRect(rect))
             node.press = { [weak self, weak node] in
                 guard let self, let node, self.nodes[key] === node, self.emptyStationRect != nil,
                       self.permitsEmptyAction?(.accessibility) ?? true, let action = self.onEmptyAction else { return false }
@@ -742,7 +762,7 @@ enum DockGripInk {
             node.setAccessibilityParent(self)
             node.setAccessibilityIdentifier("dock." + key)
             node.setAccessibilityLabel(locale.hasPrefix("zh") ? "移动额度挂件" : "Move Quota Widget")
-            node.setAccessibilityFrameInParentSpace(rect)
+            node.setAccessibilityFrameInParentSpace(accessibilityParentRect(rect))
             node.focus = { [weak self, weak node] focused in
                 guard let self, let node, self.nodes[key] === node else { return }
                 if focused {

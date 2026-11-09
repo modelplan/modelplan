@@ -10,6 +10,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { bumpPlugins, missedBumps, pluginVersions } from "./plugin-versions.mjs";
+import { releaseAssetText } from "./release-asset.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const targets = ["claude-code/cli-pin.json", "codex/cli-pin.json", "skills/model-plan/cli-pin.json", "claude-code/skills/model-plan/cli-pin.json", "codex/skills/model-plan/cli-pin.json"];
@@ -17,9 +18,8 @@ const keys = ["darwin_arm64", "darwin_amd64", "linux_arm64", "linux_amd64"];
 const repo = "https://github.com/modelplan/modelplan/releases/download";
 
 async function pinFor(tag) {
-  const res = await fetch(`${repo}/${tag}/checksums.txt`);
-  if (!res.ok) throw Error(`${tag}: checksums.txt ${res.status}`);
-  const sums = Object.fromEntries((await res.text()).trim().split("\n").map(l => l.trim().split(/\s+/).reverse()));
+  const text = await releaseAssetText("modelplan/modelplan", tag, "checksums.txt");
+  const sums = Object.fromEntries(text.trim().split("\n").map(l => l.trim().split(/\s+/).reverse()));
   const sha256 = Object.fromEntries(keys.map(k => {
     const s = sums[`modelplan_${k}.tar.gz`];
     if (!/^[0-9a-f]{64}$/.test(s ?? "")) throw Error(`${tag}: no checksum for ${k}`);

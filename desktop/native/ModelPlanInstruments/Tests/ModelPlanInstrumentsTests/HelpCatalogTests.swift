@@ -165,7 +165,7 @@ final class HelpCatalogTests: XCTestCase {
                 XCTAssertFalse(entry.sentence.isEmpty); XCTAssertFalse(entry.sentence.contains("\n"))
             }
         }
-        XCTAssertEqual(HelpMapCatalog(.english).metaphor, "Engine = subscription · Fader = model · Flame = working now")
+        XCTAssertEqual(HelpMapCatalog(.english).metaphor, "Engine = subscription · Fader = model · Glow = working now")
         XCTAssertEqual(map.menuTitle, "说明…"); XCTAssertTrue(map.dismissal.contains("Esc"))
     }
 

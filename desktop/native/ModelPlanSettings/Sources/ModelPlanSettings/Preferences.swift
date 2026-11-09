@@ -77,7 +77,9 @@ public struct SettingsPreferences: Codable, Sendable {
     public var effectiveRedBelow: Int { Self.redBelowChoices.contains(redBelow) ? redBelow : 25 }
     public var sliverAlert = true
     public var showDock = true
-    public var autoHide = false
+    /// D56 (owner 2026-11-08): a fresh install, or a saved file without this key, starts collapsed.
+    /// A saved value, either way, is kept as it is.
+    public var autoHide = true
     public var revealMilliseconds = 150
     public var magnification: HoverMagnification = .subtle
     public var showOverFullscreen = false
@@ -171,6 +173,8 @@ public actor SettingsStore {
     private var current: SettingsPreferences
     private var revision: UInt64 = 0
     private var foundationBacking: FoundationPreferenceFile.Opened?
+    /// The folder that holds this store's file; other small per-profile app state lives beside it.
+    public nonisolated var directory: URL { url.deletingLastPathComponent() }
     public init(url: URL, onboardingDefinition: OnboardingDefinition = .task65) throws {
         self.url = url; self.onboardingDefinition = onboardingDefinition
         if FileManager.default.fileExists(atPath: url.path) {

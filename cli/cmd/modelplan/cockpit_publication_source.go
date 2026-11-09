@@ -115,7 +115,62 @@ func materializeCockpitPublication(d *digest.Digest, selected []*digest.Model, t
 		result.Models = append(result.Models, converted)
 		seen[model.ID] = true
 	}
+	result.SpeedTiers = publishedSpeedTiers(d.Speed)
 	return result
+}
+
+// publishedSpeedTiers copies the published speedTiers verbatim (shape of client data.speedTiers). Tiers with
+// non-finite numbers are skipped; more than 32 tiers are cut. Nil when nothing is published.
+func publishedSpeedTiers(in []digest.SpeedTier) []wire.CockpitSpeedTier {
+	var out []wire.CockpitSpeedTier
+	finite := func(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+	strs := func(v []string) []string { return append([]string{}, v...) }
+tiers:
+	for _, t := range in {
+		if len(out) == 32 {
+			break
+		}
+		c := wire.CockpitSpeedTier{ID: t.ID, Harness: t.Harness, Tier: t.Tier, Label: t.Label, Toggle: t.Toggle,
+			Eligibility: wire.CockpitSpeedEligibility{Plans: strs(t.Eligibility.Plans), Note: t.Eligibility.Note},
+			Models:      []wire.CockpitSpeedTierModel{}, Billing: []wire.CockpitSpeedBilling{}, Caveats: strs(t.Caveats), Sources: strs(t.Sources)}
+		for _, m := range t.Models {
+			if m.Speed.Ratio != nil && !finite(*m.Speed.Ratio) {
+				continue tiers
+			}
+			c.Models = append(c.Models, wire.CockpitSpeedTierModel{VendorModelID: m.VendorModelID, ModelID: m.ModelID, Speed: wire.CockpitSpeedRatio{Ratio: m.Speed.Ratio, Qualifier: m.Speed.Qualifier}})
+		}
+		for _, b := range t.Billing {
+			if !finite(b.Ratio) {
+				continue tiers
+			}
+			c.Billing = append(c.Billing, wire.CockpitSpeedBilling{Account: b.Account, BillsTo: b.BillsTo, Basis: b.Basis, Ratio: b.Ratio})
+		}
+		if len(c.Models) > 256 || len(c.Billing) > 8 || len(c.Caveats) > 16 || len(c.Sources) > 16 || len(c.Eligibility.Plans) > 32 {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// allCockpitModels lists every published model that passes the same checks as the lineup, in
+// publication order. An invalid model is left out rather than failing the whole list.
+func allCockpitModels(d *digest.Digest) []wire.CockpitPublicationModel {
+	out := []wire.CockpitPublicationModel{}
+	if d == nil || d.Source != digest.ComponentClient {
+		return out
+	}
+	seen := map[string]bool{}
+	for i := range d.Models {
+		if len(out) == 256 {
+			break
+		}
+		if converted, ok := publishedCockpitModel(d.Models[i]); ok && !seen[converted.ID] {
+			seen[converted.ID] = true
+			out = append(out, converted)
+		}
+	}
+	return out
 }
 
 // selectCockpitPublication puts the models in use first, then keeps the verified models array's

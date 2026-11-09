@@ -26,15 +26,14 @@ test('CKP-ENG-02 one or two subscriptions keep three engine columns',async({page
  }
 });
 
-test('CKP-ENG-14 shared threshold includes the exact 51, 50, 26, 25 and zero boundaries',async({page})=>{
+test('CKP-ENG-14 shared threshold includes the exact 51, 50, 26, 25 and zero boundaries (D22)',async({page})=>{
  const data=visualFixture().data,extra=structuredClone(data.projection.rows[0]);extra.id='synthetic-fifth';extra.accounts[0].subscriptionRef=null;extra.accounts[0].accountLocator=null;data.projection.rows.push(extra);
  for(const [i,row] of data.projection.rows.entries())for(const window of row.accounts[0].windows)window.remainingPercent=[51,50,26,25,0][i];
  await open(page,data);
  const cells=page.locator('.eng-cols .ec[data-col] .qcell[data-row="first"]');await expect(cells).toHaveCount(5);
  for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(cells.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
  await page.getByRole('button',{name:'Subscription',exact:true}).click();const values=page.locator('.sa-list .sa .v');
- // The MFD's fmt.js keeps its old 41 % line until it follows D22, so 50 is still ok there.
- for(const [i,kind] of ['ok','ok','mid','low','low'].entries())await expect(values.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
+ for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(values.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
 });
 
 test('CKP-STRIP-04 ALERT stays English while its accessible label localizes',async({page})=>{
@@ -166,9 +165,10 @@ test('CKP-ENG-04 All and vendor keys share scope and the neutral underline geome
 
 
 test('CKP-MFD-10 subscription header and quota windows use delivered reading and relative reset',async({page})=>{
- const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);const account=data.projection.rows[0].accounts[0];account.observedAt='2026-11-04T11:55:00Z';account.windows[0].resetsAt='2026-11-04T13:00:00Z';
+ const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.projection.rows[0].vendorKey=null;const account=data.projection.rows[0].accounts[0];account.observedAt='2026-11-04T11:55:00Z';account.windows[0].resetsAt='2026-11-04T13:00:00Z';
  await open(page,data);await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();
- await expect(page.locator('.sp-h .mg')).toHaveCount(1);await expect(page.locator('.sp-h b')).toHaveText(data.projection.rows[0].name.en);await expect(page.locator('.sp-sub .pl')).toContainText(account.plan.name.en);
+ // An unknown vendor has no mark (as on the engine keys); c-subscription-header.spec.mjs covers a known vendor's mark.
+ await expect(page.locator('.sp-h .mg')).toHaveCount(0);await expect(page.locator('.sp-h b')).toHaveText(data.projection.rows[0].name.en);await expect(page.locator('.sp-sub .pl')).toContainText(account.plan.name.en);
  await expect(page.locator('.sp-sub .src')).toContainText('5');await expect(page.locator('.sp-sub .src')).toHaveAttribute('title','modelplan CLI');
  const w=page.locator('.sp-w').first();await expect(w.locator('.v')).toHaveText('75%');await expect(w.locator('.mb10 i')).toHaveCount(10);await expect(w.locator('em')).toContainText('1h');await expect(w).not.toContainText('2026');
 });
@@ -241,7 +241,8 @@ test('CKP-MFD-04 the built page keys follow one read-only internal page registry
 
 test('CKP-MOT-05 day appearance lightens cockpit metal while LCDs remain dark',async({page})=>{
  const {send,receive}=await open(page),read=()=>page.evaluate(()=>{const get=q=>getComputedStyle(document.querySelector(q)).backgroundImage;return {hull:get('.ck-shell'),key:get('.ek-all'),engine:get('.eng-lcd'),screen:get('.mfd-screen')};});const night=await read();expect(await receive(send('appearance',{...appearance,theme:'day'}))).toBe(true);const day=await read();await expect(page.locator('.ck-port')).toBeVisible();await expect(page.locator('.dk-fad')).toBeVisible();
- const components=s=>[...s.matchAll(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/g)].map(m=>m.slice(1).map(Number));const luminance=s=>components(s).flat().reduce((a,b)=>a+b,0)/Math.max(1,components(s).flat().length);expect(luminance(day.hull)).toBeGreaterThan(luminance(night.hull));expect(luminance(day.key)).toBeGreaterThan(luminance(night.key));for(const lcd of [day.engine,day.screen]){expect(components(lcd).length).toBeGreaterThan(0);expect(Math.max(...components(lcd).flat())).toBeLessThan(32);}
+ const components=s=>[...s.matchAll(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/g)].map(m=>m.slice(1).map(Number));const luminance=s=>components(s).flat().reduce((a,b)=>a+b,0)/Math.max(1,components(s).flat().length);// The plain plate (CKP-SHELL-25) eases its metal over 0.4 s, so wait for the settled day metal.
+ await expect.poll(async()=>luminance((await read()).hull)).toBeGreaterThan(luminance(night.hull));expect(luminance(day.key)).toBeGreaterThan(luminance(night.key));for(const lcd of [day.engine,day.screen]){expect(components(lcd).length).toBeGreaterThan(0);expect(Math.max(...components(lcd).flat())).toBeLessThan(32);}
 });
 
 test('CKP-ENG-01 five and six subscription columns show names in user order',async({page})=>{
@@ -266,7 +267,7 @@ test('CKP-ENG-05 shortcuts appear in tooltip, accessible name and Option help an
 test('CKP-MFD-06 Overview shows delivered today total and puts threshold notices first',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.details.subscriptions=data.details.subscriptions.slice(0,1);const row=data.projection.rows[0],account=row.accounts[0],detail=data.details.subscriptions[0];detail.today[0].observedOutputTokens=12000;
  data.details.alerts=[{severity:'warning',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[1].id,remainingPercent:35},{severity:'critical',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[0].id,remainingPercent:20}];account.windows[0].remainingPercent=20;account.windows[0].resetsAt='2026-11-04T15:30:00Z';account.windows[1].remainingPercent=35;data.details.resetEvents=[{version:1,id:'synthetic-reset',provider:'openai',rowId:row.id,status:'confirmed',publishedAt:'2026-11-04T11:00:00Z',expiresAt:'2026-11-05T12:00:00Z',source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];const {send,receive}=await open(page,data);
- await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('5h 20% left · resets in 3h30');await expect(page.locator('.pg-overview .mfd-alerts li').nth(1)).toHaveClass(/\bal-blue\b/);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('Reset confirmed');await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
+ await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('5h 20% left · resets in 3h30');await expect(page.locator('.pg-overview .mfd-alerts li').nth(1)).toHaveClass(/\bal-blue\b/);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('official extra reset confirmed');await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
  const positions=await page.locator('.pg-overview').evaluate(e=>[...e.children].map(n=>n.className));expect(positions.indexOf('mfd-alerts')).toBeLessThan(positions.indexOf('ov-top'));
  const second=visualFixture().data;data.projection.rows.push(second.projection.rows[1]);data.details.subscriptions.push({...second.details.subscriptions[1],today:[]});expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);await page.locator('.eng-keys .ek[data-sub]').first().click();await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
  detail.today=[];expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);

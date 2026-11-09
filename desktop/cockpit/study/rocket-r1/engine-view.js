@@ -85,7 +85,7 @@ export function engineView(m,{changed=new Set(),lang='zh-CN',now=Date.now()}={})
  const addLabel=esc(t("eng.addSubscription"));
  const empty=Array.from({length:n-m.cols.length},(_,i)=>emptyColumn(m,m.cols.length+i,addLabel)).join('');
  const emptyKeys=Array.from({length:n-m.cols.length},()=>emptyKey(addLabel)).join('');
- const labels=m.empty?'':m.rows.map(r=>`<span class="lb lb-${r}">${t(r==='other'?'eng.other':LABEL[m.rowPeriods[r]]||'eng.other')}</span>`).join('')+`<span class="lb lb-t" aria-label="${esc(t('eng.todayBasis'))}">${t('eng.today')}</span>`+(m.reserve?`<span class="lb lb-r">${t('eng.reserve')}</span>`:'');
+ const labels=m.empty?'':m.rows.map(r=>`<span class="lb lb-${r}">${t(r==='other'?'eng.other':LABEL[m.rowPeriods[r]]||'eng.other')}</span>`).join('')+`<span class="lb lb-t" aria-label="${esc(t('eng.todayBasis'))}">${t('eng.today')}</span>`+(m.reserve?`<span class="lb lb-r" tabindex="0" aria-label="${esc(t('eng.reserveHint'))}" data-tip="${esc(t('eng.reserveHint'))}">${t('eng.reserve')}</span>`:'');
  const keys=`<div class="eng-krow"><button class="ek ek-all${m.scoped?'':' on'}" data-all data-mat="part" aria-pressed="${!m.scoped}" aria-label="${t('eng.allAria')}"><span>${t('eng.all')}</span><i class="bl" aria-hidden="true"></i></button><div class="eng-keys" style="--n:${n}">${m.cols.map(key).join('')}${emptyKeys}</div></div>`;
  return `${keys}<div class="eng-lcd cls-${m.cls}${m.rich?' few-rich':''}" data-mat="well" style="--n:${n};--rows:${rowsTemplate(m)}">${m.empty?`<p class="ec-empty">${t('eng.empty')}</p>`:`<div class="eng-labels">${labels}</div><div class="eng-cols">${m.cols.map(col=>column(col,m,ui,changed)).join('')}${empty}</div>`}</div>${pager(m)}`;
 }
