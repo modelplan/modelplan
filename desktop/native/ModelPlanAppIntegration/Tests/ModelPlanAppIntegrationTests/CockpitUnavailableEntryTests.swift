@@ -40,6 +40,12 @@ extension CommunityCockpitEntryTests {
         await app.composition.stop()
     }
 
+    /// The failure line's launch age comes from the process start time, not the -1 "unknown" fallback (glm-783-1).
+    func testMsSinceLaunchReadsTheProcessStartTime() async throws {
+        try await Task.sleep(for: .milliseconds(10))
+        XCTAssertGreaterThan(CockpitFailureLog.msSinceLaunch, 0)
+    }
+
     /// G3-66, startup order: an open before the engine has its first context is not announced at once. The notice
     /// waits out its grace period (the open is retried meanwhile) and only a failure that lasts reaches the user.
     @MainActor func testOpenBeforeTheEngineIsReadyOnlyAnnouncesAFailureThatLasts() async throws {

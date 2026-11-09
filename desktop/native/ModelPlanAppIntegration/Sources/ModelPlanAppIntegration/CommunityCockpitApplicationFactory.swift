@@ -406,7 +406,9 @@ struct CockpitUnavailableNotice {
             case .alertFirstButtonReturn:owner.settings?()
             case .alertSecondButtonReturn:
                 if fallback == nil { fallback=EngineRowsConsole(composition:composition) };fallback?.show()
-            default:break
+            default:
+                // Cancel also cancels the open still waiting for the engine context, so the cockpit cannot appear uninvited later.
+                hide()
             }
         }
     }
