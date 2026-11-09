@@ -47,7 +47,7 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "dock", title: .init("Quota Widget", "额度挂件"), groups: Settings65Homes.dock),
         .init(id: "cockpit", title: .init("Cockpit", "驾驶舱"), groups: [Settings65Homes.cockpit]),
         .init(id: "appearance", title: .init("Appearance", "外观"), groups: [Settings65Homes.appearance]),
-        .init(id: "subscriptions", title: .init("Subscriptions", "订阅"), groups: [Settings65Homes.subscriptions]),
+        .init(id: "subscriptions", title: .init("Subscriptions", "订阅"), groups: [Settings65Homes.subscriptionOrder, Settings65Homes.subscriptions]),
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.notificationSystemSettings,.forecast,.reset,.official,.expiring,.stale])]),
         .init(id: "privacy", title: .init("Data & Privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
         .init(id: "diagnostics", title: .init("Diagnostics", "诊断"), groups: [.init(id: "main", keys: [.source,.readerDetails,.refreshHistory,.diagnostics])]),
