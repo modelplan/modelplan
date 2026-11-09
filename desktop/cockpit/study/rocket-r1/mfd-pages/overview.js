@@ -57,8 +57,16 @@ export function overviewBars(d,ui,list){
 const startOfDay=ms=>{const x=new Date(ms);return new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();};
 const importNote=(imp,v)=>imp>0&&imp<v?` · ${t('mfd.importedPart',{v:tok(imp)})}`:imp>0&&imp>=v?` · ${t('mfd.importedDay')}`:'';
 // Where the data starts: a quiet rule and a label, only while imported days are on the chart.
-function dataFromMark(k,pitch,base,W,n,coverage,ui){const x=k*pitch,right=x>W*.6;return `<path class="ov-from" d="M${x} 3V${base}"/><text class="ov-from-l" x="${right?x-3:x+3}" y="10" text-anchor="${right?'end':'start'}">${esc(t('mfd.dataFrom',{d:md(coverage,ui)}))}</text>`;}
-function legend(d,list){const colours=new Map(chartPalette(d.accounts.filter(a=>d.daily.some(x=>x.accountId===a.id))).map(x=>[x.id,x]));return `<div class="ov-legend">${list.map((x,i)=>`<span data-sub="${esc(x.a.id)}" title="${esc(x.a.name)}"><i style="background:${colours.get(x.a.id).fill}"></i>${esc(x.a.short)}</span>`).join('')}</div>`;}
+function dataFromMark(k,pitch,base,W,n,coverage,ui){const x=k*pitch;return `<path class="ov-from" d="M${x} 3V${base}"/>`;}
+// The label sits in the legend row below the chart, so a bucket's tooltip (drawn from the chart's top) never covers it.
+function dataFromLabel(d,ui,list){
+  if(ui.days===24)return '';
+  const n=ui.days,coverage=Math.min(...list.map(x=>x.daily.coverageStart));
+  if(!list.some(x=>(x.daily.imported||[]).slice(-n).some(v=>v>0)))return '';
+  const k=Math.round((coverage-(startOfDay(d.now)-(n-1)*DAY))/DAY);
+  return k>0&&k<n?`<span class="ov-from-l">${esc(t('mfd.dataFrom',{d:md(coverage,ui)}))}</span>`:'';
+}
+function legend(d,ui,list){const colours=new Map(chartPalette(d.accounts.filter(a=>d.daily.some(x=>x.accountId===a.id))).map(x=>[x.id,x]));return `<div class="ov-legend">${list.map((x,i)=>`<span data-sub="${esc(x.a.id)}" title="${esc(x.a.name)}"><i style="background:${colours.get(x.a.id).fill}"></i>${esc(x.a.short)}</span>`).join('')}${dataFromLabel(d,ui,list)}</div>`;}
 
 /* 点阵: 26 weeks × 7 days (Monday on top), five steps. Neutral LCD ink in 全部, the vendor colour in a subscription
    scope. Hover: the date and the tokens per subscription. Days before the record began have no cell. */
@@ -112,7 +120,7 @@ export const overview = {
     const h = fill(ui, 'page', {w: 330, h: 170}).h - 12, max = h >= 185 ? 5 : h >= 165 ? 4 : 3;
     const chart = !list.length ? `<p class="mp-empty">${t('mfd.quotaOnly')}</p>`
       : `<div class="mfd-fill" data-fill="ov">${ui.chart === 'grid' ? heatmap(d, ui, list) : overviewBars(d, ui, list)}</div>`;
-    return `${alertList(d, {max})}${list.length ? totals(d, ui, list) : ''}${chart}${ui.chart==='grid'||!list.length?'':legend(d,list)}`;
+    return `${alertList(d, {max})}${list.length ? totals(d, ui, list) : ''}${chart}${ui.chart==='grid'||!list.length?'':legend(d,ui,list)}`;
   },
   onClick(act, val, ui) {
     if (act === 'opt' && val === 'chart') return {patch: {mfdChart: ui.optionChoice ?? (ui.chart === 'grid' ? 'bars' : 'grid')}};

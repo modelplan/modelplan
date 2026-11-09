@@ -54,10 +54,23 @@ test('HIST-IMP-05 the imported bars take the same hue at reduced opacity, with n
 test('HIST-IMP-05 a quiet marker says where the data starts, in English and Chinese',async({page})=>{
  await open(page,fixture());
  await expect(page.locator('.ov-chart .ov-from')).toHaveCount(1);
- await expect(page.locator('.ov-chart .ov-from-l')).toHaveText('Data from Oct 23');
+ await expect(page.locator('.ov-legend .ov-from-l')).toHaveText('Data from Oct 23');
  await expect(page.locator('.ov-chart')).toHaveAttribute('aria-label',/Lighter parts are earlier history imported/);
  await open(page,fixture(),'zh-CN');
- await expect(page.locator('.ov-chart .ov-from-l')).toContainText('数据始于');
+ await expect(page.locator('.ov-legend .ov-from-l')).toContainText('数据始于');
+});
+
+test('HIST-IMP-05 no bucket tooltip covers the data-start label',async({page})=>{
+ await open(page,fixture());
+ const label=page.locator('.ov-legend .ov-from-l');await expect(label).toBeVisible();
+ const buckets=page.locator('.ov-bucket');
+ for(const i of [0,5,17,23,26,29]){
+  await buckets.nth(i).hover();
+  const tip=page.locator('.mfd-tip');await expect(tip).toBeVisible();
+  const [a,b]=await Promise.all([tip.boundingBox(),label.boundingBox()]);
+  const apart=a.x+a.width<=b.x||b.x+b.width<=a.x||a.y+a.height<=b.y||b.y+b.height<=a.y;
+  expect(apart,`bucket ${i}: tooltip ${JSON.stringify(a)} label ${JSON.stringify(b)}`).toBe(true);
+ }
 });
 
 test('HIST-IMP-05 the 7-day view shows imported days that fall inside it and no marker when data starts earlier',async({page})=>{
