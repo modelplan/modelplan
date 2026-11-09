@@ -79,11 +79,11 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
  for(const peak of data.details?.peaks??[]){
   const m=members.find(x=>x.row.id===peak.rowId),start=Date.parse(peak.startsAt),end=peak.endsAt?Date.parse(peak.endsAt):NaN;
   if(!m||!Number.isFinite(start)||(Number.isFinite(end)&&end<=now))continue;
-  const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['peak',peak.rowId,peak.startsAt]);
-  if(start<=now){list.push({id,level:'blue',member:m.key,text:{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
+  const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['peak',peak.rowId,peak.startsAt]),stable=JSON.stringify(['peak',peak.rowId]);
+  if(start<=now){list.push({id,stable,level:'blue',member:m.key,text:{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
   const wait=(start-now)/60000;
-  if(Number.isFinite(end))list.push({id,level:'blue',member:m.key,text:both('alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
-  else list.push({id,level:'blue',member:m.key,text:{en:`${s('en')} peak in ${dhm(wait)}`,zh:`${s('zh-CN')} ${dhm(wait)} 后进入高峰`}});
+  if(Number.isFinite(end))list.push({id,stable,level:'blue',member:m.key,text:both('alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
+  else list.push({id,stable,level:'blue',member:m.key,text:{en:`${s('en')} peak in ${dhm(wait)}`,zh:`${s('zh-CN')} ${dhm(wait)} 后进入高峰`}});
  }
  lamp.sort((a,b)=>a.remaining-b.remaining||a.resetAt-b.resetAt);
  // CKP-MFD-27 (study core.js alerts): on a red quota, each running session of that subscription above its model's
