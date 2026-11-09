@@ -51,8 +51,12 @@ export function workflowProblems(text, path = "") {
 // the push run's group, and a ref-keyed group with cancel-in-progress:false still drops queued
 // protected runs (GitHub keeps a single pending invocation). Workflows triggered only by
 // workflow_dispatch or workflow_call are out of scope.
-const CANCEL_PR_ONLY = /\$\{\{\s*github\.event_name\s*==\s*'pull_request'\s*\}\}/;
+// A branch dispatch may also dedupe per branch (a newer dispatch cancels the older one), but never a
+// dispatch on main, a release branch or a tag: those keep the run_id group and cannot be cancelled.
+const BRANCH_DISPATCH = "github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release')";
+const CANCEL_PR_ONLY = new RegExp("^\\s*cancel-in-progress:\\s*\\$\\{\\{\\s*github\\.event_name\\s*==\\s*'pull_request'\\s*(?:\\|\\|\\s*\\(" + BRANCH_DISPATCH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\)\\s*)?\\}\\}\\s*$");
 const PR_GROUP = "github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id";
+const PR_GROUP_DISPATCH = `github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || (${BRANCH_DISPATCH} && format('dispatch-{0}', github.ref)) || github.run_id`;
 
 function topLevelBlock(text, key) {
   const lines = text.split("\n");
@@ -95,7 +99,7 @@ export function macConcurrencyProblems(text) {
   }
   const groupLine = conc.split("\n").find((l) => /^\s+group:/.test(l)) ?? "";
   const cancelLine = conc.split("\n").find((l) => /^\s+cancel-in-progress:/.test(l)) ?? "";
-  if (!groupLine.includes(PR_GROUP)) {
+  if (!groupLine.includes(PR_GROUP) && !groupLine.includes(PR_GROUP_DISPATCH)) {
     problems.push('concurrency group must be "<workflow>-${{ github.event.pull_request.number && format(\'pr-{0}\', github.event.pull_request.number) || github.run_id }}": only PR heads share a group and every protected (main/tag/dispatch) run is unique, so it can neither be cancelled nor queued away');
   }
   if (!CANCEL_PR_ONLY.test(cancelLine)) {

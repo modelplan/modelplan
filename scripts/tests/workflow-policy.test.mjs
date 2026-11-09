@@ -90,6 +90,17 @@ test("macOS workflows on pull_request/push cancel superseded PR heads but never 
   }
 });
 
+test("a branch dispatch may dedupe per branch, but main, release and tag runs stay unique", () => {
+  const D = "github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release')";
+  const wf = (g, c) => `on:\n  pull_request:\n  push:\n  workflow_dispatch:\nconcurrency:\n  group: dist-\${{ ${g} }}\n  cancel-in-progress: \${{ ${c} }}\njobs:\n  a:\n    runs-on: macos-latest\n`;
+  const pr = "github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number)";
+  assert.deepEqual(macConcurrencyProblems(wf(`${pr} || (${D} && format('dispatch-{0}', github.ref)) || github.run_id`, `github.event_name == 'pull_request' || (${D})`)), []);
+  // a dedupe that would also cancel main/tag dispatches is rejected
+  const loose = "github.event_name == 'workflow_dispatch'";
+  assert.ok(macConcurrencyProblems(wf(`${pr} || (${D} && format('dispatch-{0}', github.ref)) || github.run_id`, `github.event_name == 'pull_request' || (${loose})`)).length > 0);
+  assert.ok(macConcurrencyProblems(wf(`${pr} || (${loose} && format('dispatch-{0}', github.ref)) || github.run_id`, `github.event_name == 'pull_request' || (${D})`)).length > 0);
+});
+
 test("non-macOS and non-PR/push workflows are outside the concurrency rule", () => {
   assert.deepEqual(macConcurrencyProblems("on:\n  pull_request:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n"), []);
   assert.deepEqual(macConcurrencyProblems("on:\n  workflow_dispatch:\njobs:\n  a:\n    runs-on: macos-latest\n"), []);
