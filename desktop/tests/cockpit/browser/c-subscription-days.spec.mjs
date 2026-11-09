@@ -48,7 +48,10 @@ test('D59 the cycle key switches the history between the 5h and weekly windows',
  const key=page.locator('[data-opt="cycle"]');await expect(key).toBeVisible();
  await expect(page.locator('.sec em').first()).toHaveText('5h');await expect(page.locator('.cy')).toHaveCount(1);
  // The bars carry the subscription's colour (the inline --cv the page policy drops is applied again).
- expect(await page.locator('svg.cy-chart').evaluate(e=>e.style.getPropertyValue('--cv'))).toMatch(/^#[0-9a-f]{6}$/i);
+ // glm-727-1: check what is applied, not only what was set: the computed property and a bar's painted fill.
+ const painted=await page.locator('svg.cy-chart').evaluate(e=>{const r=e.querySelector('rect[fill="var(--cv)"],rect[fill^="var("]');return {cv:getComputedStyle(e).getPropertyValue('--cv').trim(),fill:r?getComputedStyle(r).fill:null};});
+ expect(painted.cv).toMatch(/^#[0-9a-f]{6}$/i);
+ expect(painted.fill).not.toBeNull();expect(painted.fill).not.toBe('rgb(0, 0, 0)');
  await key.locator('b').nth(1).click();
  await expect(page.locator('.sec em').first()).toHaveText('Weekly');await expect(page.locator('.cy')).toHaveCount(2);
  await expect(key.locator('b.on')).toHaveText('Weekly');
