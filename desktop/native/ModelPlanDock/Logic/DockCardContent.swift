@@ -9,7 +9,7 @@ public struct DockCardRow:Equatable,Sendable {
     public let emphasised:Bool
     /// A notice's state pill: 已预告 / 已确认.
     public let pill:String
-    /// What the row's figures mean; shown in the card while the pointer is on the row (never a native tooltip) and spoken as its help.
+    /// Producer classification of a credits figure ("credits", "money" or ""). Never shown or spoken.
     public let hint:String
     public init(id:String,kind:Kind,label:String,value:String,detail:String="",remainingFraction:Double?=nil,tone:DockQuotaStatus = .unknown,emphasised:Bool=false,pill:String="",hint:String=""){
         self.hint=hint;self.id=id;self.kind=kind;self.label=label;self.value=value;self.detail=detail;self.remainingFraction=remainingFraction;self.tone=tone;self.emphasised=emphasised;self.pill=pill
