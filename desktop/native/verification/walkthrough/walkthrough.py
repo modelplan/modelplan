@@ -314,10 +314,18 @@ class Walkthrough:
         self.host.helper("click", *centre(ring["frame"]))
 
     def op_dragStrip(self, action):
-        """Drag the cockpit by its title strip: left of the strip buttons, at their height."""
+        """Drag the cockpit by the middle of its title-strip drag region (G3-43).
+
+        The region is the app's `titleDragFrame`: page x 24..240 and, from the top of the page, the strip top
+        (225 full open, 45 full closed, 57 short) minus 3 down to plus 29. It scales with the window, so the point
+        comes from the reported window frame (page width 636, root 877/691/627/609 plus the 34 px base reserve), never
+        from another control that merely shares a label.
+        """
         window = self.need(action["window"])["frame"]
-        button = self.need(action["strip"])["frame"]
-        start = (window[0] + window[2] * action.get("x", 0.12), centre(button)[1])
+        scale = window[2] / 636.0
+        root = round(window[3] / scale) - 34
+        strip_top = {877: 225, 691: 45, 627: 57, 609: 57}.get(min((877, 691, 627, 609), key=lambda r: abs(r - root)), 225)
+        start = (window[0] + 132 * scale, window[1] + (strip_top + 13) * scale)
         self.host.helper("down", *start)
         self.host.helper("held", start[0] + action["by"][0], start[1] + action["by"][1], action.get("seconds", 1.0))
         self.host.helper("up")

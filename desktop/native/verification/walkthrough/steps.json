@@ -1974,8 +1974,6 @@
         {
           "op": "dragStrip",
           "window": "window-of:label:ModelPlan Cockpit",
-          "strip": "label:Settings",
-          "x": 0.12,
           "by": [
             -320,
             40
