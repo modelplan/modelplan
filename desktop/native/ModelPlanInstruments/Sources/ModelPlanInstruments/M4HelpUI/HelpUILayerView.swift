@@ -153,8 +153,9 @@ import AppKit
               !(candidate.mapHeader != nil && candidate.card != nil),
               frames.allSatisfy({HelpUIGeometry.valid($0) && safe.contains($0) && HelpUIGeometry.free($0,from:input.liveReadings)}),
               candidate.mapLabels.allSatisfy({ label in
-                  label.leader.allSatisfy({$0.x.isFinite && $0.y.isFinite}) && zip(label.leader,label.leader.dropFirst()).allSatisfy {
-                      HelpUIGeometry.segmentIsClear($0.0,$0.1,blocks:input.liveReadings+frames)
+                  label.leader.allSatisfy({$0.x.isFinite && $0.y.isFinite}) && zip(label.leader,label.leader.dropFirst()).allSatisfy { from,to in
+                      input.map.straightLeaders ? !frames.contains { frame in HelpUIGeometry.segmentCrosses(from,to,rect:frame) }
+                          : HelpUIGeometry.segmentIsClear(from,to,blocks:input.liveReadings+frames)
                   }
               }) else { return .init(sessionID:input.sessionID,unresolvedMapIDs:["invalidRecipe"]) }
         return candidate
@@ -164,11 +165,14 @@ import AppKit
         let headerFont=recipeProvider.font(for:.header);guard isCurrent(token) else { return }
         let captionFont=recipeProvider.font(for:.caption);guard isCurrent(token) else { return }
         let buttonFont=recipeProvider.font(for:.button);guard isCurrent(token) else { return }
-        let ink=recipeProvider.primaryInk;guard isCurrent(token) else { return }
+        _=recipeProvider.primaryInk;guard isCurrent(token) else { return }
+        let ink=Self.mapInk
         let catalog=HelpMapCatalog(input.language)
         header.isHidden=result.mapHeader==nil;header.stringValue=catalog.metaphor+"\n"+catalog.dismissal
         header.font=headerFont;header.textColor=ink
-        if let frame=result.mapHeader { header.frame=frame.insetBy(dx:8,dy:5) }
+        // Layouts measure map text at the frame width less 8 pt a side. A wrapping NSTextField adds
+        // 2 pt of line-fragment padding a side, so its frame is inset 6 pt to leave the text that width.
+        if let frame=result.mapHeader { header.frame=frame.insetBy(dx:6,dy:5) }
         let visible=Set(result.mapLabels.map(\.id))
         for id in Array(labels.keys) where !visible.contains(id) { labels.removeValue(forKey:id)?.removeFromSuperview() }
         for item in result.mapLabels {
@@ -176,7 +180,7 @@ import AppKit
             if labels[item.id]==nil { labels[item.id]=label;addSubview(label) }
             label.stringValue=item.text;label.maximumNumberOfLines=0
             label.font=captionFont;label.textColor=ink
-            label.frame=item.frame.insetBy(dx:8,dy:5);label.setAccessibilityLabel(item.text)
+            label.frame=item.frame.insetBy(dx:6,dy:5);label.setAccessibilityLabel(item.text)
             label.setAccessibilityIdentifier("help.map."+item.id)
         }
         if let frame=result.mapSourceFrame,let id=input.map.sourceActionID,let text=input.map.sourceActionTitle {
@@ -328,18 +332,29 @@ import AppKit
     }
     public override func draw(_ dirtyRect:NSRect) {
         guard let presentation else { return }
-        if let frame=presentation.mapHeader { panel(frame) }
+        if let frame=presentation.mapHeader { panel(frame,fill:Self.mapPlate,border:Self.mapEdge) }
         for label in presentation.mapLabels {
-            panel(label.frame)
+            panel(label.frame,fill:Self.mapPlate,border:Self.mapEdge)
             guard let first=label.leader.first else { continue }
             let path=NSBezierPath();path.move(to:first);for point in label.leader.dropFirst() { path.line(to:point) }
-            recipeProvider.secondaryInk.setStroke();path.lineWidth=1;path.stroke()
-            if let end=label.leader.last { recipeProvider.primaryInk.setFill();NSBezierPath(ovalIn:.init(x:end.x-2,y:end.y-2,width:4,height:4)).fill() }
+            // A halo in the caption's own plate colour keeps the line visible on any desktop.
+            path.lineCapStyle = .round;path.lineJoinStyle = .round
+            Self.mapPlate.setStroke();path.lineWidth=3;path.stroke()
+            Self.mapLine.setStroke();path.lineWidth=1;path.stroke()
+            if let end=label.leader.last {
+                Self.mapPlate.setFill();NSBezierPath(ovalIn:.init(x:end.x-3.5,y:end.y-3.5,width:7,height:7)).fill()
+                Self.mapInk.setFill();NSBezierPath(ovalIn:.init(x:end.x-2,y:end.y-2,width:4,height:4)).fill()
+            }
         }
     }
-    private func panel(_ frame:CGRect) {
-        recipeProvider.panelColor.setFill();let path=NSBezierPath(roundedRect:frame,xRadius:4,yRadius:4);path.fill()
-        recipeProvider.borderColor.setStroke();path.lineWidth=1;path.stroke()
+    /// The study's help callout: a near-black plate with white text and a light hairline, on any desktop (owner D71).
+    static let mapPlate=NSColor(srgbRed:0.043,green:0.063,blue:0.102,alpha:1)
+    static let mapInk=NSColor(srgbRed:0.96,green:0.97,blue:0.98,alpha:1)
+    static let mapLine=NSColor(srgbRed:0.78,green:0.82,blue:0.88,alpha:0.9)
+    static let mapEdge=NSColor(srgbRed:1,green:1,blue:1,alpha:0.16)
+    private func panel(_ frame:CGRect,fill:NSColor? = nil,border:NSColor? = nil) {
+        (fill ?? recipeProvider.panelColor).setFill();let path=NSBezierPath(roundedRect:frame,xRadius:4,yRadius:4);path.fill()
+        (border ?? recipeProvider.borderColor).setStroke();path.lineWidth=1;path.stroke()
     }
     public override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance();needsDisplay=true;card?.needsDisplay=true }
     public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties();needsDisplay=true;card?.needsDisplay=true }
