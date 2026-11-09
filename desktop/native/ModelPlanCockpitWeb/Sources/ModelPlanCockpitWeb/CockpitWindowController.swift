@@ -240,6 +240,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     public var verificationShellState: CockpitShellState? { currentShell }
     public var verificationRootHeight: CGFloat? { layout?.rootHeight }
+    public var verificationDragRegion: NSView? { dragRegion }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
@@ -305,6 +306,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       configureVerification?(config)
     #endif
     let view = CockpitWebView(frame: .zero, configuration: config)
+    // Owner review 11-08 / CKP-SHELL-25: only the hull and canopy are drawn; the web view paints no backing of its
+    // own, so the clear panel shows the desktop around the transparent page.
+    view.setValue(false, forKey: "drawsBackground")
+    view.underPageBackgroundColor = .clear
     pageLoadStarted = false
     // The initial v2 load applies appearance and shell before a page can paint.
     view.isHidden = true
@@ -636,6 +641,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   ) { fail(.provisionalNavigationFailed) }
   public func windowWillClose(_ notification: Notification) { discard() }
   public func windowDidResignKey(_ notification: Notification) { cancelDrag() }
+  public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func updateScope(_ key:String) {
     guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
     scope=key; publishAppearance()
@@ -708,7 +714,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     window.setFrame(frame, display: true)
     window.contentView?.setBoundsSize(.init(width: 636, height: fit.rootHeight + 34))
     web?.frame = .init(x: 0, y: 0, width: 636, height: fit.rootHeight + 34)
-    dragRegion?.frame = .init(x: 64, y: fit.rootHeight + 2, width: 390, height: 28)
+    dragRegion?.frame = fit.titleDragFrame
     publishAppearance()
   }
   func toggleShutter() {

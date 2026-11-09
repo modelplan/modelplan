@@ -18,7 +18,7 @@ const notes:ReadonlyArray<readonly [string,string,string]>=[
  ['.dk-fad','Faders: each is a model; drag or press an effort for a local comparison that leaves the session unchanged.','推杆：每个代表一个模型，拖动或点档位作本地比较，不会改会话。'],
  ['.mfd-pk','Main screen: page keys change pages; bottom keys select or return.','公共屏：页键切页，底键选项或返回原页。'],
  ['.ck-tape','Session record: running sessions come first; press a row for details.','会话记录：运行中的在前，按一行查看详情。'],
- ['.ck-base .bz-line','Flame: this subscription is working now; it does not mean an alert.','火焰：表示这个订阅正在用，不表示额度告警。'],
+ ['.ck-base .bz-line','Glow: this subscription is working now; it does not mean an alert.','喷口光：表示这个订阅正在用，不表示额度告警。'],
 ];
 export function mountPrototypeHelp(root:HTMLElement,getLocale:()=>Locale,isActive:()=>boolean){
  const layer=document.createElement('section');layer.id='help-map';layer.className='annot help-map';layer.hidden=true;layer.setAttribute('role','region');document.body.append(layer);
@@ -27,7 +27,7 @@ export function mountPrototypeHelp(root:HTMLElement,getLocale:()=>Locale,isActiv
  function render(){
   if(!held||!isActive()){layer.hidden=true;return;}
   const locale=getLocale();layer.replaceChildren();layer.hidden=false;layer.dataset.surface='cockpit';layer.setAttribute('aria-label',locale==='en'?'Cockpit help':'驾驶舱说明');
-  const title=document.createElement('div');title.className='help-map-title';title.textContent=locale==='en'?'Engine = subscription · Fader = model · Flame = working now':'发动机 = 订阅 · 推杆 = 模型 · 火焰 = 正在用';
+  const title=document.createElement('div');title.className='help-map-title';title.textContent=locale==='en'?'Engine = subscription · Fader = model · Glow = working now':'发动机 = 订阅 · 推杆 = 模型 · 喷口光 = 正在用';
   const dismiss=document.createElement('span');dismiss.className='help-map-dismiss';dismiss.textContent=locale==='en'?'Press Esc or click to dismiss help':'按 Esc 或点一下退出说明';title.append(dismiss);layer.append(title);
   const targets=notes.flatMap(([selector,en,zh])=>{const target=[...root.querySelectorAll(selector)].find(visible);if(!target)return [];const box=target.getBoundingClientRect(),caption=document.createElement('span');caption.className='an';caption.dataset.target=selector;caption.textContent=locale==='en'?en:zh;layer.append(caption);return [{target,box,caption}];}).sort((a,b)=>a.box.y-b.box.y);
   if(!targets.length){layer.hidden=true;return;}
