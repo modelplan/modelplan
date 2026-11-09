@@ -135,7 +135,7 @@ private actor G1SettingsEngine: EngineClient {
             let privacy = try control("firstRun.privacy", in: window, as: NSTextField.self)
             let line = try control("firstRun.publicRecommendation", in: window, as: NSTextField.self)
             XCTAssertFalse(line.isHiddenOrHasHiddenAncestor)
-            XCTAssertEqual(line.stringValue, locale.hasPrefix("zh") ? "推荐基于公开数据。" : "Recommendations use public data.")
+            XCTAssertEqual(line.stringValue, locale.hasPrefix("zh") ? "推荐用的是 ModelPlan 公开发布的模型数据，不会上传你的使用记录。" : "Recommendations use ModelPlan's published model data; your usage never leaves this Mac.")
             let privacyFrame = privacy.convert(privacy.bounds, to: nil)
             let recommendationFrame = line.convert(line.bounds, to: nil)
             XCTAssertLessThan(recommendationFrame.midY, privacyFrame.midY)
