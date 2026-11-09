@@ -300,6 +300,7 @@ final class QuotaWidgetSpotlightView: NSView {
         guard !hole.isEmpty else {
             let path = CGMutablePath(); path.addRect(bounds)
             dim.path = path; feather.contents = nil; feather.frame = .zero; halo.contents = nil; halo.frame = .zero
+            imageKey = nil
             return
         }
         // The flat dim stops where the feather has reached full strength, so the two meet unseen.
@@ -310,13 +311,48 @@ final class QuotaWidgetSpotlightView: NSView {
         dim.path = path
         let region = outer.intersection(bounds)
         let scale = max(1, window?.backingScaleFactor ?? 2)
-        feather.contentsScale = scale
-        feather.frame = region
-        feather.contents = Self.featherImage(region: region, hole: hole, scale: scale)
-        halo.contentsScale = scale
-        halo.frame = region
-        halo.contents = Self.haloImage(region: region, hole: hole, scale: scale,
-                                       peak: QuotaWidgetSpotlightStyle.haloPeak(dark: isDark, increaseContrast: increaseContrast))
+        feather.contentsScale = scale; halo.contentsScale = scale
+        feather.frame = region; halo.frame = region
+        // The pixel loops are not cheap: draw once per geometry and tint, never again for a repeated layout.
+        let peak = QuotaWidgetSpotlightStyle.haloPeak(dark: isDark, increaseContrast: increaseContrast)
+        let key = ImageKey(region: region, hole: hole, scale: scale, peak: peak)
+        if key != imageKey {
+            let images = Self.overlayImages(region: region, hole: hole, scale: scale, peak: peak)
+            feather.contents = images.feather; halo.contents = images.halo
+            imageKey = key
+        }
+    }
+    private struct ImageKey: Equatable { let region: CGRect, hole: CGRect, scale: CGFloat, peak: CGFloat }
+    private var imageKey: ImageKey?
+
+    /// The dim feather and the accent halo from one pass over the pixels (one distance per pixel).
+    static func overlayImages(region: CGRect, hole: CGRect, scale: CGFloat, peak: CGFloat) -> (feather: CGImage?, halo: CGImage?) {
+        let w = max(1, Int((region.width * scale).rounded())), h = max(1, Int((region.height * scale).rounded()))
+        let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? NSColor.systemBlue.usingColorSpace(.sRGB)!
+        let rgb = [accent.redComponent, accent.greenComponent, accent.blueComponent]
+        var dimBytes = [UInt8](repeating: 0, count: w * h * 4), haloBytes = dimBytes
+        let radius = QuotaWidgetSpotlightStyle.holeCornerRadius
+        for row in 0..<h {
+            let y = region.maxY - (CGFloat(row) + 0.5) / scale
+            for column in 0..<w {
+                let x = region.minX + (CGFloat(column) + 0.5) / scale
+                let d = distance(from: CGPoint(x: x, y: y), toRounded: hole, radius: radius)
+                let i = (row * w + column) * 4
+                dimBytes[i + 3] = UInt8((QuotaWidgetSpotlightStyle.dimAlpha(atDistance: d) * 255).rounded())
+                let a = QuotaWidgetSpotlightStyle.haloAlpha(atDistance: d, peak: peak)
+                if a > 0 {
+                    for c in 0..<3 { haloBytes[i + c] = UInt8((rgb[c] * a * 255).rounded()) }
+                    haloBytes[i + 3] = UInt8((a * 255).rounded())
+                }
+            }
+        }
+        func image(_ bytes: [UInt8], _ space: CGColorSpace) -> CGImage? {
+            guard let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
+            return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: space,
+                           bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                           provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        }
+        return (image(dimBytes, CGColorSpaceCreateDeviceRGB()), image(haloBytes, CGColorSpace(name: CGColorSpace.sRGB)!))
     }
 
     /// Distance from `point` to the rounded rectangle's edge; negative inside.
@@ -345,31 +381,6 @@ final class QuotaWidgetSpotlightView: NSView {
         let space = CGColorSpaceCreateDeviceRGB()
         guard let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
         return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: space,
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
-    }
-
-    /// The accent colour with the halo's alpha, premultiplied, covering `region`.
-    static func haloImage(region: CGRect, hole: CGRect, scale: CGFloat, peak: CGFloat) -> CGImage? {
-        let w = max(1, Int((region.width * scale).rounded())), h = max(1, Int((region.height * scale).rounded()))
-        let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? NSColor.systemBlue.usingColorSpace(.sRGB)!
-        let rgb = [accent.redComponent, accent.greenComponent, accent.blueComponent]
-        var bytes = [UInt8](repeating: 0, count: w * h * 4)
-        let radius = QuotaWidgetSpotlightStyle.holeCornerRadius
-        for row in 0..<h {
-            let y = region.maxY - (CGFloat(row) + 0.5) / scale
-            for column in 0..<w {
-                let x = region.minX + (CGFloat(column) + 0.5) / scale
-                let d = distance(from: CGPoint(x: x, y: y), toRounded: hole, radius: radius)
-                let alpha = QuotaWidgetSpotlightStyle.haloAlpha(atDistance: d, peak: peak)
-                let i = (row * w + column) * 4
-                for c in 0..<3 { bytes[i + c] = UInt8((rgb[c] * alpha * 255).rounded()) }
-                bytes[i + 3] = UInt8((alpha * 255).rounded())
-            }
-        }
-        guard let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
-        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
-                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
                        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
                        provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
