@@ -133,6 +133,16 @@
         ]
       }
     ],
+    "planModels": [
+      {
+        "planId": "synthetic",
+        "generation": "synthetic",
+        "basis": "synthetic",
+        "modelIds": [
+          "synthetic"
+        ]
+      }
+    ],
     "forecasts": [
       {
         "source": "synthetic",

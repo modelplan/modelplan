@@ -129,6 +129,7 @@ type Digest struct {
 	Lineups           []PublishedLineup  `json:"lineups"`
 	Speed             []SpeedTier        `json:"speedTiers,omitempty"`
 	PlanMetering      *PlanMetering      `json:"planMetering,omitempty"` // client-v1.3
+	PlanModels        *PlanModels        `json:"planModels,omitempty"`   // client-v1.4
 	Resets            []json.RawMessage  `json:"resets"`
 	Windows           []json.RawMessage  `json:"windows"`
 }
@@ -264,6 +265,9 @@ func Parse(component string, b []byte) (*Digest, error) {
 	}
 	if d.PlanMetering != nil && !validMetering(d.PlanMetering) {
 		d.PlanMetering = nil
+	}
+	if d.PlanModels != nil && !validPlanModels(d.PlanModels) {
+		d.PlanModels = nil
 	}
 	if err := json.Unmarshal(raw.Data, &d.publication); err != nil {
 		return nil, err

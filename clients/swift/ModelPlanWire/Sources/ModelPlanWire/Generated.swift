@@ -2133,6 +2133,7 @@ public struct WireCockpitDetails: Codable, Sendable {
     public let `resetEvents`: [RowsResetEvent]
     public let `alerts`: [WireCockpitAlert]
     public let `publishedModels`: [WireCockpitPublicationModel]?
+    public let `planModels`: [WireCockpitPlanModels]?
     public let `forecasts`: [WireCockpitForecast]?
     private enum CodingKeys: String, CodingKey {
         case `publication`
@@ -2144,9 +2145,10 @@ public struct WireCockpitDetails: Codable, Sendable {
         case `resetEvents`
         case `alerts`
         case `publishedModels`
+        case `planModels`
         case `forecasts`
     }
-    public init(`publication`: WireCockpitPublication? = nil, `version`: Int, `sources`: [String], `subscriptions`: [WireCockpitSubscriptionDetails], `sessions`: [WireCockpitSession], `sessionCoverage`: String, `resetEvents`: [RowsResetEvent], `alerts`: [WireCockpitAlert], `publishedModels`: [WireCockpitPublicationModel]? = nil, `forecasts`: [WireCockpitForecast]? = nil) throws {
+    public init(`publication`: WireCockpitPublication? = nil, `version`: Int, `sources`: [String], `subscriptions`: [WireCockpitSubscriptionDetails], `sessions`: [WireCockpitSession], `sessionCoverage`: String, `resetEvents`: [RowsResetEvent], `alerts`: [WireCockpitAlert], `publishedModels`: [WireCockpitPublicationModel]? = nil, `planModels`: [WireCockpitPlanModels]? = nil, `forecasts`: [WireCockpitForecast]? = nil) throws {
         self.`publication` = `publication`
         self.`version` = `version`
         self.`sources` = `sources`
@@ -2156,6 +2158,7 @@ public struct WireCockpitDetails: Codable, Sendable {
         self.`resetEvents` = `resetEvents`
         self.`alerts` = `alerts`
         self.`publishedModels` = `publishedModels`
+        self.`planModels` = `planModels`
         self.`forecasts` = `forecasts`
         try validate()
     }
@@ -2172,6 +2175,8 @@ public struct WireCockpitDetails: Codable, Sendable {
         self.`alerts` = try c.decode([WireCockpitAlert].self, forKey: .`alerts`)
         if c.contains(.`publishedModels`), try c.decodeNil(forKey: .`publishedModels`) { throw WireDecodeError.invalidIdentity }
         self.`publishedModels` = try c.decodeIfPresent([WireCockpitPublicationModel].self, forKey: .`publishedModels`)
+        if c.contains(.`planModels`), try c.decodeNil(forKey: .`planModels`) { throw WireDecodeError.invalidIdentity }
+        self.`planModels` = try c.decodeIfPresent([WireCockpitPlanModels].self, forKey: .`planModels`)
         if c.contains(.`forecasts`), try c.decodeNil(forKey: .`forecasts`) { throw WireDecodeError.invalidIdentity }
         self.`forecasts` = try c.decodeIfPresent([WireCockpitForecast].self, forKey: .`forecasts`)
         try validate()
@@ -2188,6 +2193,7 @@ public struct WireCockpitDetails: Codable, Sendable {
         try c.encode(`resetEvents`, forKey: .`resetEvents`)
         try c.encode(`alerts`, forKey: .`alerts`)
         try c.encodeIfPresent(`publishedModels`, forKey: .`publishedModels`)
+        try c.encodeIfPresent(`planModels`, forKey: .`planModels`)
         try c.encodeIfPresent(`forecasts`, forKey: .`forecasts`)
     }
     private func validate() throws {
@@ -2454,6 +2460,45 @@ public struct WireCockpitHistorySums: Codable, Sendable {
         try c.encode(`generationTps`, forKey: .`generationTps`)
         try c.encode(`observedRequests`, forKey: .`observedRequests`)
         try c.encode(`eligibleRequests`, forKey: .`eligibleRequests`)
+    }
+    private func validate() throws {
+    }
+}
+
+public struct WireCockpitPlanModels: Codable, Sendable {
+    public let `planId`: String
+    public let `generation`: String?
+    public let `basis`: String
+    public let `modelIds`: [String]
+    private enum CodingKeys: String, CodingKey {
+        case `planId`
+        case `generation`
+        case `basis`
+        case `modelIds`
+    }
+    public init(`planId`: String, `generation`: String? = nil, `basis`: String, `modelIds`: [String]) throws {
+        self.`planId` = `planId`
+        self.`generation` = `generation`
+        self.`basis` = `basis`
+        self.`modelIds` = `modelIds`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`planId` = try c.decode(String.self, forKey: .`planId`)
+        if c.contains(.`generation`), try c.decodeNil(forKey: .`generation`) { throw WireDecodeError.invalidIdentity }
+        self.`generation` = try c.decodeIfPresent(String.self, forKey: .`generation`)
+        self.`basis` = try c.decode(String.self, forKey: .`basis`)
+        self.`modelIds` = try c.decode([String].self, forKey: .`modelIds`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`planId`, forKey: .`planId`)
+        try c.encodeIfPresent(`generation`, forKey: .`generation`)
+        try c.encode(`basis`, forKey: .`basis`)
+        try c.encode(`modelIds`, forKey: .`modelIds`)
     }
     private func validate() throws {
     }

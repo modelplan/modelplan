@@ -45,6 +45,9 @@ type CockpitDetails struct {
 	// PublishedModels is present only for a client that negotiated cockpitModelsV1: public
 	// data of every published model, in publication order, with no personal selection.
 	PublishedModels []CockpitPublicationModel `json:"publishedModels,omitempty" schema:"maxItems=256" null:"forbidden"`
+	// PlanModels is the published client data.planModels (D86), present with PublishedModels: which published
+	// models each published plan lets its subscriber use. A plan without an entry is unknown, not empty.
+	PlanModels []CockpitPlanModels `json:"planModels,omitempty" schema:"maxItems=128" null:"forbidden"`
 	// Forecasts is present only for a client that negotiated cockpitForecastV1.
 	Forecasts []CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
 }
@@ -143,6 +146,12 @@ type CockpitPublicationModel struct {
 	DeveloperID string                     `json:"developerId" schema:"minLength=1,maxLength=128"`
 	Recommended string                     `json:"recommended" schema:"maxLength=64"`
 	Efforts     []CockpitPublicationEffort `json:"efforts" schema:"maxItems=32"`
+}
+type CockpitPlanModels struct {
+	PlanID     string   `json:"planId" schema:"minLength=1,maxLength=128"`
+	Generation string   `json:"generation,omitempty" null:"forbidden" schema:"maxLength=128"`
+	Basis      string   `json:"basis" schema:"maxLength=16"`
+	ModelIDs   []string `json:"modelIds" schema:"minItems=1,maxItems=256"`
 }
 type CockpitPublicationEffort struct {
 	Effort      string   `json:"effort" schema:"minLength=1,maxLength=64"`
