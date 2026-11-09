@@ -263,6 +263,17 @@ public enum EntranceChecks {
             var small = frame.measurement; small.areaFraction *= 0.5
             try run.expect(!KeyframeComparison.compare(native: small, to: frame).passed, "half the area fails")
         }
+        run.group("rocket source: community builds use the neutral stand-in; a pack's geometry decodes (D109)") {
+            try run.expect(RocketModelSource.communityDefault == .neutralStandIn, "community default")
+            try run.expect(RocketModelSource.communityDefault.modelURL(for: .night) == nil, "stand-in has no model file")
+            try run.expect(RocketModelSource.communityDefault.geometry == .neutralStandIn, "stand-in geometry")
+            let json = #"{"SPDX-License-Identifier":"x","height":14.2,"skirtRadius":1.2,"windowAnchorY":12.835,"glassVertices":[[0,12.4,0.5],[0.6,13.2,0.9]]}"#
+            let g = try RocketGeometry.decodePack(Data(json.utf8))
+            try run.expect(g.glassVertices.count == 2 && g.windowAnchorY == 12.835 && g.height == 14.2, "pack geometry")
+            let night = URL(fileURLWithPath: "/n.usdz"), day = URL(fileURLWithPath: "/d.usdz")
+            let official = RocketModelSource.official(night: night, day: day, geometry: g)
+            try run.expect(official.modelURL(for: .night) == night && official.modelURL(for: .day) == day, "one file per finish")
+        }
         return run
     }
 
