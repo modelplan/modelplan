@@ -4,7 +4,7 @@
     {
       "id": "first-run-window",
       "title": "First-run window",
-      "expected": "The Set up ModelPlan window lists the synthetic subscriptions (since build 14: one row per tool found, with a checkbox); the widget is visible beside it.",
+      "expected": "The Set up ModelPlan window lists the tools found in the seeded profile (Claude Code, Codex, Gemini, ZCode, Kiro markers), one row each with a checkbox (checklist 3); Open at login is on by default; the widget is visible beside it.",
       "actions": [
         {
           "op": "await",
@@ -27,13 +27,27 @@
       "checks": [
         {
           "exists": "ax:firstRun.title"
+        },
+        {
+          "countAtLeast": {
+            "target": "ax^:scope.firstRun.tool.",
+            "min": 3
+          }
+        },
+        {
+          "exists": "ax:firstRun.login"
+        },
+        {
+          "exists": "ax:firstRun.done"
         }
-      ]
+      ],
+      "requirement": "checklist 3",
+      "requires": []
     },
     {
-      "id": "first-run-done",
-      "title": "First run finished",
-      "expected": "Done closes the window and the widget stays. With the tool chooser (build 14) Done needs one tool ticked; a tool found is ticked by default, so the walk ticks one only when the page asks for it. No hint is due here: v1 hints are for a concealed widget.",
+      "id": "first-run-login-off",
+      "title": "First run: Open at login unticked",
+      "expected": "Open at login is unticked in this synthetic HOME only (the box has one state per run; the tool ticks it off before Done so no login item stays behind). The tool rows keep their checkboxes.",
       "requires": [
         "first-run-window"
       ],
@@ -43,6 +57,42 @@
           "by": "id",
           "value": "firstRun.login"
         },
+        {
+          "op": "wait",
+          "seconds": 0.8
+        },
+        {
+          "op": "park"
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:firstRun.done",
+        "window": "window-of:ax:firstRun.done"
+      },
+      "checks": [
+        {
+          "valueIs": {
+            "target": "ax:firstRun.login",
+            "is": "0"
+          }
+        },
+        {
+          "countAtLeast": {
+            "target": "ax^:scope.firstRun.tool.",
+            "min": 3
+          }
+        }
+      ],
+      "requirement": "checklist 3"
+    },
+    {
+      "id": "first-run-done",
+      "title": "First run finished",
+      "expected": "Done closes the window and the widget stays. With the tool chooser (build 14) Done needs one tool ticked; a tool found is ticked by default, so the walk ticks one only when the page asks for it. Open at login was unticked in the step before. No hint is due here: v1 hints are for a concealed widget.",
+      "requires": [
+        "first-run-login-off"
+      ],
+      "actions": [
         {
           "op": "when",
           "present": "ax:scope.firstRun.pickOne",
@@ -197,7 +247,47 @@
         {
           "absent": "ax:settings.sidebar"
         }
-      ]
+      ],
+      "requires": []
+    },
+    {
+      "id": "s-unreadable-no-ring",
+      "title": "Unreadable subscription has no ring",
+      "expected": "Gemini is detected (tool marker) but its login is expired, so it cannot be read: the widget shows rings for Claude Code, Codex and the declared plans, and none for Gemini (G3-38). The first-run list in the first step shows Gemini.",
+      "requires": [
+        "widget-found"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0",
+        "window": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "exists": "label:Claude Code"
+        },
+        {
+          "exists": "label:Codex"
+        },
+        {
+          "absent": "label^:Gemini"
+        },
+        {
+          "countAtLeast": {
+            "target": "ax^:dock.subscription.",
+            "min": 5
+          }
+        }
+      ],
+      "requirement": "G3-38"
     },
     {
       "id": "widget-rest",
@@ -235,7 +325,8 @@
         {
           "nonblank": "window-of:ax:dock.grip.0"
         }
-      ]
+      ],
+      "requires": []
     },
     {
       "id": "widget-hover",
@@ -590,7 +681,8 @@
         {
           "opened": "ax:status.help"
         }
-      ]
+      ],
+      "requires": []
     },
     {
       "id": "first-use-hint",
@@ -1000,7 +1092,8 @@
         {
           "exists": "ax^:dock.subscription."
         }
-      ]
+      ],
+      "requires": []
     },
     {
       "id": "popup-card",
@@ -1063,6 +1156,61 @@
         }
       ],
       "requirement": "G3-14"
+    },
+    {
+      "id": "s-reserve-card",
+      "title": "Quota card with a reserve line",
+      "expected": "The Codex ring's card has the vendor mark and name on one line and a Reserve line with the balance (420 credits); hovering the line explains in one sentence what the number means (checklist 13).",
+      "requires": [
+        "widget-out-again"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "clickRing",
+          "target": "label:Codex"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "when",
+          "present": "value:Reserve",
+          "then": [
+            {
+              "op": "hover",
+              "target": "value:Reserve",
+              "seconds": 1.8
+            }
+          ]
+        },
+        {
+          "op": "remember",
+          "target": "window-of:ax:dock.grip.0"
+        }
+      ],
+      "shot": {
+        "crop": "ax^:dock.card.",
+        "window": "ax^:dock.card."
+      },
+      "checks": [
+        {
+          "cardNamed": true
+        },
+        {
+          "exists": "value:Reserve"
+        },
+        {
+          "anyExists": [
+            "value~:credits",
+            "value~:420"
+          ]
+        }
+      ],
+      "requirement": "checklist 13"
     },
     {
       "id": "card-pointer-away",
@@ -1185,7 +1333,8 @@
           "nonblank": "label:ModelPlan Cockpit"
         }
       ],
-      "requirement": "G3-40, G3-42"
+      "requirement": "G3-40, G3-42",
+      "requires": []
     },
     {
       "id": "cockpit-widget-visible",
@@ -1202,6 +1351,321 @@
         }
       ],
       "requirement": "G3-41"
+    },
+    {
+      "id": "s-bells-idle",
+      "title": "Bells before a session runs",
+      "expected": "No session is running: every bell under the engine columns is idle.",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "regionShot": {
+            "target": "label:ModelPlan Cockpit",
+            "at": [
+              0,
+              0.91,
+              1,
+              0.09
+            ]
+          }
+        },
+        {
+          "anyExists": [
+            "label~: · idle"
+          ]
+        },
+        {
+          "absent": "label~:working now"
+        }
+      ],
+      "requirement": "checklist 8"
+    },
+    {
+      "id": "s-bells-working",
+      "title": "Bells with a working glow",
+      "expected": "A Claude Code session of the seeded profile is running (its transcript gets a turn every few seconds): its bell reads 'working now' and glows under its engine column; the record strip lists the running session (checklist 8).",
+      "requires": [
+        "s-bells-idle"
+      ],
+      "actions": [
+        {
+          "op": "startSession"
+        },
+        {
+          "op": "await",
+          "target": "label~:working now",
+          "timeout": 120
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label~:working now"
+        },
+        {
+          "exists": "label~:Running"
+        },
+        {
+          "regionDiffers": {
+            "target": "label:ModelPlan Cockpit",
+            "at": [
+              0,
+              0.91,
+              1,
+              0.09
+            ],
+            "step": "s-bells-idle",
+            "min": 0.002
+          }
+        }
+      ],
+      "requirement": "checklist 8"
+    },
+    {
+      "id": "s-tab-marks",
+      "title": "Vendor marks on the tabs",
+      "expected": "The OpenAI (Codex) and Claude Code tab marks measure about the same by glyph bounds; the pictures of both tabs are kept (checklist 15).",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "markSizes": {
+            "targets": [
+              "label^:Codex ·",
+              "label^:Claude Code ·"
+            ],
+            "within": 0.35
+          }
+        }
+      ],
+      "requirement": "checklist 15"
+    },
+    {
+      "id": "s-fader-drag-compare",
+      "title": "Fader drag opens Compare",
+      "expected": "Pulling a fader up opens the comparison page ('Compare · model', Current / Try / Rec, header 'Subscription'), the current page key dims (checklist 9).",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:Overview"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        },
+        {
+          "op": "dragFaderUp",
+          "target": "role:AXSlider",
+          "by": 0.3
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "anyExists": [
+            "value~:Compare",
+            "label~:Compare"
+          ]
+        },
+        {
+          "exists": "label~:Back"
+        }
+      ],
+      "requirement": "checklist 9"
+    },
+    {
+      "id": "s-compare-back",
+      "title": "Back leaves the comparison",
+      "expected": "The Back key ends the comparison and Overview lights again (checklist 9).",
+      "requires": [
+        "s-fader-drag-compare"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "clickFirst",
+          "targets": [
+            "label~:Back",
+            "label^:‹"
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "on": "label:Overview"
+        },
+        {
+          "absent": "label~:Back"
+        }
+      ],
+      "requirement": "checklist 9"
+    },
+    {
+      "id": "s-fader-drag-esc",
+      "title": "Esc leaves the comparison",
+      "expected": "A second fader drag opens the comparison again; Esc leaves it and the cockpit stays open (checklist 9).",
+      "requires": [
+        "s-compare-back"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "dragFaderUp",
+          "target": "role:AXSlider",
+          "by": 0.3
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label:ModelPlan Cockpit"
+        },
+        {
+          "on": "label:Overview"
+        },
+        {
+          "absent": "label~:Back"
+        }
+      ],
+      "requirement": "checklist 9"
+    },
+    {
+      "id": "s-menubar-stable",
+      "title": "Menu bar percentage under the pointer",
+      "expected": "With the pointer resting on the menu bar icon for several seconds, its percentage stays '0%' (the lowest ring) and its tooltip text does not change (checklist 13/14).",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "watch",
+          "target": "status-item",
+          "seconds": 6,
+          "hover": true,
+          "every": 0.7
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "stable": "status-item"
+        },
+        {
+          "valueIs": {
+            "target": "status-item",
+            "key": "title",
+            "is": "0%"
+          }
+        }
+      ],
+      "requirement": "checklist 13, 14"
     },
     {
       "id": "shutter-closed",
@@ -1925,46 +2389,43 @@
       "requirement": "G3-42"
     },
     {
-      "id": "cockpit-detach",
-      "title": "Cockpit detached",
-      "expected": "Detach turns the cockpit into its own window; the button now reads Put back (G3-43).",
+      "id": "s-reset-home",
+      "title": "Cockpit under the icon, widget at its place",
+      "expected": "Before anything is moved the cockpit hangs under the menu bar icon, and the widget sits at its default place along the left edge; both frames are recorded for the reset check.",
       "requires": [
         "cockpit-reopen"
       ],
       "actions": [
         {
-          "op": "click",
-          "target": "label:Detach"
-        },
-        {
-          "op": "wait",
-          "seconds": 1.5
-        },
-        {
           "op": "park"
         },
         {
+          "op": "rememberNamed",
+          "name": "widget-home",
+          "target": "window-of:ax:dock.grip.0"
+        },
+        {
           "op": "wait",
-          "seconds": 1
+          "seconds": 0.5
         }
       ],
-      "shot": {
-        "crop": "label:ModelPlan Cockpit",
-        "window": "label:ModelPlan Cockpit"
-      },
+      "shot": {},
       "checks": [
         {
-          "exists": "label:Put back"
+          "underStatusItem": {
+            "target": "window-of:label:ModelPlan Cockpit",
+            "slack": 120
+          }
         }
       ],
-      "requirement": "G3-43"
+      "requirement": "checklist 6"
     },
     {
       "id": "cockpit-drag-title",
       "title": "Detached cockpit dragged by its title strip",
       "expected": "Dragging the left part of the title strip moves the detached window (G3-43).",
       "requires": [
-        "cockpit-detach"
+        "cockpit-reopen"
       ],
       "actions": [
         {
@@ -1997,25 +2458,100 @@
       "checks": [
         {
           "moved": "window-of:label:ModelPlan Cockpit"
+        },
+        {
+          "absent": "label:Detach"
+        },
+        {
+          "absent": "label:Put back"
         }
       ],
       "requirement": "G3-43"
     },
     {
-      "id": "cockpit-put-back",
-      "title": "Cockpit put back",
-      "expected": "Put back returns the cockpit under the menu bar icon.",
+      "id": "s-reset-displace-widget",
+      "title": "Widget dragged along its edge, cockpit already off",
+      "expected": "With the cockpit already dragged off, the widget is dragged up along its edge; neither window is at its place now.",
       "requires": [
-        "cockpit-detach"
+        "cockpit-drag-title"
       ],
       "actions": [
         {
-          "op": "click",
-          "target": "label:Put back"
+          "op": "park"
+        },
+        {
+          "op": "dragStart",
+          "target": "ax:dock.grip.0"
+        },
+        {
+          "op": "dragTo",
+          "point": [
+            0.04,
+            0.25
+          ],
+          "seconds": 1.2
+        },
+        {
+          "op": "dragEnd"
         },
         {
           "op": "wait",
           "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "underStatusItem": {
+            "target": "window-of:label:ModelPlan Cockpit",
+            "is": false,
+            "slack": 20
+          }
+        },
+        {
+          "nearNamed": {
+            "name": "widget-home",
+            "target": "window-of:ax:dock.grip.0",
+            "axes": "y",
+            "slack": 40,
+            "is": false
+          }
+        }
+      ],
+      "requirement": "checklist 6"
+    },
+    {
+      "id": "s-reset-position",
+      "title": "Reset Position from the status menu",
+      "expected": "The status item menu has Reset Position (reached through the Accessibility API, no pointer on the item); choosing it brings the cockpit back under the menu bar icon and the widget back to its default place along its edge (checklist 6).",
+      "requires": [
+        "s-reset-displace-widget"
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.2
+        },
+        {
+          "op": "press",
+          "by": "title",
+          "value": "Reset Position"
+        },
+        {
+          "op": "wait",
+          "seconds": 2.5
         },
         {
           "op": "park"
@@ -2028,9 +2564,21 @@
       "shot": {},
       "checks": [
         {
-          "exists": "label:Detach"
+          "underStatusItem": {
+            "target": "window-of:label:ModelPlan Cockpit",
+            "slack": 120
+          }
+        },
+        {
+          "nearNamed": {
+            "name": "widget-home",
+            "target": "window-of:ax:dock.grip.0",
+            "axes": "y",
+            "slack": 40
+          }
         }
-      ]
+      ],
+      "requirement": "checklist 6"
     },
     {
       "id": "cockpit-close",
@@ -2125,7 +2673,8 @@
           "nonblank": "label:ModelPlan Cockpit"
         }
       ],
-      "requirement": "G3-39"
+      "requirement": "G3-39",
+      "requires": []
     },
     {
       "id": "air-1470x956",
@@ -2177,7 +2726,8 @@
           "nonblank": "label:ModelPlan Cockpit"
         }
       ],
-      "requirement": "G3-39"
+      "requirement": "G3-39",
+      "requires": []
     },
     {
       "id": "display-restored",
@@ -2208,7 +2758,8 @@
         {
           "exists": "ax:dock.grip.0"
         }
-      ]
+      ],
+      "requires": []
     },
     {
       "id": "settings-window",
@@ -2250,7 +2801,8 @@
         {
           "exists": "ax:settings.sidebar"
         }
-      ]
+      ],
+      "requires": []
     }
   ]
 }

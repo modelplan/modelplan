@@ -2,17 +2,126 @@
   "schemaVersion": 1,
   "note": "Invented readings for the hosted walkthrough. No account, credential or owner data.",
   "declared": [
-    {"planId": "synthetic-ok", "remainingPercent": 80, "resetMinutes": 120},
-    {"planId": "synthetic-mid", "remainingPercent": 50, "resetMinutes": 95},
-    {"planId": "synthetic-critical", "remainingPercent": 12, "resetMinutes": 40},
-    {"planId": "synthetic-empty", "remainingPercent": 0, "resetMinutes": 25}
+    {
+      "planId": "synthetic-ok",
+      "remainingPercent": 80,
+      "resetMinutes": 120
+    },
+    {
+      "planId": "synthetic-mid",
+      "remainingPercent": 50,
+      "resetMinutes": 95
+    },
+    {
+      "planId": "synthetic-critical",
+      "remainingPercent": 12,
+      "resetMinutes": 40
+    },
+    {
+      "planId": "synthetic-empty",
+      "remainingPercent": 0,
+      "resetMinutes": 25
+    }
   ],
   "codex": {
-    "plan": "plus",
-    "subscriptionRef": "aaaaaaaaaaaaaaaa",
+    "plan": "pro",
     "windows": [
-      {"kind": "five_hour", "windowMinutes": 300, "remainingPercent": 63, "resetMinutes": 120},
-      {"kind": "weekly", "windowMinutes": 10080, "remainingPercent": 41, "resetMinutes": 4000}
-    ]
+      {
+        "kind": "five_hour",
+        "windowMinutes": 300,
+        "remainingPercent": 4,
+        "resetMinutes": 150
+      },
+      {
+        "kind": "weekly",
+        "windowMinutes": 10080,
+        "remainingPercent": 31,
+        "resetMinutes": 4000
+      }
+    ],
+    "reserveCredits": 420,
+    "resetCards": 2
+  },
+  "claude": {
+    "model": "claude-opus-5-5",
+    "accountUuid": "synthetic-account-001",
+    "organizationUuid": "synthetic-org-001",
+    "fiveHour": {
+      "usedPercent": 38,
+      "resetMinutes": 140
+    },
+    "sevenDay": {
+      "usedPercent": 27,
+      "resetMinutes": 5000
+    }
+  },
+  "gemini": {
+    "note": "Detected, expired login: unreadable, so no ring (G3-38).",
+    "expiredMinutesAgo": 600
+  },
+  "markers": [
+    ".claude",
+    ".codex",
+    ".gemini",
+    ".zcode",
+    ".kiro"
+  ],
+  "consent": [
+    "claude.local_history",
+    "codex.local_history",
+    "codex.runtime_usage",
+    "gemini.account_usage.saved_login"
+  ],
+  "history": {
+    "days": 7,
+    "models": [
+      {
+        "source": "claude-code",
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "requests": [
+          30,
+          44,
+          18,
+          52,
+          36,
+          25,
+          40
+        ],
+        "tokens": [
+          21000,
+          30000,
+          12000,
+          36000,
+          25000,
+          17000,
+          28000
+        ]
+      },
+      {
+        "source": "claude-code",
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "requests": [
+          60,
+          35,
+          70,
+          48,
+          55,
+          66,
+          41
+        ],
+        "tokens": [
+          30000,
+          18000,
+          36000,
+          25000,
+          28000,
+          34000,
+          21000
+        ]
+      }
+    ],
+    "sessions": 8
   }
 }

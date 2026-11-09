@@ -133,15 +133,62 @@ class Seed(unittest.TestCase):
         self.assertTrue(all(p["planId"].startswith("synthetic-") for p in value["plans"]))
         self.assertEqual(value["windows"][0]["observedAt"], "2025-12-31T23:59:45Z")
 
-    def test_codex_reading_binds_the_granted_consent(self):
-        value = w.codex_reading(self.SEED, self.NOW, {"storeEpoch": "e", "generation": 3})
-        self.assertEqual(value["admission"], {"storeEpoch": "e", "generation": 3, "scope": "codex.runtime_usage"})
-        self.assertEqual(value["windows"][0]["usedPercent"], 37)
+    def test_codex_runtime_stand_in_answers_the_app_server_with_invented_numbers(self):
+        script = w.codex_runtime_script(self.SEED, self.NOW)
+        self.assertTrue(script.startswith("#!/bin/sh"))
+        self.assertIn('"usedPercent":96', script)  # 4% left in the five-hour window
+        self.assertIn('"balance":"420"', script)  # the reserve line
+        self.assertIn("synthetic-credit-1", script)
+        self.assertNotIn("%(", script)
+        answer = [line for line in script.splitlines() if "account/rateLimits/read" in line][0]
+        body = answer[answer.index('{"id":2,"result":') + len('{"id":2,"result":'):answer.rindex("}'")]
+        self.assertEqual(json.loads(body)["rateLimitsByLimitId"]["codex"]["planType"], "pro")
 
-    def test_child_gets_the_synthetic_home_and_nothing_else_of_the_runner(self):
+    def test_claude_status_line_input_has_both_windows_in_the_future(self):
+        value = w.claude_statusline(self.SEED, self.NOW)
+        limits = value["rate_limits"]
+        self.assertEqual(limits["five_hour"]["used_percentage"], 38)
+        self.assertGreater(limits["seven_day"]["resets_at"], self.NOW.timestamp())
+
+    def test_perf_ledger_has_seven_days_and_enough_sessions_for_six_ranked_rows(self):
+        ledger = w.perf_ledger(self.SEED, self.NOW, {"storeEpoch": "e"})
+        self.assertEqual(ledger["schemaVersion"], 1)
+        self.assertEqual({r["day"] for r in ledger["rows"]}, {(self.NOW - datetime.timedelta(days=d)).strftime("%Y-%m-%d") for d in range(7)})
+        self.assertGreaterEqual(len(ledger["sessions"]), 6)
+        self.assertTrue(all(r["grantEpoch"] == {"storeEpoch": "e", "revokedGeneration": 0} for r in ledger["rows"] + ledger["sessions"]))
+        self.assertTrue(all(len(x["ref"]) == 16 and len(x["projectRef"]) == 16 for x in ledger["sessions"]))
+        self.assertLess(datetime.datetime.strptime(ledger["since"], "%Y-%m-%dT%H:%M:%SZ"), self.NOW.replace(tzinfo=None) - datetime.timedelta(days=7))
+
+    def test_seed_marks_three_or_more_tools_for_the_first_run_list(self):
+        self.assertGreaterEqual(len(self.SEED["markers"]), 3)
+        self.assertTrue(all(m.startswith(".") for m in self.SEED["markers"]))
+        self.assertIn("codex.runtime_usage", self.SEED["consent"])
+
+    def test_live_session_ends_on_a_tool_result_so_the_turn_is_still_running(self):
+        lines = [json.loads(line) for line in w.live_session_lines(self.NOW, 3, "/x/alpha", "claude-opus-5-5").splitlines()]
+        self.assertEqual(lines[0]["type"], "user")
+        self.assertEqual(lines[-1]["message"]["content"][0]["type"], "tool_result")
+        self.assertEqual(sum(1 for line in lines if line["type"] == "assistant"), 3)
+        self.assertTrue(all(line["timestamp"] <= w.stamp_micro(self.NOW + datetime.timedelta(seconds=1)) for line in lines))
+        more = w.live_session_lines(self.NOW, 2, "/x/alpha", "m", offset=3)
+        self.assertNotIn('"parentUuid"', more)  # only the first call opens the turn with the prompt
+
+    def test_live_session_writes_under_the_claude_projects_folder_of_the_profile(self):
+        with tempfile.TemporaryDirectory() as home:
+            session = w.LiveSession(Path(home), self.SEED, clock=lambda: self.NOW.timestamp())
+            session.append(2)
+            session.append(2)
+            text = session.path.read_text(encoding="utf-8")
+            self.assertEqual(session.path.parent.parent.name, "projects")
+            self.assertEqual(text.count('"type": "assistant"'), 4)
+            self.assertTrue((Path(session.cwd) / ".git").is_dir())
+
+    def test_child_gets_the_synthetic_home_and_only_the_stand_in_runtime_of_the_runner(self):
         env = w.child_environment(Path("profile"))
-        self.assertEqual(set(env), {"HOME", "CFFIXED_USER_HOME", "TMPDIR", "PATH", "LANG"})
+        self.assertEqual(set(env), {"HOME", "CFFIXED_USER_HOME", "TMPDIR", "PATH", "LANG", "MODELPLAN_CODEX"})
         self.assertEqual(env["HOME"], env["CFFIXED_USER_HOME"])
+        self.assertTrue(env["MODELPLAN_CODEX"].startswith("profile"))
+        self.assertTrue(env["PATH"].startswith("profile"))
 
 
 class Script(unittest.TestCase):
@@ -167,8 +214,25 @@ class Script(unittest.TestCase):
     def test_covers_the_build_12_checklist(self):
         ids = {s["id"] for s in self.STEPS}
         self.assertTrue({"first-run-window", "widget-collapse", "widget-reveal", "card-third-ring", "card-pointer-away",
-                         "card-empty-quota", "cockpit-toggle-close", "cockpit-reopen", "shutter-closed", "cockpit-detach",
+                         "card-empty-quota", "cockpit-toggle-close", "cockpit-reopen", "shutter-closed",
                          "cockpit-drag-title", "help-map", "air-1440x900", "air-1470x956"} <= ids)
+        self.assertFalse({"cockpit-detach", "cockpit-put-back"} & ids, "the detach button is gone (G3-54)")
+
+    def test_covers_the_build_14_checklist_on_the_seeded_profile(self):
+        ids = {s["id"] for s in self.STEPS}
+        self.assertTrue({"first-run-window", "first-run-login-off", "s-unreadable-no-ring", "s-reserve-card", "s-bells-idle", "s-bells-working",
+                         "s-tab-marks", "s-fader-drag-compare", "s-compare-back", "s-fader-drag-esc", "s-menubar-stable",
+                         "s-reset-home", "s-reset-displace-widget", "s-reset-position"} <= ids)
+
+    def test_the_session_starts_after_the_idle_bells_were_photographed(self):
+        ids = [s["id"] for s in self.STEPS]
+        self.assertLess(ids.index("s-bells-idle"), ids.index("s-bells-working"))
+        working = next(s for s in self.STEPS if s["id"] == "s-bells-working")
+        self.assertEqual(working["actions"][0]["op"], "startSession")
+
+    def test_open_at_login_is_unticked_only_once_and_before_done(self):
+        presses = [s["id"] for s in self.STEPS for a in s.get("actions", []) if a.get("op") == "press" and a.get("value") == "firstRun.login"]
+        self.assertEqual(presses, ["first-run-login-off"])
 
     def test_the_seed_has_a_ring_at_zero(self):
         seed = json.loads((ROOT / "seed.json").read_text(encoding="utf-8"))
@@ -176,7 +240,8 @@ class Script(unittest.TestCase):
 
     def test_every_check_kind_is_known(self):
         known = {"differsFrom", "matches", "exists", "opened", "absent", "checked", "on", "moved", "changed", "cardNamed",
-                 "collapsed", "allOnScreen", "fits", "newWindow", "noNewWindow", "windowClosed", "nonblank"}
+                 "collapsed", "allOnScreen", "fits", "newWindow", "noNewWindow", "windowClosed", "nonblank",
+                 "anyExists", "underStatusItem", "nearNamed", "countAtLeast", "stable", "valueIs", "regionShot", "regionDiffers", "markSizes"}
         for step in self.STEPS:
             for check in step.get("checks", []):
                 self.assertIn(next(iter(check)), known, step["id"])
@@ -340,6 +405,104 @@ class NewChecks(unittest.TestCase):
         self.assertEqual(first["status"], "fail")
         self.assertIn("TypeError", first["reason"])
         self.assertEqual(second["status"], "pass")
+
+    def test_stable_needs_the_same_reading_every_time_under_the_pointer(self):
+        node = {"role": "AXMenuBarItem", "title": "0%", "help": "tip", "frame": [100, 0, 60, 24]}
+        tree = {"windows": [], "extras": {"children": [node]}}
+        step = {"actions": [{"op": "watch", "target": "status-item", "seconds": 3, "every": 0.5, "hover": True}], "checks": [{"stable": "status-item"}]}
+        record = self.one(FakeHost(tree), step)
+        self.assertEqual(record["status"], "pass")
+        self.assertGreaterEqual(len(record["measures"]["samples"]), 3)
+
+        class Jumping(FakeHost):
+            def helper(self, *arguments):
+                if arguments[0] == "tree":
+                    self.tree["extras"]["children"][0]["title"] = "0" if len(self.calls) % 2 else "0%"
+                return super().helper(*arguments)
+        record = self.one(Jumping(json.loads(json.dumps(tree))), step)
+        self.assertEqual(record["status"], "fail")
+        self.assertIn("changed under the pointer", record["reason"])
+
+    def test_value_is_and_count_at_least_and_any_exists(self):
+        tree = {"windows": [{"frame": [0, 0, 500, 500], "children": [
+            {"id": "firstRun.login", "value": "0", "frame": [1, 1, 5, 5]},
+            {"id": "scope.firstRun.tool.a", "frame": [1, 10, 5, 5]}, {"id": "scope.firstRun.tool.b", "frame": [1, 20, 5, 5]},
+            {"id": "scope.firstRun.tool.c", "frame": [1, 30, 5, 5]}, {"role": "AXStaticText", "value": "Reserve", "frame": [1, 40, 5, 5]}]}]}
+        ok = {"checks": [{"valueIs": {"target": "ax:firstRun.login", "is": "0"}}, {"countAtLeast": {"target": "ax^:scope.firstRun.tool.", "min": 3}},
+                         {"anyExists": ["label:nothing", "value~:Reserv"]}]}
+        self.assertEqual(self.one(FakeHost(tree), ok)["status"], "pass")
+        for bad in ({"valueIs": {"target": "ax:firstRun.login", "is": "1"}}, {"countAtLeast": {"target": "ax^:scope.firstRun.tool.", "min": 4}},
+                    {"anyExists": ["label:nothing"]}):
+            self.assertEqual(self.one(FakeHost(tree), {"checks": [bad]})["status"], "fail")
+
+    def test_under_the_status_item_and_near_a_remembered_frame(self):
+        icon = {"role": "AXMenuBarItem", "title": "5%", "frame": [1000, 0, 60, 24]}
+        cockpit = {"frame": [700, 30, 540, 700], "label": "ModelPlan Cockpit"}
+        widget = {"frame": [0, 300, 90, 340], "children": [{"id": "dock.grip.0", "frame": [10, 600, 30, 20]}]}
+        tree = {"windows": [{"frame": cockpit["frame"], "children": [cockpit]}, widget], "extras": {"children": [icon]}}
+        here = {"underStatusItem": {"target": "window-of:label:ModelPlan Cockpit", "slack": 10}}
+        self.assertEqual(self.one(FakeHost(tree), {"checks": [here]})["status"], "pass")
+        far = json.loads(json.dumps(tree))
+        far["windows"][0]["frame"] = [100, 30, 540, 700]
+        far["windows"][0]["children"][0]["frame"] = [100, 30, 540, 700]
+        self.assertEqual(self.one(FakeHost(far), {"checks": [here]})["status"], "fail")
+        self.assertEqual(self.one(FakeHost(far), {"checks": [{"underStatusItem": {**here["underStatusItem"], "is": False}}]})["status"], "pass")
+        step = {"actions": [{"op": "rememberNamed", "name": "home", "target": "window-of:ax:dock.grip.0"}],
+                "checks": [{"nearNamed": {"name": "home", "target": "window-of:ax:dock.grip.0", "axes": "y", "slack": 5}}]}
+        self.assertEqual(self.one(FakeHost(tree), step)["status"], "pass")
+
+    def test_region_differs_from_an_earlier_region_and_marks_are_measured_by_glyph(self):
+        tree = {"windows": [{"frame": [0, 0, 400, 300], "label": "ModelPlan Cockpit", "children": [
+            {"frame": [10, 10, 100, 26], "label": "Codex · Shortcut key 1"}, {"frame": [120, 10, 100, 26], "label": "Claude Code · Shortcut key 2"}]}]}
+
+        class Pixels(FakeHost):
+            glyphs = [{"width": 14, "height": 14}, {"width": 13, "height": 15}]
+            def helper(self, *arguments):
+                if arguments[0] == "glyph":
+                    self.calls.append(arguments)
+                    return self.glyphs.pop(0)
+                return super().helper(*arguments)
+        host = Pixels(tree)
+        host.share = 0.01
+        walk = walker(host, self.out, [
+            {"id": "idle", "title": "t", "expected": "e", "checks": [{"regionShot": {"target": "label:ModelPlan Cockpit", "at": [0, 0.9, 1, 0.1]}}]},
+            {"id": "busy", "title": "t", "expected": "e", "checks": [
+                {"regionDiffers": {"target": "label:ModelPlan Cockpit", "at": [0, 0.9, 1, 0.1], "step": "idle", "min": 0.005}},
+                {"markSizes": {"targets": ["label^:Codex ·", "label^:Claude Code ·"], "within": 0.35}}]}])
+        first, second = walk.walk_steps()
+        self.assertEqual((first["status"], second["status"]), ("pass", "pass"), second.get("reason"))
+        self.assertEqual(second["measures"]["marks"]["label^:Codex ·"]["width"], 14)
+        self.assertTrue((self.out / second["region"]).exists())
+        host.share = 0.0
+        host.glyphs = [{"width": 14, "height": 14}, {"width": 24, "height": 24}]
+        walk2 = walker(host, self.out, [
+            {"id": "idle", "title": "t", "expected": "e", "checks": [{"regionShot": {"target": "label:ModelPlan Cockpit", "at": [0, 0.9, 1, 0.1]}}]},
+            {"id": "busy", "title": "t", "expected": "e", "checks": [
+                {"regionDiffers": {"target": "label:ModelPlan Cockpit", "at": [0, 0.9, 1, 0.1], "step": "idle", "min": 0.005}},
+                {"markSizes": {"targets": ["label^:Codex ·", "label^:Claude Code ·"], "within": 0.35}}]}])
+        _, bad = walk2.walk_steps()
+        self.assertEqual(bad["status"], "fail")
+        self.assertIn("looks the same", bad["reason"])
+        self.assertIn("mark sizes differ", bad["reason"])
+
+    def test_the_session_op_needs_a_profile_and_starts_one_thread_once(self):
+        walk = walker(FakeHost({}), self.out, [])
+        with self.assertRaises(w.WalkthroughError):
+            walk.op_startSession({})
+        with tempfile.TemporaryDirectory() as home:
+            walk.home, walk.seed = Path(home), json.loads((ROOT / "seed.json").read_text(encoding="utf-8"))
+            walk.op_startSession({})
+            first = walk.live.thread
+            walk.op_startSession({})
+            self.assertIs(walk.live.thread, first)
+            walk.live.stop()
+            self.assertTrue(walk.live.path.exists())
+
+    def test_matchers_value_contains_and_help_contains(self):
+        node = {"value": "420 credits", "help": "What the reserve means"}
+        self.assertTrue(w.matcher("value~:credits")(node))
+        self.assertFalse(w.matcher("value~:money")(node))
+        self.assertTrue(w.matcher("help~:reserve")({"help": "the reserve"}))
 
 
 class Guard(unittest.TestCase):

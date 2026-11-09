@@ -209,6 +209,34 @@ func difference(_ first: String, _ second: String) -> [String: Any] {
     }
     return ["changedShare": Double(changed) / Double(max(1, a.width * a.height))]
 }
+/// The box of the pixels that differ from the picture's most common colour, in the left `share` of it: the size of a
+/// vendor mark at the start of a tab. Zero when nothing differs.
+func glyph(path: String, share: Double) -> [String: Any] {
+    let (pixels, width, height) = bitmap(path)
+    let limit = max(1, min(width, Int(Double(width) * share)))
+    var counts = [Int](repeating: 0, count: 4096)
+    for y in 0..<height {
+        for x in 0..<limit {
+            let index = (y * width + x) * 4
+            counts[Int(pixels[index] >> 4) << 8 | Int(pixels[index + 1] >> 4) << 4 | Int(pixels[index + 2] >> 4)] += 1
+        }
+    }
+    var top = 0
+    for bucket in 0..<4096 where counts[bucket] > counts[top] { top = bucket }
+    let background = [Int(top >> 8) << 4 | 8, Int((top >> 4) & 15) << 4 | 8, Int(top & 15) << 4 | 8]
+    var minX = limit, maxX = -1, minY = height, maxY = -1
+    for y in 0..<height {
+        for x in 0..<limit {
+            let index = (y * width + x) * 4
+            let far = (0..<3).contains { abs(Int(pixels[index + $0]) - background[$0]) > 56 }
+            if far {
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+    }
+    if maxX < 0 { return ["width": 0, "height": 0, "x": 0, "y": 0] }
+    return ["width": maxX - minX + 1, "height": maxY - minY + 1, "x": minX, "y": minY]
+}
 /// What the accessibility system itself reports at a screen point, as VoiceOver's mouse tracking asks.
 func hit(x: Double, y: Double) -> [String: Any] {
     var element: AXUIElement?
@@ -217,7 +245,7 @@ func hit(x: Double, y: Double) -> [String: Any] {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
-guard let command = arguments.first else { fail("usage: host|modes|setmode|windows|tree|press|move|click|rightclick|down|held|up|key|stats|diff|hit") }
+guard let command = arguments.first else { fail("usage: host|modes|setmode|windows|tree|press|move|click|rightclick|down|held|up|key|stats|diff|glyph|hit") }
 switch (command, arguments.count) {
 case ("host", 1): emit(host())
 case ("windows", 2): emit(windows(pid: Int32(number(arguments[1]))))
@@ -227,6 +255,7 @@ case ("setmode", 3): emit(["set": setMode(width: Int(number(arguments[1])), heig
 case ("press", 4): emit(["pressed": press(pid: Int32(number(arguments[1])), by: arguments[2], value: arguments[3])])
 case ("stats", 2): emit(stats(path: arguments[1]))
 case ("diff", 3): emit(difference(arguments[1], arguments[2]))
+case ("glyph", 3): emit(glyph(path: arguments[1], share: number(arguments[2])))
 case ("hit", 3): emit(hit(x: number(arguments[1]), y: number(arguments[2])))
 case ("key", 2):
     guard let code = ["escape": CGKeyCode(53), "return": CGKeyCode(36), "space": CGKeyCode(49)][arguments[1]] else { fail("unknown key") }

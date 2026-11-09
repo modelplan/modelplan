@@ -14,9 +14,11 @@ from pathlib import Path
 import plistlib
 import re
 import shutil
+import hashlib
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 APP_EXECUTABLE = "ModelPlanCommunity"
@@ -62,6 +64,8 @@ def matcher(target):
         "label^": lambda n: str(n.get("label") or n.get("title") or "").startswith(value),
         "label~": lambda n: value in str(n.get("label") or n.get("title") or ""),
         "value": lambda n: n.get("value") == value,
+        "value~": lambda n: value in str(n.get("value") or ""),
+        "help~": lambda n: value in str(n.get("help") or ""),
         "dom^": lambda n: str(n.get("dom", "")).startswith(value),
         "role": lambda n: n.get("role") == value,
         "subrole": lambda n: n.get("subrole") == value,
@@ -207,6 +211,13 @@ class Walkthrough:
         self.measures = {}
         self.expected_card = None
         self.facts = None
+        self.home = None
+        self.live = None
+        self.step_name = ""
+        self.samples = []
+        self.regions = {}
+        self.named = {}
+        self.step_id = ""
 
     def tree(self):
         tree = self.host.helper("tree", self.pid)
@@ -438,6 +449,10 @@ class Walkthrough:
             evidence[name + "Hit"] = self.host.helper("hit", *centre(frame))
         self.mirror_evidence["pixels"] = evidence
 
+    def op_rememberNamed(self, action):
+        """Remember a frame under a name, for checks that compare a later frame with it."""
+        self.named[action["name"]] = self.need(action["target"])["frame"]
+
     def op_remember(self, action):
         self.remembered = self.need(action["target"])["frame"]
 
@@ -461,6 +476,39 @@ class Walkthrough:
         x, y = centre(fader["frame"])
         self.host.helper("down", x, y)
         self.host.helper("held", x, y - fader["frame"][3] * 0.3, 0.5)
+        self.host.helper("up")
+
+
+    def op_startSession(self, _):
+        """Start the running Claude Code session of the synthetic profile (it keeps going until the walk ends)."""
+        if self.home is None:
+            raise WalkthroughError("no profile to write a session into")
+        if self.live is None:
+            self.live = LiveSession(self.home, self.seed)
+        self.live.start()
+
+    def op_watch(self, action):
+        """Read a target's title, value and help text again and again while the pointer rests where it is (or on it)."""
+        self.samples = []
+        if action.get("hover"):
+            self.host.helper("move", *centre(self.need(action["target"])["frame"]), 0.5)
+        end = self.host.now() + action["seconds"]
+        while True:
+            node = resolve(self.tree(), action["target"])
+            if node is not None:
+                self.samples.append({key: node.get(key) for key in ("title", "value", "label", "help") if node.get(key) is not None})
+            if self.host.now() >= end:
+                break
+            self.host.sleep(action.get("every", 0.5))
+        self.measures["samples"] = self.samples
+
+    def op_dragFaderUp(self, action):
+        """Hold a fader and pull it up by a detent or two, as a hand does, then let go over it."""
+        fader = self.need(action["target"])
+        x, y = centre(fader["frame"])
+        self.remembered = fader.get("value")
+        self.host.helper("down", x, y)
+        self.host.helper("held", x, y - fader["frame"][3] * action.get("by", 0.3), action.get("seconds", 0.6))
         self.host.helper("up")
 
     def op_dismissHints(self, _):
@@ -536,6 +584,48 @@ class Walkthrough:
             raise WalkthroughError("a new window opened")
         if kind == "windowClosed" and not self.window_baseline - window_ids(self.windows()):
             raise WalkthroughError("no window closed")
+        if kind == "anyExists" and not any(resolve(tree, t) is not None or resolve_all(tree, t) for t in value):
+            raise WalkthroughError("none of these is on screen: " + ", ".join(value))
+        if kind == "underStatusItem":
+            node, icon = resolve(tree, value["target"]), resolve(tree, "status-item")
+            if node is None or icon is None:
+                raise WalkthroughError("nothing to place against the menu bar icon: " + value["target"])
+            x, y, w, h = node["frame"]
+            icon_x = centre(icon["frame"])[0]
+            under = y <= icon["frame"][1] + icon["frame"][3] + value.get("down", 140) and x - value.get("slack", 30) <= icon_x <= x + w + value.get("slack", 30)
+            record.setdefault("measures", {})["under:" + value["target"]] = {"frame": node["frame"], "icon": icon["frame"], "under": under}
+            if under != value.get("is", True):
+                raise WalkthroughError("%s is %sunder the menu bar icon (frame %s, icon %s)" % (value["target"], "" if under else "not ", node["frame"], icon["frame"]))
+        if kind == "nearNamed":
+            node, before = resolve(tree, value["target"]), self.named.get(value["name"])
+            if node is None or before is None:
+                raise WalkthroughError("nothing to compare with %s: %s" % (value["name"], value["target"]))
+            axes = value.get("axes", "xy")
+            gap = max([abs(centre(node["frame"])[0] - centre(before)[0])] * ("x" in axes) + [abs(centre(node["frame"])[1] - centre(before)[1])] * ("y" in axes) + [0])
+            record.setdefault("measures", {})["gap:%s:%s" % (value["target"], value["name"])] = round(gap, 1)
+            if (gap <= value.get("slack", 30)) != value.get("is", True):
+                raise WalkthroughError("%s is %s px from where %s was (frame %s, was %s)" % (value["target"], round(gap), value["name"], node["frame"], before))
+        if kind == "countAtLeast":
+            found = [n for n in resolve_all(tree, value["target"]) if visible(n)]
+            record.setdefault("measures", {})["count:" + value["target"]] = len(found)
+            if len(found) < value["min"]:
+                raise WalkthroughError("%d of %s on screen, expected at least %d" % (len(found), value["target"], value["min"]))
+        if kind == "stable":
+            texts = [json.dumps(sample, sort_keys=True) for sample in self.samples]
+            if len(texts) < 3 or len(set(texts)) != 1:
+                raise WalkthroughError("%s changed under the pointer: %s" % (value, "; ".join(sorted(set(texts)))[:300]))
+        if kind == "valueIs":
+            node = resolve(tree, value["target"])
+            if node is None or str(node.get(value.get("key", "value"))) != value["is"]:
+                raise WalkthroughError("%s is %r, expected %r" % (value["target"], node and node.get(value.get("key", "value")), value["is"]))
+        if kind == "regionShot":
+            self.region_shot(value, record, keep=True)
+        if kind == "regionDiffers":
+            share = self.compare_region(value, record)
+            if share < value["min"]:
+                raise WalkthroughError("%s looks the same as in %s (%.5f changed, need %s)" % (value["target"], value["step"], share, value["min"]))
+        if kind == "markSizes":
+            self.mark_sizes(value, shot_dir, record)
         if kind == "nonblank":
             node = resolve(tree, value)
             if node is None:
@@ -547,6 +637,50 @@ class Walkthrough:
             if stats["colours"] < MIN_COLOURS or stats["dominantShare"] > MAX_DOMINANT:
                 raise WalkthroughError("blank render: %d colours, %.2f dominant" % (stats["colours"], stats["dominantShare"]))
 
+    def region_shot(self, value, record, keep=False):
+        """A part of a surface (fractions x, y, width, height of its frame) photographed alone. With `keep` the picture
+        stays beside the manifest as evidence and later steps can compare with it by step id."""
+        node = resolve(self.tree(), value["target"])
+        if node is None:
+            raise WalkthroughError("nothing to photograph: " + value["target"])
+        x, y, w, h = node["frame"]
+        fx, fy, fw, fh = value["at"]
+        name = "%s.region.png" % self.step_name if keep else "measure.png"
+        self.host.capture(self.out / name, [x + w * fx, y + h * fy, w * fw, h * fh])
+        if keep:
+            record["region"] = name
+            self.regions[self.step_id] = name
+        return self.out / name
+
+    def compare_region(self, value, record):
+        before = self.regions.get(value["step"])
+        if before is None:
+            raise WalkthroughError("no picture of %s to compare with" % value["step"])
+        path = self.region_shot(value, record, keep=True)
+        share = self.host.helper("diff", path, self.out / before)["changedShare"]
+        record.setdefault("measures", {})["regionChangedShareFrom:" + value["step"]] = round(share, 5)
+        return share
+
+    def mark_sizes(self, value, record_shot, record):
+        """The size of the vendor mark at the left of each tab, measured from the picture by glyph bounds (the mark
+        pixels differ from the tab's background), not from a frame: marks of different artwork can sit in equal boxes."""
+        sizes = {}
+        for target in value["targets"]:
+            node = resolve(self.tree(), target)
+            if node is None:
+                raise WalkthroughError("tab not on screen: " + target)
+            x, y, w, h = node["frame"]
+            path = self.out / ("%s.tab-%d.png" % (self.step_name, len(sizes)))
+            self.host.capture(path, [x, y, w, h])
+            glyph = self.host.helper("glyph", path, value.get("share", 0.22))
+            sizes[target] = {"file": path.name, "width": glyph.get("width"), "height": glyph.get("height")}
+        record.setdefault("measures", {})["marks"] = sizes
+        extent = [max(g["width"] or 0, g["height"] or 0) for g in sizes.values()]
+        if not extent or min(extent) < value.get("least", 6):
+            raise WalkthroughError("no mark found: " + json.dumps(sizes))
+        if max(extent) > min(extent) * (1 + value.get("within", 0.35)):
+            raise WalkthroughError("mark sizes differ by more than %d%%: %s" % (value.get("within", 0.35) * 100, json.dumps(sizes)))
+
     def window_holding(self, frame):
         """The smallest on-screen window of the app whose bounds contain the centre of `frame`."""
         cx, cy = frame[0] + frame[2] / 2, frame[1] + frame[3] / 2
@@ -557,6 +691,7 @@ class Walkthrough:
 
     def run_step(self, index, step):
         name = "%02d-%s" % (index, step["id"])
+        self.step_name, self.step_id = name, step["id"]
         record = {"step": step["id"], "title": step["title"], "expected": step["expected"],
                   "prototype": step.get("prototype"), "file": None, "crop": None, "tree": None}
         blocked = [need for need in step.get("requires", []) if self.statuses.get(need) != "pass"]
@@ -638,20 +773,138 @@ def declared_quota(seed, now):
                          "resetAt": stamp(now + datetime.timedelta(minutes=p["resetMinutes"]))} for p in plans]}
 
 
-def codex_reading(seed, now, consent):
+STUB_CODEX = """#!/bin/sh
+# Synthetic Codex runtime: answers the app-server questions the reader asks, with invented numbers.
+[ "$1" = app-server ] || exit 2
+while IFS= read -r line; do
+  case "$line" in
+    *'"id":1,'*) echo '{"id":1,"result":{"userAgent":"synthetic"}}' ;;
+    *'"method":"account/read"'*) echo '{"id":3,"result":{"account":{"type":"chatgpt","email":"walkthrough@example.invalid","planType":"%(plan)s"},"requiresOpenaiAuth":true}}' ;;
+    *'"method":"account/rateLimits/read"'*) echo '{"id":2,"result":%(limits)s}' ;;
+  esac
+done
+"""
+
+
+def codex_runtime_script(seed, now):
+    """A stand-in for the `codex` executable (found through MODELPLAN_CODEX), so the real account reader runs on
+    the runner and keeps answering: a static cache file would go stale and end in reader_error after about five
+    minutes, because the runner has no Codex. The numbers are invented: one window nearly used up, a reserve balance."""
     codex = seed["codex"]
-    observed = stamp(now - datetime.timedelta(seconds=20))
-    return {"schemaVersion": 1, "status": "ok", "observedAt": observed, "plan": codex["plan"],
-            "subscriptionRef": codex["subscriptionRef"],
-            "admission": {"storeEpoch": consent["storeEpoch"], "generation": consent["generation"], "scope": "codex.runtime_usage"},
-            "windows": [{"kind": w["kind"], "windowMinutes": w["windowMinutes"], "usedPercent": 100 - w["remainingPercent"],
-                         "observedAt": observed, "resetsAt": stamp(now + datetime.timedelta(minutes=w["resetMinutes"])),
-                         "resetMode": "rolling", "limit": "main"} for w in codex["windows"]]}
+    epoch = lambda minutes: int((now + datetime.timedelta(minutes=minutes)).timestamp())
+    primary, secondary = codex["windows"]
+    limits = {"ordinaryUsageAllowed": True, "rateLimits": None, "rateLimitsByLimitId": {"codex": {
+        "limitId": "codex", "planType": codex["plan"],
+        "primary": {"usedPercent": 100 - primary["remainingPercent"], "windowDurationMins": primary["windowMinutes"], "resetsAt": epoch(primary["resetMinutes"])},
+        "secondary": {"usedPercent": 100 - secondary["remainingPercent"], "windowDurationMins": secondary["windowMinutes"], "resetsAt": epoch(secondary["resetMinutes"])},
+        "credits": {"hasCredits": True, "unlimited": False, "balance": str(codex["reserveCredits"])}}},
+        "rateLimitResetCredits": {"availableCount": codex["resetCards"], "credits": [
+            {"id": "synthetic-credit-%d" % i, "resetType": "codexRateLimits", "status": "available",
+             "grantedAt": epoch(-60), "expiresAt": epoch(60 * 24 * (20 + i)), "title": "Full reset", "description": None}
+            for i in range(codex["resetCards"])]}}
+    return STUB_CODEX % {"plan": codex["plan"], "limits": json.dumps(limits, separators=(",", ":"))}
+
+
+def claude_statusline(seed, now):
+    """What Claude Code's status line hands the bundled CLI: the real input of the Claude quota reading."""
+    claude = seed["claude"]
+    epoch = lambda minutes: int((now + datetime.timedelta(minutes=minutes)).timestamp())
+    return {"session_id": "synthetic-walkthrough", "model": {"id": claude["model"]},
+            "rate_limits": {"five_hour": {"used_percentage": claude["fiveHour"]["usedPercent"], "resets_at": epoch(claude["fiveHour"]["resetMinutes"])},
+                            "seven_day": {"used_percentage": claude["sevenDay"]["usedPercent"], "resets_at": epoch(claude["sevenDay"]["resetMinutes"])}}}
+
+
+def short_ref(*parts):
+    return hashlib.sha256("\x00".join(parts).encode()).hexdigest()[:16]
+
+
+def perf_ledger(seed, now, consent):
+    """Seven days of session history in the performance ledger (<cache>/observed/perf.json), stamped with the grant
+    that the CLI just recorded, because the reader only admits records of the current grant. Invented counts."""
+    history, epoch = seed["history"], {"storeEpoch": consent["storeEpoch"], "revokedGeneration": 0}
+    rows, sessions = [], []
+    for model in history["models"]:
+        for back in range(history["days"]):
+            day = (now - datetime.timedelta(days=back)).strftime("%Y-%m-%d")
+            requests, tokens = model["requests"][back], model["tokens"][back]
+            rows.append({"grantEpoch": epoch, "day": day, "source": model["source"], "model": model["model"], "effortStatus": "reported",
+                         "effort": model["effort"], "parser": "claude-transcript/1", "eligibility": "gen-v1",
+                         "observedRequests": requests, "observedOutputTokens": tokens,
+                         "eligibleRequests": requests, "eligibleOutputTokens": tokens, "genMs": tokens * 12,
+                         "turns": max(1, requests // 6), "turnMs": tokens * 20, "turnOutputTokens": tokens,
+                         "mixedConfigTurnsExcluded": 0, "lastAt": stamp(now - datetime.timedelta(days=back, hours=1))})
+    for index in range(history["sessions"]):
+        model = history["models"][index % len(history["models"])]
+        back = index % history["days"]
+        last = (now - datetime.timedelta(days=back, hours=2)).replace(second=0, microsecond=0)
+        sessions.append({"grantEpoch": epoch, "ref": short_ref("session", str(index)), "key": short_ref("key", str(index)) * 2,
+                         "source": model["source"], "projectRef": short_ref("project", "alpha"), "projectLabel": "alpha",
+                         "firstAt": stamp(last - datetime.timedelta(minutes=40)), "lastAt": stamp(last),
+                         "days": [{"day": last.strftime("%Y-%m-%d"), "model": model["model"], "effortStatus": "reported",
+                                   "effort": model["effort"], "observedRequests": 20 + index, "observedOutputTokens": 9000 + 500 * index}]})
+    return {"schemaVersion": 1, "since": stamp(now - datetime.timedelta(days=history["days"] + 1)), "rows": rows, "sessions": sessions}
+
+
+def live_session_lines(now, count, cwd, model, offset=0):
+    """Claude Code transcript lines of a turn that is still running: a prompt, then pairs of an assistant request
+    (stopped for a tool) and the tool result. The last line is a result, so the turn has not ended."""
+    at = lambda seconds: stamp_micro(now + datetime.timedelta(seconds=seconds))
+    lines = []
+    if offset == 0:
+        lines.append({"parentUuid": None, "isSidechain": False, "type": "user", "cwd": cwd,
+                      "message": {"role": "user", "content": "a synthetic question"}, "uuid": "u0", "timestamp": at(-count * 3 - 2)})
+    for i in range(count):
+        base = -(count - i) * 3
+        lines.append({"isSidechain": False, "type": "assistant", "cwd": cwd, "requestId": "req-%d" % (offset + i), "effort": "high",
+                      "thinkingDurationMs": 1000, "message": {"model": model, "role": "assistant", "content": [{"type": "thinking", "thinking": "hmm"}],
+                      "stop_reason": "tool_use", "usage": {"input_tokens": 5, "output_tokens": 100, "speed": ""}}, "timestamp": at(base)})
+        lines.append({"isSidechain": False, "type": "user", "cwd": cwd, "message": {"role": "user", "content": [
+            {"tool_use_id": "x", "type": "tool_result", "content": "said"}]}, "timestamp": at(base + 1)})
+    return "".join(json.dumps(line) + "\n" for line in lines)
+
+
+def stamp_micro(moment):
+    return moment.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+class LiveSession:
+    """One Claude Code session that keeps running while the walk goes on: a transcript under .claude/projects that
+    gets a few more turns every few seconds. The app reads it as it reads a real one (a session is live for five
+    minutes after its last record)."""
+    EVERY = 8
+
+    def __init__(self, home, seed, clock=time.time, sleep=time.sleep):
+        project = Path(home) / ".claude/projects/-synthetic-walkthrough"
+        project.mkdir(parents=True, exist_ok=True)
+        self.cwd = str(Path(home) / "alpha")
+        (Path(self.cwd) / ".git").mkdir(parents=True, exist_ok=True)
+        self.path, self.model, self.clock, self.sleep = project / "live.jsonl", seed["claude"]["model"], clock, sleep
+        self.written, self.stopping, self.thread = 0, threading.Event(), None
+
+    def append(self, count):
+        now = datetime.datetime.fromtimestamp(self.clock(), datetime.timezone.utc)
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write(live_session_lines(now, count, self.cwd, self.model, self.written))
+        self.written += count
+
+    def start(self):
+        if self.thread is not None:
+            return
+        self.append(5)
+        def keep():
+            while not self.stopping.wait(self.EVERY):
+                self.append(2)
+        self.thread = threading.Thread(target=keep, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stopping.set()
 
 
 def child_environment(home):
+    """The CLI and the app see the synthetic home, and only the stand-in Codex runtime (the runner has none)."""
     return {"HOME": str(home), "CFFIXED_USER_HOME": str(home), "TMPDIR": str(home / "tmp") + "/",
-            "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8"}
+            "PATH": str(home / "bin") + ":/usr/bin:/bin", "LANG": "en_US.UTF-8", "MODELPLAN_CODEX": str(home / "bin/codex")}
 
 
 def consent_call(host, cli, env, arguments, body=None):
@@ -662,23 +915,44 @@ def consent_call(host, cli, env, arguments, body=None):
 
 
 def seed_profile(host, cli, home, seed, now):
-    """Write invented readings through the same files the bundled CLI reads."""
+    """Write invented readings through the files and inputs the bundled CLI already reads:
+
+    - tool markers (`~/.claude`, `~/.codex`, ...), which the first-run page detects;
+    - `consent grant` of the local-history and usage scopes, as the first-run page records them;
+    - Claude Code: `.claude.json` identity and the status-line input (`modelplan statusline`), the real source of its quota;
+    - Codex: a stand-in `codex` executable (MODELPLAN_CODEX) answering `account/rateLimits/read`: one window nearly
+      used up and a reserve balance (the reserve card line);
+    - Gemini: an expired login, so the subscription is detected and unreadable (no ring, G3-38);
+    - declared plans in `local.json` (manual rings);
+    - the performance ledger with seven days of sessions, and later a running session (`LiveSession`).
+    """
     (home / "tmp").mkdir(parents=True, exist_ok=True)
-    (home / ".codex").mkdir(exist_ok=True)
+    (home / "bin").mkdir(exist_ok=True)
+    for marker in seed["markers"]:
+        (home / marker).mkdir(parents=True, exist_ok=True)
     env = child_environment(home)
+    (home / "bin/codex").write_text(codex_runtime_script(seed, now), encoding="utf-8")
+    (home / "bin/codex").chmod(0o755)
+    claude = seed["claude"]
+    (home / ".claude.json").write_text(json.dumps({"oauthAccount": {"accountUuid": claude["accountUuid"], "organizationUuid": claude["organizationUuid"]}}), encoding="utf-8")
+    expired = int((now - datetime.timedelta(minutes=seed["gemini"]["expiredMinutesAgo"])).timestamp() * 1000)
+    (home / ".gemini/oauth_creds.json").write_text(json.dumps({"access_token": "synthetic-not-a-token", "expiry_date": expired}), encoding="utf-8")
     consent_call(host, cli, env, ["init"])
     before = consent_call(host, cli, env, [])
     consent_call(host, cli, env, ["grant"], {
         "requestId": "00000000-0000-4000-8000-000000000001", "expectStoreEpoch": before["storeEpoch"],
         "expectGeneration": before["generation"], "consentTextVersion": before["consentTextVersion"],
-        "allow": ["codex.runtime_usage"], "deny": []})
+        "allow": seed["consent"], "deny": []})
     after = consent_call(host, cli, env, [])
     config = home / ".config/modelplan"
     config.mkdir(parents=True, exist_ok=True)
     (config / "local.json").write_text(json.dumps(declared_quota(seed, now)), encoding="utf-8")
+    status = host.run([str(cli), "statusline"], env, stdin=json.dumps(claude_statusline(seed, now)))
+    if status.returncode != 0:
+        raise WalkthroughError("statusline failed: " + (status.stderr or "")[:200])
     observed = home / "Library/Caches/modelplan/observed"
     observed.mkdir(parents=True, exist_ok=True)
-    (observed / "codex-account.json").write_text(json.dumps(codex_reading(seed, now, after)), encoding="utf-8")
+    (observed / "perf.json").write_text(json.dumps(perf_ledger(seed, now, after)), encoding="utf-8")
     return env
 
 
@@ -968,6 +1242,7 @@ def run(args, host):
     cli, exe = app / "Contents/Helpers/modelplan", app / "Contents/MacOS" / APP_EXECUTABLE
     walkthrough = Walkthrough(host, app, out, steps, seed, (frame[2], frame[3]))
     walkthrough.facts = facts
+    walkthrough.home = home
     fresh = fresh_profile_probe(host, walkthrough, exe, cli, Path(str(home) + "-fresh"), seed, out)
     # Public data only. Without it the cockpit has no faders, no HUD and no enlarged view.
     env = seed_profile(host, cli, home, seed, datetime.datetime.now(datetime.timezone.utc))
