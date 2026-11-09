@@ -26,6 +26,8 @@ public struct EngineStoreSnapshot: Sendable {
     public internal(set) var history: WireHistoryPage?
     public internal(set) var cockpit: WireCockpitData?
     public internal(set) var publication: WirePublicationResult?
+    /// The latest local-history import status the engine reported (progress, outcome, coverage).
+    public internal(set) var historyImport: WireHistoryImportStatus?
     public internal(set) var lastPluginInstall: EngineAcceptedPluginInstall?
     public var pluginInstall: WirePluginInstallResult? { lastPluginInstall?.result }
     public internal(set) var diagnostics: WireDiagnostics?
@@ -110,6 +112,9 @@ public struct EngineStoreCore: Sendable {
         case .diagnostics(let reply):
             snapshot.diagnostics = reply.envelope.data
             succeeded(.diagnostics)
+        case .historyImport(let reply):
+            snapshot.historyImport = reply.envelope.data
+            succeeded(.historyImport)
         }
     }
 
