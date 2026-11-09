@@ -219,6 +219,56 @@ public enum EntranceChecks {
                 try run.expect(stamps.count == 17, "17 frame-match timestamps for an open landing")
             }
         }
+        run.group("STORYBOARD key frames: embedded numbers decode and describe the approved stills") {
+            let k = StoryboardKeyframes.approved
+            try run.expect(k.frames.count == 12, "3 edges x 4 shots, got \(k.frames.count)")
+            for edge in ["right", "bottom", "left"] {
+                let start = try XCTUnwrapLike(k.frame(edge: edge, shot: "shot3start"), "shot3start \(edge)")
+                try run.expect(abs(start.axisFromVerticalDegrees) <= 5, "storyboard rocket is upright at shot 3 start (\(edge))")
+                try run.expect(start.topY > 26 + 12 && start.topY < 0.4 * 956, "storyboard nose is on screen near the top (\(edge))")
+                let final = try XCTUnwrapLike(k.frame(edge: edge, shot: "final"), "final \(edge)")
+                try run.near(final.bbox[2], 620, 0.05 * 620, "storyboard final cockpit width (\(edge))")
+            }
+        }
+
+        run.group("silhouette measure: largest component, box, axis, menu bar ignored") {
+            let w = 200, h = 100, vp = EntranceSize(width: 200, height: 100)
+            var mask = [Bool](repeating: false, count: w * h)
+            for y in 20..<80 { for x in 90..<100 { mask[y * w + x] = true } }   // upright bar 10 x 60
+            for y in 0..<5 { for x in 0..<200 { mask[y * w + x] = true } }      // menu bar strip
+            mask[95 * w + 5] = true                                            // stray pixel
+            let m = try XCTUnwrapLike(SilhouetteMeasure.measure(mask: mask, width: w, height: h, ignoreTop: 5, viewport: vp), "bar")
+            try run.expect(m.bbox == [90, 20, 9, 59], "bbox \(m.bbox)")
+            try run.near(m.axisFromVerticalDegrees, 0, 1e-9, "upright axis")
+            try run.near(m.areaFraction, 600.0 / 20000, 1e-12, "area")
+            try run.near(m.topY, 20, 0, "top")
+            var lying = [Bool](repeating: false, count: w * h)
+            for y in 40..<50 { for x in 20..<180 { lying[y * w + x] = true } }
+            try run.near(try XCTUnwrapLike(SilhouetteMeasure.measure(mask: lying, width: w, height: h, viewport: vp), "lying").axisFromVerticalDegrees,
+                         90, 1e-9, "horizontal axis")
+            var diagonal = [Bool](repeating: false, count: w * h)
+            for i in 10..<90 { for d in 0..<3 { diagonal[i * w + i + d] = true } }
+            let a = try XCTUnwrapLike(SilhouetteMeasure.measure(mask: diagonal, width: w, height: h, viewport: vp), "diagonal").axisFromVerticalDegrees
+            try run.near(abs(a), 45, 1, "diagonal axis")
+            try run.expect(SilhouetteMeasure.measure(mask: [Bool](repeating: false, count: w * h), width: w, height: h, viewport: vp) == nil, "empty")
+        }
+
+        run.group("key-frame comparison: identical passes, an off-axis or misplaced rocket fails") {
+            let frame = try XCTUnwrapLike(StoryboardKeyframes.approved.frame(edge: "right", shot: "shot3start"), "frame")
+            try run.expect(KeyframeComparison.compare(native: frame.measurement, to: frame).passed, "identical passes")
+            var tilted = frame.measurement; tilted.axisFromVerticalDegrees += 12
+            try run.expect(!KeyframeComparison.compare(native: tilted, to: frame).passed, "12 degrees off fails")
+            var low = frame.measurement; low.topY += 200; low.centroid[1] += 200
+            try run.expect(!KeyframeComparison.compare(native: low, to: frame).passed, "nose 200 pt lower fails")
+            var small = frame.measurement; small.areaFraction *= 0.5
+            try run.expect(!KeyframeComparison.compare(native: small, to: frame).passed, "half the area fails")
+        }
         return run
+    }
+
+    private struct Missing: Error, CustomStringConvertible { let description: String }
+    static func XCTUnwrapLike<T>(_ value: T?, _ what: String) throws -> T {
+        guard let value else { throw Missing(description: "missing \(what)") }
+        return value
     }
 }

@@ -111,6 +111,29 @@ final class EntranceSceneRenderTests: XCTestCase {
         XCTAssertEqual(rendered.width, 420, accuracy: 4)
     }
 
+    /// Slice 2: the native frame at each storyboard key-frame stage is measured and compared structurally with
+    /// the approved storyboard still. Report-only until slice 3 (D111 camera); the harness itself must work.
+    @MainActor
+    func testStoryboardKeyFrameComparisonProducesAReportForEveryEdge() async throws {
+        guard #available(macOS 15.0, *) else { throw XCTSkip("the native entrance needs macOS 15") }
+        let results = try await StoryboardCapture.run()
+        XCTAssertEqual(results.map(\.edge), ["right", "bottom", "left"])
+        for r in results {
+            let measured = try XCTUnwrap(r.measurement, "no silhouette for \(r.edge)")
+            XCTAssertGreaterThan(measured.areaFraction, 0.01)
+            let comparison = try XCTUnwrap(r.comparison, "no storyboard key frame for \(r.edge) \(r.shot)")
+            XCTAssertEqual(comparison.checks.count, 7)
+            for check in comparison.checks where !check.passed {
+                print("STORYBOARD-DIFF \(r.edge) \(r.shot) \(check.name): storyboard \(check.storyboard) native \(check.native) tol \(check.tolerance)")
+            }
+        }
+        let report = try StoryboardCapture.report(results)
+        if let dir = ProcessInfo.processInfo.environment["MODELPLAN_ENTRANCE_FRAMES_DIR"] {
+            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            try report.write(to: URL(fileURLWithPath: dir).appendingPathComponent("storyboard-comparison.json"))
+        }
+    }
+
     /// Renders every 3D frame-match timestamp for both themes; with MODELPLAN_ENTRANCE_FRAMES_DIR set, writes the
     /// PNGs there (neutral stand-in only, safe for public CI artifacts).
     @MainActor

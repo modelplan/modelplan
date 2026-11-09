@@ -16,6 +16,7 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
     .library(name: "ModelPlanEntrance", targets: ["ModelPlanEntrance"]),
     .library(name: "ModelPlanEntranceScene", targets: ["ModelPlanEntranceScene"]),
     .executable(name: "ModelPlanEntranceChecks", targets: ["ModelPlanEntranceChecks"]),
+    .executable(name: "ModelPlanEntranceCapture", targets: ["ModelPlanEntranceCapture"]),
     .executable(name: "ModelPlanWindowProbe", targets: ["ModelPlanWindowProbe"]),
     .executable(name: "ModelPlanCommunity", targets: ["ModelPlanCommunity"]),
 ], targets: [
@@ -59,6 +60,8 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
                       path: "ModelPlanEntrance/Sources/ModelPlanEntranceChecks"),
     .target(name: "ModelPlanEntranceScene", dependencies: ["ModelPlanEntrance"],
             path: "ModelPlanEntrance/Sources/ModelPlanEntranceScene"),
+    .executableTarget(name: "ModelPlanEntranceCapture", dependencies: ["ModelPlanEntranceScene"],
+                      path: "ModelPlanEntrance/Sources/ModelPlanEntranceCapture"),
     .testTarget(name: "ModelPlanEntranceTests", dependencies: ["ModelPlanEntranceChecksKit"],
                 path: "ModelPlanEntrance/Tests/ModelPlanEntranceTests"),
     .testTarget(name: "ModelPlanEntranceSceneTests",
