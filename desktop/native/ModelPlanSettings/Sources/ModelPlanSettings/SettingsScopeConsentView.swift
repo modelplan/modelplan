@@ -178,8 +178,9 @@ import ModelPlanWire
             column.addArrangedSubview(field); wrappingLabels.append(field)
             field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
-        // An unsupported login is not read at all, so its row says only why (D52).
-        if tool.canRead { line(Self.readLine(tool), id: "scope.firstRun.reads." + id) }
+        // An unsupported login is not read at all, so its row says only why (D52). A supported tool
+        // that is merely signed out still says what will be read once the user signs in.
+        if tool.block != .unsupportedLogin && !tool.scopes.isEmpty { line(Self.readLine(tool), id: "scope.firstRun.reads." + id) }
         if let block = tool.block {
             line(Self.blockLine(block, tool: id), id: "scope.firstRun.status." + id, color: .systemOrange)
         } else if !tool.canRead {
