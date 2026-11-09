@@ -203,11 +203,6 @@ func CockpitPeaksEnabled(ctx context.Context) bool {
 	return enabled
 }
 
-// WithCockpitPeaksForTest marks a context as negotiated for cockpitPeaksV1, for producer tests.
-func WithCockpitPeaksForTest(ctx context.Context) context.Context {
-	return context.WithValue(ctx, cockpitPeaksContextKey{}, true)
-}
-
 // WithCockpitSessionsForTest marks a context as negotiated for cockpitSessionsV1, for producer tests.
 func WithCockpitSessionsForTest(ctx context.Context) context.Context {
 	return context.WithValue(ctx, cockpitSessionsContextKey{}, true)

@@ -74,7 +74,8 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   list.push({id:JSON.stringify(['cards',m.key,n]),level:'blue',member:m.key,text:{en:`${m.row.name.en} · ${n} ${n===1?'reset expires':'resets expire'} within 48 hours`,zh:`${m.row.name.zh} · 重置次数中有 ${n} 次将在 48 小时内到期`}});
  }
  // D63: a declared plan's published peak-rate window (cockpitPeaksV1), from the same time-of-day windows the CLI's
- // advice reads. Blue and list-only; a peak already over is not listed.
+ // advice reads. Blue and list-only; a peak already over is not listed. Unlike the reset-card loop above, unstable members
+ // are not skipped: a peak window is publication data, not a personal reading that may be wrong.
  for(const peak of data.details?.peaks??[]){
   const m=members.find(x=>x.row.id===peak.rowId),start=Date.parse(peak.startsAt),end=peak.endsAt?Date.parse(peak.endsAt):NaN;
   if(!m||!Number.isFinite(start)||(Number.isFinite(end)&&end<=now))continue;
