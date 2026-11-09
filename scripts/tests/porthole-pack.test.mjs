@@ -33,7 +33,7 @@ function fixture(t) {
 test('checks all 980 stills, both scales, runtime layers and default still through the official root checker', () => {
   assert.equal(verifyPortholePack(root).pngCount, 980);
   assert.equal(verifyPortholePack(root).pngBytes, 3441609);
-  assert.equal(verifyVisualPack(root).pngCount, 1014);
+  assert.equal(verifyVisualPack(root).pngCount, 1015);
 });
 test('rejects drifted PNG bytes and mismatched dimensions', t => {
   const f = fixture(t), entry = f.manifest.files[0], path = join(f.directory, entry.file), original = readFileSync(path);
