@@ -42,7 +42,7 @@ test('both editions have reproducible bounded manifests; community excludes rese
     for(const name of Object.keys(manifest.files).filter(name=>/\.(?:js|html|css)$/.test(name)&&name!==scene&&name!=='src/field-page.js'&&!name.startsWith('runtime/')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/field-scene|cockpit-scene/,name);
     assert.equal(Object.hasOwn(manifest.files,'field.html'),edition==='official','field.html');
     if(edition==='official')assert.match(readFileSync(root+'src/field-page.js','utf8'),/await import\(url\)/);
-    else assert.equal(Object.hasOwn(manifest.files,'src/field-page.js'),false);
+    else for(const gone of ['src/field-page.js','src/field-shape.js'])assert.equal(Object.hasOwn(manifest.files,gone),false);
     for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.js')&&name!==scene))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/,name);
     if(edition==='official'){assert.ok(Object.hasOwn(manifest.files,'assets/brands/SOURCES.md'));assert.match(readFileSync(root+'NOTICES.txt','utf8'),/Vendor marks: third-party trademarks.*assets\/brands\/SOURCES[.]md/);}
     else assert.equal(existsSync(root+'assets/brands'),false,'community has no vendor marks');
