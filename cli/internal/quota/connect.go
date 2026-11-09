@@ -198,6 +198,19 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 			by["zai"] = Selection{Provider: "zai", Backend: BackendNative, Origin: "zcode-config"}
 		}
 	}
+	// D90: a pasted key, and for OpenCode Go OpenCode's own saved login, make the provider a
+	// selection too. Consent still decides below whether it is read.
+	for _, provider := range []string{"zai", "opencodego"} {
+		if _, configured := by[provider]; configured {
+			continue
+		}
+		switch {
+		case ManualKeyPresent(p.Cache, provider):
+			by[provider] = Selection{Provider: provider, Backend: BackendNative, Origin: "manual-key"}
+		case provider == "opencodego" && OpenCodeLoginPresent():
+			by[provider] = Selection{Provider: provider, Backend: BackendNative, Origin: "opencode-login"}
+		}
+	}
 	out := make([]Selection, 0, len(by))
 	for _, x := range by {
 		x.Name = ProviderName(x.Provider)
@@ -244,7 +257,8 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 				x.SecretPolicy = "Key is never printed, stored or copied; no credential files, browser sessions, refresh or cross-region requests. Only sanitized quota and keyed-hash references are cached."
 			}
 			if x.KeyEnv != "" {
-				x.KeySet = os.Getenv(x.KeyEnv) != "" // only whether it is there; the value stays in the environment
+				// Only whether a source is there; the value stays where it is.
+				x.KeySet = os.Getenv(x.KeyEnv) != "" || ManualKeyPresent(p.Cache, x.Provider) || (x.Provider == "opencodego" && OpenCodeLoginPresent())
 			}
 			switch {
 			case nativeOff():

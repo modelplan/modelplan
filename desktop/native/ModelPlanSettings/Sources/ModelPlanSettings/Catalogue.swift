@@ -276,7 +276,7 @@ public enum SettingsCatalogue {
         .init(.loginSystemSettings,"Open Login Items","打开登录项设置","macOS could not turn this on from here. Allow ModelPlan in System Settings.","macOS 无法在此开启，请在系统设置中允许 ModelPlan。"),
         .init(.notificationSystemSettings,"Open Notification Settings","打开通知设置","macOS is not allowing ModelPlan notifications. Change this in System Settings.","macOS 未允许 ModelPlan 发送通知，请在系统设置中更改。"),
         .init(.clearAppCache,"Clear app cache","清除应用缓存","Only app-owned derived caches; preferences and CLI data are kept.","仅清除应用衍生缓存，保留偏好和CLI数据。"),
-        .init(.privacyStatement,"Privacy statement","隐私说明","No local uploads; only public downloads.","不上传本机数据，仅下载公开数据。"),
+        .init(.privacyStatement,"Privacy statement","隐私说明","No local data is uploaded. A key you enter is stored on this Mac and sent only to its official host (api.z.ai or open.bigmodel.cn for GLM, opencode.ai for OpenCode Go) to read plan usage. Everything else is public downloads.","不上传本机数据。你输入的密钥保存在本机，只发送到对应的官方主机（GLM：api.z.ai 或 open.bigmodel.cn；OpenCode Go：opencode.ai）用于读取套餐用量；其余仅下载公开数据。"),
         .init(.appVersion,"App version","应用版本","Application build version.","应用构建版本。"),
         .init(.consentHelp,"Manual consent and cleanup instructions","授权与手动清理说明","Read the CLI disconnect instructions. Browser-cookie cleanup may require a separate approval; nothing is run automatically.","阅读 CLI 断开连接说明；浏览器缓存清理可能另需批准，此处不会自动执行。"),
         .init(.cliStatus,"CLI status","CLI状态","Read-only CLI availability.","CLI可用性的只读状态。"),

@@ -97,6 +97,9 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		return nil, func() {}, err
 	}
 	handlers["publication/get"] = publication
+	for method, h := range appserver.ReaderKeyHandlers(appserver.ReaderKeyConfig{Dir: st.Dir, ReadOnly: options.ReadOnly, Offline: options.Offline}) {
+		handlers[method] = h
+	}
 	closeBackend := func() {}
 	var scheduler *appserver.RefreshScheduler
 	var server *appserver.Server

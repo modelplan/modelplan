@@ -82,6 +82,8 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     public var onEnvironmentChange: ((SettingsSnapshot, EffectiveSettings) -> Void)?
     /// Emitted only after a successful explicit edit. The host must check revision and its own authorization.
     public var onHostRequest: ((SettingsHostRequest) -> Void)?
+    /// D90: the engine seam for the optional manual key. Nil hides the key entry.
+    public var readerKeys: ReaderKeyBackend?
     private var changeObservers: [UUID: () -> Void] = [:]
     private var firstRunPresentation: (id: UUID, action: () -> Void, about: (() -> Void)?)?
     public var canPresentFirstRun: Bool { firstRunPresentation != nil || onHostRequest != nil }

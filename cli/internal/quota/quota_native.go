@@ -318,12 +318,25 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		key := os.Getenv(x.KeyEnv)
 		readerCtx := productionReaderContext(ctx, p, x.Provider)
-		if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
+		if mk, ok := loadManualKey(p.Cache, x.Provider); ok {
+			// D90: a key the user entered is the first source. It goes only to the compiled
+			// official host of its region.
+			e, key = fetchManualKey(ctx, nativeClient, x.Provider, mk, now), mk.Key
+		} else if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
 			e = collectZaiConfig(readerCtx, nativeClient, p.Cache, now)
 		} else if n.Collect != nil {
 			e = n.Collect(readerCtx, nativeClient, p.Cache, now)
 		} else {
-			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
+			code := ""
+			if x.Provider == "opencodego" && strings.TrimSpace(key) == "" {
+				// D90: after the manual key and OPENCODE_API_KEY, OpenCode's own saved login.
+				key, code = opencodeLoginKey(ctx, now)
+			}
+			if code != "" {
+				e = codexbarEntry{Status: "error", ErrorCode: code, ObservedAt: now.UTC()}
+			} else {
+				e = n.Fetch(ctx, nativeClient, x.Region, key, now)
+			}
 		}
 		if e.Status == "ok" {
 			e.ErrorCode = ""

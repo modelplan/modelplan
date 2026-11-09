@@ -1,0 +1,1 @@
+GLM (z.ai) and OpenCode Go can now be read with a key you enter in Settings (kept only on this Mac, sent only to the provider's official host), after any detected sign-in; OpenCode Go also reads OpenCode's own saved login, and a GLM key that belongs to a relay is refused with a plain reason instead of being sent anywhere.

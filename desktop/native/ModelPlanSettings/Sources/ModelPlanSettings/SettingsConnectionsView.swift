@@ -29,6 +29,7 @@ import AppKit
     private let presentationID = UUID()
     private var preferenceSaving = false
     private var preferenceFailed = false
+    private var keyEntries: [ReaderKeyProvider: ReaderKeyEntryView] = [:]
     weak var followingKeyView: NSView? { didSet { buttons.last?.nextKeyView = followingKeyView } }
     var firstControl: NSView? { buttons.first { $0.isEnabled } }
     init(editor: SettingsEditor, firstRun: Bool = false) {
@@ -44,8 +45,8 @@ import AppKit
     deinit {
         if let observer { let controller = controller; Task { @MainActor in controller.removeObserver(observer) } }
     }
-    func apply(language: SettingsLanguage) { self.language = language; render() }
-    func suspend() { task?.cancel(); task = nil; controller.suspend(presentationID: presentationID) }
+    func apply(language: SettingsLanguage) { self.language = language; for view in keyEntries.values { view.apply(language: language) }; render() }
+    func suspend() { task?.cancel(); task = nil; for view in keyEntries.values { view.entry.dismiss() }; controller.suspend(presentationID: presentationID) }
     private func label(_ text: SettingsText, heading: Bool = false) {
         let field = NSTextField(wrappingLabelWithString: text.value(language))
         field.font = .systemFont(ofSize: heading ? 14 : 12, weight: heading ? .semibold : .regular)
@@ -120,6 +121,7 @@ import AppKit
             label(.init("Tool presence and shared consent have not been checked.", "尚未检查工具及共享授权。"))
             toolGroup([], advanced: true)
         }
+        readerKeySection()
         label(.init("ModelPlan plugins", "ModelPlan 插件"), heading: true)
         if controller.availability.pluginTools.isEmpty {
             label(.init("Plugin installation needs a verified component. Open About to check the component and setup instructions.", "插件安装组件尚未核验。请打开关于，检查组件与安装说明。"))
@@ -155,6 +157,22 @@ import AppKit
         buttons.last?.nextKeyView = followingKeyView
         if let focusedID, let next = buttons.first(where: { $0.accessibilityIdentifier() == focusedID && $0.isEnabled }) {
             window?.makeFirstResponder(next)
+        }
+    }
+    /// D90: one small, optional fix action for the key-only providers. Auto-detect stays first.
+    private func readerKeySection() {
+        guard let backend = editor.readerKeys else { return }
+        label(.init("Add a key (optional)", "添加密钥（可选）"), heading: true)
+        label(.init("Sign-ins found on this Mac are used first. Enter a key only when none is found.", "会先使用本机上已找到的登录；没有可用登录时再输入密钥。"))
+        for provider in ReaderKeyProvider.allCases {
+            let view: ReaderKeyEntryView
+            if let existing = keyEntries[provider] { view = existing } else {
+                view = ReaderKeyEntryView(entry: ReaderKeyEntry(provider: provider, backend: backend), language: language)
+                keyEntries[provider] = view
+                let entry = view.entry
+                Task { @MainActor in await entry.load() }
+            }
+            addArrangedSubview(view)
         }
     }
     private func subscriptions(_ subscriptions: [SettingsVerifiedSubscription]) {

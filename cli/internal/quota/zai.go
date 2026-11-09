@@ -69,6 +69,7 @@ func fetchZaiAuthorization(ctx context.Context, c *http.Client, region, key, aut
 	}
 	if key == "" {
 		e.Error = "no API key in the environment"
+		e.ErrorCode = "no_key"
 		return e
 	}
 	var r zaiResponse
@@ -110,6 +111,13 @@ func parseZai(r zaiResponse, now time.Time) codexbarEntry {
 		}
 		e.ErrorCode = zaiBodyErrorCode(code)
 		e.Error = e.ErrorCode
+		// A working key whose Coding Plan lapsed is answered 500 with this exact message
+		// (measured by Pulse, 2026-09-07): an account state, not an outage and not a refused key.
+		// Only the exact documented text counts; nothing is inferred from other messages.
+		if code == 500 && strings.TrimSpace(r.Msg) == "当前用户不存在coding plan" {
+			e.ErrorCode = "http_403"
+			e.Error = manualKeyPlanLapsedText
+		}
 		return e
 	}
 	if r.Data == nil || r.Data.Limits == nil {
