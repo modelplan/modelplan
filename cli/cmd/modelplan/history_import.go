@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -69,7 +70,7 @@ func say(c common, en, zh string) string {
 // consent fence. A tool without consent gets no root and is reported as skipped.
 func importOptions(st *store.Store, days int, firstRun bool, now time.Time) speed.ImportOptions {
 	opts := speed.ImportOptions{Days: days, Now: now, Auto: firstRun,
-		Guard: func(tool string, write func() error) error { return consent.LocalWrite(tool, write) }}
+		Guard: guardLocalWrite}
 	if consent.Allowed("claude", consent.Local) {
 		home, _ := os.UserHomeDir()
 		dir := os.Getenv("CLAUDE_CONFIG_DIR")
@@ -111,3 +112,16 @@ func (e importEngine) State() wire.HistoryImportStatus {
 }
 
 func (e importEngine) Remove() error { return speed.RemoveImported(e.st.Dir) }
+
+// guardLocalWrite is consent.LocalWrite that waits a few seconds when another reader holds the
+// admission lock (the running engine's own observers do, for a moment).
+func guardLocalWrite(tool string, write func() error) error {
+	var err error
+	for i := 0; i < 50; i++ {
+		if err = consent.LocalWrite(tool, write); !errors.Is(err, consent.ErrBusy) {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return err
+}
