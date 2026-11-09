@@ -2,10 +2,14 @@
 # Signal only. A PR event, a submitted review or a merge-queue group starts this no-op run; its run
 # starts `merge-gates` (workflow_run), which evaluates the gates with the default branch's rules. This
 # file runs the PR's or the group's own code, so it holds no logic and no permissions.
+# Only for events no other listed workflow answers: opened, synchronize, reopened and ready_for_review always
+# start `ci` and `repo checks`, whose completions re-evaluate the new head (until then the head has no
+# `modelplan-gates` status, which blocks like pending). A title/body/base edit or a return to draft starts
+# no check, so the probe signals those.
 name: merge-gates probe
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
+    types: [converted_to_draft, edited]
   pull_request_review:
     types: [submitted, edited, dismissed]
   merge_group:
@@ -13,6 +17,14 @@ on:
 permissions: {}
 jobs:
   probe:
+    # A review changes a gate only through a VERDICT or DESIGN line from the trusted account (rules.mjs reads
+    # nothing else from reviews), so any other review starts no job. merge-gates skips a probe run concluded
+    # `skipped`; the evaluator still checks the reviewer's identity itself.
+    if: >-
+      ${{ github.event_name != 'pull_request_review'
+      || (github.event.review.user.login == 'guanbear'
+      && (contains(github.event.review.body, 'VERDICT') || contains(github.event.review.body, 'DESIGN:')
+      || contains(github.event.changes.body.from, 'VERDICT') || contains(github.event.changes.body.from, 'DESIGN:'))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

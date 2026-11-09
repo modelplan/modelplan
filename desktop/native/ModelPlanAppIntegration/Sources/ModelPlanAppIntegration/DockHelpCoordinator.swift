@@ -100,7 +100,7 @@ struct DockStatusHelpDismissal {
                 let zh = language == .chinese
                 switch kind {
                 case .ringRefresh: return (zh ? "悬停查看详情 · 点击刷新" : "Hover to see details · click to refresh", zh ? "不再显示" : "Don't show again")
-                case .findWidget: return (zh ? "右键点菜单栏图标，勾选「显示额度挂件」可再次找到" : "Find it again: right-click the menu bar icon, Show Quota Widget", zh ? "不再显示" : "Don't show again")
+                case .findWidget: return (zh ? "右键点菜单栏图标，选「找到额度挂件」可再次找到" : "Find it again: right-click the menu bar icon, Find Quota Widget", zh ? "不再显示" : "Don't show again")
                 case .widgetOff: return (EngineRowsText.widgetTurnedOffHint.value(zh ? .chinese : .english), zh ? "知道了" : "OK")
                 case .ignition: return (zh ? "点按打开驾驶舱" : "Tap to open Cockpit", zh ? "关闭" : "Close")
                 case .drag: return (zh ? "拖喷口换顺序，拖底座换到别的边" : "Drag a nozzle to reorder; drag the base to move to another edge", zh ? "关闭" : "Close")
@@ -158,7 +158,7 @@ struct DockStatusHelpDismissal {
 
     private func presentExplanation(_ interaction: DockHelpInteraction) {
         guard !retired, !suspended, mapSurface == nil, explanationInteraction == interaction, let dock,
-              dock.currentDockHelpInteraction == interaction, let surface = dock.currentDockHelpSurface,
+              !dock.spotlightHold, dock.currentDockHelpInteraction == interaction, let surface = dock.currentDockHelpSurface,
               dock.isCurrentDockHelpSurface(surface) else { return }
         let language: InstrumentLanguage = application.latest?.effective.language == .chinese ? .chinese : .english
         guard let explanation = DockHoverExplanation.explanation(anchorID: interaction.anchor.id, language: language,
@@ -175,7 +175,9 @@ struct DockStatusHelpDismissal {
     private func update(_ surface: DockHelpSurface?) {
         guard !retired, !suspended, let binding else { return }
         if let mapSurface, surface != mapSurface { dismissRequestedMap() }
-        let eligible = application.latest?.snapshot.preferences.onboarding.completed == true
+        // D56: no hint is offered while Find Quota Widget dims the display; the first hint
+        // follows once the spotlight has ended, so the two read as one automatic hint.
+        let eligible = application.latest?.snapshot.preferences.onboarding.completed == true && dock?.spotlightHold != true
         let concealed: Bool, turnedOff: Bool
         switch dock?.edgePresentation?.state {
         case .sliver?: concealed = true; turnedOff = false
@@ -226,7 +228,7 @@ struct DockStatusHelpDismissal {
         var anchors = surface.mapAnchors.map { DockRequestedHelpAnchor(id: $0.id, region: $0.region, rect: local($0.rect), visible: $0.visible, caption: $0.caption) }
         if let status = statusAnchor(), viewport.contains(status.frame) {
             mapStatusFrame = status.frame
-            let caption = application.latest?.effective.language == .chinese ? "右键点菜单栏图标，勾选「显示额度挂件」。" : "Right-click the menu bar icon and choose Show Quota Widget."
+            let caption = application.latest?.effective.language == .chinese ? "右键点菜单栏图标，选「找到额度挂件」。" : "Right-click the menu bar icon and choose Find Quota Widget."
             anchors.append(.init(id: "status.menu", region: .sliver, rect: local(status.frame), visible: true, caption: caption))
         } else { mapStatusFrame = nil }
         let blockers = (dock?.dockHelpMapBlockingRects(surface) ?? []).map(local)

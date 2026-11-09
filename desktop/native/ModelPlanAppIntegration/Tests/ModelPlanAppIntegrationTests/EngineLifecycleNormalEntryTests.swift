@@ -252,10 +252,15 @@ private actor LifecycleEngine: EngineClient {
         return root
     }
 
-    private func make(_ root: URL, topology: Topology, rows: WireRowsSnapshot? = nil, native: Bool = false,
+    /// These journeys exercise an expanded widget. Since D56 (owner 2026-11-08) a fresh profile
+    /// starts collapsed, so a new profile records auto-collapse off unless `freshDefaults` asks for
+    /// the shipped defaults. A relaunch on an existing profile keeps whatever it saved.
+    private func make(_ root: URL, topology: Topology, rows: WireRowsSnapshot? = nil, native: Bool = false, freshDefaults: Bool = false,
                       beforePrepare: ((EngineDockMenuApplication) -> Void)? = nil, edit: ((inout SettingsPreferences) -> Void)? = nil)
         async throws -> EngineDockMenuApplication {
+        let newProfile = !FileManager.default.fileExists(atPath: root.path)
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        if newProfile && !freshDefaults { _ = try await store.update { $0.autoHide = false } }
         if let edit { _ = try await store.update { edit(&$0) } }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("synthetic-engine"),
             applicationVersion: "test", allowedEnvironment: [:], offline: true, readOnly: true),
@@ -325,11 +330,13 @@ private actor LifecycleEngine: EngineClient {
     func testG317TrulyFreshProfileEnablesAndShowsTheWidget() async throws {
         let topology = Topology(), root = profile()
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path), "Precondition: no profile at all")
-        let app = try await make(root, topology: topology)
+        let app = try await make(root, topology: topology, freshDefaults: true)
         _ = start(app)
-        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
+        // D56: shown, collapsed to its strip at the edge.
+        try await wait { app.composition.dock.edgePresentation?.state == .sliver }
         let editor = app.settingsHost.application.editor
         XCTAssertEqual(editor.snapshot?.preferences.showDock, true)
+        XCTAssertEqual(editor.snapshot?.preferences.autoHide, true)
         XCTAssertEqual(try showDockRow(app), .toggle(true), "Settings shows the Quota Widget switch on")
         let status = await app.foundationStore.foundationStatus()
         let document = try XCTUnwrap(status?.path)
