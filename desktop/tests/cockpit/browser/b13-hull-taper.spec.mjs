@@ -65,9 +65,11 @@ for(const s of shapes)test(`B13 ${s.tier}${s.closed?' closed':''}: study hull wa
  const root=s.closed?(s.tier==='tall'?691:609):(s.tier==='tall'?877:627),top=s.closed?-14:0,rows=await silhouette(page,root+top);
  const at=y=>rows[y+top];
  if(!s.closed){
-  const foot=s.plate===890?200:40;
-  expect(at(foot)[0],'canopy frame foot, left').toBeGreaterThanOrEqual(8);
-  expect(at(foot)[1],'canopy frame foot, right').toBeLessThanOrEqual(627);
+  // D100 (owner 2026-11-09): the tall canopy is A3 as generated; its walls bulge slightly outward above the foot
+  // (measured at 200 px: left 7, right 627). Compact (A1) stays inside the hull line.
+  const foot=s.plate===890?200:40,[minL,maxR]=s.plate===890?[6.5,627.5]:[8,627];
+  expect(at(foot)[0],'canopy frame foot, left').toBeGreaterThanOrEqual(minL);
+  expect(at(foot)[1],'canopy frame foot, right').toBeLessThanOrEqual(maxR);
  }
  for(const y of [s.upper[0]+30,s.cone-2])expect(at(y),`upper wall at ${y}`).toEqual([8,627]);
  for(const y of [s.cone+40,s.cone+31+s.lower-10])expect(at(y),`lower wall at ${y}`).toEqual([0,635]);
