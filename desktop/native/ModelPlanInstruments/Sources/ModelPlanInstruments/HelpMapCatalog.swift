@@ -36,9 +36,9 @@ public struct HelpMapCatalog: Sendable {
     }
     public func sentence(_ region: HelpMapRegion) -> String {
         switch region {
-        case .window: return copy("悬窗：查看模型概况，按放大键看完整画面。", "Window: view the model overview or enlarge the full scene.")
+        case .window: return copy("悬窗：场景视图暂不可用。", "Window: the field view is unavailable.")
         case .shutter: return copy("悬窗开关：拖动或按一下，收起或展开。", "Window shutter: drag or press to fold or expand the Window.")
-        case .alert: return copy("注意灯：按一下查看全部提醒并停止闪烁。", "Alert lamp: press for all alerts and to stop flashing.")
+        case .alert: return copy("注意灯：显示当前提醒状态。", "Alert lamp: indicates current alerts.")
         case .settings: return copy("设置：在独立窗口调整偏好或重新显示提示。", "Settings: adjust preferences or show hints again in its window.")
         case .pin: return copy("钉住：点别处也保持驾驶舱打开。", "Pin: keep the Cockpit open when clicking elsewhere.")
         case .close: return copy("关闭：结束本地试档并收起驾驶舱。", "Close: end the local Try and close the Cockpit.")
@@ -47,7 +47,7 @@ public struct HelpMapCatalog: Sendable {
         case .other: return copy("其他：其他周期和专项额度，+N 表示还有更多。", "Other: remaining periods and scoped quotas; +N means more.")
         case .faders: return copy("推杆：每个代表一个模型，拖动或点档位作本地比较，不会改会话。", "Faders: each is a model; drag or press an effort for a local comparison that leaves the session unchanged.")
         case .screen: return copy("公共屏：页键切页，底键选项或返回原页。", "Main screen: page keys change pages; bottom keys select or return.")
-        case .record: return copy("会话记录：运行中的在前，按一行查看详情。", "Session record: running sessions come first; press a row for details.")
+        case .record: return copy("运行中的会话在前，其后为最近观察；-- 表示速率不可用。", "Running sessions first, then last seen; -- means speed unavailable.")
         case .base: return copy("火焰：表示这个订阅正在用，不表示额度告警。", "Flame: this subscription is working now; it does not mean an alert.")
         case .nozzle: return copy("喷口：每个是一个订阅，悬停查看卡片、点按刷新，拖动可排序，⌥ 加方向键移动一位。", "Nozzle: each is a subscription; hover for its card, click to refresh, drag to reorder or use Option arrows to move one place.")
         case .dockMove: return copy("背景与握柄：拖动可移动整个额度挂件，松手即贴到左、右、上或下边缘。", "Background and grips: drag to move the whole Quota Widget; release it on the left, right, top or bottom edge.")
