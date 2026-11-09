@@ -19,12 +19,15 @@ The runtime pack contains:
   joined outline coverage for the 640/890 layout tiers, at 1x and 2x. Tier names
   describe the layout, not image width. The window/aperture/outline images are
   final runtime coverage masks. Consumers use the recorded pixel dimensions.
-  D74 (2026-11-08): the c01 layers are re-exported from a redrawn master whose top
-  arc is completed (extension 80 source px; 890 tier 636x244, 640 tier 636x76).
-  The master is the approved mockup-1 pixels shifted down 80 px, with only the missing
-  top band taken from a Codex image-generated redraw (cross-faded over source rows
-  90-150); this art is pending owner acceptance and is not final. Layer names and
-  the 1x/2x sizes are otherwise unchanged.
+  D74 (2026-11-08, revised by D100 on 2026-11-09): the c01 layers are re-exported
+  from a master whose outer walls, shoulders and top arc are completed (the approved
+  mockup-1 at an (80,100) offset inside a 1940x864 outpainted canvas). The specular
+  glints on the top arc are removed and the bright spots on the lower metal are toned
+  down (Codex image edit, composited only inside feathered masks). The completed
+  silhouette is fitted uniformly into the 620 pt registration box (scale 0.964 of the
+  previous mapping); sizes stay 890 tier 636x244 and 640 tier 636x76 and the art is
+  bottom aligned. This art is pending owner acceptance and is not final. Layer names
+  and the 1x/2x sizes are otherwise unchanged.
 
 `manifest.json` binds every file to its SHA-256, byte size, pixel dimensions and
 reserved licence. Its eight baseline records point to the exact owner-confirmed

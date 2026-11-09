@@ -1,1 +1,1 @@
-The cockpit porthole canopy is re-exported from a redrawn master with its top arc completed (D74, art pending owner acceptance); the window grows by 28 points in both profiles.
+The cockpit porthole canopy is re-exported from an outpainted master with completed outer walls, shoulders and top arc, the specular glints on the top arc removed and the sill glints toned down, fitted uniformly into the same 636 pt box (D74 and D100, art pending owner acceptance); the window grows by 28 points in both profiles, and the HUD and compact strip sit lower so they keep their glass margin.
