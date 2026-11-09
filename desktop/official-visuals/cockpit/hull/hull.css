@@ -74,8 +74,8 @@
 }
 /* The c01 frame's raw lower sides run straight down to the image edge; the study rounds them with its solid outline
    (strip-hull-unify), so the frame's foot meets the 620 px upper walls. */
-#cockpit .ck-portrow::before{-webkit-mask:url('/runtime/canopy-c01/solid-outline-890-1x.png') 0 0/636px 216px no-repeat;mask:url('/runtime/canopy-c01/solid-outline-890-1x.png') 0 0/636px 216px no-repeat}
-#cockpit[data-layout="640"] .ck-portrow::before{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-640-1x.png');mask-image:url('/runtime/canopy-c01/solid-outline-640-1x.png');-webkit-mask-size:636px 48px;mask-size:636px 48px}
+#cockpit .ck-portrow::before{-webkit-mask:url('/runtime/canopy-c01/solid-outline-890-1x.png') 0 0/636px 244px no-repeat;mask:url('/runtime/canopy-c01/solid-outline-890-1x.png') 0 0/636px 244px no-repeat}
+#cockpit[data-layout="640"] .ck-portrow::before{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-640-1x.png');mask-image:url('/runtime/canopy-c01/solid-outline-640-1x.png');-webkit-mask-size:636px 76px;mask-size:636px 76px}
 @media(min-resolution:2dppx){
 #cockpit .ck-portrow::before{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-890-2x.png');mask-image:url('/runtime/canopy-c01/solid-outline-890-2x.png')}
 #cockpit[data-layout="640"] .ck-portrow::before{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-640-2x.png');mask-image:url('/runtime/canopy-c01/solid-outline-640-2x.png')}

@@ -19,3 +19,8 @@
 .dk-mfd .cmp .cmp-panel .cmp-equal{color:#9ca7b0}
 .dk-mfd .cmp [data-light="off"] b,.dk-mfd .cmp [data-light="off"] .cmp-value{visibility:hidden}
 .dk-mfd .cmp .cmp-equal-star{font-size:10px;line-height:10px;color:var(--cmp-gold,var(--gold))}
+/* D74: the redrawn canopy has rounded top corners, so nothing behind it may show beside the arc: the port border is
+   transparent and the day plate is masked to the canopy outline above the cap and to a plain box below it. */
+.ck-port{border-color:transparent!important}
+:root[data-theme="day"] #cockpit .ck-shell{-webkit-mask:url('/runtime/canopy-c01/solid-outline-890-2x.png') -8px 0/636px 244px no-repeat,linear-gradient(#000,#000) 0 var(--hull-cap-h)/100% 100% no-repeat;mask:url('/runtime/canopy-c01/solid-outline-890-2x.png') -8px 0/636px 244px no-repeat,linear-gradient(#000,#000) 0 var(--hull-cap-h)/100% 100% no-repeat;-webkit-mask-composite:source-over;mask-composite:add}
+:root[data-theme="day"] #cockpit[data-layout="640"] .ck-shell{-webkit-mask:url('/runtime/canopy-c01/solid-outline-640-2x.png') -8px 0/636px 76px no-repeat,linear-gradient(#000,#000) 0 var(--hull-cap-h)/100% 100% no-repeat;mask:url('/runtime/canopy-c01/solid-outline-640-2x.png') -8px 0/636px 76px no-repeat,linear-gradient(#000,#000) 0 var(--hull-cap-h)/100% 100% no-repeat;-webkit-mask-composite:source-over;mask-composite:add}

@@ -165,10 +165,10 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
    a 31 px taper steps out above the instruments and the lower wall runs full width to the aft plate (22 px). Each is
    the lower-skin tile in one vertical phase (the strip's content line, cap + 9 px), cut by the study's alpha masks
    (official edition, hull.css); the community edition has neither and stays neutral. The taper tops are the study's
-   formulas at the fixed root heights 877/627 open (root - console - tape - 40) and 691/609 closed
+   formulas at the fixed root heights 905/655 open (D74: canopy +28) (root - console - tape - 40) and 691/609 closed
    (84.5 + eng - 4.5 + (root + 6 - 120 - eng - console - tape) / 3 - 6). */
-#cockpit{--hull-cap-h:216px;--hull-taper-top:486px}
-#cockpit[data-layout="640"]{--hull-cap-h:48px;--hull-taper-top:312px}
+#cockpit{--hull-cap-h:244px;--hull-taper-top:514px}
+#cockpit[data-layout="640"]{--hull-cap-h:76px;--hull-taper-top:340px}
 #cockpit[data-shell="closed"]{--hull-cap-h:30px;--hull-taper-top:300px}
 #cockpit[data-shell="closed"][data-layout="640"]{--hull-taper-top:294px}
 :root[data-theme="night"] #cockpit .ck-shell :is(.hull-crown,.hull-record){display:none}

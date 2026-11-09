@@ -64,7 +64,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   close.disabled=!active||!nativeShell;
   cap.hidden=!closed;cap.style.display=closed?'block':'none';
   root.querySelector<HTMLElement>('.ck-portrow')!.style.visibility=closed?'hidden':'';
-  root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?(tier==='tall'?691:609):(tier==='tall'?877:627))+'px');
+  root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?(tier==='tall'?691:609):(tier==='tall'?905:655))+'px');
   if(closed){stop();caution.classList.remove('flash');}
  }
  function localise(now?:number){

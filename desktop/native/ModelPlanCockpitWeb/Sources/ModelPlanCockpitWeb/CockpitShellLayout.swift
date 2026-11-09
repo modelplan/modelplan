@@ -51,16 +51,16 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let chosen = size.scale(screenWidth: screenWidth ?? usable.width)
         func fitting(_ root: CGFloat) -> CGFloat { min(chosen, usable.width / Self.width, available / (root + Self.baseReserve)) }
         var profile = CockpitAppearance.Profile.full, forcedClosed = false
-        var scale = fitting(877)
+        var scale = fitting(905)
         if scale < Self.minimumFullScale {
             // The short version, as before D51: open when its root fits, otherwise forced closed.
             profile = .compact
-            forcedClosed = usable.height - 6 - Self.baseReserve < 627
-            scale = fitting(forcedClosed ? 609 : 627)
+            forcedClosed = usable.height - 6 - Self.baseReserve < 655
+            scale = fitting(forcedClosed ? 609 : 655)
         }
         let fellBack = scale < chosen
         let closed = shutterClosed || forcedClosed
-        let height: CGFloat = profile == .full ? (closed ? 691 : 877) : (closed ? 609 : 627)
+        let height: CGFloat = profile == .full ? (closed ? 691 : 905) : (closed ? 609 : 655)
         // The scale follows the open root, so closing the shutter never resizes the strip or the canopy.
         let canvas = CGSize(width: Self.width * scale, height: (height + Self.baseReserve) * scale)
         let x = attachedX(anchor: anchor, width: canvas.width, scale: scale, usable: usable)
@@ -82,7 +82,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
     /// G3-43 / CKP-SHELL-04: the free left of the title strip in page px with Y up; the window uses
     /// `scaledTitleDragFrame`. It stops short of the shutter so buttons keep their own input. Strip tops are the page's, shared with the study.
     public var titleDragFrame: CGRect {
-        let stripTop: CGFloat = shutterClosed ? 45 : (profile == .full ? 225 : 57)
+        let stripTop: CGFloat = shutterClosed ? 45 : (profile == .full ? 253 : 85)
         return CGRect(x: 24, y: rootHeight + 34 - stripTop - 29, width: 216, height: 32)
     }
     public var scaledTitleDragFrame: CGRect { titleDragFrame.applying(.init(scaleX: scale, y: scale)) }
