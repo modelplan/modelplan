@@ -31,6 +31,7 @@ import ModelPlanDock
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
     static var verificationConsoleNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
+    static var verificationNoticeGrace: Duration?
     /// The coordinator's prewarm and open steps, for timing tests.
     public static var verificationCockpitTrace: ((String) -> Void)?
     /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
@@ -81,7 +82,8 @@ import ModelPlanDock
                 if let makeConsole { return makeConsole(composition) }
                 #if MODELPLAN_TEST_ONLY_SPI
                 if let verificationNotice {
-                    return SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{ true },activate:{},requestNotice:verificationNotice)
+                    return SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{ true },activate:{},requestNotice:verificationNotice,
+                                                     noticeGrace:CommunityCockpitApplicationFactory.verificationNoticeGrace ?? SharedEngineCockpitConsole.defaultNoticeGrace)
                 }
                 if verificationFactory != nil {
                     return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
@@ -231,17 +233,25 @@ struct CockpitUnavailableNotice {
     private let isForeground: @MainActor () -> Bool
     private let activate: @MainActor () -> Void
     private let requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
+    /// G3-66: how long a failed open may still recover before the notice appears.
+    static let defaultNoticeGrace: Duration = .seconds(4)
+    private let noticeGrace: Duration
+    /// Counts successful page opens; a notice is dropped when one happened after the failure it was raised for.
+    private var openCount = 0
+    private var noticeTask: Task<Void,Never>?
     init(owner:CockpitConsoleOwner,composition:EngineDockMenuComposition,
          isForeground: @escaping @MainActor () -> Bool = { NSApp.isActive },
          activate: @escaping @MainActor () -> Void = { if !NSApp.isActive { NSApplication.shared.activate() } },
-         requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)? = nil) {
-        self.owner=owner;self.composition=composition
+         requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)? = nil,
+         noticeGrace: Duration = SharedEngineCockpitConsole.defaultNoticeGrace) {
+        self.owner=owner;self.composition=composition;self.noticeGrace=noticeGrace
         self.isForeground=isForeground;self.activate=activate;self.requestNotice=requestNotice
         owner.coordinator?.onUnavailable = { [weak self] reason in self?.unavailable(path:reason.path) }
         owner.pageFailure = { [weak self] failure in self?.unavailable(path:"page."+failure.rawValue) }
         let onOpened = owner.coordinator?.onOpened
         owner.coordinator?.onOpened = { [weak self] in
             self?.pageOpened = true
+            self?.openCount += 1
             onOpened?()
         }
         owner.coordinator?.onClosed = { [weak self] in
@@ -292,6 +302,7 @@ struct CockpitUnavailableNotice {
     }
     func show() {
         wantsVisible=true
+        noticeTask?.cancel(); noticeTask=nil // a new click starts its own grace period
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
         CockpitTimingLog.markClick()
@@ -314,11 +325,13 @@ struct CockpitUnavailableNotice {
     var onShowingChanged: (() -> Void)?
     /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
     func requestClose() {
+        noticeTask?.cancel(); noticeTask=nil
         if pageOpened { owner.coordinator?.requestClose() } else { hide() }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
         wantsVisible = false
+        noticeTask?.cancel(); noticeTask=nil
         onShowingChanged?()
         showTask?.cancel()
         showTask = nil
@@ -327,11 +340,33 @@ struct CockpitUnavailableNotice {
         pageOpened = false
         fallback?.hide()
     }
+    /// G3-66: a failure is only worth a notice when it lasts. An open that finds the engine without its first
+    /// context is retried until the context arrives, and any failure is dropped when a later open succeeds
+    /// within the grace period. The log line is written for every failure.
     private func unavailable(path:String,history:Bool=false) {
+        if noticeTask != nil, !history { return } // a retry of the open already being waited on
         let initiatedInForeground=isForeground()
         // A failure in the background or after a close shows nothing, so the log is all there is.
         CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened)")
         guard wantsVisible else { return }
+        if history { presentNotice(history:true,initiatedInForeground:initiatedInForeground); return }
+        let epoch=openCount,retries=path == "open.noDelivery"
+        noticeTask=Task { @MainActor [weak self] in
+            guard let self else { return }
+            let clock=ContinuousClock(),deadline=clock.now.advanced(by:self.noticeGrace)
+            while clock.now < deadline {
+                try? await Task.sleep(for:.milliseconds(100))
+                guard !Task.isCancelled else { return }
+                if self.openCount != epoch { break }
+                if retries, self.wantsVisible { self.owner.coordinator?.open() } // no context yet: opens as soon as one exists
+            }
+            guard !Task.isCancelled else { return }
+            self.noticeTask=nil
+            guard self.openCount == epoch else { return } // recovered: nothing to tell the user
+            self.presentNotice(history:false,initiatedInForeground:initiatedInForeground)
+        }
+    }
+    private func presentNotice(history:Bool,initiatedInForeground:Bool) {
         let notice=CockpitUnavailableNotice(history:history)
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }

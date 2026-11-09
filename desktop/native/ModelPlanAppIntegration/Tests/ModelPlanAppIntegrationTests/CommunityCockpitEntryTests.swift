@@ -560,7 +560,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let coordinator=EngineCockpitCoordinator { _ in page }
             coordinator.bind(client:client);owner.coordinator=coordinator
             var notices:[CockpitUnavailableNotice]=[]
-            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)})
+            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.zero)
             let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
             await coordinator.consume(.context(context));surface.show()
             for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }

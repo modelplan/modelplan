@@ -37,6 +37,10 @@
    without changing the artwork or the separately licensed source sheet. */
 :root[data-theme="day"] .ck-head::before,:root[data-theme="day"] .ck-head .key::before,:root[data-theme="day"] .shutter-slider::before,:root[data-theme="day"] .shutter-thumb,:root[data-theme="day"] .shutter-blind{filter:invert(.76) hue-rotate(180deg)}
 
+/* G3-60: the detach key's slot (x=502 in the study strip) now holds Settings, beside Close at 544. The extra type selector
+   outranks the shared strip sheet's own left offset, which stays byte-identical to the approved file. */
+.ck-head button[data-settings]{left:502px}
+
 /* Bounded caution blink; hidden, closed and reduced-motion surfaces stay still. */
 @keyframes cockpit-caution-blink{50%{filter:brightness(.45)}}
 #cockpit[data-active="true"][data-shell="open"] .caution.flash{animation:cockpit-caution-blink 1s steps(1,end) 10!important}

@@ -1,0 +1,1 @@
+The Settings key now sits where the detach key used to be, next to Close, so the title strip has no gap. Opening the cockpit while the engine is still starting no longer flashes the "Cockpit unavailable" notice; it appears only if the failure lasts a few seconds.
