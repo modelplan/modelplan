@@ -30,11 +30,17 @@ final class T2OracleTests: XCTestCase {
             let stations = try XCTUnwrap(test["stations"] as? [[String: Any]])
             XCTAssertEqual(actual.stations.count, stations.count)
             for (station, reference) in zip(actual.stations, stations) {
-                XCTAssertEqual(station.centre.x, try XCTUnwrap(reference["x"] as? Double), accuracy: 1e-7)
-                XCTAssertEqual(station.centre.y, try XCTUnwrap(reference["y"] as? Double), accuracy: 1e-7)
+                // D48: the study puts the ring at the station depth; the owner moved it halfway
+                // across the face. Only the inward axis differs, and the readout moves with it.
+                let x = try XCTUnwrap(reference["x"] as? Double), y = try XCTUnwrap(reference["y"] as? Double)
+                let inward = edge == .right ? 1470 - x : edge == .left ? x : 956 - y
+                let shift = (Double(actual.freeDepth) - Double(actual.stationDepth) - inward) / 2
+                let dx = edge == .right ? -shift : edge == .left ? shift : 0, dy = edge == .bottom ? -shift : 0
+                XCTAssertEqual(station.centre.x, x + dx, accuracy: 1e-7)
+                XCTAssertEqual(station.centre.y, y + dy, accuracy: 1e-7)
                 let readout = try XCTUnwrap(reference["readout"] as? [Double])
-                XCTAssertEqual(station.readoutCentre.x, readout[0], accuracy: 1e-7)
-                XCTAssertEqual(station.readoutCentre.y, readout[1], accuracy: 1e-7)
+                XCTAssertEqual(station.readoutCentre.x, readout[0] + dx, accuracy: 1e-7)
+                XCTAssertEqual(station.readoutCentre.y, readout[1] + dy, accuracy: 1e-7)
                 XCTAssertEqual(station.pitch, try XCTUnwrap(reference["pitch"] as? Double), accuracy: 1e-7)
             }
             XCTAssertEqual(actual.shown.map(\.id), test["shown"] as? [String])
@@ -102,7 +108,7 @@ final class T2OracleTests: XCTestCase {
         let neutral = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true)
         let beta = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true, zaiMarkEnabled: true)
         let station = try XCTUnwrap(beta.stations.first)
-        XCTAssertNil(neutral.stations.first?.glyphs["zhipu"])
+        XCTAssertEqual(neutral.stations.first?.glyphs["zhipu"], "logo-zhipu", "D43: Zhipu has its own mark when the beta mark is off")
         XCTAssertEqual(station.glyphs["zhipu"], "logo-zai-white")
         XCTAssertEqual(station.layers, ["a1-01-bell-wall-44px@3x.webp", "a1-03-deep-centre-44px@3x.webp", "a1-02-throat-lip-44px@3x.webp", "a1-04-exit-lip-44px@3x.webp"])
         let depth = try XCTUnwrap(station.radialOverlay)

@@ -15,6 +15,7 @@ public enum SettingKey: String, CaseIterable, Sendable {
     case appVersion, cliStatus, architecture, diagnostics, readerDetails, refreshHistory, feedback, licenses, consentHelp
     case dockEdge, dockDisplay, dockPosition, detectedReaders, optionalReaders
     case updateStatus, websiteLink, methodologyLink, privacyLink, repositoryLink
+    case loginSystemSettings, notificationSystemSettings
 }
 public enum SettingAvailability: Equatable, Sendable {
     case available, readOnly, unsupportedCaptureHiding, cliOwned, serviceUnavailable, cacheUnavailable
@@ -116,6 +117,16 @@ public struct SettingsDisplayChoice: Equatable, Sendable {
 public struct SettingsPageContext: Sendable {
     /// True only for the shipping normal-entry v1 surface.
     public var v1NormalEntry = false
+    /// SET-9-26: the service state, not the toggle, decides when a v1 fallback row appears.
+    public var systemSettingsFallbacks: Set<SettingsSystemPane> {
+        var panes: Set<SettingsSystemPane> = []
+        if loginServiceObserved, [.requiresApproval, .unavailable].contains(capabilities.login) { panes.insert(.loginItems) }
+        if notificationServiceObserved, [.denied, .unavailable].contains(notificationAuthorization) { panes.insert(.notifications) }
+        return panes
+    }
+    /// Set by the host once it has asked the system; before that nothing is known to be wrong.
+    public var loginServiceObserved = false
+    public var notificationServiceObserved = false
     public var unavailableControls: [SettingKey: SettingsText] = [:]
     public mutating func configureV1NormalEntry() {
         v1NormalEntry = true
@@ -136,6 +147,29 @@ public struct SettingsPageContext: Sendable {
         unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")
         unavailableControls[.resetHints] = .init("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
     }
+    /// The Quota Widget settings whose effect the widget itself applies. Each becomes usable in
+    /// v1 only once the widget reports that it consumes that key; until then the row keeps its
+    /// visible reason. The saved preferences are never changed here.
+    public static let widgetConsumedKeys: Set<SettingKey> = [.magnification, .showPercentages, .sliverAlert, .fullscreen, .redBelow]
+    /// Called by the Quota Widget host with the keys it applies (from the committed
+    /// `SettingsPreferences`: `magnification`, `showPercentages`, `sliverAlert`,
+    /// `showOverFullscreen`, `redBelow`). Keys outside `widgetConsumedKeys` are ignored.
+    public mutating func observeWidgetConsumers(_ keys: Set<SettingKey>) {
+        let dock = SettingsText("Unavailable until Quota Widget supports this setting.", "额度挂件支持此设置前不可用。")
+        for key in Self.widgetConsumedKeys {
+            if keys.contains(key) { unavailableControls.removeValue(forKey: key) }
+            else if v1NormalEntry { unavailableControls[key] = dock }
+        }
+    }
+    /// SET-9-18: "Quota reset" and "Official extra reset" are delivered by the app once its
+    /// notification delivery is wired; then their rows are usable. Saved kinds are unchanged.
+    public mutating func observeNotificationDelivery(_ available: Bool) {
+        let notices = SettingsText("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
+        for key in [SettingKey.reset, .official] {
+            if available { unavailableControls.removeValue(forKey: key) }
+            else if v1NormalEntry { unavailableControls[key] = notices }
+        }
+    }
     /// SET-9-18 / SET-9-29: the forecast-exhaustion kind is offered only while the engine
     /// reports a forecast producer (F1); without one the v1 row is hidden, not shown disabled.
     /// The saved notification kinds are never changed here.
@@ -145,6 +179,8 @@ public struct SettingsPageContext: Sendable {
         else if v1NormalEntry { unavailableControls[.forecast] = SettingsText("Unavailable until forecasts are available.", "预测可用前不可用。") }
     }
     public var dockPlacementObservation: SettingsDockPlacementObservation?
+    /// G3-22: the menu-bar icon is covered (full menu bar); Settings shows how to bring it back.
+    public var statusItemNotice: SettingsText?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
     public var readerDiagnostics: [SettingsReaderDiagnostic] = []
@@ -173,7 +209,6 @@ public struct SettingsRow: Equatable, Sendable {
     public let key: SettingKey
     public let paneID: String
     public let groupID: String
-    public let paneTitle: SettingsText
     public let groupTitle: SettingsText?
     /// Compatibility only. Custom pane identifiers are intentionally not constrained to draft IDs.
     public var pane: SettingsPane? { SettingsPane(rawValue: paneID) }
@@ -197,19 +232,19 @@ public enum SettingsCatalogue {
         .init(.motion,"Reduce motion","减少动态效果","Follow accessibility settings or always reduce motion.","跟随辅助功能设置或始终减少动态。"),
         .init(.transparency,"Reduce transparency","减少透明度","Follow accessibility settings or use solid surfaces.","跟随辅助功能设置或使用不透明表面。"),
         .init(.percentageMode,"Percentage basis","百分比含义","Show remaining or used quota.","显示剩余或已用额度。"),
-        .init(.showPercentages,"Show percentages","显示百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
+        .init(.showPercentages,"Quota Widget percentages","额度挂件百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
         .init(.percentagePin,"Percentage window","百分比窗口","Select the tightest, 5-hour or weekly window per subscription.","为每个订阅选择最紧的、5小时或每周窗口。"),
         .init(.redBelow,"Critical threshold","变红阈值","Red at remaining quota ≤ the threshold, even when displaying used quota.","剩余额度 ≤ 阈值时变红，即使显示已用额度也一样。"),
-        .init(.sliverAlert,"Sliver alert color","隐藏条提示色","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
-        .init(.showDock,"Show Quota Widget","显示额度挂件","Show or hide the Quota Widget.","显示或隐藏额度挂件。"),
-        .init(.autoHide,"Auto-collapse","自动收起","Collapse to the edge strip when leaving.","移开后收起成贴边细条。"),
+        .init(.sliverAlert,"Sliver alert color","细条提示色","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
+        .init(.showDock,"Show Quota Widget","显示额度挂件","Same as Show Quota Widget in the menu bar icon's menu. When off, turn it back on there.","与菜单栏图标菜单里的「显示额度挂件」相同；关闭后可在那里重新打开。"),
+        .init(.autoHide,"Auto-collapse when the pointer leaves","鼠标离开后自动收起","Shrinks to a strip on the edge; rest the pointer there to expand it. Same as Auto-Collapse in the Quota Widget menu.","缩成贴边细条，鼠标靠近稍停即可展开；与额度挂件右键菜单里的「自动收起」相同。"),
         .init(.reveal,"Reveal dwell","展开停留时间","Wait before revealing the edge Quota Widget.","在边缘停留后展开。"),
         .init(.magnification,"Hover magnification","悬停放大","Choose none, subtle or strong.","选择不放大、轻微或明显。"),
         .init(.fullscreen,"Show over full-screen apps","全屏应用上显示","Off by default.","默认关闭。"),
         .init(.captureHiding,"Hide from capture","录屏时隐藏","Unavailable: hiding from arbitrary recorders is not supported.","不可用：不支持对任意录屏程序隐藏。"),
         .init(.dockDisplay,"Preferred display","偏好显示器","Keep the selected display when it reconnects.","重新连接后恢复所选显示器。"),
         .init(.dockPosition,"Preferred along-edge position","偏好沿边位置","Bottom to top on sides; left to right on bottom.","侧边从下到上；底边从左到右。"),
-        .init(.dockEdge,"Preferred Quota Widget edge","偏好额度挂件边缘","Choose right, bottom or left.","选择右侧、底部或左侧。"),
+        .init(.dockEdge,"Preferred Quota Widget edge","偏好额度挂件边缘","Choose right, bottom, left or top (below the menu bar).","选择右侧、底部、左侧或顶部（菜单栏下方）。"),
         .init(.detectedReaders,"Detected readers","已检测读取器","Read-only local reader status.","本地读取器的只读状态。"),
         .init(.optionalReaders,"Local reader choices","本地读取器选择","Legacy app choices only; not shared CLI authorization.","仅为旧版本地选择，不代表 CLI 共享授权。"),
         .init(.activeDisplay,"Follow active display","跟随当前显示器","Use the display selected by the display coordinator.","使用显示器协调器选定的显示器。"),
@@ -218,16 +253,16 @@ public enum SettingsCatalogue {
         .init(.automaticUpdates,"Check for updates automatically","自动检查更新","Show available versions quietly in Overview and the menu.","有可用版本时，在总览和菜单中轻声提醒。"),
         .init(.menuDisplay,"Menu-bar display","菜单栏显示","Icon, tightest percentage or two windows.","图标、最紧的百分比或并列两个窗口。"),
         .init(.openShortcut,"Open cockpit shortcut","打开驾驶舱快捷键","Global registration can fail; local matching remains available.","全局注册可能失败；应用内匹配仍可用。"),
-        .init(.dockShortcut,"Toggle Quota Widget shortcut","显示隐藏额度挂件快捷键","Text editing and composition do not trigger shortcuts.","文本编辑与输入法组合期间不触发。"),
+        .init(.dockShortcut,"Find Quota Widget shortcut","找到额度挂件快捷键","Shows where the Quota Widget is. Text editing and composition do not trigger shortcuts.","显示额度挂件的位置；文本编辑与输入法组合期间不触发。"),
         .init(.language,"Language","语言","Choose Chinese or English.","选择中文或英文。"),
-        .init(.opening,"Opening behavior","打开驾驶舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
+        .init(.opening,"Cockpit opening","打开驾驶舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
         .init(.countdown,"Countdown beat","倒数节奏","Three beats follow the 200 ms hold boundary.","按住200毫秒后开始三拍倒数。"),
-        .init(.resetHints,"Show hints again","重新显示提示","Reset the nine first-use hints and their open/reveal budgets.","重置九种首次提示及打开驾驶舱、额度挂件展开的提示预算。"),
+        .init(.resetHints,"Show hints again","重新显示提示","Reset the first-use hints and the cockpit and Quota Widget open budgets.","重置首次提示及打开驾驶舱、额度挂件展开的提示预算。"),
         .init(.notificationConsent,"Enable notifications","开启通知","Ask for permission only after explicit opt-in.","仅在主动开启后请求通知权限。"),
         .init(.forecast,"May not last to reset","可能撑不到重置","Notify for a new forecast episode.","新出现的耗尽风险可通知。"),
         .init(.reset,"Quota reset","额度重置","Notify when a reset is read.","读取到重置时通知。"),
         .init(.official,"Official extra reset","官方额外重置","Notify once per official event.","每个官方事件仅通知一次。"),
-        .init(.expiring,"Resets expiring","重置即将到期","Expired resets are never revived after wake.","已过期的重置不再重新显示。"),
+        .init(.expiring,"Resets expiring","额外重置即将过期","Expired resets are never revived after wake.","已过期的重置不再重新显示。"),
         .init(.stale,"Data stopped arriving","数据停止更新","Notify once per stale-data episode.","每次数据停滞仅通知一次。"),
         .init(.visible,"Subscription visibility","订阅可见性","Apply to both Quota Widget and cockpit.","同时用于额度挂件与驾驶舱。"),
         .init(.alias,"Subscription alias","订阅别名","Commit only completed text, never an active IME composition.","仅提交已完成的文本，不提交输入法组合内容。"),
@@ -235,14 +270,16 @@ public enum SettingsCatalogue {
         .init(.projectNames,"Project names","项目名称","Shown by default; hiding also applies to notifications.","默认显示；隐藏时通知也不显示名称。"),
         .init(.retention,"Local retention","本地保留时间","CLI-owned: sessions 35 days; daily totals 371 days.","CLI管理：会话35天，日汇总371天。"),
         .init(.clearCLI,"Clear CLI data","清除CLI数据","Unavailable here; no mutating CLI command is issued.","此处不可用；不会执行写入型CLI命令。"),
+        .init(.loginSystemSettings,"Open Login Items","打开登录项设置","macOS could not turn this on from here. Allow ModelPlan in System Settings.","macOS 无法在此开启，请在系统设置中允许 ModelPlan。"),
+        .init(.notificationSystemSettings,"Open Notification Settings","打开通知设置","macOS is not allowing ModelPlan notifications. Change this in System Settings.","macOS 未允许 ModelPlan 发送通知，请在系统设置中更改。"),
         .init(.clearAppCache,"Clear app cache","清除应用缓存","Only app-owned derived caches; preferences and CLI data are kept.","仅清除应用衍生缓存，保留偏好和CLI数据。"),
         .init(.privacyStatement,"Privacy statement","隐私说明","No local uploads; only public downloads.","不上传本机数据，仅下载公开数据。"),
         .init(.appVersion,"App version","应用版本","Application build version.","应用构建版本。"),
-        .init(.consentHelp,"Manual consent and cleanup instructions","授权与手动清理说明","Read the CLI disconnect instructions. Browser-cookie cleanup may require a separate approval; nothing is run automatically.","阅读CLI disconnect说明；浏览器缓存清理可能另需批准，此处不会自动执行。"),
+        .init(.consentHelp,"Manual consent and cleanup instructions","授权与手动清理说明","Read the CLI disconnect instructions. Browser-cookie cleanup may require a separate approval; nothing is run automatically.","阅读 CLI 断开连接说明；浏览器缓存清理可能另需批准，此处不会自动执行。"),
         .init(.cliStatus,"CLI status","CLI状态","Read-only CLI availability.","CLI可用性的只读状态。"),
         .init(.architecture,"Architecture","架构","Intel is untested; 3D may stutter.","Intel未测试，3D效果可能卡顿。"),
         .init(.diagnostics,"Copy diagnostics","复制诊断","Versions, macOS, reader identifiers and error codes only.","仅含版本、macOS、读取器标识和错误代码。"),
-        .init(.readerDetails,"Reader status","读取状态","Source and observation times for admitted readers.","已授权读取器的来源与观察时间。"),
+        .init(.readerDetails,"Reader status","读取状态","Source and reading times for admitted readers.","已授权读取器的来源与读取时间。"),
         .init(.refreshHistory,"Recent refreshes","最近刷新","Recent admitted refresh outcomes.","最近的已授权刷新结果。"),
         .init(.feedback,"Feedback","反馈","Open the public issue template; nothing is submitted automatically.","打开公开问题模板，不自动提交内容。"),
         .init(.licenses,"Third-party notices","第三方声明","The app adapter supplies bundled license notices.","由应用适配器提供随包许可证声明。"),
@@ -274,6 +311,8 @@ public enum SettingsCatalogue {
                     // nil means that no history producer is connected; do not show a dead row.
                     if key == .refreshHistory && c.refreshHistory == nil { return nil }
                     if c.v1NormalEntry && [.theme, .opening, .countdown].contains(key) { return nil }
+                    if c.v1NormalEntry && key == .loginSystemSettings && !c.systemSettingsFallbacks.contains(.loginItems) { return nil }
+                    if c.v1NormalEntry && key == .notificationSystemSettings && !c.systemSettingsFallbacks.contains(.notifications) { return nil }
                     // SET-9-18 (owner 11-06, D36): "Resets expiring" and "Data stopped arriving" are
                     // v1.1; v1 offers the forecast, reset and official-announcement kinds.
                     if c.v1NormalEntry && [.expiring, .stale].contains(key) { return nil }
@@ -298,7 +337,7 @@ public enum SettingsCatalogue {
                         let current = SettingsDockPlacementText.current(c.dockPlacementObservation, displays: c.displays)
                         subtitle = .init(current.english + " " + d.subtitle.english, current.chinese + " " + d.subtitle.chinese)
                     } else { subtitle = d.subtitle }
-                    return .init(key: key, paneID: pane.id, groupID: group.id, paneTitle: pane.title,
+                    return .init(key: key, paneID: pane.id, groupID: group.id,
                                  groupTitle: group.title, title: d.title, subtitle: subtitle,
                                  availability: availability(key, c), value: value(key, p, c, subs))
                 }
@@ -348,7 +387,7 @@ public enum SettingsCatalogue {
         case .percentageMode: return choices(p.percentageMode)
         case .showPercentages: return .toggle(p.showPercentages)
         case .percentagePin: return perSub(options: PercentagePin.allCases.map(\.rawValue)) { (p.subscriptionSettings[$0.id]?.percentagePin ?? .auto).rawValue }
-        case .redBelow: return .choice(String(p.redBelow), options: [10,16,20,25].map(String.init))
+        case .redBelow: return .choice(String(p.effectiveRedBelow), options: SettingsPreferences.redBelowChoices.map(String.init))
         case .sliverAlert: return .toggle(p.sliverAlert)
         case .showDock: return .toggle(p.showDock)
         case .autoHide: return .toggle(p.autoHide)
@@ -367,6 +406,7 @@ public enum SettingsCatalogue {
         case .opening: return choices(p.opening)
         case .countdown: return .choice(String(p.beatMilliseconds), options: [150,200,250].map(String.init))
         case .resetHints: return .action(.resetHelpHints)
+        case .loginSystemSettings, .notificationSystemSettings: return .action(nil)
         case .notificationConsent: return .toggle(p.notifications.optedIn)
         case .forecast, .reset, .official, .expiring, .stale: return .toggle(p.notifications.kinds.contains(NotificationKind(rawValue: k.rawValue)!))
         case .visible: return perSub(options: ["true", "false"]) { String(!p.subscriptions.hiddenIDs.contains($0.id)) }

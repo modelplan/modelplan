@@ -11,7 +11,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
-import { CONTEXT, FAILURE, description, evaluateGroup, evaluatePr, feed, parseDesignConf } from "./rules.mjs";
+import { CONTEXT, FAILURE, dataSyncRunId, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -21,6 +21,7 @@ const repo = env.GITHUB_REPOSITORY || "modelplan/modelplan";
 const cwd = flag("--repo-dir") ?? process.cwd();
 const gh = client({ token: env.GITHUB_TOKEN, repo });
 const conf = parseDesignConf(readFileSync(new URL("./design-paths.conf", import.meta.url), "utf8"));
+const tiers = tiersFrom(() => readFileSync(new URL(`../../${TIER_TABLE}`, import.meta.url), "utf8"));
 const MAIN = "refs/remotes/origin/main";
 const runUrl = env.GITHUB_RUN_ID ? `${env.GITHUB_SERVER_URL || "https://github.com"}/${repo}/actions/runs/${env.GITHUB_RUN_ID}` : undefined;
 
@@ -29,6 +30,8 @@ function log(obj) {
   console.log(line);
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, "`" + line.replaceAll("`", "'") + "`\n\n");
 }
+
+if (!tiers.size) log({ warning: `${TIER_TABLE} unreadable: every scenario needs evidence` });
 
 async function post(sha, result) {
   log({ sha, ...result, dryRun });
@@ -47,17 +50,43 @@ function verifiedEdge(oldSha, newSha) {
   return carryCache.get(k);
 }
 
+// A train's members, read only for a train: the extra calls would otherwise run on every evaluation. A number in
+// Supersedes that is not a PR is skipped; any other read error stops the evaluation, so the gate never passes on
+// a partial member list.
+async function readTrainMembers(pr) {
+  if (!isTrain(pr)) return [];
+  const notFound = (e) => { if (/HTTP 404/.test(String(e))) return null; throw e; };
+  const [based, open, superseded] = await Promise.all([
+    gh.all(`/pulls?state=all&base=${encodeURIComponent(pr.head.ref)}`),
+    gh.all("/pulls?state=open&base=main"),
+    Promise.all(supersededPrs(pr.body).map((n) => gh.get(`/pulls/${n}`).catch(notFound))),
+  ]);
+  G.git(cwd, ["fetch", "-q", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/main:${MAIN}`]);
+  return trainMembers(pr, { based, open, superseded: superseded.filter(Boolean), commits: G.commitsOnlyIn(cwd, pr.head.sha, MAIN) });
+}
+
+// A data-sync PR's evidence, read only for a bot PR on a data/sync-* branch: the workflow run its branch names and
+// the head commit. An unreadable run or commit (404) is "not proven", never a pass.
+async function readDataSync(pr) {
+  const runId = dataSyncRunId(pr);
+  if (!runId) return null;
+  const orNull = (e) => { if (/HTTP 404/.test(String(e))) return null; throw e; };
+  const [run, commit] = await Promise.all([gh.get(`/actions/runs/${runId}`).catch(orNull), gh.get(`/commits/${pr.head.sha}`).catch(orNull)]);
+  return { run, commit };
+}
+
 async function prResult(number) {
   const pr = await gh.get(`/pulls/${number}`);
   const head = pr.head.sha;
-  const [comments, reviews, files, runs, combined] = await Promise.all([
+  const [comments, reviews, files, runs, combined, members] = await Promise.all([
     gh.all(`/issues/${number}/comments`),
     gh.all(`/pulls/${number}/reviews`),
     gh.all(`/pulls/${number}/files`),
     gh.all(`/actions/runs?head_sha=${head}`, "workflow_runs", 500),
     gh.get(`/commits/${head}/status`),
+    readTrainMembers(pr),
   ]);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf });
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf, members, tiers, sync: await readDataSync(pr) });
   return { pr, result };
 }
 
@@ -95,7 +124,7 @@ async function evaluateGroupAndPost(groupSha) {
     gh.all(`/actions/runs?head_sha=${groupSha}`, "workflow_runs", 500),
     gh.get(`/commits/${groupSha}/status`),
   ]);
-  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [] });
+  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], repo });
   await post(groupSha, { group: steps.map((s) => s.pr), ...result });
 }
 
@@ -117,7 +146,14 @@ async function fromEvent() {
   if (wr.event !== "pull_request" && wr.event !== "pull_request_review") return log({ skipped: `run event ${wr.event}` });
   let numbers = (wr.pull_requests ?? []).map((p) => p.number);
   if (!numbers.length) numbers = (await gh.get(`/commits/${wr.head_sha}/pulls`)).filter((p) => p.state === "open").map((p) => p.number);
-  for (const n of numbers) await evaluatePrAndPost(n);
+  for (const n of numbers) {
+    // A cancelled run whose head is no longer the PR head was replaced by a newer push: that head's runs decide.
+    if (wr.conclusion === "cancelled" && cancelledRunSuperseded(wr, (await gh.get(`/pulls/${n}`)).head.sha)) {
+      log({ pr: n, skipped: "cancelled run of a superseded head" });
+      continue;
+    }
+    await evaluatePrAndPost(n);
+  }
 }
 
 const pr = flag("--pr"), group = flag("--group");

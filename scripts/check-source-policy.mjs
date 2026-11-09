@@ -125,7 +125,8 @@ for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p)
     continue;
   }
   if (p === "desktop/native/tools/package-neutral.sh") {
-    assert.equal(code.split("official-visuals").length, 2, "one native visual license reference");
+    assert.equal(code.split("official-visuals").length, 3, "one native visual license reference and one app icon reference");
+    assert.ok(code.includes('cp "$repo_root/desktop/official-visuals/icons/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"'), "exact native app icon copy");
     assert.ok(code.includes('cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"'), "exact native visual license copy");
     continue;
   }
@@ -135,12 +136,28 @@ for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p)
     assert.ok(code.includes('let name = scale == 1 ? "tray-outline.png" : "tray-outline@2x.png"'), "exact 1x/2x tray references");
     continue;
   }
+  if (p === "desktop/third-party/notices.json") {
+    assert.equal(code.split("official-visuals").length, 2, "one attribution reference in the notice catalog");
+    assert.ok(code.includes('"desktop/official-visuals/runtime/field-scene/cockpit-scene.bundle.js"'), "exact three.js attribution path");
+    continue;
+  }
   assert.ok(["desktop/build.mjs", "desktop/cockpit/build.mjs"].includes(p), "community build must not read the reserved visuals: " + p);
   const end = p === "desktop/cockpit/build.mjs" ? "} else {" : "} else if (external) {";
   const branch = code.slice(code.indexOf("if (official) {"), code.indexOf(end));
   assert.ok(
     code.indexOf("if (official) {") >= 0 && code.split("official-visuals").length === branch.split("official-visuals").length,
     "community build must not read the reserved visuals outside the --official branch",
+  );
+}
+// Cockpit admission pins are generated at build time from the canonical build (check-bundle-pins.py --write) and
+// never committed, so parallel cockpit PRs cannot conflict on them (D69).
+{
+  const generated = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift";
+  const factory = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift";
+  assert.ok(!tracked.includes(generated), "generated cockpit pins must not be committed: " + generated);
+  assert.ok(
+    !/"(community|official)"\s*:\s*"[a-f0-9]{64}"/.test((await read(factory)).toString()),
+    "cockpit manifest pins are generated at build time; do not commit them in " + factory,
   );
 }
 const core = JSON.parse(await read("reader/manifest.json"));

@@ -12,13 +12,35 @@ final class SettingsCatalogueCopyTests: XCTestCase {
         XCTAssertEqual(try row(.menuDisplay).subtitle.chinese, "图标、最紧的百分比或并列两个窗口。")
         XCTAssertEqual(try row(.openShortcut).title.chinese, "打开驾驶舱快捷键")
         XCTAssertEqual(try row(.opening).title.chinese, "打开驾驶舱方式")
-        XCTAssertEqual(try row(.resetHints).subtitle.chinese, "重置九种首次提示及打开驾驶舱、额度挂件展开的提示预算。")
+        XCTAssertEqual(try row(.resetHints).subtitle.chinese, "重置首次提示及打开驾驶舱、额度挂件展开的提示预算。")
         XCTAssertEqual(try row(.reset).subtitle.chinese, "读取到重置时通知。")
         XCTAssertEqual(try row(.expiring).title.english, "Resets expiring")
-        XCTAssertEqual(try row(.expiring).title.chinese, "重置即将到期")
+        XCTAssertEqual(try row(.expiring).title.chinese, "额外重置即将过期")
         XCTAssertEqual(try row(.expiring).subtitle.chinese, "已过期的重置不再重新显示。")
         XCTAssertFalse(try row(.source).subtitle.chinese.contains("采集器"))
         XCTAssertFalse(try row(.diagnostics).subtitle.chinese.contains("读取器ID"))
+    }
+    /// G3-28: "收起/collapse" names only the edge-strip state; "隐藏/hide" never names it.
+    func testCollapseAndTurnOffWordingStaysApart() throws {
+        let rows = try SettingsCatalogue.rows(preferences: .init(), context: .init())
+        func row(_ key: SettingKey) throws -> SettingsRow { try XCTUnwrap(rows.first { $0.key == key }) }
+        XCTAssertEqual(try row(.autoHide).title.chinese, "鼠标离开后自动收起")
+        XCTAssertEqual(try row(.autoHide).title.english, "Auto-collapse when the pointer leaves")
+        XCTAssertEqual(try row(.showDock).title.chinese, "显示额度挂件")
+        for key in [SettingKey.autoHide, .sliverAlert] {
+            let text = try row(key)
+            XCTAssertFalse(text.title.chinese.contains("隐藏") || text.subtitle.chinese.contains("隐藏"), "\(key)")
+            XCTAssertFalse(text.title.english.lowercased().contains("hide") || text.subtitle.english.lowercased().contains("hide"), "\(key)")
+        }
+        XCTAssertTrue(try row(.showDock).subtitle.chinese.contains("菜单栏图标"))
+    }
+    /// D56: the SET-9-05 widget shortcut slot is the Find Quota Widget shortcut.
+    func testD56WidgetShortcutRowNamesFindQuotaWidget() throws {
+        let rows = try SettingsCatalogue.rows(preferences: .init(), context: .init())
+        let row = try XCTUnwrap(rows.first { $0.key == .dockShortcut })
+        XCTAssertEqual(row.title.english, "Find Quota Widget shortcut")
+        XCTAssertEqual(row.title.chinese, "找到额度挂件快捷键")
+        XCTAssertFalse(row.title.chinese.contains("隐藏"))
     }
     func testQuotaWindowChoicesUseGlossaryLabelsInBothLanguages() {
         XCTAssertEqual(SettingsWords.option("5h", key: .percentagePin, language: .english), "5h")

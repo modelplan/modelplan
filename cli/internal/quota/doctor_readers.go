@@ -109,6 +109,50 @@ func diagnosticWindows(ws []Window, now time.Time) int {
 	return n
 }
 
+// codexFailureState names a failed Codex read as the other readers do: runtime_missing, or
+// reader_error with the fixed reason word.
+func codexFailureState(s *accountSnap) string {
+	if code := s.failureCode(); code != "runtime_missing" {
+		return "unavailable:reader_error:" + code
+	}
+	return diagnosticState(toolcli.RuntimeMissing)
+}
+
+// codexDiagnostic: Codex is not a native reader, so it reports its runtime route from the
+// cached account snapshot alone. Session logs stay the fallback and are never opened here.
+func codexDiagnostic(p Paths, policy consent.State, detected bool, now time.Time) ReaderDiagnostic {
+	admission := admissionFor(p)
+	admitted := !CodexAccountOff() && p.Cache != "" && admission.State().AllowsScope(consent.ScopeCodexRuntimeUsage, admission.Mode())
+	row := ReaderDiagnostic{Provider: "codex", Detected: yesNo(detected), Consent: diagnosticConsent(policy, "codex", consent.Runtime), Admitted: yesNo(admitted), Last: "unknown", State: "unavailable:not_admitted"}
+	if row.Consent == "none" && admitted {
+		row.Consent = "granted"
+	}
+	if row.Consent == "denied" {
+		row.State = "unavailable:denied"
+	}
+	if !admitted {
+		return row
+	}
+	row.State = "unavailable:not_read"
+	if s := loadAccount(p.Cache); s != nil {
+		reading := s
+		if s.Status != "ok" && s.Good != nil && now.Sub(s.Good.ObservedAt) <= accountKeep {
+			reading = s.Good // the retained last good reading: its age and windows
+		}
+		row.Last = diagnosticAge(reading.ObservedAt, now)
+		row.Windows = diagnosticWindows(reading.Windows, now)
+		switch {
+		case s.Status != "ok":
+			row.State = codexFailureState(s)
+		case now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now):
+			row.State = "stale"
+		default:
+			row.State = "ok"
+		}
+	}
+	return row
+}
+
 // ReaderDiagnostics uses only production admission, presence metadata and
 // ModelPlan caches. In particular it never calls ReadPermitted, whose legacy
 // paths can open tool-owned session files or inspect current login state.
@@ -237,6 +281,7 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 		}
 		rows = append(rows, row)
 	}
+	rows = append(rows, codexDiagnostic(p, policy, presence["codex"], now))
 	home, _ := os.UserHomeDir()
 	for _, id := range localusage.HistoryProviders() {
 		root, a := localusage.ProductionHistoryAccess(home, id, false)

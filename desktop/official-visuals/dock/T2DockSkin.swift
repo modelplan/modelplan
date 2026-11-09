@@ -18,7 +18,10 @@ public enum T2DockSkin {
         let sourceSize = d <= 44 ? 44 : 52
         let layers = names.map { "\($0)-\(sourceSize)px@3x.webp" }
         let available = Dictionary(uniqueKeysWithValues: rows.map { ($0.subscriptionID, $0) })
-        var logos = ["openai":"logo-openai", "claude":"logo-claude", "cursor":"logo-cursor", "copilot":"logo-copilot", "kimi":"logo-kimi", "opencode":"logo-opencode"]
+        var logos = ["openai":"logo-openai", "claude":"logo-claude", "cursor":"logo-cursor", "copilot":"logo-copilot", "kimi":"logo-kimi", "deepseek":"logo-deepseek", "opencode":"logo-opencode",
+                     "gemini":"logo-gemini", "grok":"logo-grok", "x":"logo-x", "qwen":"logo-qwen", "minimax":"logo-minimax", "xiaomi":"logo-xiaomi",
+                     "kiro":"logo-kiro", "amp":"logo-amp", "antigravity":"logo-antigravity", "droid":"logo-droid",
+                     "zhipu":"logo-zhipu", "glm":"logo-zhipu", "zai":"logo-zhipu"]
         if zaiMarkEnabled { for key in ["zhipu", "glm", "zai"] { logos[key] = "logo-zai-white" } }
         let outerWidth = d * 0.058, innerWidth = d * 0.031
         // workbench-engine.js draws the 52-point nozzle before CSS zoom.
@@ -78,7 +81,9 @@ public enum T2DockSkin {
             ["resource":"a5-recessed-guard-52x52@3x.png", "rect":rect(box(button,guardSize,guardSize))]
         ]
         func ink(_ r: Double,_ g: Double,_ b: Double,_ a: Double=1) -> [String:Double] { ["r":r/255,"g":g/255,"b":b/255,"a":a] }
-        let palette: [String: [String: Double]] = ["body":ink(16,19,24),"case":ink(5,6,8),"track":ink(255,255,255,28/255),"notch":ink(14,17,22),"normal":ink(90,217,186),"warning":ink(234,193,123),"critical":ink(239,68,68),"unknown":ink(125,134,142),"clock":ink(255,255,255,0.6),"clockBack":ink(5,6,8,0.55),"text":ink(255,255,255),"lcdWhite":ink(233,237,240),"alias":ink(230,233,235),"noticeBlue":ink(159,210,255),"noticeAmber":ink(234,193,123),"noticeWhite":ink(255,255,255),"eventBackdrop":ink(16,21,28),"eventOutline":ink(16,21,28,0.6),"emptyFill":ink(20,22,26,221/255),"emptyStroke":ink(255,255,255,0.2),"emptyText":ink(154,160,166)]
+        let palette: [String: [String: Double]] = ["body":ink(16,19,24),"case":ink(5,6,8),"track":ink(255,255,255,28/255),"notch":ink(14,17,22),"normal":ink(90,217,186),"warning":ink(234,193,123),"critical":ink(239,68,68),"unknown":ink(125,134,142),"clock":ink(255,255,255,0.6),"clockBack":ink(5,6,8,0.55),"text":ink(255,255,255),"lcdWhite":ink(233,237,240),"alias":ink(230,233,235),"noticeBlue":ink(159,210,255),"noticeAmber":ink(234,193,123),"noticeWhite":ink(255,255,255),"eventBackdrop":ink(16,21,28),"eventOutline":ink(16,21,28,0.6),"emptyFill":ink(20,22,26,221/255),"emptyStroke":ink(255,255,255,0.2),"emptyText":ink(154,160,166),
+            // D65 (owner 11-08, option B): a used-up window: dark red track, light red face, dimmed mark.
+            "usedUpTrack":ink(156,52,39,0.95),"usedUpFace":ink(223,96,76,0.20),"usedUpMark":ink(11,15,19,0.45)]
         let text: [String: Any] = ["fontResource":"font-jetbrains-mono","size":11*unit,"weight":400]
         let alias: [String: Any] = ["useSystemUIFont":true,"size":10*unit,"weight":400]
         let object: [String: Any] = ["schemaVersion":1,"bounds":rect(bounds),"bodyPolygon":g.outline.map{[$0.x,$0.y]},"fixedLayers":fixed,"stations":stations,"palette":palette,"text":text,"aliasText":alias,"readoutPalette":["normal":"lcdWhite"]]

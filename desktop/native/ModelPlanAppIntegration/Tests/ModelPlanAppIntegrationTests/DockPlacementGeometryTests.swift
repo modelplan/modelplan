@@ -13,7 +13,7 @@ final class DockPlacementGeometryTests: XCTestCase {
     private func layouts(_ displays: [DockDisplayArea]) -> [DockEdgeLayout] {
         displays.flatMap { display in DockEdgeGeometry.allowedEdges.map { edge in
             DockEdgeLayout(displayID: display.id, edge: edge,
-                expandedSize: edge == .bottom ? CGSize(width: 180, height: 80) : CGSize(width: 80, height: 180),
+                expandedSize: edge.isHorizontal ? CGSize(width: 180, height: 80) : CGSize(width: 80, height: 180),
                 sliverLength: 160, sliverThickness: 4, hoverRects: [])
         } }
     }
@@ -35,7 +35,7 @@ final class DockPlacementGeometryTests: XCTestCase {
     func testFixedDisplaySharedEdgeDisconnectAndReconnectNeverRewriteIntent() throws {
         let preference = DockEdgePreference(displayID: "left", edge: .right, alongFraction: 0.61)
         let initial = try place(preference, displays: [left, right], pointer: CGPoint(x: 700, y: 500))
-        XCTAssertEqual(initial.displayID, "left"); XCTAssertNotEqual(initial.edge, .right)
+        XCTAssertEqual(initial.displayID, "left"); XCTAssertEqual(initial.edge, .right)
         XCTAssertTrue(left.visibleFrame.contains(initial.sliverFrame))
         let absentA = try place(preference, displays: [right], pointer: CGPoint(x: 50, y: 50))
         let absentB = try place(preference, displays: [right], pointer: CGPoint(x: 1500, y: 900))
@@ -44,7 +44,7 @@ final class DockPlacementGeometryTests: XCTestCase {
         XCTAssertEqual(initial, restored)
         XCTAssertEqual(preference.displayID, "left"); XCTAssertEqual(preference.alongFraction, 0.61)
     }
-    func testBlockedEdgeRecoveryIgnoresOrdinaryPointerMotion() throws {
+    func testRestingInnerEdgeIgnoresOrdinaryPointerMotion() throws {
         let preference = DockEdgePreference(displayID: "left", edge: .right, alongFraction: 0.61)
         let a = try place(preference, displays: [left, right], pointer: CGPoint(x: -1190, y: 400))
         let b = try place(preference, displays: [left, right], pointer: CGPoint(x: -400, y: -195))

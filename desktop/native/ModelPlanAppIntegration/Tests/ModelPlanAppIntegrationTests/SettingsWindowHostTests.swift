@@ -2,6 +2,7 @@
 import AppKit
 import XCTest
 import ModelPlanSettings
+import ModelPlanEngineClient
 @testable import ModelPlanAppIntegration
 
 @MainActor final class TestSettingsSurface: SettingsWindowSurface {
@@ -124,6 +125,96 @@ import ModelPlanSettings
         _ = host.perform(try XCTUnwrap(item.action), with: item)
         await fulfillment(of: [menu], timeout: 2)
         XCTAssertEqual(builds, 1); XCTAssertEqual(surface.shown.count, 2)
+    }
+
+    func testNormalEntrySettingsMenuAndWidgetActionShareTheWindow() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let surface = TestSettingsSurface()
+        var builds = 0
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, makeSettingsSurface: { _ in builds += 1; return surface },
+            activateSettings: {})
+        await app.prepare()
+        app.allowDockPresentation()
+        defer { app.composition.dock.close() }
+
+        let menu = try XCTUnwrap(app.liveStatusMenu)
+        let settings = try XCTUnwrap(menu.items.first { $0.title == "Settings…" })
+        XCTAssertEqual(settings.keyEquivalent, ",")
+        XCTAssertEqual(settings.keyEquivalentModifierMask, .command)
+        let menuShown = expectation(description: "Settings menu opens the actual shared host")
+        surface.onShow = { menuShown.fulfill() }
+        _ = try XCTUnwrap(settings.target as? NSObject).perform(try XCTUnwrap(settings.action), with: settings)
+        await fulfillment(of: [menuShown], timeout: 2)
+
+        let widgetShown = expectation(description: "Widget Settings action opens the same host")
+        surface.onShow = { widgetShown.fulfill() }
+        let nodes = try XCTUnwrap(app.composition.dock.dockView.accessibilityChildren() as? [NSAccessibilityElement])
+        let entry = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.empty" })
+        XCTAssertTrue(entry.accessibilityPerformPress())
+        await fulfillment(of: [widgetShown], timeout: 2)
+        XCTAssertEqual(builds, 1)
+        XCTAssertEqual(surface.shown.count, 2)
+    }
+
+    func testNormalEntryApplicationMenuDispatchesCommandComma() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-key-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let surface = TestSettingsSurface()
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, makeSettingsSurface: { _ in surface }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.stopLifecycle(); await app.composition.stop() }
+        await app.prepare()
+        let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+            timestamp: 0, windowNumber: 0, context: nil, characters: ",", charactersIgnoringModifiers: ",",
+            isARepeat: false, keyCode: 43))
+        let command = try XCTUnwrap(app.applicationMenu.items.first?.submenu?.items.first)
+        XCTAssertEqual(command.title, "Settings…")
+        XCTAssertTrue(command.target === app.settingsHost)
+        let shown = expectation(description: "Command-comma opened the shared Settings host")
+        surface.onShow = { shown.fulfill() }
+        XCTAssertTrue(app.applicationMenu.performKeyEquivalent(with: key))
+        await fulfillment(of: [shown], timeout: 2)
+        XCTAssertEqual(surface.shown.count, 1)
+
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(command.title, "设置…")
+        let localized = expectation(description: "Localized application command still opens the same host")
+        surface.onShow = { localized.fulfill() }
+        XCTAssertTrue(app.applicationMenu.performKeyEquivalent(with: key))
+        await fulfillment(of: [localized], timeout: 2)
+
+        surface.onShow = { XCTFail("Paused Command-comma reopened Settings") }
+        app.setActivityPaused(true)
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(),
+                           displayIDs: { [1] }, onConsole: { false }, displaysAsleep: { _ in false })
+        XCTAssertTrue(app.lifecyclePaused)
+        XCTAssertFalse(command.isEnabled)
+        XCTAssertFalse(app.applicationMenu.performKeyEquivalent(with: key))
+        XCTAssertEqual(surface.shown.count, 2)
+    }
+
+    func testNormalEntryDoesNotOfferUpdateActionWithAnAdvertisedCapability() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("no-updates-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        defer { app.composition.dock.close() }
+        var context = app.settingsHost.application.editor.context
+        context.capabilities.updateServiceAvailable = true
+        app.settingsHost.application.update(context: context)
+        await app.prepare()
+        XCTAssertTrue(app.settingsHost.application.editor.context.capabilities.updateServiceAvailable)
+        let menu = try XCTUnwrap(app.liveStatusMenu)
+        XCTAssertFalse(menu.items.contains { $0.title == "Check for updates" || $0.title == "检查更新" })
+        XCTAssertTrue(menu.items.contains { $0.title == "About ModelPlan" })
     }
 
     func testSuspendAlsoRetiresAnEntryStillQueuedOnTheMainActor() async throws {

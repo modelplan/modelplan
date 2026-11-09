@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "note": "Invented readings for the hosted walkthrough. No account, credential or owner data.",
+  "declared": [
+    {"planId": "synthetic-ok", "remainingPercent": 80, "resetMinutes": 120},
+    {"planId": "synthetic-mid", "remainingPercent": 50, "resetMinutes": 95},
+    {"planId": "synthetic-critical", "remainingPercent": 12, "resetMinutes": 40},
+    {"planId": "synthetic-empty", "remainingPercent": 0, "resetMinutes": 25}
+  ],
+  "codex": {
+    "plan": "plus",
+    "subscriptionRef": "aaaaaaaaaaaaaaaa",
+    "windows": [
+      {"kind": "five_hour", "windowMinutes": 300, "remainingPercent": 63, "resetMinutes": 120},
+      {"kind": "weekly", "windowMinutes": 10080, "remainingPercent": 41, "resetMinutes": 4000}
+    ]
+  }
+}

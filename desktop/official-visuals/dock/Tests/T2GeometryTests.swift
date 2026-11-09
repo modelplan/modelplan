@@ -32,11 +32,9 @@ final class T2GeometryTests: XCTestCase {
                     XCTAssertEqual(geometry.outlineLocal.count, 962)
                     XCTAssertEqual(geometry.shown.map(\.id) + geometry.overflow.map(\.id), rows.map(\.id))
                     if edge == .right {
-                        XCTAssertEqual(geometry.stations[0].centre.x,
-                            1470 - (diameter / 2 + 14 * diameter / 52), accuracy: 0.000001)
+                        XCTAssertEqual(geometry.stations[0].centre.x, 1470 - geometry.freeDepth / 2, accuracy: 0.000001)
                     } else {
-                        XCTAssertEqual(geometry.stations[0].centre.y,
-                            956 - (diameter / 2 + 14 * diameter / 52), accuracy: 0.000001)
+                        XCTAssertEqual(geometry.stations[0].centre.y, 956 - geometry.freeDepth / 2, accuracy: 0.000001)
                     }
                     XCTAssertEqual(geometry.buttonOverhang, 0.4, accuracy: 1.0 / 4096)
                     XCTAssertEqual(geometry.clockRadius, diameter / 2 + 3 * diameter / 52)
@@ -45,6 +43,49 @@ final class T2GeometryTests: XCTestCase {
             }
         }
         XCTAssertEqual(T2GeometryConstants.wakeDepth, 20)
+    }
+
+    /// DOCK-3.1-05/-06/-07a/-08: the outline the packaged-app visual gate compares at S, M and L.
+    /// Five rings (4 declared + Codex, the walkthrough seed) on a 1920x1080 screen.
+    /// `study` = the pinned geometry.js (sha256 77e2294f..., see geometry-oracle.json) run with
+    /// the same input; `prototype` = the opus-r7 baseline's `.dk-hull-body` rect (CSS px, rounded).
+    func testFiveRingOutlineMatchesTheStudyAtEverySizeOnBothSideEdges() throws {
+        let expected: [(diameter: CGFloat, study: CGSize, prototype: CGSize)] = [
+            (36, CGSize(width: 55.713, height: 329.254), CGSize(width: 56, height: 329)),
+            (44, CGSize(width: 68.094, height: 402.421), CGSize(width: 68, height: 402)),
+            (52, CGSize(width: 80.475, height: 475.589), CGSize(width: 80, height: 476))
+        ]
+        let rows = (0..<5).map { T2Subscription(id: "synthetic-\($0)") }
+        for size in expected {
+            var boxes = [CGRect]()
+            for edge in [T2Edge.left, .right] {
+                let c = T2EdgeCoordinates(edge: edge, width: 1920, height: 1080, menuBarExclusion: 25)
+                let g = try T2Geometry.make(subscriptions: rows,
+                    input: T2GeometryInput(coordinates: c, diameter: size.diameter))
+                XCTAssertEqual(g.shown.count, 5)
+                XCTAssertTrue(g.overflow.isEmpty)
+                let xs = g.outline.map(\.x), ys = g.outline.map(\.y)
+                let box = CGRect(x: xs.min()!, y: ys.min()!,
+                                 width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+                boxes.append(box)
+                let label = "D\(size.diameter) \(edge)"
+                // Width = face depth plus the mid-face arc bulge; height = the whole run of stations.
+                XCTAssertEqual(box.width, size.study.width, accuracy: 0.001, label)
+                XCTAssertEqual(box.height, size.study.height, accuracy: 0.001, label)
+                XCTAssertEqual(box.width, size.prototype.width, accuracy: 1, label)
+                XCTAssertEqual(box.height, size.prototype.height, accuracy: 1, label)
+                // Flat side on the screen edge, bulge on the free side, tapered ends.
+                XCTAssertEqual(edge == .left ? box.minX : box.maxX, edge == .left ? 0 : 1920, accuracy: 1e-9, label)
+                XCTAssertGreaterThan(box.width, g.freeDepth, label)
+                let ends = g.outline.filter { abs($0.y - box.midY) > box.height * 0.45 }
+                let endDepth = ends.map { edge == .left ? $0.x : 1920 - $0.x }.max()!
+                XCTAssertLessThan(endDepth, box.width - 1, label)
+            }
+            // The right edge is the mirror image of the left one.
+            XCTAssertEqual(boxes[0].width, boxes[1].width, accuracy: 1e-9)
+            XCTAssertEqual(boxes[0].height, boxes[1].height, accuracy: 1e-9)
+            XCTAssertEqual(boxes[0].minY, boxes[1].minY, accuracy: 1e-9)
+        }
     }
 
     func testOverflowPreservesIdentityRatherThanShrinkingStations() throws {

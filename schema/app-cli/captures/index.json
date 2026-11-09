@@ -14,6 +14,14 @@
           "nullPolicy": "forbidden"
         },
         {
+          "field": "activity",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
           "field": "resetCards",
           "omission": true,
           "null": false,
@@ -84,6 +92,19 @@
         "beta",
         "valueState",
         "windows"
+      ]
+    },
+    {
+      "file": "RowsAccountActivity.json",
+      "type": "RowsAccountActivity",
+      "optional": [],
+      "required": [
+        "sessionRef",
+        "subscriptionRef",
+        "bindingVerified",
+        "phase",
+        "recordAt",
+        "expiresAt"
       ]
     },
     {
@@ -590,6 +611,55 @@
       ]
     },
     {
+      "file": "WireCockpitCycle.json",
+      "type": "WireCockpitCycle",
+      "optional": [],
+      "required": [
+        "startedAt",
+        "resetsAt",
+        "points",
+        "hadDrop",
+        "spent"
+      ]
+    },
+    {
+      "file": "WireCockpitCycleGroup.json",
+      "type": "WireCockpitCycleGroup",
+      "optional": [],
+      "required": [
+        "subscriptionRef",
+        "kind",
+        "attribution",
+        "cycles"
+      ]
+    },
+    {
+      "file": "WireCockpitCycleShare.json",
+      "type": "WireCockpitCycleShare",
+      "optional": [
+        {
+          "field": "model",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "fast",
+        "points"
+      ]
+    },
+    {
       "file": "WireCockpitData.json",
       "type": "WireCockpitData",
       "optional": [
@@ -621,6 +691,14 @@
       "optional": [
         {
           "field": "publication",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "publishedModels",
           "omission": true,
           "null": false,
           "wrongType": false,
@@ -719,7 +797,8 @@
         "tools",
         "daily",
         "hourly",
-        "projects"
+        "projects",
+        "cycles"
       ]
     },
     {
@@ -785,7 +864,16 @@
     {
       "file": "WireCockpitPublication.json",
       "type": "WireCockpitPublication",
-      "optional": [],
+      "optional": [
+        {
+          "field": "speedTiers",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
       "required": [
         "contractVersion",
         "publicationId",
@@ -1008,6 +1096,78 @@
         "bindingBasis",
         "recent7d",
         "recent30d"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedBilling.json",
+      "type": "WireCockpitSpeedBilling",
+      "optional": [],
+      "required": [
+        "account",
+        "billsTo",
+        "basis",
+        "ratio"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedEligibility.json",
+      "type": "WireCockpitSpeedEligibility",
+      "optional": [],
+      "required": [
+        "plans",
+        "note"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedRatio.json",
+      "type": "WireCockpitSpeedRatio",
+      "optional": [
+        {
+          "field": "ratio",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "qualifier"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedTier.json",
+      "type": "WireCockpitSpeedTier",
+      "optional": [],
+      "required": [
+        "id",
+        "harness",
+        "tier",
+        "label",
+        "toggle",
+        "eligibility",
+        "models",
+        "billing",
+        "caveats",
+        "sources"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedTierModel.json",
+      "type": "WireCockpitSpeedTierModel",
+      "optional": [
+        {
+          "field": "modelId",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "vendorModelId",
+        "speed"
       ]
     },
     {

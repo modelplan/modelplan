@@ -680,14 +680,14 @@ private extension Double {
 /// caller selects an exposed edge and clamps the registered anchor before
 /// asking Pulse for the window frame. No settings or actual display is read.
 public enum PulseDockPlacementGeometry {
-    public enum Edge: Sendable { case left, right, bottom }
+    public enum Edge: Sendable { case left, right, bottom, top }
     public static func frame(edge: Edge, in visible: CGRect, size: CGSize,
                              anchor: CGFloat, alongFraction: Double) -> CGRect? {
         guard [visible.minX, visible.minY, visible.width, visible.height,
                size.width, size.height, anchor, CGFloat(alongFraction)].allSatisfy({ $0.isFinite }),
               visible.width > 0, visible.height > 0, size.width > 0, size.height > 0,
               size.width <= visible.width, size.height <= visible.height else { return nil }
-        let vertical = edge != .bottom
+        let vertical = edge == .left || edge == .right
         let span = vertical ? visible.height : visible.width
         let length = vertical ? size.height : size.width
         let travel = span - length
@@ -698,6 +698,7 @@ public enum PulseDockPlacementGeometry {
         case .left: dock = .edge(.left)
         case .right: dock = .edge(.right)
         case .bottom: dock = .edge(.bottom)
+        case .top: dock = .edge(.top)
         }
         let placement = PanelPlacement(dock: dock, horizontalRatio: vertical ? 0 : ratio,
                                        verticalRatio: vertical ? 1 - ratio : 0)

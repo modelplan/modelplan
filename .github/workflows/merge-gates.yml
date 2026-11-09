@@ -14,8 +14,7 @@ on:
     workflows:
       - merge-gates probe
       - ci
-      - source-policy
-      - third-party notices
+      - repo checks
       - desktop
       - e2e-journey
       - macOS distribution
@@ -52,18 +51,42 @@ permissions:
   statuses: write
   pull-requests: read
   actions: read
-concurrency:
-  # One evaluation per PR or group at a time; a newer event supersedes a queued older one.
-  group: merge-gates-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha || github.event.issue.number || inputs.pr || inputs.group_sha || github.run_id }}
-  cancel-in-progress: true
 jobs:
   gates:
-    # Only trusted comments can change a gate, and only PR and merge-queue runs carry gates (main pushes do
-    # not), so nothing else starts a job.
+    # Decided before a runner is taken; an event that cannot change a gate starts no job.
+    # - issue_comment: a trusted comment that carries (or, edited or deleted, carried) a gate marker. rules.mjs
+    #   reads markers on any line of a comment (VERDICT, VERDICT-CARRY, VERIFIED, EVIDENCE-DEFERRED) and DESIGN
+    #   under a "Design-conformance review" first line, so this matches the marker anywhere, not only at the start.
+    #   contains() ignores case, a superset of the rules' case-sensitive markers. Any other comment cannot change
+    #   the result, and every later event re-reads all comments anyway.
+    # - workflow_run: PR and merge-queue runs only (main pushes carry no gate). A skipped probe is a review
+    #   without a marker (merge-gates-probe.yml). A cancelled run still evaluates: a job past its timeout cancels
+    #   the whole run, and if that run finished last nothing else would re-evaluate, leaving the head pending.
+    #   A cancelled PR run whose PR no longer has that head was replaced by a newer push and starts no job (the
+    #   newer head's runs re-evaluate); evaluate.mjs re-checks the live head. For the current head, the newest run
+    #   being cancelled fails the gate (rules.mjs ciState).
+    # A skipped run posts nothing: the required `modelplan-gates` status is a commit status this job writes, so
+    # skipping leaves the head's last evaluated state (or no status, which blocks), never a pass.
     if: >-
-      ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login == 'guanbear')
-      || (github.event_name == 'workflow_run' && contains(fromJSON('["pull_request","pull_request_review","merge_group"]'), github.event.workflow_run.event))
+      ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login == 'guanbear'
+      && (contains(github.event.comment.body, 'VERDICT') || contains(github.event.comment.body, 'GLMREV')
+      || contains(github.event.comment.body, 'DESIGN:') || contains(github.event.comment.body, 'REVIEW-TIER:')
+      || contains(github.event.comment.body, 'VERIFIED:') || contains(github.event.comment.body, 'EVIDENCE-DEFERRED:')
+      || contains(github.event.changes.body.from, 'VERDICT') || contains(github.event.changes.body.from, 'GLMREV')
+      || contains(github.event.changes.body.from, 'DESIGN:') || contains(github.event.changes.body.from, 'REVIEW-TIER:')
+      || contains(github.event.changes.body.from, 'VERIFIED:') || contains(github.event.changes.body.from, 'EVIDENCE-DEFERRED:')))
+      || (github.event_name == 'workflow_run' && contains(fromJSON('["pull_request","pull_request_review","merge_group"]'), github.event.workflow_run.event)
+      && (github.event.workflow_run.conclusion != 'cancelled' || github.event.workflow_run.event == 'merge_group'
+      || github.event.workflow_run.pull_requests[0].head.sha == github.event.workflow_run.head_sha)
+      && !(github.event.workflow_run.name == 'merge-gates probe' && github.event.workflow_run.conclusion == 'skipped'))
       || github.event_name == 'workflow_dispatch' }}
+    # One evaluation per PR or group at a time; a newer event supersedes a queued older one. On the job, not the
+    # workflow, so a run skipped by `if:` above never cancels a live evaluation of the same PR. A cancelled run's
+    # evaluation takes its own group per head sha: the cancel of an old head after a push must not cancel the
+    # live evaluation of the new head.
+    concurrency:
+      group: merge-gates-${{ github.event.workflow_run.conclusion == 'cancelled' && format('cancelled-{0}', github.event.workflow_run.head_sha) || github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha || github.event.issue.number || inputs.pr || inputs.group_sha || github.run_id }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -72,7 +95,9 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           filter: blob:none
-          sparse-checkout: scripts/merge-gates
+          sparse-checkout: |
+            scripts/merge-gates
+            desktop/native/verification
       - run: node scripts/merge-gates/evaluate.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}

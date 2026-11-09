@@ -115,6 +115,24 @@
         "remainingPercent": 42.5
       }
     ],
+    "publishedModels": [
+      {
+        "id": "synthetic-model",
+        "name": "Synthetic model",
+        "developerId": "openai",
+        "recommended": "medium",
+        "efforts": [
+          {
+            "effort": "medium",
+            "label": "Med",
+            "star": true,
+            "ability": 50,
+            "cost": 2,
+            "time": 1.2
+          }
+        ]
+      }
+    ],
     "forecasts": [
       {
         "source": "synthetic",
@@ -257,7 +275,30 @@
           "share": 42.5
         }
       ]
-    }
+    },
+    "cycles": [
+      {
+        "subscriptionRef": "0123456789abcdef",
+        "kind": "tokens",
+        "attribution": "synthetic",
+        "cycles": [
+          {
+            "startedAt": "2026-10-29T12:00:00.123456789Z",
+            "resetsAt": "2026-10-29T12:00:00.123456789Z",
+            "points": 42.5,
+            "hadDrop": false,
+            "spent": [
+              {
+                "model": "synthetic",
+                "effort": "synthetic",
+                "fast": false,
+                "points": 42.5
+              }
+            ]
+          }
+        ]
+      }
+    ]
   },
   "projection": {
     "resetEvents": [
@@ -333,6 +374,16 @@
               "runningSessions": 1,
               "bindingBasis": "source-wide-current-binding"
             },
+            "activity": [
+              {
+                "sessionRef": "aaaaaaaaaaaaaaaa",
+                "subscriptionRef": "bbbbbbbbbbbbbbbb",
+                "bindingVerified": true,
+                "phase": "tool",
+                "recordAt": "2026-10-29T12:00:00Z",
+                "expiresAt": "2026-10-29T12:05:00Z"
+              }
+            ],
             "resetCards": {
               "state": "complete",
               "count": 1,
@@ -460,6 +511,16 @@
               "runningSessions": 1,
               "bindingBasis": "source-wide-current-binding"
             },
+            "activity": [
+              {
+                "sessionRef": "aaaaaaaaaaaaaaaa",
+                "subscriptionRef": "bbbbbbbbbbbbbbbb",
+                "bindingVerified": true,
+                "phase": "tool",
+                "recordAt": "2026-10-29T12:00:00Z",
+                "expiresAt": "2026-10-29T12:05:00Z"
+              }
+            ],
             "resetCards": {
               "state": "complete",
               "count": 1,

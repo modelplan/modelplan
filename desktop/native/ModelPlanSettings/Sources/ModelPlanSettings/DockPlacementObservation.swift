@@ -17,13 +17,14 @@ public struct SettingsDockPlacementObservation: Equatable, Sendable {
 public enum SettingsDockPlacementText {
     public static func current(_ observation: SettingsDockPlacementObservation?, displays: [SettingsDisplayChoice]) -> SettingsText {
         guard let observation else {
-            return .init("Current Quota Widget placement has not been observed.", "尚未观测到额度挂件的实际位置。")
+            return .init("The Quota Widget's current position is not known yet.", "还不知道额度挂件的实际位置。")
         }
         let edge: SettingsText
         switch observation.edge {
         case .left: edge = .init("left", "左侧")
         case .right: edge = .init("right", "右侧")
         case .bottom: edge = .init("bottom", "底部")
+        case .top: edge = .init("top", "顶部")
         }
         let name = displays.first { $0.id == observation.displayID }?.name
         let display = name.map { SettingsText($0, $0) } ?? .init("Unknown display", "未知显示器")

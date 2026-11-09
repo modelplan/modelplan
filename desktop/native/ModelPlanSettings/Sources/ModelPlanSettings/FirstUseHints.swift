@@ -5,6 +5,8 @@ public enum FirstUseHintKind: String, Codable, CaseIterable, Sendable {
     // Declaration order is the fixed request priority, including the contextual tie order.
     case ignition, detach, optionHelp, shutter, field, drag, page, pinned, trial
     case ringRefresh, findWidget
+    /// G3-28: once, after the widget is turned off from the status menu or Settings.
+    case widgetOff
 }
 public struct FirstUseHintPreferences: Codable, Equatable, Sendable {
     public private(set) var seen: Set<FirstUseHintKind>
@@ -47,6 +49,8 @@ public struct HintContext: Equatable, Sendable {
     public var cardPinned = false, captureReady = false, helpMapVisible = false, reducedMotion = false
     public var ignitionAvailable = true
     public var v1MinimalHints = false, ringRefreshAvailable = false, widgetConcealed = false, statusAnchorAvailable = false
+    /// The widget is switched off (Show Quota Widget unchecked), not merely collapsed to its strip.
+    public var widgetTurnedOff = false
     public init(cockpitOpen: UUID? = nil, dockReveal: UUID? = nil) { self.cockpitOpen = cockpitOpen; self.dockReveal = dockReveal }
 }
 public struct HintOffer: Equatable, Sendable {
@@ -180,18 +184,19 @@ public struct FirstUseHints: Sendable {
         // Keep the current host context; reset does not close/reopen a window or manufacture an open.
     }
     private func usesDock(_ kind: FirstUseHintKind) -> Bool {
-        kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || (kind == .pinned && context.cockpitOpen == nil)
+        kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || kind == .widgetOff || (kind == .pinned && context.cockpitOpen == nil)
     }
     private func contextSupports(_ kind: FirstUseHintKind) -> Bool {
         guard !context.helpMapVisible else { return false }
         if context.v1MinimalHints {
             switch kind {
-            case .ringRefresh: return context.dockReveal != nil && context.ringRefreshAvailable
-            case .findWidget: return context.widgetConcealed && context.statusAnchorAvailable
+            case .ringRefresh: return context.dockReveal != nil && context.ringRefreshAvailable && preferences.seen.contains(.findWidget)
+            case .findWidget: return context.dockReveal != nil && !context.widgetTurnedOff && (!context.widgetConcealed || context.statusAnchorAvailable)
+            case .widgetOff: return context.dockReveal != nil && context.widgetTurnedOff && context.statusAnchorAvailable
             default: return false
             }
         }
-        if kind == .ringRefresh || kind == .findWidget { return false }
+        if kind == .ringRefresh || kind == .findWidget || kind == .widgetOff { return false }
         if usesDock(kind) { guard context.dockReveal != nil else { return false } }
         else { guard context.cockpitOpen != nil else { return false } }
         // Exact frozen guarded list: pinned/drag deliberately do not gain a capture barrier.
@@ -205,15 +210,16 @@ public struct FirstUseHints: Sendable {
     private func allowed(_ kind: FirstUseHintKind) -> Bool {
         guard contextSupports(kind), !preferences.seen.contains(kind),
               context.cockpitOpen == nil || !cockpitBudgetUsed else { return false }
-        if usesDock(kind) && dockBudgetUsed { return false }
+        if usesDock(kind) && dockBudgetUsed && !context.v1MinimalHints { return false }
         if [.ignition,.field,.drag].contains(kind) && !dwellReady.contains(kind) { return false }
         if kind == .trial && (!trialReady || trialRest == nil) { return false }
         return true
     }
     private mutating func offerContextualTriggers() {
         if context.v1MinimalHints {
-            if context.dockReveal != nil { request(.ringRefresh) }
-            if context.widgetConcealed && context.statusAnchorAvailable { request(.findWidget) }
+            if context.dockReveal != nil && context.widgetTurnedOff { request(.widgetOff) }
+            if context.dockReveal != nil { request(.findWidget) }
+            if context.dockReveal != nil && preferences.seen.contains(.findWidget) { request(.ringRefresh) }
             return
         }
         if context.cockpitOpen != nil {

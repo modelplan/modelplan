@@ -27,14 +27,23 @@ type RefreshConfig struct {
 	Offline, ReadOnly bool
 	Changed           func()
 	CredentialRequest func(CredentialNeed) (string, error)
-	Now               func() time.Time
-	Plan              func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)
+	// CredentialHold reports an explicit operation for the provider that is open or reading, and
+	// when the quiet time after it ends. A saved-login read must not take that read's lock or
+	// make a second credential read: an automatic read waits out the quiet time, and a requested
+	// one waits only for the operation.
+	CredentialHold func(string) (active bool, until time.Time)
+	// Observe records what the local logs show: sessions and speed. It runs every 30 seconds, so
+	// it reads only local logs and ModelPlan's own cache: no provider request, no credential.
+	Observe func(time.Time)
+	Now     func() time.Time
+	Plan    func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)
 }
 type refreshJob struct {
 	at         time.Time
 	scope, key string
 	stamp      Stamp
 	member     *wire.RefreshMember
+	automatic  bool
 }
 type RefreshScheduler struct {
 	credentialWait map[string]bool
@@ -52,6 +61,7 @@ type RefreshScheduler struct {
 	autoNext       map[string]time.Time
 	autoReason     map[string]wire.MemberRefreshReason
 	autoStarted    bool
+	requested      map[string]bool
 	decisions      refreshDecisionRing
 }
 
@@ -68,9 +78,19 @@ func (s *RefreshScheduler) plan(paths quota.Paths, scope string, now time.Time) 
 	return quota.PlanScopeRefresh(paths, scope, now)
 }
 
+// readerBusyRetry: another process, such as a plugin hook, held the reader lock past the
+// two-second wait. The failure back-off is for reads that ran.
+const readerBusyRetry = 15 * time.Second
+
+// credentialHoldPoll spaces a requested read's checks; an operation ends within its own timeout.
+const credentialHoldPoll = 100 * time.Millisecond
+
+// observeEvery matches the live session window closely enough for a current rate.
+const observeEvery = 30 * time.Second
+
 func NewRefreshScheduler(ctx context.Context, config RefreshConfig) *RefreshScheduler {
 	ctx, cancel := context.WithCancel(ctx)
-	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), scheduled: map[string]refreshJob{}, wake: make(chan struct{}, 1), pending: map[string]time.Time{}, credentialWait: map[string]bool{}, autoDone: make(chan struct{}), autoWake: make(chan struct{}, 1), autoNext: map[string]time.Time{}, autoReason: map[string]wire.MemberRefreshReason{}}
+	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), scheduled: map[string]refreshJob{}, wake: make(chan struct{}, 1), pending: map[string]time.Time{}, credentialWait: map[string]bool{}, autoDone: make(chan struct{}), autoWake: make(chan struct{}, 1), autoNext: map[string]time.Time{}, autoReason: map[string]wire.MemberRefreshReason{}, requested: map[string]bool{}}
 	go s.work()
 	return s
 }
@@ -145,6 +165,9 @@ func (s *RefreshScheduler) Handler() Handler {
 	}}
 }
 func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestParams) ([]wire.RefreshScheduled, Stamp, error) {
+	return s.request(ctx, p, false)
+}
+func (s *RefreshScheduler) request(ctx context.Context, p wire.RefreshRequestParams, automatic bool) ([]wire.RefreshScheduled, Stamp, error) {
 	if ctx.Err() != nil {
 		return nil, Stamp{}, ctx.Err()
 	}
@@ -225,6 +248,14 @@ func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestPar
 					}
 					scheduled.At = until.UTC()
 					disable(wire.RefreshCooldown)
+					// The job in the slot may be an automatic one that will be held. This request
+					// must not go with it.
+					if job, queued := s.scheduled[key]; !automatic && queued {
+						job.automatic = false
+						s.scheduled[key] = job
+					} else if !automatic {
+						s.requested[key] = true
+					}
 				} else if len(s.pending) >= len(consent.Definitions()) || len(s.scheduled) >= len(consent.Definitions()) {
 					scheduled.At = now.Add(5 * time.Minute).UTC()
 					disable(wire.RefreshCooldown)
@@ -233,7 +264,7 @@ func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestPar
 					if !plan.At.After(now) {
 						s.pending[key] = now.Add(5 * time.Minute)
 					}
-					s.scheduled[key] = refreshJob{scope: scope, key: key, stamp: stamp, at: plan.At}
+					s.scheduled[key] = refreshJob{scope: scope, key: key, stamp: stamp, at: plan.At, automatic: automatic}
 					enqueued = true
 					s.signal()
 				}
@@ -314,25 +345,41 @@ func (s *RefreshScheduler) work() {
 func (s *RefreshScheduler) run(job refreshJob) {
 	keepPending := false
 	attempted := false
+	held := false
 	defer func() {
 		if !keepPending {
 			currentFence := stampOfFence(consent.Capture().Fence()) == job.stamp
-			if !attempted {
-				s.decisions.add(s.now(), job.scope, refreshNotAttempted, refreshUnavailable)
-			}
+			now := s.now()
+			// One section owns the flag and the slot: between them a request would see the slot
+			// taken, leave its flag and be lost when the slot is released.
 			s.mu.Lock()
+			if held && s.requested[job.key] {
+				// A request arrived while this job was being held: it runs now instead.
+				delete(s.requested, job.key)
+				job.automatic, job.at = false, now
+				s.scheduled[job.key] = job
+				s.signal()
+				s.mu.Unlock()
+				return
+			}
+			delete(s.requested, job.key)
 			// The worker is serial: a queued job for this key is a newer
 			// replacement, admitted after a credential wait expired. Its
 			// pending guard belongs to it, not to the completing job.
 			if _, replaced := s.scheduled[job.key]; !replaced {
-				if !attempted && currentFence {
-					s.autoNext[job.key] = s.now().Add(10 * time.Minute)
+				if !attempted && !held && currentFence {
+					s.autoNext[job.key] = now.Add(10 * time.Minute)
 					s.autoReason[job.key] = wire.MemberRefreshBudget
 				}
 				delete(s.pending, job.key)
 				delete(s.credentialWait, job.key)
 			}
 			s.mu.Unlock()
+			if held {
+				s.decisions.add(now, job.scope, refreshDeferred, refreshInFlight)
+			} else if !attempted {
+				s.decisions.add(now, job.scope, refreshNotAttempted, refreshUnavailable)
+			}
 		}
 		if s.ctx.Err() == nil && s.config.Changed != nil {
 			s.config.Changed()
@@ -385,6 +432,35 @@ func (s *RefreshScheduler) run(job refreshJob) {
 		keepPending = true
 		return
 	}
+	if job.scope == consent.ScopeClaudeAccountUsageSavedLogin && s.config.CredentialHold != nil {
+		active, until := s.config.CredentialHold("claude")
+		s.mu.Lock()
+		if s.requested[job.key] {
+			delete(s.requested, job.key)
+			job.automatic = false
+		}
+		s.mu.Unlock()
+		if job.automatic && (active || until.After(s.now())) {
+			if !until.After(s.now()) {
+				until = s.now().Add(readerBusyRetry)
+			}
+			s.mu.Lock()
+			s.autoNext[job.key] = until
+			s.mu.Unlock()
+			held = true
+			return
+		}
+		if active {
+			job.at = s.now().Add(credentialHoldPoll)
+			s.mu.Lock()
+			s.pending[job.key] = job.at
+			s.scheduled[job.key] = job
+			s.signal()
+			s.mu.Unlock()
+			keepPending = true
+			return
+		}
+	}
 	if !credentialBound && s.needsCredential(paths, job.scope) {
 		if s.config.CredentialRequest != nil {
 			s.mu.Lock()
@@ -402,7 +478,11 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	attempted = true
 	err = s.config.Run(ctx, paths, job.scope, started)
 	outcome, reason := refreshNotAttempted, refreshUnavailable
-	if err != nil {
+	// Lost to another reader before reading anything: nothing failed, so try again soon.
+	busy := errors.Is(err, consent.ErrReaderBusy) || errors.Is(err, consent.ErrBusy)
+	if busy {
+		outcome, reason = refreshDeferred, refreshBudget
+	} else if err != nil {
 		outcome = refreshFailed
 	} else if job.scope == consent.ScopeCodexLocalHistory {
 		outcome, reason = refreshSucceeded, refreshCompleted
@@ -419,8 +499,11 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	if err != nil {
 		wait = 10 * time.Minute
 		if job.scope == consent.ScopeCodexRuntimeUsage {
-			wait = 30 * time.Minute
+			wait = quota.CodexFailureWait(paths.Cache)
 		}
+	}
+	if busy {
+		wait = readerBusyRetry
 	}
 	if stampOfFence(consent.Capture().Fence()) == job.stamp {
 		s.mu.Lock()

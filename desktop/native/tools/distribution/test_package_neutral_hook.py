@@ -37,6 +37,8 @@ class PackageNeutralFixture:
         visuals = self.repo / json.loads((ROOT / 'source-policy.json').read_text())['reservedVisuals']['prefix']
         visuals.mkdir(parents=True)
         (visuals / 'LICENSE.md').write_text('Synthetic visuals license')
+        (visuals / 'icons').mkdir()
+        (visuals / 'icons/AppIcon.icns').write_bytes(b'icns synthetic')
         (self.repo / 'THIRD-PARTY-TRADEMARKS.md').write_text('Synthetic trademark notice')
         self.archives = root / 'archives'
         self.archives.mkdir()
@@ -104,7 +106,8 @@ elif name == 'npm':
         (out / 'index.html').write_text('synthetic ' + edition + ' cockpit')
 elif name == 'python3':
     if args and args[0].endswith('/check-bundle-pins.py'):
-        raise SystemExit(int(os.environ.get('PACKAGING_PIN_EXIT', '0')))
+        variable = 'PACKAGING_APP_PIN_EXIT' if '--app' in args else 'PACKAGING_PIN_EXIT'
+        raise SystemExit(int(os.environ.get(variable, '0')))
     if args and args[0].endswith('/check_app_architectures.py'):
         raise SystemExit(0)
     if args and args[0].endswith('/embed_fixed_helper.py'):
@@ -122,6 +125,10 @@ elif name == 'python3':
             command.write_text(stub)
             command.chmod(0o700)
         self.output = root / 'packaged'
+        # A stale generated pins file from an earlier local build.
+        self.generated = self.repo / 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift'
+        self.generated.parent.mkdir(parents=True)
+        self.generated.write_text('stale')
         self.artifact = root / 'credential-artifact'
         self.artifact.mkdir()
         self.credential = self.artifact / 'modelplan-credential-agent'
@@ -189,6 +196,8 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.assertTrue((resources / 'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle' / 'fixture.txt').is_file())
         self.assertFalse(list((resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle').rglob('zai-white.svg')))
         self.assertTrue((resources / 'VISUAL-LICENSE.md').is_file())
+        self.assertEqual((resources / 'AppIcon.icns').read_bytes(), b'icns synthetic')
+        self.assertIn('<key>CFBundleIconFile</key><string>AppIcon</string>', (resources.parent / 'Info.plist').read_text())
         self.assertTrue((resources / 'THIRD-PARTY-TRADEMARKS.md').is_file())
 
     def test_flat_resource_bundle_excludes_beta_only_mark(self):
@@ -300,6 +309,10 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
                     self.assertFalse((resources / 'Cockpit').exists())
                     self.assertFalse((resources / 'build-edition.json').exists())
                     self.assertFalse(any(c['command'] == 'npm' for c in self.fixture.commands()))
+                    # No generated cockpit pins: a package without the page admits none, even after an earlier build.
+                    self.assertFalse(self.fixture.generated.exists())
+                    self.assertFalse(any(c['command'] == 'python3' and c['args'][0].endswith('/check-bundle-pins.py')
+                                         for c in self.fixture.commands()))
 
     def test_owner_test_package_opens_the_entry_with_the_pinned_official_cockpit(self):
         result = self.fixture.run(arguments=('--owner-test',))
@@ -310,11 +323,21 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
         self.assertEqual((resources / 'Cockpit/index.html').read_text(), 'synthetic official cockpit')
         self.assertEqual(json.loads((resources / 'build-edition.json').read_text())['edition'], 'official')
         commands = self.fixture.commands()
-        pins = next(i for i, c in enumerate(commands) if c['command'] == 'python3' and c['args'][0].endswith('/check-bundle-pins.py'))
+        checks = [i for i, c in enumerate(commands) if c['command'] == 'python3' and c['args'][0].endswith('/check-bundle-pins.py')]
+        self.assertEqual(len(checks), 2)
+        pins, shipped = checks
+        # Pins are generated from the fresh build (never read from the tree) before the App is compiled with them.
+        self.assertIn('--write', commands[pins]['args'])
         builds = [i for i, c in enumerate(commands) if c['command'] == 'npm' and c['args'][0] == 'run']
         self.assertEqual([commands[i]['args'][1] for i in builds], ['build', 'build:official'])
         self.assertLess(max(builds), pins)
-        self.assertLess(pins, next(i for i, c in enumerate(commands) if c['command'] == 'swift'))
+        swift = [i for i, c in enumerate(commands) if c['command'] == 'swift']
+        self.assertLess(pins, swift[0])
+        # Then the finished App is checked to ship exactly that page and pin, before anything is signed.
+        app_args = commands[shipped]['args']
+        self.assertEqual(app_args[app_args.index('--app') + 1], str(self.fixture.output / 'ModelPlan Community.app'))
+        self.assertLess(max(swift), shipped)
+        self.assertLess(shipped, next(i for i, c in enumerate(commands) if c['command'] == 'codesign'))
         identity = next(c for c in commands if c['command'] == 'python3' and c['args'][0].endswith('/write-consent-bundle-identity.py'))
         self.assertEqual(identity['args'][identity['args'].index('--mode') + 1], 'unverified')
 
@@ -322,6 +345,12 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
         result = self.fixture.run(arguments=('--owner-test',), environment={'PACKAGING_PIN_EXIT': '1'})
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(any(c['command'] in ('swift', 'codesign') for c in self.fixture.commands()))
+
+    def test_owner_test_package_stops_when_the_app_does_not_ship_its_pinned_page(self):
+        result = self.fixture.run(arguments=('--owner-test',), environment={'PACKAGING_APP_PIN_EXIT': '1'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(any(c['command'] == 'swift' for c in self.fixture.commands()))
+        self.assertFalse(any(c['command'] == 'codesign' for c in self.fixture.commands()))
 
 
 if __name__ == '__main__':

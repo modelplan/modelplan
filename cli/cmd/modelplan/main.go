@@ -392,20 +392,27 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if !*quiet {
 			detectedHint(st, stderr, c)
 		}
-		if *refreshAccount && consent.Allowed("codex", consent.Runtime) {
-			home, _ := os.UserHomeDir()
-			err := quota.RefreshCodexAccount(context.Background(), st.Dir, quota.CodexBin(home), time.Now())
-			if *quiet {
-				return 0
-			}
-			if err != nil {
-				fmt.Fprintln(stderr, "codex account:", err)
+		var refreshed *quota.AccountRefresh
+		if *refreshAccount {
+			refreshed = &quota.AccountRefresh{Source: "codex", Status: "not_allowed"}
+			if consent.Allowed("codex", consent.Runtime) {
+				home, _ := os.UserHomeDir()
+				refreshed = quota.RefreshAccountNow(context.Background(), st.Dir, quota.CodexBin(home), time.Now())
+				if *quiet {
+					return 0
+				}
+				if refreshed.Status == "failed" {
+					fmt.Fprintln(stderr, "codex account:", refreshed.Reason)
+				}
 			}
 		} else if !c.offline {
 			refreshAccountLater(st)
+		}
+		if !c.offline {
 			refreshNativeLater(st)
 		}
 		r := quota.ReadPermitted(quotaPaths(st), time.Now())
+		r.Refresh = refreshed
 		if c.json {
 			return printJSON(stdout, r)
 		}
@@ -889,11 +896,18 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 		Model          string `json:"model"`
 		TranscriptPath string `json:"transcript_path"` // Claude Code: read for local speed measurement
 		Event          string `json:"hook_event_name"`
-		Source         string `json:"source"` // SessionStart: startup | resume | clear | compact
+		Source         string `json:"source"`   // SessionStart: startup | resume | clear | compact
+		AgentID        string `json:"agent_id"` // set inside a subagent
+		ToolInput      struct {
+			Model string `json:"model"`
+		} `json:"tool_input"`
 	}
 	_ = json.Unmarshal(b, &in)
-	if in.Event == "SessionStart" {
+	switch in.Event {
+	case "SessionStart":
 		return sessionStartHook(stdout, style, st, harness, in.SessionID, in.Model, in.Source, now)
+	case "PreToolUse":
+		return spendHook(stdout, style, st, harness, in.SessionID, in.Model, in.AgentID, in.ToolInput.Model, now, deadline)
 	}
 	// Without the status line nothing else keeps the publication fresh for Claude Code. With no
 	// publication at all (just installed) the first prompt waits briefly for one, so it gets the
@@ -1000,9 +1014,15 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 				}
 			}
 		}
+		var other *advise.OtherPlan
+		looked := false
 		for _, fact := range state.QuotaNotices(in.SessionID, acct, now) {
 			if fact.Kind == "low" {
 				fact.Down, fact.Cheaper = advise.NoticeSteps(acct, report, d, now)
+				if !looked {
+					other, looked = otherPlanWithRoom(st, report, harness, now), true
+				}
+				fact.Other = other
 			}
 			parts = append(parts, style.QuotaNotice(fact))
 		}
@@ -1078,6 +1098,60 @@ func sessionStartHook(stdout io.Writer, style render.Style, st *store.Store, har
 	return 0
 }
 
+// spendHook is a PreToolUse hook on the tools that spawn subagents (Claude Code's Agent and
+// Workflow, Codex's spawn_agent). When the main thread's quota is low it tells the user one
+// line and the model the same facts, plus a cheaper model as strong when the spawn names none.
+// Notices share the prompt's thresholds and marks and are capped per thread; a subagent's own
+// spawns say nothing. It reads cached readings only: no network, no refresh, and it never
+// blocks or changes the tool call.
+func spendHook(stdout io.Writer, style render.Style, st *store.Store, harness, session, model, agentID, spawnModel string, now, deadline time.Time) int {
+	if session == "" || agentID != "" || os.Getenv("MODELPLAN_TASK_BRIEF") == "off" {
+		return 0
+	}
+	paths := quotaPaths(st)
+	if harness == "claude-code" {
+		paths.CodexHome = "" // as on a prompt; Codex is read only when a warning is due
+		paths.ClaudeSession = session
+		model = "" // as on a prompt: the status line's reading for this session
+	} else {
+		// A Codex subagent is a thread of its own and its hook input names no agent: its log does.
+		if quota.CodexBackgroundThread(paths.CodexHome, session) {
+			return 0
+		}
+		paths.CodexThread = session
+	}
+	report := quota.ReadPermitted(paths, now)
+	acct := threadAccount(report, harness, model)
+	ns := advise.ClaimSpendNotices(st.Dir, session, acct, now, time.Until(deadline))
+	if len(ns) == 0 {
+		return 0
+	}
+	other := otherPlanWithRoom(st, report, harness, now)
+	for i := range ns {
+		ns[i].Other = other
+	}
+	var cheaper *advise.Step
+	if spawnModel == "" {
+		d, _, _ := publication.Load(st)
+		_, cheaper = advise.NoticeSteps(acct, report, d, now)
+	}
+	b, _ := json.Marshal(map[string]any{
+		"systemMessage":      style.SpendNotice(ns, nil, false),
+		"hookSpecificOutput": map[string]any{"hookEventName": "PreToolUse", "additionalContext": style.SpendNotice(ns, cheaper, true)},
+	})
+	fmt.Fprintln(stdout, string(b))
+	return 0
+}
+
+// otherPlanWithRoom: another connected plan with room for a low notice. Claude Code's prompt
+// hook skips Codex's logs, so they are read here, only when a low notice is due.
+func otherPlanWithRoom(st *store.Store, report quota.Report, harness string, now time.Time) *advise.OtherPlan {
+	if harness == "claude-code" {
+		report = quota.ReadPermitted(quotaPaths(st), now)
+	}
+	return advise.OtherPlanWithRoom(report, harness, now)
+}
+
 // refreshAccountLater asks Codex for the account reading (and CodexBar for the enabled
 // providers) in the background when the cached one is due, so hooks and the plugin never wait.
 func refreshAccountLater(st *store.Store) {
@@ -1138,7 +1212,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly, withHisto
 	if !c.offline && !readOnly {
 		refreshAccountLater(st)
 		refreshNativeLater(st)
-		if (d == nil || time.Since(ps.CheckedAt) > staleAfter) && time.Since(ps.LastAttemptAt) > backgroundEvery {
+		if publicationSyncDue(d, ps, now) {
 			_ = startDetached("sync", "--quiet", "--scheduled", "--base", c.base)
 		}
 	}
@@ -1213,33 +1287,48 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly, withHisto
 
 // observeLiveSessions never queries accounts; it only reuses local bindings already read above.
 func observeLiveSessions(st *store.Store, paths quota.Paths, report quota.Report, now time.Time) {
-	if speed.Off() || !consent.Allowed("claude", consent.Local) || !consent.Allowed("codex", consent.Local) {
+	observeLive(st, paths.CodexHome, quota.UniqueSubscriptionRefs(report.Accounts), report, now)
+}
+
+// observeLiveLogs is observeLiveSessions for a caller without a report: the current consent fences it.
+func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, now time.Time) {
+	fence := consent.Capture().Fence()
+	observeLive(st, codexHome, refs, quota.Report{ConsentStoreEpoch: fence.StoreEpoch, ConsentGeneration: fence.Generation}, now)
+}
+
+func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time) {
+	// Each harness's logs are read under its own grant: a Codex-only user still gets live Codex sessions (owner
+	// build 13), and Claude Code's logs stay unread without its grant. An empty home disables that root.
+	claudeAllowed, codexAllowed := consent.Allowed("claude", consent.Local), consent.Allowed("codex", consent.Local)
+	if speed.Off() || !claudeAllowed && !codexAllowed {
 		return
 	}
-	home, _ := os.UserHomeDir()
-	claude := os.Getenv("CLAUDE_CONFIG_DIR")
-	if claude == "" {
-		claude = filepath.Join(home, ".claude")
-	}
-	refs := map[string]string{}
-	for _, a := range report.Accounts {
-		if a.Subscription != nil {
-			refs[a.Source] = a.Subscription.Ref
+	claude := ""
+	if claudeAllowed {
+		home, _ := os.UserHomeDir()
+		if claude = os.Getenv("CLAUDE_CONFIG_DIR"); claude == "" {
+			claude = filepath.Join(home, ".claude")
 		}
 	}
+	if !codexAllowed {
+		codexHome = ""
+	}
 	reportWrite(report, func() error {
-		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, paths.CodexHome, now), projectLabels(), refs, now)
+		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, codexHome, now), projectLabels(), refs, now)
 	})
 }
 
 // observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex
 // runs by itself.
 func observeCodexSpeed(st *store.Store, now time.Time) {
+	observeCodexHomeSpeed(st, quotaPaths(st).CodexHome, now)
+}
+
+func observeCodexHomeSpeed(st *store.Store, home string, now time.Time) {
 	if !consent.Allowed("codex", consent.Local) {
 		return
 	}
 	_ = consent.LocalWrite("codex", func() error {
-		home := quotaPaths(st).CodexHome
 		return speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
 			speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}, now)
 	})

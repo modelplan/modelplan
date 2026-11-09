@@ -192,6 +192,12 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 		x.KeyEnv = r.KeyEnv
 		by[id] = x
 	}
+	// ZCode's own Coding Plan key, on by default when no GLM source is configured (G3-21).
+	if g, ok := p.ReaderAccessGrant("zai"); ok && g.ConfigSource != nil && g.ConfigSource.Tool == "zcode" {
+		if _, configured := by["zai"]; !configured {
+			by["zai"] = Selection{Provider: "zai", Backend: BackendNative, Origin: "zcode-config"}
+		}
+	}
 	out := make([]Selection, 0, len(by))
 	for _, x := range by {
 		x.Name = ProviderName(x.Provider)
@@ -312,7 +318,11 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	s, mode := admission.State(), admission.Mode()
 	r := Report{ConsentStoreEpoch: s.StoreEpoch, ConsentGeneration: s.Generation, SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: []Account{}}
 	if mode == consent.Off {
-		r.Sources = []SourceStatus{{Source: "readers", Status: "off", Reason: "reader-privacy"}}
+		reason := "reader-privacy"
+		if consent.NewerStore() {
+			reason = "consent-newer"
+		}
+		r.Sources = []SourceStatus{{Source: "readers", Status: "off", Reason: reason}}
 		return r
 	}
 	add := func(a []Account, st SourceStatus) {

@@ -7,7 +7,7 @@ import "strings"
 // changing permissions, or changing the original receipt returned to a client.
 // The engine calls it after in-flight readers drain and on restart.
 func RetryCleanup(file string, cleanup func(scope string, forget bool) error) error {
-	unlock, err := lockFile(file + ".lock")
+	unlock, err := lockConsent(file)
 	if err != nil {
 		return err
 	}

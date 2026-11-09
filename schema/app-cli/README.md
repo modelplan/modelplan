@@ -264,12 +264,20 @@ engine that produces forecasts also reports `forecastProducerV1`, so the App can
 offer the forecast notification. The same capability adds `forecasts` to rows
 snapshots and changes, so the App can notify while the cockpit is closed.
 
+Clients can declare `cockpitModelsV1`, together with `cockpitDetailsV1`, to receive
+`details.publishedModels`: public data of every published model, in publication
+order, for the launch field and the frontier. `details.publication` keeps its
+three-model lineup. Without the capability the field is omitted.
+
 Clients can declare `cockpitHistoryV1` to receive `history` from `cockpit/query`:
 7/30-day sums per subscription and source, model and tool rankings, `daily` (last
 182 local days from `dailyFrom`) and `hourly` (last 48 local hours) buckets per
 source, and `projects` (labels only while the project-labels preference is on).
 All of it is observed on this device. A day or hour that is not listed has no
 observation, which is not a known zero.
+`cycles` lists up to ten newest closed cycles, oldest first, of each window kind for a subscription, with
+its one current binding; a meter drop inside a cycle cannot be told apart from a
+correction.
 
 Clients can declare `refreshDecisionsV1` to receive `refreshDecisions` from
 `diagnostics/get`. The array holds at most 20 recent in-memory scheduling and

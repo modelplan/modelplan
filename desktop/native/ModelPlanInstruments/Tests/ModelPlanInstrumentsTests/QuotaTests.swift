@@ -25,7 +25,7 @@ final class QuotaTests: XCTestCase {
 
     func testF02ThresholdsAndTenSegments() {
         for (value, level, lit) in [(0.0, QuotaLevel.critical, 0), (0.1, .critical, 1), (15, .critical, 2),
-                                     (16, .critical, 2), (25, .critical, 3), (25.01, .amber, 3), (40, .amber, 4), (41, .healthy, 4), (100, .healthy, 10)] {
+                                     (16, .critical, 2), (25, .critical, 3), (25.01, .amber, 3), (40, .amber, 4), (41, .amber, 4), (50, .amber, 5), (50.01, .healthy, 5), (100, .healthy, 10)] {
             let cell = QuotaCell(Fixtures.quota("q", .fiveHours, value), now: now)
             XCTAssertEqual(cell.level, level); XCTAssertEqual(cell.litSegments, lit)
         }

@@ -10,6 +10,15 @@ import ModelPlanSettings
 import ModelPlanMenuVerification
 #endif
 
+struct StatusNoticePresentation {
+    let frameInButton: CGRect
+    let buttonBounds: CGRect
+    let buttonIsFlipped: Bool
+    let tone: DockNotice.Tone?
+    let shape: DockNotice.Shape?
+    let isVisible: Bool
+}
+
 /// The rows-backed normal Dock/menu lifecycle. Legacy probe entry remains separate.
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
     public let composition: EngineDockMenuComposition
@@ -23,7 +32,28 @@ import ModelPlanMenuVerification
     private var lastAboutConnectionReady = false
     private var forecastCheckedSession: String?
     private var status: NSStatusItem?
+    private var statusClickMonitor: Any?
+    private var statusPressPending = false
     private(set) var liveStatusMenu: NSMenu?
+    private lazy var applicationSettingsItem: NSMenuItem = {
+        let item = settingsHost.menuItem(title: "Settings…")
+        item.isEnabled = false
+        item.keyEquivalent = ""
+        return item
+    }()
+    private let applicationQuitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    private(set) lazy var applicationMenu: NSMenu = {
+        let root = NSMenu()
+        let application = NSMenuItem(title: "ModelPlan", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        submenu.addItem(applicationSettingsItem)
+        submenu.addItem(.separator())
+        submenu.addItem(applicationQuitItem)
+        application.submenu = submenu
+        root.addItem(application)
+        return root
+    }()
     private var statusMenuComponent: DockStatusMenu?
     let noticeIndicator = DockNoticeIndicatorView(frame: .zero)
     public let cockpitEntryEnabled: Bool
@@ -34,7 +64,12 @@ import ModelPlanMenuVerification
     private var accessibilityObserver: NSObjectProtocol?
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
-    private var showFeedback: ShowQuotaWidgetOutcome?
+    private var helpRevealTask: Task<Void, Never>?
+    /// D56 Find Quota Widget: one spotlight for the status menu, the shortcut and the end of first run.
+    let spotlight = QuotaWidgetSpotlight()
+    private var showFeedback: ShowQuotaWidgetOutcome?, hideFeedback: ShowQuotaWidgetOutcome?
+    private var autoCollapseFailed = false
+    /// True only for a sealed owner-test package; a release package never offers or applies these.
     private var memberRefreshInFlight = Set<String>()
     private var unavailableMemberRefreshes = Set<String>()
     public var memberRefreshAdapter: (any DockMemberRefreshAdapting)? {
@@ -50,9 +85,25 @@ import ModelPlanMenuVerification
     }
     private var dockHelp: DockHelpCoordinator?
     var dockHelpInstalled: Bool { dockHelp?.isInstalled == true }
+    /// The explanation card currently shown next to a widget element (checks only).
+    var shownDockExplanationForChecks: String? { dockHelp?.shownExplanationForChecks?.accessibleDescription }
     private var helpMapUnavailable = false
     /// The presentation boundary remains replaceable for synthetic, window-free tests.
     var requestHelpMap: (() -> Bool)?
+    private(set) var statusHelpRequestID: UUID?
+    var statusHelpButtonFocused: Bool {
+        guard let button = status?.button else { return false }
+        return button.window?.firstResponder === button
+    }
+    func statusHelpDidDismiss(_ requestID: UUID) {
+        guard statusHelpRequestID == requestID else { return }
+        statusHelpRequestID = nil
+        guard !terminating, !lifecyclePaused, let item = status, item.isVisible,
+              let button = item.button, let window = button.window, window.isVisible,
+              !button.isHiddenOrHasHiddenAncestor else { return }
+        _ = window.makeFirstResponder(button)
+        button.setAccessibilityFocused(true)
+    }
     private var dockHelpSetupInProgress = false
     #if MODELPLAN_U6_DRIVE
     private var driveGuard: U6DriveGuard?
@@ -64,6 +115,14 @@ import ModelPlanMenuVerification
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
+    /// Injection point for opening System Settings; the normal entry uses NSWorkspace.
+    public var openSystemSettings: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Every public link from a menu or Settings leaves through here; tests read the URL instead of a browser.
+    public var openPublicURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Injection point for the cache action; the normal entry clears the app's own folder.
+    public var clearAppCache: () -> Void = { EngineAppCache.clearCurrentApp() }
+    /// Injection point for global shortcuts; the normal entry supplies the system registrar.
+    var shortcutRegistrar: (any EngineShortcutRegistering)?
     private let notificationConsumer = SettingsNotificationConsumer()
     /// The default uses the native first-run window. Synthetic composition tests
     /// may supply an in-memory surface before preparation; no system service runs.
@@ -111,9 +170,17 @@ import ModelPlanMenuVerification
             self.console?.applySettings(value)
             self.dockHelp?.refresh()
         }
-        let application=settings
-        composition.dock.requestHideDock = { [weak application] in
-            Task { _ = try? await application?.editor.commit(SettingsB21Edit.showDock(false)) }
+        composition.dock.requestAutoCollapse = { [weak self] on in
+            Task { @MainActor [weak self] in await self?.setAutoCollapse(on) }
+        }
+        if !createsNativePanels {
+            spotlight.makeSurface = { DetachedQuotaWidgetSpotlightSurface() }
+            spotlight.makeInput = { DetachedQuotaWidgetSpotlightInput() }
+        }
+        spotlight.onActiveChange = { [weak self] active in
+            guard let self else { return }
+            self.composition.dock.spotlightHold = active
+            self.dockHelp?.refresh()
         }
         #if MODELPLAN_U6_DRIVE
         composition.provider.verificationWillClear = { [weak self] invalidation in
@@ -225,16 +292,30 @@ import ModelPlanMenuVerification
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
     public func presentSettings() async { await settingsHost.present() }
+    /// G3-46: a menu bar full enough to hide the icon (G3-22) leaves no icon to open under. Then there is
+    /// no anchor, and the cockpit opens at the top-right of the screen below the menu bar.
     var cockpitAnchor: CGRect? {
-        guard let button = status?.button, let window = button.window else { return nil }
-        return window.convertToScreen(button.convert(button.bounds, to: nil))
+        guard !statusItemHidden, let status, status.isVisible, let button = status.button, let window = button.window,
+              window.isVisible else { return nil }
+        let rect = window.convertToScreen(button.convert(button.bounds, to: nil))
+        guard NSScreen.screens.contains(where: { $0.frame.intersects(rect) }) else { return nil }
+        return rect
     }
     public func showConsole() {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
         composition.dock.acknowledgeCockpitOpening()
-        if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
+        if console == nil {
+            console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition)
+            console?.onShowingChanged = { [weak self] in self?.refreshStatusTooltip() }
+        }
         if let value = composition.latestSettings { console?.applySettings(value) }
         console?.show()
+        refreshStatusTooltip()
+    }
+    /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
+    /// entry (menu item, ignition, shortcut, reopening the app) only ever opens.
+    func toggleConsole() {
+        if let console, console.isShowing { console.requestClose(); refreshStatusTooltip() } else { showConsole() }
     }
     /// OS accessibility changes are presentation facts, never saved user choices.
     func updateSystemAccessibility(_ observed: SettingsEnvironment) {
@@ -258,22 +339,49 @@ import ModelPlanMenuVerification
            bundle.bundleIdentifier != nil, bundle.bundleURL.pathExtension == "app" {
             notificationAuthorizationService = SystemNotificationAuthorizationService()
         }
+        if shortcutRegistrar == nil, let bundle = Bundle(url: appBundleURL),
+           bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL, bundle.bundleURL.pathExtension == "app" {
+            shortcutRegistrar = CarbonShortcutRegistrar()
+        }
         let observedAuthorization = await notificationAuthorizationService?.authorization() ?? .unavailable
         guard !terminating else { return }
         notificationConsumer.observeAuthorization(observedAuthorization)
         var context = settings.editor.context
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
         context.notificationAuthorization = observedAuthorization
+        context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
+        composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
+        context.loginServiceObserved = true
+        context.notificationServiceObserved = true
+        // The choice stays visible; a service macOS refuses gets an honest reason and the fallback row.
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
+        else { context.unavailableControls[.login] = .init("Unavailable for this copy of the app. Use Login Items in System Settings.", "此应用副本不可用，请使用系统设置中的登录项。") }
         if notificationAuthorizationService != nil && observedAuthorization != .unavailable {
             context.unavailableControls.removeValue(forKey: .notificationConsent)
-        }
+        } else { context.unavailableControls[.notificationConsent] = .init("Unavailable for this copy of the app. Use Notifications in System Settings.", "此应用副本不可用，请使用系统设置中的通知。") }
         for key in [SettingKey.websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] {
             context.unavailableControls.removeValue(forKey: key)
+        }
+        // SET-9-18: the reset and official kinds are usable once delivery is wired.
+        if composition.notificationDeliveryAvailable { context.observeNotificationDelivery(true) }
+        // Dock, card and menu bar all read these through `applying(to:)` and `presentedSubscriptionIDs`.
+        for key in [SettingKey.percentagePin, .order, .visible, .alias] {
+            context.unavailableControls.removeValue(forKey: key)
+        }
+        // Language reaches every surface through `applySettings`; the menu bar reads its own display.
+        for key in [SettingKey.language, .menuDisplay] { context.unavailableControls.removeValue(forKey: key) }
+        context.capabilities.appCacheClearAvailable = true
+        for key in [SettingKey.clearAppCache, .resetHints] { context.unavailableControls.removeValue(forKey: key) }
+        if shortcutRegistrar != nil {
+            context.unavailableControls.removeValue(forKey: .dockShortcut)
+            // A build without the cockpit entry has nothing for this shortcut to open.
+            if cockpitEntryEnabled { context.unavailableControls.removeValue(forKey: .openShortcut) }
+            else { context.unavailableControls[.openShortcut] = .init("Unavailable until this build can open the cockpit.", "此版本可打开驾驶舱前不可用。") }
         }
         // Project names reach the cockpit through `applySettings`, so the row is a real control.
         context.unavailableControls.removeValue(forKey: .projectNames)
         settings.update(context: context)
+        shortcutRegistrar?.onPress = { [weak self] action in self?.performShortcut(action) }
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
             firstRunFlow = try? CommunityConnectionFlow(application: settings,
@@ -285,6 +393,10 @@ import ModelPlanMenuVerification
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
         guard !terminating else { return }
+        // Saved chords exist only after the store has loaded.
+        if let preferences = settings.editor.snapshot?.preferences {
+            registerShortcuts(openCockpit: preferences.openShortcut, toggleDock: preferences.dockShortcut)
+        }
         if dockHelp == nil, !dockHelpSetupInProgress {
             dockHelpSetupInProgress = true
             let help = await DockHelpCoordinator.restored(dock: composition.dock, application: settings, statusAnchor: { [weak self] in
@@ -296,7 +408,8 @@ import ModelPlanMenuVerification
                 guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
                       [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
                 return DockStatusHelpAnchor(frame: frame, sharing: window.sharingType, collection: window.collectionBehavior)
-            })
+            }, statusRequestID: { [weak self] in self?.statusHelpRequestID },
+               statusDidDismiss: { [weak self] id in self?.statusHelpDidDismiss(id) })
             dockHelpSetupInProgress = false
             if terminating { await help?.dispose(); return }
             if dockHelp == nil { dockHelp = help }
@@ -312,6 +425,10 @@ import ModelPlanMenuVerification
         renderMenu()
         interactionBinding?.install()
     }
+    private var dockPresentationGateOpen: Bool {
+        lifecycleController?.canRetry ?? !lifecyclePaused
+    }
+
     func allowDockPresentation() {
         guard !terminating else { return }
         composition.dock.setPresentationAllowed(true)
@@ -333,7 +450,10 @@ import ModelPlanMenuVerification
                 self.lifecyclePaused = false; self.composition.dock.resumeFromLifecycle(); self.composition.resumeDeadlines()
                 self.allowDockPresentation(); self.dockHelp?.resume(); self.renderMenu()
                 Task { [weak self] in await self?.restoreFirstRunIfNeeded() }
-            }, onGateOpen: { [weak self] in self?.renderMenu() })
+            }, onGateOpen: { [weak self] in
+                self?.allowDockPresentation()
+                self?.renderMenu()
+            })
         lifecycleController = controller
         controller.setActivityPaused(activityPaused)
         withdrawForLifecycle(); controller.start()
@@ -351,9 +471,35 @@ import ModelPlanMenuVerification
         lifecyclePaused = true
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
+        statusHelpRequestID = nil
+        spotlight.finish(.withdrawn)
         dockHelp?.suspend()
         composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
+        // A retry or engine failure can withdraw rows while the OS gate remains open.
+        if dockPresentationGateOpen { allowDockPresentation() }
         renderMenu()
+    }
+    /// D37: an unassigned chord registers nothing. Each outcome is recorded for that exact chord.
+    private func registerShortcuts(openCockpit: ShortcutChord, toggleDock: ShortcutChord) {
+        guard let shortcutRegistrar else { return }
+        shortcutRegistrar.unregisterAll()
+        var observations: [SettingsShortcutObservation] = []
+        for (action, chord) in [(ShortcutAction.openCockpit, openCockpit), (.toggleDock, toggleDock)]
+        where !chord.isUnassigned && (action != .openCockpit || cockpitEntryEnabled) {
+            let outcome = chord.isValid ? shortcutRegistrar.register(chord, action: action) : .unavailable
+            observations.append(.init(action: action, chord: chord, registration: outcome))
+        }
+        var context = settings.editor.context
+        context.shortcutObservations = observations
+        settings.update(context: context)
+    }
+    private func performShortcut(_ action: ShortcutAction) {
+        guard !terminating, !lifecyclePaused else { return }
+        switch action {
+        case .openCockpit: showConsole()
+        // D56: the SET-9-05 widget slot is the Find Quota Widget shortcut.
+        case .toggleDock: findQuotaWidget()
+        }
     }
     private func dispatchHostRequest(_ request: SettingsHostRequest) {
         guard !terminating, let current = settings.editor.snapshot, request.revision == current.revision else { return }
@@ -378,11 +524,19 @@ import ModelPlanMenuVerification
                     self.settings.update(context: context)
                 }
             }
-        case .openPublicLink(let link): NSWorkspace.shared.open(link.url)
+        case .openPublicLink(let link): openPublicURL(link.url)
+        case .openSystemSettings(let pane): openSystemSettings(pane.url)
+        case .action(.clearAppCache): clearAppCache()
+        case .shortcutPreferencesChanged(let openCockpit, let toggleDock):
+            registerShortcuts(openCockpit: openCockpit, toggleDock: toggleDock)
         case .firstRunCompleted(let effects, _):
             for effect in effects {
                 switch effect {
-                case .revealDock: composition.dock.setPresentationAllowed(true)
+                case .revealDock:
+                    composition.dock.setPresentationAllowed(true)
+                    // D56: once, at the end of first run, show where the widget is. "See what's
+                    // here" latches the Help map over the widget instead, which already shows it.
+                    if !effects.contains(.latchOptionHelp) { findQuotaWidget() }
                 case .returnToSettings: Task { [weak self] in await self?.settingsHost.present() }
                 case .openCockpit: showConsole()
                 case .latchOptionHelp: showHelp()
@@ -399,7 +553,7 @@ import ModelPlanMenuVerification
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        NSApp.appearance = NSAppearance(named: .darkAqua)
+        NSApp.mainMenu = applicationMenu
         if accessibilityObserver == nil {
             accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
@@ -420,18 +574,111 @@ import ModelPlanMenuVerification
         },
            dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
-        status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        status?.autosaveName = "ModelPlanCommunity.StatusItem"
-        status?.isVisible = true
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        installStatusItem(autosaveName: EngineRowsEntry.nativeJourneyProfile == nil ? "ModelPlanCommunity.StatusItem" : nil)
+        #else
+        installStatusItem(autosaveName: "ModelPlanCommunity.StatusItem")
+        #endif
         #if MODELPLAN_U6_DRIVE
         driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
             guard let self else { return false }; return menu === self.status?.menu
         }, currentStatusMenu: { [weak self] in self?.liveStatusMenu },
            actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
+        renderMenu()
+        watchStatusItemVisibility()
         Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
     }
+    /// G3-22: a full menu bar hides the item behind the notch (the owner's Mac: occluded at
+    /// x=769..801 of 1470). Test seam: nil reads the real status-item window.
+    var statusItemVisibility: (@MainActor () -> Bool?)?
+    private(set) var statusItemHidden = false
+    private var statusOcclusionObserver: NSObjectProtocol?
+    private func watchStatusItemVisibility() {
+        statusOcclusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                                                        object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let window = note.object as? NSWindow, window === self.status?.button?.window else { return }
+                self.checkStatusItemVisibility()
+            }
+        }
+        // Give the menu bar a few seconds to lay the item out before telling the user.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            self?.checkStatusItemVisibility()
+        }
+    }
+    /// Shows the one-line notice in the widget menu and Settings while the item is covered; clears it when visible.
+    func checkStatusItemVisibility() {
+        guard !terminating else { return }
+        let visible = statusItemVisibility.map { $0() } ?? status?.button?.window.map { $0.occlusionState.contains(.visible) }
+        let hidden = visible == false
+        guard hidden != statusItemHidden else { return }
+        statusItemHidden = hidden
+        composition.dock.statusIconNotice = hidden ? EngineRowsText.statusItemHidden : nil
+        var context = settings.editor.context
+        context.statusItemNotice = hidden ? EngineRowsText.statusItemHidden : nil
+        settings.update(context: context)
+    }
+    var statusButtonForTesting: NSStatusBarButton? { status?.button }
+    var statusMenuForTesting: NSMenu? { status?.menu }
+    var statusLengthForTesting: CGFloat? { status?.length }
+    /// A caller supplying no autosave name owns a temporary, non-persisted item.
+    func installStatusItem(autosaveName: NSStatusItem.AutosaveName? = nil) {
+        guard status == nil, !terminating else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let autosaveName { item.autosaveName = autosaveName }
+        item.isVisible = true
+        status = item
+        statusClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+            let handled = MainActor.assumeIsolated { self?.handleStatusClick(event) ?? false }
+            return handled ? nil : event
+        }
+    }
+
+    /// D44: a plain left click opens the cockpit, and closes it again while it is open (G3-40). The menu stays attached to the status item, so
+    /// right-click, control-click, keyboard and accessibility presses show it natively, and so does
+    /// a left click while the cockpit cannot open. Command stays free for dragging the icon.
+    func handleStatusClick(_ event: NSEvent) -> Bool {
+        let onStatusItem = status?.button?.window.map { $0.windowNumber == event.windowNumber } ?? false
+        if event.type == .leftMouseUp {
+            guard statusPressPending else { return false }
+            statusPressPending = false
+            if onStatusItem { toggleConsole() }
+            return true
+        }
+        guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
+              cockpitEntryEnabled, !terminating, !lifecyclePaused else { return false }
+        statusPressPending = true
+        return true
+    }
+
+    /// D44: opening the running app again from Spotlight or Launchpad opens the cockpit.
+    public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showConsole()
+        return false
+    }
+
+    func removeStatusItem() {
+        guard let status else { return }
+        self.status = nil
+        if let statusClickMonitor { NSEvent.removeMonitor(statusClickMonitor) }
+        statusClickMonitor = nil; statusPressPending = false
+        noticeIndicator.removeFromSuperview()
+        status.menu = nil
+        NSStatusBar.system.removeStatusItem(status)
+    }
+
+    var statusNoticePresentation: StatusNoticePresentation? {
+        guard let status, let button = status.button, noticeIndicator.superview === button else { return nil }
+        let windowVisible = button.window.map { $0.isVisible && $0.alphaValue > 0 && $0.occlusionState.contains(.visible) } ?? false
+        return StatusNoticePresentation(frameInButton: noticeIndicator.frame, buttonBounds: button.bounds,
+            buttonIsFlipped: button.isFlipped, tone: noticeIndicator.notice?.tone, shape: noticeIndicator.notice?.shape,
+            isVisible: status.isVisible && windowVisible && noticeIndicator.notice != nil && !noticeIndicator.isHiddenOrHasHiddenAncestor)
+    }
+
     func renderMenu() {
+        guard !terminating else { return }
         let language = composition.latestSettings?.effective.language ?? .english
         let component: DockStatusMenu
         if let current = statusMenuComponent { component = current }
@@ -451,29 +698,45 @@ import ModelPlanMenuVerification
         let english = language == .english
         func label(_ en: String, _ zh: String) -> String { english ? en : zh }
         let available = !lifecyclePaused
-        let showAvailability = ShowQuotaWidgetRequest.availability(paused: lifecyclePaused || terminating,
+        let settingsTitle = label("Settings…", "设置…")
+        // HIG: "Quit AppName" and "About AppName" in a menu bar extra's menu.
+        let quitTitle = EngineRowsText.quit.value(language)
+        applicationSettingsItem.title = settingsTitle
+        applicationSettingsItem.isEnabled = available && !terminating
+        applicationSettingsItem.keyEquivalent = applicationSettingsItem.isEnabled ? "," : ""
+        applicationQuitItem.title = quitTitle
+        let showAvailability = ShowQuotaWidgetRequest.availability(paused: terminating,
             loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight)
-        let showTitle: String
-        switch showAvailability {
-        case .loading: showTitle = label("Show Quota Widget — Loading Settings", "显示额度挂件 — 正在载入设置")
-        case .saving: showTitle = label("Show Quota Widget — Saving Settings", "显示额度挂件 — 正在保存设置")
-        case .ready, .paused: showTitle = EngineRowsText.showQuotaWidget.value(language)
-        }
+        // Owner HIG decision (11-06): one checkable item with a constant title. The checkmark
+        // shows the stored switch (the same one as Settings); choosing it toggles show/hide.
+        // While Settings load or save the item stays put and is only disabled.
+        let showTitle = EngineRowsText.showQuotaWidget.value(language)
+        let widgetShown = settings.editor.snapshot?.preferences.showDock ?? false
         var menuItems: [DockMenuPresentationItem] = []
         if let feedback = helpError ?? showFeedbackText(language) { menuItems.append(.init(title: feedback)) }
         else if lifecyclePaused { menuItems.append(.init(title: (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language))) }
         menuItems += [
             .init(title: label("Refresh", "刷新"), target: (available || canRetry) ? self : nil, selector: (available || canRetry) ? #selector(refreshRows) : nil),
-            .init(title: showTitle, action: showAvailability == .ready ? { [weak self] in self?.showDock() } : nil),
+            .init(title: showTitle, accessibilityID: "status.showQuotaWidget", checked: widgetShown,
+                  action: showAvailability == .ready ? { [weak self] in Task { @MainActor [weak self] in await self?.setDockShown(!widgetShown) } } : nil),
+            // D56: shows where the widget is; it turns the widget on first when it is off.
+            .init(title: EngineRowsText.findQuotaWidget.value(language), accessibilityID: "status.findQuotaWidget",
+                  action: available && showAvailability == .ready ? { [weak self] in self?.findQuotaWidget() } : nil),
             .init(title: nil),
             .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
-            .init(title: label("Website", "网站"), action: { NSWorkspace.shared.open(SettingsPublicLink.website.url) }),
-            .init(title: label("Methodology", "方法论"), action: { NSWorkspace.shared.open(SettingsPublicLink.methodology.url) }),
-            .init(title: label("Privacy", "隐私"), action: { NSWorkspace.shared.open(SettingsPublicLink.privacy.url) }),
+            .init(title: label("Website", "网站"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.website.url) }),
+            .init(title: label("Methodology", "方法论"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.methodology.url) }),
+            .init(title: label("Privacy", "隐私"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.privacy.url) }),
         ]
         let admitted = composition.presentedContent.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
-        var diagnosticFacts: [ProviderDiagnosticFact] = []
+        let content = composition.provider.dockContent
+        // Some reader failures publish an admitted provider row without any
+        // account. Such failures still need the same Diagnostics action.
+        var diagnosticFacts = (content.menuRows + content.dockRows).compactMap { row -> ProviderDiagnosticFact? in
+            guard row.state == .failed, row.accounts.isEmpty else { return nil }
+            return .init(providerID: row.id, name: english ? row.name.en : row.name.zh, condition: .failed)
+        }
         for member in composition.accountMembers.members {
             guard let row = admitted[member.id] else { continue }
             let condition: ProviderDiagnosticCondition
@@ -496,26 +759,33 @@ import ModelPlanMenuVerification
             menuItems.append(.init(title: summary,
                 action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil))
         }
-        if settings.editor.context.capabilities.updateServiceAvailable, settings.editor.onHostRequest != nil {
-            menuItems.append(.init(title: label("Check for updates", "检查更新"), action: { [weak self] in self?.checkForUpdates() }))
-        }
         menuItems += [
             .init(title: nil),
-            .init(title: label("Help…", "说明…"), action: available ? { [weak self] in self?.showHelp() } : nil),
-            .init(title: label("Settings…", "设置…"), action: available ? { [weak self] in self?.settingsHost.action() } : nil),
-            .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
-            .init(title: label("Quit", "退出"), keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
+            .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
+                  action: available ? { [weak self] in self?.showHelp(fromStatusMenu: true) } : nil),
+            .init(title: settingsTitle, keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
+            .init(title: EngineRowsText.about.value(language), action: available ? { [weak self] in self?.showAbout() } : nil),
+            .init(title: quitTitle, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
+        LivePrivateMenus.scrubItems(menu)
         component.replace(with: menuItems)
         liveStatusMenu = menu
         if let status { component.attach(to: status) }
         if let button = status?.button {
             Self.configureStatusButton(button,image:CommunityMenuBarResources.templateImage(),barThickness:NSStatusBar.system.thickness); button.contentTintColor = nil
-            noticeIndicator.frame = NSRect(x: max(0, button.bounds.width - 7), y: max(0, button.bounds.height - 7), width: 7, height: 7)
-            noticeIndicator.autoresizingMask = [.minXMargin, .minYMargin]
-            if noticeIndicator.superview !== button { button.addSubview(noticeIndicator) }
         }
-        if let button = status?.button { applyStatusContent(to: button, detail: detail) }
+        if let button = status?.button {
+            applyStatusContent(to: button, detail: detail)
+            // G3-22: an icon-only item takes the square menu-bar length (was 32 pt for a 16 pt image);
+            // a percentage title keeps a variable length. The autosave name keeps a ⌘-dragged position.
+            let iconOnly = button.title.isEmpty && button.image != nil
+            let position: NSControl.ImagePosition = iconOnly ? .imageOnly : .imageLeading
+            if button.imagePosition != position { button.imagePosition = position }
+            let length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            if status?.length != length { status?.length = length }
+            // MENU-06: place the dot after the title is set, against the icon, not the text end.
+            noticeIndicator.attach(to: button)
+        }
         dockHelp?.refresh()
         #if MODELPLAN_U6_DRIVE
         if let button = status?.button { driveGuard?.observeStatusButton(button) }
@@ -526,9 +796,13 @@ import ModelPlanMenuVerification
         pulse?.fromValue = 0.25; pulse?.toValue = 1; pulse?.duration = 0.35
         noticeIndicator.apply(notice, firstAppearanceAnimation: pulse, reducedMotion: composition.latestSettings?.effective.reduceMotion ?? true)
     }
+    static let statusFallbackTitle = "MP"
     static func configureStatusButton(_ button:NSButton,image:NSImage?,barThickness:CGFloat) {
-        let sized=image?.copy() as? NSImage
         let side=min(16,max(0,barThickness.isFinite ? barThickness : 0))
+        // Every menu render calls this; a button that already shows the image at this size is left alone, so a
+        // refresh does not re-measure the item (and move the notice dot) while the pointer is on it.
+        if image != nil,let current=button.image,current.isTemplate,current.size == NSSize(width:side,height:side),button.imageScaling == .scaleProportionallyDown{return}
+        let sized=image?.copy() as? NSImage
         sized?.size=NSSize(width:side,height:side);sized?.isTemplate=true
         button.image=sized;button.imageScaling = .scaleProportionallyDown;button.imagePosition = .imageLeading
     }
@@ -538,44 +812,131 @@ import ModelPlanMenuVerification
     /// Shared by the native status item and detached presentation checks.
     /// Feedback belongs to the menu/accessibility detail; the title remains the quota value.
     func applyStatusContent(to button: NSButton, detail: String) {
-        button.title = composition.menuPresentation.title
-        button.toolTip = detail
-        button.setAccessibilityHelp(detail)
+        let title = composition.menuPresentation.title
+        // Never let the item collapse to zero width when the template image is unavailable.
+        // Only changed values are written: re-setting the same title or position makes the item re-measure itself.
+        let shownTitle = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
+        if button.title != shownTitle { button.title = shownTitle }
+        // With no image the fallback title is the whole item; image-only would hide it.
+        if button.image != nil {
+            let position: NSControl.ImagePosition = title.isEmpty ? .imageOnly : .imageLeading
+            if button.imagePosition != position { button.imagePosition = position }
+        }
+        statusTooltip = detail
+        let tooltip = statusTooltipHidden ? nil : detail
+        if button.toolTip != tooltip { button.toolTip = tooltip }
+        if button.accessibilityHelp() != detail { button.setAccessibilityHelp(detail) }
     }
-    private func showHelp() {
+    /// G3-49: the icon's tooltip sits above every app window and drew over the porthole when a click left the
+    /// pointer on the icon. While the cockpit is showing the icon has no tooltip; the accessible help stays.
+    private var statusTooltip = ""
+    private var statusTooltipHidden: Bool { console?.isShowing == true }
+    func refreshStatusTooltip() {
+        guard let button = status?.button else { return }
+        button.toolTip = statusTooltipHidden ? nil : statusTooltip
+    }
+    private func showHelp(fromStatusMenu: Bool = false) {
         guard !terminating, !lifecyclePaused else { return }
-        helpMapUnavailable = requestHelpMap?() != true
-        renderMenu()
+        spotlight.finish(.cancelled)
+        helpRevealTask?.cancel(); helpRevealTask = nil
+        let requestID = fromStatusMenu ? UUID() : nil
+        statusHelpRequestID = requestID
+        if requestHelpMap?() == true { helpMapUnavailable = false; renderMenu(); return }
+        // G3-12: the map is drawn over the visible widget. When the widget is hidden or
+        // collapsed and presentation is allowed, show it as Show Quota Widget does, then retry.
+        guard composition.dock.canPresentForHelp, settings.editor.snapshot != nil else {
+            helpMapUnavailable = true; statusHelpRequestID = nil; renderMenu(); return
+        }
+        helpMapUnavailable = false; renderMenu()
+        helpRevealTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var presented = false
+            if await self.showDockForHelp() {
+                let deadline = ContinuousClock.now + .seconds(2)
+                repeat {
+                    if self.requestHelpMap?() == true { presented = true; break }
+                    try? await Task.sleep(for: .milliseconds(50))
+                } while ContinuousClock.now < deadline && !Task.isCancelled && !self.terminating
+            }
+            guard !Task.isCancelled, !self.terminating else { return }
+            self.helpRevealTask = nil
+            if !presented, self.statusHelpRequestID == requestID { self.statusHelpRequestID = nil }
+            self.helpMapUnavailable = !presented
+            self.renderMenu()
+        }
     }
-    private func showFeedbackText(_ language: SettingsLanguage) -> String? {
+    /// Makes the widget visible for a Help request: saves Show when it was hidden, then
+    /// reveals it from the strip. Returns false when Show cannot be saved.
+    private func showDockForHelp(highlight: Bool = true) async -> Bool {
+        if settings.editor.snapshot?.preferences.showDock != true {
+            guard ShowQuotaWidgetRequest.availability(paused: terminating, loaded: settings.editor.snapshot != nil,
+                    saving: settings.editor.isSaving || showRequestInFlight) == .ready else { return false }
+            showRequestInFlight = true
+            let outcome = await ShowQuotaWidgetRequest.perform(editor: settings.editor)
+            showRequestInFlight = false
+            guard !terminating, outcome == .ready, settings.editor.snapshot?.preferences.showDock == true else { return false }
+        }
+        composition.dock.revealForUser(highlight: highlight)
+        return true
+    }
+    /// D56 Find Quota Widget, from the status menu, the shortcut or the end of first run. The
+    /// widget is turned on if it is off (as Help does), slides out if collapsed, and the rest of its
+    /// display dims. Afterwards the normal auto-collapse rules apply again.
+    func findQuotaWidget() {
+        guard !terminating, !lifecyclePaused, composition.dock.canPresentForHelp, settings.editor.snapshot != nil else { return }
+        spotlight.run(reduceMotion: { [weak self] in
+            // The effective setting already folds in the system's Reduce Motion.
+            self?.composition.latestSettings?.effective.reduceMotion ?? true
+        }, prepare: { [weak self] in
+            guard let self, !self.terminating, !self.lifecyclePaused else { return false }
+            return await self.showDockForHelp(highlight: false)
+        }, target: { [weak self] in
+            guard let self, !self.terminating, !self.lifecyclePaused else { return nil }
+            return self.composition.dock.spotlightTarget
+        })
+    }
+    func showFeedbackText(_ language: SettingsLanguage) -> String? {
+        if autoCollapseFailed { return SettingsText("Could not change Auto-Collapse. Check Settings and try again.", "无法更改自动收起，请检查设置后重试。").value(language) }
+        switch hideFeedback {
+        case .changed: return SettingsText("Settings changed. Hide Quota Widget again if you still want it hidden.", "设置已更改；如仍要隐藏额度挂件，请再次选择隐藏。").value(language)
+        case .failed, .unavailable: return SettingsText("Could not hide Quota Widget. Check Settings and try again.", "无法隐藏额度挂件，请检查设置后重试。").value(language)
+        case .ready, nil: break
+        }
         switch showFeedback {
-        case .changed: return SettingsText("Settings changed. Choose Show Quota Widget again.", "设置已更改，请再次选择显示额度挂件。").value(language)
-        case .failed, .unavailable: return SettingsText("Could not show Quota Widget. Check Settings and try again.", "无法显示额度挂件，请检查设置后重试。").value(language)
+        case .changed: return SettingsText("Settings changed. Choose Show Quota Widget again.", "设置已更改，请再次选择「显示额度挂件」。").value(language)
+        case .failed, .unavailable: return SettingsText("Could not change Show Quota Widget. Check Settings and try again.", "无法更改「显示额度挂件」，请检查设置后重试。").value(language)
         case .ready, nil: return nil
         }
     }
-    private func showDock() {
-        guard ShowQuotaWidgetRequest.availability(paused: terminating || lifecyclePaused,
-                loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready,
-              let revision = settings.editor.snapshot?.revision else { return }
-        showRequestInFlight = true; showFeedback = nil; renderMenu()
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let outcome = await ShowQuotaWidgetRequest.perform(editor: self.settings.editor, expectedRevision: revision)
-            self.showRequestInFlight = false
-            guard !self.terminating else { return }
-            let currentOutcome: ShowQuotaWidgetOutcome = outcome == .ready && self.settings.editor.snapshot?.preferences.showDock != true ? .changed : outcome
-            self.showFeedback = currentOutcome == .ready ? nil : currentOutcome
-            if currentOutcome == .ready && !self.lifecyclePaused { self.composition.dock.revealForUser() }
-            self.renderMenu()
-        }
+    /// G3-28: the same stored setting as Settings' auto-collapse switch, through the same bounded
+    /// path as Show, so a hint-ledger write cannot drop the choice. A failure shows in the status menu.
+    func setAutoCollapse(_ on: Bool, commit: (@MainActor (SettingsEditor) async throws -> SettingsSnapshot)? = nil) async {
+        let outcome = await ShowQuotaWidgetRequest.setAutoCollapse(on, editor: settings.editor, commit: commit)
+        guard !terminating else { return }
+        autoCollapseFailed = outcome != .ready
+        renderMenu()
+    }
+    /// The status menu's checkable Show Quota Widget item (G3-18): unchecking turns the widget
+    /// off, checking turns it on and reveals it. The app keeps running either way.
+    func setDockShown(_ shown: Bool, commit: (@MainActor (SettingsEditor) async throws -> SettingsSnapshot)? = nil) async {
+        guard ShowQuotaWidgetRequest.availability(paused: terminating,
+                loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready else { return }
+        showRequestInFlight = true; showFeedback = nil; hideFeedback = nil; renderMenu()
+        let outcome = await ShowQuotaWidgetRequest.setVisible(shown, editor: settings.editor, commit: commit)
+        showRequestInFlight = false
+        guard !terminating else { return }
+        let currentOutcome: ShowQuotaWidgetOutcome = outcome == .ready && settings.editor.snapshot?.preferences.showDock != shown ? .changed : outcome
+        // A Hide that did not take effect leaves the widget on screen, so it is reported too.
+        if shown { showFeedback = currentOutcome == .ready ? nil : currentOutcome }
+        else { hideFeedback = currentOutcome == .ready ? nil : currentOutcome }
+        if currentOutcome == .ready && shown { composition.dock.revealForUser() }
+        renderMenu()
     }
     @objc private func showConsoleMenu() { showConsole() }
     @objc private func openPublicLink(_ sender:NSMenuItem) {
         guard !terminating,let raw=sender.representedObject as? String,let link=SettingsPublicLink(rawValue:raw) else { return }
-        NSWorkspace.shared.open(link.url)
+        openPublicURL(link.url)
     }
-    @objc private func checkForUpdates() { try? settings.editor.request(.checkForUpdates) }
     @objc private func showAbout() { Task { await settingsHost.present(paneID:"about",origin:.userInitiated) } }
     @objc private func refreshRows() {
         if lifecyclePaused { lifecycleController?.retryPending(); return }
@@ -596,14 +957,24 @@ import ModelPlanMenuVerification
             await composition.refresh()
         }
     }
-    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !terminating else { return .terminateLater }
-        terminating = true; settings.editor.onHostRequest = nil
+    private func retireApplicationSurfaces() {
+        helpRevealTask?.cancel(); helpRevealTask = nil
+        spotlight.finish(.cancelled)
+        settings.editor.onHostRequest = nil
+        applicationSettingsItem.isEnabled = false
+        applicationSettingsItem.keyEquivalent = ""
+        shortcutRegistrar?.unregisterAll()
         dockHelp?.suspend()
         if let showSettingsObserver { settings.editor.removeChangeObserver(showSettingsObserver); self.showSettingsObserver = nil }
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
         interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
         statusMenuComponent?.dispose(); statusMenuComponent = nil; liveStatusMenu = nil
+    }
+
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !terminating else { return .terminateLater }
+        terminating = true
+        retireApplicationSurfaces()
         Task {
             if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
             else { await composition.stop() }
@@ -612,6 +983,24 @@ import ModelPlanMenuVerification
         }
         return .terminateLater
     }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    var nativeJourneyStatusVisible: Bool {
+        guard let status, status.isVisible, let button = status.button, button.image != nil,
+              let window = button.window else { return false }
+        return window.isVisible && !button.isHiddenOrHasHiddenAncestor && button.bounds.width > 0
+    }
+
+    func stopNativeDockJourney() async {
+        terminating = true
+        if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
+        retireApplicationSurfaces()
+        await stopLifecycle()
+        await composition.stop()
+        await dockHelp?.dispose()
+        dockHelp = nil
+    }
+    #endif
+
     public func applicationWillTerminate(_ notification: Notification) {
         #if MODELPLAN_U6_DRIVE
         driveGuard?.recordTerminateCompleted()

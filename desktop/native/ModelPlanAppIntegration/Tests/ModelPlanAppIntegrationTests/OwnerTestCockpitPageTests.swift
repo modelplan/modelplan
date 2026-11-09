@@ -11,7 +11,7 @@ import ModelPlanCockpitWeb
 /// as the bundled helper with both pins, the canonical official page in Resources/Cockpit, the entry flag and the
 /// owner-test marker. The release shape is the same bundle without the marker; its page must be refused.
 extension CommunityCockpitEntryTests {
-    private static func repoRoot() -> URL {
+    static func repoRoot() -> URL {
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 where !FileManager.default.fileExists(atPath: repo.appendingPathComponent("desktop/cockpit/build.mjs").path) {
             repo.deleteLastPathComponent()
@@ -19,7 +19,7 @@ extension CommunityCockpitEntryTests {
         return repo
     }
 
-    private static func ownerTestShapedApp(at root: URL, helper: URL, ownerTest: Bool, official: URL) throws -> URL {
+    static func ownerTestShapedApp(at root: URL, helper: URL, ownerTest: Bool, official: URL) throws -> URL {
         let app = root.appendingPathComponent("ModelPlan Community.app"), contents = app.appendingPathComponent("Contents")
         let fm = FileManager.default
         for dir in ["MacOS", "Helpers", "Resources"] {
@@ -78,8 +78,9 @@ extension CommunityCockpitEntryTests {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
               FileManager.default.isExecutableFile(atPath: path) else { throw XCTSkip("The real synthetic-test CLI is not available") }
         let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
-        guard FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
-            throw XCTSkip("Build the canonical official cockpit first")
+        guard FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path),
+              !CommunityCockpitApplicationFactory.manifestPins.isEmpty else { // pins exist only in a build that generated them
+            throw XCTSkip("Build the canonical official cockpit and generate its pins (check-bundle-pins.py) first")
         }
         for ownerTest in [true, false] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("owner-test-page-" + UUID().uuidString)
@@ -108,6 +109,75 @@ extension CommunityCockpitEntryTests {
                 try await Task.sleep(for: .milliseconds(50))
             }
             XCTAssertNotEqual(state, "none", "the official page must load from Resources/Cockpit and mount the cockpit")
+            page.discard()
+        }
+    }
+
+    /// G3-42: the second open reuses the launch's check, so a stray file added later is not read again by the
+    /// click; served files keep their own check, and a tampered one is still refused. A click right after
+    /// `prepare()` is safe too: it either finds the finished check or checks on the spot.
+    @MainActor func testG3_42BundleIsCheckedOncePerLaunchAndServedFilesStayChecked() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path),
+              !CommunityCockpitApplicationFactory.manifestPins.isEmpty else { // pins exist only in a build that generated them
+            throw XCTSkip("Build the canonical official cockpit and generate its pins (check-bundle-pins.py) first")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-42-once-" + UUID().uuidString).resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let synthetic = root.appendingPathComponent("synthetic-helper")
+        try Data("synthetic helper".utf8).write(to: synthetic)
+        let app = try Self.ownerTestShapedApp(at: root.appendingPathComponent("app"), helper: synthetic, ownerTest: true, official: official)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+        let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+        let helper = app.appendingPathComponent("Contents/Helpers/modelplan")
+        func context() throws -> CockpitEngineContext { try .init(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1) }
+        owner.prepare()
+        for _ in 0..<500 where owner.verifiedBundle == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let verified = try XCTUnwrap(owner.verifiedBundle, "the launch check finishes without a click")
+        let cockpit = app.appendingPathComponent("Contents/Resources/Cockpit")
+        try Data("stray".utf8).write(to: cockpit.appendingPathComponent("stray.txt"))
+        _ = try owner.makePage(context: context(), executable: helper)
+        XCTAssertTrue(owner.verifiedBundle === verified, "the click reuses the launch check")
+        XCTAssertThrowsError(try owner.makePage(context: context(), executable: synthetic), "the helper path is still checked on every open")
+        try Data("tampered".utf8).write(to: cockpit.appendingPathComponent("index.html"))
+        XCTAssertThrowsError(try verified.resource(path: "index.html"), "a served file is checked as it loads")
+    }
+
+    /// G3-42: where the time goes from a click to a ready page, on the production factory and the real
+    /// WKWebView. Hosted-runner numbers are rough; compare stages and runs, never absolute targets.
+    @MainActor func testG3_42OpenStageTimings() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path),
+              !CommunityCockpitApplicationFactory.manifestPins.isEmpty else { // pins exist only in a build that generated them
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-42-" + UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+        let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+        let helper = app.appendingPathComponent("Contents/Helpers/modelplan")
+        func ms(_ start: ContinuousClock.Instant) -> Int {
+            let (seconds, attoseconds) = (ContinuousClock.now - start).components
+            return Int(seconds) * 1000 + Int(attoseconds / 1_000_000_000_000_000)
+        }
+        for run in 1...4 {
+            let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+            let click = ContinuousClock.now
+            let page = try owner.makePage(context: context, executable: helper)
+            let factory = ms(click)
+            var ready: Int?
+            page.onReady = { if ready == nil { ready = ms(click) } }
+            page.open()
+            let opened = ms(click)
+            let deadline = ContinuousClock.now + .seconds(30)
+            while ready == nil, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(2)) }
+            let resources = (try? await page.verificationWebView?.evaluateJavaScript("performance.getEntriesByType('resource').length")) as? Int
+            print("G3-42-TIMING run=\(run) factoryMs=\(factory) openMs=\(opened) pageReadyMs=\(ready.map(String.init) ?? "timeout") resources=\(resources ?? -1)")
+            XCTAssertNotNil(ready)
             page.discard()
         }
     }

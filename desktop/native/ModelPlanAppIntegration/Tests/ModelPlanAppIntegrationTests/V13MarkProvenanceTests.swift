@@ -55,6 +55,18 @@ private actor V13SyntheticClient: EngineClient {
             ("claude", "logo-claude", "6d53db4be375e899c937c26cf16684a80d6e869b1928d72b37748bef2560e219"),
             ("cursor", "logo-cursor", "cd0e3e5d8991a4cdd4577f8896cd063105207665165c73e25a1ff918dd367eb7"),
             ("copilot", "logo-copilot", "ae3ac7a6dc1415aeaf7064c7a749d9efd7f1ec49a68450590df7cf0da8d83781"),
+            ("grok", "logo-grok", "de1e9ce2c033e7e2a6d11fd5981c2efeac5c8c5b094a62cabc2fbc4669057493"),
+            ("antigravity", "logo-antigravity", "193ba1805de11c23cd0c7a1df92aa0a886708e57350f6f7766100afe5befed73"),
+            ("droid", "logo-droid", "8b6270e882a878c8c962b2f48c4d4d3813b06ac9689f4fbd8309777067ee78e0"),
+            ("deepseek", "logo-deepseek", "afb242f8632e69a1902a8f2df57a08409dc448e9c0d9448c9cdbb8c92008f3f4"),
+            ("gemini", "logo-gemini", "402d59dd6f18f85d8cd914ec73fddfe7074c43456acb59e557ecd3bf0fa0f5fa"),
+            ("zhipu", "logo-zhipu", "1b9098f886c3033dadbae6c48e1064f58f6c5f303eb1a107ff40cab0d0011b1e"),
+            ("qwen", "logo-qwen", "3e999ddc896eccb1e978b1127fb1a83f05787379d1f8434907516c62806010f3"),
+            ("x", "logo-x", "0ac8aa2bd5b22efaff12fbf367e83603885fdcdbd48557d7c5f4d6e1649fa101"),
+            ("xiaomi", "logo-xiaomi", "3594c088f79b7db4bfab1633d185c6cab295439906614b10a60cadca2de5e943"),
+            ("kiro", "logo-kiro", "774cbc1c7ecec8c935a6091595583d7a92fc8289d6f1db3f071c0f50c61c369f"),
+            ("amp", "logo-amp", "3c2a38b678b384d73558330e225498fb987e44895591dae22eac9826cc9b5e55"),
+            ("minimax", "logo-minimax", "8574febfdd5ef0d978146670db80ca7ad7f51dc95d6e7b03b754834be6a83eba"),
             ("kimi", "logo-kimi", "3821ae593eebce6940992f56e2fee3f55a08bbbba78713303c23ea714d44c5f9"),
             ("opencode", "logo-opencode", "4e84f87aa7bc2a5f8a72eeb08d3d4f1836b422189256d0bd5e7bfabc830d7ed0")
         ]
@@ -70,7 +82,7 @@ private actor V13SyntheticClient: EngineClient {
             var account = accounts[0], windows = try XCTUnwrap(account["windows"] as? [[String: Any]])
             row["vendorKey"] = vendor; row["id"] = "codex"; row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock"]
             row["expiresAt"] = "2028-12-01T00:00:00Z"
-            row["reason"] = ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
+            row["reason"] = ["code": "ok", "text": ["en": "Reading available", "zh": "已读到用量"]]
             row["nextStep"] = ["action": "open_settings_consent", "text": ["en": "Check read access in Settings", "zh": "在设置检查读取权限"], "availableAt": NSNull(), "disabledReason": NSNull()]
             account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = "current"
             account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = "2028-12-01T00:00:00Z"

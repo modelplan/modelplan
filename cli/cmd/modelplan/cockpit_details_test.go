@@ -84,6 +84,57 @@ func TestCockpitDetailsReserveThresholdAndFence(t *testing.T) {
 	}
 }
 
+func TestCockpitDetailsWarningBand(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MODELPLAN_HISTORY", "off")
+	if _, err := consent.EnsureStore(consent.Path()); err != nil {
+		t.Fatal(err)
+	}
+	fence := consent.Capture().Fence()
+	stamp := appserver.Stamp{Epoch: fence.StoreEpoch, Generation: fence.Generation}
+	ref := "0123456789abcdef"
+	until := time.Now().Add(time.Hour)
+	for _, tc := range []struct {
+		name      string
+		threshold int
+		remaining *float64
+		want      string
+	}{
+		{"40 critical", 40, ptrFloat(40), "critical"},
+		{"41 warning", 40, ptrFloat(41), "warning"},
+		{"50 warning", 40, ptrFloat(50), "warning"},
+		{"51 normal", 40, ptrFloat(51), ""},
+		{"10 critical", 10, ptrFloat(10), "critical"},
+		{"11 warning", 10, ptrFloat(11), "warning"},
+		{"50 warning with 10", 10, ptrFloat(50), "warning"},
+		{"51 normal with 10", 10, ptrFloat(51), ""},
+		{"default critical", 0, ptrFloat(25), "critical"},
+		{"default warning", 0, ptrFloat(26), "warning"},
+		{"50 warning with default", 0, ptrFloat(50), "warning"},
+		{"51 normal with default", 0, ptrFloat(51), ""},
+		{"unknown", 40, nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			view := appserver.View{Projection: rows.Projection{Rows: []rows.Row{{ID: "codex", Accounts: []rows.Account{{SubscriptionRef: &ref, ValueState: rows.ValueStateCurrent, Windows: []rows.Window{{ID: "weekly", Current: true, ValidUntil: &until, RemainingPercent: tc.remaining}}}}}}}}
+			got, err := (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp, RedBelow: tc.threshold}, map[string][]wire.CockpitAccount{ref: {}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.want == "" {
+				if len(got.Alerts) != 0 {
+					t.Fatalf("unexpected alerts: %+v", got.Alerts)
+				}
+				return
+			}
+			if len(got.Alerts) != 1 || got.Alerts[0].Severity != tc.want {
+				t.Fatalf("alerts = %+v, want %s", got.Alerts, tc.want)
+			}
+		})
+	}
+}
+
+func ptrFloat(v float64) *float64 { return &v }
+
 func TestCockpitLabelRejectsPathsAndControlCharacters(t *testing.T) {
 	for _, s := range []string{"secret/path", "secret\\path", "line\nbreak", ""} {
 		if safeCockpitLabel(s) {
@@ -141,7 +192,7 @@ func TestCockpitDetailsProjectsOnlyAdmittedStampedLiveSessions(t *testing.T) {
 	cache := t.TempDir()
 	ledger := speed.PerfLedger{SchemaVersion: 1, Since: now.Add(-time.Hour), Rows: []speed.PerfRow{}, Live: []speed.LiveRecord{
 		{Ref: "1111111111111111", Source: "codex", Model: "synthetic-alias", Effort: "high", ProjectRef: "p1", LastAt: now.Add(-time.Second), GrantEpoch: epoch, Running: true},
-		{Ref: "2222222222222222", Source: "codex", Model: "unknown-secret", Effort: "unknown-secret", LastAt: now.Add(-2 * time.Second), GrantEpoch: epoch},
+		{Ref: "2222222222222222", Source: "codex", Model: "unknown-secret", Effort: "unknown-secret", SubscriptionRef: "aaaaaaaaaaaaaaaa", LastAt: now.Add(-2 * time.Second), GrantEpoch: epoch},
 		{Ref: "3333333333333333", Source: "claude-code", Model: "synthetic-alias", LastAt: now.Add(-time.Second), GrantEpoch: epoch},
 		{Ref: "4444444444444444", Source: "codex", Model: "synthetic-alias", LastAt: now.Add(-time.Second)},
 	}, Sessions: []speed.PerfSession{{Ref: "1111111111111111", Source: "codex", ProjectRef: "p1", ProjectLabel: "Synthetic project", GrantEpoch: epoch}}}
@@ -167,6 +218,9 @@ func TestCockpitDetailsProjectsOnlyAdmittedStampedLiveSessions(t *testing.T) {
 	}
 	if got.Sessions[1].Model != "unknown" || got.Sessions[1].Effort != nil || got.Sessions[1].ProjectLabel != nil {
 		t.Fatalf("untrusted fields escaped: %#v", got.Sessions[1])
+	}
+	if got.Sessions[1].SubscriptionRef != nil {
+		t.Fatalf("a reference outside the cockpit's subscriptions stays unbound: %q", *got.Sessions[1].SubscriptionRef)
 	}
 	labelFile := speed.ProjectLabelsFile(home)
 	if err := os.MkdirAll(filepath.Dir(labelFile), 0700); err != nil {

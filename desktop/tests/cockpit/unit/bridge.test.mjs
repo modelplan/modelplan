@@ -75,6 +75,12 @@ test('same-floor invalidation and a new session cannot revive old deliveries',()
   assert.equal(f.bridge.clear(f.send('clear',{viewRevision:'6'}),source),false);
   assert.equal(f.bridge.receive(f.send('display',{viewRevision:'5',sessionId:pageId,data:capture()}),source),true);
 });
+test('openWebsite carries a typed page and value, never a URL (CKP-MFD-24)',()=>{
+  const f=fixture();
+  for(const bad of [undefined,'plans','plans/','/openai','home/x','plans/a b','plans/a?b=1','https://evil.example/x','plans/'+'x'.repeat(65)])assert.equal(f.bridge.action('openWebsite',bad),false,String(bad));
+  assert.equal(f.bridge.action('openWebsite','methodology/effort-ladder'),true);
+  const last=f.events.at(-1);assert.equal(last.action,'openWebsite');assert.equal(last.page,'methodology');assert.equal(last.value,'effort-ladder');assert.equal(last.url,undefined);
+});
 test('only fixed actions are emitted, history is limited to currently displayed rows',()=>{
   const f=fixture();assert.equal(f.bridge.action('openURL'),false);assert.equal(f.bridge.action('chooseSetup','x'),false);
   assert.equal(f.bridge.action('openHistory','unknown'),false);assert.equal(f.bridge.action('openSettings'),true);
@@ -260,7 +266,7 @@ test('display and appearance receive the bridge clock, while ticks use the host-
 test('redBelow is optional, validated and logged on load and appearance without weakening strict keys',()=>{
  const logs=[],original=console.warn;console.warn=(...args)=>logs.push(args);
  try{
-  for(const [input,expected,warn] of [[10,10,false],[16,16,false],[20,20,false],[25,25,false],[undefined,25,true],[17,25,true],['private-synthetic-value',25,true],[null,25,true],[{},25,true],[20.5,25,true]]){
+  for(const [input,expected,warn] of [[10,10,false],[15,15,false],[20,20,false],[25,25,false],[30,30,false],[40,40,false],[16,25,true],[undefined,25,true],[17,25,true],['private-synthetic-value',25,true],[null,25,true],[{},25,true],[20.5,25,true]]){
    const seen=[],view={clear(){},configure(_a,n){seen.push(n);},updateAppearance(_a,_now,n){seen.push(n);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
    const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
    const extra=input===undefined?{}:{redBelow:input},before=logs.length;

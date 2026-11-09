@@ -72,9 +72,14 @@ public struct SettingsPreferences: Codable, Sendable {
     public var percentageMode: PercentageMode = .remaining
     public var showPercentages = true
     public var redBelow = 25
+    /// D22: the choices, highest first. An older saved 16 stays readable, is not rewritten, and acts as the default.
+    public static let redBelowChoices = [40, 30, 25, 20, 15, 10]
+    public var effectiveRedBelow: Int { Self.redBelowChoices.contains(redBelow) ? redBelow : 25 }
     public var sliverAlert = true
     public var showDock = true
-    public var autoHide = false
+    /// D56 (owner 2026-11-08): a fresh install, or a saved file without this key, starts collapsed.
+    /// A saved value, either way, is kept as it is.
+    public var autoHide = true
     public var revealMilliseconds = 150
     public var magnification: HoverMagnification = .subtle
     public var showOverFullscreen = false
@@ -90,7 +95,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public var openAtLogin = true
     /// Saved preference only; observing/performing update checks belongs to the application service.
     public var automaticUpdates = true
-    public var menuDisplay: MenuDisplay = .icon
+    public var menuDisplay: MenuDisplay = .tightest
     public var openShortcut = ShortcutChord.unassigned
     public var dockShortcut = ShortcutChord.unassigned
     public var language: SettingsLanguage = .chinese
@@ -141,7 +146,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public func validate() throws {
         func validID(_ id: String) -> Bool { !id.isEmpty && id.utf8.count <= 256 && !id.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) }
         guard dockAlongFraction.isFinite, (0...1).contains(dockAlongFraction), dockDisplayID.map(validID) ?? true,
-              [10, 16, 20, 25].contains(redBelow), [100, 150, 300].contains(revealMilliseconds),
+              (Self.redBelowChoices + [16]).contains(redBelow), [100, 150, 300].contains(revealMilliseconds),
               [150, 200, 250].contains(beatMilliseconds),
               openShortcut.isValid || openShortcut.isUnassigned, dockShortcut.isValid || dockShortcut.isUnassigned,
               openShortcut.isUnassigned || dockShortcut.isUnassigned || openShortcut != dockShortcut,
@@ -168,6 +173,8 @@ public actor SettingsStore {
     private var current: SettingsPreferences
     private var revision: UInt64 = 0
     private var foundationBacking: FoundationPreferenceFile.Opened?
+    /// The folder that holds this store's file; other small per-profile app state lives beside it.
+    public nonisolated var directory: URL { url.deletingLastPathComponent() }
     public init(url: URL, onboardingDefinition: OnboardingDefinition = .task65) throws {
         self.url = url; self.onboardingDefinition = onboardingDefinition
         if FileManager.default.fileExists(atPath: url.path) {

@@ -16,7 +16,14 @@ struct DockRequestedHelpAnchor: Equatable {
                      anchors: [DockRequestedHelpAnchor], blocked: [CGRect],
                      recipe: any HelpUIRecipeProvider, refreshAvailable: Bool = false) -> HelpUIRenderInput? {
         var selectedRegions = Set<HelpMapRegion>()
-        let visible = anchors.filter { anchor in
+        // Leaders run no higher than y = 28, below the menu bar, and end 4 pt beyond an anchor's edge.
+        // The menu-bar item lies above that, so it is reached from just under the bar.
+        let reachable = anchors.map { anchor in
+            anchor.rect.maxY >= 24 || anchor.rect.isEmpty ? anchor : DockRequestedHelpAnchor(id: anchor.id, region: anchor.region,
+                rect: CGRect(x: anchor.rect.minX, y: anchor.rect.minY, width: anchor.rect.width, height: 24 - anchor.rect.minY),
+                visible: anchor.visible, caption: anchor.caption)
+        }
+        let visible = reachable.filter { anchor in
             guard anchor.visible else { return false }
             return anchor.caption != nil || selectedRegions.insert(anchor.region).inserted
         }.sorted {
