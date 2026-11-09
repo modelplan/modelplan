@@ -126,6 +126,14 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 #cockpit .ck-tape{pointer-events:auto}
 #cockpit .dk-fad .fd-ch.xhl .fd-indicator{color:var(--lcd-ink)}
 #cockpit .ec.xhl,#cockpit .ek.xhl{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcd-ink) 40%,transparent)}
+/* QA 11-08 (G3-48, CKP-PORT-04/08): the tall HUD follows the study's hud-selection style. Six 12 px rows fill the 74 px
+   list (names 10 px, ranks and effort 9 px); the list widens only as far as a complete name needs, inside the HUD. */
+#cockpit .hud-b .hud-list{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(6,12px);width:max-content;min-width:117px;max-width:174px;height:74px;box-sizing:border-box;padding:1px 2px 1px 4px;align-content:start}
+#cockpit .hud-b .hp{display:grid;grid-template-columns:9px auto auto;column-gap:2px;align-items:center;height:12px;padding:0 0 0 2px;line-height:12px;white-space:nowrap}
+#cockpit .hud-b .hp b{font:500 10px/12px var(--f-lcd);overflow:hidden;text-overflow:ellipsis;min-width:0}
+#cockpit .hud-b .hp-n,#cockpit .hud-b .hp-rec{font:400 9px/12px var(--f-lcd)}#cockpit .hud-b .hp-n{color:var(--muted,#8a96a0)}
+.hud-axis{fill:none;stroke:#e9edf030;stroke-width:.7}.hud-axis-label{font:400 9px var(--f-silk);fill:#aab6bf}
+.hud-rank{font:500 9px var(--f-lcd);fill:#f3e8d5}.hud-rank.dominated{fill:#aab6bf}
 
 /* G3-47 base row (CKP-ENG-15..20, CKP-SHELL-13; study entrance.css and base.js): one light per visible subscription
    under its engine column, in the 34 px reserve below the root, and a dim socket under each empty bay. The official
