@@ -25,20 +25,16 @@ private struct FieldProcessSample {
   }
 }
 
-/// This test process, the field page's WebContent and WebKit's GPU process.
+/// This test process, the field page's WebContent and WebKit's GPU process. No private SPI: the processes are found
+/// by name, and the page's WebContent is the one that was not running before the field opened.
 private struct FieldBudgetProcesses {
-  let app: pid_t, web: pid_t?, gpu: [pid_t], gpuBasis: String
-  var all: [pid_t] { [app] + (web.map { [$0] } ?? []) + gpu }
-  @MainActor static func of(_ web: WKWebView) -> FieldBudgetProcesses {
-    func spi(_ name: String) -> pid_t? {
-      guard web.responds(to: NSSelectorFromString(name)), let value = web.value(forKey: name) as? NSNumber,
-            value.int32Value > 0 else { return nil }
-      return value.int32Value
-    }
-    let gpu = spi("_gpuProcessIdentifier")
-    let named = gpu == nil ? processes(named: "com.apple.WebKit.GPU") : []
-    return .init(app: getpid(), web: spi("_webProcessIdentifier"), gpu: gpu.map { [$0] } ?? named,
-                 gpuBasis: gpu != nil ? "_gpuProcessIdentifier" : "process name (\(named.count))")
+  static let webContentName = "com.apple.WebKit.WebContent", gpuName = "com.apple.WebKit.GPU"
+  let app: pid_t, web: [pid_t], gpu: [pid_t], gpuBasis: String
+  var all: [pid_t] { [app] + web + gpu }
+  static func of(webBefore: Set<pid_t>) -> FieldBudgetProcesses {
+    let gpu = processes(named: gpuName)
+    return .init(app: getpid(), web: processes(named: webContentName).filter { !webBefore.contains($0) }, gpu: gpu,
+                 gpuBasis: "process name (\(gpu.count))")
   }
   static func processes(named name: String) -> [pid_t] {
     let count = proc_listallpids(nil, 0)
@@ -111,12 +107,16 @@ final class CockpitFieldBudgetTests: XCTestCase {
     let panel = CockpitFieldPanel(bundle: bundle, idleSeconds: 600)
     var events: [String] = []
     panel.onPageEvent = { events.append($0) }
+    let webBefore = Set(FieldBudgetProcesses.processes(named: FieldBudgetProcesses.webContentName))
 
     try await Task.sleep(for: .seconds(1))
     let baseline = try XCTUnwrap(FieldProcessSample.read(getpid())).footprint
     var closedFootprints: [UInt64] = []
     let cycles = 10, budget = 10.0, mebibyte = Double(1 << 20)
     for cycle in 1...cycles {
+      // The open part holds the only references to the page's web view and window, so after it returns nothing in
+      // this test keeps them alive (the #723 method): WebKit can end the WebContent process after the close.
+      func openAndClose() async throws -> FieldBudgetProcesses {
       events.removeAll()
       panel.open(payload: payload, near: nil)
       let deadline = ContinuousClock.now + .seconds(30)
@@ -144,24 +144,27 @@ final class CockpitFieldBudgetTests: XCTestCase {
           print("CKP-FIELD-BUDGET snapshot unavailable")
         }
       }
-      let processes = FieldBudgetProcesses.of(web)
-      XCTAssertNotNil(processes.web, "cycle \(cycle): the page's WebContent process is attributable")
+      let processes = FieldBudgetProcesses.of(webBefore: webBefore)
+      XCTAssertFalse(processes.web.isEmpty, "cycle \(cycle): the page's WebContent process is attributable")
       let open = try await processes.cpuPercent(over: 10)
       let mib = { (pid: pid_t?) in pid.flatMap { FieldProcessSample.read($0) }.map { String(format: "%.1f", Double($0.footprint) / mebibyte) } ?? "--" }
-      print("CKP-FIELD-BUDGET cycle=\(cycle) scene=\(scene) shape=\(shape) openCPU=\(String(format: "%.2f", open))% openAppMiB=\(mib(getpid())) openWebContentMiB=\(mib(processes.web)) openGPUMiB=\(processes.gpu.isEmpty ? "--" : processes.gpu.map { mib($0) }.joined(separator: "+")) gpu=\(processes.gpuBasis)")
+      print("CKP-FIELD-BUDGET cycle=\(cycle) scene=\(scene) shape=\(shape) openCPU=\(String(format: "%.2f", open))% openAppMiB=\(mib(getpid())) openWebContentMiB=\(processes.web.map { mib($0) }.joined(separator: "+")) openGPUMiB=\(processes.gpu.isEmpty ? "--" : processes.gpu.map { mib($0) }.joined(separator: "+")) gpu=\(processes.gpuBasis)")
       XCTAssertLessThanOrEqual(open, budget, "cycle \(cycle): App + WebContent + GPU average at most 10% of one core with the field open at rest")
       panel.close()
-      let webPID = processes.web
+      return processes
+      }
+      let processes = try await openAndClose()
+      let webPIDs = processes.web
       var ended = false
       let gone = ContinuousClock.now + .seconds(10)
       while !ended && ContinuousClock.now < gone {
-        ended = webPID.map { kill($0, 0) != 0 } ?? true
+        ended = webPIDs.allSatisfy { kill($0, 0) != 0 }
         if !ended { try await Task.sleep(for: .milliseconds(50)) }
       }
       try await Task.sleep(for: .seconds(2))
-      let closed = try await FieldBudgetProcesses(app: getpid(), web: nil, gpu: processes.gpu, gpuBasis: processes.gpuBasis).cpuPercent(over: 3)
+      let closed = try await FieldBudgetProcesses(app: getpid(), web: [], gpu: processes.gpu, gpuBasis: processes.gpuBasis).cpuPercent(over: 3)
       // A WebContent process WebKit keeps after the close still counts against the memory budget.
-      let kept = ended ? 0 : webPID.flatMap { FieldProcessSample.read($0)?.footprint } ?? 0
+      let kept = ended ? 0 : webPIDs.reduce(UInt64(0)) { $0 + (FieldProcessSample.read($1)?.footprint ?? 0) }
       let footprint = try XCTUnwrap(FieldProcessSample.read(getpid())).footprint + kept
       closedFootprints.append(footprint)
       print(String(format: "CKP-FIELD-BUDGET cycle=%d closedCPU=%.2f%% webContentEnded=%@ baselineMiB=%.1f closedMiB=%.1f",
