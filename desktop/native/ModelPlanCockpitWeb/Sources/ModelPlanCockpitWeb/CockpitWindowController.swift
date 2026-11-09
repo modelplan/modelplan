@@ -482,7 +482,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       case .action(let intent):
         switch intent {
         case .shutterToggle:
-          if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+          toggleShutter()
         case .close: closeAnimated()
         default: onIntent?(intent)
         }
@@ -748,6 +748,26 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     updateAppearance(appearance)
   }
+  func toggleShutter() {
+    if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+  }
+  func setAttached(_ attached: Bool) {
+    guard let window, shellSession.detached == attached else { return }
+    if !attached {
+      shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
+    } else {
+      shellSession.detached = false
+      guard let (usable, icon) = environment(), let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed) else { return }
+      if appearance.reduceMotion { applyLayout() }
+      else {
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = 0.25; context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+          window.animator().setFrame(fit.frame, display: true)
+        }
+      }
+    }
+    updateAppearance(appearance)
+  }
   private func titleDrag(_ phase: CockpitTitleDrag.Phase, point: CGPoint) {
     guard let window else { return }
     switch phase {
@@ -815,7 +835,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       return event
     }
   }
-  private func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType) {
+  func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType) {
     guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
     // The owned tray completes one toggle on mouse-up. Its mouse-down is not
     // a competing outside dismissal, including with Reduce Motion/long holds.
