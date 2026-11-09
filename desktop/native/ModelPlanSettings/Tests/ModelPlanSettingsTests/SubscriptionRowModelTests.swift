@@ -39,8 +39,9 @@ final class SubscriptionRowModelTests: XCTestCase {
                            sub("opencodego", vendor: "opencodego", source: .unavailable, cause: "key_missing")],
                           order: ["claude", "codex", "zai", "kiro", "opencodego"], tools: [], keys: true)
         let targets = model.added.map { $0.fix?.target }
-        XCTAssertEqual(targets, [.allowKeychain, .chooseToolLocation, .addKey, .installTool, .addKey])
-        XCTAssertEqual(model.added[1].fix?.action.english, "Choose Codex location…")
+        XCTAssertEqual(targets, [.allowKeychain, .installTool, .addKey, .installTool, .addKey])
+        XCTAssertEqual(model.added[1].fix?.action.english, "Open install page", "a hint and the install page, not a path chooser")
+        XCTAssertEqual(model.added[1].status.chinese, "安装 Codex CLI，或确认 Codex 在命令行里能运行")
         XCTAssertEqual(model.added[3].fix?.action.english, "Install kiro-cli")
         XCTAssertTrue(model.added.allSatisfy(\.needsAttention))
         // Without the key area the GLM row falls back to opening ZCode.
@@ -60,6 +61,9 @@ final class SubscriptionRowModelTests: XCTestCase {
         let tools = [tool("claude"), tool("codex"), tool("cursor"), tool("grok", block: .notSignedIn, readable: false), tool("gemini", detected: false)]
         let model = build([sub("claude", vendor: "claude")], order: ["claude"], tools: tools, reading: ["codex"])
         XCTAssertEqual(model.detected.map(\.id), ["cursor", "grok"], "a tool already added or already read is not offered again")
+        XCTAssertEqual(model.added.map(\.id), ["claude", "codex"], "a tool that reads by default but has no row yet is listed as added")
+        XCTAssertEqual(model.added[1].status, SettingsText("Reading…", "正在读取…"))
+        XCTAssertTrue(model.added[1].isPending); XCTAssertFalse(model.added[1].canMoveUp); XCTAssertFalse(model.added[1].canMoveDown)
         XCTAssertEqual(model.detected.map(\.canAdd), [true, false], "a signed-out tool cannot be added yet")
         XCTAssertEqual(model.detected[1].fix?.target, .openTool)
         XCTAssertEqual(model.notInstalled.map(\.id), ["gemini"])
@@ -79,7 +83,7 @@ final class SubscriptionRowModelTests: XCTestCase {
         let missing = line(tool("kiro"), ToolRowFacts(consent: .unset, state: .needsAction, code: "tool_not_found"))
         XCTAssertEqual(missing.0.english, "kiro-cli was not found"); XCTAssertTrue(missing.1)
         let codex = line(tool("codex"), ToolRowFacts(consent: .unset, state: .needsAction, code: "not_found"))
-        XCTAssertEqual(codex.0.english, "Can't find the Codex command")
+        XCTAssertEqual(codex.0.english, "Install the Codex CLI, or make sure Codex runs from a terminal")
         // Consent and timing codes are first run's own question, not a prerequisite.
         XCTAssertEqual(line(tool("codex"), ToolRowFacts(consent: .unset, state: .needsConsent, code: "consent_required")).0.english, "Ready: nothing else is needed.")
         XCTAssertEqual(line(tool("grok", block: .notSignedIn, readable: false)).0.english, "Not signed in to Grok. Sign in first.")
