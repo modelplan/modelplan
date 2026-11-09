@@ -109,7 +109,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         case .success(let accepted):
           if accepted as? String == "accepted" { complete(.accepted) }
           else if accepted as? String == "missing" { complete(.missing) }
-          else { complete(.rejected) }
+          else {
+            // "rejected:<code>": the page's fixed code path for the refusal, never message content.
+            let code = (accepted as? String).flatMap { $0.hasPrefix("rejected:") ? String($0.dropFirst(9)) : nil } ?? "unknown"
+            self?.lastRejectCode = String(code.filter { $0.isLetter || $0.isNumber || $0 == "." }.prefix(40))
+            complete(.rejected)
+          }
         case .failure: complete(.failed)
         }
       }
@@ -164,6 +169,25 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard visibilityFence.isConfirmedVisible, appearanceGate.isDeferred, appearanceWatchdog.currentID == nil else { return }
     appearanceWatchdog.wait(for: UUID())
   }
+  /// Page-side code path of the last rejected host message (bridge.ts `lastReject`).
+  private var lastRejectCode = "none"
+  private var tickRetries = 0
+  private static let maxTickRetries = 3
+  /// A tick the page refuses only because its own visibility has not caught up (document still hidden, no
+  /// display yet) carries no state: the page learns the real state from the visibility message and its own
+  /// events. Retry it shortly instead of discarding the page. Any other rejection stays a failure.
+  private func retryRejectedTick(_ reason: CockpitDeadlineReason) -> Bool {
+    guard lastRejectCode.hasPrefix("tick."), lastRejectCode != "tick.view", tickRetries < Self.maxTickRetries else { return false }
+    tickRetries += 1
+    receiptWatchdog.cancel()
+    CockpitFailureLog.record("page-resync tick retry=\(tickRetries) code=\(lastRejectCode)")
+    Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(120))
+      guard let self, !self.ending else { return }
+      self.sendFreshnessTick(reason)
+    }
+    return true
+  }
   private func sendFreshnessTick(_ reason: CockpitDeadlineReason) {
     guard !ending, closeTask == nil else { return }
     // A newly opened page has no admitted data to re-evaluate yet. Do not send
@@ -175,7 +199,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let raw = try bridge.tick(nowUnixMs: deadlineNow(), reason: reason)
       guard let id = bridge.currentDeadlineTrigger else { throw CockpitBridgeError.unavailable }
       receiptWatchdog.wait(for: id)
-      send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentDeadlineTrigger(id) == true })
+      send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentDeadlineTrigger(id) == true },
+           onAccepted: { [weak self] in self?.tickRetries = 0 },
+           onRejected: { [weak self] in self?.retryRejectedTick(reason) ?? false })
     } catch { fail() }
   }
   private var lastVisibility: CockpitVisibility?
@@ -408,7 +434,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     } catch { fail() }
   }
   private func send(_ raw: String, clear: Bool = false, bootstrap: Bool = false,
-                    isCurrent: (() -> Bool)? = nil, onAccepted: (() -> Void)? = nil) {
+                    isCurrent: (() -> Bool)? = nil, onAccepted: (() -> Void)? = nil,
+                    onRejected: (() -> Bool)? = nil) {
     let web = self.web
     #if MODELPLAN_TEST_ONLY_SPI
     let noWindowTest = web == nil && verificationNoWindowDelivery != nil
@@ -419,8 +446,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let context = bridge.context, revision = bridge.viewRevision
     // JSON is an argument, never interpolated into executable JavaScript.
     let body = clear
-      ? "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.clear(raw)===true?'accepted':'rejected'"
-      : "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.receive(raw)===true?'accepted':'rejected'"
+      ? "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.clear(raw)===true?'accepted':'rejected:'+String(window.modelPlanCockpit.reject?.()||'none')"
+      : "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.receive(raw)===true?'accepted':'rejected:'+String(window.modelPlanCockpit.reject?.()||'none')"
     let code = (bootstrap ? "await import('modelplan-cockpit://bundle/src/main.js');" : "") + body
     let submitted = orderedDelivery.submit(OutboundMessage(code: code, raw: raw), isCurrent: { [weak self, weak web] in
       guard let self else { return false }
@@ -436,7 +463,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       switch result {
       case .accepted: onAccepted?()
       case .missing: self.fail(.pageAPIUnavailable)
-      case .rejected: self.fail(.messageRejected)
+      case .rejected:
+        CockpitFailureLog.record("page-reject code=\(self.lastRejectCode)")
+        if onRejected?() != true { self.fail(.messageRejected) }
       case .failed: self.fail(.javascriptFailed)
       }
     })
@@ -832,7 +861,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let age = openedAt.map { Int((ProcessInfo.processInfo.systemUptime - $0) * 1_000) }
     CockpitFailureLog.record("page-failure failure=\(failure.rawValue) at=\(site):\(line) ageMs=\(age.map(String.init) ?? "none") "
       + "ready=\(bridge.ready) visible=\(visibilityFence.isConfirmedVisible) rendered=\(freshnessHasRendered) "
-      + "displayPending=\(bridge.hasPendingDisplay) occluded=\(lastVisibility?.occluded.description ?? "unknown")")
+      + "displayPending=\(bridge.hasPendingDisplay) occluded=\(lastVisibility?.occluded.description ?? "unknown") reject=\(lastRejectCode)")
     onFailure?(failure)
     discard()
   }

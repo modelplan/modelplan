@@ -278,3 +278,28 @@ test('redBelow is optional, validated and logged on load and appearance without 
   assert.ok(logs.every(args=>args.length===1&&args[0]==='Cockpit redBelow missing or invalid; using default 25.'));
  }finally{console.warn=original;}
 });
+test('G3-66: a show tick before the page document event is accepted once the host says visible',()=>{
+  const f=fixture(),tick={nowUnixMs:'1793620800000',reason:'show'};
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  // A prewarmed page: its own visibilitychange has not fired yet, so the document still reports hidden.
+  f.bridge.documentHidden(true);
+  assert.equal(f.bridge.receive(f.send('visibility',{visible:true,occluded:false,key:true}),source),true);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),true);
+});
+test('G3-66: a tick refused while the document is hidden names its code, and the next tick is accepted',()=>{
+  const f=fixture(),tick={nowUnixMs:'1793620800000',reason:'show'};
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  f.bridge.documentHidden(true);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),false);
+  assert.equal(f.bridge.lastReject,'tick.documentHidden');
+  f.bridge.documentHidden(false);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),true);
+  assert.equal(f.bridge.lastReject,'none');
+});
+test('G3-66: reject codes are fixed code paths and never carry message data',()=>{
+  const f=fixture(),base=JSON.parse(f.send('display',{data:capture()}));
+  const secret='synthetic-secret-value';
+  const cases=[[{...base,data:{...base.data,accessToken:secret}},'data.schema'],[{...base,extra:secret},'display.keys'],[{...base,requestId:secret},'msg.header'],[{...base,type:secret},'msg.type']];
+  for(const [msg,code] of cases){assert.equal(f.bridge.receive(JSON.stringify(msg),source),false);assert.equal(f.bridge.lastReject,code);assert.ok(!f.bridge.lastReject.includes(secret));assert.match(f.bridge.lastReject,/^[a-z]+\.[A-Za-z]+$/);}
+  assert.equal(f.bridge.receive(' '.repeat(MAX_MESSAGE_BYTES+1),source),false);assert.equal(f.bridge.lastReject,'msg.size');
+});

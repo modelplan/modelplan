@@ -37,35 +37,42 @@ const identity=(v:unknown):v is string=>typeof v==='string'&&v.length>0&&v.lengt
 const uint=(v:unknown):v is string=>typeof v==='string'&&/^(0|[1-9][0-9]{0,19})$/.test(v)&&BigInt(v)<=18446744073709551615n;
 const timestamp=(v:unknown):v is string=>typeof v==='string'&&/^(0|[1-9]\d*)$/.test(v)&&v.length<=16&&BigInt(v)<=8640000000000000n;
 const same=(a:Context,b:Context)=>a.sessionId===b.sessionId&&a.storeEpoch===b.storeEpoch&&a.generation===b.generation&&a.viewRevision===b.viewRevision;
+let why='none';
 function validData(value:unknown):value is WireCockpitData {
-  if(!conforms(value,{$ref:'#/$defs/CockpitData'},definitions)) return false;
+  const bad=(code:string):false=>{why=code;return false;};
+  if(!conforms(value,{$ref:'#/$defs/CockpitData'},definitions)) return bad('data.schema');
   const data=value as WireCockpitData;
-  if(data.projection.rowsVersion!==1||new Set(data.projection.rows.map(row=>row.id)).size!==data.projection.rows.length) return false;
+  if(data.projection.rowsVersion!==1) return bad('data.rowsVersion');
+  if(new Set(data.projection.rows.map(row=>row.id)).size!==data.projection.rows.length) return bad('data.rowDuplicate');
   const ref=(v:string|null)=>v===null||/^[a-f0-9]{16}$/.test(v);
   for(const row of data.projection.rows) {
-    if(!identity(row.id)||(['denied','unset'].includes(row.consent)||row.reason.code==='cleanup_pending')&&row.accounts.length>0) return false;
-    if(row.accounts.some(a=>!ref(a.subscriptionRef)||!ref(a.accountLocator))) return false;
+    if(!identity(row.id)) return bad('data.rowId');
+    if((['denied','unset'].includes(row.consent)||row.reason.code==='cleanup_pending')&&row.accounts.length>0) return bad('data.rowAccounts');
+    if(row.accounts.some(a=>!ref(a.subscriptionRef)||!ref(a.accountLocator))) return bad('data.accountRef');
   }
-  return new Set(data.subscriptions.map(s=>s.subscriptionRef)).size===data.subscriptions.length &&
-    data.subscriptions.every(s=>s.accounts.every(a=>identity(a.tool)&&ref(a.account.subscriptionRef)&&ref(a.account.accountLocator)));
+  if(new Set(data.subscriptions.map(s=>s.subscriptionRef)).size!==data.subscriptions.length) return bad('data.subDuplicate');
+  if(!data.subscriptions.every(s=>s.accounts.every(a=>identity(a.tool)&&ref(a.account.subscriptionRef)&&ref(a.account.accountLocator)))) return bad('data.subAccount');
+  return true;
 }
+// Code path of the last rejected host message (a fixed constant, never message content).
+const no=(code:string):null=>{why=code;return null;};
 function message(raw:string):HostMessage|null {
-  if(typeof raw!=='string'||raw.length>MAX_MESSAGE_BYTES||new TextEncoder().encode(raw).length>MAX_MESSAGE_BYTES) return null;
-  let m:unknown; try {m=parseMessage(raw);} catch {return null;}
-  if(!record(m)||m.version!==2||!uuid(m.pageId)||!uuid(m.requestId)||!uint(m.sequence)||!uuid(m.sessionId)||!identity(m.storeEpoch)||['unavailable','legacy'].includes(m.storeEpoch)||!uint(m.generation)||!uint(m.viewRevision)) return null;
+  if(typeof raw!=='string'||raw.length>MAX_MESSAGE_BYTES||new TextEncoder().encode(raw).length>MAX_MESSAGE_BYTES) return no('msg.size');
+  let m:unknown; try {m=parseMessage(raw);} catch {return no('msg.parse');}
+  if(!record(m)||m.version!==2||!uuid(m.pageId)||!uuid(m.requestId)||!uint(m.sequence)||!uuid(m.sessionId)||!identity(m.storeEpoch)||['unavailable','legacy'].includes(m.storeEpoch)||!uint(m.generation)||!uint(m.viewRevision)) return no('msg.header');
   const keys=(extra:string[]=[],optional:string[]=[])=>exact(m,[...header,'type',...extra,...optional.filter(key=>Object.hasOwn(m,key))]);
   const validAppearance=(v:unknown):boolean=>exact(v,['theme','locale','reduceMotion','reduceTransparency','showProjectNames'])&&typeof v.showProjectNames==='boolean'&&['day','night'].includes(v.theme as string)&&['en','zh-CN'].includes(v.locale as string)&&typeof v.reduceMotion==='boolean'&&typeof v.reduceTransparency==='boolean';
   const validScope=(v:unknown):boolean=>{if(typeof v!=='string')return false;if(v==='all'||/^[a-f0-9]{16}$/.test(v))return true;const parts=v.split('#');let last=parts.pop()??'';if(/^\d+$/.test(last)){if(!/^[1-9]\d*$/.test(last)||Number(last)>1024)return false;last=parts.pop()??'';}return identity(parts.join('#'))&&['saved_login_api','runtime_rpc','local_log','api_key_api','local_sqlite','status_line','browser_session','manual','unknown'].includes(last);};
   const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope'])&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
   switch(m.type) {
-    case 'load': if(!keys(['appearance','shell'],['redBelow'])||!validAppearance(m.appearance)||!validShell(m.shell)) return null; break;
-    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow'])||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return null; break;
-    case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return null; break;
-    case 'display': if(!keys(['data'])||!validData(m.data)) return null; break;
-    case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return null; break;
-    case 'tick': if(!keys(['nowUnixMs','reason'])||!timestamp(m.nowUnixMs)||!['deadline','show','wake','unlock','clockChange'].includes(m.reason as string)) return null; break;
-    case 'clear': case 'unload': if(!keys()) return null; break;
-    default:return null;
+    case 'load': if(!keys(['appearance','shell'],['redBelow']))return no('load.keys');if(!validAppearance(m.appearance))return no('load.appearance');if(!validShell(m.shell))return no('load.shell'); break;
+    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow'])||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
+    case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return no('shell.fields'); break;
+    case 'display': if(!keys(['data']))return no('display.keys');if(!validData(m.data))return null; break;
+    case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return no('visibility.fields'); break;
+    case 'tick': if(!keys(['nowUnixMs','reason'])||!timestamp(m.nowUnixMs)||!['deadline','show','wake','unlock','clockChange'].includes(m.reason as string)) return no('tick.fields'); break;
+    case 'clear': case 'unload': if(!keys()) return no('clear.keys'); break;
+    default:return no('msg.type');
   }
   return m as unknown as HostMessage;
 }
@@ -127,60 +134,70 @@ export class CockpitBridge {
     const parsed=message(raw);
     return parsed?.type==='clear'&&this.receive(raw,source);
   }
+  get lastReject():string{return why;}
+  private no(code:string):false{why=code;return false;}
   receive(raw:string,source:BridgeSource):boolean {
-    if(this.ended||!source||source.isMainFrame!==true||source.origin!==this.origin) return false;
+    why='none';
+    if(this.ended||!source||source.isMainFrame!==true||source.origin!==this.origin) return this.no('recv.source');
     const m=message(raw);
-    if(!m||m.pageId!==this.pageId||BigInt(m.sequence)<=this.sequence) return false;
+    if(!m) return false;
+    if(m.pageId!==this.pageId) return this.no('recv.page');
+    if(BigInt(m.sequence)<=this.sequence) return this.no('recv.sequence');
     if(m.type==='load') {
-      if(this.loaded) return false;
+      if(this.loaded) return this.no('load.again');
       // First load is also an explicit privacy barrier.
       this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;
       this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
       this.sequence=BigInt(m.sequence); this.loaded=true;this.cleared=false;this.loadRequestId=m.requestId;
-      try {this.view.configure(m.appearance,threshold(m.redBelow));this.view.shell(m.shell);} catch {this.unload();return false;}
+      try {this.view.configure(m.appearance,threshold(m.redBelow));this.view.shell(m.shell);} catch {this.unload();return this.no('load.view');}
       this.shellState=m.shell;this.view.active(this.isActive());
       if(this.domReady) {this.emit('ready',m.requestId,{appearanceVersion:2,capabilities:['appearanceUpdates','shellState','shellActions']});this.loadRequestId=null;}
       return true;
     }
-    if(!this.context) return false;
+    if(!this.context) return this.no('recv.noContext');
     if(m.type==='clear') {
       const old=this.context;
       if(BigInt(m.viewRevision)<=BigInt(old.viewRevision)||this.retiredSessions.has(m.sessionId)||this.retiredEpochs.has(m.storeEpoch)||
-        (m.storeEpoch===old.storeEpoch&&BigInt(m.generation)<BigInt(old.generation))) return false;
+        (m.storeEpoch===old.storeEpoch&&BigInt(m.generation)<BigInt(old.generation))) return this.no('clear.barrier');
       // Epochs are equality-only. Only this explicit host barrier can adopt one.
       this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;if(this.shellState)this.shellState={...this.shellState,scope:'all'};this.cleared=true;
       if(m.sessionId!==old.sessionId) this.retiredSessions.add(old.sessionId);
       if(m.storeEpoch!==old.storeEpoch) this.retiredEpochs.add(old.storeEpoch);
       this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
       this.sequence=BigInt(m.sequence);
-      if(this.retiredSessions.size>128||this.retiredEpochs.size>128) {this.unload();return false;}
+      if(this.retiredSessions.size>128||this.retiredEpochs.size>128) {this.unload();return this.no('clear.retired');}
       this.emit('cleared',m.requestId); return true;
     }
-    if(!same(m,this.context)) return false;
+    if(!same(m,this.context)) return this.no('recv.context');
     switch(m.type) {
       case 'appearance':
-        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow));} catch {this.unload();return false;}
+        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow));} catch {this.unload();return this.no('appearance.view');}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'shell':
-        try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return false;}
+        try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return this.no('shell.view');}
         this.shellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope};this.sequence=BigInt(m.sequence);return true;
       case 'display':
-        if(!this.domReady) return false;
+        if(!this.domReady) return this.no('display.notReady');
         // Render is synchronous, with no queued/private snapshot cache to revive.
-        try {this.view.render(m.data,this.clock());} catch {this.unload();return false;}
+        try {this.view.render(m.data,this.clock());} catch {this.unload();return this.no('display.render');}
         this.historyTools=new Set(m.data.projection.rows.filter(row=>row.kind==='tool').map(row=>row.id));
         this.scopeMembers=new Set(cockpitMembers(m.data).map(member=>member.key));
         this.hasDisplay=true;this.cleared=false;
         this.view.active(this.isActive()); this.sequence=BigInt(m.sequence); this.emit('rendered',m.requestId);this.reportDeadline(m.requestId); return true;
       case 'tick':
-        if(!this.isVisible()||!this.hasDisplay||this.cleared)return false;
-        try {this.view.tick(Number(m.nowUnixMs));} catch {this.unload();return false;}
+        if(!this.isVisible())return this.no(this.hidden?'tick.documentHidden':'tick.notVisible');
+        if(!this.hasDisplay||this.cleared)return this.no('tick.noDisplay');
+        try {this.view.tick(Number(m.nowUnixMs));} catch {this.unload();return this.no('tick.view');}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'visibility':
         this.visible=m.visible;this.occluded=m.occluded;this.key=m.key;this.sequence=BigInt(m.sequence);
+        // The host already folds window visibility, miniaturisation and occlusion into this message. A prewarmed page's
+        // own visibilitychange event arrives later and can still report hidden, which made the show tick fail (G3-66).
+        // A host-visible window is therefore not a hidden document; the page's real event still follows and corrects it.
+        if(m.visible&&!m.occluded)this.hidden=false;
         this.view.active(this.isActive());return true;
       case 'unload': this.sequence=BigInt(m.sequence);this.unload();return true;
-      default:return false;
+      default:return this.no('recv.type');
     }
   }
   action(action:PageAction,tool?:string):boolean {
