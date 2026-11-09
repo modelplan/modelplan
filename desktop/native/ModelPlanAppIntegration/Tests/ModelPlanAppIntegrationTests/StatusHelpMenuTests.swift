@@ -10,7 +10,7 @@ import ModelPlanEngineClient
     private func application(language: String = "en", cockpitEnabled: Bool? = nil) async throws -> EngineDockMenuApplication {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-help-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: [language])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: [language])
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, cockpitEntryEnabled: cockpitEnabled, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
         await app.prepare()
         return app
@@ -192,7 +192,7 @@ import ModelPlanEngineClient
     func testNativeJourneyCleanupRetiresTheStatusMenu() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-teardown-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
             dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
@@ -218,7 +218,7 @@ import ModelPlanEngineClient
         let systemDark = SettingsWindowController.systemEnvironment().darkAppearance
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("system-appearance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root)
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
             createsNativePanels: false, bundleURL: root.appendingPathComponent("Synthetic.app"),

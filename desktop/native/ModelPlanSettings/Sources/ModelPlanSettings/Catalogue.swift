@@ -253,7 +253,7 @@ public enum SettingsCatalogue {
         .init(.automaticUpdates,"Check for updates automatically","自动检查更新","Show available versions quietly in Overview and the menu.","有可用版本时，在总览和菜单中轻声提醒。"),
         .init(.menuDisplay,"Menu-bar display","菜单栏显示","Icon, tightest percentage or two windows.","图标、最紧的百分比或并列两个窗口。"),
         .init(.openShortcut,"Open cockpit shortcut","打开驾驶舱快捷键","Global registration can fail; local matching remains available.","全局注册可能失败；应用内匹配仍可用。"),
-        .init(.dockShortcut,"Toggle Quota Widget shortcut","显示隐藏额度挂件快捷键","Text editing and composition do not trigger shortcuts.","文本编辑与输入法组合期间不触发。"),
+        .init(.dockShortcut,"Find Quota Widget shortcut","找到额度挂件快捷键","Shows where the Quota Widget is. Text editing and composition do not trigger shortcuts.","显示额度挂件的位置；文本编辑与输入法组合期间不触发。"),
         .init(.language,"Language","语言","Choose Chinese or English.","选择中文或英文。"),
         .init(.opening,"Cockpit opening","打开驾驶舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
         .init(.countdown,"Countdown beat","倒数节奏","Three beats follow the 200 ms hold boundary.","按住200毫秒后开始三拍倒数。"),

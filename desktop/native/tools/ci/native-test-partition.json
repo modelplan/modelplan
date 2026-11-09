@@ -71,6 +71,7 @@
         "DockWakePolicyTests",
         "EngineDesignConformanceTests",
         "EngineDockInteractionBindingTests",
+        "FindQuotaWidgetJourneyTests",
         "HintExecutionHostTests",
         "HostPairedProjectionTests",
         "InstrumentHelpCompositionTests",

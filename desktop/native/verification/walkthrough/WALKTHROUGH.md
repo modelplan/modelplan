@@ -60,7 +60,10 @@ itself (see `publication-fresh-profile` below). That is the only network use, an
 
 - `steps[]`: `step`, `title`, `expected`, `prototype`, `status` (`pass`, `fail`, `not-run`, `skipped`), `reason`,
   `seconds` (how long the step took), `measures` (numbers a step records, below), `file` (full screen), `crop`
-  (the named surface, when there is one) and `tree` (accessibility state then). `skipped` means this host cannot
+  (the named surface, when there is one), `window` (for steps whose `shot` names one: the app window holding that
+  surface, captured alone with its alpha by `screencapture -o -l`, with its `bounds`; the visual comparison against
+  the prototype reads it, so a clear window is transparent there and an opaque backing is not) and `tree`
+  (accessibility state then). `skipped` means this host cannot
   walk the step, such as a display mode it does not offer; it does not fail the job.
 - `checks[]`: `check`, `status`, `detail`. These need no judgement.
 
