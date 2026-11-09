@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// A perspective camera with a lens shift, matching the web reference (Three.js PerspectiveCamera with a
+// A perspective camera with a lens shift, matching the web reference (a standard OpenGL-style perspective with a
 // projection-matrix translation, no geometry stretch). RealityKit has no lens-shift parameter, so the scene
 // renders a larger unshifted canvas and crops it (`renderPlan`); a lens shift is exactly a 2D image translation.
 import Foundation
@@ -28,7 +28,7 @@ public struct EntranceCamera: Equatable, Sendable, Codable {
         public let inFront: Bool
     }
 
-    /// Projects a world point to viewport points (top-left origin, y down), as Three.js `Vector3.project`.
+    /// Projects a world point to viewport points (top-left origin, y down), as the web reference projects points.
     /// Points behind the camera produce the same (meaningless) values as the reference; check `inFront`.
     public func project(_ world: EntranceVector) -> Projected {
         let c = orientation.conjugate.rotate(world - position)
