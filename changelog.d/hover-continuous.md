@@ -1,0 +1,1 @@
+- Quota Widget: hover magnification now stays on across the whole unit (ring, percentage and the gap between them) instead of dipping in the gap (G3-73).

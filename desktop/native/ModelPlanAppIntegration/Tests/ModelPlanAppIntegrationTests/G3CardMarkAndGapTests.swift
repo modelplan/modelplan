@@ -255,6 +255,72 @@ private actor G350Engine: EngineClient {
         print(report.joined(separator: "\n"))
     }
 
+    /// G3-73 (owner, build 14b): pointing at a percentage magnifies the unit, but moving on to the
+    /// ring shrank it in the gap and magnified it again. Hover is one continuous region per unit
+    /// (ring, number, gap), so the pose never drops while the pointer travels number -> gap -> ring.
+    /// Through the normal entry, at S, M and L.
+    func testG373MagnificationStaysOnWhileThePointerTravelsFromTheNumberToTheRing() async throws {
+        for size in SettingsSize.allCases {
+            let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g373-" + UUID().uuidString)
+            addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            _ = try await store.update { p in
+                p.showDock = true; p.autoHide = false; p.dockEdge = .right; p.size = size; p.magnification = .subtle
+                p.motion = .system; for _ in 0..<16 { p.onboarding.next() }
+            }
+            let snapshot = try rows([("codex", "openai"), ("claude-code", "claude"), ("zcode", "zhipu")])
+            let clock = G350Clock()
+            let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795), backingScale: 2)
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: true, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+                dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
+                deadlineNow: { [clock] in clock.wall }, deadlineElapsed: { [clock] in clock.elapsed },
+                makeClient: { _, target in G350Engine(store: target, rows: snapshot) }, makeSettingsSurface: { _ in G350NoWindowSurface() },
+                isolatedResetNotificationLedger: profile.appendingPathComponent("reset-notifications.json"), activateSettings: {})
+            app.makeFirstRunSurface = { _ in G350NoWindowSurface() }
+            app.makeFirstRunSurfaceWithConsent = { _, _ in G350NoWindowSurface() }
+            await app.prepare()
+            app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+            app.allowDockPresentation()
+            let dock = app.composition.dock, view = dock.dockView, label = size.rawValue
+            for _ in 0..<1000 {
+                if !app.lifecyclePaused, (view.presentedSkinForChecks?.stations.filter { $0.subscriptionID != nil }.count ?? 0) == 3, view.window != nil { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let window = try XCTUnwrap(view.window, label)
+            let skin = try XCTUnwrap(view.presentedSkinForChecks, label)
+            let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID != nil }, label)
+            let id = try XCTUnwrap(station.subscriptionID, label)
+            let origin = view.layoutOriginForChecks
+            let ring = try XCTUnwrap(view.interactionAnchor(id), label)
+            let readout = station.readout.offsetBy(dx: -origin.x, dy: -origin.y)
+            let from = CGPoint(x: readout.midX, y: readout.midY), to = CGPoint(x: ring.midX, y: ring.midY)
+            func scale() -> CGFloat { view.nozzlePosesForChecks[id]?.scale ?? 1 }
+            func move(to point: CGPoint) throws {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: view.convert(point, to: nil), modifierFlags: [],
+                    timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0), label)
+                view.mouseMoved(with: event)
+                clock.elapsed += 0.6; clock.wall.addTimeInterval(0.6); dock.interactionControllerForChecks?.refresh()
+            }
+            try move(to: from)
+            let onUnit = scale()
+            XCTAssertEqual(onUnit, 1.15, accuracy: 0.001, "\(label): the number magnifies the unit")
+            XCTAssertEqual(view.hoverUnitIDForChecks(atLocal: from), id, label)
+            // Number -> gap -> ring in small steps: the unit never drops below its on-unit scale.
+            for step in 0...40 {
+                let t = CGFloat(step) / 40
+                let point = CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t)
+                try move(to: point)
+                XCTAssertEqual(view.hoverUnitIDForChecks(atLocal: point), id, "\(label): step \(step) stays on the unit")
+                XCTAssertGreaterThanOrEqual(scale(), onUnit - 0.0001, "\(label): step \(step) did not dip")
+            }
+            XCTAssertEqual(scale(), onUnit, accuracy: 0.0001, "\(label): on the ring it is the same magnification")
+            // Leaving the unit entirely still resets it.
+            try move(to: CGPoint(x: view.bounds.maxX + 50, y: view.bounds.maxY + 50))
+            XCTAssertNil(view.nozzlePosesForChecks[id], "\(label): off the widget the pose resets")
+            await app.stopLifecycle(); dock.close()
+        }
+    }
+
     /// The widget panel and the card panel drawn at their screen frames, 2x, on a dark ground.
     private func composite(dock: StaticDockPreviewHost) -> CGImage? {
         let view = dock.dockView
