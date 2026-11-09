@@ -32,19 +32,22 @@ extension RealBinaryTests {
         // Read-only status first: nothing imported, nothing running.
         _ = try await client.historyImportStatus()
         try await eventually { await probe.historyImports().last != nil }
-        let idle = try XCTUnwrap(await probe.historyImports().last)
+        let idleLast = await probe.historyImports().last
+        let idle = try XCTUnwrap(idleLast)
         XCTAssertEqual(idle.phase, .idle); XCTAssertEqual(idle.importedRows, 0); XCTAssertFalse(idle.firstRunDone)
 
         _ = try await client.historyImportStart(try WireHistoryImportStartParams(days: 30, firstRun: true))
         try await eventually { await probe.historyImports().last?.phase == .done }
-        let done = try XCTUnwrap(await probe.historyImports().last)
+        let doneLast = await probe.historyImports().last
+        let done = try XCTUnwrap(doneLast)
         XCTAssertEqual(done.sources.first?.source, "claude-code")
         XCTAssertEqual(done.sources.first?.status, .imported)
         XCTAssertEqual(done.sources.first?.turns, 1)
         XCTAssertEqual(done.sources.last?.status, .skippedNoConsent) // codex has no grant: skipped, not asked again
         _ = try await client.historyImportStatus()
         try await eventually { (await probe.historyImports().last?.importedRows ?? 0) > 0 }
-        let status = try XCTUnwrap(await probe.historyImports().last)
+        let statusLast = await probe.historyImports().last
+        let status = try XCTUnwrap(statusLast)
         XCTAssertTrue(status.firstRunDone); XCTAssertEqual(status.coverage.first?.source, "claude-code")
 
         let found = try importedLedgerText(root)
@@ -56,7 +59,8 @@ extension RealBinaryTests {
         try await eventually { let last = await probe.historyImports().last; return last?.importedRows == 0 && last?.phase == .idle }
         XCTAssertFalse(try importedLedgerText(root).contains(#""origin":"import""#))
         // Re-arming the first-run import must not happen: the marker survives remove.
-        XCTAssertTrue(try XCTUnwrap(await probe.historyImports().last).firstRunDone)
+        let finalLast = await probe.historyImports().last
+        XCTAssertTrue(try XCTUnwrap(finalLast).firstRunDone)
     }
 
     func importedLedgerText(_ root: URL) throws -> String {
