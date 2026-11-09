@@ -4,7 +4,7 @@ import Foundation
 /// Where a cause's one action leads. The card and the Settings row share this table (D87 slice 4);
 /// the card keeps its single "Settings" entry button until the Subscriptions rows wire the targets.
 public enum ReaderCauseTarget: String, Sendable, Equatable {
-    case installNode, chooseToolLocation, retry, allowKeychain, openTool, openSettings, explain
+    case installNode, retry, allowKeychain, openTool, openSettings, explain
     /// D87 slice 6: open the tool's install page (kiro-cli) or reveal the manual key entry (D90).
     case installTool, addKey
 }
@@ -63,10 +63,13 @@ public enum ReaderCauseTable {
         }
         switch canon {
         case "not_found":
-            return .init(reason: .init(name.map { "Can't find the \($0) command" } ?? "Can't find the tool command",
-                                       name.map { "找不到 \($0) 命令" } ?? "找不到工具命令"),
-                         action: .init(name.map { "Choose \($0) location…" } ?? "Choose location…",
-                                       name.map { "选择 \($0) 位置…" } ?? "选择位置…"), target: .chooseToolLocation)
+            // No path setting exists in the engine, so the hint says what to do and links to the install page.
+            let codex = (tool ?? "").lowercased() == "codex"
+            let reason: SettingsText
+            if codex { reason = .init("Install the Codex CLI, or make sure Codex runs from a terminal", "安装 Codex CLI，或确认 Codex 在命令行里能运行") }
+            else if let name { reason = .init("Install \(name), or make sure it runs from a terminal", "安装 \(name)，或确认它在命令行里能运行") }
+            else { reason = .init("Install the tool, or make sure it runs from a terminal", "安装这个工具，或确认它在命令行里能运行") }
+            return .init(reason: reason, action: .init("Open install page", "打开安装页面"), target: .installTool)
         case "runtime_missing":
             return .init(reason: .init("Node.js is required", "需要 Node.js"),
                          action: .init("Install Node.js", "安装 Node.js"), target: .installNode)

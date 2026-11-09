@@ -8,7 +8,7 @@ final class ReaderCauseTableTests: XCTestCase {
     func testEachCauseHasItsOwnReasonAndActionInBothLanguages() throws {
         let cases: [(String, String?, String?, String, String, String, String, ReaderCauseTarget)] = [
             ("runtime_missing", nil, nil, "Node.js is required", "需要 Node.js", "Install Node.js", "安装 Node.js", .installNode),
-            ("not_found", "codex", "Codex", "Can't find the Codex command", "找不到 Codex 命令", "Choose Codex location…", "选择 Codex 位置…", .chooseToolLocation),
+            ("not_found", "codex", "Codex", "Install the Codex CLI, or make sure Codex runs from a terminal", "安装 Codex CLI，或确认 Codex 在命令行里能运行", "Open install page", "打开安装页面", .installTool),
             ("timeout", nil, nil, "The reading timed out; it will retry on its own", "读取超时，稍后自动重试", "Retry now", "立即重试", .retry),
             ("rpc_error", "codex", "Codex", "Codex's background service returned an error", "Codex 后台服务出错", "Retry", "重试", .retry),
             ("closed", nil, nil, "The tool's background service closed unexpectedly", "工具后台服务意外退出", "Retry", "重试", .retry),
@@ -30,7 +30,7 @@ final class ReaderCauseTableTests: XCTestCase {
         XCTAssertEqual(ReaderCauseTable.entry(code: "consent_needed"), ReaderCauseTable.entry(code: "consent_required"))
         XCTAssertEqual(ReaderCauseTable.entry(code: "no_key", tool: "zai")?.reason.chinese, "在 ZCode 里登录 GLM 编程套餐")
         XCTAssertEqual(ReaderCauseTable.entry(code: "no_key", tool: "opencode")?.reason.chinese, "需要配置密钥")
-        XCTAssertEqual(ReaderCauseTable.entry(code: "tool_not_found")?.reason.chinese, "找不到工具命令")
+        XCTAssertEqual(ReaderCauseTable.entry(code: "tool_not_found")?.reason.chinese, "安装这个工具，或确认它在命令行里能运行")
     }
 
     func testUnknownAndGenericCodesKeepTheEngineText() {

@@ -40,8 +40,10 @@ public struct SubscriptionRow: Equatable, Sendable, Identifiable {
     public let fix: ReaderCauseEntry?
     /// Detected rows only: the tool can be added now (readable, with at least one standard path).
     public let canAdd: Bool
-    public var canMoveUp: Bool { section == .added && (position ?? 0) > 0 }
-    public var canMoveDown: Bool { section == .added && (position ?? 0) < addedCount - 1 }
+    /// A row for a tool that is reading but has no subscription yet: no visibility switch or order controls.
+    public var isPending: Bool { section == .added && position == nil }
+    public var canMoveUp: Bool { section == .added && (position.map { $0 > 0 } ?? false) }
+    public var canMoveDown: Bool { section == .added && (position.map { $0 < addedCount - 1 } ?? false) }
 }
 
 public struct SubscriptionRowModel: Equatable, Sendable {
@@ -132,12 +134,19 @@ public struct SubscriptionRowModel: Equatable, Sendable {
                                    status: status, needsAttention: fix != nil, fix: fix, canAdd: false)
         }
 
-        var detected: [SubscriptionRow] = [], absent: [SubscriptionRow] = []
+        var detected: [SubscriptionRow] = [], absent: [SubscriptionRow] = [], pending: [SubscriptionRow] = []
         for tool in tools where !addedTools.contains(tool.tool.lowercased()) {
             let toolFacts = facts[tool.tool]
             let displayName = name(tool.tool)
             if tool.detected {
-                if tool.canRead && isReading(tool.tool) { continue }
+                if tool.canRead && isReading(tool.tool) {
+                    // Reading by default but no engine row yet: it belongs under "My subscriptions", without order controls.
+                    pending.append(SubscriptionRow(id: tool.tool, tool: tool.tool, name: displayName, plan: "", section: .added,
+                                                   consent: toolFacts?.consent, state: toolFacts?.state, causeCode: nil, visible: true,
+                                                   position: nil, addedCount: ordered.count,
+                                                   status: SettingsText("Reading…", "正在读取…"), needsAttention: false, fix: nil, canAdd: false))
+                    continue
+                }
                 let pre = prerequisite(tool: tool, name: displayName.english, facts: toolFacts, keyEntryAvailable: keyEntryAvailable)
                 var fix: ReaderCauseEntry?
                 let fixCode: String? = tool.block == .notSignedIn ? "not_signed_in" : (tool.block == nil ? actionableCode(toolFacts?.code) : nil)
@@ -156,6 +165,6 @@ public struct SubscriptionRowModel: Equatable, Sendable {
                                               needsAttention: false, fix: nil, canAdd: false))
             }
         }
-        return SubscriptionRowModel(added: added, detected: detected, notInstalled: absent)
+        return SubscriptionRowModel(added: added + pending, detected: detected, notInstalled: absent)
     }
 }
