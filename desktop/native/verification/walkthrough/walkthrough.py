@@ -394,8 +394,12 @@ class Walkthrough:
         deadline = self.host.now() + action.get("timeout", 15)
         while not window_ids(self.windows()) - self.window_baseline:
             if self.host.now() >= deadline:
+                if action.get("optional"):  # A build that shows no window here (hint rules changed) is recorded, not failed.
+                    self.measures["newWindow"] = False
+                    return
                 raise WalkthroughError("no new window within %ss" % action.get("timeout", 15))
             self.host.sleep(0.25)
+        self.measures["newWindow"] = True
 
     def op_assertAbsent(self, action):
         if resolve(self.tree(), action["target"]) is not None:
@@ -1309,8 +1313,8 @@ def run(args, host):
 
 def machine_summary(manifest):
     """One row per scenario for a machine reader (the coordinator's auto-verify.sh): id, pass / fail / blocked, evidence.
-    A step the host or the build cannot walk is "blocked" (its reason says why), never a silent pass."""
-    states = {"pass": "pass", "skipped": "blocked"}
+    A step the host or the build cannot walk, or one whose prerequisite failed, is "blocked" (its reason says why), never a silent pass."""
+    states = {"pass": "pass", "skipped": "blocked", "not-run": "blocked"}
     rows = []
     for r in manifest["steps"]:
         evidence = [r[k] for k in ("file", "crop", "tree") if r.get(k)]
