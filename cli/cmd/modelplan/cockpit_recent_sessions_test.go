@@ -65,6 +65,19 @@ func TestCockpitRecentSessionsKeepsSevenBoundedDaysOfLastSightings(t *testing.T)
 	}
 }
 
+// glm-737-1: the model and effort come from the newest day by date even when the days were read out of order.
+func TestCockpitRecentSessionsTakeTheNewestDayByDate(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	sessions := []speed.PerfSession{{Ref: "1111111111111111", Source: "codex", LastAt: now.Add(-time.Hour), Days: []speed.SessionDay{
+		{Day: "2026-11-05", Model: "synthetic-alias", Effort: "high", EffortStatus: "reported"},
+		{Day: "2026-11-02", Model: "other", Effort: "low", EffortStatus: "reported"}}}}
+	models := []digest.Model{{ID: "public-model", HarnessIDs: map[string][]string{"codex": {"synthetic-alias"}}}}
+	got := cockpitRecentSessions(sessions, map[string]bool{consent.ScopeCodexLocalHistory: true}, map[string]string{"codex": consent.ScopeCodexLocalHistory}, nil, true, models, now)
+	if len(got) != 1 || got[0].Model != "public-model" || got[0].Effort == nil || *got[0].Effort != "high" {
+		t.Fatalf("newest day by date: %+v", got)
+	}
+}
+
 // The field crosses the app-server only for a client that negotiated cockpitSessionsV1.
 func TestCockpitRecentSessionsNeedTheNegotiatedCapability(t *testing.T) {
 	home := t.TempDir()
