@@ -110,7 +110,7 @@ public enum HistoryImportText {
     public static func running(days: Int) -> SettingsText { .init("Importing \(days) days of local history…", "正在导入 \(days) 天的本地历史…") }
     public static let unavailable = SettingsText("Not available until the engine is ready.", "引擎就绪前不可用。")
     public static let failed = SettingsText("The import could not run. Nothing was changed.", "导入未能运行，未做任何改动。")
-    public static func line(_ model: HistoryImportModel) -> SettingsText {
+    @MainActor public static func line(_ model: HistoryImportModel) -> SettingsText {
         if model.failed { return failed }
         guard let s = model.status else { return model.canStart ? .init("", "") : unavailable }
         switch s.phase {

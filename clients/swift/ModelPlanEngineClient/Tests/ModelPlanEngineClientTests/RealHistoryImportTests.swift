@@ -37,7 +37,7 @@ extension RealBinaryTests {
         XCTAssertEqual(idle.phase, .idle); XCTAssertEqual(idle.importedRows, 0); XCTAssertFalse(idle.firstRunDone)
 
         _ = try await client.historyImportStart(try WireHistoryImportStartParams(days: 30, firstRun: true))
-        try await eventually { await probe.historyImports().last?.phase == .done }
+        try await eventually { _ = try? await client.historyImportStatus(); return await probe.historyImports().last?.phase == .done }
         let doneLast = await probe.historyImports().last
         let done = try XCTUnwrap(doneLast)
         XCTAssertEqual(done.sources.first?.source, "claude-code")
