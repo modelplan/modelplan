@@ -14,7 +14,7 @@ function data(){
  return d;
 }
 async function open(page){
- await page.setViewportSize({width:636,height:911});
+ await page.setViewportSize({width:636,height:939});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell}))).toBe(true);
@@ -47,7 +47,7 @@ test('G3-47 subscribed bells match the study; only the working bell lights its m
 
 // D70: only an empty slot (no subscription) is darker: the study's night/black bell, quietly dimmed, with no light.
 test('G3-47 an empty slot shows the darker night bell',async({page})=>{
- await page.setViewportSize({width:636,height:911});
+ await page.setViewportSize({width:636,height:939});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const d=data();d.projection.rows=d.projection.rows.slice(0,2);d.subscriptions=d.subscriptions.slice(0,2);if(d.details)d.details.subscriptions=d.details.subscriptions.slice(0,2);

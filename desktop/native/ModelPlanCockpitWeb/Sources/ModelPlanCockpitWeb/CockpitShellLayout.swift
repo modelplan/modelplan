@@ -17,10 +17,10 @@ public struct CockpitShellLayout: Equatable, Sendable {
         // its 26 px menu bar. `usable` already excludes the menu bar, so only the top gap and base
         // reserve come off here, and a step is taken exactly when its real root fits.
         let room = usable.height - 6 - 34
-        let profile: CockpitAppearance.Profile = room >= 877 ? .full : .compact
-        let forcedClosed = room < 627
+        let profile: CockpitAppearance.Profile = room >= 905 ? .full : .compact
+        let forcedClosed = room < 635
         let closed = shutterClosed || forcedClosed
-        let height: CGFloat = profile == .full ? (closed ? 691 : 877) : (closed ? 609 : 627)
+        let height: CGFloat = profile == .full ? (closed ? 691 : 905) : (closed ? 609 : 635)
         let top = min(usable.maxY, anchor.minY) - 6
         let available = top - usable.minY
         guard available > 0 else { return nil }
@@ -33,7 +33,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
     /// G3-43 / CKP-SHELL-04: the free left of the title strip, window-local with Y up. It stops short of
     /// the shutter so buttons keep their own input. Strip tops are the page's, shared with the study.
     public var titleDragFrame: CGRect {
-        let stripTop: CGFloat = shutterClosed ? 45 : (profile == .full ? 225 : 57)
+        let stripTop: CGFloat = shutterClosed ? 45 : (profile == .full ? 253 : 65)
         return CGRect(x: 24, y: rootHeight + 34 - stripTop - 29, width: 216, height: 32)
     }
     /// G3-46: with no visible menu bar icon, open at the top-right of the screen, directly below the menu bar.
