@@ -17,3 +17,6 @@
 .dk-mfd .cmp .cmp-panel .cmp-equal{color:#9ca7b0}
 .dk-mfd .cmp [data-light="off"] b,.dk-mfd .cmp [data-light="off"] .cmp-value{visibility:hidden}
 .dk-mfd .cmp .cmp-equal-star{font-size:10px;line-height:10px;color:var(--cmp-gold,var(--gold))}
+
+/* D100: without the hull plates (main) the strip panel image shows its 16 px side flanges as dark ears beside the canopy foot; clip them so nothing is drawn outside the 588 px strip. */
+.ck-head::before{-webkit-clip-path:inset(0 16px)!important;clip-path:inset(0 16px)!important}
