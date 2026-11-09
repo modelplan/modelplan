@@ -301,6 +301,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     build()
   }
   public func open() {
+    let wasClosing = closeTask != nil
     closeTask?.cancel(); closeTask = nil
     if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
     if web == nil, !bridge.disposed, !ending { build() }
@@ -347,6 +348,17 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         if let web { verificationDidOpen?(web, panel) }
       #endif
       return
+    }
+    if wasClosing {
+      // Re-opened during the D88 shrink: stop the running shrink/fade animation (a zero-length group replaces it) and
+      // present at the layout frame instead of leaving the window at the icon rect.
+      entering = false
+      NSAnimationContext.runAnimationGroup { context in
+        context.duration = 0
+        panel.animator().alphaValue = 1
+        panel.animator().setFrame(panel.frame, display: false)
+      }
+      applyLayout()
     }
     panel.alphaValue = 1
     panel.makeKeyAndOrderFront(nil)

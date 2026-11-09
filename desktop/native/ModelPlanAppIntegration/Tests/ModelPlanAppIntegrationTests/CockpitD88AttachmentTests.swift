@@ -145,6 +145,22 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
+  /// A re-open during the shrink must stop it and present at the layout frame, not at the icon rect.
+  func testD88ReopenDuringTheShrinkPresentsAtTheLayoutFrame() async throws {
+    let fixture = try make(reduceMotion: false)
+    defer { fixture.page.discard() }
+    let window = try openPage(fixture, entrance: .growFromIcon)
+    let home = try XCTUnwrap(fixture.home)
+    try await Task.sleep(for: .milliseconds(600))
+    fixture.page.requestClose()
+    try await Task.sleep(for: .milliseconds(80))
+    fixture.page.open()
+    try await Task.sleep(for: .milliseconds(400))
+    XCTAssertEqual(fixture.page.window?.frame, home, "it presents at the layout frame")
+    XCTAssertEqual(window.alphaValue, 1)
+    XCTAssertEqual(failures, [])
+  }
+
   /// Reduce Motion opens at once at full size, and the widget ignition keeps its own fade instead of the grow.
   func testD88GrowIsSkippedUnderReduceMotionAndForTheIgnition() async throws {
     let reduced = try make(reduceMotion: true)
