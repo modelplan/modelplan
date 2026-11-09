@@ -8,6 +8,27 @@ import XCTest
 }
 
 final class SettingsV1PolicyTests: XCTestCase {
+    @MainActor func testNormalEntryNumberThresholdAndLanguagePersist() async throws {
+        var context = SettingsPageContext(); context.configureV1NormalEntry()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-v1-controls-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try SettingsStore(foundationAt: root, product: .community)
+        let editor = SettingsEditor(store: store, context: context)
+        await editor.reload()
+        let rows = try SettingsCatalogue.rows(preferences: try XCTUnwrap(editor.snapshot).preferences, context: context)
+        for key in [SettingKey.showPercentages, .redBelow, .language] {
+            XCTAssertEqual(try XCTUnwrap(rows.first { $0.key == key }).availability, .available, "\(key) must be editable in normal entry")
+        }
+        try await editor.commit(SettingsB20Edit.showPercentages(false))
+        try await editor.commit(SettingsB20Edit.redBelow(16))
+        try await editor.commit(SettingsB21Edit.language(.chinese))
+        let reopened = try SettingsStore(foundationAt: root, product: .community)
+        let preferences = await reopened.snapshot().preferences
+        XCTAssertFalse(preferences.showPercentages)
+        XCTAssertEqual(preferences.redBelow, 16)
+        XCTAssertEqual(preferences.language, .chinese)
+    }
     func testV1HidesRefreshHistoryUntilAProducerSuppliesIt() throws {
         var context = SettingsPageContext(); context.configureV1NormalEntry()
         let missing = try SettingsCatalogue.rows(preferences: .init(), context: context, paneID: "diagnostics")
@@ -51,9 +72,9 @@ final class SettingsV1PolicyTests: XCTestCase {
         let rows = try SettingsCatalogue.rows(preferences: .init(), context: context)
         XCTAssertFalse(rows.contains { $0.key == .automaticUpdates || $0.key == .updateStatus })
         let keys: [SettingKey] = [.login, .menuDisplay, .openShortcut, .dockShortcut,
-            .resetHints, .magnification, .showPercentages, .sliverAlert, .percentagePin, .order,
+            .resetHints, .magnification, .sliverAlert, .percentagePin, .order,
             .visible, .alias, .notificationConsent, .reset, .official,
-            .projectNames, .language, .fullscreen, .redBelow,
+            .projectNames, .fullscreen,
             .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback, .clearAppCache]
         for key in keys {
             let row = try XCTUnwrap(rows.first { $0.key == key }, "Missing visible key: \(key)")
@@ -61,7 +82,7 @@ final class SettingsV1PolicyTests: XCTestCase {
             XCTAssertTrue(row.subtitle.english.contains("Unavailable"), "Provide an English visible reason: \(key)")
             XCTAssertTrue(row.subtitle.chinese.contains("不可用"), "Provide a Chinese visible reason: \(key)")
         }
-        for key in [SettingKey.size, .dockEdge, .dockDisplay, .dockPosition, .percentageMode] {
+        for key in [SettingKey.size, .dockEdge, .dockDisplay, .dockPosition, .percentageMode, .showPercentages, .redBelow, .language] {
             XCTAssertEqual(try XCTUnwrap(rows.first { $0.key == key }).availability, .available)
         }
     }

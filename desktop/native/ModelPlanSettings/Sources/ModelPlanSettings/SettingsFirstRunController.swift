@@ -17,7 +17,7 @@ import AppKit
     private(set) var readerButtons: [OptionalReaderID: NSButton] = [:]
     private let titleLabel = NSTextField(labelWithString: "")
     private let privacy = NSTextField(wrappingLabelWithString: "")
-    private let recommendations = NSTextField(wrappingLabelWithString: "")
+    private let recommendation = NSTextField(wrappingLabelWithString: "")
     private let subscriptions = NSTextField(wrappingLabelWithString: "")
     private let readerStack = NSStackView()
     private lazy var connectionsView = SettingsConnectionsView(editor: editor, firstRun: true)
@@ -98,11 +98,10 @@ import AppKit
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false; document.addSubview(stack)
         titleLabel.font = .systemFont(ofSize: 24, weight: .semibold)
-        privacy.font = .systemFont(ofSize: 14); subscriptions.font = .systemFont(ofSize: 13)
+        privacy.font = .systemFont(ofSize: 14); recommendation.font = .systemFont(ofSize: 13); subscriptions.font = .systemFont(ofSize: 13)
         titleLabel.setAccessibilityIdentifier("firstRun.title");privacy.setAccessibilityIdentifier("firstRun.privacy")
+        recommendation.setAccessibilityIdentifier("firstRun.publicRecommendation")
         subscriptions.setAccessibilityIdentifier("firstRun.subscriptions")
-        recommendations.font = .systemFont(ofSize: 12); recommendations.textColor = .secondaryLabelColor
-        recommendations.setAccessibilityIdentifier("firstRun.recommendations")
         readerStack.orientation = .vertical; readerStack.alignment = .leading; readerStack.spacing = 10
         for id in OptionalReaderID.allCases {
             let button = NSButton(checkboxWithTitle: "", target: self, action: #selector(readerChanged(_:)))
@@ -113,7 +112,7 @@ import AppKit
         loginButton.setAccessibilityIdentifier("firstRun.login")
         loginSubtitle.font = .systemFont(ofSize: 12); loginSubtitle.textColor = .secondaryLabelColor
         // Wrapping copy wraps at the column width instead of growing past it or clipping a line.
-        for field in [privacy, recommendations, subscriptions, loginSubtitle, status] {
+        for field in [privacy, recommendation, subscriptions, loginSubtitle, status] {
             field.preferredMaxLayoutWidth = Self.column; field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
         }
         let login = NSStackView(views: [loginButton,loginSubtitle]); login.orientation = .vertical; login.alignment = .leading; login.spacing = 5
@@ -129,7 +128,7 @@ import AppKit
         window.initialFirstResponder=focusOrder.first
         let buttons = NSStackView(views: [doneButton,helpButton]); buttons.spacing = 12
         let firstRunScopes = scopePresentation?.container ?? NSStackView()
-        for view in [titleLabel,privacy,recommendations,subscriptions,firstRunScopes,connectionsView,readerStack,login,status,buttons] {
+        for view in [titleLabel,privacy,recommendation,subscriptions,firstRunScopes,connectionsView,readerStack,login,status,buttons] {
             stack.addArrangedSubview(view)
             if view !== buttons { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         }
@@ -156,9 +155,7 @@ import AppKit
             window?.title = SettingsWords.text("First run", "首次运行", language)
             titleLabel.stringValue = SettingsWords.text("Set up ModelPlan", "设置 ModelPlan", language)
             privacy.stringValue = page.privacy.value(language)
-            // FR-9-03 (owner D71): recommendations use published model data; usage stays on this Mac.
-            recommendations.stringValue = SettingsWords.text("Recommendations use ModelPlan's published model data; your usage never leaves this Mac.",
-                                                             "推荐用的是 ModelPlan 公开发布的模型数据，不会上传你的使用记录。", language)
+            recommendation.stringValue = page.publicRecommendation.value(language)
             connectionsView.apply(language: language)
             connectionsView.isHidden = scopeConsentEntry != nil
             scopePresentation?.apply(language: language)

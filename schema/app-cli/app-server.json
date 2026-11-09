@@ -2288,6 +2288,171 @@
       ],
       "type": "object"
     },
+    "HistoryImportCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "rows": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "through": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "from",
+        "through",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "HistoryImportSource": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "imported",
+            "skipped_no_consent",
+            "nothing_found",
+            "off"
+          ],
+          "type": "string"
+        },
+        "turns": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source",
+        "status",
+        "turns"
+      ],
+      "type": "object"
+    },
+    "HistoryImportStartParams": {
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "maximum": 371,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "firstRun": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "days",
+        "firstRun"
+      ],
+      "type": "object"
+    },
+    "HistoryImportStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage": {
+          "items": {
+            "$ref": "#/$defs/HistoryImportCoverage"
+          },
+          "type": "array"
+        },
+        "days": {
+          "maximum": 371,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "filesDone": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "filesTotal": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "firstRunDone": {
+          "type": "boolean"
+        },
+        "importedRows": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "phase": {
+          "enum": [
+            "idle",
+            "running",
+            "done",
+            "cancelled",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "schemaVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/HistoryImportSource"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "phase",
+        "days",
+        "filesDone",
+        "filesTotal",
+        "firstRunDone",
+        "importedRows",
+        "coverage",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "HistoryImportStatusEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/HistoryImportStatus"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
     "HistoryItem": {
       "additionalProperties": false,
       "properties": {
@@ -3711,6 +3876,102 @@
               "const": "2.0"
             },
             "method": {
+              "const": "history/import_cancel"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "history/import_remove"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "history/import_start"
+            },
+            "params": {
+              "$ref": "#/$defs/HistoryImportStartParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "history/import_status"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
               "const": "history/query"
             },
             "params": {
@@ -4159,6 +4420,9 @@
                 },
                 {
                   "$ref": "#/$defs/MemberRefreshResultEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/HistoryImportStatusEnvelope"
                 },
                 {
                   "$ref": "#/$defs/RefreshResultEnvelope"

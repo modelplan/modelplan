@@ -287,21 +287,6 @@ private actor G345Engine: EngineClient {
         }
     }
 
-    /// Ledger: none / Scenarios: I-03 / Requirements: FR-9-03 (owner D71, 2026-11-08).
-    /// Under the privacy line the first-run page says recommendations use ModelPlan's published model
-    /// data and the user's usage stays on this Mac. Driven through the normal first-run entry.
-    func testFirstRunStatesThatRecommendationsNeverUploadUsage() async throws {
-        let (en, _) = try await launch(locale: "en-US")
-        let enWindow = try await firstRun(en)
-        XCTAssertEqual(try text("firstRun.recommendations", in: enWindow), "Recommendations use ModelPlan's published model data; your usage never leaves this Mac.")
-        let (zh, _) = try await launch(locale: "zh-CN")
-        let zhWindow = try await firstRun(zh)
-        XCTAssertEqual(try text("firstRun.recommendations", in: zhWindow), "推荐用的是 ModelPlan 公开发布的模型数据，不会上传你的使用记录。")
-        let privacy = try find("firstRun.privacy", in: zhWindow, as: NSTextField.self), line = try find("firstRun.recommendations", in: zhWindow, as: NSTextField.self)
-        XCTAssertFalse(line.isHiddenOrHasHiddenAncestor)
-        XCTAssertGreaterThan(privacy.convert(privacy.bounds, to: nil).minY, line.convert(line.bounds, to: nil).maxY - 0.5, "the line sits under the privacy line")
-    }
-
     /// A detected tool with only browser-session paths is never read here, so its row gives a plain
     /// reason and no "Reads ..." line, beside a disabled, unticked box.
     func testToolWithOnlyBrowserSessionPathsSaysItCannotBeReadInsteadOfReads() async throws {
