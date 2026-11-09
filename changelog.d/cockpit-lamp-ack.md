@@ -1,1 +1,0 @@
-The cockpit's ALERT lamp no longer blinks again for a caution you already pressed: a refresh, a reopen or a pending read keeps it steady, and pressing the lamp flashes the row of the newest caution once in the list.
