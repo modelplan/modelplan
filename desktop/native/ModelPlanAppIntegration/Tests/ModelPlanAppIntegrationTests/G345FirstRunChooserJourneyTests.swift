@@ -217,7 +217,7 @@ private actor G345Engine: EngineClient {
         let box = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.cursor" } as? NSButton)
         XCTAssertEqual(box.state, .off, "the unticked tool is listed, off")
         XCTAssertTrue(box.isEnabled, "and can be switched on")
-        box.performClick(nil)
+        XCTAssertNotNil(controller.requestToolChoice("cursor", on: true)) // what the box sends when pressed; the view is not in a window here
         guard case .confirmation(let confirmation) = controller.phase else { return XCTFail("switching a tool on asks to confirm") }
         XCTAssertEqual(confirmation.intent.allowIDs, ["cursor.account_usage.saved_login", "cursor.local_history"])
         await controller.confirm(confirmation.id)
