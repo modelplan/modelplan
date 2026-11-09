@@ -165,7 +165,7 @@ test('CKP-ENG-04 All and vendor keys share scope and the neutral underline geome
 
 
 test('CKP-MFD-10 subscription header and quota windows use delivered reading and relative reset',async({page})=>{
- const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);const account=data.projection.rows[0].accounts[0];account.observedAt='2026-11-04T11:55:00Z';account.windows[0].resetsAt='2026-11-04T13:00:00Z';
+ const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.projection.rows[0].vendorKey=null;const account=data.projection.rows[0].accounts[0];account.observedAt='2026-11-04T11:55:00Z';account.windows[0].resetsAt='2026-11-04T13:00:00Z';
  await open(page,data);await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();
  // An unknown vendor has no mark (as on the engine keys); c-subscription-header.spec.mjs covers a known vendor's mark.
  await expect(page.locator('.sp-h .mg')).toHaveCount(0);await expect(page.locator('.sp-h b')).toHaveText(data.projection.rows[0].name.en);await expect(page.locator('.sp-sub .pl')).toContainText(account.plan.name.en);
