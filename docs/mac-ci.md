@@ -41,6 +41,27 @@ asks for `modelplan-mac-nongui` instead of the plain `modelplan-mac`, and refuse
 name contains `gui`. The GUI Mac also carries `modelplan-mac`, so the plain label used to send headless jobs
 there while GUI jobs waited. Only the non-GUI Macs carry `modelplan-mac-nongui`.
 
+### Lending gui-2 to non-GUI jobs (D94)
+
+Owner decision D94 (2026-11-09) lets the second GUI runner help with non-GUI work when no GUI work needs it.
+The "Refuse the GUI Mac" step that opens every non-GUI job still refuses a runner whose name contains `gui`,
+with one exception: the runner named exactly `modelplan-mac-gui-2` is accepted while the repository variable
+`MAC_GUI_LEND` is `enabled`. `modelplan-mac-arm64-1` is the V1 verification host and is refused by name
+whatever the switch says; it is never lent. `scripts/workflow-policy.mjs` (`guiGuardProblems`) compares the
+step line for line, so a wider pattern, a default-on switch or a missing V1 refusal fails source policy.
+
+The coordinator's lending script runs every 5 minutes. When no GUI job is queued or running and at least
+three non-GUI jobs are queued, it sets `MAC_GUI_LEND=enabled` and adds the `modelplan-mac-nongui` label to
+`modelplan-mac-gui-2` (runner id 263). As soon as a GUI job is queued it removes the label and sets
+`MAC_GUI_LEND=disabled`; a non-GUI job already running there finishes (at most 25 minutes). It never touches
+`modelplan-mac-arm64-1` (runner id 76). Changing labels needs an org runner-admin token, which the
+coordinator holds; GitHub Actions never sees it.
+
+The guard lives in `trusted-mac.yml`, so the change needs new caller pins. Before the pin PR merges, the
+owner adds the new ref (`modelplan/modelplan/.github/workflows/trusted-mac.yml@<commit>`) under the
+organization's Settings, Actions, Runner groups, `modelplan-mac`, allowed workflows. Keep the old refs
+until the PR has merged, and merge it with a merge commit so the pinned commit stays reachable.
+
 The native suite runs as two parallel legs. `task: native` keeps the GUI
 label and runs everything that may need a window server. `task: native-headless`
 uses the ordinary label and runs the app-integration XCTest classes listed in
