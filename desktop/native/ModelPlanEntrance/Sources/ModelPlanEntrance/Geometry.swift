@@ -17,13 +17,13 @@ public struct EntranceVector: Equatable, Sendable, Codable {
     public func lerp(to b: Self, _ t: Double) -> Self { self + (b - self) * t }
 }
 
-/// Unit quaternion (x, y, z, w), the same convention as Three.js and simd_quatd.
+/// Unit quaternion (x, y, z, w), the same convention as simd_quatd and the web reference.
 public struct EntranceQuaternion: Equatable, Sendable, Codable {
     public var x: Double, y: Double, z: Double, w: Double
     public init(x: Double, y: Double, z: Double, w: Double) { self.x = x; self.y = y; self.z = z; self.w = w }
     public static let identity = EntranceQuaternion(x: 0, y: 0, z: 0, w: 1)
 
-    /// Rotation whose basis columns are `xAxis`, `yAxis`, `zAxis` (Three.js `setFromRotationMatrix`).
+    /// Rotation whose basis columns are `xAxis`, `yAxis`, `zAxis` (standard trace-based conversion).
     public init(basisX a: EntranceVector, basisY b: EntranceVector, basisZ c: EntranceVector) {
         let m11 = a.x, m12 = b.x, m13 = c.x, m21 = a.y, m22 = b.y, m23 = c.y, m31 = a.z, m32 = b.z, m33 = c.z
         let trace = m11 + m22 + m33
@@ -42,7 +42,7 @@ public struct EntranceQuaternion: Equatable, Sendable, Codable {
         }
     }
 
-    /// Orientation of a camera at `eye` looking at `target` with +Y up (Three.js `Object3D.lookAt` for cameras:
+    /// Orientation of a camera at `eye` looking at `target` with +Y up (the standard camera look-at:
     /// the camera looks down its local −Z).
     public static func lookAt(eye: EntranceVector, target: EntranceVector, up: EntranceVector = .init(0, 1, 0)) -> Self {
         var z = eye - target
@@ -66,7 +66,7 @@ public struct EntranceQuaternion: Equatable, Sendable, Codable {
     }
     public var conjugate: Self { .init(x: -x, y: -y, z: -z, w: w) }
 
-    /// Shortest-path spherical interpolation (Three.js `Quaternion.slerp`).
+    /// Shortest-path spherical interpolation (standard algorithm).
     public func slerp(to b: Self, _ t: Double) -> Self {
         if t <= 0 { return self }
         if t >= 1 { return b }
