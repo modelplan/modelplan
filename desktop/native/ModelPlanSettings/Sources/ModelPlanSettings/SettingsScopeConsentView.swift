@@ -180,7 +180,7 @@ import ModelPlanWire
         let name = NSTextField(labelWithString: Self.toolName(id).value(language))
         name.font = .systemFont(ofSize: 14, weight: .semibold)
         name.setAccessibilityIdentifier(prefix + "name." + id)
-        let tag = NSTextField(labelWithString: SettingsText("Detected on this Mac", "本机已检测到").value(language))
+        let tag = NSTextField(labelWithString: (tool.detected ? SettingsText("Detected on this Mac", "本机已检测到") : SettingsText("Not detected on this Mac", "本机未检测到")).value(language))
         tag.font = .systemFont(ofSize: 11); tag.textColor = .secondaryLabelColor
         let title = NSStackView(views: [name, tag]); title.orientation = .horizontal; title.alignment = .firstBaseline; title.spacing = 8
         let column = NSStackView(views: [title]); column.orientation = .vertical; column.alignment = .leading; column.spacing = 3
@@ -194,7 +194,11 @@ import ModelPlanWire
             field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
         // An unsupported login is not read at all, so its row says only why (D52).
-        if tool.block != .unsupportedLogin { line(Self.readLine(tool), id: prefix + "reads." + id) }
+        if tool.detected, tool.block != .unsupportedLogin { line(Self.readLine(tool), id: prefix + "reads." + id) }
+        if !tool.detected {
+            line(SettingsText("Not installed. ModelPlan reads it once it is installed on this Mac and you turn it on here.",
+                              "未安装。安装到这台 Mac 后，可在这里打开，ModelPlan 才会读取。"), id: prefix + "status." + id, color: .systemOrange)
+        }
         if let block = tool.block {
             line(Self.blockLine(block, tool: id, firstRun: !settings), id: prefix + "status." + id, color: .systemOrange)
         }
@@ -359,15 +363,15 @@ import ModelPlanWire
             label(.init("No saved or detected reading paths are available. Choose Check current permissions after connecting the engine.", "暂无已保存或已检测的读取路径，连接引擎后可点“检查当前权限”。"))
         }
         if compactTools {
-            for (index, tool) in controller.firstRunTools.enumerated() {
+            for (index, tool) in controller.settingsTools.enumerated() {
                 if index > 0 { separator() }
                 toolRow(tool, settings: true)
             }
             gap()
-            line([synchronousButton(pathDetailsExpanded ? .init("Hide reading paths", "收起读取路径") : .init("Show reading paths and saved permissions", "展开读取路径与已保存权限"),
+            if !facts.scopes.isEmpty { line([synchronousButton(pathDetailsExpanded ? .init("Hide reading paths", "收起读取路径") : .init("Show reading paths and saved permissions", "展开读取路径与已保存权限"),
                                     id: "scope.details.toggle") { [weak self] in
                 guard let self else { return }; self.setPathDetailsExpanded(!self.pathDetailsExpanded)
-            }])
+            }]) }
         }
         for scope in facts.scopes where !compactTools || pathDetailsExpanded {
             let id = scope.scope

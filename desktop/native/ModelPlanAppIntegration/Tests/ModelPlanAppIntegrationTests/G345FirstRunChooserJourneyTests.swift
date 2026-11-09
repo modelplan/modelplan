@@ -14,7 +14,11 @@ private actor G345Engine: EngineClient {
     let store: EngineStore, facts: WireConsentFacts, rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "g345", floor: .init(storeEpoch: "g345", generation: 1), revision: 1)
     var grants: [WireConsentGrantParams] = []
-    init(store: EngineStore, facts: WireConsentFacts, rows: WireRowsSnapshot) { self.store = store; self.facts = facts; self.rows = rows }
+    /// What the engine shows once a tool is allowed: the rows then include that tool (nil: rows never change).
+    let rowsAfterAllow: WireRowsSnapshot?
+    init(store: EngineStore, facts: WireConsentFacts, rows: WireRowsSnapshot, rowsAfterAllow: WireRowsSnapshot? = nil) {
+        self.store = store; self.facts = facts; self.rows = rows; self.rowsAfterAllow = rowsAfterAllow
+    }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context))); await store.consume(.context(context))
         await store.consume(.consentChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: facts), delivery: context)))
@@ -29,7 +33,11 @@ private actor G345Engine: EngineClient {
     }
     func consent(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("g345-facts")) }
     func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion {
-        grants.append(request); return .init(requestID: .string(request.requestId))
+        grants.append(request)
+        if let more = rowsAfterAllow, !request.allow.isEmpty {
+            await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: more), delivery: context), invalidRowCount: 0))
+        }
+        return .init(requestID: .string(request.requestId))
     }
     func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
@@ -49,7 +57,7 @@ private actor G345Engine: EngineClient {
     }
     /// Claude Code (local history, saved login), Codex (local history, runtime), Cursor (local history,
     /// saved login, browser session), ZCode (saved key) are detected; Gemini is not.
-    private func facts(keychain: Set<String> = ["claude.account_usage.saved_login"]) throws -> WireConsentFacts {
+    private func facts(keychain: Set<String> = ["claude.account_usage.saved_login"], denied: Set<String> = []) throws -> WireConsentFacts {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures().appendingPathComponent("WireConsentFacts.json"))) as? [String: Any])
         let base = try XCTUnwrap((object["scopes"] as? [[String: Any]])?.first)
         let paths: [(String, String, String, Bool, Bool)] = [
@@ -65,7 +73,7 @@ private actor G345Engine: EngineClient {
         ]
         object["scopes"] = paths.map { id, tool, route, defaultCheck, detected -> [String: Any] in
             var scope = base
-            scope["scope"] = id; scope["tool"] = tool; scope["route"] = route; scope["state"] = "unset"
+            scope["scope"] = id; scope["tool"] = tool; scope["route"] = route; scope["state"] = denied.contains(tool) ? "denied" : "unset"
             scope["detected"] = detected; scope["retired"] = false; scope["defaultCheck"] = defaultCheck; scope["cleanupPending"] = false
             scope.removeValue(forKey: "disabledReason")
             if keychain.contains(id) { scope["keychain"] = "unset" } else { scope.removeValue(forKey: "keychain") }
@@ -90,16 +98,34 @@ private actor G345Engine: EngineClient {
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
-    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"]) async throws -> (EngineDockMenuApplication, G345Engine) {
+    /// Dock rows only: Codex reads; with `cursor` the Cursor row appears too.
+    private func dockRows(cursor: Bool) throws -> WireRowsSnapshot {
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures().appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
+        var projection = try XCTUnwrap(json["projection"] as? [String: Any])
+        let template = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
+        func row(_ id: String) -> [String: Any] {
+            var value = template
+            value["id"] = id; value["vendorKey"] = id; value["name"] = ["en": id, "zh": id]
+            value["state"] = "fresh"; value["consent"] = "implicit"; value["surfaces"] = ["dock", "menu", "settings"]
+            value["reason"] = ["code": "ok", "text": ["en": "ok", "zh": "ok"]]
+            value["expiresAt"] = "2099-01-01T00:00:00Z"; value.removeValue(forKey: "stateAfterExpiry"); value.removeValue(forKey: "nextStep")
+            return value
+        }
+        projection["rows"] = cursor ? [row("codex"), row("cursor")] : [row("codex")]
+        json["projection"] = projection
+        return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"], deniedAtFirstRun: Set<String> = [], dock: Bool = false) async throws -> (EngineDockMenuApplication, G345Engine) {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g345-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
-        let consent = try facts(keychain: keychain), snapshot = try rows()
+        let consent = try facts(keychain: keychain, denied: deniedAtFirstRun), snapshot = dock ? try dockRows(cursor: false) : try rows()
+        let after = dock ? try dockRows(cursor: true) : nil
         final class Holder: @unchecked Sendable { var engine: G345Engine? }
         let holder = Holder()
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]),
             settingsStore: store, createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment,
-            makeClient: { _, target in let value = G345Engine(store: target, facts: consent, rows: snapshot); holder.engine = value; return value }, activateSettings: {})
+            makeClient: { _, target in let value = G345Engine(store: target, facts: consent, rows: snapshot, rowsAfterAllow: after); holder.engine = value; return value }, activateSettings: {})
         await app.prepare(); await app.composition.start()
         let controller = app.scopeConsentEntry.controller
         for _ in 0..<500 where controller.facts == nil || controller.rowsSummary == nil { try await Task.sleep(for: .milliseconds(10)) }
@@ -151,10 +177,11 @@ private actor G345Engine: EngineClient {
     func testSettingsListsOneRowPerToolLikeTheFirstRunList() async throws {
         let (app, _) = try await launch(locale: "en-US")
         let settings = app.scopeConsentEntry.view
+        settings.apply(language: .english) // Settings applies the editor language when it is presented; this view is driven directly
         let controller = app.scopeConsentEntry.controller
         func ids(prefix: String) -> [String] { views(settings).compactMap { $0 as? NSButton }.map { $0.accessibilityIdentifier() }.filter { $0.hasPrefix(prefix) } }
-        XCTAssertEqual(ids(prefix: "scope.settings.tool."), ["scope.settings.tool.claude", "scope.settings.tool.codex", "scope.settings.tool.cursor", "scope.settings.tool.zai"],
-                       "every detected tool once, Codex included")
+        XCTAssertEqual(ids(prefix: "scope.settings.tool."), ["scope.settings.tool.claude", "scope.settings.tool.codex", "scope.settings.tool.cursor", "scope.settings.tool.zai", "scope.settings.tool.gemini"],
+                       "every tool first run lists, Codex included, then the supported tool this Mac does not have")
         XCTAssertEqual(ids(prefix: "scope.revoke.") + ids(prefix: "scope.forget.") + ids(prefix: "scope.allow."), [], "no per-path buttons until the paths are shown")
         for tool in ["claude", "codex", "cursor", "zai"] {
             XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "scope.mark." + tool }, "\(tool) has its mark")
@@ -162,16 +189,43 @@ private actor G345Engine: EngineClient {
         let box = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.codex" } as? NSButton)
         XCTAssertEqual(box.state, .on, "a default-on tool shows on")
         XCTAssertTrue(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.status.zai" } as? NSTextField).stringValue.contains("nothing is read"))
+        // G3-59: a supported tool that is not installed is listed with the reason and cannot be switched on.
+        let gemini = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.gemini" } as? NSButton)
+        XCTAssertEqual(gemini.state, .off); XCTAssertFalse(gemini.isEnabled)
+        XCTAssertTrue(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.status.gemini" } as? NSTextField).stringValue.hasPrefix("Not installed"))
+        XCTAssertTrue(views(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.row.gemini" })).compactMap { ($0 as? NSTextField)?.stringValue }.contains("Not detected on this Mac"))
+        XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "scope.mark.gemini" }, "an undetected tool has its mark too")
         // Turning a tool off is one confirmed choice for all of its paths.
         XCTAssertNotNil(controller.requestToolChoice("codex", on: false)) // what the box sends when pressed
         guard case .confirmation(let confirmation) = controller.phase else { return XCTFail("a tool toggle asks for confirmation") }
         XCTAssertEqual(confirmation.intent.denyIDs, ["codex.local_history", "codex.runtime_usage"])
-        XCTAssertEqual(views(settings).compactMap { ($0 as? NSTextField)?.stringValue }.filter { $0 == "Codex" }.count, 1, "the confirmation names the tool once")
+        XCTAssertEqual(views(settings).compactMap { ($0 as? NSTextField)?.stringValue }.filter { $0 == "Codex" }.count, 2, "the row's name and the confirmation's one line: the confirmation names the tool once")
         controller.cancelConfirmation()
         // The paths and their saved-permission buttons are still reachable.
         XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "scope.details.toggle" })
         settings.setPathDetailsExpanded(true)
         XCTAssertFalse(ids(prefix: "scope.revoke.").isEmpty, "the disclosure shows the paths")
+    }
+
+    /// G3-59 (owner build 14b): a tool that is installed but was not selected in first run can be enabled later in
+    /// Settings, with no relaunch, and then appears in the Dock. Cursor was left unticked (its paths are refused);
+    /// the engine shows the Cursor row once an allow reaches it.
+    func testToolLeftOutOfFirstRunCanBeEnabledInSettingsAndAppearsInTheDock() async throws {
+        let (app, engine) = try await launch(locale: "en-US", deniedAtFirstRun: ["cursor"], dock: true)
+        let settings = app.scopeConsentEntry.view, controller = app.scopeConsentEntry.controller
+        XCTAssertEqual(app.composition.provider.dockContent.dockRows.map(\.id), ["codex"], "the Dock shows only what is read")
+        let box = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.cursor" } as? NSButton)
+        XCTAssertEqual(box.state, .off, "the unticked tool is listed, off")
+        XCTAssertTrue(box.isEnabled, "and can be switched on")
+        box.performClick(nil)
+        guard case .confirmation(let confirmation) = controller.phase else { return XCTFail("switching a tool on asks to confirm") }
+        XCTAssertEqual(confirmation.intent.allowIDs, ["cursor.account_usage.saved_login", "cursor.local_history"])
+        await controller.confirm(confirmation.id)
+        let grants = await engine.recorded()
+        XCTAssertEqual(grants.count, 1)
+        XCTAssertEqual(grants.first?.allow, ["cursor.account_usage.saved_login", "cursor.local_history"])
+        for _ in 0..<300 where app.composition.provider.dockContent.dockRows.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(app.composition.provider.dockContent.dockRows.map(\.id), ["codex", "cursor"], "the tool appears in the Dock without a relaunch")
     }
 
     func testFirstRunListsDetectedToolsAndDoneSendsTheChoices() async throws {

@@ -26,7 +26,9 @@ public struct FirstRunTool: Sendable, Equatable {
     /// D61: a path of this tool can show a macOS Keychain prompt (the engine's access class,
     /// sent as a Keychain choice on the scope), so it is read only after Done and only if ticked.
     public let promptsKeychain: Bool
-    public var canRead: Bool { block == nil && !scopes.isEmpty }
+    /// False only for a supported tool this Mac does not have (Settings lists it with the reason; first run does not).
+    public var detected: Bool = true
+    public var canRead: Bool { detected && block == nil && !scopes.isEmpty }
 }
 /// Transient UI choices over already-accepted facts. No persistence or protocol acceptance logic.
 @MainActor public final class ScopeConsentController {
@@ -337,6 +339,16 @@ public struct FirstRunTool: Sendable, Equatable {
             return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool),
                                 promptsKeychain: standard.contains { $0.keychain != nil })
         }
+    }
+    /// G3-59: Settings lists every tool first run would list (same rows, engine order), then each supported
+    /// tool this Mac does not have, so the user can always see what is supported and why it is not read.
+    public var settingsTools: [FirstRunTool] {
+        guard let facts else { return [] }
+        var seen = Set(facts.scopes.filter { $0.detected && !$0.retired }.map(\.tool)), absent: [FirstRunTool] = []
+        for scope in facts.scopes where !scope.retired && seen.insert(scope.tool).inserted {
+            absent.append(FirstRunTool(tool: scope.tool, scopes: [], routes: [], block: nil, promptsKeychain: false, detected: false))
+        }
+        return firstRunTools + absent
     }
     /// Checked unless the user unchecked it, it cannot be read, or every path was already refused.
     public func isFirstRunToolChosen(_ tool: String) -> Bool {
