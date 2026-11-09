@@ -1,1 +1,1 @@
-The cockpit "All" scope, the porthole HUD ranking and the Models page now list only models your own subscriptions can use, not the whole published field, and the page key formerly called Effort (档位) is now Models (模型).
+The cockpit "All" scope, the porthole HUD ranking and the Models page now list only models your own subscriptions can use, not the whole published field, and the page key formerly called Effort is now Models.
