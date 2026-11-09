@@ -825,11 +825,16 @@ struct StatusNoticePresentation {
         statusTooltip = detail
         let tooltip = statusTooltipHidden ? nil : detail
         if button.toolTip != tooltip { button.toolTip = tooltip }
-        if button.accessibilityHelp() != detail { button.setAccessibilityHelp(detail) }
+        // AppKit answers accessibilityHelp() from the tooltip until help is set explicitly, so comparing against the
+        // getter skipped the write and the help went nil with the tooltip (G3-49). Compare with what we last set.
+        if statusAccessibilityHelp != detail || button.accessibilityHelp() != detail {
+            button.setAccessibilityHelp(detail); statusAccessibilityHelp = detail
+        }
     }
     /// G3-49: the icon's tooltip sits above every app window and drew over the porthole when a click left the
     /// pointer on the icon. While the cockpit is showing the icon has no tooltip; the accessible help stays.
     private var statusTooltip = ""
+    private var statusAccessibilityHelp: String?
     private var statusTooltipHidden: Bool { console?.isShowing == true }
     func refreshStatusTooltip() {
         guard let button = status?.button else { return }

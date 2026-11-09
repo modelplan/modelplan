@@ -1,1 +1,0 @@
-The cockpit's Subscription page now switches its usage block between 7 and 30 days and its history between the 5-hour and weekly windows, draws the cycle bars in the subscription's colour, and shows the 30-day credits total as unknown instead of leaving it out.

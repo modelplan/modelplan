@@ -17,6 +17,7 @@ public struct OptionHelpState: Equatable, Sendable {
 }
 public struct FirstRunPage: Sendable {
     public let privacy = SettingsText("Nothing on this Mac is uploaded; only public data is downloaded", "不上传任何本机数据，只下载公开数据")
+    public let publicRecommendation = SettingsText("Recommendations use public data.", "推荐基于公开数据。")
     public let loginSubtitle = SettingsText("You can turn this off in Settings", "可随时在设置里关闭")
     public let done = SettingsText("Done", "完成"), seeWhatsHere = SettingsText("See what's here", "看看都有什么")
     public let subscriptions: [SettingsSubscription]
