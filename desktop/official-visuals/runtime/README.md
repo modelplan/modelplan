@@ -24,8 +24,9 @@ The runtime pack contains:
   mockup-1 at an (80,100) offset inside a 1940x864 outpainted canvas). The specular
   glints on the top arc are removed and the bright spots on the lower metal are toned
   down (Codex image edit, composited only inside feathered masks). The completed
-  silhouette is fitted uniformly into the 620 pt registration box (scale 0.964 of the
-  previous mapping); sizes stay 890 tier 636x244 and 640 tier 636x76 and the art is
+  silhouette is fitted by a smooth vertical-gradient horizontal scale: exactly the
+  previous mapping at the foot (rows within 95 source px of the hull join), easing
+  to 0.968 of it at the shoulders and top arc; sizes stay 890 tier 636x244 and 640 tier 636x76 and the art is
   bottom aligned. This art is pending owner acceptance and is not final. Layer names
   and the 1x/2x sizes are otherwise unchanged.
 
