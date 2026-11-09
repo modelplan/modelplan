@@ -843,7 +843,7 @@ def stamp_micro(moment):
 
 def live_session_lines(now, count, cwd, model, effort="high", first=True):
     """Codex rollout lines of a turn that is still running: it starts, names its model, then keeps calling tools
-    (the last line is a tool call, so the turn has not ended). Same shapes as the app-server's own live tests."""
+    (the last line is a tool output, so the turn has not ended). Same shapes as the app-server's own live tests."""
     lines = []
     if first:
         lines.append({"timestamp": stamp_micro(now - datetime.timedelta(seconds=count * 3 + 3)), "type": "session_meta", "payload": {"cwd": cwd}})
@@ -851,7 +851,10 @@ def live_session_lines(now, count, cwd, model, effort="high", first=True):
         lines.append({"timestamp": stamp_micro(now - datetime.timedelta(seconds=count * 3 + 1)), "type": "turn_context",
                       "payload": {"model": model, "effort": effort, "cwd": cwd}})
     for i in range(count):
-        lines.append({"timestamp": stamp_micro(now - datetime.timedelta(seconds=(count - i) * 3)), "type": "response_item", "payload": {"type": "function_call"}})
+        at = now - datetime.timedelta(seconds=(count - i) * 3)
+        # The tool call, then its output a second later: the output restarts the turn's clock, which is what keeps it live.
+        lines.append({"timestamp": stamp_micro(at), "type": "response_item", "payload": {"type": "function_call"}})
+        lines.append({"timestamp": stamp_micro(at + datetime.timedelta(seconds=1)), "type": "response_item", "payload": {"type": "function_call_output"}})
     # Compact JSON: the rollout parser matches the head of each line byte for byte, as Codex writes it.
     return "".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines)
 

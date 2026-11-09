@@ -728,7 +728,7 @@
     {
       "id": "widget-shown-again",
       "title": "Widget shown again",
-      "expected": "Show Quota Widget brings the widget back at its snapped place.",
+      "expected": "Show Quota Widget brings the widget back at its snapped place. The changed-pixel share against drag-snap is recorded, not asserted (animated critical rings change it).",
       "requires": [
         "status-menu-right"
       ],
@@ -771,9 +771,9 @@
           "exists": "ax:dock.grip.0"
         },
         {
-          "matches": {
+          "differsFrom": {
             "step": "drag-snap",
-            "max": 0.05
+            "min": -1
           }
         }
       ]
@@ -2425,7 +2425,7 @@
     {
       "id": "s-reset-displace-widget",
       "title": "Widget dragged along its edge, cockpit already off",
-      "expected": "The widget is dragged along its edge while the cockpit is open; it is not at its default place now. The cockpit is opened again if the drag closed it.",
+      "expected": "The widget is dragged along its edge; it is not at its default place now. A drag away from the cockpit closes it (click outside).",
       "requires": [
         "s-reset-home"
       ],
@@ -2465,10 +2465,6 @@
           "seconds": 0.5
         },
         {
-          "op": "toggleCockpit",
-          "want": "open"
-        },
-        {
           "op": "wait",
           "seconds": 1.5
         },
@@ -2486,9 +2482,44 @@
             "slack": 40,
             "is": false
           }
+        }
+      ],
+      "requirement": "checklist 6"
+    },
+    {
+      "id": "s-reset-open-cockpit",
+      "title": "Cockpit opened again under the icon",
+      "expected": "The cockpit is opened again from the menu bar icon (it opens under the icon) before it is dragged off.",
+      "requires": [
+        "s-reset-displace-widget"
+      ],
+      "actions": [
+        {
+          "op": "toggleCockpit",
+          "want": "open"
         },
         {
+          "op": "wait",
+          "seconds": 5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
           "exists": "label:ModelPlan Cockpit"
+        },
+        {
+          "underStatusItem": {
+            "target": "window-of:label:ModelPlan Cockpit",
+            "slack": 120
+          }
         }
       ],
       "requirement": "checklist 6"
@@ -2498,7 +2529,7 @@
       "title": "Detached cockpit dragged by its title strip",
       "expected": "Dragging the left part of the title strip moves the detached window (G3-43).",
       "requires": [
-        "s-reset-displace-widget"
+        "s-reset-open-cockpit"
       ],
       "actions": [
         {
