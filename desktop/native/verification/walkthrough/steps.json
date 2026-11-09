@@ -1487,154 +1487,6 @@
       "requirement": "checklist 15"
     },
     {
-      "id": "s-fader-drag-compare",
-      "title": "Fader drag opens Compare",
-      "expected": "Pulling a fader up opens the comparison page ('Compare · model', Current / Try / Rec, header 'Subscription'), the current page key dims (checklist 9).",
-      "requires": [
-        "cockpit-open"
-      ],
-      "actions": [
-        {
-          "op": "park"
-        },
-        {
-          "op": "click",
-          "target": "label:Overview"
-        },
-        {
-          "op": "wait",
-          "seconds": 1
-        },
-        {
-          "op": "dragFaderUp",
-          "target": "role:AXSlider",
-          "by": 0.3
-        },
-        {
-          "op": "wait",
-          "seconds": 1.5
-        },
-        {
-          "op": "park"
-        },
-        {
-          "op": "wait",
-          "seconds": 0.5
-        }
-      ],
-      "shot": {
-        "crop": "label:ModelPlan Cockpit",
-        "window": "label:ModelPlan Cockpit"
-      },
-      "checks": [
-        {
-          "anyExists": [
-            "value~:Compare",
-            "label~:Compare"
-          ]
-        },
-        {
-          "exists": "label~:Back"
-        }
-      ],
-      "requirement": "checklist 9"
-    },
-    {
-      "id": "s-compare-back",
-      "title": "Back leaves the comparison",
-      "expected": "The Back key ends the comparison and Overview lights again (checklist 9).",
-      "requires": [
-        "s-fader-drag-compare"
-      ],
-      "actions": [
-        {
-          "op": "park"
-        },
-        {
-          "op": "clickFirst",
-          "targets": [
-            "label~:Back",
-            "label^:‹"
-          ]
-        },
-        {
-          "op": "wait",
-          "seconds": 1.5
-        },
-        {
-          "op": "park"
-        },
-        {
-          "op": "wait",
-          "seconds": 0.5
-        }
-      ],
-      "shot": {
-        "crop": "label:ModelPlan Cockpit"
-      },
-      "checks": [
-        {
-          "on": "label:Overview"
-        },
-        {
-          "absent": "label~:Back"
-        }
-      ],
-      "requirement": "checklist 9"
-    },
-    {
-      "id": "s-fader-drag-esc",
-      "title": "Esc leaves the comparison",
-      "expected": "A second fader drag opens the comparison again; Esc leaves it and the cockpit stays open (checklist 9).",
-      "requires": [
-        "s-compare-back"
-      ],
-      "actions": [
-        {
-          "op": "park"
-        },
-        {
-          "op": "dragFaderUp",
-          "target": "role:AXSlider",
-          "by": 0.3
-        },
-        {
-          "op": "wait",
-          "seconds": 1.5
-        },
-        {
-          "op": "key",
-          "name": "escape"
-        },
-        {
-          "op": "wait",
-          "seconds": 1.5
-        },
-        {
-          "op": "park"
-        },
-        {
-          "op": "wait",
-          "seconds": 0.5
-        }
-      ],
-      "shot": {
-        "crop": "label:ModelPlan Cockpit"
-      },
-      "checks": [
-        {
-          "exists": "label:ModelPlan Cockpit"
-        },
-        {
-          "on": "label:Overview"
-        },
-        {
-          "absent": "label~:Back"
-        }
-      ],
-      "requirement": "checklist 9"
-    },
-    {
       "id": "s-menubar-stable",
       "title": "Menu bar percentage under the pointer",
       "expected": "With the pointer resting on the menu bar icon for several seconds, its percentage stays '0%' (the lowest ring) and its tooltip text does not change (checklist 13/14).",
@@ -2138,7 +1990,7 @@
         },
         {
           "op": "click",
-          "target": "label^:GPT-6 Astra: effort"
+          "target": "label~:Press to compare"
         },
         {
           "op": "wait",
@@ -2264,7 +2116,7 @@
         },
         {
           "op": "click",
-          "target": "label^:GPT-6 Astra: effort"
+          "target": "label~:Press to compare"
         },
         {
           "op": "wait",
@@ -2295,6 +2147,154 @@
         }
       ],
       "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "s-fader-drag-compare",
+      "title": "Fader drag opens Compare",
+      "expected": "Pulling a fader up opens the comparison page ('Compare · model', Current / Try / Rec, header 'Subscription'), the current page key dims (checklist 9).",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:Overview"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        },
+        {
+          "op": "dragFaderUp",
+          "target": "role:AXSlider",
+          "by": 0.3
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "anyExists": [
+            "value~:Compare",
+            "label~:Compare"
+          ]
+        },
+        {
+          "exists": "label~:Back"
+        }
+      ],
+      "requirement": "checklist 9"
+    },
+    {
+      "id": "s-compare-back",
+      "title": "Back leaves the comparison",
+      "expected": "The Back key ends the comparison and Overview lights again (checklist 9).",
+      "requires": [
+        "s-fader-drag-compare"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "clickFirst",
+          "targets": [
+            "label~:Back",
+            "label^:‹"
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "on": "label:Overview"
+        },
+        {
+          "absent": "label~:Back"
+        }
+      ],
+      "requirement": "checklist 9"
+    },
+    {
+      "id": "s-fader-drag-esc",
+      "title": "Esc leaves the comparison",
+      "expected": "A second fader drag opens the comparison again; Esc leaves it and the cockpit stays open (checklist 9).",
+      "requires": [
+        "s-compare-back"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "dragFaderUp",
+          "target": "role:AXSlider",
+          "by": 0.3
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label:ModelPlan Cockpit"
+        },
+        {
+          "on": "label:Overview"
+        },
+        {
+          "absent": "label~:Back"
+        }
+      ],
+      "requirement": "checklist 9"
     },
     {
       "id": "cockpit-toggle-close",
