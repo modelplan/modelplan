@@ -11,6 +11,8 @@ const (
 	ScopeCodexRuntimeUsage            = "codex.runtime_usage"
 	ScopeCursorLocalHistory           = "cursor.local_history"
 	ScopeCursorAccountUsageSavedLogin = "cursor.account_usage.saved_login"
+	// D102: opt-in. Runs the user's own `cursor-agent models` (fixed argv, no shell) to read model ids.
+	ScopeCursorRuntimeModels          = "cursor.runtime_models"
 	ScopeGeminiLocalHistory           = "gemini.local_history"
 	ScopeGeminiAccountUsageSavedLogin = "gemini.account_usage.saved_login"
 	ScopeGrokLocalHistory             = "grok.local_history"

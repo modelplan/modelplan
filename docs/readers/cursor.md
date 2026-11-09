@@ -194,3 +194,23 @@ the listed request set and body schemas. It does not grant user consent, change
 the O-class unchecked default, waive red lines or establish L2 acceptance.
 The tests and evidence gaps above describe the pinned review and historical
 gate fixtures; the enabled production implementation is verified separately.
+
+## Opt-in model-id lane (D98/D99/D102)
+
+Owner decision D102 (v1.1): the cockpit may list the models a signed-in Cursor account offers, read from the user's own `cursor-agent models`. This is a **separate, opt-in scope** (`cursor.runtime_models`, runtime class, never checked by default); the saved-login usage scope above is unchanged and does not enable it. With the scope off, no process is started and nothing is cached.
+
+Safeguards: the binary is found by `toolcli.Find` (or `$MODELPLAN_CURSOR_AGENT`, absolute only) and must already be installed by the user, otherwise the lane is skipped; fixed argv `models`; no shell; a minimal environment (HOME, PATH and locale only, no tokens); 15 s timeout with kill; output capped at 64 KiB; parsed strictly to ids (a line is an id alone or `id - description`; anything else is dropped); ids only are cached for 24 hours in `observed/cursor-models.json`, keyed by the account so a sign-in change never shows the old list. Any failure keeps the previous list and never changes the quota read.
+
+Tests: `cursor_models_test.go` with a fake CLI (off by default starts nothing, opt-in success, argv and environment, 24 h cache and account change, timeout, malformed, non-zero exit, oversize, missing/relative binary, hostile ids).
+
+### Follow-up: recorded fixture and alias data (needs a Mac with a signed-in Cursor)
+
+The real output format is **unverified**; the parser accepts one id per line (with an optional ` - description`) or a JSON list. No `harnessIds.cursor` aliases are published until a real fixture exists (D102: no guessed aliases). On the Mac with `cursor-agent` signed in:
+
+```sh
+cursor-agent --version
+cursor-agent models > cursor-models.txt 2> cursor-models.err; echo "exit=$?"
+cat -v cursor-models.txt | head -40
+```
+
+Redact nothing but account names if present, commit `cursor-models.txt` as a fixture, check `parseCursorModels` returns exactly the model ids (add a case if the format differs), then map ids to published model identities by vendor docs and add `harnessIds.cursor` aliases with source and checked date through the data PR flow.
