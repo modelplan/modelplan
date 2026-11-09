@@ -26,8 +26,8 @@ test('CKP-PORT-04 the tall HUD lists the first six models, complete, under a min
  const box=await hud.boundingBox();expect([box.width,box.height]).toEqual([180,160]);
  const svg=await hud.locator('svg.hud-mini').boundingBox();expect([svg.width,svg.height]).toEqual([162,77]);
 });
-test('CKP-PORT-03 HUD B sits at window-local (76,24)',async({page})=>{
- await open(page);expect(await local(page)).toEqual([76,24,180,160]);
+test('CKP-PORT-03 HUD B sits at window-local (80,30), 6 px lower and 4 px right of the first canopy so the glass margin stays (D100)',async({page})=>{
+ await open(page);expect(await local(page)).toEqual([80,30,180,160]);
 });
 test('CKP-PORT-04 chart order: this week\'s models, the lineup, then developers in turn, dominated last',async({page})=>{
  const other=m=>({...m,developerId:'anthropic'}),a=model('a',40,.1),b=model('b',50,.3),c=other(model('c',60,.5)),d=other(model('d',70,.7)),e=model('e',80,.9),beaten=model('beaten',30,2);
@@ -90,7 +90,7 @@ test('CKP-PORT-08 a different current effort is a white dot linked to its ★',a
 test('CKP-PORT-05 the compact profile is one strip of three',async({page})=>{
  await open(page,{tier:'compact'});
  await expect(page.locator('.hud.hud-strip .hp')).toHaveCount(3);
- expect(await local(page)).toEqual([58,9,216,30]);
+ expect(await local(page)).toEqual([58,31,216,30]);
 });
 // G3-48: long published names overlapped their neighbours in three columns. The study's compact strip is an
 // 86x30 chart beside three stacked 10 px rows; each name stays inside its own row, before its ★ effort.
