@@ -189,19 +189,26 @@ private actor S04SyntheticClient: EngineClient {
         defer { app.composition.dock.close() }
         let dock = app.composition.dock
         for _ in 0..<300 where dock.currentDockHelpSurface == nil || !app.dockHelpInstalled { try await Task.sleep(for: .milliseconds(10)) }
-        let help = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Help…" })
-        _ = try XCTUnwrap(help.target as? NSObject).perform(try XCTUnwrap(help.action), with: help)
         func mapLayer() -> HelpUILayerView? {
             NSApplication.shared.windows.filter(\.isVisible).flatMap { $0.contentView.map(descendants) ?? [] }
                 .compactMap { $0 as? HelpUILayerView }.first { $0.presentation?.mapHeader != nil }
         }
-        for _ in 0..<300 where mapLayer() == nil { try await Task.sleep(for: .milliseconds(10)) }
-        let map = try XCTUnwrap(mapLayer(), "Help presents the map over the visible widget")
-        XCTAssertNotNil(app.statusHelpRequestID)
-        map.onAction?(.dismissMap(reason: .escape, returnFocusID: nil))
-        for _ in 0..<200 where app.statusHelpRequestID != nil { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertNil(app.statusHelpRequestID, "the Escape dismissal reaches the status item exactly once")
-        XCTAssertNil(mapLayer())
+        // S-06: both user dismissals, in turn; physical Escape and outside pointer input are a device gate.
+        for reason in [HelpUIDismissReason.escape, .pointer] {
+            let help = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Help…" })
+            _ = try XCTUnwrap(help.target as? NSObject).perform(try XCTUnwrap(help.action), with: help)
+            for _ in 0..<300 where mapLayer() == nil { try await Task.sleep(for: .milliseconds(10)) }
+            let map = try XCTUnwrap(mapLayer(), "Help presents the map over the visible widget")
+            let requestID = try XCTUnwrap(app.statusHelpRequestID)
+            app.statusHelpDidDismiss(UUID())
+            XCTAssertEqual(app.statusHelpRequestID, requestID, "A stale dismissal cannot retire this map")
+            map.onAction?(.dismissMap(reason: reason, returnFocusID: nil))
+            for _ in 0..<200 where app.statusHelpRequestID != nil { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertNil(app.statusHelpRequestID, "The dismissal reaches the status item exactly once")
+            XCTAssertTrue(app.statusHelpButtonFocused, "A user dismissal returns focus to the status item")
+            for _ in 0..<200 where mapLayer() != nil { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertNil(mapLayer())
+        }
         await app.composition.stop()
     }
     #endif
