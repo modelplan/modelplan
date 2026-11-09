@@ -9,7 +9,7 @@ const origin=url.protocol==='modelplan-cockpit:'&&url.hostname==='bundle'?'model
 const root=document.getElementById('cockpit');
 if(pageId&&origin&&root&&window.top===window) {
   let bridge:CockpitBridge;
-  const view=mountCockpit(root,(action,tool)=>bridge.action(action,tool));
+  const view=mountCockpit(root,(action,tool)=>bridge.action(action,tool),ids=>bridge.acknowledgeCautions(ids));
   const field=root.querySelector<HTMLElement>('.ck-field');const still=field?mountPortholeStill(field,root,portholeStills,()=>bridge.action('openField')):null;
   const post=(message:string)=>window.webkit?.messageHandlers?.cockpit?.postMessage(message);
   bridge=new CockpitBridge(pageId,origin,post,view,()=>crypto.randomUUID());
