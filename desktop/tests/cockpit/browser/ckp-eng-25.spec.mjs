@@ -6,10 +6,10 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
 const NOW=new Date(2026,10,4,12).getTime(),localDay=back=>{const d=new Date(2026,10,4-back);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
-async function open(page,data) {
+async function open(page,data,query='?few=b') {
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.clock.setFixedTime(new Date(NOW));
- await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ await page.goto('/'+query+(query?'&':'?')+'pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,locale:'en'},shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
@@ -17,8 +17,10 @@ async function open(page,data) {
 }
 const sums=out=>({inputTokens:null,outputTokens:out,cacheReadTokens:null,cacheWriteTokens:null,cacheHitRatio:null,generationTps:40,observedRequests:3,eligibleRequests:3});
 const ranking={measure:'observed-output-tokens',attribution:'unattributed',recent7d:{entities:0,totalObservedOutputTokens:0,top:[]},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}};
-function fixture(days) {
- const data=visualFixture().data,ref=data.projection.rows[0].accounts[0].subscriptionRef;
+function fixture(days,count=3) {
+ const data=visualFixture().data;
+ data.projection.rows=data.projection.rows.slice(0,count);data.subscriptions=data.subscriptions.slice(0,count);data.details.subscriptions=data.details.subscriptions.slice(0,count);
+ const ref=data.projection.rows[0].accounts[0].subscriptionRef;
  data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:localDay(9),
   subscriptions:[{subscriptionRef:ref,sources:[{source:'codex',bindingBasis:'source-wide-current-binding',recent7d:sums(1200),recent30d:sums(4800)}]}],
   models:ranking,tools:ranking,daily:days.map(back=>({at:localDay(back),source:'codex',observedOutputTokens:100+back*50})),hourly:[],
@@ -47,4 +49,16 @@ test('CKP-ENG-25 a missing day leaves the history unplotted, never a zero',async
  await open(page,fixture([0,1,2,4,5,6]));
  await expect(page.locator('.eng-history').first()).toBeVisible();
  await expect(page.locator('.eng-history polyline')).toHaveCount(0);
+});
+
+test('CKP-ENG-25 a day recorded with zero tokens counts as zero; the history is still drawn',async({page})=>{
+ const data=fixture([0,1,2,3,4,5,6]);data.history.daily.find(d=>d.at===localDay(3)).observedOutputTokens=0;
+ await open(page,data);
+ const points=await page.locator('.eng-history polyline').first().getAttribute('points');
+ expect(points.trim().split(/\s+/)).toHaveLength(7);
+});
+
+test('CKP-ENG-25 the default keeps three bays until the owner decides',async({page})=>{
+ await open(page,fixture([0,1,2,3,4,5,6]),'');
+ await expect(page.locator('.eng-lcd.few-rich')).toHaveCount(0);await expect(page.locator('.eng-detail')).toHaveCount(0);
 });
