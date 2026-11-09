@@ -1,4 +1,4 @@
-import { isWorkflowFile, workflowProblems } from "./workflow-policy.mjs";
+import { guiGuardProblems, isWorkflowFile, workflowProblems } from "./workflow-policy.mjs";
 import assert from "node:assert/strict";
 import { verifyPortholePack } from "./check-porthole-pack.mjs";
 import { readFile } from "node:fs/promises";
@@ -184,6 +184,10 @@ for (const p of tracked.filter(isWorkflowFile)) {
   const s = (await read(p)).toString();
   const problems = workflowProblems(s, p);
   assert.deepEqual(problems, [], "public workflow runner/trigger policy: " + p + " " + problems.join(", "));
+}
+{
+  const problems = guiGuardProblems((await read(".github/workflows/trusted-mac.yml")).toString());
+  assert.deepEqual(problems, [], "trusted-mac GUI guard (D94): " + problems.join(", "));
 }
 assert.ok(
   !(await read("desktop/build.mjs"))

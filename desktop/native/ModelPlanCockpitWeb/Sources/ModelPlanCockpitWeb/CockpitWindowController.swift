@@ -638,6 +638,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   ) { fail(.provisionalNavigationFailed) }
   public func windowWillClose(_ notification: Notification) { discard() }
   public func windowDidResignKey(_ notification: Notification) { cancelDrag() }
+  public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
   public func updateScope(_ key:String) {
     guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
     scope=key; publishAppearance()

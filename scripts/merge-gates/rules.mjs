@@ -243,12 +243,30 @@ export function tiersFrom(read) {
   try { return parseTiers(read()); } catch { return new Map(); }
 }
 
+// D97 (owner 2026-11-09, changes R13): a ledger PR may land on its automated gates. The coordinator checks them
+// (auto-verify.sh) and posts a trusted comment whose FIRST line is
+//   AUTO-VERIFIED: <scenario IDs, comma or space separated> @ <40-hex head sha> gates=<gates that applied>
+// The gate list is in canonical order and always starts ci,gui,review; design follows when the PR is design-touching
+// (required then, as in evidence-gate.sh), visual when it is visual-touching. The older form with walkthrough still
+// parses. It satisfies exactly the listed IDs (G3 rows and real-Mac tiers included) at that exact head; never carried.
+const AUTO_VERIFIED = /^AUTO-VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}(?:[, ]+[A-Z][A-Z0-9]{0,3}-[0-9]{2})*) @ ([0-9a-f]{40}) gates=([a-z,]+)$/;
+export const AUTO_VERIFIED_GATES = Object.freeze(["ci,gui,review", "ci,gui,review,design", "ci,gui,review,visual",
+  "ci,gui,review,design,visual", "ci,gui,review,design,visual,walkthrough"]);
+
+// The IDs one comment body's first line auto-verifies at `head`, or [] when it is not a valid AUTO-VERIFIED line.
+export function autoVerified(body, head, { designTouching = false } = {}) {
+  const m = AUTO_VERIFIED.exec(lines(body ?? "")[0] ?? "");
+  if (!m || m[2] !== head || !AUTO_VERIFIED_GATES.includes(m[3])) return [];
+  if (designTouching && !m[3].split(",").includes("design")) return [];
+  return m[1].split(/[, ]+/).filter(Boolean);
+}
+
 // Only trusted issue comments count. Evidence is tied to the actual head and is never carried across a merge
 // or other commit. As in evidence-gate.sh (D21): a PR naming a ledger row needs a line for every scenario; any other
 // PR needs one for each scenario that is not on a CI tier, so real-Mac tiers, G3 rows and IDs missing from `tiers`
 // all do. A CI-tier scenario needs no line because evaluatePr requires green CI at the head anyway. #661 landed with
 // C-10 (T3) unaccounted for when only ledger PRs were read here.
-export function evidenceState(pr, items, head, tiers = new Map()) {
+export function evidenceState(pr, items, head, tiers = new Map(), { designTouching = false } = {}) {
   const body = pr.body ?? "";
   const ledger = /g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n"));
   const { ids: scenarios, malformed } = parseScenarios(body);
@@ -257,6 +275,7 @@ export function evidenceState(pr, items, head, tiers = new Map()) {
     : { state: SUCCESS, why: "not an evidence-tier-1 PR" };
   const verified = new Set();
   for (const item of items) if (item.kind === "comment") {
+    for (const id of autoVerified(item.body, head, { designTouching })) verified.add(id);
     for (const line of lines(item.body)) {
       const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
       if (match && match[2] === head) verified.add(match[1]);
@@ -436,7 +455,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
     if (problem) return res(FAILURE, dataSyncRunId(pr) ? `data-sync PR not admitted: ${problem}` : "not a trusted same-repository PR; coordinator decides");
     dataSync = true;
   }
-  const evidence = evidenceState(pr, items, head, tiers);
+  const design = designTouch(files, conf);
+  const evidence = evidenceState(pr, items, head, tiers, { designTouching: design.touching });
   if (evidence.state === FAILURE) return res(FAILURE, evidence.why);
   const gap = trainScenarioGap(pr, members);
   if (gap) return res(FAILURE, gap);
@@ -445,7 +465,6 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   const paths = prPaths(files);
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
-  const design = designTouch(files, conf);
   const carried = carryChain(carryEdges(items), head, verifiedEdge);
   const extra = { tier, design: design.touching ? design.surfaces : [], carried };
 
