@@ -47,14 +47,12 @@
     "expiredMinutesAgo": 600
   },
   "markers": [
-    ".claude",
     ".codex",
     ".gemini",
     ".zcode",
     ".kiro"
   ],
   "consent": [
-    "claude.local_history",
     "codex.local_history",
     "codex.runtime_usage",
     "gemini.account_usage.saved_login"

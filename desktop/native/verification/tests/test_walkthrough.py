@@ -157,11 +157,14 @@ class Seed(unittest.TestCase):
         self.assertGreaterEqual(len(self.SEED["markers"]), 3)
         self.assertTrue(all(m.startswith(".") for m in self.SEED["markers"]))
         self.assertIn("codex.runtime_usage", self.SEED["consent"])
+        self.assertNotIn(".claude", self.SEED["markers"])  # Claude Code would show a ring that vanishes mid-walk
 
     def test_live_session_ends_on_a_tool_call_so_the_turn_is_still_running(self):
         lines = [json.loads(line) for line in w.live_session_lines(self.NOW, 3, "/x/alpha", "gpt-6-astra").splitlines()]
-        self.assertEqual(lines[0]["payload"]["type"], "task_started")
-        self.assertEqual(lines[1]["payload"]["model"], "gpt-6-astra")
+        self.assertEqual(lines[0]["type"], "session_meta")
+        self.assertEqual(lines[1]["payload"]["type"], "task_started")
+        self.assertEqual(lines[2]["payload"]["model"], "gpt-6-astra")
+        self.assertTrue(w.live_session_lines(self.NOW, 1, "/x", "m").startswith('{"timestamp":"'))  # compact, as the parser matches it
         self.assertEqual(lines[-1]["payload"]["type"], "function_call")
         self.assertTrue(all(line["timestamp"] <= w.stamp_micro(self.NOW) for line in lines))
         more = w.live_session_lines(self.NOW, 2, "/x/alpha", "m", first=False)

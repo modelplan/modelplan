@@ -845,12 +845,14 @@ def live_session_lines(now, count, cwd, model, effort="high", first=True):
     (the last line is a tool call, so the turn has not ended). Same shapes as the app-server's own live tests."""
     lines = []
     if first:
+        lines.append({"timestamp": stamp_micro(now - datetime.timedelta(seconds=count * 3 + 3)), "type": "session_meta", "payload": {"cwd": cwd}})
         lines.append({"timestamp": stamp_micro(now - datetime.timedelta(seconds=count * 3 + 2)), "type": "event_msg", "payload": {"type": "task_started"}})
         lines.append({"timestamp": stamp_micro(now - datetime.timedelta(seconds=count * 3 + 1)), "type": "turn_context",
                       "payload": {"model": model, "effort": effort, "cwd": cwd}})
     for i in range(count):
         lines.append({"timestamp": stamp_micro(now - datetime.timedelta(seconds=(count - i) * 3)), "type": "response_item", "payload": {"type": "function_call"}})
-    return "".join(json.dumps(line) + "\n" for line in lines)
+    # Compact JSON: the rollout parser matches the head of each line byte for byte, as Codex writes it.
+    return "".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines)
 
 
 class LiveSession:
@@ -1264,7 +1266,9 @@ def walk_app(host, walkthrough, exe, cli, env, out):
         process, first_window, first_reading = launch_app(host, walkthrough, exe, env, log)
         checks.append(outcome("launch", first_window is not None and process.poll() is None,
                               {"firstWindowSeconds": first_window}))
-        checks.append(outcome("reader-first-reading", first_reading is not None, {"seconds": first_reading}))
+        # A fresh profile starts with the first-run page and a collapsed widget, so no ring is on screen to time here;
+        # the relaunch (restart-launch) times the first reading on a settled profile.
+        checks.append({"check": "reader-first-reading", "status": "info", "detail": {"seconds": first_reading}})
         walkthrough.walk_steps()
         checks.append(outcome("alive-after-walk", process.poll() is None, {"exit": process.poll()}))
         checks.append(outcome("widget-ax-frames", not walkthrough.frames_mirrored, {"mirrored": walkthrough.frames_mirrored, **walkthrough.mirror_evidence}))
