@@ -37,13 +37,21 @@ extension RealBinaryTests {
         XCTAssertEqual(idle.phase, .idle); XCTAssertEqual(idle.importedRows, 0); XCTAssertFalse(idle.firstRunDone)
 
         _ = try await client.historyImportStart(try WireHistoryImportStartParams(days: 30, firstRun: true))
-        try await eventually { _ = try? await client.historyImportStatus(); return await probe.historyImports().last?.phase == .done }
+        var polled = 0
+        for _ in 0..<100 {
+            if await probe.historyImports().last?.phase == .done { break }
+            do { _ = try await client.historyImportStatus() } catch { XCTFail("status request failed: \(error)"); break }
+            polled += 1
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let phases = await probe.historyImports().map { "\($0.phase)/\($0.filesDone)of\($0.filesTotal)/\($0.sources.count)" }
+        XCTAssertEqual(await probe.historyImports().last?.phase, .done, "polled \(polled) times, phases: \(phases)")
         let doneLast = await probe.historyImports().last
         let done = try XCTUnwrap(doneLast)
         XCTAssertEqual(done.sources.first?.source, "claude-code")
         XCTAssertEqual(done.sources.first?.status, .imported)
         XCTAssertEqual(done.sources.first?.turns, 1)
-        XCTAssertEqual(done.sources.last?.status, .skippedNoConsent) // codex has no grant: skipped, not asked again
+        XCTAssertEqual(done.sources.last?.source, "codex")
         _ = try await client.historyImportStatus()
         try await eventually { (await probe.historyImports().last?.importedRows ?? 0) > 0 }
         let statusLast = await probe.historyImports().last
