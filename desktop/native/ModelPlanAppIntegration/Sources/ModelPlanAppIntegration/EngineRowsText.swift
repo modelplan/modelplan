@@ -24,8 +24,8 @@ enum EngineRowsText {
     static let quit = SettingsText("Quit ModelPlan", "退出 ModelPlan")
     static let about = SettingsText("About ModelPlan", "关于 ModelPlan")
     /// G3-22: macOS hides status items behind the notch when the menu bar is full.
-    static let statusItemHidden = SettingsText("The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right.",
-                                               "菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。")
+    static let statusItemHidden = SettingsText("The menu bar icon is hidden — the menu bar may be full or the camera notch may cover it. You can still use the Quota Widget, the ignition key, or the shortcut below.",
+                                               "菜单栏图标被遮住了。可能是菜单栏已满，或被屏幕刘海挡住，拖动也不一定有用。仍可用：额度挂件、点火键，或下面的快捷键。")
     /// D65 (owner 11-08): the card's plain line for a window at 0 %, with the time until it resets when known.
     /// "5-hour quota used up · resets in 3h 18m" / "5 小时额度已用完 · 3 小时 18 分后重置".
     static func quotaUsedUp(period: DockQuotaPeriod, label: String, resetMinutes: Int?) -> SettingsText {

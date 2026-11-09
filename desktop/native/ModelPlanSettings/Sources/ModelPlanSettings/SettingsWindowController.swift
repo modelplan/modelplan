@@ -128,6 +128,10 @@ enum SettingsWords {
     private let scopeConsentEntry: ScopeConsentEntry?
     private let heading = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
+    /// G3-71: the hidden-icon notice. General pane only, dismissible; never in the status line.
+    private let iconNoticeBox = NSStackView()
+    private let iconNoticeLabel = NSTextField(wrappingLabelWithString: "")
+    private let iconNoticeShortcut = NSButton(), iconNoticeClose = NSButton()
     private let empty = NSTextField(wrappingLabelWithString: "")
     private var rows: [SettingKey: SettingsNativeRow] = [:]
     private var displayedKeys: [SettingKey] = []
@@ -234,7 +238,18 @@ enum SettingsWords {
         status.font = .systemFont(ofSize: 12); status.textColor = .systemRed
         status.setAccessibilityIdentifier("settings.status"); status.setAccessibilityRole(.staticText)
         empty.font = .systemFont(ofSize: 13); empty.textColor = .secondaryLabelColor
-        for view in [heading, status, empty] { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        iconNoticeBox.orientation = .horizontal; iconNoticeBox.alignment = .centerY; iconNoticeBox.spacing = 8
+        iconNoticeLabel.font = .systemFont(ofSize: 12); iconNoticeLabel.textColor = .systemOrange
+        iconNoticeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        iconNoticeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        iconNoticeShortcut.bezelStyle = .rounded; iconNoticeShortcut.target = self; iconNoticeShortcut.action = #selector(iconNoticeSetShortcut)
+        iconNoticeClose.bezelStyle = .rounded; iconNoticeClose.target = self; iconNoticeClose.action = #selector(iconNoticeDismiss)
+        iconNoticeClose.title = "×"
+        iconNoticeBox.setAccessibilityIdentifier("settings.iconNotice"); iconNoticeShortcut.setAccessibilityIdentifier("settings.iconNotice.shortcut")
+        iconNoticeClose.setAccessibilityIdentifier("settings.iconNotice.dismiss")
+        for view in [iconNoticeLabel, iconNoticeShortcut, iconNoticeClose] { iconNoticeBox.addArrangedSubview(view) }
+        iconNoticeBox.isHidden = true
+        for view in [heading, iconNoticeBox, status, empty] { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         let connectionContent: NSView = scopeConsentEntry?.view ?? connectionsView
         stack.addArrangedSubview(connectionContent)
         connectionContent.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -306,8 +321,14 @@ enum SettingsWords {
         let feedbackText = feedback.map { $0 == .copied ? SettingsWords.text("Diagnostics copied", "诊断信息已复制", language) : SettingsWords.text("Request sent to the app", "请求已交给应用", language) }
         let deliveryWarning = editor.lastCommitDeliveryFailure?.message(language)
         let iconNotice = editor.context.statusItemNotice?.value(language)
-        status.stringValue = errorMessage ?? deliveryWarning ?? feedbackText ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : (iconNotice ?? ""))
-        status.textColor = errorMessage != nil ? .systemRed : (deliveryWarning == nil && (iconNotice == nil || status.stringValue != iconNotice) ? .secondaryLabelColor : .systemOrange)
+        // G3-71: the hidden-icon notice has its own dismissible box, General pane only.
+        let showIconNotice = iconNotice != nil && selectedPaneID == "general" && query.isEmpty && !editor.statusItemNoticeDismissed
+        iconNoticeBox.isHidden = !showIconNotice
+        iconNoticeLabel.stringValue = showIconNotice ? iconNotice ?? "" : ""
+        iconNoticeShortcut.title = SettingsWords.text("Set Shortcut…", "设置快捷键…", language)
+        iconNoticeClose.setAccessibilityLabel(SettingsWords.text("Dismiss", "关闭提示", language))
+        status.stringValue = errorMessage ?? deliveryWarning ?? feedbackText ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : "")
+        status.textColor = errorMessage != nil ? .systemRed : (deliveryWarning == nil ? .secondaryLabelColor : .systemOrange)
         status.isHidden = status.stringValue.isEmpty
         do {
             let catalogued = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
@@ -333,7 +354,7 @@ enum SettingsWords {
                 for (index, key) in keys.enumerated() {
                     let row = rows[key] ?? SettingsNativeRow(key: key); rows[key] = row
                     if row.superview !== stack {
-                        stack.insertArrangedSubview(row, at: index + 4)
+                        stack.insertArrangedSubview(row, at: index + 5)
                         row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
                     }
                 }
@@ -494,6 +515,12 @@ enum SettingsWords {
     var visibleSettingKeys: [SettingKey] { displayedKeys }
     func aliasControl(subscriptionID: String) -> SettingsAliasControl? { rows[.alias]?.aliases[subscriptionID] }
     func shortcutControl(key: SettingKey) -> SettingsShortcutControl? { rows[key]?.shortcut }
+    var iconNoticeVisible: Bool { !iconNoticeBox.isHidden }
+    var iconNoticeText: String { iconNoticeLabel.stringValue }
+    var iconNoticeShortcutButton: NSButton { iconNoticeShortcut }
+    var iconNoticeDismissButton: NSButton { iconNoticeClose }
+    @objc private func iconNoticeDismiss() { editor.dismissStatusItemNotice() }
+    @objc private func iconNoticeSetShortcut() { rows[.openShortcut]?.shortcut?.beginRecording() }
     var orderControl: SettingsOrderControl? { rows[.order]?.order }
     var hintsResetControl: SettingsActionControl? { rows[.resetHints]?.resetHints }
     func actionControl(key: SettingKey) -> SettingsActionControl? { rows[key]?.surfaceAction }

@@ -262,4 +262,29 @@ import XCTest
         XCTAssertNil(controller.choice(key: .detectedReaders))
         controller.close()
     }
+    /// G3-71 / D87: the hidden-icon notice shows on General only, never on another pane, and stays dismissed until it clears.
+    func testHiddenIconNoticeShowsOnGeneralOnlyAndIsDismissible() async throws {
+        let editor = try await makeEditor()
+        var context = editor.context
+        context.statusItemNotice = .init("The menu bar icon is hidden", "菜单栏图标被遮住了")
+        editor.update(context: context)
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare()
+        controller.selectPane("general")
+        XCTAssertTrue(controller.iconNoticeVisible); XCTAssertEqual(controller.iconNoticeText, "The menu bar icon is hidden")
+        XCTAssertFalse(controller.iconNoticeShortcutButton.isHidden)
+        for pane in SettingsStructure.task65.panes.map(\.id) where pane != "general" {
+            controller.selectPane(pane)
+            XCTAssertFalse(controller.iconNoticeVisible, "no hidden-icon notice on \(pane)")
+        }
+        controller.selectPane("general"); XCTAssertTrue(controller.iconNoticeVisible)
+        let close = controller.iconNoticeDismissButton
+        XCTAssertTrue(close.sendAction(close.action, to: close.target))
+        XCTAssertFalse(controller.iconNoticeVisible)
+        controller.selectPane("general"); XCTAssertFalse(controller.iconNoticeVisible, "stays dismissed")
+        var cleared = editor.context; cleared.statusItemNotice = nil; editor.update(context: cleared)
+        editor.update(context: context)
+        controller.selectPane("general"); XCTAssertTrue(controller.iconNoticeVisible, "a new hidden situation shows it again")
+        controller.close()
+    }
 }
