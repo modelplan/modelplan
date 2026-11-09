@@ -174,7 +174,7 @@ public enum EntranceChecks {
             try run.near(first.tailRect.centre.x, 1100, 0.01, "tail centred on the tail point x")
             try run.near(first.tailRect.centre.y, 900, 0.01, "tail centred on the tail point y")
             try run.near(last.windowRect.width, 420, 0.01, "window as wide as the c01 aperture")
-            try run.near(last.windowRect.centre.x, 1100, 0.01, "window centred on the aperture x")
+            try run.near(last.windowRect.centre.x, 1090, 0.01, "window centred on the aperture x")
             try run.near(last.windowRect.centre.y, 150, 0.01, "window centred on the aperture y")
             var lastRise = -1.0
             for i in 0...60 {

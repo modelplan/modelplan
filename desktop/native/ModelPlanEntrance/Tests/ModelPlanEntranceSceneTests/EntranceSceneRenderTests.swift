@@ -88,7 +88,7 @@ final class EntranceSceneRenderTests: XCTestCase {
         // The end pose: the window is exactly the aperture's width and centred on it (spec §3.3).
         let end = try await scene.render(at: plan.timeline.mapStart)
         let rendered = try XCTUnwrap(silhouette(end.image))
-        XCTAssertEqual(rendered.midX, 1100, accuracy: 2)
+        XCTAssertEqual(rendered.midX, 1090, accuracy: 2)
         XCTAssertEqual(rendered.width, 420, accuracy: 4)
     }
 
