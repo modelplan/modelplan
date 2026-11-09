@@ -327,7 +327,7 @@ private actor G350Engine: EngineClient {
     /// fixed at 1.15x, and at S, M and L on every allowed edge the grown ring stays inside the
     /// panel, and clear of the neighbouring rings and labels. The label does not magnify: its frame and font size are unchanged.
     func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighbours() async throws {
-        for edge in [SettingsDockEdge.left, .right, .bottom] {
+        for edge in [SettingsDockEdge.left, .right, .bottom, .top] {
             for size in SettingsSize.allCases {
                 let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g374-" + UUID().uuidString)
                 addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
