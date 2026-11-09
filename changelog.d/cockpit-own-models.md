@@ -1,3 +1,1 @@
-The cockpit "All" scope, the porthole HUD ranking and the Models page now list only models your own subscriptions can use, not the whole published field, and the page key formerly called Effort is now Models.
-
-When the publication lists which models each plan can use (planModels), the cockpit uses that list for a subscription whose plan it can match, and falls back to the developer match otherwise.
+The cockpit "All" scope, the porthole HUD ranking and the Models page now list only models your own subscriptions can use, not the whole published field, and the page key formerly called Effort is now Models. When the publication lists which models each plan can use (planModels), the cockpit uses that list for a subscription whose plan it can match, and falls back to the developer match otherwise.
