@@ -30,6 +30,19 @@ final class OfficialRocketTests: XCTestCase {
         XCTAssertThrowsError(try OfficialRocket.verified("unregistered.usdz"))
     }
 
+    /// D111.4 with the real glass and the real c01 outline: the end pose reaches the 80 % window overlap.
+    func testD111EndPoseOverlapsTheRealCanopyWindowByAtLeast80Percent() throws {
+        struct Fixture: Decodable { let points: [[Double]] }
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "c01-aperture-890", withExtension: "json"))
+        let aperture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url)).points.map { EntrancePoint($0[0], $0[1]) }
+        let bounds = EntranceRect.bounds(aperture)
+        let input = LiftOffInput(viewport: .init(width: 1470, height: 956), handoffDiameter: 496,
+                                 tailPoint: .init(bounds.centre.x, 900), apertureRect: bounds)
+        let rail = StoryboardRail(input: .init(liftOff: input, aperture: aperture, targetNoseY: 176), geometry: try OfficialRocket.source().geometry)
+        print("official end IoU \(rail.endIoU) at elevation \(rail.endElevationDegrees)")
+        XCTAssertGreaterThanOrEqual(rail.endIoU, StoryboardRail.minWindowIoU)
+    }
+
     #if canImport(RealityKit)
     /// Both finishes load in RealityKit as the same model: every named part and anchor the entrance uses is
     /// present, at the official dimensions (14.2 m tall, 2.4 m skirt).
