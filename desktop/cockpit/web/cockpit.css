@@ -42,6 +42,14 @@
 @keyframes cockpit-caution-blink{50%{filter:brightness(.45)}}
 #cockpit[data-active="true"][data-shell="open"] .caution.flash{animation:cockpit-caution-blink 1s steps(1,end) 10!important}
 html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .caution.flash{animation:none!important}
+/* G3-56: the row of the newest acknowledged caution is highlighted when the lamp opens the list: one flash, then a steady tint
+   for as long as the list is open. Reduce Motion keeps the steady tint and drops the flash. */
+@keyframes cockpit-alert-row-flash{from{background:rgba(255,200,80,.6)}to{background:rgba(255,200,80,.16)}}
+#cockpit .mfd-alerts li.al-mark{background:rgba(255,200,80,.16);border-radius:3px}
+#cockpit .mfd-alerts li.al-mark.al-flash{animation:cockpit-alert-row-flash 900ms ease-out 1}
+html[data-reduce-motion="true"] #cockpit .mfd-alerts li.al-mark.al-flash{animation:none!important}
+@media(prefers-reduced-motion:reduce){#cockpit .mfd-alerts li.al-mark.al-flash{animation:none!important}}
+
 @media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .caution.flash{animation:none!important}}
 
 /* Preserve room for localized session status and the running cursor. */
