@@ -228,6 +228,19 @@ private actor G345Engine: EngineClient {
         XCTAssertEqual(app.composition.provider.dockContent.dockRows.map(\.id), ["codex", "cursor"], "the tool appears in the Dock without a relaunch")
     }
 
+    /// D87 slice 8: every detected tool that can be read shows one prerequisite line; a tool that is not read says why instead.
+    func testFirstRunShowsOnePrerequisiteLinePerReadableTool() async throws {
+        let (app, _) = try await launch(locale: "en-US")
+        let window = try await firstRun(app)
+        for tool in ["codex", "cursor"] {
+            XCTAssertEqual(try text("scope.firstRun.prereq." + tool, in: window), "Ready: nothing else is needed.", tool)
+        }
+        for tool in ["claude", "zai"] {
+            XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.firstRun.prereq." + tool },
+                         "\(tool) is blocked: its status line already says why")
+        }
+    }
+
     func testFirstRunListsDetectedToolsAndDoneSendsTheChoices() async throws {
         let (app, engine) = try await launch(locale: "en-US")
         let window = try await firstRun(app)

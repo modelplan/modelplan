@@ -331,6 +331,14 @@ public struct FirstRunTool: Sendable, Equatable {
             changed()
         }
     }
+    /// D87 slice 5: the engine's accepted row facts (consent, state, reason code) per tool id.
+    public var toolRowFacts: [String: ToolRowFacts] {
+        var ids = Set(rowCodes.keys).union(rowStates.keys)
+        if let rowConsent { ids.formUnion(rowConsent.keys) }
+        var result: [String: ToolRowFacts] = [:]
+        for id in ids { result[id] = ToolRowFacts(consent: rowConsent?[id], state: rowStates[id], code: rowCodes[id]?.rawValue) }
+        return result
+    }
     /// G3-38 / G3-45: why a detected tool cannot be read, when the engine's rows say so.
     public func block(forTool tool: String) -> ScopeToolBlock? {
         switch rowCodes[tool] {

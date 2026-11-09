@@ -5,6 +5,8 @@ import Foundation
 /// the card keeps its single "Settings" entry button until the Subscriptions rows wire the targets.
 public enum ReaderCauseTarget: String, Sendable, Equatable {
     case installNode, chooseToolLocation, retry, allowKeychain, openTool, openSettings, explain
+    /// D87 slice 6: open the tool's install page (kiro-cli) or reveal the manual key entry (D90).
+    case installTool, addKey
 }
 
 /// One cause: a short reason and one action, in both languages.
@@ -34,9 +36,32 @@ public enum ReaderCauseTable {
 
     private static func isGLM(_ tool: String?) -> Bool { ["zai", "zcode", "glm"].contains((tool ?? "").lowercased()) }
 
-    public static func entry(code rawCode: String, tool: String? = nil, toolName: String? = nil) -> ReaderCauseEntry? {
+    private static func isKiro(_ tool: String?) -> Bool { (tool ?? "").lowercased() == "kiro" }
+    private static func isKeyProvider(_ tool: String?) -> Bool { isGLM(tool) || ["opencodego", "opencode"].contains((tool ?? "").lowercased()) }
+
+    /// `keyEntryAvailable`: the app can show the manual key entry (D90). A missing key then offers "Add key"
+    /// for the key-based providers, after auto-detect found nothing.
+    public static func entry(code rawCode: String, tool: String? = nil, toolName: String? = nil,
+                             keyEntryAvailable: Bool = false) -> ReaderCauseEntry? {
         let name = toolName.flatMap { $0.isEmpty ? nil : $0 }
-        switch canonical(rawCode) {
+        let canon = canonical(rawCode)
+        if isKiro(tool) {
+            switch canon {
+            case "not_found", "runtime_missing":
+                return .init(reason: .init("kiro-cli was not found", "没有找到 kiro-cli"),
+                             action: .init("Install kiro-cli", "安装 kiro-cli"), target: .installTool)
+            case "not_signed_in", "login_expired", "unsupported_login":
+                return .init(reason: .init("Not signed in to kiro-cli", "尚未登录 kiro-cli"),
+                             action: .init("Sign in to kiro-cli", "登录 kiro-cli"), target: .explain)
+            default: break
+            }
+        }
+        if canon == "key_missing", keyEntryAvailable, isKeyProvider(tool) {
+            return .init(reason: isGLM(tool) ? .init("No GLM Coding Plan sign-in found in ZCode", "ZCode 里没有找到 GLM 编程套餐的登录")
+                                              : .init("No OpenCode Go key found", "没有找到 OpenCode Go 的密钥"),
+                         action: .init("Add key", "添加密钥"), target: .addKey)
+        }
+        switch canon {
         case "not_found":
             return .init(reason: .init(name.map { "Can't find the \($0) command" } ?? "Can't find the tool command",
                                        name.map { "找不到 \($0) 命令" } ?? "找不到工具命令"),
