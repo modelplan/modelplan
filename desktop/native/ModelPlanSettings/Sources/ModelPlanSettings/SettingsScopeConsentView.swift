@@ -144,6 +144,8 @@ import ModelPlanWire
                     "之后安装的工具默认会读取，可在 设置 › 数据与隐私 中关闭。"), secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.later")
         label(Self.activityDisclosure, secondary: true)
+        label(HistoryImportText.firstRunLine, secondary: true)
+        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.import")
     }
     private func separator() {
         let line = NSBox(); line.boxType = .separator
