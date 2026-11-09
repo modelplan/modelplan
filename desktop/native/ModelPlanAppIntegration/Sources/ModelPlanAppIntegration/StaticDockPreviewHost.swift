@@ -222,8 +222,6 @@ struct DockHelpInteraction: Equatable {
     /// G3-28: the widget menu's Auto-Collapse item. The app writes the same stored setting
     /// as Settings' auto-collapse switch; without an app the preview applies nothing.
     public var requestAutoCollapse: ((Bool) -> Void)?
-    /// G3-22: shown as the first, disabled line of the widget menu (the status icon may be hidden).
-    public var statusIconNotice: SettingsText?
     /// Set only when the member-scoped refresh adapter is actually installed.
     public var ringRefreshAvailable = false
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
@@ -1910,10 +1908,6 @@ struct DockHelpInteraction: Equatable {
         }
         let available = permitted && !lifecycleSuspended
         var items: [DockMenuPresentationItem] = []
-        if let statusIconNotice {
-            items.append(.init(title: statusIconNotice.value(preferences.language), accessibilityID: "dock.menu.notice"))
-            items.append(.init(title: nil))
-        }
         if lifecycleSuspended {
             items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
             items.append(.init(title: nil))

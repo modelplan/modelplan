@@ -646,7 +646,6 @@ struct StatusNoticePresentation {
         let hidden = visible == false
         guard hidden != statusItemHidden else { return }
         statusItemHidden = hidden
-        composition.dock.statusIconNotice = hidden ? EngineRowsText.statusItemHidden : nil
         var context = settings.editor.context
         context.statusItemNotice = hidden ? EngineRowsText.statusItemHidden : nil
         settings.update(context: context)

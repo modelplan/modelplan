@@ -1,1 +1,3 @@
 With two displays the "menu bar is full" warning no longer shows while the icon is visible on one of them, the menu-bar percentage is written again when a display change or a returning menu-bar window could have left it stale, and the ignition key's help tip is sized to its text on the study's dark tooltip panel and goes when the cockpit opens or the pointer leaves the key.
+
+The hidden-icon warning is shown in Settings only, no longer in the widget's right-click menu.
