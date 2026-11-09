@@ -52,4 +52,33 @@ import XCTest
         while window.isVisible && ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertFalse(window.isVisible, "ordered out once the fade ends")
     }
+
+    /// Evidence: the overlay over a light and a dark desktop fill, with a stand-in widget in the hole,
+    /// written to dock-visual/find-overlay (uploaded with the other dock-visual captures).
+    func testD56WritesTheFeatheredOverlayOverLightAndDarkFills() throws {
+        _ = NSApplication.shared
+        let display = CGRect(x: 0, y: 0, width: 640, height: 480)
+        let widget = CGRect(x: 540, y: 80, width: 64, height: 320)
+        let target = QuotaWidgetSpotlightTarget(widget: widget, display: display, displayID: "capture")
+        let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
+        let out = root.appendingPathComponent("dock-instrument-checks/dock-visual/find-overlay", isDirectory: true)
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        for (name, fill) in [("light", NSColor(srgbRed: 0.93, green: 0.94, blue: 0.96, alpha: 1)),
+                             ("dark", NSColor(srgbRed: 0.12, green: 0.13, blue: 0.15, alpha: 1))] {
+            let canvas = NSView(frame: display)
+            canvas.wantsLayer = true
+            canvas.layer?.backgroundColor = fill.cgColor
+            let stand = NSView(frame: widget)
+            stand.wantsLayer = true
+            stand.layer?.backgroundColor = NSColor.systemOrange.cgColor
+            stand.layer?.cornerRadius = 10
+            canvas.addSubview(stand)
+            let overlay = QuotaWidgetSpotlightView(frame: display)
+            overlay.hole = QuotaWidgetSpotlightStyle.hole(for: target)
+            canvas.addSubview(overlay)
+            let bitmap = try XCTUnwrap(canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds))
+            canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: out.appendingPathComponent("find-overlay-\(name)-normal.png"))
+        }
+    }
 }
