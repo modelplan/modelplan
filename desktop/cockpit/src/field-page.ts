@@ -13,6 +13,7 @@ import {featherShape,type FieldShape} from './field-shape.js';
 import {layoutFieldAxes} from './field-axes.js';
 import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
 import {createFieldPicker,type Preset} from './field-picker.js';
+import {shortLabel} from '../study/rocket-r1/short-label.js';
 
 interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly lowPower?:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null}
 interface Scene {update(models:readonly FieldModel[],focus:string|null,path?:boolean):void;renderFor?(ms:number):void;stats?():{frames?:number;scheduled?:boolean};dispose():void}
@@ -91,7 +92,7 @@ function mount(root:HTMLElement) {
    language=value.language;const w=words[language];document.documentElement.lang=language==='en'?'en':'zh-CN';
    close.textContent='×';close.setAttribute('aria-label',w.close);
    reduceMotion=value.reduceMotion;lowPower=value.lowPower===true;
-   models=value.models.flatMap(m=>{const f=fieldModel(m);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
+   models=value.models.flatMap(m=>{const f=fieldModel(m,shortLabel);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
    chosen=new Set(mineIds().slice(0,FIELD_LIMIT));preset='mine';
    // A rocket clicked in the porthole joins the field (the last of a full fleet makes room) and takes the focus.
    if(focus!==null&&!models.some(m=>m.id===focus))focus=null;
