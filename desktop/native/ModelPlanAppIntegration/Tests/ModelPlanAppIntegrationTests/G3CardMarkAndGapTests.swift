@@ -48,7 +48,7 @@ private actor G350Engine: EngineClient {
 ///   copied: every vendor mark is cropped to its visible glyph and drawn as tall as the title line.
 /// - Gap and arrow: as the prototype (opus-r7 card.js place() and refreshCardPlacement): 12 x D/52
 ///   from the ring as painted, and the arrow tip 2 pt before it, also while hover magnification
-///   has grown the ring and moved it towards the card.
+///   has grown the ring concentrically (it does not move towards the card).
 @MainActor final class G3CardMarkAndGapTests: XCTestCase {
     /// Every vendor mark the widget can show (T2DockSkin logos), plus the opt-in Z.ai mark.
     static let marks: [(resource: String, zai: Bool)] = [
@@ -183,7 +183,7 @@ private actor G350Engine: EngineClient {
     }
 
     /// The card's gap and arrow against the ring as painted, at rest and while the hovered ring is
-    /// magnified (subtle: x1.15 and 6 pt towards the card), on the right edge at S, M and L, through
+    /// magnified (subtle: x1.15, concentric, no travel), on the right edge at S, M and L, through
     /// the normal entry with native panels. Writes a 2x composite of widget and card per case to
     /// dock-visual/g3-50-gap (assembled from the two panels' own pixels at their screen frames).
     func testG350CardKeepsThePrototypeGapAndArrowFromTheMagnifiedRing() async throws {
