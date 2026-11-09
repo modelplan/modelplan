@@ -72,10 +72,10 @@ func TestEffortSuggestionHooksNeverExposeOrClaim(t *testing.T) {
 					st := effortTestCache(t, at)
 					t.Setenv("MODELPLAN_TASK_BRIEF", brief)
 					style := render.Style{T: render.EN}
-					needle := "past 3 weeks averaged 45%"
+					needle := "Quota to spare"
 					if lang == "zh" {
 						style.T = render.ZH
-						needle = "过去 3 周平均用了 45%"
+						needle = "额度富余"
 					}
 					for i := 0; i < 2; i++ {
 						var out bytes.Buffer
@@ -89,7 +89,7 @@ func TestEffortSuggestionHooksNeverExposeOrClaim(t *testing.T) {
 						if err := json.Unmarshal(out.Bytes(), &result); err != nil {
 							t.Fatal(err, out.String())
 						}
-						if strings.Contains(result.Hook.Context, needle) || strings.Contains(result.Hook.Context, "effortSuggestion") || strings.Contains(result.Hook.Context, "past 3 weeks") || strings.Contains(result.Hook.Context, "过去 3 周") {
+						if strings.Contains(result.Hook.Context, needle) || strings.Contains(result.Hook.Context, "effortSuggestion") || strings.Contains(result.Hook.Context, "Quota running low") || strings.Contains(result.Hook.Context, "额度偏紧") || strings.Contains(result.Hook.Context, "额度富余") {
 							t.Fatalf("personal suggestion leaked to model: %s", out.String())
 						}
 						if strings.Contains(result.System, needle) {
@@ -138,7 +138,7 @@ func TestEffortSuggestionDesktopReadOnlyAndHistory(t *testing.T) {
 		{"plan", "--json", "--offline"},
 	} {
 		out.Reset()
-		if code := run(args, nil, &out, &stderr); code != 0 || strings.Contains(out.String(), "effortSuggestion") || strings.Contains(out.String(), "past 3 weeks") || strings.Contains(out.String(), "过去 3 周") {
+		if code := run(args, nil, &out, &stderr); code != 0 || strings.Contains(out.String(), "effortSuggestion") || strings.Contains(out.String(), "Quota to spare") || strings.Contains(out.String(), "额度富余") || strings.Contains(out.String(), "额度偏紧") {
 			t.Fatal("machine-readable feed gained personal derived advice", args, code, out.String(), stderr.String())
 		}
 		if _, err := os.Stat(history.EffortSuggestionPath(st.Dir)); !os.IsNotExist(err) {
@@ -195,10 +195,10 @@ func TestEffortSuggestionStatuslineSharesWeeklyNotice(t *testing.T) {
 	d := mustEffortDigest(t)
 	style := render.Style{T: render.EN}
 	hint := statuslineHint(style, st, d, report, at, true)
-	if !strings.Contains(hint, "default: 3wk 45% ★Med→High ref ×1.50") {
+	if !strings.Contains(hint, "↑ Quota to spare · High is affordable") {
 		t.Fatalf("hint: %q", hint)
 	}
-	if second := statuslineHint(style, st, d, report, at.Add(time.Minute), true); strings.Contains(second, "default:") {
+	if second := statuslineHint(style, st, d, report, at.Add(time.Minute), true); strings.Contains(second, "Quota to spare") {
 		t.Fatalf("repeated hint: %q", second)
 	}
 	var out, stderr bytes.Buffer
@@ -226,7 +226,7 @@ func TestEffortSuggestionHistoryClaimsWeeklyNotice(t *testing.T) {
 }
 
 func TestEffortSuggestionStatuslineSilentPathsDoNotClaim(t *testing.T) {
-	for _, mode := range []string{"preview", "record-only", "no meter", "urgent", "unknown effort", "endpoint", "history off", "other plan", "no history", "default off", "suggestions off", "late after reset"} {
+	for _, mode := range []string{"preview", "record-only", "no meter", "urgent", "endpoint", "history off", "other plan", "no history", "suggestions off", "late after reset"} {
 		t.Run(mode, func(t *testing.T) {
 			at := time.Now()
 			st, report := claudeEffortFixture(t, at)
@@ -248,7 +248,7 @@ func TestEffortSuggestionStatuslineSilentPathsDoNotClaim(t *testing.T) {
 					w = io.Discard
 				}
 				statuslineInput(in, w, style, st, common{offline: true}, "claude-code", "native-z", "medium", mode == "preview")
-				if strings.Contains(out.String(), "default:") {
+				if strings.Contains(out.String(), "Quota to spare") {
 					t.Fatal("silent path rendered notice", out.String())
 				}
 			default:
@@ -257,14 +257,10 @@ func TestEffortSuggestionStatuslineSilentPathsDoNotClaim(t *testing.T) {
 					used := 100.0
 					report.Accounts[0].Windows[0].UsedPercent = &used
 					quota.Evaluate(&report.Accounts[0], at)
-				case "unknown effort":
-					report.Accounts[0].Harness.Effort = ""
 				case "endpoint":
 					report.Accounts[0].Harness.Endpoint = "https://example.test"
 				case "history off":
 					t.Setenv("MODELPLAN_HISTORY", "off")
-				case "default off":
-					t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "")
 				case "suggestions off":
 					t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "off")
 				case "late after reset":
@@ -276,7 +272,7 @@ func TestEffortSuggestionStatuslineSilentPathsDoNotClaim(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if hint := statuslineHint(style, st, d, report, at, true); strings.Contains(hint, "default:") {
+				if hint := statuslineHint(style, st, d, report, at, true); strings.Contains(hint, "Quota to spare") {
 					t.Fatalf("silent path rendered notice: %q", hint)
 				}
 			}
@@ -302,9 +298,9 @@ func TestEffortSuggestionFullStatusline(t *testing.T) {
 			}
 			input := `{"model":{"id":"native-z"},"rate_limits":{"seven_day":{"used_percentage":20,"resets_at":` + fmt.Sprint(at.Add(6*24*time.Hour).Unix()) + `}}}`
 			// The current default is provided explicitly by the status-line flag.
-			needle := "default: 3wk 45% ★Med→High ref ×1.50"
+			needle := "↑ Quota to spare · High is affordable"
 			if lang == "zh" {
-				needle = "默认：3周 45% ★Med→High 参考 ×1.50"
+				needle = "↑ 额度富余 · 可升到 High"
 			}
 			for i := 0; i < 2; i++ {
 				var out, stderr bytes.Buffer
@@ -347,17 +343,17 @@ func TestEffortSuggestionUnknownPlanMatchesOnlyUnlabelledCycles(t *testing.T) {
 					}
 					d := mustEffortDigest(t)
 					style := render.Style{T: render.EN}
-					marker, needle := "default:", "default: 3wk 45% ★Med→High ref ×1.50"
+					marker, needle := "Quota to spare", "↑ Quota to spare · High is affordable"
 					if lang == "zh" {
 						style.T = render.ZH
-						marker, needle = "默认：", "默认：3周 45% ★Med→High 参考 ×1.50"
+						marker, needle = "额度富余", "↑ 额度富余 · 可升到 High"
 					}
 					input := `{"model":{"id":"native-z"},"rate_limits":{"seven_day":{"used_percentage":20,"resets_at":` + fmt.Sprint(at.Add(6*24*time.Hour).Unix()) + `}}}`
 					var claimed []byte
 					for attempt := 0; attempt < 2; attempt++ {
 						var output string
 						if path == "helper" {
-							output = defaultEffortHint(style, st, d, report, at.Add(time.Duration(attempt)*time.Minute))
+							output = defaultEffortHint(style, st, d, report, nil, at.Add(time.Duration(attempt)*time.Minute))
 						} else {
 							var out, stderr bytes.Buffer
 							if code := run([]string{"statusline", "--effort", "medium", "--offline", "--lang", lang}, strings.NewReader(input), &out, &stderr); code != 0 {
@@ -418,10 +414,10 @@ func TestEffortSuggestionHistoryDefaultAndOptOut(t *testing.T) {
 			if code := run([]string{"history", "--offline", "--lang", "en"}, nil, &out, &stderr); code != 0 {
 				t.Fatal(code, stderr.String())
 			}
-			if strings.Contains(out.String(), "Default effort suggestion") != (mode == "local on") {
-				t.Fatal("incorrect opt-in behavior", out.String())
+			if strings.Contains(out.String(), "Default effort suggestion") != (mode == "default" || mode == "local on") {
+				t.Fatal("incorrect default-on behavior", out.String())
 			}
-			if mode != "local on" {
+			if mode != "local on" && mode != "default" {
 				if _, err := os.Stat(history.EffortSuggestionPath(st.Dir)); !os.IsNotExist(err) {
 					t.Fatal("suppressed history consumed notice", err)
 				}

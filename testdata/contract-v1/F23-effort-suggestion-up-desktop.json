@@ -139,7 +139,9 @@
     "publicationId": "synthetic-contract-publication",
     "resetAt": "2026-10-20T20:05:00Z",
     "expiresAt": "2026-10-21T20:05:00Z",
-    "message": "codex / synthetic-plan · Synthetic Z: past 3 weeks averaged 45%; your default could go up from ★Med to High (published reference cost ×1.50)."
+    "reason": "headroom-history",
+    "basis": "history",
+    "message": "Quota to spare · High is affordable"
   },
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",

@@ -9,7 +9,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/digest"
@@ -34,9 +33,10 @@ const (
 	tightAverage          = 90.0
 )
 
-// Owner-controlled rollout: no automatic activation on the earliest go-live
-// date (2026-11-07). Local on/env opt-in is available for review.
-const effortSuggestionDefaultEnabled = false
+// On by default since v1.1 (D102): passive, local, one notice per rolling week,
+// and it needs a verified publication. "modelplan history --effort-suggestion off"
+// (or MODELPLAN_EFFORT_SUGGESTION=off) is the off switch behind the Settings toggle.
+const effortSuggestionDefaultEnabled = true
 
 // EffortSuggestion is personal, local advice, never agent context. CostRatio is a
 // published reference-cost ratio, not a prediction of the user's quota consumption.
@@ -60,6 +60,12 @@ type EffortSuggestion struct {
 	PublicationID  string    `json:"publicationId"`
 	ResetAt        time.Time `json:"resetAt"`
 	ExpiresAt      time.Time `json:"expiresAt"`
+	// Reason is the stable code of the rule that fired (Reason* constants); Basis is
+	// "history", "live" or "reset". BasisHours is the look-back of a live basis.
+	// Neither is shown as a number promise; they feed the optional detail line.
+	Reason     string `json:"reason,omitempty"`
+	Basis      string `json:"basis,omitempty"`
+	BasisHours int    `json:"basisHours,omitempty"`
 	// Message is localized by the caller, never used in the decision.
 	Message string `json:"message,omitempty"`
 }
@@ -70,184 +76,6 @@ type effortConfig struct {
 }
 
 func positive(v float64) bool { return v > 0 && !math.IsNaN(v) && !math.IsInf(v, 0) }
-
-// SuggestEffort is pure: callers supply a ledger and a verified publication. No
-// historical default, alias, endpoint, cost or speed multiplier is guessed.
-func SuggestEffort(l Ledger, d *digest.Digest, now time.Time) *EffortSuggestion {
-	return suggestEffort(l, d, now, nil)
-}
-
-// SuggestDefaultEffort takes finished weekly cycles of one subscription/pool and
-// an explicit current default. Past attribution establishes a comparable model
-// and speed setting; the adjacent step starts at the current effort, even when
-// the user has since changed it. Unknown defaults and mixed subscriptions abstain.
-// Share.Points is unused. The caller owns reading local inputs and publication.
-func SuggestDefaultEffort(cycles []Cycle, current Share, d *digest.Digest, now time.Time) *EffortSuggestion {
-	if len(cycles) == 0 || current.Model == "" || current.Effort == "" {
-		return nil
-	}
-	pool := cycles[0]
-	for _, c := range cycles {
-		if c.Source != pool.Source || c.Plan != pool.Plan || c.Limit != pool.Limit || c.WindowMinutes != pool.WindowMinutes ||
-			c.Kind != "weekly" || !c.Done(now) {
-			return nil
-		}
-	}
-	return suggestEffort(Ledger{Cycles: cycles}, d, now, &current)
-}
-
-func suggestEffort(l Ledger, d *digest.Digest, now time.Time, current *Share) *EffortSuggestion {
-	if d == nil || d.PublicationID == "" {
-		return nil
-	}
-	type pool struct {
-		source, plan, limit string
-		minutes             int
-	}
-	groups := map[pool][]Cycle{}
-	for _, c := range l.Cycles {
-		// Claude Code's status-line meter does not report a plan label. Keep it
-		// unknown and separate from labelled pools; Codex does report its plan.
-		if (c.Source != "codex" && c.Source != "claude-code") || (c.Source == "codex" && c.Plan == "") || c.Kind != "weekly" ||
-			(c.WindowMinutes != 0 && c.WindowMinutes != 10080) || c.ResetsAt.IsZero() || !c.Done(now) {
-			continue
-		}
-		k := pool{c.Source, c.Plan, c.Limit, c.WindowMinutes}
-		groups[k] = append(groups[k], c)
-	}
-	var candidates []*EffortSuggestion
-	for k, cs := range groups {
-		sort.Slice(cs, func(i, j int) bool { return cs[i].ResetsAt.After(cs[j].ResetsAt) })
-		if len(cs) < suggestionWeeks || !now.Before(cs[0].ResetsAt.Add(suggestionResetWindow)) {
-			continue
-		}
-		cs = cs[:suggestionWeeks]
-		totals := map[effortConfig]float64{}
-		occurrences := map[effortConfig]int{}
-		sum, maximum, knownTotal, hits, valid := 0.0, 0.0, 0.0, 0, true
-		for i, c := range cs {
-			if i > 0 {
-				gap := cs[i-1].ResetsAt.Sub(c.ResetsAt)
-				if gap < 5*24*time.Hour || gap > 9*24*time.Hour {
-					valid = false
-					break
-				}
-			}
-			if !positive(c.LastUsed) || c.LastUsed > 100 || c.FirstUsed < 0 || math.IsNaN(c.FirstUsed) || c.FirstUsed > c.LastUsed ||
-				c.FirstAt.IsZero() || c.LastAt.Before(c.FirstAt) || c.LastAt.After(c.ResetsAt) {
-				valid = false
-				break
-			}
-			known, spent := 0.0, 0.0
-			seen := map[effortConfig]bool{}
-			for _, s := range c.Spent {
-				if !positive(s.Points) {
-					valid = false
-					break
-				}
-				spent += s.Points
-				m := d.Match(c.Source, s.Model)
-				if m == nil || s.Effort == "" {
-					continue
-				}
-				e := m.Effort(s.Effort)
-				if e == nil {
-					continue
-				}
-				cfg := effortConfig{m.ID, e.Effort, s.Fast}
-				known += s.Points
-				totals[cfg] += s.Points
-				seen[cfg] = true
-			}
-			// Includes unrecognized configuration points and use before FirstAt.
-			// Allow one point for the recorder's per-share decimal rounding.
-			if !valid || known < minObservedPoints || known/c.LastUsed < minAttributedShare || spent > c.LastUsed-c.FirstUsed+1 {
-				valid = false
-				break
-			}
-			for cfg := range seen {
-				occurrences[cfg]++
-			}
-			knownTotal += known
-			sum += c.LastUsed
-			maximum = math.Max(maximum, c.LastUsed)
-			if c.HitLimit {
-				hits++
-			}
-		}
-		if !valid {
-			continue
-		}
-		avg := sum / suggestionWeeks
-		step, direction := 0, ""
-		if avg <= underusedAverage && maximum <= underusedMaximum && hits == 0 {
-			step, direction = 1, "up"
-		}
-		if avg >= tightAverage || hits >= tightLimitCycles {
-			step, direction = -1, "down"
-		}
-		if step == 0 {
-			continue
-		}
-		var dominant effortConfig
-		best := 0.0
-		for cfg, n := range totals {
-			if n > best {
-				dominant, best = cfg, n
-			}
-		}
-		if best/knownTotal < minDominantShare || occurrences[dominant] < minDominantWeeks {
-			continue
-		}
-		m := d.Model(dominant.model)
-		if current != nil {
-			cm := d.Match(k.source, current.Model)
-			if cm == nil || cm.ID != m.ID || current.Fast != dominant.fast || m.Effort(current.Effort) == nil {
-				continue
-			}
-			dominant.effort = m.Effort(current.Effort).Effort
-		}
-		fromIndex := -1
-		for i := range m.Efforts {
-			if m.Efforts[i].Effort == dominant.effort {
-				fromIndex = i
-			}
-		}
-		toIndex := fromIndex + step
-		if fromIndex < 0 || toIndex < 0 || toIndex >= len(m.Efforts) || m.Rec() == nil {
-			continue
-		}
-		from, to := m.Efforts[fromIndex], m.Efforts[toIndex]
-		if from.Cost == nil || to.Cost == nil || !positive(*from.Cost) || !positive(*to.Cost) || from.CostBasisID == "" || from.CostBasisID != to.CostBasisID {
-			continue
-		}
-		ratio := *to.Cost / *from.Cost
-		if !positive(ratio) || (step > 0 && ratio <= 1) || (step < 0 && ratio >= 1) {
-			continue
-		}
-		// Fast stays on. Require reviewed subscription billing against plan quota;
-		// its same published factor cancels in the adjacent-effort reference ratio.
-		if dominant.fast && !publishedFast(d, m.ID, k.source, k.plan) {
-			continue
-		}
-		candidates = append(candidates, &EffortSuggestion{Source: k.source, Plan: k.plan, ModelID: m.ID, ModelName: m.Name, Direction: direction,
-			FromEffort: from.Effort, FromLabel: from.Label, ToEffort: to.Effort, ToLabel: to.Label, Recommended: m.Recommended, Fast: dominant.fast,
-			Cycles: suggestionWeeks, AverageUsed: avg, HitLimitCycles: hits, CostRatio: ratio, CostBasisID: from.CostBasisID, PublicationID: d.PublicationID,
-			ResetAt: cs[0].ResetsAt, ExpiresAt: cs[0].ResetsAt.Add(suggestionResetWindow)})
-	}
-	// One line: newest reset, then stable source/plan/model ordering (never map order).
-	sort.Slice(candidates, func(i, j int) bool {
-		a, b := candidates[i], candidates[j]
-		if !a.ResetAt.Equal(b.ResetAt) {
-			return a.ResetAt.After(b.ResetAt)
-		}
-		return a.Source+"|"+a.Plan+"|"+a.ModelID < b.Source+"|"+b.Plan+"|"+b.ModelID
-	})
-	if len(candidates) == 0 {
-		return nil
-	}
-	return candidates[0]
-}
 
 func publishedFast(d *digest.Digest, model, source, plan string) bool {
 	for _, t := range d.SpeedTiers(model, source) {
@@ -362,7 +190,12 @@ func NotifyEffortSuggestion(cache string, d *digest.Digest, now time.Time) *Effo
 // precomputed suggestion, including one based on an explicit current default.
 // Call only when the caller will render it; previews and discarded output do not claim.
 func ClaimEffortSuggestion(cache string, v *EffortSuggestion, now time.Time) *EffortSuggestion {
-	if effortSuggestionOff() || v == nil || v.ResetAt.IsZero() || now.Before(v.ResetAt) || !now.Before(v.ResetAt.Add(suggestionResetWindow)) || !now.Before(v.ExpiresAt) {
+	if effortSuggestionOff() || v == nil || v.ResetAt.IsZero() || !now.Before(v.ExpiresAt) {
+		return nil
+	}
+	// History advice is for the first day after a reset; a live or reset-close hint
+	// is valid until the reset it was gated on.
+	if v.Basis == "history" && (now.Before(v.ResetAt) || !now.Before(v.ResetAt.Add(suggestionResetWindow))) {
 		return nil
 	}
 	unlock, ok := lockNamed(cache, "effort-suggestion.lock")
@@ -379,6 +212,17 @@ func ClaimEffortSuggestion(cache string, v *EffortSuggestion, now time.Time) *Ef
 		return nil
 	}
 	return v
+}
+
+// EffortSuggestionEnabled is the Settings toggle's read side: whether the hint is on
+// for this cache (default on; "off" in Settings, the CLI or the environment turns it
+// off). Settings writes with SetEffortSuggestion(cache, "on"|"off", now).
+func EffortSuggestionEnabled(cache string) bool {
+	if effortSuggestionOff() {
+		return false
+	}
+	s, err := loadEffortState(cache)
+	return err == nil && s.enabled()
 }
 
 // SetEffortSuggestion changes only this feature's local state, never a harness

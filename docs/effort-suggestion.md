@@ -1,108 +1,81 @@
-# Local default-effort suggestion
+# Local effort suggestion
 
-C14 is **off by default** pending the owner's go-live, no earlier than
-2026-11-07. There is no automatic date-based activation. For local review, explicitly
-opt in with `modelplan history --effort-suggestion on` or
-`MODELPLAN_EFFORT_SUGGESTION=on`. Previously saved state without an explicit opt-in
-stays off. Changing the shipped default requires a separate owner-approved change.
+The suggestion is **on by default** (owner decisions D101 and D102). It is advice
+only: ModelPlan never changes the harness's model, effort or Fast setting, never
+uploads anything, and never puts it in hook output, agent context, MCP results or
+desktop JSON. Turn it off with `modelplan history --effort-suggestion off`,
+`MODELPLAN_EFFORT_SUGGESTION=off`, or the Settings toggle (`history.SetEffortSuggestion`
+writes the same state; `history.EffortSuggestionEnabled` reads it). `dismiss` hides it
+for seven days and `on` turns it back on. State is `<cache>/observed/effort-suggestion.json`
+(0600); `MODELPLAN_HISTORY=off` disables it too.
 
-Within the first 24 hours after a weekly reset, `modelplan history` text output and
-the Claude Code status-line hint share one suggestion notice per rolling seven days,
-when enough local history is known. A missed reset window is skipped until a later
-weekly reset. The status line shows a compact summary such as
-`default: 3wk 45% ★Med→High ref ×1.37`; urgent quota advice has priority. Preview,
-record-only and missing quota meters do not consume a notice. It is advice only:
-ModelPlan never changes the harness's model, effort or Fast setting.
+## The rule
 
-Suggestions are never included in hook output (including `systemMessage`), agent
-context, MCP results or desktop JSON. Those paths neither calculate a suggestion
-nor consume its weekly notice. JSON history keeps its existing raw measurement
-format. The optional desktop contract field is retained for compatibility with
-older clients and fixtures, but the CLI no longer populates it.
+The base is the published ★ (recommended) effort of the model you mainly use. The rule
+only adjusts it from your own quota, on the **same model**, at most **two rungs** from ★,
+on the published ladder. Your current effort does not change the target (a suggestion
+you already sit at or beyond is not shown). There are no model-switch and no Fast
+suggestions. Projections are internal gates, never shown.
 
-The inputs are the local `<cache>/observed/cycles.json` ledger and the already
-verified public publication. No new account, credential, transcript or log reader
-is added. No quota history, suggestion or dismissal state is uploaded, aggregated
-across users, or added to the automatic agent context. The existing public
-publication refresh is independent of this calculation. `history --json` keeps its
-existing raw history/measurement format; it does not add the derived suggestion to
-the plugins' measurement feed.
+- **Up** (one rung above ★ at most): the last three finished weekly cycles of one pool
+  show headroom (average final use at most 60%, none above 75%, no limit hit) and the
+  projected use at that rung stays at or below 85%; or a reset (scheduled or officially
+  announced) is close with much left (advise's existing "resets unused" verdict, no
+  cycle history needed).
+- **Down** (one or two rungs below ★): history shows a limit hit in two of the last three
+  cycles or average use of 90% or more; or the live pace (used% at least ten points over
+  elapsed%, window at least 10% elapsed, recent day rate runs out before the reset)
+  shows a shortfall. The smallest drop whose projection fits is chosen, else the
+  largest allowed. No history is needed for the live case.
+- Otherwise nothing. Silence also covers fewer than three finished cycles (for history),
+  gaps, mixed workload (under 60% of points on one configuration), a missing ★ or
+  published cost, and a stale publication.
 
-The latest three completed weekly cycles must belong to the same source, recorded
-plan, limit and window duration. Claude Code's status-line readings do not name a
-plan: those cycles retain an empty label, kept separate from labelled pools;
-no plan is inferred from the model. Resets must be five to nine days apart, with the
-latest reset less than 24 hours ago. A cycle needs at least five attributed
-percentage points and at least 60% of its final use attributed to reviewed model
-identifiers and explicit published efforts. The rest includes use before the first
-reading and unknown configurations: more than 40% unattributed excludes the cycle.
-We abstain if any of the latest three cycles is ineligible, rather than cherry-pick
-older favorable weeks. The ledger's last usage reading is an observation, not an
-estimate of unobserved use. Claude Code attributes changes to its latest session's
-configuration; this cannot prove which concurrent session spent those points.
+Every outcome has a reason code (`history.Reason*`, also on the suggestion's `reason` and
+`basis` fields): `headroom-history`, `reset-unused`, `tight-history`, `live-runout`, and
+the silent ones (`few-cycles`, `coverage-gap`, `mixed-workload`, `middle-range`,
+`reset-before-runout`, `reset-imminent`, ...).
 
-The dominant model/effort/Fast configuration must account for at least 60% of known
-points and appear in at least two of those weeks. Average use at most 60%, every
-week at most 75%, and no limit hits suggests one step up. Average use at least 90%
-or at least two limit hits suggests one step down. Intermediate/mixed results show
-nothing. These named constants are deliberately conservative: five points rejects
-meter jitter, dominance avoids a mixed workload, and a wide middle range avoids
-frequent reversals. They are client presentation heuristics over a user's own
-observations, not a new public model ranking or a production recommendation scorer.
+## Reset gating
 
-The status line supplies its explicit current model and effort (including
-`--model` / `--effort` flags) to the pure `SuggestDefaultEffort` function, together
-with finished weeks from its weekly pool. The adjacent step starts at that current
-effort rather than an older historical effort. Unknown current effort, another
-model or a changed speed setting produces no status-line suggestion. Text history
-uses the dominant recorded configuration when no current default is supplied. No new configuration reader is added.
+The reset used is the earlier of the scheduled window reset and any officially announced
+extra reset that is still standing in the published reset events
+(`advise.AnnouncedResets`). A withdrawn, cancelled or not upstream-confirmed
+announcement is ignored, and it is re-read on every publication read, so a change takes
+effect at once. "Down" is silent when the reset comes before the projected run-out or
+within about an hour.
 
-Adjacent efforts, the ★ marker and reference costs come from the verified
-publication. Both costs must be positive and share the same nonempty cost basis;
-the ratio must agree with the direction. It is a **published reference-cost ratio**,
-not a forecast of the user's quota consumption. Missing effort, endpoint-dependent
-alias, ladder, cost basis or applicable Fast billing means no suggestion. Fast is
-preserved, requiring a published eligible subscription rate billed to plan quota;
-its unchanged factor cancels in the adjacent-effort reference ratio. No Fast ratio
-is invented and no recommendation to enable/disable Fast is made.
+## Copy
 
-Use `modelplan history --effort-suggestion dismiss` to hide it for seven days,
-`--effort-suggestion off` for “don't suggest again”, or `--effort-suggestion on` to
-opt in locally. State is local in `<cache>/observed/effort-suggestion.json` (0600);
-deleting that file restores the shipped default and clears preferences and the
-notice throttle. `MODELPLAN_EFFORT_SUGGESTION=off` or `MODELPLAN_HISTORY=off`
-disables the feature even with a saved opt-in. A saved `off` also suppresses an
-environment opt-in until `on` is chosen locally. Corrupt state or a failed
-notification claim is silent.
+One short line, no numbers; the basis goes in an optional detail line.
+
+| | zh | en |
+|---|---|---|
+| up | 额度富余 · 可升到 {effort} | Quota to spare · {effort} is affordable |
+| down | 额度偏紧 · 建议降到 {effort} | Quota running low · try {effort} |
+| detail | 依据：最近 {h} 小时 / 过去 {n} 个周期 | based on last {h}h / {n} cycles |
+
+The status line prefixes the line with the arrow of the headroom hints (↑ spare, ↓
+tight). History-based advice appears in the first 24 hours after a weekly reset; live and
+reset-close advice until the reset it was gated on. All of them share one notice per
+rolling seven days between `modelplan history` and the status line.
+
+## Not yet
+
+The cockpit fader's ★ hint (slice 4 of the spec) follows the v1 cockpit PRs. It should
+read the same `DecideEffort` result (`Direction`, `ToEffort`, `Reason`, `Basis`) so its
+arrow matches the status line, with dismiss and "stop suggesting" in its tooltip.
 
 ## 中文
 
-C14 默认关闭，等待所有者上线批准，最早为 2026-11-07；到期不会自动启用。
-本机审核可用 `modelplan history --effort-suggestion on` 或
-`MODELPLAN_EFFORT_SUGGESTION=on` 明确开启。旧状态没有明确开启标记时仍关闭；
-默认开启需要另一次所有者批准的变更。
+本机档位建议**默认开启**（所有者决定 D101、D102）。它只是建议：不会改变任何工具的
+型号、档位或 Fast，不上传，也不进入钩子输出、Agent 上下文、MCP 结果或桌面 JSON。
+关闭方式：`modelplan history --effort-suggestion off`、`MODELPLAN_EFFORT_SUGGESTION=off`
+或设置里的开关；`dismiss` 隐藏七天，`on` 重新开启。
 
-每周重置后的首 24 小时内，`modelplan history` 文本和 Claude Code 状态栏共享
-每滚动七天最多一次的本机默认档位建议；错过窗口就等下一次周重置。状态栏显示三周
-平均用量、相邻档位和公开参考成本比，紧急额度提示优先；预览、仅记录和无额度条时
-不消耗提示次数。建议不进入钩子输出（包括 `systemMessage`）、Agent 上下文、MCP
-结果或桌面 JSON；这些路径不计算建议，也不消耗提示次数。历史 JSON 保留原始测量
-格式。桌面契约的可选字段为兼容旧客户端和样例而保留，CLI 不再填充。
-
-状态栏使用当前明确的型号和档位（包括 `--model` / `--effort`），从当前档位迈一步；
-档位未知、型号或速度模式不匹配时不建议。历史文本沿用主要已记录配置，不新增配置
-读取器。Claude Code 状态栏不报告套餐名，记录保持空标签且不与有标签的额度池混用，
-不从型号推断套餐。用量增量归于最近会话配置，不能确定并发会话各用了多少；首次读数
-之前的用量不归因。
-
-只读取本机额度周期记录和已验证的公开发布，不新增凭证或会话读取，不上传、跨用户
-汇总，也不会替用户切换档位或 Fast。三个已结束的同来源、同套餐、同额度池周周期中，
-每周至少归因 5 个百分点且归因比例至少 60%；主配置至少占已归因用量的 60%。平均
-不超过 60%、每周不超过 75% 且未触顶时建议上调一档；平均至少 90% 或两周触顶时
-建议下调一档。其他情况不猜测。倍数是公开的同一基准参考成本比，不是额度用量预测。
-
-`modelplan history --effort-suggestion dismiss` 隐藏七天，`off` 不再建议，`on` 明确
-开启；状态只保存在本机缓存。删除状态文件恢复出厂默认并清除偏好与提示次数。
-环境变量 `MODELPLAN_EFFORT_SUGGESTION=off` 或 `MODELPLAN_HISTORY=off` 优先关闭；
-本机保存的 `off` 也优先于环境变量开启，直到用户在本机选择 `on`。状态损坏或提示
-次数写入失败时保持安静。
+规则：以所用型号公开发布的 ★ 档位为起点，只在同一型号内、离 ★ 最多两档，依据本机额度
+历史和当前用量节奏调整；当前档位不改变目标；不建议换型号，不建议 Fast，不显示数字。
+“可升”：最近三个完整周周期有富余（平均不超过 60%、没有超过 75%、未触顶，且升一档后
+预计不超过 85%），或重置（含官方宣布的）临近而额度还多。“建议降”：两周触顶或平均至少
+90%，或当前节奏会在重置前用完。重置在预计用完之前或一小时内时不提示“降”；被撤回或未
+确认的官方重置不计入，每次读取发布数据都会重新判断。证据不足时保持沉默。

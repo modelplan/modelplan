@@ -361,6 +361,12 @@
         "averageUsed": {
           "type": "number"
         },
+        "basis": {
+          "type": "string"
+        },
+        "basisHours": {
+          "type": "integer"
+        },
         "costBasisId": {
           "type": "string"
         },
@@ -402,6 +408,9 @@
           "type": "string"
         },
         "publicationId": {
+          "type": "string"
+        },
+        "reason": {
           "type": "string"
         },
         "recommended": {
