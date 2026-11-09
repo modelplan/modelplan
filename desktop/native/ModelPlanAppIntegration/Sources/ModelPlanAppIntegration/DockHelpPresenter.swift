@@ -206,6 +206,8 @@ import ModelPlanSettings
     /// A first-use hint owns the panel while it is shown.
     var showsHint: Bool { currentOffer != nil }
     private(set) var shownExplanationForChecks: HelpExplanation?
+    /// The screen frame of the explanation card while it is shown (checks only).
+    var shownExplanationFrameForChecks: CGRect? { currentExplanationID != nil && panel?.isVisible == true ? panel?.frame : nil }
 
     /// G3-10: the prototype explanation card next to the hovered or focused widget element.
     /// The panel ignores the pointer, so the hover that produced it stays on the widget.

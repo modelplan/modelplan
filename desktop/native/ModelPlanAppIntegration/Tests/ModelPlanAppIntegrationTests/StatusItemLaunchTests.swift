@@ -217,6 +217,32 @@ import XCTest
         XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
     }
 
+    /// G3-57 (owner, two displays): the "menu bar is full" warning showed although the icon was visible on the
+    /// external display. The icon is hidden only when its window is on screen on NO display.
+    func testG3_57IconVisibleOnAnyDisplayGivesNoHiddenWarning() async throws {
+        let app = try await application()
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let notice = "The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right."
+        // Hidden on the built-in display, shown on the external one: no warning.
+        app.statusWindowVisibilities = { [false, true] }
+        app.checkStatusItemVisibility()
+        XCTAssertFalse(app.statusItemHidden)
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice })
+        XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
+        // Hidden everywhere: the warning.
+        app.statusWindowVisibilities = { [false, false] }
+        app.checkStatusItemVisibility()
+        XCTAssertTrue(app.statusItemHidden)
+        XCTAssertNotNil(app.settingsHost.application.editor.context.statusItemNotice)
+        // Back on one display: cleared.
+        app.statusWindowVisibilities = { [true, false] }
+        app.checkStatusItemVisibility()
+        XCTAssertFalse(app.statusItemHidden)
+        XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
+        XCTAssertNil(EngineDockMenuApplication.anyWindowVisible([]), "no known window gives no verdict")
+    }
+
     func testMissingTemplateImageFallsBackToAVisibleTitle() async throws {
         let app = try await application()
         defer { app.composition.dock.close() }

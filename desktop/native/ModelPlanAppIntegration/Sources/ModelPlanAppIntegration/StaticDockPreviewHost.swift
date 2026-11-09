@@ -132,8 +132,10 @@ public struct StaticDockGeometry {
         let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
         addTrackingArea(area); hoverArea = area
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true; updatePose() }
-    override func mouseExited(with event: NSEvent) { hovered = false; updatePose() }
+    // G3-62: the key is its own view, so the widget's pointer tracking never sees the pointer leave it; without
+    // this the key's tip stayed up after the pointer had gone.
+    override func mouseEntered(with event: NSEvent) { hovered = true; updatePose(); onHelpFocusChanged?() }
+    override func mouseExited(with event: NSEvent) { hovered = false; updatePose(); onHelpFocusChanged?() }
     override func highlight(_ flag: Bool) { super.highlight(flag); pressed = flag; updatePose() }
 
     private var canPresentHelp: Bool { isEnabled && !isHiddenOrHasHiddenAncestor && !bounds.isEmpty }

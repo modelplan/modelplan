@@ -87,6 +87,7 @@ struct StatusNoticePresentation {
     var dockHelpInstalled: Bool { dockHelp?.isInstalled == true }
     /// The explanation card currently shown next to a widget element (checks only).
     var shownDockExplanationForChecks: String? { dockHelp?.shownExplanationForChecks?.accessibleDescription }
+    var shownDockExplanationFrameForChecks: CGRect? { dockHelp?.shownExplanationFrameForChecks }
     private var helpMapUnavailable = false
     /// The presentation boundary remains replaceable for synthetic, window-free tests.
     var requestHelpMap: (() -> Bool)?
@@ -592,15 +593,45 @@ struct StatusNoticePresentation {
     /// G3-22: a full menu bar hides the item behind the notch (the owner's Mac: occluded at
     /// x=769..801 of 1470). Test seam: nil reads the real status-item window.
     var statusItemVisibility: (@MainActor () -> Bool?)?
+    /// Test seam for several displays: one entry per status-item window, true when that window is on screen.
+    var statusWindowVisibilities: (@MainActor () -> [Bool])?
     private(set) var statusItemHidden = false
+    /// G3-57: the last length written, so the gate does not rely on what the item reads back, and a one-shot flag that
+    /// makes the next render write title, position and length again (a display change or a window coming back on screen
+    /// leaves the other display's copy of the item with stale content, which the unchanged-value gates would never fix).
+    private var appliedStatusLength: CGFloat?
+    private var forceStatusRewrite = false
+    private var lastStatusRewrite = Date.distantPast
+    /// At most one forced rewrite every two seconds: a rewrite re-measures the item, which must not feed back into itself.
+    func rewriteStatusContent(now: Date = Date()) {
+        guard now.timeIntervalSince(lastStatusRewrite) >= 2 else { return }
+        lastStatusRewrite = now; forceStatusRewrite = true; renderMenu()
+    }
+    /// G3-57: with more than one display macOS keeps a status-item window per display's menu bar, and the button's
+    /// own window is only one of them (often the one on a display where the bar is full, or that shows no menu bar).
+    /// The icon counts as visible when its window is on screen on ANY display; nil when no window is known.
+    static func anyWindowVisible(_ states: [Bool]) -> Bool? { states.isEmpty ? nil : states.contains(true) }
+    private func statusItemWindows() -> [NSWindow] {
+        var windows = [NSWindow]()
+        if let own = status?.button?.window { windows.append(own) }
+        for window in NSApp.windows where String(describing: type(of: window)).contains("StatusBar") && !windows.contains(where: { $0 === window }) { windows.append(window) }
+        return windows
+    }
+    private func realStatusWindowVisibilities() -> [Bool] {
+        statusItemWindows().map { window in window.isVisible && window.occlusionState.contains(.visible) && NSScreen.screens.contains { $0.frame.intersects(window.frame) } }
+    }
     private var statusOcclusionObserver: NSObjectProtocol?
     private func watchStatusItemVisibility() {
         statusOcclusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
                                                                         object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
-                guard let self, let window = note.object as? NSWindow, window === self.status?.button?.window else { return }
+                guard let self, let window = note.object as? NSWindow, self.statusItemWindows().contains(where: { $0 === window }) else { return }
                 self.checkStatusItemVisibility()
+                if window.occlusionState.contains(.visible) { self.rewriteStatusContent() }
             }
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.rewriteStatusContent(); self?.checkStatusItemVisibility() }
         }
         // Give the menu bar a few seconds to lay the item out before telling the user.
         Task { @MainActor [weak self] in
@@ -611,7 +642,7 @@ struct StatusNoticePresentation {
     /// Shows the one-line notice in the widget menu and Settings while the item is covered; clears it when visible.
     func checkStatusItemVisibility() {
         guard !terminating else { return }
-        let visible = statusItemVisibility.map { $0() } ?? status?.button?.window.map { $0.occlusionState.contains(.visible) }
+        let visible = statusItemVisibility.map { $0() } ?? Self.anyWindowVisible(statusWindowVisibilities?() ?? realStatusWindowVisibilities())
         let hidden = visible == false
         guard hidden != statusItemHidden else { return }
         statusItemHidden = hidden
@@ -780,9 +811,10 @@ struct StatusNoticePresentation {
             // a percentage title keeps a variable length. The autosave name keeps a ⌘-dragged position.
             let iconOnly = button.title.isEmpty && button.image != nil
             let position: NSControl.ImagePosition = iconOnly ? .imageOnly : .imageLeading
-            if button.imagePosition != position { button.imagePosition = position }
+            if forceStatusRewrite || button.imagePosition != position { button.imagePosition = position }
             let length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
-            if status?.length != length { status?.length = length }
+            if forceStatusRewrite || appliedStatusLength != length || status?.length != length { status?.length = length; appliedStatusLength = length }
+            forceStatusRewrite = false
             // MENU-06: place the dot after the title is set, against the icon, not the text end.
             noticeIndicator.attach(to: button)
         }
@@ -816,7 +848,7 @@ struct StatusNoticePresentation {
         // Never let the item collapse to zero width when the template image is unavailable.
         // Only changed values are written: re-setting the same title or position makes the item re-measure itself.
         let shownTitle = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
-        if button.title != shownTitle { button.title = shownTitle }
+        if forceStatusRewrite || button.title != shownTitle { button.title = shownTitle }
         // With no image the fallback title is the whole item; image-only would hide it.
         if button.image != nil {
             let position: NSControl.ImagePosition = title.isEmpty ? .imageOnly : .imageLeading
@@ -832,6 +864,8 @@ struct StatusNoticePresentation {
     private var statusTooltip = ""
     private var statusTooltipHidden: Bool { console?.isShowing == true }
     func refreshStatusTooltip() {
+        // G3-62: a tip shown for the ignition key goes when the cockpit opens, and stays away while it is open.
+        dockHelp?.setCockpitShowing(statusTooltipHidden)
         guard let button = status?.button else { return }
         button.toolTip = statusTooltipHidden ? nil : statusTooltip
     }

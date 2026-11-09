@@ -123,7 +123,8 @@ private actor S04SyntheticClient: EngineClient {
     }
 
     /// Normal entry on real panels with the real display topology; only the pointer is supplied.
-    private func journeyApplication(_ name: String, onboarded: Bool = false, pointer: @escaping @MainActor () -> CGPoint?) async throws -> (EngineDockMenuApplication, URL) {
+    private func journeyApplication(_ name: String, onboarded: Bool = false, console: (any EngineRowsConsoleSurface)? = nil,
+                                    pointer: @escaping @MainActor () -> CGPoint?) async throws -> (EngineDockMenuApplication, URL) {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent(name + "-" + UUID().uuidString)
         EngineRowsEntry.nativeJourneyProfile = profile
@@ -139,11 +140,12 @@ private actor S04SyntheticClient: EngineClient {
         if onboarded { _ = try await store.update { preferences in preferences.onboarding.next(in: .task65) } }
         let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: true,
-            dockEnvironment: {
+            cockpitEntryEnabled: console != nil ? true : nil, dockEnvironment: {
                 let topology = DockDisplayTopology.system()
                 return .init(displays: topology.displays, layouts: [], primaryDisplayID: topology.primaryID, pointer: pointer())
             },
-            makeClient: { _, engineStore in S04SyntheticClient(store: engineStore, rows: rows) }, activateSettings: {})
+            makeClient: { _, engineStore in S04SyntheticClient(store: engineStore, rows: rows) },
+            makeConsole: console.map { surface in { _ in surface } }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         return (app, profile)
     }
@@ -180,6 +182,51 @@ private actor S04SyntheticClient: EngineClient {
         await app.composition.stop()
     }
 
+    /// G3-62 on real panels: the ignition key's tip fits its text, goes when the cockpit opens (the pointer is still on
+    /// the key then) and stays away while the cockpit is open; it also goes when the pointer leaves the key.
+    func testG362IgnitionTipFitsItsTextAndGoesWhenTheCockpitOpensOrThePointerLeaves() async throws {
+        let console = IgnitionTipConsole()
+        var pointer: CGPoint? = CGPoint(x: -10_000, y: -10_000)
+        let (app, profile) = try await journeyApplication("g362-ignition", console: console, pointer: { pointer })
+        defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, view = dock.dockView
+        for _ in 0..<300 where dock.currentDockHelpSurface?.mapAnchors.contains(where: { $0.id == "dock.ignition" }) != true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let key = try XCTUnwrap(dock.currentDockHelpSurface?.mapAnchors.first { $0.id == "dock.ignition" }?.rect)
+        let panel = try XCTUnwrap(view.window)
+        let moved = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: panel.convertPoint(fromScreen: CGPoint(x: key.midX, y: key.midY)),
+            modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+        func settle(_ shown: Bool) async throws {
+            for _ in 0..<200 where (app.shownDockExplanationForChecks != nil) != shown { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        pointer = CGPoint(x: key.midX, y: key.midY)
+        view.mouseMoved(with: moved)
+        try await settle(true)
+        XCTAssertEqual(app.shownDockExplanationForChecks, HelpCatalog(.english).explanation(.ignition).accessibleDescription)
+        let frame = try XCTUnwrap(app.shownDockExplanationFrameForChecks)
+        XCTAssertLessThan(frame.width, 250, "the tip is sized to its text, not the 370 pt ceiling")
+        XCTAssertLessThan(frame.height, 70)
+        // The click that opens the cockpit leaves the pointer on the key: the tip goes and does not come back.
+        app.showConsole()
+        try await settle(false)
+        XCTAssertNil(app.shownDockExplanationForChecks, "the tip is dismissed when the cockpit opens")
+        view.mouseMoved(with: moved)
+        try await Task.sleep(for: .milliseconds(800))
+        XCTAssertNil(app.shownDockExplanationForChecks, "no tip while the cockpit is open")
+        // Closed again, the pointer still resting on the key: it shows again, and leaving the key clears it.
+        console.pageClosed()
+        view.mouseMoved(with: moved)
+        try await settle(true)
+        XCTAssertNotNil(app.shownDockExplanationForChecks)
+        pointer = CGPoint(x: -10_000, y: -10_000)
+        view.mouseExited(with: moved)
+        try await settle(false)
+        XCTAssertNil(app.shownDockExplanationForChecks, "leaving the key clears the tip")
+        await app.composition.stop()
+    }
+
     /// G3-12 / S-06 on real panels: Help from the status menu presents the map, and the user's
     /// dismissal returns the request to the status item (focus return). Before the fix the
     /// coordinator was built without the status request, so no dismissal ever reached it.
@@ -205,4 +252,14 @@ private actor S04SyntheticClient: EngineClient {
         await app.composition.stop()
     }
     #endif
+}
+
+@MainActor private final class IgnitionTipConsole: EngineRowsConsoleSurface {
+    private(set) var isShowing = false
+    var onShowingChanged: (() -> Void)?
+    func show() { isShowing = true; onShowingChanged?() }
+    func pageClosed() { isShowing = false; onShowingChanged?() }
+    func render() {}
+    func hide() { isShowing = false; onShowingChanged?() }
+    func requestClose() { hide() }
 }

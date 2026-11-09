@@ -14,10 +14,12 @@ import AppKit
 /// Independent community rendering; approved private geometry/material/copy can be injected above it.
 @MainActor public final class NeutralHelpUIRecipeProvider: HelpUIRecipeProvider {
     public init() {}
-    public var primaryInk: NSColor { .labelColor }
-    public var secondaryInk: NSColor { .secondaryLabelColor }
-    public var panelColor: NSColor { .controlBackgroundColor }
-    public var borderColor: NSColor { .separatorColor }
+    // The help-system study's tooltip (`.help-tooltip`): a dark panel with a thin grey frame in both appearances,
+    // never the system's white control background.
+    public var primaryInk: NSColor { NSColor(srgbRed: 0xe4/255, green: 0xea/255, blue: 0xf0/255, alpha: 1) }
+    public var secondaryInk: NSColor { NSColor(srgbRed: 0xba/255, green: 0xc5/255, blue: 0xce/255, alpha: 1) }
+    public var panelColor: NSColor { NSColor(srgbRed: 0x10/255, green: 0x18/255, blue: 0x20/255, alpha: 1) }
+    public var borderColor: NSColor { NSColor(srgbRed: 0x66/255, green: 0x72/255, blue: 0x7d/255, alpha: 1) }
     public func font(for role: HelpUITextRole) -> NSFont {
         .systemFont(ofSize: role == .button ? 10:11,weight:role == .contextTitle || role == .header ? .semibold:.regular)
     }

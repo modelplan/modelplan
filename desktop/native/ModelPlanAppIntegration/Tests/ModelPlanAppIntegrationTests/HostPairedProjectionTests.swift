@@ -1402,6 +1402,43 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(button.title, "15%")
     }
 
+    /// G3-57 (owner build 14b): the percentage vanished from the menu bar next to the icon. The path of a refresh
+    /// after the #756 change (configure, apply, place the dot) must leave "15%" in the title, the icon leading it, and
+    /// must show it again when the item first rendered icon-only (no reading yet) and a reading arrives afterwards.
+    func testPercentageTextStaysAfterTheStablePathAndAfterAnIconOnlyStart() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-percent-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let fixture = try Self.rows(weekly: 15)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let button = NSButton(frame: .zero), dot = DockNoticeIndicatorView(frame: .zero)
+        let icon = NSImage(size: .init(width: 16, height: 16))
+        func render() {
+            EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+            app.applyStatusContent(to: button, detail: "detail")
+            dot.attach(to: button)
+        }
+        // First render: the display style shows no percentage yet, so the item is icon only.
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.icon))
+        render()
+        XCTAssertEqual(button.title, ""); XCTAssertEqual(button.imagePosition, .imageOnly)
+        // A reading style arrives: the title comes back with the icon leading it.
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.tightest))
+        render()
+        XCTAssertEqual(button.title, "15%", "the percentage shows after an icon-only start")
+        XCTAssertEqual(button.imagePosition, .imageLeading)
+        for _ in 0..<3 { render() }
+        XCTAssertEqual(button.title, "15%", "unchanged refreshes keep the percentage")
+        XCTAssertEqual(button.imagePosition, .imageLeading)
+        XCTAssertNotNil(button.image)
+    }
+
     /// The reset dot stays on the icon's top right whatever size the button still holds from before a refresh.
     func testResetDotStaysOnTheIconWhateverBoundsTheButtonHolds() throws {
         let button = NSButton(frame: .zero)

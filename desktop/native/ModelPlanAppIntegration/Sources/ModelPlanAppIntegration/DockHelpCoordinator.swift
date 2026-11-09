@@ -44,6 +44,16 @@ struct DockStatusHelpDismissal {
     private var explanationTask: Task<Void, Never>?
     private var explanationInteraction: DockHelpInteraction?
     var shownExplanationForChecks: HelpExplanation? { presenter?.shownExplanationForChecks }
+    var shownExplanationFrameForChecks: CGRect? { presenter?.shownExplanationFrameForChecks }
+    /// G3-62: the pointer stays on the ignition key after the click that opens the cockpit, and its tip drew over the
+    /// cockpit. While the cockpit shows, no hover or focus explanation is shown, and one already up is removed.
+    private var cockpitShowing = false
+    func setCockpitShowing(_ showing: Bool) {
+        guard cockpitShowing != showing else { return }
+        cockpitShowing = showing
+        if showing { explanationTask?.cancel(); explanationTask = nil; presenter?.hideExplanation() }
+        else if let interaction = explanationInteraction { interactionDidChange(interaction) }
+    }
     var isInstalled: Bool { !retired && presenter != nil && binding != nil }
 
     private init(dock: StaticDockPreviewHost, application: SettingsApplicationCoordinator,
@@ -146,7 +156,7 @@ struct DockStatusHelpDismissal {
         explanationTask?.cancel(); explanationTask = nil
         presenter?.hideExplanation()
         explanationInteraction = interaction
-        guard let interaction, !retired, !suspended, mapSurface == nil else { return }
+        guard let interaction, !retired, !suspended, !cockpitShowing, mapSurface == nil else { return }
         let dwell: Duration = interaction.source == .keyboard ? .zero : .milliseconds(500)
         explanationTask = Task { @MainActor [weak self] in
             if dwell > .zero { try? await Task.sleep(for: dwell) }
@@ -157,7 +167,7 @@ struct DockStatusHelpDismissal {
     }
 
     private func presentExplanation(_ interaction: DockHelpInteraction) {
-        guard !retired, !suspended, mapSurface == nil, explanationInteraction == interaction, let dock,
+        guard !retired, !suspended, !cockpitShowing, mapSurface == nil, explanationInteraction == interaction, let dock,
               !dock.spotlightHold, dock.currentDockHelpInteraction == interaction, let surface = dock.currentDockHelpSurface,
               dock.isCurrentDockHelpSurface(surface) else { return }
         let language: InstrumentLanguage = application.latest?.effective.language == .chinese ? .chinese : .english
