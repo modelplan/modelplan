@@ -45,7 +45,8 @@ extension RealBinaryTests {
             try await Task.sleep(for: .milliseconds(50))
         }
         let phases = await probe.historyImports().map { "\($0.phase)/\($0.filesDone)of\($0.filesTotal)/\($0.sources.count)" }
-        XCTAssertEqual(await probe.historyImports().last?.phase, .done, "polled \(polled) times, phases: \(phases)")
+        let finalPhase = await probe.historyImports().last?.phase
+        XCTAssertEqual(finalPhase, .done, "polled \(polled) times, phases: \(phases)")
         let doneLast = await probe.historyImports().last
         let done = try XCTUnwrap(doneLast)
         XCTAssertEqual(done.sources.first?.source, "claude-code")
