@@ -161,6 +161,7 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 .website-fleet-picker>footer button{padding:0;color:#e9eaeb;font-size:11px}
 .website-fleet-picker>footer .field-website{color:#d4b994;font-size:10px}
 .website-fleet-picker>footer .field-website:hover{text-decoration:underline}
+.website-fleet-picker>footer .field-website:disabled{opacity:.4;cursor:default;text-decoration:none}
 .website-fleet-picker>footer small{width:100%;font-size:9px;color:#a2a4a8}
 .field-card button:focus-visible,.website-fleet-tools button:focus-visible{outline:1px solid #f6d38a;outline-offset:2px}
 /* Axis labels in screen-space lanes (src/field-axes.ts; prototype study style.css task 91 rounds 4-5). Unplaced ticks stay hidden

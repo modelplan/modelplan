@@ -141,7 +141,7 @@ export function createFieldPicker(actions:PickerActions):FieldPicker {
    `<div class="sp-which-chart field-frontier">${chart(flown,base,v.focus,v.language)}</div>`+
    `<div class="field-roster-heading"><b>${w.roster}</b><span>${count}/${FIELD_LIMIT} ${w.onField}</span></div>`+
    `<div class="field-model-list sp-which-roster">${rows||`<p class="field-empty">${w.empty}</p>`}</div>`+
-   `<footer><button type="button" data-field-reset>↺ ${w.reset}</button><button type="button" class="field-website" aria-label="${w.compareLabel}">${w.compare}</button>`+
+   `<footer><button type="button" data-field-reset>↺ ${w.reset}</button><button type="button" class="field-website" aria-label="${w.compareLabel}" ${count?'':'disabled'}>${w.compare}</button>`+
    `<small>${full?w.limit:cheapest?`×1 = ${esc(cheapest.name)} ★ ${esc(cheapest.rec)} · ${w.local}`:w.local}</small></footer>`;
   tools.innerHTML=`<button type="button" data-fleet-picker aria-expanded="${!folded}" ${folded?'':'hidden'}>${w.title} <b>${count}/${FIELD_LIMIT}</b></button>`;
   if(searching){const input=card.querySelector<HTMLInputElement>('[data-field-search]');input?.focus();input?.setSelectionRange(input.value.length,input.value.length);}

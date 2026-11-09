@@ -208,6 +208,15 @@ test('CKP-PORT-13 the website link names the flown fleet and the host builds the
  expect((await page.evaluate(()=>window.sent.filter(m=>m.type==='website'))).at(-1).models).toHaveLength(10);
  expect(await page.locator('.field-website[href]').count()).toBe(0);
 });
+test('CKP-PORT-13 the link lives only in the picker card footer (the study), with no top bar, and is disabled at 0/10',async({page})=>{
+ await open(page);await show(page,payload());
+ await expect(page.locator('.field-website')).toHaveCount(1);
+ await expect(page.locator('.field-card footer .field-website')).toHaveCount(1);
+ await expect(page.locator('.field-bar')).toHaveCount(0);
+ const link=page.locator('.field-website');await expect(link).toBeEnabled();
+ while(await page.locator('.field-model-row[data-on="true"] .field-launch-lamp').count())await page.locator('.field-model-row[data-on="true"] .field-launch-lamp').first().click();
+ await expect(link).toBeDisabled();
+});
 test('CKP-PORT-13 Chinese link text',async({page})=>{
  await open(page);await show(page,payload(3,{language:'zh'}));
  await expect(page.locator('.field-website')).toHaveText('网站对比 ↗');await expect(page.locator('.field-website')).toHaveAttribute('aria-label','在网站上看完整舰队');
