@@ -6,7 +6,35 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
-## CLI v0.5.56, Codex plugin 0.15.43 and Claude Code plugin 0.7.42 (2026-11-08)
+## CLI v0.5.57, Codex plugin 0.15.44 and Claude Code plugin 0.7.43 (2026-11-09)
+
+- The cockpit base now shows a bell under each subscription column, and a subscription with a session running right now lights the inside of its bell mouth in the colour of its quota state, as on the prototype. The official appearance uses the released base-bell art; the community appearance draws a flat light in the same place.
+
+- The cockpit comparison view now reads the published fast tiers, matching a model by its published or vendor model id, so the fast key can show off and on. It stays dark for a model with no tier.
+
+- The cockpit publication now carries the published fast tiers (speedTiers, unchanged from the client data), so the comparison fast key has data to read.
+
+- The cockpit's porthole HUD now fits all six model rows on the tall screen with whole names, and its small chart carries the Ability and Cost captions and rank numbers, as in the design.
+
+- The cockpit's ALERT lamp no longer blinks again for a caution you already pressed: a refresh, a reopen or a pending read keeps it steady, and pressing the lamp flashes the row of the newest caution once in the list.
+
+- At night the cockpit now draws its hull as in the design: the r3 hull walls and aft plate around the canopy, with nothing drawn around the hull, so the desktop shows through beside and below it.
+
+- The cockpit's Subscription page now switches its usage block between 7 and 30 days and its history between the 5-hour and weekly windows, draws the cycle bars in the subscription's colour, and shows the 30-day credits total as unknown instead of leaving it out.
+
+- The cockpit now lines up with its design at both heights: the canopy joins the title strip, every record line fits, and the full height is used whenever it actually fits the screen. Dragging the left of the title strip now detaches and moves the cockpit.
+
+- A failed Codex refresh (Codex not found, a timeout, a transient error) no longer throws away the last good reading: for up to six hours the account keeps its windows as a stale reading that names the failure, so its ring stays, and the retry still follows the usual back-off. Doctor now reports Codex failures as runtime_missing or reader_error with the specific reason, like the other readers.
+
+- After consent is reset and granted again, Codex is read at once even when the cache folder still holds an older snapshot and next-attempt time from before the grant, so the Codex ring no longer waits for the old half-hour schedule.
+
+- The Help map places its captions beside the Quota Widget instead of over its rings, and its leader lines now show on dark desktops.
+
+- Help map captions on the Quota Widget no longer lose their last words; a caption that just fit its measured width wrapped onto a line its box could not show.
+
+- Esc and a click outside now close the Help map: opening it brings the app forward so the keys and clicks reach it.
+
+- The menu-bar percentage no longer jumps while the pointer is on the item: a refresh that changes nothing writes nothing, and the reset dot is placed from the icon's own width instead of the button's stale bounds.
 
 - The widget card now draws every vendor mark at the same size as its title, measured by the mark itself rather than its file's clear space, and keeps the prototype's gap from a ring that hover has magnified, so the card no longer crowds the ring and its arrow tip is no longer hidden under it.
 
@@ -353,7 +381,6 @@ This heading also covers v0.5.47 to v0.5.53, which were released without their o
 - History-off stops new recording; read-only projection preserves it. The snapshot docs describe
   timing boundaries, DST, sample gates and bounded retention. Desktop parser types accept the additions.
 - Complete the existing macOS CLI dependency notices for go-isatty and go-strftime (no dependency change).
-
 
 - Both plugins pin CLI v0.5.33.
 
