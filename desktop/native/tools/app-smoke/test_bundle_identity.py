@@ -95,9 +95,10 @@ class BundleIdentityModeTests(unittest.TestCase):
     def test_smoke_artifact_is_built_from_the_exact_head_it_is_labelled_with(self):
         # A pull_request run's default checkout is the synthetic merge commit; the artifact is
         # labelled with the PR head, so the job must check that head out and refuse to publish an
-        # artifact whose bundle source or checkout differs from the label (macrevb-567-5).
+        # artifact whose bundle source or checkout differs from the label (macrevb-567-5). A pr=<N>
+        # dispatch (D112) builds the resolved refs/pull/<N>/merge commit and is labelled with that.
         smoke = (ROOT / '.github/workflows/desktop.yml').read_text().split('  app-smoke:', 1)[1].split('  native:', 1)[0]
-        head = '${{ github.event.pull_request.head.sha || github.sha }}'
+        head = '${{ inputs.pr && needs.pr-ref.outputs.sha || github.event.pull_request.head.sha || github.sha }}'
         checkout = smoke.split('- uses: actions/checkout@v4', 1)[1].split('- uses:', 1)[0]
         self.assertIn('ref: ' + head, checkout)
         zipping = smoke.split('Zip the packaged native app', 1)[1].split('- uses:', 1)[0]
