@@ -12,17 +12,46 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(try fit(1000, closed: true).rootHeight, 691)
         XCTAssertEqual(try fit(800).rootHeight, 635)
         XCTAssertEqual(try fit(800, closed: true).rootHeight, 609)
-        XCTAssertEqual(try fit(984).profile, .full)
-        XCTAssertEqual(try fit(983).profile, .compact)
+        XCTAssertEqual(try fit(945).profile, .full)
+        XCTAssertEqual(try fit(944).profile, .compact)
     }
     func testNativeShellTierAndForcedClosedBoundary() throws {
-        let forced = try fit(713).shellState(attached: true)
+        let forced = try fit(674).shellState(attached: true)
         XCTAssertEqual(forced.profile, .closed); XCTAssertEqual(forced.tier, .compact)
         XCTAssertTrue(forced.forcedClosed)
-        let fitting = try fit(714).shellState(attached: true)
+        let fitting = try fit(675).shellState(attached: true)
         XCTAssertEqual(fitting.profile, .open); XCTAssertEqual(fitting.tier, .compact)
         XCTAssertFalse(fitting.forcedClosed)
-        XCTAssertEqual(try fit(984).shellState(attached: false).tier, .tall)
+        XCTAssertEqual(try fit(945).shellState(attached: false).tier, .tall)
+    }
+    /// G3-39: the menu bar is excluded from `usable` once, and a step is taken when its root really fits.
+    func testG3_39ProfileFollowsTheRealFitOnLaptopScreens() throws {
+        func placed(width: CGFloat, height: CGFloat, bar: CGFloat, macDock: CGFloat = 0) throws -> CockpitShellLayout {
+            try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: macDock, width: width, height: height - bar - macDock),
+                anchor: .init(x: width - 200, y: height - bar, width: 28, height: bar), shutterClosed: false))
+        }
+        // 13-inch Air without a notch at its default size: 876 pt usable, the full root needs 945. Compact is right.
+        XCTAssertEqual(try placed(width: 1440, height: 900, bar: 24).profile, .compact)
+        // The same Air at "More Space".
+        XCTAssertEqual(try placed(width: 1680, height: 1050, bar: 24).profile, .full)
+        // 13-inch notched Air: 919 pt usable, the full root (D74: 905 plus the 40 reserve) needs 945, so it is compact.
+        let notched = try placed(width: 1470, height: 956, bar: 37)
+        XCTAssertEqual(notched.profile, .compact); XCTAssertEqual(notched.scale, 1)
+        XCTAssertEqual(notched.frame.height, 669); XCTAssertEqual(notched.frame.minY, 244)
+        // 14-inch notched Pro: 945 pt usable fits the full root exactly.
+        let pro = try placed(width: 1512, height: 982, bar: 37)
+        XCTAssertEqual(pro.profile, .full); XCTAssertEqual(pro.scale, 1)
+        XCTAssertEqual(pro.frame.height, 939); XCTAssertEqual(pro.frame.minY, 0)
+        XCTAssertEqual(try placed(width: 1470, height: 956, bar: 37, macDock: 70).profile, .compact)
+    }
+    /// G3-43 / CKP-SHELL-04: the drag region sits on the strip, not on the canopy, in every shape.
+    func testG3_43TitleDragFrameFollowsTheStrip() throws {
+        for (height, closed, stripTop) in [(1000, false, 253), (1000, true, 45), (800, false, 65), (800, true, 45)] as [(CGFloat, Bool, CGFloat)] {
+            let value = try fit(height, closed: closed), canvas = value.rootHeight + 34
+            XCTAssertEqual(canvas - value.titleDragFrame.maxY, stripTop - 3, "top of the strip keys")
+            XCTAssertEqual(value.titleDragFrame.height, 32)
+            XCTAssertLessThan(value.titleDragFrame.maxX, 243, "the shutter keeps its input")
+        }
     }
     func testShortAndNarrowDisplaysScaleTheWholeRootIncludingBaseReserve() throws {
         let value = try fit(500, width: 400)
