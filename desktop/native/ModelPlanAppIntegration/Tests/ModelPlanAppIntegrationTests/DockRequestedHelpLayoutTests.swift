@@ -160,6 +160,116 @@ import ModelPlanSettings
         XCTAssertTrue(result.mapLabels.contains { $0.anchorID == "status.menu" })
     }
 
+    /// QA 11-08 item 7: "Number" hid the third ring and "Quota rings" covered the second. Captions
+    /// go beside the widget, as in the study, and each draws a leader to its own target.
+    func testCaptionsSitBesideTheWidgetWithALeaderToEachTarget() throws {
+        // Build 14 gate: a caption covered ~17% of the ring. No caption frame meets a ring at S, M or L (36/44/52 pt).
+        for factor in [CGFloat(36) / 44, 1, CGFloat(52) / 44] { try assertCaptionsBesideWidget(factor: factor) }
+    }
+
+    private func assertCaptionsBesideWidget(factor: CGFloat) throws {
+        func scaled(_ r: CGRect) -> CGRect { CGRect(x: r.minX * factor, y: r.minY * factor, width: r.width * factor, height: r.height * factor) }
+        let recipe = NeutralHelpUIRecipeProvider()
+        let widget = scaled(CGRect(x: 0, y: 145, width: 72, height: 415))
+        let rings = (0..<5).map { scaled(CGRect(x: 12, y: 190 + CGFloat($0) * 70, width: 42, height: 42)) }
+        let anchors: [DockRequestedHelpAnchor] = [
+            .init(id: "status.menu", region: .sliver, rect: CGRect(x: 1641, y: 1, width: 64, height: 22), visible: true,
+                  caption: "Right-click the menu bar icon and choose Show Quota Widget."),
+            .init(id: "dock.ignition", region: .ignition, rect: scaled(CGRect(x: 9, y: 146, width: 29, height: 29)), visible: true),
+            .init(id: "dock.nozzle.a", region: .nozzle, rect: rings[0].insetBy(dx: -1, dy: -1), visible: true),
+            .init(id: "dock.rings.a", region: .rings, rect: rings[0], visible: true),
+            .init(id: "dock.number.a", region: .number, rect: scaled(CGRect(x: 10, y: 236, width: 47, height: 13)), visible: true),
+            .init(id: "dock.grip.0", region: .dockMove, rect: scaled(CGRect(x: 9, y: 530, width: 37, height: 25)), visible: true),
+        ] + rings.dropFirst().enumerated().map { index, ring in
+            .init(id: "dock.rings.\(index + 1)", region: .rings, rect: ring, visible: true)
+        }
+        let readings = rings.map { CGRect(x: 10 * factor, y: $0.maxY + 4, width: 47 * factor, height: 13 * factor) }
+        for language in [InstrumentLanguage.english, .chinese] {
+            let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: CGSize(width: 1920, height: 1080),
+                language: language, anchors: anchors, blocked: readings, avoid: [widget], recipe: recipe, refreshAvailable: true))
+            let result = recipe.presentation(for: input)
+            XCTAssertEqual(result.unresolvedMapIDs, [])
+            XCTAssertFalse(result.mapLabels.isEmpty)
+            for label in result.mapLabels {
+                for ring in rings { XCTAssertFalse(label.frame.intersects(ring), "\(label.id) covers a ring") }
+                XCTAssertFalse(label.frame.intersects(widget), "\(label.id) sits on the widget")
+                XCTAssertGreaterThanOrEqual(label.leader.count, 2, "\(label.id) has no leader")
+            }
+            XCTAssertFalse(try XCTUnwrap(result.mapHeader).intersects(widget))
+            // Each leader is one straight line to its target, and no two cross: lines must not share a long run.
+            let widgetSide = result.mapLabels.filter { label in anchors.first { $0.id == label.anchorID }.map { widget.insetBy(dx: -4, dy: -4).intersects($0.rect) } ?? false }
+            XCTAssertFalse(widgetSide.isEmpty)
+            XCTAssertEqual(Set(widgetSide.map { $0.frame.minX }).count, 1, "the widget's captions share one column")
+            for label in result.mapLabels { XCTAssertEqual(label.leader.count, 2, "\(label.id) leader is not one straight line") }
+            func cross(_ a: [CGPoint], _ b: [CGPoint]) -> Bool {
+                func side(_ p: CGPoint, _ q: CGPoint, _ r: CGPoint) -> CGFloat { (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x) }
+                return side(a[0], a[1], b[0]) * side(a[0], a[1], b[1]) < 0 && side(b[0], b[1], a[0]) * side(b[0], b[1], a[1]) < 0
+            }
+            for (i, one) in result.mapLabels.enumerated() {
+                for other in result.mapLabels[(i + 1)...] { XCTAssertFalse(cross(one.leader, other.leader), "\(one.id) crosses \(other.id)") }
+            }
+        }
+    }
+
+    /// Narrow and short screens: the map is still produced, every caption stays inside the screen and off the
+    /// rings, and captions beside the widget keep the order of their targets (so leaders cannot cross).
+    func testNarrowAndShortScreensStillShowTheMapInOrder() throws {
+        let recipe = NeutralHelpUIRecipeProvider()
+        let widget = CGRect(x: 0, y: 145, width: 72, height: 415)
+        let rings = (0..<5).map { CGRect(x: 12, y: 190 + CGFloat($0) * 70, width: 42, height: 42) }
+        let anchors: [DockRequestedHelpAnchor] = rings.enumerated().map { .init(id: "dock.rings.\($0.offset)", region: $0.offset == 0 ? .rings : .nozzle, rect: $0.element, visible: true,
+                  caption: "Quota ring number \($0.offset + 1) of five, with its own reading.") }
+        // Each anchor carries its own caption: the layout keeps one anchor per region unless it has a caption,
+        // so without captions only the first ring and the first nozzle would be labelled.
+        for size in [CGSize(width: 900, height: 700), CGSize(width: 1280, height: 720), CGSize(width: 1280, height: 600), CGSize(width: 900, height: 480)] {
+            for language in [InstrumentLanguage.english, .chinese] {
+                let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: size, language: language,
+                    anchors: anchors, blocked: [], avoid: [widget], recipe: recipe), "map hidden at \(size)")
+                let result = recipe.presentation(for: input)
+                XCTAssertNotNil(result.mapHeader, "no header at \(size)")
+                XCTAssertEqual(result.unresolvedMapIDs, [])
+                XCTAssertEqual(result.mapLabels.count, anchors.count, "a caption is missing at \(size)")
+                let screen = CGRect(origin: .zero, size: size)
+                let ordered = anchors.compactMap { anchor in result.mapLabels.first { $0.anchorID == anchor.id } }
+                for label in result.mapLabels {
+                    XCTAssertTrue(screen.contains(label.frame), "\(label.id) leaves the screen at \(size)")
+                    for ring in rings { XCTAssertFalse(label.frame.intersects(ring), "\(label.id) covers a ring at \(size)") }
+                }
+                XCTAssertEqual(ordered.map(\.frame.minY), ordered.map(\.frame.minY).sorted(), "captions out of order at \(size)")
+            }
+        }
+    }
+
+    /// Owner D71: the Help map callouts use the study's dark plate with light text, not white. Drawn by the
+    /// real layer and read back from its pixels, so a theme-following fill cannot pass.
+    func testHelpMapCalloutsAreDrawnOnTheDarkPlate() throws {
+        let recipe = NeutralHelpUIRecipeProvider()
+        let rings = (0..<3).map { CGRect(x: 12, y: 190 + CGFloat($0) * 70, width: 42, height: 42) }
+        let anchors: [DockRequestedHelpAnchor] = rings.enumerated().map { .init(id: "dock.rings.\($0.offset)", region: $0.offset == 0 ? .rings : .nozzle, rect: $0.element, visible: true) }
+        let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: CGSize(width: 800, height: 600),
+            language: .english, anchors: anchors, blocked: [], avoid: [CGRect(x: 0, y: 145, width: 72, height: 415)], recipe: recipe))
+        let layer = HelpUILayerView(recipeProvider: recipe)
+        layer.frame = CGRect(origin: .zero, size: input.viewport)
+        layer.update(input)
+        let presentation = try XCTUnwrap(layer.presentation)
+        XCTAssertFalse(presentation.mapLabels.isEmpty)
+        let rep = try XCTUnwrap(layer.bitmapImageRepForCachingDisplay(in: layer.bounds))
+        layer.cacheDisplay(in: layer.bounds, to: rep)
+        func luminance(_ color: NSColor?) throws -> CGFloat {
+            let rgb = try XCTUnwrap(color?.usingColorSpace(.sRGB))
+            return 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
+        }
+        let scale = CGFloat(rep.pixelsWide) / layer.bounds.width
+        for label in presentation.mapLabels {
+            // Inside the plate, left of the text (which starts 8 pt in); the layer is flipped, so y is as laid out.
+            let fill = rep.colorAt(x: Int((label.frame.minX + 3) * scale), y: Int(label.frame.midY * scale))
+            XCTAssertLessThan(try luminance(fill), 0.25, "\(label.id) callout fill is not dark")
+        }
+        let fields = layer.subviews.compactMap { $0 as? NSTextField }.filter { !$0.stringValue.isEmpty }
+        XCTAssertFalse(fields.isEmpty)
+        for field in fields { XCTAssertGreaterThan(try luminance(field.textColor), 0.8, "\(field.stringValue) text is not light") }
+    }
+
     func testLabelsEveryVisibleAnchorAndOmitsHiddenAnchors() throws {
         let recipe = NeutralHelpUIRecipeProvider()
         let anchors: [DockRequestedHelpAnchor] = [
