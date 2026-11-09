@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // The enlarged field's page, with synthetic public model data. WebGL may be absent here, which exercises the fallback.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
+import {createHash} from 'node:crypto';
+import {readFileSync} from 'node:fs';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
@@ -71,14 +73,14 @@ test('item 6 rows: maker, name, ★ effort, ability and cost bars; my subscripti
  await expect(page.locator('.field-model-row.on')).toHaveAttribute('data-field-row','m4');
  await expect(page.locator('.field-roster-heading span')).toHaveText('4/10 on field');
 });
-test('item 6 v1 shows the derivable verdicts: Strongest and Cheapest by the field (D92), outclassed models carry the tag and sink; no published-only tags (D71)',async({page})=>{
+test('item 6 v1 shows the derivable verdict: outclassed models carry the tag and sink; no published-only tags (D71)',async({page})=>{
  await page.setViewportSize({width:1323,height:735});await open(page);
  const m=(id,name,ability,cost)=>({id,name,developerId:'openai',recommended:'high',efforts:[{effort:'high',label:'High',star:true,ability,cost,time:30}]});
  await show(page,JSON.stringify({language:'en',reduceMotion:true,mine:['a','b','c'],focus:null,models:[m('a','Alpha',50,.4),m('b','Beta',45,.8),m('c','Gamma',30,.1)]}));
  await expect(rows(page)).toHaveCount(3);
  await expect(rows(page).last()).toHaveAttribute('data-field-row','b');await expect(rows(page).last()).toHaveClass(/dominated/);
- await expect(page.locator('.sp-cr-tags i')).toHaveText(['Strongest','Cheapest','Outclassed']);
- await expect(page.locator('.tag-best_value,.tag-equivalent_costlier')).toHaveCount(0);
+ await expect(page.locator('.sp-cr-tags i')).toHaveText(['Outclassed']);// no published tags in this payload, so no verdict label (D92)
+ await expect(page.locator('.tag-strongest,.tag-best_value,.tag-cheapest,.tag-equivalent_costlier')).toHaveCount(0);
  // The chart: one dot per rocket on the field, the gold frontier through the undominated ones, a dotted line from Beta to Alpha.
  await expect(page.locator('.field-frontier .sp-which-dot')).toHaveCount(3);
  await expect(page.locator('.field-frontier path.field-front')).toHaveCount(1);
@@ -195,34 +197,25 @@ test('D63 a focused rocket outside my models joins the field and takes the focus
 });
 // CKP-PORT-13 (D63): "Full fleet on the website ↗". The page never sends a URL: it names the flown public model IDs
 // and native builds the modelplan.ai address (prototype website-updates/links.js fleetUrl, the site's focus query).
-// D92: Strongest / Cheapest are worked out from the models on the field (en and zh); ties tag every tied model; a model with
-// no cost is never Cheapest; fewer than two priced models, or all tied, gives no label. Best value is a published verdict.
-const tagModel=(id,ability,cost)=>({id,name:'Tag '+id,developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability,cost,time:30}]});
+// D92 (revised): the picker labels each model with the published lineup verdicts its `tags` carry (strongest, best_value,
+// cheapest), the same as the website; nothing is computed in the field, and a model with no published tags shows none.
+const tagModel=(id,ability,cost,tags)=>({id,name:'Tag '+id,developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability,cost,time:30}],...(tags?{tags}:{})});
 const tagRows=async page=>{await page.waitForSelector('.field-model-row');return page.evaluate(()=>Object.fromEntries([...document.querySelectorAll('.field-model-row')].map(r=>[r.dataset.fieldRow,[...r.querySelectorAll('.sp-cr-tags i:not(.tag-dominated)')].map(i=>i.className.replace('tag-','')+':'+i.textContent)])));};
 async function tagged(page,models,mine,language='en'){await open(page);await show(page,JSON.stringify({language,reduceMotion:true,models,mine,focus:null}));return tagRows(page);}
-test('D92 Strongest is the highest ability and Cheapest the lowest cost among the models on the field',async({page})=>{
- const rows=await tagged(page,[tagModel('a',50,2),tagModel('b',60,3),tagModel('c',40,1),tagModel('d',99,.1)],['a','b','c']);
- expect(rows).toEqual({a:[],b:['strongest:Strongest'],c:['cheapest:Cheapest'],d:[]});// d is not on the field, so it neither wins nor gets a label
+test('D92 each model shows the published verdicts it carries, in the fixed order, whatever the field holds',async({page})=>{
+ const rows=await tagged(page,[tagModel('a',50,2,['cheapest','strongest']),tagModel('b',60,3,['best_value']),tagModel('c',40,1),tagModel('d',99,.1,['strongest'])],['a','b']);
+ expect(rows).toEqual({a:['strongest:Strongest','cheapest:Cheapest'],b:['best_value:Best value'],c:[],d:['strongest:Strongest']});
 });
-test('D92 the Chinese labels',async({page})=>{
- const rows=await tagged(page,[tagModel('a',50,2),tagModel('b',60,3),tagModel('c',40,1)],['a','b','c'],'zh');
- expect(rows.b).toEqual(['strongest:最强']);expect(rows.c).toEqual(['cheapest:最省']);
+test('D92 the Chinese labels, with 最值 for best value as on the website',async({page})=>{
+ const rows=await tagged(page,[tagModel('a',50,2,['strongest']),tagModel('b',60,3,['best_value']),tagModel('c',40,1,['cheapest'])],['a','b','c'],'zh');
+ expect([rows.a,rows.b,rows.c]).toEqual([['strongest:最强'],['best_value:最值'],['cheapest:最省']]);
 });
-test('D92 ties tag every tied model, and a field that all tie gets no label',async({page})=>{
- expect(await tagged(page,[tagModel('a',60,2),tagModel('b',60,3),tagModel('c',40,2)],['a','b','c'])).toEqual({a:['strongest:Strongest','cheapest:Cheapest'],b:['strongest:Strongest'],c:['cheapest:Cheapest']});
- expect(await tagged(page,[tagModel('a',60,2),tagModel('b',60,2)],['a','b'])).toEqual({a:[],b:[]});
+test('D92 a publication without tags (an older CLI) shows no label, and unknown tags are ignored',async({page})=>{
+ expect(await tagged(page,[tagModel('a',50,2),tagModel('b',60,3)],['a','b'])).toEqual({a:[],b:[]});
+ expect(await tagged(page,[tagModel('a',50,2,['dominated','equivalent_costlier','mystery']),tagModel('b',60,3,[])],['a','b'])).toEqual({a:[],b:[]});
 });
-test('D92 a model with no published cost leaves the field and is never labelled; one priced model gives no Cheapest',async({page})=>{
- const unpriced={id:'a',name:'Tag a',developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:99,cost:null,time:30}]};
- expect(await tagged(page,[unpriced,tagModel('b',60,3),tagModel('c',40,1)],['a','b','c'])).toEqual({b:['strongest:Strongest'],c:['cheapest:Cheapest']});
- expect(await tagged(page,[unpriced,tagModel('b',60,3)],['a','b'])).toEqual({b:[]});
- expect(await tagged(page,[tagModel('a',50,3)],['a'])).toEqual({a:[]});
-});
-test('D92 the labels follow the field as models join and leave',async({page})=>{
- await tagged(page,[tagModel('a',50,2),tagModel('b',60,3),tagModel('c',40,1)],['a','c']);
- expect(await tagRows(page)).toEqual({a:['strongest:Strongest'],b:[],c:['cheapest:Cheapest']});
- await page.locator('[data-fleet-model="b"]').click();
- expect(await tagRows(page)).toEqual({a:[],b:['strongest:Strongest'],c:['cheapest:Cheapest']});
+test('D92 published ties and several verdicts on one model are shown as published',async({page})=>{
+ expect(await tagged(page,[tagModel('a',60,2,['strongest','best_value','cheapest']),tagModel('b',60,3,['strongest']),tagModel('c',40,2,['cheapest'])],['a','b','c'])).toEqual({a:['strongest:Strongest','best_value:Best value','cheapest:Cheapest'],b:['strongest:Strongest'],c:['cheapest:Cheapest']});
 });
 // D93: the Site picks tab is the website's default focus set (`defaultSelected` on the published model), between
 // My subscriptions and All; it is hidden for a publication without that field (an older CLI) and capped at ten.
@@ -283,19 +276,29 @@ test('CKP-PORT-13 Chinese link text',async({page})=>{
 // CKP-PORT-11 (D63): the c01 porthole silhouette feathered ~10% into the desktop, derived from the published
 // window-890-1x.png at open. Reference: alpha samples of the prototype's approved mask (task 91 round 5,
 // feather-masks/A.png, 1000x650), read on the design branch; the mask image itself is not in this repository.
-const featherReference=[[500,325,255],[0,0,0],[999,649,0],[500,0,0],[500,20,63],[500,40,176],[500,65,255],[500,100,255],[0,325,0],[20,325,4],[40,325,83],[65,325,220],[100,325,255],[500,649,0],[500,610,171],[500,585,255],[150,60,188],[850,60,190],[120,600,119],[60,120,73]];
-test('CKP-PORT-11 the feathered silhouette matches the approved mask',async({page})=>{
+// 91 A pins (owner 11-09): the approved matte (task 91 A, feather-masks/A.png) ships byte for byte and the page reads it.
+const MATTE_ASSET_SHA256='4c476c2a5dcb902065b20f9e365a2df5d1ac0cab8857f0d154dd45fb8f31ec41';
+const matteGrid=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,13,52,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,53,14,0,0,0,0,0,0,0,0,0,16,69,135,192,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,192,135,69,16,0,0,0,0,0,0,41,125,199,246,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,246,199,125,43,0,0,0,0,13,136,228,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,230,139,14,0,0,0,30,165,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,165,30,0,0,0,45,184,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,187,48,0,0,0,58,197,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,197,58,0,0,0,72,211,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,212,73,0,0,0,84,221,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,221,84,0,0,1,95,228,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,232,100,1,0,4,113,239,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,239,113,4,0,8,125,244,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,244,125,8,0,16,141,250,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,251,142,16,0,23,154,253,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,253,154,23,0,30,165,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,168,32,0,43,182,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,182,43,0,53,192,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,192,53,0,67,206,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,207,68,0,79,216,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,216,79,0,73,212,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,214,75,0,53,192,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,194,55,0,22,144,246,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,246,144,22,0,0,69,184,229,244,251,254,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,254,251,244,230,184,69,0,0,0,8,58,97,124,142,159,171,176,184,192,197,197,207,207,207,212,212,216,221,216,212,212,207,207,207,197,197,192,184,176,171,159,142,124,98,59,8,0,0,0,0,0,1,8,16,26,34,39,45,53,58,58,68,68,68,73,73,79,84,79,73,73,68,68,68,58,58,53,45,39,34,26,16,8,1,0,0,0];
+test('91 A the approved matte ships byte for byte, is 1000x650, and the page reads exactly its alpha',async({page})=>{
  await page.goto('/field.html');
- const got=await page.evaluate(async points=>{const {featherShape}=await import('./src/field-shape.js');const shape=await featherShape('runtime/canopy-c01/window-890-1x.png');
-  return shape&&{w:shape.width,h:shape.height,url:shape.maskUrl.slice(0,5),samples:points.map(([x,y])=>shape.alpha[y*shape.width+x])};},featherReference);
- expect(got).not.toBeNull();expect([got.w,got.h,got.url]).toEqual([1000,650,'blob:']);
- for(const [i,[x,y,want]] of featherReference.entries())expect(Math.abs(got.samples[i]-want),`(${x},${y}) ${got.samples[i]} vs ${want}`).toBeLessThanOrEqual(24);
+ const got=await page.evaluate(async()=>{const url='runtime/canopy-c01/field-matte-A-1000x650.png';
+  const {featherShape}=await import('./src/field-shape.js');const shape=await featherShape(url);
+  const grid=[];for(let y=0;y<650;y+=25)for(let x=0;x<1000;x+=25)grid.push(shape.alpha[y*1000+x]);return {w:shape.width,h:shape.height,grid,mask:shape.maskUrl.endsWith('field-matte-A-1000x650.png')};});
+ expect(createHash('sha256').update(readFileSync(new URL('../../../official-visuals/runtime/canopy-c01/field-matte-A-1000x650.png',import.meta.url))).digest('hex')).toBe(MATTE_ASSET_SHA256);expect([got.w,got.h]).toEqual([1000,650]);
+ expect(got.grid).toEqual(matteGrid);expect(got.mask).toBe(true);
+});
+for(const [desktop,width,field] of [['1470x956',1323,[865,562.25]],['1440x900',1296,[838,544.69]]])test(`91 A geometry at ${desktop}: the field is ${field.join('x')} and the card is 430x664 at its left`,async({page})=>{
+ await page.setViewportSize({width,height:Math.round(+desktop.split('x')[1]*.8)});await open(page);await show(page,payload());
+ await expect(page.locator('.field-stage')).toHaveAttribute('data-shape','feathered');
+ const stage=await page.locator('.field-stage').boundingBox(),card=await page.locator('.field-card').boundingBox();
+ expect(stage.width).toBeCloseTo(field[0],1);expect(stage.height).toBeCloseTo(field[1],1);
+ expect([card.x,card.width,card.height]).toEqual([0,430,664]);
 });
 test('CKP-PORT-11 the scene is masked by the silhouette; bare desktop and the feathered rim close, the porthole does not',async({page})=>{
  await page.setViewportSize({width:1323,height:735});await open(page);await show(page,payload());
  await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
  await expect(page.locator('.field-stage')).toHaveAttribute('data-shape','feathered');
- expect(await page.locator('.field-stage').evaluate(e=>getComputedStyle(e).webkitMaskImage||getComputedStyle(e).maskImage)).toMatch(/^url\("blob:/);
+ expect(await page.locator('.field-stage').evaluate(e=>getComputedStyle(e).webkitMaskImage||getComputedStyle(e).maskImage)).toMatch(/^url\("http:\/\/[^"]+\/runtime\/canopy-c01\/field-matte-A-1000x650\.png"\)$/);
  expect(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
  const closes=()=>page.evaluate(()=>window.posted.filter(x=>x==='close').length);
  const stage=await page.locator('.field-stage').boundingBox(),card=await page.locator('.field-card').boundingBox();

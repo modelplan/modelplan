@@ -151,6 +151,7 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 .field-model-row .sp-cr-tags i{font:500 9px Manrope,'PingFang SC',sans-serif;font-style:normal;padding:0 5px;border-radius:4px;line-height:15px;white-space:nowrap}
 .field-model-row .sp-cr-tags i.tag-dominated{color:#d4b994;background:#d4b99414}
 .field-model-row .sp-cr-tags i.tag-strongest{color:#1d1e21;background:linear-gradient(180deg,#ffd0b8,#ff9a6a)}
+.field-model-row .sp-cr-tags i.tag-best_value{color:#1d1e21;background:linear-gradient(180deg,#f6d38a,#d9a94e)}
 .field-model-row .sp-cr-tags i.tag-cheapest{color:#a6ffc4;background:rgba(120,255,170,.12)}
 .field-model-row .sp-cr-bars{display:grid;grid-template-columns:36px 1fr 42px;gap:4px 9px;align-items:center;padding-left:30px;margin-top:4px;font:400 10px var(--sp-font-lcd);color:var(--sp-lcd-dim)}
 .field-model-row .sp-cr-bars i{height:5px;border-radius:3px;display:block}

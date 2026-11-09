@@ -1042,6 +1042,13 @@
         "recommended": {
           "maxLength": 64,
           "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "type": "array"
         }
       },
       "required": [

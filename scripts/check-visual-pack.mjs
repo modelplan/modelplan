@@ -26,6 +26,8 @@ function expectedFiles(porthole) {
       files.set(`canopy-c01/${layer}-${tier}-${scale}x.png`, { kind: 'canopy-layer', tier, scale });
     }
   }
+  // Owner 91 A (2026-10-27): the approved launch-field matte, shipped byte for byte (1000x650, 65 px inward ramp).
+  files.set('canopy-c01/field-matte-A-1000x650.png', { kind: 'field-matte' });
   // Owner D39/D-A: the minified launch-field scene (reserved licence, official edition only, loaded on demand).
   files.set('field-scene/README.md', { kind: 'notice' });
   files.set('field-scene/cockpit-scene.bundle.js', { kind: 'field-scene' });

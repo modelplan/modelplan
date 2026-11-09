@@ -13229,6 +13229,17 @@
       "scale": 2
     },
     {
+      "file": "canopy-c01/field-matte-A-1000x650.png",
+      "sha256": "4c476c2a5dcb902065b20f9e365a2df5d1ac0cab8857f0d154dd45fb8f31ec41",
+      "bytes": 38027,
+      "size": {
+        "width": 1000,
+        "height": 650
+      },
+      "kind": "field-matte",
+      "license": "LicenseRef-ModelPlan-Visuals-1.0"
+    },
+    {
       "file": "field-scene/README.md",
       "kind": "notice",
       "sha256": "9a074634be45bc82fa583c78278165e318d51cf89bcea2e3cb36f201597d074c",

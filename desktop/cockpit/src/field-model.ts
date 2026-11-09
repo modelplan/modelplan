@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Maps published public model data to the launch-field scene's model shape. No personal data.
 export interface PublishedEffort {readonly effort:string;readonly label:string;readonly star?:boolean;readonly ability?:number|null;readonly cost?:number|null;readonly time?:number|null}
-export interface PublishedModel {readonly id:string;readonly name:string;readonly developerId:string;readonly recommended:string;readonly efforts:readonly PublishedEffort[];readonly defaultSelected?:boolean|null}
+export interface PublishedModel {readonly id:string;readonly name:string;readonly developerId:string;readonly recommended:string;readonly efforts:readonly PublishedEffort[];readonly defaultSelected?:boolean|null;readonly tags?:readonly string[]|null}
 export type FieldRow=readonly [string,number,number,number];
-export interface FieldModel {readonly id:string;readonly name:string;readonly short:string;readonly dev:string;readonly colour:string;readonly rec:string;readonly e:readonly FieldRow[];readonly sel:FieldRow;readonly reportedEffort:null;readonly previewEffort:null;/** The website's default focus set (D93); absent when the publication has none. */readonly site?:boolean}
+export interface FieldModel {readonly id:string;readonly name:string;readonly short:string;readonly dev:string;readonly colour:string;readonly rec:string;readonly e:readonly FieldRow[];readonly sel:FieldRow;readonly reportedEffort:null;readonly previewEffort:null;/** The website's default focus set (D93); absent when the publication has none. */readonly site?:boolean;/** The published lineup verdicts the picker labels (D92); none when the publication carries none. */readonly tags?:readonly ('strongest'|'best_value'|'cheapest')[]}
 export const FIELD_LIMIT=10;
 // The scene's own developer keys; anything else takes the neutral rocket.
 const developers:Readonly<Record<string,{dev:string;colour:string}>>={openai:{dev:'openai',colour:'#6aa8ff'},anthropic:{dev:'anthropic',colour:'#ff9a6a'},zhipuai:{dev:'zhipu',colour:'#8f7dff'},zhipu:{dev:'zhipu',colour:'#8f7dff'}};
@@ -16,8 +16,9 @@ export function fieldModel(m:PublishedModel,short:(name:string)=>string=name=>na
   if(e.star||e.effort===m.recommended)star=star??row;
  }
  const sel=star??rows[0];if(!sel)return null;
+ const labels=(['strongest','best_value','cheapest'] as const).filter(t=>m.tags?.includes(t));
  const developer=Object.hasOwn(developers,m.developerId)?developers[m.developerId]!:{dev:m.developerId,colour:'#c6ccd4'};
- return {id:m.id,name:m.name,short:short(m.name),dev:developer.dev,colour:developer.colour,rec:sel[0],e:rows,sel,reportedEffort:null,previewEffort:null,...(typeof m.defaultSelected==='boolean'?{site:m.defaultSelected}:{})};
+ return {id:m.id,name:m.name,short:short(m.name),dev:developer.dev,colour:developer.colour,rec:sel[0],e:rows,sel,reportedEffort:null,previewEffort:null,...(typeof m.defaultSelected==='boolean'?{site:m.defaultSelected}:{}),...(labels.length?{tags:labels}:{})};
 }
 /** The rockets to fly: the chosen IDs in publication order, never more than the field's limit. */
 export function fieldFleet(models:readonly FieldModel[],chosen:ReadonlySet<string>):FieldModel[] {

@@ -945,6 +945,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "forbidden"
+        },
+        {
+          "field": "tags",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [

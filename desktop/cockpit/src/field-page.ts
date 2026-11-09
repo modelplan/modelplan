@@ -43,7 +43,7 @@ function mount(root:HTMLElement) {
  });
  const card=picker.card;root.dataset.picker='open';
  root.append(picker.tools,card,stage,close);
- const shaped=featherShape(new URL('runtime/canopy-c01/window-890-1x.png',document.baseURI).href).then(value=>{
+ const shaped=featherShape(new URL('runtime/canopy-c01/field-matte-A-1000x650.png',document.baseURI).href).then(value=>{
   if(disposed){value?.dispose();return;}shape=value;if(value)stage.style.setProperty('--field-mask',`url("${value.maskUrl}")`);stage.dataset.shape=value?'feathered':'none';
  });
  // A transparent WKWebView cannot blur the desktop behind it, so the native panel puts a behind-window blur under the

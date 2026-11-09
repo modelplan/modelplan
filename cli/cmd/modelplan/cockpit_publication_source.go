@@ -112,6 +112,7 @@ func materializeCockpitPublication(d *digest.Digest, selected []*digest.Model, t
 		if !ok {
 			return nil
 		}
+		converted.Tags = publishedLineupTags(d, model.DeveloperID, model.ID)
 		result.Models = append(result.Models, converted)
 		seen[model.ID] = true
 	}
@@ -166,6 +167,7 @@ func allCockpitModels(d *digest.Digest) []wire.CockpitPublicationModel {
 			break
 		}
 		if converted, ok := publishedCockpitModel(d.Models[i]); ok && !seen[converted.ID] {
+			converted.Tags = publishedLineupTags(d, d.Models[i].DeveloperID, converted.ID)
 			seen[converted.ID] = true
 			out = append(out, converted)
 		}
@@ -190,4 +192,24 @@ func selectCockpitPublication(d *digest.Digest, projection rows.Projection, inUs
 		}
 	}
 	return materializeCockpitPublication(d, eligible[:min(3, len(eligible))], len(eligible) > 3)
+}
+
+// publishedLineupTags copies the published lineup verdicts the launch field labels (strongest, best_value, cheapest), in
+// published order. Nothing is calculated; an older publication without lineups yields none.
+func publishedLineupTags(d *digest.Digest, developerID, id string) []string {
+	var out []string
+	lineup := d.PublishedLineup(developerID)
+	if lineup == nil {
+		return out
+	}
+	row := lineup.Row(id)
+	if row == nil {
+		return out
+	}
+	for _, tag := range row.Tags {
+		if tag == "strongest" || tag == "best_value" || tag == "cheapest" {
+			out = append(out, tag)
+		}
+	}
+	return out
 }

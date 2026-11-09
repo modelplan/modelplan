@@ -145,6 +145,8 @@ type CockpitPublicationModel struct {
 	Efforts     []CockpitPublicationEffort `json:"efforts" schema:"maxItems=32"`
 	// DefaultSelected marks the website's default focus set (the field's Site picks tab); absent when the publication has none.
 	DefaultSelected *bool `json:"defaultSelected,omitempty" null:"forbidden"`
+	// Tags are the published lineup verdicts the field labels (strongest, best_value, cheapest); absent when none are published.
+	Tags []string `json:"tags,omitempty" null:"forbidden" schema:"maxItems=3"`
 }
 type CockpitPublicationEffort struct {
 	Effort      string   `json:"effort" schema:"minLength=1,maxLength=64"`
