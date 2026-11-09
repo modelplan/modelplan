@@ -330,6 +330,12 @@ func Cases() ([]Case, error) {
 			if mode == "absent" {
 				uses = []float64{45, 50}
 			}
+			if mode == "down" {
+				// A down suggestion needs a rung below the star: low < medium (★) < high.
+				cost := 1.0
+				m := d.Model("synthetic-z")
+				m.Efforts = append([]digest.Effort{{Effort: "low", Label: "Low", Cost: &cost, CostBasisID: "synthetic-reference"}}, m.Efforts...)
+			}
 			l := EffortLedger(Now, effort, false, uses...)
 			in.EffortSuggestion = history.SuggestEffort(l, d, Now)
 			if v := in.EffortSuggestion; v != nil {

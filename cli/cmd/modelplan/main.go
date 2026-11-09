@@ -106,7 +106,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        machine only from log timestamps and token counts
                                        (MODELPLAN_HISTORY=off stops both, and the tokens per day)
   modelplan history --effort-suggestion dismiss|off|on
-                                       control local weekly effort suggestions (default off; never changes settings)
+                                       control local weekly effort suggestions (default on; never changes settings)
   modelplan declare <planId> [generation] [--region ID]
                                        record which plan pays for another vendor's model (GLM through
                                        Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
@@ -126,7 +126,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
 Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
      MODELPLAN_READERS=passive|off (restrict shared reader permissions),
-     MODELPLAN_EFFORT_SUGGESTION=on (opt in to local weekly effort suggestions; default off),
+     MODELPLAN_EFFORT_SUGGESTION=off (no local weekly effort suggestions; default on),
      MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history, speed measurement or tokens per day), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
      MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
 `
@@ -492,6 +492,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				fmt.Fprintln(stdout, "\n默认档位建议（仅本机）")
 			}
 			fmt.Fprintln(stdout, style.EffortSuggestionLine(v))
+			if detail := style.EffortSuggestionDetail(v); detail != "" {
+				fmt.Fprintln(stdout, detail)
+			}
 		}
 		fmt.Fprintln(stdout)
 		style.Measured(stdout, measured, d, true)
@@ -834,7 +837,7 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 	if save {
 		saveAdviceState(state, st.Dir, now)
 		if hint == "" && personalAllowed {
-			hint = defaultEffortHint(style, st, d, report, now)
+			hint = defaultEffortHint(style, st, d, report, es, now)
 		}
 	}
 	return hint
@@ -842,9 +845,11 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 
 // defaultEffortHint is user-only and cache-only. It matches the current weekly
 // pool and explicit harness configuration, so another subscription's history or
-// another model's past default cannot supply the status-line hint.
-// An unknown plan label matches only other unknown labels.
-func defaultEffortHint(style render.Style, st *store.Store, d *digest.Digest, report quota.Report, now time.Time) string {
+// another model's past default cannot supply the status-line hint. The rule starts
+// from the model's published star effort (see history.DecideEffort); the live
+// forecast, the scheduled and any announced reset, and advise's "resets unused"
+// verdict are its inputs. An unknown plan label matches only other unknown labels.
+func defaultEffortHint(style render.Style, st *store.Store, d *digest.Digest, report quota.Report, es []advise.Event, now time.Time) string {
 	if history.Off() || d == nil {
 		return ""
 	}
@@ -863,9 +868,14 @@ func defaultEffortHint(style render.Style, st *store.Store, d *digest.Digest, re
 					cycles = append(cycles, c)
 				}
 			}
-			current := history.Share{Model: a.Harness.Model, Effort: a.Harness.Effort,
-				Fast: (a.Harness.FastMode != nil && *a.Harness.FastMode) || a.Harness.ServiceTier == "fast"}
-			v := history.SuggestDefaultEffort(cycles, current, d, now)
+			in := history.EffortInput{Source: a.Source, Plan: a.Plan, Cycles: cycles, Now: now,
+				Current: &history.Share{Model: a.Harness.Model, Effort: a.Harness.Effort,
+					Fast: (a.Harness.FastMode != nil && *a.Harness.FastMode) || a.Harness.ServiceTier == "fast"},
+				Announced: advise.AnnouncedResets(d, a.Source, now), Surplus: advise.ResetUnused(es, a.Source)}
+			if w.UsedPercent != nil && w.ElapsedPercent != nil && w.ResetsAt != nil {
+				in.Live = &history.Live{Used: *w.UsedPercent, Elapsed: *w.ElapsedPercent, ResetsAt: *w.ResetsAt, RunsOutIn: w.LastDayRunout(now)}
+			}
+			v := history.DecideEffort(in, d).Suggestion
 			if v = history.ClaimEffortSuggestion(st.Dir, v, now); v != nil {
 				return style.EffortSuggestionShort(v)
 			}
