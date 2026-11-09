@@ -142,11 +142,14 @@ export function createFieldPicker(actions:PickerActions):FieldPicker {
    `<div class="field-roster-heading"><b>${w.roster}</b><span>${count}/${FIELD_LIMIT} ${w.onField}</span></div>`+
    `<div class="field-model-list sp-which-roster">${rows||`<p class="field-empty">${w.empty}</p>`}</div>`+
    `<footer><button type="button" data-field-reset>↺ ${w.reset}</button><button type="button" class="field-website" aria-label="${w.compareLabel}">${w.compare}</button>`+
-   `<small>${full?w.limit:cheapest?`×1 = ${esc(shortName(cheapest.name))} ★ ${esc(cheapest.rec)} · ${w.local}`:w.local}</small></footer>`;
+   `<small>${full?w.limit:cheapest?`×1 = ${esc(cheapest.name)} ★ ${esc(cheapest.rec)} · ${w.local}`:w.local}</small></footer>`;
   tools.innerHTML=`<button type="button" data-fleet-picker aria-expanded="${!folded}" ${folded?'':'hidden'}>${w.title} <b>${count}/${FIELD_LIMIT}</b></button>`;
   if(searching){const input=card.querySelector<HTMLInputElement>('[data-field-search]');input?.focus();input?.setSelectionRange(input.value.length,input.value.length);}
  };
- card.addEventListener('input',e=>{const t=e.target as HTMLInputElement;if(t.matches('[data-field-search]')){query=t.value;searching=true;draw();searching=false;}});
+ // An IME composition is not rebuilt mid-way (the input would be replaced and the composition aborted); the list updates when it ends.
+ const searchNow=(t:HTMLInputElement)=>{query=t.value;searching=true;draw();searching=false;};
+ card.addEventListener('input',e=>{const t=e.target as HTMLInputElement;if(t.matches('[data-field-search]')){if((e as InputEvent).isComposing){query=t.value;return;}searchNow(t);}});
+ card.addEventListener('compositionend',e=>{const t=e.target as HTMLInputElement;if(t.matches('[data-field-search]'))searchNow(t);});
  card.addEventListener('click',e=>{
   const t=(e.target as Element).closest('button,[data-field-focus]');if(!t||(t as HTMLButtonElement).disabled)return;
   const d=(t as HTMLElement).dataset;
