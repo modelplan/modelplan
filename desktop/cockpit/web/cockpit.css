@@ -101,7 +101,7 @@ body.field-page{background:#010205;color:var(--lcd,#d7dde4);overflow:hidden}
 #cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:radial-gradient(closest-side,#0b0f13cc 62%,#0b0f1300)}
 #cockpit .hud-b .hud-chart{width:180px;height:86px;padding:4px 9px 5px}
 #cockpit .hud-b .hud-list{width:117px;height:74px;padding:0;gap:0;overflow:hidden}
-#cockpit[data-layout] .hud.hud-strip{left:40px;top:-5px;width:216px;height:30px;display:block;background:linear-gradient(90deg,#0b0f1300,#0b0f13cc 12% 88%,#0b0f1300)}
+#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:linear-gradient(90deg,#0b0f1300,#0b0f13cc 12% 88%,#0b0f1300)}
 #cockpit .hud .hp{display:flex;align-items:baseline;gap:3px;padding:0 2px;min-width:0;background:none;border:0;color:inherit;font-size:10px;line-height:12px;cursor:pointer}
 #cockpit .hud .hp b{overflow:visible;text-overflow:clip;font-size:10px}
 #cockpit .hud .hp-rec{white-space:nowrap;margin-left:auto}

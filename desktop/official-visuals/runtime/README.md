@@ -20,9 +20,9 @@ The runtime pack contains:
   describe the layout, not image width. The window/aperture/outline images are
   final runtime coverage masks. Consumers use the recorded pixel dimensions.
   D74 (2026-11-08, revised by D100 on 2026-11-09): only the missing top is added to the
-  shipped c01 layers. Below a seam (row 96 of the 636x244 tall canvas, row 43 of the
-  636x76 compact canvas) the layers are the shipped pixels, bit for bit, placed 28 pt
-  lower, but only inside x 28..608 pt: the outer 28 pt strip of each wall is rebuilt so
+  shipped c01 layers. Below a seam (row 96 of the 636x244 tall canvas, row 23 of the
+  636x56 compact canvas) the layers are the shipped pixels, bit for bit, placed lower
+  (28 pt tall, 8 pt compact), but only inside x 28..608 pt: the outer 28 pt strip of each wall is rebuilt so
   the wall ends in its natural rounded edge instead of the original straight cut (the
   outer wall band is squeezed horizontally, faded in over 90 source rows). Above the
   seam the completed shoulders and top arc come from an outpainted master (Codex image

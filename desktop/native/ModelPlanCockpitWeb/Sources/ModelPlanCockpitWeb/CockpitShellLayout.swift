@@ -14,15 +14,15 @@ public struct CockpitShellLayout: Equatable, Sendable {
               usable.origin.x.isFinite, usable.origin.y.isFinite,
               anchor.origin.x.isFinite, anchor.origin.y.isFinite else { return nil }
         let profile: CockpitAppearance.Profile = usable.height - 66 >= 918 ? .full : .compact
-        let closed = shutterClosed || usable.height - 66 < 668
-        let height: CGFloat = profile == .full ? (closed ? 691 : 905) : (closed ? 609 : 655)
+        let closed = shutterClosed || usable.height - 66 < 648
+        let height: CGFloat = profile == .full ? (closed ? 691 : 905) : (closed ? 609 : 635)
         let top = min(usable.maxY, anchor.minY) - 6
         let available = top - usable.minY
         guard available > 0 else { return nil }
         let scale = min(1, usable.width / 636, available / (height + 34))
         let size = CGSize(width: 636 * scale, height: (height + 34) * scale)
         let x = attachedX(anchor: anchor, width: size.width, scale: scale, usable: usable)
-        return Self(profile: profile, shutterClosed: closed, forcedClosed: usable.height - 66 < 668, scale: scale, rootHeight: height,
+        return Self(profile: profile, shutterClosed: closed, forcedClosed: usable.height - 66 < 648, scale: scale, rootHeight: height,
                     frame: CGRect(x: x, y: top - size.height, width: size.width, height: size.height))
     }
     /// G3-46: with no visible menu bar icon, open at the top-right of the screen, directly below the menu bar.

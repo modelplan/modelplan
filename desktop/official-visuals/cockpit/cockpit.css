@@ -5,7 +5,7 @@
 /* D74: the window starfield mask clips the porthole still to the new rounded top (same box as the canopy layer). */
 .ck-port .ck-field{-webkit-mask:url('./runtime/canopy-c01/window-890-2x.png') -30px -1px/calc(100% + 60px) calc(100% + 2px) no-repeat;mask:url('./runtime/canopy-c01/window-890-2x.png') -30px -1px/calc(100% + 60px) calc(100% + 2px) no-repeat}[data-profile=compact] .ck-port .ck-field{-webkit-mask:url('./runtime/canopy-c01/window-640-2x.png') -30px -1px/calc(100% + 60px) calc(100% + 2px) no-repeat;mask:url('./runtime/canopy-c01/window-640-2x.png') -30px -1px/calc(100% + 60px) calc(100% + 2px) no-repeat}
 /* D74: the metal backing plate starts below the rounded top corners of the new canopy, so it no longer shows beside the arc. */
-:root[data-theme="night"] .ck-shell::before{clip-path:inset(64px 16px 22px)}:root[data-theme="night"][data-profile=compact] .ck-shell::before{clip-path:inset(26px 16px 22px)}
+:root[data-theme="night"] .ck-shell::before{clip-path:inset(64px 16px 22px)}:root[data-theme="night"][data-profile=compact] .ck-shell::before{clip-path:inset(14px 16px 22px)}
 /* Comparison view static LCD backlights (study effort-backlights/comparison.css, Task 44/53): each fixed role column is
    lit in its own colour (current white, try blue, ★ gold); a column equal to the current one is unlit. */
 :root{--cmp-gold:#f3e8d5}
