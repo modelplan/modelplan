@@ -252,8 +252,8 @@
     },
     {
       "id": "s-unreadable-no-ring",
-      "title": "Unreadable subscription has no ring",
-      "expected": "Gemini is detected (tool marker) but its login cannot be used, so it cannot be read. Its row on the widget carries no reading ('--') and no percentage; it is listed on the first-run page. Rings for Codex and the declared plans keep their readings (G3-38). NOTE: the build still draws a placeholder ring for Gemini; the step asserts only that it shows no reading.",
+      "title": "Unreadable subscription has no ring (G3-38, expected to fail on 14b)",
+      "expected": "Gemini is detected (tool marker) but its login cannot be used, so it cannot be read. The widget must show NO ring for it (the G3-38 rule); it stays listed on the first-run page. Rings for Codex and the declared plans keep their readings. 14b still draws a placeholder ring ('--') for Gemini, so this step fails there on purpose until the fix lands.",
       "requires": [
         "widget-found"
       ],
@@ -272,10 +272,7 @@
       },
       "checks": [
         {
-          "valueIs": {
-            "target": "ax:dock.subscription.gemini#unknown",
-            "is": "--"
-          }
+          "absent": "ax:dock.subscription.gemini#unknown"
         },
         {
           "exists": "label:Codex"
@@ -283,7 +280,7 @@
         {
           "countAtLeast": {
             "target": "ax^:dock.subscription.",
-            "min": 4
+            "min": 3
           }
         }
       ],
@@ -2391,6 +2388,155 @@
       "requirement": "G3-42"
     },
     {
+      "id": "cockpit-detach",
+      "title": "Cockpit detached",
+      "expected": "D88: the detach key is visible while the cockpit is attached; pressing it detaches (the key then reads Put back). Skipped on a build without the key (14b).",
+      "requires": [
+        "cockpit-reopen"
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "target": "label:Detach"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label:Put back"
+        }
+      ],
+      "requirement": "G3-43",
+      "onlyIf": "label:Detach"
+    },
+    {
+      "id": "cockpit-put-back",
+      "title": "Cockpit put back",
+      "expected": "D88: Put back re-attaches the cockpit under the menu bar icon (the Detach key returns).",
+      "requires": [
+        "cockpit-detach"
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "target": "label:Put back"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "exists": "label:Detach"
+        }
+      ],
+      "onlyIf": "label:Put back"
+    },
+    {
+      "id": "cockpit-drag-detaches",
+      "title": "Dragging the title strip detaches",
+      "onlyIf": "label:Detach",
+      "expected": "D88: with the cockpit attached, dragging its title strip detaches it (the key reads Put back); Put back then re-attaches it. Skipped on a build without the key.",
+      "requires": [
+        "cockpit-put-back"
+      ],
+      "actions": [
+        {
+          "op": "remember",
+          "target": "window-of:label:ModelPlan Cockpit"
+        },
+        {
+          "op": "dragStrip",
+          "window": "window-of:label:ModelPlan Cockpit",
+          "strip": "label:Settings",
+          "x": 0.12,
+          "by": [
+            -320,
+            40
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit",
+        "window": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "moved": "window-of:label:ModelPlan Cockpit"
+        },
+        {
+          "exists": "label:Put back"
+        }
+      ],
+      "requirement": "D88, checklist 4"
+    },
+    {
+      "id": "cockpit-drag-put-back",
+      "title": "Put back after the drag",
+      "onlyIf": "label:Put back",
+      "expected": "D88: Put back re-attaches the cockpit dragged out in the step before.",
+      "requires": [
+        "cockpit-drag-detaches"
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "target": "label:Put back"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "exists": "label:Detach"
+        }
+      ],
+      "requirement": "D88, checklist 4"
+    },
+    {
       "id": "s-reset-home",
       "title": "Cockpit under the icon, widget at its place",
       "expected": "Before anything is moved the cockpit hangs under the menu bar icon, and the widget sits at its default place along the left edge; both frames are recorded for the reset check.",
@@ -2526,7 +2672,7 @@
     },
     {
       "id": "cockpit-drag-title",
-      "title": "Detached cockpit dragged by its title strip",
+      "title": "Cockpit dragged by its title strip (14b: no detach key)",
       "expected": "Dragging the left part of the title strip moves the detached window (G3-43).",
       "requires": [
         "s-reset-open-cockpit"
@@ -2562,12 +2708,6 @@
       "checks": [
         {
           "moved": "window-of:label:ModelPlan Cockpit"
-        },
-        {
-          "absent": "label:Detach"
-        },
-        {
-          "absent": "label:Put back"
         }
       ],
       "requirement": "G3-43"

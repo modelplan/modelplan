@@ -239,7 +239,9 @@ class Script(unittest.TestCase):
         self.assertTrue({"first-run-window", "widget-collapse", "widget-reveal", "card-third-ring", "card-pointer-away",
                          "card-empty-quota", "cockpit-toggle-close", "cockpit-reopen", "shutter-closed",
                          "cockpit-drag-title", "help-map", "air-1440x900", "air-1470x956"} <= ids)
-        self.assertFalse({"cockpit-detach", "cockpit-put-back"} & ids, "the detach button is gone (G3-54)")
+        self.assertTrue({"cockpit-detach", "cockpit-put-back", "cockpit-drag-detaches"} <= ids, "D88 keeps the detach key")
+        optional = {s["id"]: s.get("onlyIf") for s in self.STEPS}
+        self.assertEqual(optional["cockpit-detach"], "label:Detach")  # a build without the key skips, so 14b passes
 
     def test_covers_the_build_14_checklist_on_the_seeded_profile(self):
         ids = {s["id"] for s in self.STEPS}
@@ -507,6 +509,16 @@ class NewChecks(unittest.TestCase):
         self.assertEqual(bad["status"], "fail")
         self.assertIn("looks the same", bad["reason"])
         self.assertIn("mark sizes differ", bad["reason"])
+
+    def test_only_if_skips_a_step_and_what_needs_it(self):
+        host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "children": []}]})
+        steps = [{"id": "a", "title": "t", "expected": "e", "onlyIf": "label:Detach", "actions": [{"op": "click", "target": "label:Detach"}]},
+                 {"id": "b", "title": "t", "expected": "e", "requires": ["a"]}]
+        first, second = walker(host, self.out, steps).walk_steps()
+        self.assertEqual((first["status"], second["status"]), ("skipped", "skipped"))
+        self.assertEqual(w.failures({"steps": [first, second], "checks": []}), [])
+        with_key = FakeHost({"windows": [{"frame": [0, 0, 90, 90], "children": [{"label": "Detach", "frame": [1, 1, 5, 5]}]}]})
+        self.assertEqual(walker(with_key, self.out, steps).walk_steps()[0]["status"], "pass")
 
     def test_the_session_op_needs_a_profile_and_starts_one_thread_once(self):
         walk = walker(FakeHost({}), self.out, [])

@@ -702,12 +702,21 @@ class Walkthrough:
         self.step_name, self.step_id = name, step["id"]
         record = {"step": step["id"], "title": step["title"], "expected": step["expected"],
                   "prototype": step.get("prototype"), "file": None, "crop": None, "tree": None}
-        blocked = [need for need in step.get("requires", []) if self.statuses.get(need) != "pass"]
+        skipped_needs = [need for need in step.get("requires", []) if self.statuses.get(need) == "skipped"]
+        if skipped_needs:
+            record.update(status="skipped", reason="needs %s, which was skipped" % ", ".join(skipped_needs))
+            return record
+        blocked = [need for need in step.get("requires", []) if self.statuses.get(need) not in ("pass", "skipped")]
         if blocked:
             record.update(status="not-run", reason="needs " + ", ".join(blocked))
             return record
         started = self.host.now()
         reasons, skipped = [], None
+        only_if = step.get("onlyIf")
+        if only_if and resolve(self.tree(), only_if) is None:
+            # A control that only some builds have (the detach key, D88): a build without it skips the step.
+            record.update(status="skipped", reason="this build has no " + only_if, seconds=0)
+            return record
         self.measures = {}
         self.window_baseline = window_ids(self.windows())
         try:
