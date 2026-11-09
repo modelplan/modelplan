@@ -46,6 +46,7 @@ function fixture(t) {
       add(`canopy-c01/${layer}-${tier}-${scale}x.png`, 'canopy-layer', { tier, scale });
     }
   }
+  add('canopy-c01/field-matte-A-1000x650.png', 'field-matte');
   add('field-scene/README.md', 'notice');
   add('field-scene/cockpit-scene.bundle.js', 'field-scene');
   function save() {
@@ -58,7 +59,7 @@ function fixture(t) {
 
 test('checks every file, licence, baseline, PNG size and policy hash', t => {
   const f = fixture(t);
-  assert.equal(verifyVisualPack(f.root).pngCount, 34);
+  assert.equal(verifyVisualPack(f.root).pngCount, 35);
 });
 
 test('rejects changed PNG bytes, dimensions and unregistered files', t => {
