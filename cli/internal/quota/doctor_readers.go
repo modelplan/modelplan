@@ -109,6 +109,15 @@ func diagnosticWindows(ws []Window, now time.Time) int {
 	return n
 }
 
+// codexFailureState names a failed Codex read as the other readers do: runtime_missing, or
+// reader_error with the fixed reason word.
+func codexFailureState(s *accountSnap) string {
+	if code := s.failureCode(); code != "runtime_missing" {
+		return "unavailable:reader_error:" + code
+	}
+	return diagnosticState(toolcli.RuntimeMissing)
+}
+
 // codexDiagnostic: Codex is not a native reader, so it reports its runtime route from the
 // cached account snapshot alone. Session logs stay the fallback and are never opened here.
 func codexDiagnostic(p Paths, policy consent.State, detected bool, now time.Time) ReaderDiagnostic {
@@ -126,11 +135,15 @@ func codexDiagnostic(p Paths, policy consent.State, detected bool, now time.Time
 	}
 	row.State = "unavailable:not_read"
 	if s := loadAccount(p.Cache); s != nil {
-		row.Last = diagnosticAge(s.ObservedAt, now)
-		row.Windows = diagnosticWindows(s.Windows, now)
+		reading := s
+		if s.Status != "ok" && s.Good != nil && now.Sub(s.Good.ObservedAt) <= accountKeep {
+			reading = s.Good // the retained last good reading: its age and windows
+		}
+		row.Last = diagnosticAge(reading.ObservedAt, now)
+		row.Windows = diagnosticWindows(reading.Windows, now)
 		switch {
 		case s.Status != "ok":
-			row.State = "unavailable:reader_error"
+			row.State = codexFailureState(s)
 		case now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now):
 			row.State = "stale"
 		default:

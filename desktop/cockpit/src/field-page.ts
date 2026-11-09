@@ -3,7 +3,9 @@
 // scene loads with a dynamic import when the view opens, and the panel destroys this page on close, which
 // releases the WebGL context. The 180 s idle close and the outside-click close live in the native panel.
 // Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) for behaviour; the code is written here.
+import {layoutFieldAxes} from './field-axes.js';
 import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
+import {shortLabel} from '../study/rocket-r1/short-label.js';
 
 interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readonly models:readonly PublishedModel[];readonly mine:readonly string[];readonly focus:string|null}
 interface Scene {update(models:readonly FieldModel[],focus:string|null,path?:boolean):void;renderFor?(ms:number):void;dispose():void}
@@ -16,7 +18,7 @@ const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:s
 const webgl=()=>{try{return !!document.createElement('canvas').getContext('webgl2');}catch{return false;}};
 
 function mount(root:HTMLElement) {
- let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false;
+ let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,stopAxes=()=>{};
  const bar=el('header','field-bar'),stage=el('div','ov-porthole field-stage'),list=el('div','field-list');
  const close=el('button','field-close');close.type='button';close.onclick=()=>post({type:'close'});
  const mineKey=el('button','field-preset'),allKey=el('button','field-preset'),count=el('span','field-count');mineKey.type=allKey.type='button';
@@ -33,14 +35,14 @@ function mount(root:HTMLElement) {
  };
  const preset=(ids:readonly string[])=>{chosen=new Set(ids.slice(0,FIELD_LIMIT));refresh();};
  mineKey.onclick=()=>preset(mine.length?mine:models.map(m=>m.id));allKey.onclick=()=>preset(models.map(m=>m.id));search.oninput=refresh;
- const fallback=(text:string)=>{stage.replaceChildren(el('p','nogl',text));};
+ const fallback=(text:string)=>{stopAxes();stage.replaceChildren(el('p','nogl',text));};
  for(const type of ['pointerdown','keydown','wheel'])root.addEventListener(type,()=>post({type:'activity'}),{passive:true});
  window.addEventListener('keydown',e=>{if(e.key==='Escape')post({type:'close'});});
  return {
   async show(value:Show) {
    language=value.language;const w=words[language];document.documentElement.lang=language==='en'?'en':'zh-CN';
    close.textContent='×';close.setAttribute('aria-label',w.close);mineKey.textContent=w.mine;allKey.textContent=w.all;search.placeholder=w.search;search.setAttribute('aria-label',w.search);
-   models=value.models.flatMap(m=>{const f=fieldModel(m);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
+   models=value.models.flatMap(m=>{const f=fieldModel(m,shortLabel);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
    chosen=new Set((mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT));
    // A rocket clicked in the porthole joins the field (the last of a full fleet makes room) and takes the focus.
    if(focus!==null&&!models.some(m=>m.id===focus))focus=null;
@@ -55,9 +57,10 @@ function mount(root:HTMLElement) {
    const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;
    scene=mountWorkbenchField(host,{models:flown,focus,quiet:value.reduceMotion,showPath:true,language,onDemand:true,noIntro:true,
     onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{scene=null;fallback(w.noGl);}});
-   scene.renderFor?.(1400);refresh();post({type:'ready'});
+   if(scene)stopAxes=layoutFieldAxes(host);
+   scene?.renderFor?.(1400);refresh();post({type:'ready'});
   },
-  dispose(){disposed=true;scene?.dispose();scene=null;root.replaceChildren();},
+  dispose(){disposed=true;stopAxes();scene?.dispose();scene=null;root.replaceChildren();},
  };
 }
 const root=document.getElementById('field');
