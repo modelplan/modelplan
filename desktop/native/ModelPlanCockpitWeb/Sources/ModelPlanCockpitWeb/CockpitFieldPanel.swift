@@ -32,6 +32,10 @@ import WebKit
   /// Where the card's blur sits in the panel's content view, for tests.
   var cardBlurFrame: NSRect? { cardBlur?.isHidden == false ? cardBlur?.frame : nil }
   public var onClosed: (() -> Void)?
+  /// Test seams (CKP-SHELL-19 field budget): every page event's type, the page's web view and the panel.
+  var onPageEvent: ((String) -> Void)?
+  var verificationWebView: WKWebView? { webView }
+  var verificationWindow: NSWindow? { window }
   public private(set) var isOpen = false
   public init(bundle: VerifiedCockpitBundle, idleSeconds: TimeInterval = CockpitFieldPanel.defaultIdleSeconds) {
     self.bundle = bundle; self.idleSeconds = idleSeconds
@@ -106,6 +110,7 @@ import WebKit
     guard isOpen, let raw = body as? String, let data = raw.data(using: .utf8),
           let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let type = message["type"] as? String else { return }
+    onPageEvent?(type)
     switch type {
     case "loaded": deliver()
     case "activity": renewIdle()
