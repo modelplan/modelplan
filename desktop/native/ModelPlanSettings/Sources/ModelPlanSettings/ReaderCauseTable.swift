@@ -48,11 +48,11 @@ public enum ReaderCauseTable {
         if isKiro(tool) {
             switch canon {
             case "not_found", "runtime_missing":
-                return .init(reason: .init("kiro-cli was not found", "没有找到 kiro-cli"),
-                             action: .init("Install kiro-cli", "安装 kiro-cli"), target: .installTool)
+                return .init(reason: .init("kiro-cli was not found", "没有找到 Kiro 命令行工具"),
+                             action: .init("Install kiro-cli", "安装 Kiro 命令行工具"), target: .installTool)
             case "not_signed_in", "login_expired", "unsupported_login":
-                return .init(reason: .init("Not signed in to kiro-cli", "尚未登录 kiro-cli"),
-                             action: .init("Sign in to kiro-cli", "登录 kiro-cli"), target: .explain)
+                return .init(reason: .init("Not signed in to kiro-cli", "尚未登录 Kiro 命令行工具"),
+                             action: .init("Sign in to kiro-cli", "登录 Kiro 命令行工具"), target: .explain)
             default: break
             }
         }
