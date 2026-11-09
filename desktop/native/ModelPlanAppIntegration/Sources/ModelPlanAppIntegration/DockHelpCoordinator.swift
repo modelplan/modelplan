@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanCockpitWeb
 import ModelPlanInstruments
 import ModelPlanSettings
 
@@ -32,6 +33,9 @@ struct DockStatusHelpDismissal {
     private var suspended = false
     private var retired = false
     private let statusAnchor: @MainActor () -> DockStatusHelpAnchor?
+    /// D88: the open cockpit's detach / put-back key, for its two one-time hints.
+    private let cockpitAnchor: @MainActor () -> CockpitAttachmentHintAnchor?
+    private var cockpitSurface: DockHelpSurface?
     private let statusRequestID: @MainActor () -> UUID?
     private let statusDidDismiss: @MainActor (UUID) -> Void
     private var statusDismissal = DockStatusHelpDismissal()
@@ -49,17 +53,19 @@ struct DockStatusHelpDismissal {
     private init(dock: StaticDockPreviewHost, application: SettingsApplicationCoordinator,
                  composition: InstrumentHelpComposition, router: HelpOverlayRouter,
                  statusAnchor: @escaping @MainActor () -> DockStatusHelpAnchor?,
+                 cockpitAnchor: @escaping @MainActor () -> CockpitAttachmentHintAnchor?,
                  statusRequestID: @escaping @MainActor () -> UUID?,
                  statusDidDismiss: @escaping @MainActor (UUID) -> Void) {
         self.dock = dock; self.application = application
         self.composition = composition; self.router = router
-        self.statusAnchor = statusAnchor
+        self.statusAnchor = statusAnchor; self.cockpitAnchor = cockpitAnchor
         self.statusRequestID = statusRequestID; self.statusDidDismiss = statusDidDismiss
     }
 
     static func restored(dock: StaticDockPreviewHost,
                          application: SettingsApplicationCoordinator,
                          statusAnchor: @escaping @MainActor () -> DockStatusHelpAnchor? = { nil },
+                         cockpitAnchor: @escaping @MainActor () -> CockpitAttachmentHintAnchor? = { nil },
                          statusRequestID: @escaping @MainActor () -> UUID? = { nil },
                          statusDidDismiss: @escaping @MainActor (UUID) -> Void = { _ in }) async -> DockHelpCoordinator? {
         var routed: HelpOverlayRouter?
@@ -71,6 +77,7 @@ struct DockStatusHelpDismissal {
         guard let router = routed else { composition.dispose(); return nil }
         let owner = DockHelpCoordinator(dock: dock, application: application,
                                         composition: composition, router: router, statusAnchor: statusAnchor,
+                                        cockpitAnchor: cockpitAnchor,
                                         statusRequestID: statusRequestID, statusDidDismiss: statusDidDismiss)
         owner.install()
         return owner
@@ -85,11 +92,12 @@ struct DockStatusHelpDismissal {
             isCurrent: { [weak self] surface in self?.isCurrent(surface) == true },
             blockers: { [weak self] surface in
                 guard let self else { return [] }
-                return self.statusSurface == surface ? Array(surface.anchors.values) : (self.dock?.dockHelpBlockingRects(surface) ?? [])
+                return self.statusSurface == surface || self.cockpitSurface == surface ? Array(surface.anchors.values) : (self.dock?.dockHelpBlockingRects(surface) ?? [])
             },
             windowPolicy: { [weak self] surface in
                 guard let self else { return nil }
                 if self.statusSurface == surface, let anchor = self.statusAnchor() { return (anchor.sharing, anchor.collection) }
+                if self.cockpitSurface == surface, let anchor = self.cockpitAnchor() { return (anchor.sharing, anchor.collection) }
                 return self.dock?.dockHelpWindowPolicy(surface)
             },
             language: { [weak self] in self?.application.latest?.effective.language == .chinese ? .chinese : .english },
@@ -104,6 +112,9 @@ struct DockStatusHelpDismissal {
                 case .widgetOff: return (EngineRowsText.widgetTurnedOffHint.value(zh ? .chinese : .english), zh ? "知道了" : "OK")
                 case .ignition: return (zh ? "点按打开驾驶舱" : "Tap to open Cockpit", zh ? "关闭" : "Close")
                 case .drag: return (zh ? "拖喷口换顺序，拖底座换到别的边" : "Drag a nozzle to reorder; drag the base to move to another edge", zh ? "关闭" : "Close")
+                // D88: the keys' glyphs are an arrow out of a box (detach) and an arrow into it (put back).
+                case .detach: return (zh ? "拖动标题条或点 ↗ 可把驾驶舱分离出来单独放" : "Drag the title strip or press ↗ to detach the cockpit", zh ? "关闭" : "Close")
+                case .putBack: return (zh ? "点 ↙ 或拖回菜单栏图标即可放回" : "Press ↙ or drag it back to the menu-bar icon to put it back", zh ? "关闭" : "Close")
                 default: return nil
                 }
             }, dismiss: { [weak self] _ in
@@ -192,7 +203,16 @@ struct DockStatusHelpDismissal {
                                                 anchors: anchors)
             }
         } else { statusSurface = nil }
-        let admittedSurface = eligible ? (statusSurface ?? surface) : nil
+        // D88: while the cockpit is open and its next one-time hint is unseen, that hint's key is the surface.
+        let cockpit = eligible ? cockpitAnchor() : nil
+        let cockpitKind: FirstUseHintKind? = cockpit.map { $0.attached ? .detach : .putBack }
+        if let cockpit, let cockpitKind, !composition.host.hints.preferences.seen.contains(cockpitKind) {
+            let anchors: [FirstUseHintKind: CGRect] = [cockpitKind: cockpit.frame]
+            if cockpitSurface?.anchors != anchors {
+                cockpitSurface = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false, anchors: anchors)
+            }
+        } else { cockpitSurface = nil }
+        let admittedSurface = eligible ? (cockpitSurface ?? statusSurface ?? surface) : nil
         activeSurface = admittedSurface
         var context = composition.host.hints.context
         context.helpMapVisible = mapSurface != nil
@@ -201,6 +221,7 @@ struct DockStatusHelpDismissal {
         context.widgetConcealed = concealed
         context.widgetTurnedOff = turnedOff
         context.statusAnchorAvailable = statusSurface != nil
+        context.cockpitAttached = cockpitSurface == nil ? nil : cockpit?.attached
         context.ignitionAvailable = dock?.cockpitEntryEnabled == true
         context.cardPinned = false
         context.reducedMotion = application.latest?.effective.reduceMotion ?? true
@@ -271,6 +292,10 @@ struct DockStatusHelpDismissal {
     private func isCurrent(_ surface: DockHelpSurface) -> Bool {
         guard !retired, !suspended, !dismissingMap, activeSurface == surface else { return false }
         if statusSurface == surface { return statusAnchor()?.frame == surface.anchors[.findWidget] }
+        if cockpitSurface == surface {
+            guard let anchor = cockpitAnchor() else { return false }
+            return surface.anchors[anchor.attached ? .detach : .putBack] == anchor.frame
+        }
         return dock?.isCurrentDockHelpSurface(surface) == true
     }
 
@@ -296,7 +321,7 @@ struct DockStatusHelpDismissal {
     func dispose() async {
         guard !retired else { return }
         explanationTask?.cancel(); explanationTask = nil; explanationInteraction = nil
-        dismissRequestedMap(); retired = true; activeSurface = nil; statusSurface = nil; dock?.dockHelpSurfaceDidChange = nil
+        dismissRequestedMap(); retired = true; activeSurface = nil; statusSurface = nil; cockpitSurface = nil; dock?.dockHelpSurfaceDidChange = nil
         dock?.dockHelpInteractionDidChange = nil
         if let binding { try? binding.retire(context: composition.host.hints.context, host: composition.host) }
         router.installDock(nil); presenter?.dispose(); presenter = nil; binding = nil

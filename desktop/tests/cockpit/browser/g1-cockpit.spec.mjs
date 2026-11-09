@@ -45,23 +45,13 @@ test('CKP-STRIP-04 ALERT stays English while its accessible label localizes',asy
 });
 
 test('CKP-STRIP-07 Option opens and dismisses the help map without a help key',async({page})=>{
- const {send,receive}=await open(page);const map=page.locator('#help-map');
- await expect(page.locator('[data-help],button[aria-label="Help"]')).toHaveCount(0);
- await page.keyboard.down('Alt');await expect(map).toBeVisible();await expect(map.locator('[data-target="[data-detach]"]')).toHaveCount(0);await page.keyboard.up('Alt');await expect(map).toBeHidden();
+ const {send,receive}=await open(page);const map=page.locator('#help-map'),detach=page.locator('[data-detach]');
+ await expect(page.locator('[data-help],button[aria-label="Help"]')).toHaveCount(0);const before=await detach.boundingBox();
+ await page.keyboard.down('Alt');await expect(map).toBeVisible();await expect(map.locator('[data-target="[data-detach]"]')).toContainText('Detach');
+ const otherLabels=()=>map.locator('.an:not([data-target="[data-detach]"])').evaluateAll(nodes=>nodes.map(n=>({target:n.dataset.target,x:n.getBoundingClientRect().x,y:n.getBoundingClientRect().y})));
+ const labelsBefore=await otherLabels();expect(await detach.boundingBox()).toEqual(before);await page.keyboard.up('Alt');await expect(map).toBeHidden();
  expect(await receive(send('shell',{...shell,attached:false}))).toBe(true);
- await page.keyboard.down('Alt');await expect(map).toBeVisible();await expect(map.locator('[data-target="[data-detach]"]')).toHaveCount(0);await page.keyboard.up('Alt');await expect(map).toBeHidden();
-});
-
-test('G3-54 collapsed and expanded cockpit have no detach control',async({page})=>{
- const {send,receive}=await open(page);
- const none=async()=>{
-  await expect(page.locator('[data-detach],.detach-glyph,.detach-toggle')).toHaveCount(0);
-  await expect(page.getByRole('button',{name:/^(Detach|Put back|分离|放回)$/})).toHaveCount(0);
- };
- await none();
- expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);await none();
- expect(await receive(send('shell',{...shell,attached:false}))).toBe(true);await none();
- expect(await receive(send('shell',{...shell,profile:'closed',attached:false}))).toBe(true);await none();
+ await page.keyboard.down('Alt');await expect(map.locator('[data-target="[data-detach]"]')).toContainText('Put back');expect(await otherLabels()).toEqual(labelsBefore);await page.keyboard.up('Alt');await expect(map).toBeHidden();
 });
 
 test('G3-55 right-click on the cockpit raises no browser context menu',async({page})=>{
@@ -153,14 +143,28 @@ test('CKP-ENG-09 reserve uses reported reset counts and credits, not a public co
  for(const [value,expected] of [[0.2,'<1'],[0,'0']]){detail.credits.balance=value;expect(await receive(send('display',{data}))).toBe(true);await expect(col.locator('.qrv-p')).toHaveText(expected);}
 });
 
-test('CKP-SHELL-03 gear and close share a strip key geometry and order',async({page})=>{
- await open(page);const controls=await Promise.all(['[data-settings]','[data-close]'].map(s=>page.locator(s).boundingBox()));
- expect(controls.every(Boolean)).toBe(true);expect(controls[0].x).toBeLessThan(controls[1].x);
+test('D88 attached shows the detach key and detached shows put back in the same strip slot',async({page})=>{
+ const {send,receive}=await open(page);const key=page.locator('.ck-head [data-detach]');
+ const slots=async()=>Promise.all(['[data-settings]','[data-detach]','[data-close]'].map(s=>page.locator('.ck-head '+s).boundingBox()));
+ await expect(key).toBeVisible();await expect(key).toHaveAttribute('aria-label','Detach');await expect(key).toHaveAttribute('aria-pressed','false');
+ const attached=await slots();expect(attached[1].x).toBeGreaterThan(attached[0].x);expect(attached[2].x-attached[1].x).toBeCloseTo(attached[1].x-attached[0].x,0);
+ await key.click();expect(await page.evaluate(()=>window.__g1Messages.filter(m=>m.type==='action').at(-1)?.action)).toBe('detach');
+ expect(await receive(send('shell',{...shell,attached:false}))).toBe(true);
+ await expect(key).toBeVisible();await expect(key).toHaveAttribute('aria-label','Put back');await expect(key).toHaveAttribute('aria-pressed','true');
+ expect((await slots()).map(r=>r.x)).toEqual(attached.map(r=>r.x));
+ await key.click();expect(await page.evaluate(()=>window.__g1Messages.filter(m=>m.type==='action').at(-1)?.action)).toBe('putBack');
+ expect(await receive(send('shell',{...shell,attached:true}))).toBe(true);await expect(key).toHaveAttribute('aria-label','Detach');
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(key).toHaveAttribute('aria-label','分离');
+});
+
+test('CKP-SHELL-03 gear, detach and close share a strip key geometry and order',async({page})=>{
+ await open(page);const controls=await Promise.all(['[data-settings]','[data-detach]','[data-close]'].map(s=>page.locator(s).boundingBox()));
+ expect(controls.every(Boolean)).toBe(true);expect(controls[0].x).toBeLessThan(controls[1].x);expect(controls[1].x).toBeLessThan(controls[2].x);
  for(const r of controls.slice(1)){expect(r.width).toBeCloseTo(controls[0].width,0);expect(r.height).toBeCloseTo(controls[0].height,0);}
 });
 
 test('CKP-STRIP-01 cockpit strip exposes one ordered row of its required controls',async({page})=>{
- await open(page);const selectors=['.ck-brand','[data-shutter]','[data-caution]','[data-settings]','[data-close]'];const rects=[];
+ await open(page);const selectors=['.ck-brand','[data-shutter]','[data-caution]','[data-settings]','[data-detach]','[data-close]'];const rects=[];
  for(const selector of selectors){const element=page.locator('.ck-head '+selector);await expect(element).toBeVisible();rects.push(await element.boundingBox());}
  for(let i=1;i<rects.length;i++)expect(rects[i].x).toBeGreaterThan(rects[i-1].x);
  expect(Math.max(...rects.map(r=>r.y))-Math.min(...rects.map(r=>r.y))).toBeLessThan(26);
@@ -330,7 +334,7 @@ test('CKP-STRIP-10 running session cursors blink, stop when hidden, and stay sta
 });
 
 test('CKP-MOT-03 Reduce Motion keeps running cursors static without shifting controls',async({page})=>{
- const data=visualFixture().data,row=data.projection.rows[0],account=row.accounts[0];data.details.alerts=[{severity:'critical',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[0].id,remainingPercent:20}];account.windows[0].remainingPercent=20;const {send,receive}=await open(page,data);const cursor=page.locator('.ck-tape .t-cur').first(),lamp=page.locator('[data-caution]'),shutter=page.locator('[data-shutter]'),before=await shutter.boundingBox(),cursorBefore=await cursor.boundingBox();await expect(lamp).toHaveClass(/\blit\b/);expect(await receive(send('appearance',{...appearance,reduceMotion:true}))).toBe(true);expect(await cursor.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await lamp.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await shutter.boundingBox()).toEqual(before);expect(await cursor.boundingBox()).toEqual(cursorBefore);expect(await receive(send('shell',{...shell,attached:false}))).toBe(true);const closeKey=page.locator('[data-close]');expect(await closeKey.evaluate(e=>getComputedStyle(e).transitionDuration)).toBe('0s');await closeKey.click();expect(await page.evaluate(()=>window.__g1Messages.filter(m=>m.type==='action').at(-1)?.action)).toBe('close');await page.emulateMedia({reducedMotion:'reduce'});expect(await receive(send('appearance',appearance))).toBe(true);expect(await cursor.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await shutter.boundingBox()).toEqual(before);
+ const data=visualFixture().data,row=data.projection.rows[0],account=row.accounts[0];data.details.alerts=[{severity:'critical',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[0].id,remainingPercent:20}];account.windows[0].remainingPercent=20;const {send,receive}=await open(page,data);const cursor=page.locator('.ck-tape .t-cur').first(),lamp=page.locator('[data-caution]'),shutter=page.locator('[data-shutter]'),before=await shutter.boundingBox(),cursorBefore=await cursor.boundingBox();await expect(lamp).toHaveClass(/\blit\b/);expect(await receive(send('appearance',{...appearance,reduceMotion:true}))).toBe(true);expect(await cursor.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await lamp.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await shutter.boundingBox()).toEqual(before);expect(await cursor.boundingBox()).toEqual(cursorBefore);expect(await receive(send('shell',{...shell,attached:false}))).toBe(true);const putBack=page.locator('[data-detach]');expect(await putBack.evaluate(e=>getComputedStyle(e).transitionDuration)).toBe('0s');await putBack.click();expect(await page.evaluate(()=>window.__g1Messages.filter(m=>m.type==='action').at(-1)?.action)).toBe('putBack');await page.emulateMedia({reducedMotion:'reduce'});expect(await receive(send('appearance',appearance))).toBe(true);expect(await cursor.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await shutter.boundingBox()).toEqual(before);
 });
 
 test('CKP-MOT-06 visible text and well nesting respect the v1 budget',async({page})=>{

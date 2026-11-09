@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanCockpitWeb
 import ModelPlanCore
 import ModelPlanShell
 import ModelPlanEngineClient
@@ -301,21 +302,28 @@ struct StatusNoticePresentation {
         guard NSScreen.screens.contains(where: { $0.frame.intersects(rect) }) else { return nil }
         return rect
     }
-    public func showConsole() {
+    /// D88: `fromStatusItem` is the menu bar icon's own click: the attached cockpit grows out of the icon.
+    public func showConsole(fromStatusItem: Bool = false) {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
         composition.dock.acknowledgeCockpitOpening()
         if console == nil {
             console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition)
-            console?.onShowingChanged = { [weak self] in self?.refreshStatusTooltip() }
+            console?.onShowingChanged = { [weak self] in self?.cockpitPresentationChanged() }
         }
         if let value = composition.latestSettings { console?.applySettings(value) }
-        console?.show()
+        console?.show(fromStatusItem: fromStatusItem)
         refreshStatusTooltip()
+    }
+    /// D88: the cockpit opened, closed, detached or was put back: the icon highlight and the one-time
+    /// detach / put-back hints follow.
+    private func cockpitPresentationChanged() {
+        refreshStatusTooltip()
+        dockHelp?.refresh()
     }
     /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
     /// entry (menu item, ignition, shortcut, reopening the app) only ever opens.
     func toggleConsole() {
-        if let console, console.isShowing { console.requestClose(); refreshStatusTooltip() } else { showConsole() }
+        if let console, console.isShowing { console.requestClose(); refreshStatusTooltip() } else { showConsole(fromStatusItem: true) }
     }
     /// OS accessibility changes are presentation facts, never saved user choices.
     func updateSystemAccessibility(_ observed: SettingsEnvironment) {
@@ -408,7 +416,8 @@ struct StatusNoticePresentation {
                 guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
                       [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
                 return DockStatusHelpAnchor(frame: frame, sharing: window.sharingType, collection: window.collectionBehavior)
-            }, statusRequestID: { [weak self] in self?.statusHelpRequestID },
+            }, cockpitAnchor: { [weak self] in self?.console?.attachmentHintAnchor },
+               statusRequestID: { [weak self] in self?.statusHelpRequestID },
                statusDidDismiss: { [weak self] id in self?.statusHelpDidDismiss(id) })
             dockHelpSetupInProgress = false
             if terminating { await help?.dispose(); return }
@@ -685,7 +694,10 @@ struct StatusNoticePresentation {
         else {
             component = DockStatusMenu(labels: [:], handlers: [:])
             component.onMenuActuallyOpen = { [weak self] open in
-                guard open, let self, let menu = self.liveStatusMenu else { return }
+                guard let self else { return }
+                // D88: menu tracking clears the icon's highlight; restore it while the attached cockpit is open.
+                guard open else { Task { @MainActor [weak self] in self?.refreshStatusTooltip() }; return }
+                guard let menu = self.liveStatusMenu else { return }
                 self.menuWillOpen(menu)
             }
             statusMenuComponent = component
@@ -834,7 +846,12 @@ struct StatusNoticePresentation {
     func refreshStatusTooltip() {
         guard let button = status?.button else { return }
         button.toolTip = statusTooltipHidden ? nil : statusTooltip
+        // D88: the icon shows its native pressed highlight while the attached cockpit is open.
+        let pressed = statusItemPressed
+        if button.isHighlighted != pressed { button.highlight(pressed) }
     }
+    /// D88: open and attached. A detached cockpit is its own window, so the icon is not pressed.
+    var statusItemPressed: Bool { console?.isShowing == true && console?.isDetached != true }
     private func showHelp(fromStatusMenu: Bool = false) {
         guard !terminating, !lifecyclePaused else { return }
         spotlight.finish(.cancelled)

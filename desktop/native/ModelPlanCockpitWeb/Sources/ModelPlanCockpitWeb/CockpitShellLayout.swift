@@ -29,11 +29,11 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public static func hiddenIconAnchor(usable: CGRect) -> CGRect {
         CGRect(x: usable.maxX, y: usable.maxY, width: 0, height: 0)
     }
-    /// G3-46 (owner D53): like other menu bar tools, the cockpit's visible left edge lines up with the menu
-    /// bar icon's left edge. The 636 px raster has an 8 px transparent margin around the 620 px shell. When
-    /// that would run past the right edge it shifts left just enough to stay on the screen.
+    /// Owner D88 (supersedes D53): the attached cockpit sits centred under the menu bar icon. The 636 px
+    /// raster has the same 8 px transparent margin on both sides of the 620 px shell, so the frame's centre is
+    /// the shell's centre. Near a screen edge it shifts just enough to stay on the screen.
     public static func attachedX(anchor: CGRect, width: CGFloat, scale: CGFloat, usable: CGRect) -> CGFloat {
-        max(usable.minX, min(anchor.minX - 8 * scale, usable.maxX - width))
+        max(usable.minX, min(anchor.midX - width / 2, usable.maxX - width))
     }
     public func shellState(attached: Bool, scope: String = "all") -> CockpitShellState {
         .init(closed: shutterClosed, attached: attached, forcedClosed: forcedClosed,
@@ -50,6 +50,8 @@ public struct CockpitShellLayout: Equatable, Sendable {
 @MainActor public final class CockpitShellSession {
     public var detached = false
     public var shutterClosed = false
+    /// D88: set by the console just before an open and consumed by it; the menu bar icon grows the cockpit.
+    public var nextEntrance: CockpitEntrance = .fade
     private var origins: [(String, CGPoint)] = []
     public init() {}
     public func origin(for arrangement: String) -> CGPoint? { origins.first { $0.0 == arrangement }?.1 }

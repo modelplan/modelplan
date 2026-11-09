@@ -155,7 +155,7 @@ class Script(unittest.TestCase):
     def test_covers_the_build_12_checklist(self):
         ids = {s["id"] for s in self.STEPS}
         self.assertTrue({"first-run-window", "widget-collapse", "widget-reveal", "card-third-ring", "card-pointer-away",
-                         "card-empty-quota", "cockpit-toggle-close", "cockpit-reopen", "shutter-closed",
+                         "card-empty-quota", "cockpit-toggle-close", "cockpit-reopen", "shutter-closed", "cockpit-detach", "cockpit-put-back",
                          "cockpit-drag-title", "help-map", "air-1440x900", "air-1470x956"} <= ids)
 
     def test_the_seed_has_a_ring_at_zero(self):

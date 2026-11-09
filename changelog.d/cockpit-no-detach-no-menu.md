@@ -1,1 +1,1 @@
-The cockpit no longer has a detach button, and right-clicking it no longer shows a browser menu; reloading the page can no longer take the cockpit down. Drag the title strip to move the cockpit and drop it near the menu bar icon to snap it back.
+Right-clicking the cockpit no longer shows a browser menu, and reloading the page can no longer take the cockpit down.

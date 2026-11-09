@@ -25,6 +25,11 @@
 .ck-head [data-settings]{left:460px;--strip-base:url('./assets/gear-normal@3x.png')}
 .ck-head [data-settings]:hover{--strip-key:url('./assets/gear-hover@3x.png')}
 .ck-head [data-settings]:active{--strip-key:url('./assets/gear-pressed@3x.png')}
+.ck-head [data-detach]{left:502px;--strip-base:url('./assets/detach-normal@3x.png')}
+.ck-head [data-detach]:hover{--strip-key:url('./assets/detach-hover@3x.png')}
+.ck-head [data-detach]:active{--strip-key:url('./assets/detach-pressed@3x.png')}
+.ck-head .detach-glyph{position:absolute;inset:0;pointer-events:none;background:#e9edf4;mask:url('./assets/detach.svg') center/18.5px 18.5px no-repeat}
+.ck-head [data-detach][aria-pressed=true] .detach-glyph{mask-image:url('./assets/put-back.svg')}
 .ck-head [data-close]{left:544px;--strip-base:url('./assets/close-normal@3x.png')}
 .ck-head [data-close]:hover{--strip-key:url('./assets/close-hover@3x.png')}
 .ck-head [data-close]:active{--strip-key:url('./assets/close-pressed@3x.png')}

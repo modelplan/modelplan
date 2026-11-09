@@ -75,7 +75,7 @@ public struct CockpitVisibility: Equatable, Sendable {
   var active: Bool { visible && !occluded && key }
 }
 public enum CockpitIntent: Equatable, Sendable {
-  case chooseSetup, openSettings, close, shutterToggle, openField
+  case chooseSetup, openSettings, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
   case scopeSelect(String)
   case openWebsite(CockpitWebsiteLink)
@@ -467,6 +467,8 @@ public final class CockpitBridgeState {
         guard let link = CockpitWebsiteLink(page: m["page"] as? String, value: m["value"] as? String) else { throw CockpitBridgeError.invalidMessage }
         intent = .openWebsite(link)
       case "close": intent = .close
+      case "detach": intent = .detach
+      case "putBack": intent = .putBack
       case "shutterToggle": intent = .shutterToggle
       case "openField": intent = .openField
       case "openHistory":

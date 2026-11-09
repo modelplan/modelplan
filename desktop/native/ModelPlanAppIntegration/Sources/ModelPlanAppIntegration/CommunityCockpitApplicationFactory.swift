@@ -226,6 +226,7 @@ struct CockpitUnavailableNotice {
     var showTask: Task<Void,Never>?
     var wantsVisible=false
     private var pageOpened = false
+    private var entrance: CockpitEntrance = .fade
     var fallback: EngineRowsConsole?
     private var appliedSettings: SettingsApplication?
     private let isForeground: @MainActor () -> Bool
@@ -244,6 +245,8 @@ struct CockpitUnavailableNotice {
             self?.pageOpened = true
             onOpened?()
         }
+        // D88: a detach, a put back or the settled open refreshes the icon highlight and the hints.
+        owner.coordinator?.onShellChanged = { [weak self] in self?.onShowingChanged?() }
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
             self.wantsVisible = false
@@ -273,7 +276,7 @@ struct CockpitUnavailableNotice {
         case .openField:openField()
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
-        case .shutterToggle,.scopeSelect:
+        case .detach,.putBack,.shutterToggle,.scopeSelect:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()
@@ -290,7 +293,12 @@ struct CockpitUnavailableNotice {
         owner.appearance=owner.cockpitAppearance(value)
         owner.coordinator?.updateAppearance(owner.appearance)
     }
-    func show() {
+    var isDetached: Bool { owner.shell.detached }
+    var attachmentHintAnchor: CockpitAttachmentHintAnchor? { wantsVisible ? owner.coordinator?.attachmentHintAnchor : nil }
+    func show() { show(fromStatusItem: false) }
+    func show(fromStatusItem: Bool) {
+        // D88: only the menu bar icon grows the cockpit out of itself; the ignition keeps its own entrance.
+        entrance = fromStatusItem ? .growFromIcon : .fade
         wantsVisible=true
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
@@ -306,7 +314,9 @@ struct CockpitUnavailableNotice {
             if owner.coordinator?.presented == false { owner.coordinator?.updateAppearance(owner.appearance) }
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
+            owner.shell.nextEntrance = entrance
             owner.coordinator?.open()
+            owner.shell.nextEntrance = .fade
             showTask = nil
         }
     }
