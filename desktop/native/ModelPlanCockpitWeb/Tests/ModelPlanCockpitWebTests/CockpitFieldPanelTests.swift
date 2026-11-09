@@ -39,6 +39,21 @@ final class CockpitFieldPanelTests: XCTestCase {
     panel.close()
     XCTAssertEqual(closed, 2)
   }
+  /// CKP-PORT-11E: a click outside the field makes its panel resign key, which closes it once and destroys the page.
+  @MainActor func testLosingKeyClosesTheField() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-key-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let panel = CockpitFieldPanel(bundle: try bundle(root))
+    var closed = 0
+    panel.onClosed = { closed += 1 }
+    panel.open(payload: "{}", near: nil)
+    XCTAssertTrue(panel.isOpen)
+    panel.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification))
+    XCTAssertFalse(panel.isOpen, "the outside click closes the field")
+    XCTAssertEqual(closed, 1)
+    panel.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification))
+    XCTAssertEqual(closed, 1, "a second resign does nothing")
+  }
   /// CKP-PORT-11 (D63, task 91 round 5): the composition's bounds follow the prototype's fieldFrame.
   func testCompositionBoundsFollowThePrototypeFrame() {
     XCTAssertEqual(CockpitFieldPanel.frame(in: NSRect(x: 0, y: 0, width: 1470, height: 919)),

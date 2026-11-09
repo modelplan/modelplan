@@ -20,7 +20,8 @@ const words={en:{close:'Close',mine:'Mine',all:'All',search:'Search models',noGl
  zh:{close:'关闭',mine:'我的',all:'全部',search:'搜索模型',noGl:'3D 视图需要 WebGL，当前不可用。',empty:'暂无已发布模型。'}} as const;
 const post=(message:Record<string,unknown>)=>(window.webkit?.messageHandlers as Record<string,{postMessage(m:string):void}>|undefined)?.field?.postMessage(JSON.stringify(message));
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
-const webgl=()=>{try{return !!document.createElement('canvas').getContext('webgl2');}catch{return false;}};
+// CKP-PORT-11G: the probe's context is released at once, so the scene's is the only live WebGL context while the field is open.
+const webgl=()=>{try{const gl=document.createElement('canvas').getContext('webgl2');if(!gl)return false;gl.getExtension('WEBGL_lose_context')?.loseContext();return true;}catch{return false;}};
 
 function mount(root:HTMLElement) {
  let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,shape:FieldShape|null=null,stopAxes=()=>{};
