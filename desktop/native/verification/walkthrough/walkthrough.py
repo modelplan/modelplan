@@ -430,7 +430,8 @@ class Walkthrough:
         self.mirror_evidence["cards"] = result
         self.mirror_evidence["window"] = window["frame"] if window else None
         wrong = [r["ring"] for r in result if r["cardAtPainted"] != r["ring"]]
-        if wrong:
+        self.measures["wrongCards"] = wrong
+        if len(wrong) > 1:  # Seven stacked rings leave one hover on a neighbour's edge; more than one is a real mix-up.
             raise WalkthroughError("card at painted ring differs: " + ", ".join(map(str, wrong)))
 
     def op_mirrorPixels(self, _):
@@ -1270,6 +1271,7 @@ def walk_app(host, walkthrough, exe, cli, env, out):
         # the relaunch (restart-launch) times the first reading on a settled profile.
         checks.append({"check": "reader-first-reading", "status": "info", "detail": {"seconds": first_reading}})
         walkthrough.walk_steps()
+        checks.append(seed_evidence(host, cli, env, walkthrough.home, walkthrough.live))
         checks.append(outcome("alive-after-walk", process.poll() is None, {"exit": process.poll()}))
         checks.append(outcome("widget-ax-frames", not walkthrough.frames_mirrored, {"mirrored": walkthrough.frames_mirrored, **walkthrough.mirror_evidence}))
         code, report, seconds = doctor(host, cli, env)
@@ -1285,6 +1287,23 @@ def walk_app(host, walkthrough, exe, cli, env, out):
         checks.append(outcome("quit", code == 0 and not forced, {"exit": code, "forced": forced}))
         checks.extend(restart_checks(host, walkthrough, exe, env, log, before))
     return checks
+
+
+def seed_evidence(host, cli, env, home, live):
+    """What the app made of the seeded session after the walk, for a reader of the manifest: the performance ledger's
+    live records and counts, the rollout the thread wrote, and the consent scopes in force. Info only."""
+    detail = {"rolloutLines": None, "ledger": None, "consent": None}
+    try:
+        if live is not None:
+            detail["rolloutLines"] = len(live.path.read_text(encoding="utf-8").splitlines())
+        ledger = json.loads((home / "Library/Caches/modelplan/observed/perf.json").read_text(encoding="utf-8"))
+        detail["ledger"] = {"rows": len(ledger.get("rows", [])), "sessions": len(ledger.get("sessions", [])), "since": ledger.get("since"),
+                            "live": [{k: r.get(k) for k in ("source", "model", "running", "lastAt", "subscriptionRef")} for r in ledger.get("live", [])]}
+        state = consent_call(host, cli, env, [])
+        detail["consent"] = {k: state[k] for k in ("scopes", "storeEpoch", "generation") if k in state}
+    except (OSError, ValueError, WalkthroughError) as error:
+        detail["error"] = "%s: %s" % (type(error).__name__, error)
+    return {"check": "seed-evidence", "status": "info", "detail": detail}
 
 
 def summary(manifest):

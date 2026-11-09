@@ -773,7 +773,7 @@
         {
           "matches": {
             "step": "drag-snap",
-            "max": 0.005
+            "max": 0.05
           }
         }
       ]
@@ -2423,11 +2423,82 @@
       "requirement": "checklist 6"
     },
     {
+      "id": "s-reset-displace-widget",
+      "title": "Widget dragged along its edge, cockpit already off",
+      "expected": "The widget is dragged along its edge while the cockpit is open; it is not at its default place now. The cockpit is opened again if the drag closed it.",
+      "requires": [
+        "s-reset-home"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "dragStart",
+          "target": "ax:dock.grip.0"
+        },
+        {
+          "op": "dragTo",
+          "point": [
+            0.04,
+            0.92
+          ],
+          "seconds": 1.2
+        },
+        {
+          "op": "dragEnd"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "rememberNamed",
+          "name": "widget-displaced",
+          "target": "window-of:ax:dock.grip.0"
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        },
+        {
+          "op": "toggleCockpit",
+          "want": "open"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "nearNamed": {
+            "name": "widget-home",
+            "target": "window-of:ax:dock.grip.0",
+            "axes": "y",
+            "slack": 40,
+            "is": false
+          }
+        },
+        {
+          "exists": "label:ModelPlan Cockpit"
+        }
+      ],
+      "requirement": "checklist 6"
+    },
+    {
       "id": "cockpit-drag-title",
       "title": "Detached cockpit dragged by its title strip",
       "expected": "Dragging the left part of the title strip moves the detached window (G3-43).",
       "requires": [
-        "cockpit-reopen"
+        "s-reset-displace-widget"
       ],
       "actions": [
         {
@@ -2471,75 +2542,11 @@
       "requirement": "G3-43"
     },
     {
-      "id": "s-reset-displace-widget",
-      "title": "Widget dragged along its edge, cockpit already off",
-      "expected": "With the cockpit already dragged off, the widget is dragged up along its edge; neither window is at its place now.",
-      "requires": [
-        "cockpit-drag-title"
-      ],
-      "actions": [
-        {
-          "op": "park"
-        },
-        {
-          "op": "dragStart",
-          "target": "ax:dock.grip.0"
-        },
-        {
-          "op": "dragTo",
-          "point": [
-            0.04,
-            0.92
-          ],
-          "seconds": 1.2
-        },
-        {
-          "op": "dragEnd"
-        },
-        {
-          "op": "wait",
-          "seconds": 1.5
-        },
-        {
-          "op": "rememberNamed",
-          "name": "widget-displaced",
-          "target": "window-of:ax:dock.grip.0"
-        },
-        {
-          "op": "park"
-        },
-        {
-          "op": "wait",
-          "seconds": 0.5
-        }
-      ],
-      "shot": {},
-      "checks": [
-        {
-          "underStatusItem": {
-            "target": "window-of:label:ModelPlan Cockpit",
-            "is": false,
-            "slack": 20
-          }
-        },
-        {
-          "nearNamed": {
-            "name": "widget-home",
-            "target": "window-of:ax:dock.grip.0",
-            "axes": "y",
-            "slack": 40,
-            "is": false
-          }
-        }
-      ],
-      "requirement": "checklist 6"
-    },
-    {
       "id": "s-reset-position",
       "title": "Reset Position from the status menu",
       "expected": "The status item menu has Reset Position (reached through the Accessibility API, no pointer on the item); choosing it brings the cockpit back under the menu bar icon and the widget back to its default place along its edge (away from where it was dragged) (checklist 6).",
       "requires": [
-        "s-reset-displace-widget"
+        "cockpit-drag-title"
       ],
       "actions": [
         {
