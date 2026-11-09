@@ -169,6 +169,8 @@ public enum SettingsActionRequest: Equatable, Sendable {
 }
 public struct SettingsCapabilities: Sendable {
     public var login: LoginServiceState = .notRegistered
+    /// G3-69: `login` is `.unavailable` because the system reported the app as not found (not in Applications).
+    public var loginNotInApplications = false
     public var appCacheClearAvailable = false
     public var updateServiceAvailable = false
     /// True only while the engine reports its forecast producer (F1). Injected from the
