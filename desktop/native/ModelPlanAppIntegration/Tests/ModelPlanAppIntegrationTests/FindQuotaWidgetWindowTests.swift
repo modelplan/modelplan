@@ -112,6 +112,32 @@ import XCTest
         }
     }
 
+    /// glm-780-1: the feather raster must land upright on the layer. The hole sits within 24 pt of the display top, so the
+    /// feather region is clipped and not mirror-symmetric; a vertically mirrored image would show the dimmed far end of
+    /// the ramp flush against the widget's lower edge.
+    func testD56FeatherIsUprightWhenTheHoleIsClippedAtTheDisplayTop() throws {
+        _ = NSApplication.shared
+        let display = CGRect(x: 0, y: 0, width: 640, height: 480)
+        let widget = CGRect(x: 280, y: 400, width: 80, height: 64)
+        let hole = QuotaWidgetSpotlightStyle.hole(for: QuotaWidgetSpotlightTarget(widget: widget, display: display, displayID: "capture"))
+        XCTAssertGreaterThan(hole.maxY, display.height - QuotaWidgetSpotlightStyle.featherRadius, "the feather region is clipped at the top")
+        let canvas = NSView(frame: display)
+        canvas.wantsLayer = true
+        canvas.layer?.backgroundColor = NSColor(srgbRed: 0.8, green: 0.8, blue: 0.8, alpha: 1).cgColor
+        let overlay = QuotaWidgetSpotlightView(frame: display)
+        overlay.backdropIsDark = false
+        overlay.hole = hole
+        canvas.addSubview(overlay)
+        let bitmap = try XCTUnwrap(canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds))
+        canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+        let scale = CGFloat(bitmap.pixelsWide) / display.width
+        func luma(below d: CGFloat) -> CGFloat {
+            let c = bitmap.colorAt(x: Int(hole.midX * scale), y: Int((display.height - (hole.minY - d)) * scale))?.usingColorSpace(.sRGB)
+            return c.map { 0.2126 * $0.redComponent + 0.7152 * $0.greenComponent + 0.0722 * $0.blueComponent } ?? 0
+        }
+        XCTAssertGreaterThan(luma(below: 3), luma(below: 21) + 0.1, "near the widget the surface is nearly clear, further out it is dimmed (not mirrored)")
+    }
+
     func testD56HaloIsAFeatherNotARing() {
         let peak = QuotaWidgetSpotlightStyle.haloPeak(dark: true, increaseContrast: false)
         XCTAssertEqual(peak, 0.35, accuracy: 0.001)
