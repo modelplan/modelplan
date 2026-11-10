@@ -35,7 +35,11 @@ final class OfficialEntranceFramesTests: XCTestCase {
         }
         guard drawn else { return 0 }
         var n = 0
-        for i in stride(from: 0, to: bytes.count, by: 4) where abs(Int(bytes[i]) - Int(bytes[0])) + abs(Int(bytes[i + 1]) - Int(bytes[1])) + abs(Int(bytes[i + 2]) - Int(bytes[2])) > 30 { n += 1 }
+        let r0 = Int(bytes[0]), g0 = Int(bytes[1]), b0 = Int(bytes[2])
+        for i in stride(from: 0, to: bytes.count, by: 4) {
+            let dr: Int = abs(Int(bytes[i]) - r0), dg: Int = abs(Int(bytes[i + 1]) - g0), db: Int = abs(Int(bytes[i + 2]) - b0)
+            if dr + dg + db > 30 { n += 1 }
+        }
         return Double(n) / Double(w * h)
     }
 
