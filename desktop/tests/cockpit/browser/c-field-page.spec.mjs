@@ -52,6 +52,69 @@ test('D43 every vendor mark the scene asks for loads under the page CSP, close t
   ['openai-white.svg','claude-rounded.svg','claude.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
  for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
 });
+// D63 / CKP-PORT-11/12: the ⤢ key, a double-click and a click on a still rocket open the field; a rocket focuses it.
+// Prototype rocket-r1/porthole.js placeBigKey / bindPorthole (task 91); hud-selection/still.js hitStillRocket (28 px).
+async function openCockpit(page,theme='night') {
+ await page.addInitScript(()=>{window.posted=[];window.webkit={messageHandlers:{cockpit:{postMessage(m){window.posted.push(typeof m==='string'?JSON.parse(m):m);}}}};});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance:{...appearance,theme},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
+}
+const opens=page=>page.evaluate(()=>window.posted.filter(m=>m.type==='action'&&m.action==='openField').map(m=>m.payload?.key??m.key??null));
+test('D63 the ⤢ key opens the field, with a label that says the field itself also opens it',async({page})=>{
+ await openCockpit(page);
+ const key=page.locator('.ck-port [data-bigfield]');await expect(key).toBeVisible();await expect(key).toHaveText('⤢');
+ await expect(key).toHaveAttribute('aria-label','Open the 3D launch field · Or click anywhere on the field');
+ expect(await key.evaluate(e=>{const s=getComputedStyle(e);return [s.right,s.top,s.width,s.height];})).toEqual(['38px','52px','22px','22px']);
+ await key.click();expect(await opens(page)).toEqual([null]);
+});
+// Owner 11-09: the key must sit inside the glass. The c01 canopy aperture mask (laid 1:1 on the canopy art box, see below; origin at the box's
+// top left) is the truth: every pixel of the key's rect keeps at least 8 px from any frame pixel, and it clears the HUD.
+for(const theme of ['night','day'])for(const tier of ['tall','compact'])test(`D63 the key lies inside the aperture mask with 8 px of glass (${theme} ${tier})`,async({page})=>{
+ await page.setViewportSize({width:636,height:tier==='tall'?905:635});
+ await page.addInitScript(()=>{window.posted=[];window.webkit={messageHandlers:{cockpit:{postMessage(m){window.posted.push(typeof m==='string'?JSON.parse(m):m);}}}};});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ await receive(send('load',{appearance:{...appearance,theme},shell:{...shell,tier}}));
+ await receive(send('visibility',{visible:true,occluded:false,key:true}));await receive(send('display',{data:visualFixture().data}));
+ await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
+ const layout=tier==='tall'?890:640;
+ const r=await page.evaluate(async layout=>{
+  // The art box is the port row grown by 24 px each side and 12 px at the top (cockpit.css .ck-portrow::before, inset -12px -24px 0),
+  // drawn 1:1 with the canopy mask. The mask pixel (px,y) therefore lies at the box's origin plus (px,y), never at the page's.
+  const img=new Image();img.src='./runtime/canopy-c01/aperture-'+layout+'-1x.png';await img.decode();
+  const row=document.querySelector('.ck-portrow').getBoundingClientRect(),box={left:row.left-24,top:row.top-12,width:row.width+48,height:row.height+12};
+  const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const x=c.getContext('2d');x.drawImage(img,0,0);const a=x.getImageData(0,0,c.width,c.height).data;
+  const k=document.querySelector('[data-bigfield]').getBoundingClientRect();let min=1e9;
+  for(let y=0;y<c.height;y++)for(let px=0;px<c.width;px++)if(a[(y*c.width+px)*4+3]<128){
+   const X=box.left+px,Y=box.top+y,dx=Math.max(k.left-X,0,X-(k.right-1)),dy=Math.max(k.top-Y,0,Y-(k.bottom-1));min=Math.min(min,Math.hypot(dx,dy));}
+  const huds=[...document.querySelectorAll('.ck-port .hud, .ck-port .hud *')].map(e=>e.getBoundingClientRect()).filter(h=>h.width>0&&h.height>0);
+  return {min,boxWidth:box.width,boxHeight:box.height,maskWidth:c.width,maskHeight:c.height,hudOverlap:huds.some(h=>k.left<h.right&&k.right>h.left&&k.top<h.bottom&&k.bottom>h.top)};
+ },layout);
+ expect([r.boxWidth,r.boxHeight],'the art box is 1:1 with the canopy mask').toEqual([r.maskWidth,r.maskHeight]);
+ expect(r.min,'glass margin around the key').toBeGreaterThanOrEqual(8);
+ expect(r.hudOverlap).toBe(false);
+});
+test('D63 a double-click on the field opens it once',async({page})=>{
+ await openCockpit(page);
+ const port=await page.locator('.ck-port').boundingBox();
+ await page.mouse.dblclick(port.x+12,port.y+port.height-12);
+ expect(await opens(page)).toEqual([null]);
+});
+test('D63 a click on a rocket in the still opens the field focused on that rocket',async({page})=>{
+ await openCockpit(page);
+ const rocket=await page.locator('.ck-still-body[data-model-name]').evaluateAll(es=>{const e=es.find(e=>{const r=e.getBoundingClientRect(),p=document.querySelector('.ck-port').getBoundingClientRect(),hud=document.querySelector('.hud')?.getBoundingClientRect();const x=r.x+r.width/2,y=r.y+r.height/2;return r.width>0&&x>p.x&&x<p.right&&y>p.y&&y<p.bottom&&!(hud&&x>=hud.x&&x<=hud.right&&y>=hud.y&&y<=hud.bottom)&&document.elementFromPoint(x,y)?.closest('.ck-port')&&!document.elementFromPoint(x,y)?.closest('.hud,[data-bigfield]');});const r=e.getBoundingClientRect();return {name:e.dataset.modelName,x:r.x+r.width/2,y:r.y+r.height/2};});
+ await page.mouse.click(rocket.x,rocket.y);
+ expect(await opens(page)).toEqual([rocket.name]);
+});
+test('D63 a focused rocket outside my models joins the field and takes the focus',async({page})=>{
+ await open(page);await show(page,payload(12,{focus:'m7'}));
+ await expect(page.locator('.field-count')).toHaveText('3/10');
+ await expect(page.locator('.field-row',{hasText:'Synthetic 7'}).locator('input')).toBeChecked();
+ });
 // CKP-PORT-11 (D63): the c01 porthole silhouette feathered ~10% into the desktop, derived from the published
 // window-890-1x.png at open. Reference: alpha samples of the prototype's approved mask (task 91 round 5,
 // feather-masks/A.png, 1000x650), read on the design branch; the mask image itself is not in this repository.
