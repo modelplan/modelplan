@@ -22,7 +22,7 @@ function fixture(extra={}) {
  data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:localDay(9),
   subscriptions:[{subscriptionRef:ref,sources:[{source:'codex',bindingBasis:'source-wide-current-binding',recent7d:sums(1200,300),recent30d:sums(4800,900)}]}],
   models:ranking,tools:ranking,
-  daily:[{at:localDay(1),source:'codex',observedOutputTokens:1000},{at:localDay(0),source:'codex',observedOutputTokens:200},{at:localDay(1),source:'other',observedOutputTokens:9999}],hourly:[],
+  daily:[{at:localDay(1),source:'codex',origin:'live',observedOutputTokens:1000},{at:localDay(0),source:'codex',origin:'live',observedOutputTokens:200},{at:localDay(1),source:'other',origin:'live',observedOutputTokens:9999}],hourly:[],
   projects:{recent7d:[{ref:'p1',label:null,model:null,effort:'high',observedOutputTokens:1200,share:1}],recent30d:[{ref:'p1',label:null,model:null,effort:'high',observedOutputTokens:1200,share:1}]},cycles:[],...extra};
  return {data,ref};
 }
@@ -32,6 +32,11 @@ const label=page=>page.locator('.ov-top .ov-sum').evaluate(e=>e.previousElementS
 test('D63 a record shorter than 30 days labels the 30-day total with its start',async({page})=>{
  await open(page,fixture().data);
  expect(await label(page)).toBe('Recorded since Oct 26');await expect(page.locator('.ov-top .ov-sum')).toHaveText('1k');
+});
+test('D63 imported history that starts earlier moves the start to the earliest day of either source',async({page})=>{
+ const {data}=fixture({dailyFrom:localDay(14)});data.history.daily.push({at:localDay(14),source:'codex',origin:'import',observedOutputTokens:500});
+ await open(page,data);
+ expect(await label(page)).toBe('Recorded since Oct 21');
 });
 test('D63 the Chinese label says where the record starts',async({page})=>{
  await open(page,fixture().data,'zh-CN');
