@@ -5,6 +5,8 @@ import {websiteFields} from './website-link.js';
 import { conforms, exact, parseMessage, record } from './schema.js';
 import { cockpitMembers } from './members.js';
 import {effectiveRedBelow,type RedBelow} from './threshold.js';
+import {parsePluginState,type PluginState} from './plugin-state.js';
+import {PLUGIN_ID} from './plugin-registry.js';
 export const MAX_MESSAGE_BYTES = 1024 * 1024;
 export interface Context { readonly sessionId:string; readonly storeEpoch:string; readonly generation:string; readonly viewRevision:string }
 export interface BridgeSource { readonly origin:string; readonly isMainFrame:boolean }
@@ -20,7 +22,11 @@ export type HostMessage = Header & (
   {readonly type:'display'; readonly data:WireCockpitData} |
   {readonly type:'visibility'; readonly visible:boolean; readonly occluded:boolean; readonly key:boolean} |
   {readonly type:'tick'; readonly nowUnixMs:string; readonly reason:'deadline'|'show'|'wake'|'unlock'|'clockChange'} |
-  {readonly type:'clear'} | {readonly type:'unload'});
+  {readonly type:'clear'} | {readonly type:'unload'} |
+  /** v1.1 plugin columns: the host's saved plugin choices (CockpitPluginPreferences). */
+  {readonly type:'plugins'; readonly plugins:PluginState} |
+  /** v1.1: a reading the host sampled for a running plugin. */
+  {readonly type:'pluginData'; readonly id:string; readonly data:unknown});
 export interface CockpitView {
   /** G3-56: caution identities the host remembered as acknowledged; sent before `configure`. */
   restoreAcked?(ids:string[]):void;
@@ -33,6 +39,11 @@ export interface CockpitView {
   nextDeadline():number|null;
   tick(now:number):void;
   active(active:boolean):void;
+  /** Open = visible and not occluded (key or not); plugins sample only while this is true (D124). */
+  visible?(visible:boolean):void;
+  /** Host plugin state; false when it does not fit this page's registry rules. */
+  plugins?(state:PluginState):boolean;
+  pluginData?(id:string,data:unknown):boolean;
   dispose():void;
 }
 const header=['version','pageId','requestId','sequence','sessionId','storeEpoch','generation','viewRevision'];
@@ -70,6 +81,8 @@ function message(raw:string):HostMessage|null {
     case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return null; break;
     case 'tick': if(!keys(['nowUnixMs','reason'])||!timestamp(m.nowUnixMs)||!['deadline','show','wake','unlock','clockChange'].includes(m.reason as string)) return null; break;
     case 'clear': case 'unload': if(!keys()) return null; break;
+    case 'plugins': if(!keys(['plugins'])||!parsePluginState(m.plugins)) return null; break;
+    case 'pluginData': if(!keys(['id','data'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return null; break;
     default:return null;
   }
   return m as unknown as HostMessage;
@@ -188,13 +201,22 @@ export class CockpitBridge {
         this.visible=m.visible;this.occluded=m.occluded;this.key=m.key;this.sequence=BigInt(m.sequence);
         this.syncActive();return true;
       case 'unload': this.sequence=BigInt(m.sequence);this.unload();return true;
+      case 'plugins':
+        // A host that sends its plugin state also accepts the page's plugin edits (pluginsEdit).
+        {const before=this.pluginsNegotiated;this.pluginsNegotiated=true;
+        if(!this.view.plugins?.(m.plugins)){this.pluginsNegotiated=before;return false;}}
+        this.sequence=BigInt(m.sequence);return true;
+      case 'pluginData':
+        // Readings are only for a host that negotiated plugins and only reach a running plugin.
+        if(!this.pluginsNegotiated||!this.isVisible()||!this.view.pluginData?.(m.id,m.data))return false;
+        this.sequence=BigInt(m.sequence);return true;
       default:return false;
     }
   }
   /** G3-56: the lamp was pressed; the host keeps the acknowledged identities across restarts. */
   private pendingAck:string[]|null=null;
   private syncActive():void {
-    this.view.active(this.isActive());
+    this.view.active(this.isActive());this.view.visible?.(this.isVisible());
     if(this.pendingAck&&this.isActive()) {const ids=this.pendingAck;this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});}
   }
   acknowledgeCautions(ids:string[]):boolean {
@@ -226,6 +248,17 @@ export class CockpitBridge {
     }
     if(action==='openHistory'?(!tool||!this.historyTools.has(tool)):tool!==undefined) return false;
     this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
+  }
+  private pluginsNegotiated=false;
+  /** v1.1: a plugin edit made on the page (× or the + menu). Posted only to a host that sent its plugin state. */
+  pluginsEdit(state:PluginState):boolean {
+    if(!this.pluginsNegotiated||!this.isActive()||!parsePluginState(state))return false;
+    this.emit('action',this.requestId(),{action:'pluginsEdit',plugins:state});return true;
+  }
+  /** v1.1: the plugins now running (open cockpit, column shown); the host samples exactly these. */
+  pluginsRunning(ids:string[]):boolean {
+    if(!this.pluginsNegotiated||this.ended||!this.context||ids.length>16||!ids.every(id=>PLUGIN_ID.test(id)))return false;
+    this.emit('action',this.requestId(),{action:'pluginsRunning',ids});return true;
   }
   unload():void {
     if(this.ended) return;

@@ -15,9 +15,10 @@ import { mountPrototypeBase } from './prototype-base.js';
 import { cautionItems,readWindows } from './caution.js';
 import { createCautionMemory } from './caution-ack.js';
 import {currentWindow,withoutProjectNames} from './prototype-data-adapter.js';
+import {mountPluginHost,type PluginReports} from './plugin-host.js';
 const words={en:{all:'All',settings:'Settings',waiting:'Waiting for readings',cleared:'Readings cleared',empty:'No subscriptions',rows:['5h','Weekly','Other'],page:'Page',resets:'resets in',now:'now'},'zh-CN':{all:'全部',settings:'设置',waiting:'等待读数',cleared:'读数已清除',empty:'无订阅',rows:['5小时','每周','其他'],page:'第',resets:'后重置',now:'现在'}};
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
-export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void,reportAcked:(ids:string[])=>void=()=>{}):CockpitView {
+export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void,reportAcked:(ids:string[])=>void=()=>{},reportPlugins:PluginReports={state:()=>{},running:()=>{}}):CockpitView {
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
  let nativeShell:ShellState|null=null,tier:ShellState['tier']='tall';
  let applyScope:((scope:string)=>void)|null=null,refreshEngine:((now?:number)=>void)|null=null,localiseEngine:((value:Appearance['locale'],now:number)=>void)|null=null,quotaFocusIdentity:((element:HTMLElement)=>string|null)|null=null,lastData:WireCockpitData|null=null;
@@ -84,7 +85,9 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  frame.lamp.addEventListener('animationend',settled);frame.lamp.addEventListener('animationcancel',settled);
  const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
  const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
- const setEmpty=(key:'waiting'|'cleared'|'empty')=>{base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',locale==='en'?'Alert inactive':'告警未激活');applyScope=null;frame.engine.replaceChildren(bilingual(element('p',words[locale][key],'ec-empty'),words.en[key],words['zh-CN'][key]));frame.hud.replaceChildren();deck.clear();tape.clear();};
+ // v1.1 plugin columns (D121/D124): one host per page; the engine table lays its columns out through it.
+ const plugins=mountPluginHost(root,reportPlugins);
+ const setEmpty=(key:'waiting'|'cleared'|'empty')=>{plugins.bindEngine(null);plugins.clearPlacement();base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',locale==='en'?'Alert inactive':'告警未激活');applyScope=null;frame.engine.replaceChildren(bilingual(element('p',words[locale][key],'ec-empty'),words.en[key],words['zh-CN'][key]));frame.hud.replaceChildren();deck.clear();tape.clear();};
  function nextDeadline(data:WireCockpitData,now:number):number|null {
   let next=Infinity;
   for(const row of data.projection.rows)for(const account of row.accounts)if(account.valueState==='current')for(const w of account.windows){
@@ -150,7 +153,10 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   nextDeadline(){return lastData?nextDeadline(lastData,lastRenderedAt):null;},
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
-  active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}},
-  dispose(){if(disposed)return;disposed=true;base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  active(value){active=value;plugins.setInteractive(value);root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}},
+  visible(value){plugins.setVisible(value);},
+  plugins(raw){return plugins.applyHostState(raw);},
+  pluginData(id,data){return plugins.deliver(id,data);},
+  dispose(){if(disposed)return;disposed=true;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }

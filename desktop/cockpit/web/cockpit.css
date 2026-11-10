@@ -199,3 +199,45 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .mfd-tip.eng-hint{position:fixed;z-index:40}
 /* The comparison title never gives way to its note or links (current unknown made it "Compare …"). */
 .dk-mfd .cmp-h .mfd-title{flex:none}.dk-mfd .cmp-h .cmp-note{min-width:0;overflow:hidden;text-overflow:ellipsis}.dk-mfd .cmp-header-links{min-width:0;overflow:hidden}
+/* v1.1 cockpit plugin columns (D121, D124, D126, D127): keys, the double seam, the inset panel and the "+" menu.
+   Ported from the approved design mock; high usage may colour a plugin's number, never the column wash. */
+.ck-eng .eng-keys .pl-key{cursor:default}
+.ck-eng .pl-key .ek-identity{display:flex;align-items:center;gap:5px;min-width:0}
+.ck-eng .pl-icon{display:inline-grid;place-items:center;flex:none;width:16px;height:16px;color:var(--silk)}
+.ck-eng .pl-icon svg{width:16px;height:16px;display:block}
+.ck-eng .pl-key .ek-name{color:var(--silk-hi);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ck-eng .pl-x{position:absolute;right:2px;top:1px;width:14px;height:14px;padding:0;border:0;background:none;font:500 10px/14px var(--f-silk);color:#7b858f;text-align:center;border-radius:3px}
+.ck-eng .pl-x:hover,.ck-eng .pl-x:focus-visible{color:var(--silk-hi);background:#ffffff14}
+.ck-eng .eng-keys .pl-key.pl-first{margin-left:3px}
+.ck-eng .ec.pl-col::before{content:none}
+.ck-eng .ec.pl-col{display:block;padding:2px 3px 2px 5px}
+.ck-eng .ec.pl-col.pl-first::after{content:"";position:absolute;left:-3px;top:-4px;bottom:-4px;width:4px;pointer-events:none;background:linear-gradient(90deg,#ffffff1a 0 1px,#000 1px 3px,#ffffff1a 3px 4px)}
+.ck-eng .ec.pl-col+.ec.pl-col::before{content:"";position:absolute;left:0;top:0;bottom:0;width:1px;background:var(--lcd-rule)}
+.ck-eng .pl-panel{position:relative;height:100%;display:flex;flex-direction:column;gap:5px;padding:5px 6px 4px;border-radius:4px;overflow:hidden;
+  background:linear-gradient(180deg,#ffffff07,#ffffff03);box-shadow:inset 0 0 0 1px #ffffff10,inset 0 1px 3px #0009}
+.ck-eng .pl-panel .pp-h{display:flex;align-items:baseline;justify-content:space-between;gap:4px;white-space:nowrap}
+.ck-eng .pl-panel .pp-h span{font:500 10px/12px var(--f-silk);letter-spacing:.06em;color:var(--silk)}
+.ck-eng .pl-panel .pp-h em{font:400 8.5px/11px var(--f-lcd);font-style:normal;color:var(--silk-dim)}
+.ck-eng .pl-panel .pp-count{font:600 13px/14px var(--f-lcd);color:var(--lcd-ink);font-variant-numeric:tabular-nums}
+.ck-eng .pl-panel .pp-foot{margin-top:auto;display:flex;justify-content:space-between;padding-top:3px;border-top:1px solid var(--lcd-rule);font:400 8.5px/10px var(--f-lcd);color:var(--silk-dim);white-space:nowrap}
+.ck-eng .eng-keys .ek-bay .bay-dash{font-size:0}
+.ck-eng .eng-keys .ek-bay .bay-dash::before{content:"+";font:400 13px/1 var(--f-silk);color:var(--silk-dim)}
+.ck-eng .eng-keys .ek-bay.on{box-shadow:var(--pressed);background:linear-gradient(180deg,var(--key-p1),var(--key-p2))}
+.pl-menu{position:fixed;z-index:10020;width:238px;padding:5px;border-radius:8px;background:var(--pop-solid);box-shadow:var(--pop-shadow),inset 0 0 0 1px var(--pop-line);font:400 11px/1 var(--f-silk);color:var(--pop-ink);pointer-events:auto}
+.pl-menu .pm-h{padding:5px 7px 4px;font:500 9.5px/1 var(--f-silk);letter-spacing:.06em;color:var(--pop-ink3)}
+.pl-menu .pm-i{display:grid;grid-template-columns:16px minmax(0,1fr) auto auto;align-items:center;column-gap:7px;width:100%;height:26px;padding:0 7px;border:0;border-radius:5px;background:none;color:inherit;text-align:left;font:inherit}
+.pl-menu .pm-i:hover:not([disabled]),.pl-menu .pm-i:focus-visible{background:var(--mb-hover);outline:none}
+.pl-menu .pm-i[disabled]{opacity:1;cursor:default}
+.pl-menu .pm-n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-menu .pm-mark{display:grid;place-items:center;width:16px;height:16px}
+.pl-menu .pm-mark img{width:14px;height:14px;object-fit:contain}
+.pl-menu .pm-i em{font-size:9.5px;font-style:normal;color:var(--pop-ink3)}
+.pl-menu .pm-i em.pm-det{color:var(--st-ok)}
+.pl-menu .pm-go{font:500 10px/1 var(--f-silk);padding:3px 6px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--pop-btn-line);color:var(--pop-ink)}
+.pl-menu .pm-go.dim{color:var(--pop-ink3)}
+.pl-menu .pm-ok{font:500 10px/1 var(--f-silk);color:var(--pop-ink3)}
+.pl-menu .pm-more{grid-template-columns:1fr;padding-left:30px;color:var(--pop-ink2);font-size:10.5px}
+.pl-menu .pm-plugin{grid-template-columns:16px minmax(0,1fr) auto}
+.pl-menu .pm-ic{display:grid;place-items:center;width:16px;height:16px;color:var(--pop-ink2)}
+.pl-menu .pm-ic svg{width:14px;height:14px}
+.pl-menu .pm-sep{height:1px;margin:4px 6px;background:var(--pop-line)}
