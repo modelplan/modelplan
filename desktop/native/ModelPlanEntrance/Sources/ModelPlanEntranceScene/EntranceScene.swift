@@ -88,7 +88,7 @@ public final class EntranceScene {
     /// Look mode: image-based lighting from an equirectangular image (top row = zenith) for every model in the
     /// scene. Without it, metal finishes render nearly black under the two lights alone.
     public func setEnvironment(_ equirectangular: CGImage, intensityExponent: Float = 0) async throws {
-        let environment = try EnvironmentResource.generate(fromEquirectangular: equirectangular)
+        let environment = try await EnvironmentResource(equirectangular: equirectangular)
         root.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: intensityExponent))
         func receive(_ e: Entity) {
             if e.components.has(ModelComponent.self) { e.components.set(ImageBasedLightReceiverComponent(imageBasedLight: root)) }
@@ -202,7 +202,7 @@ enum StandInRocket {
             stage.addChild(plate)
             for slot in tail {
                 let bell = ModelEntity(mesh: .generateCylinder(height: 0.38, radius: Float(slot.radius)), materials: [hull])
-                bell.position = [Float(slot.x), 0.02 - 0.19, Float(slot.z)]
+                bell.position = [Float(slot.x), Float(0.02 - 0.19), Float(slot.z)]
                 bell.name = "entry-bell-\(slot.index)"
                 stage.addChild(bell)
                 let mouth = ModelEntity(mesh: .generateCylinder(height: 0.002, radius: Float(slot.radius) * 0.92), materials: [dark])
@@ -319,7 +319,7 @@ enum ModelRocket {
                 // The reference grey box bell: an open cylinder and a dark mouth disc.
                 let grey = UnlitMaterial(color: .init(white: 0x8e / 255.0, alpha: 1))
                 let bell = ModelEntity(mesh: .generateCylinder(height: 0.38, radius: Float(slot.radius)), materials: [grey])
-                bell.position = [Float(slot.x), 0.02 - 0.19, Float(slot.z)]
+                bell.position = [Float(slot.x), Float(0.02 - 0.19), Float(slot.z)]
                 bell.name = "entry-bell-\(slot.index)"
                 engines.addChild(bell)
                 let mouth = ModelEntity(mesh: .generateCylinder(height: 0.002, radius: Float(slot.radius) * 0.92),
