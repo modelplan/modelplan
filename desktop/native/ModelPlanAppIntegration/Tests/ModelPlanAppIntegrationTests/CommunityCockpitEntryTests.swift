@@ -844,7 +844,9 @@ final class CommunityCockpitEntryTests:XCTestCase {
         var ready=false;page.onReady={ready=true}
         // The page takes data only once it is confirmed visible (a hidden page drops it), so send it from onShown, as the
         // coordinator does, instead of repeating display while the first receipt is pending.
-        page.onShown={ if let ticket=page.queryTicket { page.display(wire,ticket:ticket) } }
+        var trace=[String]()
+        page.onShown={ trace.append("onShown ticket=\(page.queryTicket != nil)"); if let ticket=page.queryTicket { page.display(wire,ticket:ticket); trace.append("display sent") } }
+        page.onRendered={ trace.append("onRendered") }
         page.open()
         let deadline=ContinuousClock.now + .seconds(30)
         while !ready && ContinuousClock.now<deadline { try await Task.sleep(for:.milliseconds(20)) }
@@ -863,8 +865,16 @@ final class CommunityCockpitEntryTests:XCTestCase {
             result=((try? await web.evaluateJavaScript(script)) as? String) ?? "none"
             if result != "none" && result != "no-fader" { break }
         }
+        // Diagnostics for a failed paint: the controller's own flags and the page's raw DOM state.
+        let dom=((try? await web.evaluateJavaScript("""
+        (()=>{const all=document.querySelectorAll('.fd-ch').length,filled=document.querySelectorAll('.fd-ch:not(.empty)').length,
+        models=[...document.querySelectorAll('.fd-ch')].map(e=>e.dataset.model).join(','),root=document.querySelector('#cockpit');
+        return 'fd-ch='+all+' filled='+filled+' models=['+models+'] hidden='+document.hidden+' detailsAvailable='+(root?root.dataset.detailsAvailable:'noroot')
+        +' bank='+(document.querySelector('.bank-lcd')?.textContent??'none')+' waiting='+(document.querySelector('.mp-empty')?.textContent??'none');})()
+        """)) as? String) ?? "unreadable"
+        let diagnostics="trace=\(trace) dom={\(dom)} windowVisible=\(page.window?.isVisible ?? false) occlusion=\(page.window?.occlusionState.contains(.visible) ?? false) appActive=\(NSApp.isActive) key=\(page.window?.isKeyWindow ?? false)"
         let parts=result.split(separator:"|").map(String.init)
-        XCTAssertEqual(parts.count,3,"the fader painted: \(result)")
+        XCTAssertEqual(parts.count,3,"the fader painted: \(result) \(diagnostics)")
         XCTAssertGreaterThan(Int(parts.first ?? "0") ?? 0,0,"the fader shows effort bars (\(result))")
         XCTAssertEqual(parts.dropFirst().first,"rec","the recommended-effort star marker is on the fader (\(result))")
         XCTAssertEqual(parts.last,"k","and sits at a numeric travel position (\(result))")
