@@ -195,8 +195,10 @@ public struct FirstUseHints: Sendable {
         guard !context.helpMapVisible else { return false }
         if context.v1MinimalHints {
             switch kind {
-            case .ringRefresh: return context.dockReveal != nil && context.ringRefreshAvailable && preferences.seen.contains(.findWidget)
-            case .findWidget: return context.dockReveal != nil && !context.widgetTurnedOff && (!context.widgetConcealed || context.statusAnchorAvailable)
+            // D114: while the widget is collapsed the "where it went" hint comes first; an expanded widget never waits for it.
+            case .ringRefresh: return context.dockReveal != nil && context.ringRefreshAvailable && (!context.widgetConcealed || preferences.seen.contains(.findWidget))
+            // D114: only once the widget has been collapsed to its strip (never while it is expanded).
+            case .findWidget: return context.dockReveal != nil && !context.widgetTurnedOff && context.widgetConcealed && context.statusAnchorAvailable
             case .widgetOff: return context.dockReveal != nil && context.widgetTurnedOff && context.statusAnchorAvailable
             case .detach: return context.dockReveal != nil && context.cockpitAttached == true
             case .putBack: return context.dockReveal != nil && context.cockpitAttached == false
@@ -227,7 +229,7 @@ public struct FirstUseHints: Sendable {
             if context.dockReveal != nil && context.widgetTurnedOff { request(.widgetOff) }
             if context.dockReveal != nil, let attached = context.cockpitAttached { request(attached ? .detach : .putBack) }
             if context.dockReveal != nil { request(.findWidget) }
-            if context.dockReveal != nil && preferences.seen.contains(.findWidget) { request(.ringRefresh) }
+            if context.dockReveal != nil && (!context.widgetConcealed || preferences.seen.contains(.findWidget)) { request(.ringRefresh) }
             return
         }
         if context.cockpitOpen != nil {
