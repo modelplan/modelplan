@@ -351,10 +351,10 @@ private actor G1SettingsEngine: EngineClient {
         try await choose("settings.percentageMode", value: "used", in: window)
         saved = await app.foundationStore.snapshot()
         XCTAssertEqual(saved.preferences.percentageMode, .used)
-        try await choose("settings.redBelow", value: "16", in: window)
+        try await choose("settings.redBelow", value: "15", in: window)
         saved = await app.foundationStore.snapshot()
-        XCTAssertEqual(saved.preferences.redBelow, 16)
-        XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.redBelow, 16)
+        XCTAssertEqual(saved.preferences.redBelow, 15)
+        XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.redBelow, 15)
         XCTAssertEqual(acknowledged(), 3, "each chained edit waited for the slow consumer's acknowledgment")
         throw XCTSkip("Actual widget values, event dots, per-member pin and relaunch remain unverified")
     }
