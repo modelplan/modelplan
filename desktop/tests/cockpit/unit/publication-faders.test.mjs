@@ -32,3 +32,22 @@ test('CKP-FAD-02 models in use lead, then the publication order',()=>{
  assert.deepEqual(faders[0].sessions,[{ref:'0123456789abcdef',sub:null}]);
  assert.deepEqual(faders[1].sessions,[]);
 });
+
+test('D123 order: in use by recency, then starred recommendations, then others by ability; own plans only',()=>{
+ const model=(id,ability,developerId='openai')=>({id,name:id,developerId,recommended:'medium',efforts:[{effort:'medium',star:true,ability,cost:1,time:null}]});
+ const now=Date.parse('2026-11-10T00:00:00Z'),day=86_400_000;
+ const live=[
+  {sessionRef:'0000000000000001',subscriptionRef:null,model:'old',lastObservedAt:new Date(now-1*day).toISOString()},
+  {sessionRef:'0000000000000002',subscriptionRef:null,model:'newer',lastObservedAt:new Date(now-1000).toISOString()},
+  {sessionRef:'0000000000000003',subscriptionRef:null,model:'stale',lastObservedAt:new Date(now-8*day).toISOString()},
+ ];
+ const subs=[{key:'s1',developer:'openai',colour:'#fff'}];
+ const publication={contractVersion:1,models:[model('rec1',50),model('rec2',60),model('rec3',40)]};
+ const more=[model('low',10),model('high',90),model('old',5),model('newer',5),model('stale',20),model('foreign',99,'google')];
+ const {faders}=publicationFaders(publication,live,more,subs,{now,ownPlansOnly:true});
+ assert.deepEqual(faders.map(f=>f.id),['newer','old','rec1','rec2','rec3','high','stale','low']);
+ const all=publicationFaders(publication,live,more,subs,{now,ownPlansOnly:false}).faders.map(f=>f.id);
+ assert.ok(all.includes('foreign'));
+ // A subscription with no known developer cannot be matched, so nothing is filtered out.
+ assert.ok(publicationFaders(publication,[],more,[...subs,{key:'s2',developer:null,colour:'#fff'}],{now,ownPlansOnly:true}).faders.some(f=>f.id==='foreign'));
+});
