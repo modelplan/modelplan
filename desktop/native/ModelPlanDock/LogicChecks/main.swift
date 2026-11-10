@@ -344,6 +344,27 @@ do {
         try expect(try lit(0.0001,used:false)==1 && (try lit(0.0001,used:true))==37,"time almost gone: one dot remaining, all dots used")
         try expect(try lit(0.5,used:false)==19 && (try lit(0.5,used:true))==19,"half time lights the same count in both modes")
     }
+    try test("D130 quota arcs follow the remaining/used choice; colours stay keyed to remaining") {
+        func reading(_ r:Double,used:Bool)throws->DockInstrumentReading{
+            let a=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"Short",remainingPercent:r,resetsAt:nil,durationSeconds:nil)
+            let b=DockQuotaWindowInput(id:"week",period:.week,label:"Long",remainingPercent:100-r,resetsAt:nil,durationSeconds:nil)
+            var i=DockInstrumentInput(id:"s",name:"Synthetic",windows:[a,b]);i.dataState = .fresh;i.showUsedPercent=used
+            return try DockInstrumentProjection.evaluate(i,now:now)
+        }
+        for r in [0.0,10,25,40,50,75,100] {
+            let rem=try reading(r,used:false),used=try reading(r,used:true)
+            try expect(abs(rem.outer!.fraction!-r/100)<1e-9 && abs(rem.inner!.fraction!-(100-r)/100)<1e-9,"remaining mode arcs = remaining")
+            try expect(abs(used.outer!.fraction!-(1-r/100))<1e-9 && abs(used.inner!.fraction!-r/100)<1e-9,"used mode arcs = used")
+            try expect(rem.outer!.status==used.outer!.status && rem.inner!.status==used.inner!.status && rem.status==used.status,"colours identical across modes")
+            try expect(rem.outer!.remainingFraction==used.outer!.remainingFraction && abs(used.outer!.remainingFraction!-r/100)<1e-9,"remaining truth identical across modes")
+        }
+        let empty=try reading(0,used:true),full=try reading(100,used:true)
+        try expect(empty.outer!.fraction==1 && empty.outer!.status == .critical && empty.outer!.remainingFraction==0,"0% remaining: full used arc, still critical and used-up")
+        try expect(full.outer!.fraction==0 && full.outer!.status == .normal && full.outer!.remainingFraction==1,"100% remaining: empty used arc, still normal")
+        let swept=try reading(30,used:true).refreshSweepFrame(progress:0.5)
+        try expect(abs(swept.outer!.fraction!-0.35)<1e-9 && abs(swept.outer!.remainingFraction!-0.15)<1e-9,"refresh sweep scales both fractions")
+        try expect(DockQuotaArc(windowID:"x",fraction:nil,status:.unknown).remainingFraction==nil,"unknown stays unknown")
+    }
     try test("configured critical thresholds include equality for saved and new choices") {
         for threshold in [40.0, 30, 25, 20, 15, 10] {
             for remaining in [threshold - 0.01, threshold, threshold + 0.01] {
@@ -561,7 +582,7 @@ do {
         var input=DockInstrumentInput(id:"a",name:"Synthetic",windows:[.init(id:"five",period:.fiveHour,label:"Short",remainingPercent:0,resetsAt:now.addingTimeInterval(100),durationSeconds:18000),.init(id:"week",period:.week,label:"Long",remainingPercent:nil,resetsAt:nil,durationSeconds:nil)])
         input.dataState = .fresh;input.showUsedPercent=true
         let card=try DockCardProjection.content(input:input,at:now)
-        try expect(card.rows[0].value=="100%" && card.rows[0].remainingFraction==0 && card.rows[0].tone == .critical,"used display never reverses fuel/status truth")
+        try expect(card.rows[0].value=="100%" && card.rows[0].remainingFraction==0 && card.rows[0].tone == .critical,"used display never reverses status truth (D130: ring arcs are checked separately)")
         try expect(card.rows[1].value=="--" && card.rows[1].remainingFraction==nil,"missing is not zero")
         input.dataState = .stale
         let stale=try DockCardProjection.content(input:input,at:now)
