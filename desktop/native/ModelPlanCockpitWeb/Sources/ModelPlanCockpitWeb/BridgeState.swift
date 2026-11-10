@@ -35,10 +35,12 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let redBelow: Int
   /// Settings "Project names": off withholds project labels from every cockpit surface.
   public let showProjectNames: Bool
+  /// Settings "Percentage mode" = used (SET-9-10): the engine table shows used, text and bars.
+  public let showUsedPercent: Bool
   /// Settings "Cockpit size": native window geometry only, never sent to the page.
   public let size: CockpitSize
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, size: CockpitSize = .standard) {
-    self.showProjectNames = showProjectNames; self.size = size
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, size: CockpitSize = .standard) {
+    self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent; self.size = size
     if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
       self.redBelow = redBelow
     } else {
@@ -284,7 +286,7 @@ public final class CockpitBridgeState {
         "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
         "showProjectNames": appearance.showProjectNames,
       ],
-      "shell": shell.fields, "redBelow": appearance.redBelow,
+      "shell": shell.fields, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent,
     ]
     // G3-56: sent only when there is something to restore, so a page that has none sees the unchanged contract.
     if CockpitCautionIdentities.valid(ackedCautions), !ackedCautions.isEmpty { extra["ackedCautions"] = ackedCautions }
@@ -296,7 +298,7 @@ public final class CockpitBridgeState {
     return try envelope("appearance", extra: [
       "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
       "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
-      "showProjectNames": appearance.showProjectNames, "redBelow": appearance.redBelow,
+      "showProjectNames": appearance.showProjectNames, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent,
     ], appearanceDeadline: correlated)
   }
   public func setShell(_ shell: CockpitShellState) throws -> String {

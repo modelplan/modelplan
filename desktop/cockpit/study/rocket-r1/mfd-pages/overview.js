@@ -28,8 +28,7 @@ export function overviewBars(d,ui,list){
  const {w:W,h:H}=fill(ui,'ov',{w:260,h:110}),hourly=ui.days===24,instants=d.hourly?.[0]?.instants,n=hourly?(instants?.length||24):ui.days;
  const palette=chartPalette(d.accounts.filter(a=>d.daily.some(x=>x.accountId===a.id))),byId=new Map(palette.map(x=>[x.id,x]));
  const ser=list.map((x,j)=>({a:x.a,fill:byId.get(x.a.id).fill,v:hourly?d.hourly?.find(h=>h.accountId===x.a.id)?.values||Array(24).fill(null):x.daily.values.slice(-n),imp:hourly?[]:(x.daily.imported||[]).slice(-n)}));
- // Imported history (older, read once from the tools' logs) is drawn lighter in the same hue; a live figure is never replaced by it.
- const hasImport=ser.some(x=>x.imp.some(v=>v>0)),coverage=Math.min(...list.map(x=>x.daily.coverageStart)),from=hasImport&&!hourly?Math.round((coverage-(startOfDay(d.now)-(n-1)*DAY))/DAY):-1;
+ // Imported history (D117) is drawn exactly like live days; only the hover note says which part was imported.
  const total=Array.from({length:n},(_,i)=>ser.reduce((s,x)=>s+(x.v[i]||0),0));
  const max=Math.max(...(ui.stack?total:ser.flatMap(x=>x.v.map(v=>v||0))),1),base=Math.max(12,H-15),top=3;
  const pitch=W/n,bw=Math.max(.5,pitch-2),height=base-top,scale=(height-(ui.stack?Math.max(0,ser.length-1)*2:0))/max;
@@ -45,28 +44,17 @@ export function overviewBars(d,ui,list){
    const h=ui.stack?bh:value/max*height,rad=ui.stack&&x!==last?0:Math.min(1.5,h/2,ww/2);
    // Only top corners are rounded. Small values retain their true height.
    const path=`M${xx},${yy+h}V${yy+rad}Q${xx},${yy} ${xx+rad},${yy}H${xx+ww-rad}Q${xx+ww},${yy} ${xx+ww},${yy+rad}V${yy+h}Z`;
-   const lighter=x.imp[i]>0&&x.imp[i]>=value;
-   return `<path class="ov-bar${lighter?' imp':''}" data-sub="${esc(x.a.id)}" data-value="${value}" d="${path}" fill="${x.fill}"/>`;
+   return `<path class="ov-bar" data-sub="${esc(x.a.id)}" data-value="${value}" d="${path}" fill="${x.fill}"/>`;
   }).join('');
-  body+=`<g class="ov-bucket${imported>0?' has-imported':''}" data-hour="${hourly?i:''}" data-total="${total[i]}"${imported>0?` data-imported="${imported}"`:''} data-tip="${tip(lines)}"><rect class="ov-hit" x="${i*pitch}" y="0" width="${pitch}" height="${base}"/>${rects}</g>`;
+  body+=`<g class="ov-bucket" data-hour="${hourly?i:''}" data-total="${total[i]}"${imported>0?` data-imported="${imported}"`:''} data-tip="${tip(lines)}"><rect class="ov-hit" x="${i*pitch}" y="0" width="${pitch}" height="${base}"/>${rects}</g>`;
  }
  const ticks=hourly?[[0,'0'],[6,'6'],[12,'12'],[18,'18'],[n-1,`${n}h`]]:[[0,`−${n-1}d`],[Math.floor(n/2),`−${n-1-Math.floor(n/2)}d`],[n-1,t('mfd.todayAxis')]];
- return `<svg class="ov-chart" data-mode="${ui.stack?'stack':'split'}" data-buckets="${n}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t(hourly?'mfd.hourChartAria':'mfd.chartAria',{d:n})}${hasImport?' '+t('mfd.importedAria'):''}">
- ${[.5,1].map(v=>`<path class="ov-grid" d="M0 ${base-height*v}H${W}"/>`).join('')}<path class="ov-base" d="M0 ${base+.5}H${W}"/>${body}${from>0&&from<n?dataFromMark(from,pitch,base,W,n,coverage,ui):''}${ticks.map(([i,label])=>`<text class="ov-ax" x="${i===0?0:i===n-1?W:(i+.5)*pitch}" y="${H-2}" text-anchor="${i===0?'start':i===n-1?'end':'middle'}">${esc(label)}</text>`).join('')}</svg>`;
+ return `<svg class="ov-chart" data-mode="${ui.stack?'stack':'split'}" data-buckets="${n}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t(hourly?'mfd.hourChartAria':'mfd.chartAria',{d:n})}">
+ ${[.5,1].map(v=>`<path class="ov-grid" d="M0 ${base-height*v}H${W}"/>`).join('')}<path class="ov-base" d="M0 ${base+.5}H${W}"/>${body}${ticks.map(([i,label])=>`<text class="ov-ax" x="${i===0?0:i===n-1?W:(i+.5)*pitch}" y="${H-2}" text-anchor="${i===0?'start':i===n-1?'end':'middle'}">${esc(label)}</text>`).join('')}</svg>`;
 }
 const startOfDay=ms=>{const x=new Date(ms);return new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();};
 const importNote=(imp,v)=>imp>0&&imp<v?` · ${t('mfd.importedPart',{v:tok(imp)})}`:imp>0&&imp>=v?` · ${t('mfd.importedDay')}`:'';
-// Where the data starts: a quiet rule and a label, only while imported days are on the chart.
-function dataFromMark(k,pitch,base,W,n,coverage,ui){const x=k*pitch;return `<path class="ov-from" d="M${x} 3V${base}"/>`;}
-// The label sits in the legend row below the chart, so a bucket's tooltip (drawn from the chart's top) never covers it.
-function dataFromLabel(d,ui,list){
-  if(ui.days===24)return '';
-  const n=ui.days,coverage=Math.min(...list.map(x=>x.daily.coverageStart));
-  if(!list.some(x=>(x.daily.imported||[]).slice(-n).some(v=>v>0)))return '';
-  const k=Math.round((coverage-(startOfDay(d.now)-(n-1)*DAY))/DAY);
-  return k>0&&k<n?`<span class="ov-from-l">${esc(t('mfd.dataFrom',{d:md(coverage,ui)}))}</span>`:'';
-}
-function legend(d,ui,list){const colours=new Map(chartPalette(d.accounts.filter(a=>d.daily.some(x=>x.accountId===a.id))).map(x=>[x.id,x]));return `<div class="ov-legend">${list.map((x,i)=>`<span data-sub="${esc(x.a.id)}" title="${esc(x.a.name)}"><i style="background:${colours.get(x.a.id).fill}"></i>${esc(x.a.short)}</span>`).join('')}${dataFromLabel(d,ui,list)}</div>`;}
+function legend(d,ui,list){const colours=new Map(chartPalette(d.accounts.filter(a=>d.daily.some(x=>x.accountId===a.id))).map(x=>[x.id,x]));return `<div class="ov-legend">${list.map((x,i)=>`<span data-sub="${esc(x.a.id)}" title="${esc(x.a.name)}"><i style="background:${colours.get(x.a.id).fill}"></i>${esc(x.a.short)}</span>`).join('')}</div>`;}
 
 /* 点阵: 26 weeks × 7 days (Monday on top), five steps. Neutral LCD ink in 全部, the vendor colour in a subscription
    scope. Hover: the date and the tokens per subscription. Days before the record began have no cell. */
@@ -98,12 +86,12 @@ function heatmap(d, ui, list) {
   const H = top + 7 * pitch - gap, W = 26 * pitch - gap, x0 = Math.max(0, Math.floor((AW - W) / 2)), y0 = Math.max(0, Math.floor((AH - since - H) / 2));
   const rects = cells.map(x => {
     if (x.step == null) return '';
-    const lines = [md(x.at, ui), ...(x.per.length ? x.per.map(p => `${p.a.short} ${tok(p.v)}${importNote(p.i, p.v)}`) : [t('mfd.noRecord')])], lighter = x.imported > 0 && x.imported >= x.total;
-    return `<rect class="hm s${x.step} ${x.at + 864e5 > d.now ? 'today' : ''}${lighter ? ' imp' : ''}" x="${x.col * pitch}" y="${top + x.row * pitch}" width="${c}" height="${c}" rx="1.2" data-tip="${tip(lines)}"/>`;
+    const lines = [md(x.at, ui), ...(x.per.length ? x.per.map(p => `${p.a.short} ${tok(p.v)}${importNote(p.i, p.v)}`) : [t('mfd.noRecord')])];
+    return `<rect class="hm s${x.step} ${x.at + 864e5 > d.now ? 'today' : ''}" x="${x.col * pitch}" y="${top + x.row * pitch}" width="${c}" height="${c}" rx="1.2" data-tip="${tip(lines)}"/>`;
   }).join('');
-  return `<svg class="ov-heat ${colour ? 'vendor' : ''}" style="left:${x0}px;top:${y0}px;${colour ? `--hv:${colour}` : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t('mfd.heatAria')}${hasImport ? ' ' + t('mfd.importedAria') : ''}">
+  return `<svg class="ov-heat ${colour ? 'vendor' : ''}" style="left:${x0}px;top:${y0}px;${colour ? `--hv:${colour}` : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t('mfd.heatAria')}">
     ${months.filter((m, i) => !i || m.col - months[i - 1].col >= 3).map(m => `<text class="hm-m" x="${m.col * pitch}" y="9">${esc(mon(m.at, ui))}</text>`).join('')}${rects}</svg>
-    ${short ? `<p class="hm-since" style="left:${x0}px">${t(hasImport ? 'mfd.dataFrom' : 'mfd.since', {d: md(coverage, ui)})}</p>` : ''}`;
+    ${short ? `<p class="hm-since" style="left:${x0}px">${t('mfd.since', {d: md(coverage, ui)})}</p>` : ''}`;
 }
 
 export const overview = {

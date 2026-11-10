@@ -58,7 +58,7 @@ actor RouteClient: EngineClient { // internal: the real-page size test (OwnerTes
     func open(){
         let raw=try! state.load(.init(theme:.day,locale:.en,profile:.full),shell:.init(closed:false,attached:true,forcedClosed:false,tier:.tall))
         var value=try! JSONSerialization.jsonObject(with:Data(raw.utf8)) as! [String:Any]
-        value["appearance"]=nil;value["shell"]=nil;value["redBelow"]=nil;value["type"]="ready";value["sequence"]="1"
+        value["appearance"]=nil;value["shell"]=nil;value["redBelow"] = nil; value["showUsedPercent"] = nil;value["type"]="ready";value["sequence"]="1"
         value["appearanceVersion"]=2;value["capabilities"]=["appearanceUpdates","shellState","shellActions"]
         _=try! state.accept(String(decoding:try! JSONSerialization.data(withJSONObject:value),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"));onReady?()
     }
@@ -721,6 +721,29 @@ final class CommunityCockpitEntryTests:XCTestCase {
         surface.applySettings(try XCTUnwrap(applied.last))
         XCTAssertFalse(owner.appearance.showProjectNames)
         XCTAssertEqual(owner.appearance.redBelow,15)
+        await composition.stop()
+    }
+
+    /// CKP-ENG-23 / SET-9-10: Settings "Percentage mode" reaches the appearance the page is given, at open and on change.
+    @MainActor func testPercentageModeSettingReachesTheCockpitAppearanceAtOpenAndLive() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("ckp-eng-23-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        var applied:[SettingsApplication]=[]
+        let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
+        _=try await settings.update { $0.percentageMode = .used }
+        await app.reload()
+        let client=RouteClient()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        XCTAssertFalse(owner.appearance.showUsedPercent, "Default is remaining")
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertTrue(owner.appearance.showUsedPercent)
+        _=try await settings.update { $0.percentageMode = .remaining }
+        await app.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertFalse(owner.appearance.showUsedPercent)
         await composition.stop()
     }
 

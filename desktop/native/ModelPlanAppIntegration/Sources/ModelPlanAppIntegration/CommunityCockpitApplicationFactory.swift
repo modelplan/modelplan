@@ -188,14 +188,14 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         case .system:theme=NSApplication.shared.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
         }
         appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
-            redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,
+            redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,showUsedPercent:snapshot.preferences.percentageMode == .used,
             size:CockpitSize(snapshot.preferences.cockpitSize))
         if let applied { appearance=cockpitAppearance(applied) }
     }
     func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
         let e=value.effective
         return .init(theme:appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
-            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames,
+            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames,showUsedPercent:e.showUsedPercent,
             size:CockpitSize(e.cockpitSize))
     }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {

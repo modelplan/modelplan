@@ -741,7 +741,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: .night, locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, size: value.size)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       window?.alphaValue = 1
@@ -807,7 +807,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return }
     layout = fit
     appearance = .init(theme: .night, locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, size: appearance.size)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size)
     let frame = shellSession.detached ? fit.clamping(origin: shellSession.origin(for: arrangement) ?? window.frame.origin, usable: usable) : fit.frame
     window.setFrame(frame, display: true)
     // CKP-SHELL-07 (owner D51): a scaled cockpit is the same page at a uniform WebKit page zoom, not a
