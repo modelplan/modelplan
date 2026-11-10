@@ -51,6 +51,21 @@ import ModelPlanWire
     XCTAssertFalse(menu.items.contains { $0.title == "Reload" })
   }
 
+  /// D88 Detach / Put back: the item's action is the target's own method. As `perform(_:)` it resolved to NSObject's
+  /// `performSelector:`, so AppKit passed the menu item as the selector (unrecognized selector, CI 11-10).
+  func testAttachmentMenuItemReachesItsTarget() {
+    _ = NSApplication.shared
+    XCTAssertEqual(NSStringFromSelector(CockpitMenuTarget.action), "cockpitAttachmentItemChosen:")
+    let target = CockpitMenuTarget()
+    XCTAssertTrue(target.responds(to: CockpitMenuTarget.action))
+    var fired = 0
+    target.fire = { fired += 1 }
+    let menu = NSMenu(); menu.autoenablesItems = false
+    menu.addItem(withTitle: "Detach", action: CockpitMenuTarget.action, keyEquivalent: "").target = target
+    menu.performActionForItem(at: 0)
+    XCTAssertEqual(fired, 1)
+  }
+
   func testPolicyAllowsOnlyTheFirstMainFrameLoad() {
     let url = URL(string: "modelplan-cockpit://bundle/index.html?pageId=x")!
     XCTAssertTrue(CockpitNavigationPolicy.allows(isMainFrame: true, url: url, pageURL: url, type: .other, alreadyLoaded: false))

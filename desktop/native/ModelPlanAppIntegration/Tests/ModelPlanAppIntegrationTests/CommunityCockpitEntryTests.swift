@@ -113,11 +113,12 @@ final class CommunityCockpitEntryTests:XCTestCase {
       window.setFrame(layout.frame, display: true)
       XCTAssertEqual(content.bounds.size, window.frame.size, "bounds stay the scaled frame after a resize")
       XCTAssertEqual(web.pageZoom, 0.85, accuracy: 0.001, "the page zoom stays the layout scale")
-      // The anchor lands on the detach key at the page position times the scale.
+      // The anchor lands on the detach key at the page position times the scale; the page is top-anchored in the
+      // whole-point window, so the key is measured from the window's top edge (2 CSS px below the canvas top).
       let anchor = try XCTUnwrap(page.attachmentHintAnchor)
       let size = CockpitWindowController.attachmentKeySize
-      let key = CGRect(x: CockpitWindowController.attachmentKeyX, y: layout.rootHeight + 34 - size - 2, width: size, height: size)
-        .applying(.init(scaleX: 0.85, y: 0.85)).offsetBy(dx: window.frame.minX, dy: window.frame.minY)
+      let key = CGRect(x: window.frame.minX + CockpitWindowController.attachmentKeyX * 0.85, y: window.frame.maxY - (size + 2) * 0.85,
+                       width: size * 0.85, height: size * 0.85)
       XCTAssertEqual(anchor.frame.midX, key.midX, accuracy: 0.5)
       XCTAssertEqual(anchor.frame.midY, key.midY, accuracy: 0.5)
       XCTAssertTrue(window.frame.contains(anchor.frame))

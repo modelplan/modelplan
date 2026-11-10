@@ -49,7 +49,10 @@ public struct CockpitAttachmentHintAnchor: Equatable {
 /// D88: the cockpit's own right-click menu target. WebKit's menu (Reload and the rest) is never shown.
 @MainActor final class CockpitMenuTarget: NSObject {
   var fire: (() -> Void)?
-  @objc func perform(_ sender: Any?) { fire?() }
+  /// Never named `perform(_:)`: NSObject's `performSelector:` is also `perform(_:)` in Swift, `#selector` resolved to
+  /// it, and AppKit then sent the menu item itself as the selector (unrecognized-selector crash on Detach / Put back).
+  @objc(cockpitAttachmentItemChosen:) func attachmentItemChosen(_ sender: Any?) { fire?() }
+  static let action = #selector(CockpitMenuTarget.attachmentItemChosen(_:))
 }
 
 public enum CockpitBridgeDiagnostic: String {
@@ -867,7 +870,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // The host's menu (Settings, Reset Position, size, Help) with the detach / put-back item on top.
     let menu = contextMenuProvider?() ?? NSMenu(); menu.autoenablesItems = false
     let item = NSMenuItem(title: detached ? (zh ? "放回" : "Put back") : (zh ? "分离" : "Detach"),
-                          action: #selector(CockpitMenuTarget.perform(_:)), keyEquivalent: "")
+                          action: CockpitMenuTarget.action, keyEquivalent: "")
     item.target = menuTarget; item.identifier = NSUserInterfaceItemIdentifier("cockpit.attachment")
     if !menu.items.isEmpty { menu.insertItem(.separator(), at: 0) }
     menu.insertItem(item, at: 0)
@@ -878,9 +881,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let window, shown, !ending, !entering, closeTask == nil, dragStart == nil, window.isVisible,
           window.alphaValue > 0, let layout, let content = window.contentView else { return nil }
     let height = layout.rootHeight + 34, size = Self.attachmentKeySize
-    // The page lays out in CSS px and renders at `layout.scale`, so the key sits at the scaled position.
-    let local = CGRect(x: Self.attachmentKeyX, y: height - size - 2, width: size, height: size)
-      .applying(.init(scaleX: layout.scale, y: layout.scale))
+    // The page lays out in CSS px and renders at `layout.scale`, top-anchored in the whole-point window.
+    let local = layout.windowRect(page: CGRect(x: Self.attachmentKeyX, y: height - size - 2, width: size, height: size))
     let frame = window.convertToScreen(content.convert(local, to: nil))
     guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
           [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }

@@ -31,6 +31,32 @@ final class ShellLayoutTests: XCTestCase {
         try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: macDock, width: width, height: height - bar - macDock),
             anchor: .init(x: width - 200, y: height - bar, width: 28, height: bar), shutterClosed: closed, size: size))
     }
+    /// The window server places borderless panels on whole points: the layout frame is already whole, so the
+    /// real window equals it, and it holds the scaled page with under 1 pt to spare.
+    func assertHoldsThePage(_ value: CockpitShellLayout, _ label: String, file: StaticString = #filePath, line: UInt = #line) {
+        let frame = value.frame
+        for edge in [frame.minX, frame.minY, frame.width, frame.height] { XCTAssertEqual(edge, edge.rounded(), "\(label): whole points", file: file, line: line) }
+        for (window, page) in [(frame.width, value.pageSize.width * value.scale), (frame.height, value.pageSize.height * value.scale)] {
+            XCTAssertGreaterThanOrEqual(window, page - 1e-6, "\(label): the page fits", file: file, line: line)
+            XCTAssertLessThan(window - page, 1, "\(label): no more than the rounding", file: file, line: line)
+        }
+    }
+    /// CI 11-10: a fractional frame (531.69 pt) came back from the window server as 532 pt; fit() now returns the whole frame.
+    func testFramesAreWholePointsAndHoldTheScaledPage() throws {
+        for (width, height, bar, dock) in [(1440, 900, 24, 0), (1440, 900, 24, 70), (1470, 956, 37, 70), (1512, 982, 37, 0), (1680, 1050, 24, 0)] as [(CGFloat, CGFloat, CGFloat, CGFloat)] {
+            for size in CockpitSize.allCases {
+                for closed in [false, true] {
+                    let value = try placed(width: width, height: height, bar: bar, macDock: dock, closed: closed, size: size)
+                    assertHoldsThePage(value, "\(Int(width))x\(Int(height)) Dock \(Int(dock)) \(size.rawValue) closed \(closed)")
+                    XCTAssertEqual(value.frame.maxY, height - bar - 6)
+                    XCTAssertGreaterThanOrEqual(value.frame.minY, dock)
+                }
+            }
+        }
+        // Fractional icon positions still give a whole frame, centred to within half a point.
+        let odd = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: 0, width: 1440, height: 876), anchor: .init(x: 700.3, y: 876, width: 28, height: 24), shutterClosed: false, size: .percent85))
+        assertHoldsThePage(odd, "fractional icon"); XCTAssertEqual(odd.frame.midX, 714.3, accuracy: 0.5)
+    }
     /// G3-39: the menu bar is excluded from `usable` once, and a step is taken when its root really fits.
     func testG3_39ProfileFollowsTheRealFitOnLaptopScreens() throws {
         // 13-inch Air without a notch at its default size: 876 pt usable, the full canvas needs 939 + 6. D51: scaled full.
@@ -61,9 +87,8 @@ final class ShellLayoutTests: XCTestCase {
             XCTAssertEqual(value.profile, .full, label); XCTAssertEqual(value.rootHeight, 905, label)
             XCTAssertEqual(value.scale, expected, accuracy: 1e-9, label)
             XCTAssertGreaterThanOrEqual(value.scale, CockpitShellLayout.minimumFullScale, label)
-            // The window holds the root and the flame reserve, uniformly scaled, 6 pt below the icon and above the Dock.
-            XCTAssertEqual(value.frame.width, 636 * value.scale, accuracy: 1e-9, label)
-            XCTAssertEqual(value.frame.height, 939 * value.scale, accuracy: 1e-9, label)
+            // The window holds the root and the flame reserve, uniformly scaled, on whole points, 6 pt below the icon and above the Dock.
+            assertHoldsThePage(value, label)
             XCTAssertEqual(value.frame.maxY, height - bar - 6, accuracy: 1e-9, label)
             XCTAssertGreaterThanOrEqual(value.frame.minY, dock - 1e-9, label)
             XCTAssertEqual(value.pageSize, CGSize(width: 636, height: 939), label)
@@ -76,7 +101,7 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(closed.profile, .full); XCTAssertEqual(closed.rootHeight, 691)
         XCTAssertEqual(closed.scale, open.scale); XCTAssertEqual(closed.frame.width, open.frame.width)
         XCTAssertEqual(closed.frame.maxY, open.frame.maxY)
-        XCTAssertEqual(closed.frame.height, (691 + 34) * open.scale, accuracy: 1e-9)
+        assertHoldsThePage(closed, "closed")
     }
     /// D51: below 75 % the short version shows, at the chosen size when it fits (D60: 85 % by default).
     func testD51ShortVersionOnlyBelowTheReadableScale() throws {
@@ -110,12 +135,12 @@ final class ShellLayoutTests: XCTestCase {
         let value = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: 0, width: 1680, height: 1026),
             anchor: .init(x: 800, y: 1026, width: 28, height: 24), shutterClosed: false, size: .percent85))
         XCTAssertEqual(value.scale, 0.85)
-        XCTAssertEqual(value.frame.width, 636 * 0.85, accuracy: 1e-9)
-        XCTAssertEqual(value.frame.midX, 814, accuracy: 1e-9, "D88: the scaled window is centred under the icon (anchor midX 814)")
+        XCTAssertEqual(value.frame.width, 541, "636 x 85 % on whole points")
+        XCTAssertEqual(value.frame.midX, 814, accuracy: 0.5, "D88: the scaled window is centred under the icon (anchor midX 814)")
         let edge = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: 0, width: 1680, height: 1026),
             anchor: .init(x: 1670, y: 1026, width: 28, height: 24), shutterClosed: false, size: .percent85))
         XCTAssertEqual(edge.frame.maxX, 1680, accuracy: 1e-9, "the right-edge clamp uses the scaled width")
-        XCTAssertEqual(edge.frame.width, 636 * 0.85, accuracy: 1e-9)
+        XCTAssertEqual(edge.frame.width, 541)
     }
     /// D66: Auto (the default) is 85 % on screens up to 1512 pt wide (13-14 inch laptops) and 100 % on wider ones,
     /// judged on the full width of the icon's screen; it is re-judged when the cockpit opens on another screen.
@@ -139,7 +164,7 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(air.scale, 0.85)
         // Switching screens: the same Auto choice gives 85 % on the Air and 100 % on an external display.
         let onAir = try placed(width: 1470, height: 956, bar: 37), onExternal = try placed(width: 2560, height: 1440, bar: 25)
-        XCTAssertEqual(onAir.frame.width, 636 * 0.85, accuracy: 1e-9); XCTAssertEqual(onExternal.frame.width, 636, accuracy: 1e-9)
+        XCTAssertEqual(onAir.frame.width, 541); XCTAssertEqual(onExternal.frame.width, 636)
         // Manual choices stay fixed across screens.
         XCTAssertEqual(try placed(width: 2560, height: 1440, bar: 25, size: .percent85).scale, 0.85)
         XCTAssertEqual(try placed(width: 1470, height: 1050, bar: 37, size: .percent100).scale, 1)
@@ -147,7 +172,8 @@ final class ShellLayoutTests: XCTestCase {
     /// D51: the drag region scales with the page so it stays on the strip at every size.
     func testD51DragRegionScalesWithThePage() throws {
         let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70)
-        XCTAssertEqual(value.scaledTitleDragFrame.minY, value.titleDragFrame.minY * value.scale, accuracy: 1e-9)
+        // The page is top-anchored in the whole-point window, so the region keeps its scaled distance from the top.
+        XCTAssertEqual(value.frame.height - value.scaledTitleDragFrame.maxY, (value.pageSize.height - value.titleDragFrame.maxY) * value.scale, accuracy: 1e-9)
         XCTAssertEqual(value.scaledTitleDragFrame.width, 216 * value.scale, accuracy: 1e-9)
         XCTAssertLessThanOrEqual(value.scaledTitleDragFrame.maxY, value.frame.height)
     }
@@ -165,7 +191,8 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertTrue(value.shutterClosed); XCTAssertTrue(value.forcedClosed)
         XCTAssertEqual(value.rootHeight, 609)
         XCTAssertLessThan(value.scale, 1)
-        XCTAssertEqual(value.frame.width / 636, value.frame.height / 643, accuracy: 0.00001)
+        XCTAssertEqual(value.frame.width / 636, value.frame.height / 643, accuracy: 0.002, "uniform, up to the whole-point rounding")
+        assertHoldsThePage(value, "short and narrow")
         XCTAssertGreaterThanOrEqual(value.frame.minY, 50)
         XCTAssertLessThanOrEqual(value.frame.maxX, 500)
         XCTAssertEqual(value.frame.maxY, 544, accuracy: 0.001)
