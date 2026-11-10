@@ -282,6 +282,10 @@ func buildCandidate(in Input, c *candidate) Row {
 	}
 	outcome := classify(f)
 	applyOutcome(&row, in, c, outcome)
+	if row.Reason.Code == CodeNotSignedIn {
+		// G3-38 (owner D52): a signed-out tool has no ring. Settings and the menu still say why.
+		row.Surfaces = []Surface{SurfaceMenu, SurfaceSettings}
+	}
 	for _, a := range row.Accounts {
 		if a.ValueState == ValueStateCurrent {
 			row.ExpiresAt = earlier(row.ExpiresAt, a.FreshUntil)
@@ -352,6 +356,17 @@ func applyOutcome(row *Row, in Input, c *candidate, outcome Outcome) {
 	row.State = outcome.State
 	row.Reason = Reason{Code: outcome.Code, Text: outcome.Text}
 	row.NextStep = nextStep(in, c, outcome)
+	if outcome.Code == CodeNotSignedIn && row.NextStep != nil {
+		// One sentence pair across first run, Settings and the rows (G3-38): the Chinese line
+		// carries no English words besides the tool's own name.
+		row.NextStep.Text = NotSignedInText(row.Name.EN, row.Name.ZH)
+	}
+}
+
+// NotSignedInText is the single not-signed-in sentence. The Swift copies in Settings and
+// first run (SettingsScopeConsentView.blockLine) use the same words; a test pins them.
+func NotSignedInText(nameEN, nameZH string) Text {
+	return Text{EN: "Not signed in to " + nameEN + ". ModelPlan reads it after you sign in.", ZH: "未登录 " + nameZH + "。登录后会自动读取。"}
 }
 
 var actionTexts = map[Action]Text{
