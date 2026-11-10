@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import CryptoKit
+import WebKit
 import XCTest
 import ModelPlanSettings
 import ModelPlanEngineClient
@@ -73,6 +74,55 @@ actor RouteClient: EngineClient { // internal: the real-page size test (OwnerTes
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
+    // verificationPlacement is test-only SPI; u11-native defines MODELPLAN_TEST_ONLY_SPI and runs this class.
+    #if MODELPLAN_TEST_ONLY_SPI
+    private func d88Bundle() throws -> VerifiedCockpitBundle {
+      let root = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-d88-" + UUID().uuidString)
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+      let html = Data("synthetic".utf8); try html.write(to: root.appendingPathComponent("index.html"))
+      let manifest = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "edition": "community", "interfaceOnly": true, "files": ["index.html": VerifiedCockpitBundle.digest(html)]])
+      try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
+      return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
+    }
+
+    /// CKP-SHELL-07 with D88: at 85 % a resize (grow animation, snap-back) must keep the scaled canvas and page
+    /// zoom, and the one-time hint anchor must sit on the detach key as drawn at that scale.
+    @MainActor func testD88ScaledCockpitKeepsBoundsZoomAndHintAnchorAfterResize() throws {
+      guard NSScreen.main != nil else { throw XCTSkip("needs a display") }
+      _ = NSApplication.shared
+      let usable = CGRect(x: 0, y: 0, width: 1440, height: 876)
+      let icon = CGRect(x: 700, y: usable.maxY, width: 28, height: 24)
+      let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
+      let session = CockpitShellSession()
+      let page = CockpitWindowController(bundle: try d88Bundle(), context: context,
+        appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: true, size: .percent85),
+        shellSession: session, anchor: { icon })
+      page.verificationPlacement = (usable: usable, anchor: icon)
+      defer { page.discard() }
+      session.nextEntrance = .fade
+      page.open()
+      let window = try XCTUnwrap(page.window)
+      (window.contentView?.subviews.first as? WKWebView)?.navigationDelegate = nil
+      let layout = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false, size: .percent85, screenWidth: usable.width))
+      XCTAssertEqual(layout.scale, 0.85, accuracy: 0.001)
+      let content = try XCTUnwrap(window.contentView)
+      let web = try XCTUnwrap(content.subviews.first as? WKWebView)
+      // A resize (as the grow animation and a snap-back do) must not undo the scaled canvas.
+      window.setFrame(layout.frame.insetBy(dx: 40, dy: 40), display: true)
+      window.setFrame(layout.frame, display: true)
+      XCTAssertEqual(content.bounds.size, window.frame.size, "bounds stay the scaled frame after a resize")
+      XCTAssertEqual(web.pageZoom, 0.85, accuracy: 0.001, "the page zoom stays the layout scale")
+      // The anchor lands on the detach key at the page position times the scale.
+      let anchor = try XCTUnwrap(page.attachmentHintAnchor)
+      let size = CockpitWindowController.attachmentKeySize
+      let key = CGRect(x: CockpitWindowController.attachmentKeyX, y: layout.rootHeight + 34 - size - 2, width: size, height: size)
+        .applying(.init(scaleX: 0.85, y: 0.85)).offsetBy(dx: window.frame.minX, dy: window.frame.minY)
+      XCTAssertEqual(anchor.frame.midX, key.midX, accuracy: 0.5)
+      XCTAssertEqual(anchor.frame.midY, key.midY, accuracy: 0.5)
+      XCTAssertTrue(window.frame.contains(anchor.frame))
+    }
+    #endif
     @MainActor private func shellFixture() throws -> (CockpitConsoleOwner, VerifiedCockpitBundle, CockpitEngineContext, CGRect) {
         guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true", let screen=NSScreen.main,
               screen.visibleFrame.height > 706, screen.visibleFrame.width > 700 else {

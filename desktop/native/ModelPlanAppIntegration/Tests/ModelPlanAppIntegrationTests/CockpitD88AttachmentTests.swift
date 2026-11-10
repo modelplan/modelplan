@@ -71,46 +71,6 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
-  // verificationPlacement is test-only SPI, so this test exists only in builds that define it.
-  #if MODELPLAN_TEST_ONLY_SPI
-  /// CKP-SHELL-07 with D88: at 85 % a resize (grow animation, snap-back) must keep the scaled canvas and page
-  /// zoom, and the one-time hint anchor must sit on the detach key as drawn at that scale.
-  func testD88ScaledCockpitKeepsBoundsZoomAndHintAnchorAfterResize() throws {
-    _ = NSApplication.shared
-    let usable = CGRect(x: 0, y: 0, width: 1440, height: 876)
-    let icon = CGRect(x: 700, y: usable.maxY, width: 28, height: 24)
-    let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
-    let session = CockpitShellSession()
-    let page = CockpitWindowController(bundle: try bundle(), context: context,
-      appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: true, size: .percent85),
-      shellSession: session, anchor: { icon })
-    page.verificationPlacement = (usable: usable, anchor: icon)
-    defer { page.discard() }
-    session.nextEntrance = .fade
-    page.open()
-    let window = try XCTUnwrap(page.window)
-    (window.contentView?.subviews.first as? WKWebView)?.navigationDelegate = nil
-    let layout = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false, size: .percent85, screenWidth: usable.width))
-    XCTAssertEqual(layout.scale, 0.85, accuracy: 0.001)
-    let content = try XCTUnwrap(window.contentView)
-    let web = try XCTUnwrap(content.subviews.first as? WKWebView)
-    // A resize (as the grow animation and a snap-back do) must not undo the scaled canvas.
-    window.setFrame(layout.frame.insetBy(dx: 40, dy: 40), display: true)
-    window.setFrame(layout.frame, display: true)
-    XCTAssertEqual(content.bounds.size, window.frame.size, "bounds stay the scaled frame after a resize")
-    XCTAssertEqual(web.pageZoom, 0.85, accuracy: 0.001, "the page zoom stays the layout scale")
-    // The anchor lands on the detach key at the page position times the scale.
-    let anchor = try XCTUnwrap(page.attachmentHintAnchor)
-    let size = CockpitWindowController.attachmentKeySize
-    let key = CGRect(x: CockpitWindowController.attachmentKeyX, y: layout.rootHeight + 34 - size - 2, width: size, height: size)
-      .applying(.init(scaleX: 0.85, y: 0.85)).offsetBy(dx: window.frame.minX, dy: window.frame.minY)
-    XCTAssertEqual(anchor.frame.midX, key.midX, accuracy: 0.5)
-    XCTAssertEqual(anchor.frame.midY, key.midY, accuracy: 0.5)
-    XCTAssertTrue(window.frame.contains(anchor.frame))
-  }
-
-  #endif
-
   /// A drag of the title strip detaches: the window follows the pointer, and the drop reports the detach once.
   func testD88DraggingTheTitleStripDetaches() throws {
     let fixture = try make(reduceMotion: true)
