@@ -499,7 +499,7 @@ final class QuotaWidgetSpotlightView: NSView {
             let y = region.maxY - (CGFloat(row) + 0.5) / scale
             for column in 0..<w {
                 let x = region.minX + (CGFloat(column) + 0.5) / scale
-                let d = distance(from: CGPoint(x: x, y: y), toRounded: fallbackHole, radius: radius)
+                let d = distance(from: CGPoint(x: x, y: y), toRounded: hole, radius: radius)
                 let alpha = QuotaWidgetSpotlightStyle.dimAlpha(atDistance: d)
                 bytes[(row * w + column) * 4 + 3] = UInt8((alpha * 255).rounded())
             }
