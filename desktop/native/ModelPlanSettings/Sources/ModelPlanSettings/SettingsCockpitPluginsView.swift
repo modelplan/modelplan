@@ -73,9 +73,9 @@ import AppKit
         if !entry.pinned, entry.enabled, !prefs.canPin(plugin.id, model.catalogue) {
             pin.toolTip = text("Two plugins are already pinned.", "已经固定了两个插件。")
         }
-        let up = button("↑", id: base + ".up", action: #selector(moveUp(_:)), enabled: !first)
+        let up = button("↑", id: base + ".up", action: #selector(movePluginEarlier(_:)), enabled: !first)
         up.identifier = .init(plugin.id); up.setAccessibilityLabel(text("Move earlier", "前移"))
-        let down = button("↓", id: base + ".down", action: #selector(moveDown(_:)), enabled: !last)
+        let down = button("↓", id: base + ".down", action: #selector(movePluginLater(_:)), enabled: !last)
         down.identifier = .init(plugin.id); down.setAccessibilityLabel(text("Move later", "后移"))
         let line = NSStackView(views: [on, pin, up, down])
         line.orientation = .horizontal; line.spacing = 10; line.alignment = .centerY
@@ -119,8 +119,8 @@ import AppKit
         guard let id = sender.identifier?.rawValue else { return }
         run(.setPinned(id, sender.state == .on))
     }
-    @objc private func moveUp(_ sender: NSButton) { if let id = sender.identifier?.rawValue { run(.move(id, -1)) } }
-    @objc private func moveDown(_ sender: NSButton) { if let id = sender.identifier?.rawValue { run(.move(id, 1)) } }
+    @objc private func movePluginEarlier(_ sender: NSButton) { if let id = sender.identifier?.rawValue { run(.move(id, -1)) } }
+    @objc private func movePluginLater(_ sender: NSButton) { if let id = sender.identifier?.rawValue { run(.move(id, 1)) } }
     @objc private func changeSetting(_ sender: CockpitPluginStepper) { run(.setSetting(sender.pluginID, sender.key, sender.integerValue)) }
 }
 
