@@ -1,0 +1,1 @@
+The Quota Widget now starts expanded: Auto-Collapse is off by default, so a fresh install shows the widget after first run and a saved choice (on or off) is kept. The first time the widget collapses to its edge strip, a one-time hint says where it went and that hovering it or Find Quota Widget in the menu bar brings it back.
