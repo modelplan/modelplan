@@ -1,0 +1,1 @@
+The cockpit 7-day and 30-day charts now draw imported-history days exactly like live days: no lighter bars or cells and no data-start marker. A day with imported output only says so in its hover note.
