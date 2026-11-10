@@ -68,7 +68,7 @@ import WebKit
     panel.isReleasedWhenClosed = false; panel.level = Self.level; panel.hasShadow = false
     panel.isOpaque = false; panel.backgroundColor = .clear
     panel.appearance = NSAppearance(named: .darkAqua); panel.delegate = self
-    let view = WKWebView(frame: NSRect(origin: .zero, size: frame.size), configuration: config)
+    let view = CockpitWebView(frame: NSRect(origin: .zero, size: frame.size), configuration: config)
     view.autoresizingMask = [.width, .height]; view.allowsBackForwardNavigationGestures = false
     // The panel is clear, so the web view paints no backing of its own either (as the cockpit shell does); otherwise the page's
     // transparent body still sits on an opaque rectangle and the card's behind-window blur is covered.
