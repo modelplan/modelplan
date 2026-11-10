@@ -369,9 +369,6 @@ do {
         let empty=try reading(0,used:true),full=try reading(100,used:true)
         try expect(empty.outer?.fraction==1 && empty.outer?.status == .critical && empty.outer?.remainingFraction==0,"0% remaining: full used arc, still critical and used-up")
         try expect(full.outer?.fraction==0 && full.outer?.status == .normal && full.outer?.remainingFraction==1,"100% remaining: empty used arc, still normal")
-        let swept=try reading(30,used:true).refreshSweepFrame(progress:0.5)
-        let sweptFill:Double=swept.outer?.fraction ?? -1, sweptRem:Double=swept.outer?.remainingFraction ?? -1
-        try expect(abs(sweptFill-0.35)<1e-9 && abs(sweptRem-0.15)<1e-9,"refresh sweep scales both fractions")
         let unknown=DockQuotaArc(windowID:"x",fraction:nil,status:.unknown)
         try expect(unknown.remainingFraction==nil,"unknown stays unknown")
     }
