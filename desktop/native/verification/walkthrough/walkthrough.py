@@ -987,6 +987,41 @@ def failures(manifest):
             + [c["check"] for c in manifest["checks"] if c["status"] == "fail"])
 
 
+DIAG_CAPS = ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "cockpitDetailsV1", "cockpitForecastV1",
+             "cockpitHistoryV1", "cockpitModelsV1", "cockpitSessionsV1", "cockpitPeaksV1", "publication", "plugin_install",
+             "history_import_v1", "resetEvents", "memberRefreshV1", "windowSourcesV1", "resetEventLinksV1"]
+
+
+def capture_diagnostics(cli, env, out, label):
+    """diag/walk-oslog only: unified log of the app plus a direct helper session transcript."""
+    try:
+        logs = subprocess.run(["log", "show", "--last", "10m", "--style", "compact", "--info", "--debug", "--predicate",
+                               'subsystem BEGINSWITH "org.modelplan" OR subsystem BEGINSWITH "ai.modelplan" OR process == "modelplan"'],
+                              capture_output=True, text=True, timeout=180)
+        (out / ("oslog-%s.txt" % label)).write_text(logs.stdout + "\n--- stderr ---\n" + logs.stderr, encoding="utf-8")
+    except Exception as error:
+        (out / ("oslog-%s.txt" % label)).write_text("log show failed: %r" % error, encoding="utf-8")
+    try:
+        process = subprocess.Popen([str(cli), "app-server"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True)
+        frames = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                      "sessionId": "00000000-0000-4000-8000-0000000000d1", "protocolVersion": "1.0", "appVersion": "diag",
+                      "capabilities": DIAG_CAPS}},
+                  {"jsonrpc": "2.0", "id": 2, "method": "consent/get", "params": {}},
+                  {"jsonrpc": "2.0", "id": 3, "method": "rows/subscribe", "params": {}}]
+        sent = "".join(json.dumps(f) + "\n" for f in frames)
+        try:
+            stdout, stderr = process.communicate(sent, timeout=20)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate()
+        (out / ("helper-session-%s.txt" % label)).write_text(
+            "--- sent ---\n" + sent + "--- stdout ---\n" + stdout[:400000] + "\n--- stderr ---\n" + stderr[:100000]
+            + "\n--- exit %s ---\n" % process.returncode, encoding="utf-8")
+    except Exception as error:
+        (out / ("helper-session-%s.txt" % label)).write_text("helper session failed: %r" % error, encoding="utf-8")
+
+
 def walk_app(host, walkthrough, exe, cli, env, out):
     checks = []
     with (out / "app.log").open("w", encoding="utf-8") as log:
@@ -995,6 +1030,7 @@ def walk_app(host, walkthrough, exe, cli, env, out):
                               {"firstWindowSeconds": first_window}))
         checks.append(outcome("reader-first-reading", first_reading is not None, {"seconds": first_reading}))
         walkthrough.walk_steps()
+        capture_diagnostics(cli, env, out, "after-steps")
         checks.append(outcome("alive-after-walk", process.poll() is None, {"exit": process.poll()}))
         checks.append(outcome("widget-ax-frames", not walkthrough.frames_mirrored, {"mirrored": walkthrough.frames_mirrored, **walkthrough.mirror_evidence}))
         code, report, seconds = doctor(host, cli, env)
