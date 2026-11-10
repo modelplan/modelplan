@@ -217,7 +217,7 @@ private actor S4RowsClient: EngineClient {
         events[0]["publishedAt"]=formatter.string(from:now.addingTimeInterval(-60))
         events[0]["expiresAt"]=formatter.string(from:now.addingTimeInterval(3600))
         events[0]["schedule"]=["precision":"window","from":formatter.string(from:now),"through":formatter.string(from:now.addingTimeInterval(3600))]
-        projection["resetEvents"]=events;data["projection"]=projection
+        projection["resetEvents"]=events;restoreDockSurface(&projection);data["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-menu-notice-"+UUID().uuidString)
         defer { removeScratch(directory) }
@@ -272,6 +272,13 @@ private actor S4RowsClient: EngineClient {
         try await synthetic.replaceRows(rows);try await Task.sleep(for:.milliseconds(50))
         try require(deliveries.count == 1,"a repeated forecast must not produce a second notification")
     }
+    /// G3-38 removed the Dock surface from a row with no value, and the shared fixture's Codex row has none. These
+    /// journeys test how a reset event reaches the Dock and the menu, so they give that row its Dock surface back.
+    static func restoreDockSurface(_ projection:inout [String:Any]) {
+        var rows=projection["rows"] as! [[String:Any]]
+        rows[0]["surfaces"]=["dock","menu","settings"]
+        projection["rows"]=rows
+    }
     static func resetEvents(capture:URL) async throws {
         let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
@@ -284,7 +291,7 @@ private actor S4RowsClient: EngineClient {
         events[0]["publishedAt"]=formatter.string(from:clock.addingTimeInterval(-60))
         events[0]["expiresAt"]=formatter.string(from:clock.addingTimeInterval(3600))
         events[0]["schedule"]=["precision":"window","from":formatter.string(from:clock),"through":formatter.string(from:clock.addingTimeInterval(3600))]
-        projection["resetEvents"]=events;data["projection"]=projection
+        projection["resetEvents"]=events;restoreDockSurface(&projection);data["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-events-"+UUID().uuidString)
         defer { removeScratch(directory) }
