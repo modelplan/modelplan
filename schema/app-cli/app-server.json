@@ -1372,6 +1372,9 @@
         "observedOutputTokens": {
           "type": "integer"
         },
+        "origin": {
+          "type": "string"
+        },
         "source": {
           "type": "string"
         }
@@ -1379,6 +1382,7 @@
       "required": [
         "at",
         "source",
+        "origin",
         "observedOutputTokens"
       ],
       "type": "object"

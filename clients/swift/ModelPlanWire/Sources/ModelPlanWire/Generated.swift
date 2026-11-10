@@ -2965,15 +2965,18 @@ public struct WireCockpitSession: Codable, Sendable {
 public struct WireCockpitSourceBucket: Codable, Sendable {
     public let `at`: String
     public let `source`: String
+    public let `origin`: String
     public let `observedOutputTokens`: Int64
     private enum CodingKeys: String, CodingKey {
         case `at`
         case `source`
+        case `origin`
         case `observedOutputTokens`
     }
-    public init(`at`: String, `source`: String, `observedOutputTokens`: Int64) throws {
+    public init(`at`: String, `source`: String, `origin`: String, `observedOutputTokens`: Int64) throws {
         self.`at` = `at`
         self.`source` = `source`
+        self.`origin` = `origin`
         self.`observedOutputTokens` = `observedOutputTokens`
         try validate()
     }
@@ -2981,6 +2984,7 @@ public struct WireCockpitSourceBucket: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`at` = try c.decode(String.self, forKey: .`at`)
         self.`source` = try c.decode(String.self, forKey: .`source`)
+        self.`origin` = try c.decode(String.self, forKey: .`origin`)
         self.`observedOutputTokens` = try c.decode(Int64.self, forKey: .`observedOutputTokens`)
         try validate()
     }
@@ -2989,6 +2993,7 @@ public struct WireCockpitSourceBucket: Codable, Sendable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(`at`, forKey: .`at`)
         try c.encode(`source`, forKey: .`source`)
+        try c.encode(`origin`, forKey: .`origin`)
         try c.encode(`observedOutputTokens`, forKey: .`observedOutputTokens`)
     }
     private func validate() throws {

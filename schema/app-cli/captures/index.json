@@ -1155,6 +1155,7 @@
       "required": [
         "at",
         "source",
+        "origin",
         "observedOutputTokens"
       ]
     },
