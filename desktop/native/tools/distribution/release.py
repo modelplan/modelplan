@@ -122,7 +122,7 @@ def run(*args, input=None):
 def fetch_cli(pin_path, output):
     pin = json.loads(Path(pin_path).read_text())
     version = pin['version']
-    if not re.fullmatch(r'\d+\.\d+\.\d+', version):
+    if not re.fullmatch(r'\d+\.\d+\.\d+(?:-rc\.\d+)?', version):
         raise ValueError('Invalid pinned CLI release')
     expected_base = f'https://github.com/modelplan/modelplan/releases/download/v{version}'
     if pin['release'] != expected_base:

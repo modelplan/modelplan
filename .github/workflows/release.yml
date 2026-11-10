@@ -37,4 +37,9 @@ jobs:
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/* --title "${{ github.ref_name }}" --generate-notes
+        run: |
+          TAG="${{ github.ref_name }}"
+          FLAGS=()
+          # Release candidates (v0.5.58-rc.1) must never become "latest": install.sh follows releases/latest.
+          if [[ "$TAG" == *-* ]]; then FLAGS=(--prerelease --latest=false); fi
+          gh release create "$TAG" dist/* --title "$TAG" --generate-notes "${FLAGS[@]}"

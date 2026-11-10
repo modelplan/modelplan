@@ -1,0 +1,1 @@
+CLI release candidates (tags containing a hyphen, such as v0.5.58-rc.1) are now published as prereleases that never become the latest release, so the installer keeps following the last stable CLI. The Mac app packaging accepts an optional -rc.N suffix on the pinned CLI version.

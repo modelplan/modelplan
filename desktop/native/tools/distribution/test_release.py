@@ -527,6 +527,16 @@ class AppleSiliconArchitectureTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 release.require_arm64(Path('/synthetic/app'))
 
+    def test_fetch_cli_accepts_release_candidate_pins_only_in_rc_form(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pin = Path(directory) / 'pin.json'
+            for version, message in (('0.5.58-rc.1', 'Unexpected CLI release source'), ('0.5.58', 'Unexpected CLI release source'),
+                                     ('0.5.58-beta.1', 'Invalid pinned CLI release'), ('0.5.58-rc', 'Invalid pinned CLI release')):
+                with self.subTest(version=version):
+                    pin.write_text(json.dumps({'version': version, 'release': 'https://example.invalid/x'}))
+                    with self.assertRaisesRegex(ValueError, message):
+                        release.fetch_cli(pin, Path(directory) / 'out')
+
 
 if __name__ == '__main__':
     unittest.main()

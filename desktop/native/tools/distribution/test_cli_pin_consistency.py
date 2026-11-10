@@ -83,6 +83,26 @@ class CLIPinConsistencyTests(SyntheticRepo, unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'older than the app minimum'):
             module.assert_pin_matches(self.repo)
 
+    def test_release_candidate_pin_compares_on_base_version(self):
+        (self.repo / 'cli/source.go').write_text('two\n')
+        self.commit()
+        self.git('tag', 'v0.5.53-rc.1')
+        self.pin.write_text(json.dumps({'version': '0.5.53-rc.1'}))
+        self.commit()
+        module.assert_pin_matches(self.repo)
+
+    def test_release_candidate_older_than_minimum_is_refused(self):
+        self.git('tag', 'v0.5.49-rc.1')
+        self.pin.write_text(json.dumps({'version': '0.5.49-rc.1'}))
+        with self.assertRaisesRegex(ValueError, 'older than the app minimum'):
+            module.assert_pin_matches(self.repo)
+
+    def test_malformed_candidate_suffix_is_refused(self):
+        for bad in ('0.5.53-beta.1', '0.5.53-rc', '0.5.53-rc.1.2'):
+            self.pin.write_text(json.dumps({'version': bad}))
+            with self.assertRaisesRegex(ValueError, 'version'):
+                module.assert_pin_matches(self.repo)
+
 
 SOURCE = {'arm64': 'a' * 64, 'x86_64': 'b' * 64}
 ROOT = Path(__file__).resolve().parents[4]
