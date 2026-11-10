@@ -71,6 +71,8 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
+  // verificationPlacement is test-only SPI, so this test exists only in builds that define it.
+  #if MODELPLAN_TEST_ONLY_SPI
   /// CKP-SHELL-07 with D88: at 85 % a resize (grow animation, snap-back) must keep the scaled canvas and page
   /// zoom, and the one-time hint anchor must sit on the detach key as drawn at that scale.
   func testD88ScaledCockpitKeepsBoundsZoomAndHintAnchorAfterResize() throws {
@@ -106,6 +108,8 @@ import XCTest
     XCTAssertEqual(anchor.frame.midY, key.midY, accuracy: 0.5)
     XCTAssertTrue(window.frame.contains(anchor.frame))
   }
+
+  #endif
 
   /// A drag of the title strip detaches: the window follows the pointer, and the drop reports the detach once.
   func testD88DraggingTheTitleStripDetaches() throws {
