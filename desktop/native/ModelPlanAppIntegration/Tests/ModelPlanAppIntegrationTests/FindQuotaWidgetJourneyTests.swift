@@ -162,15 +162,22 @@ private actor D56SyntheticEngine: EngineClient {
 
     // MARK: DOCK-3.6-20 values
 
-    func testD56DimHoleAndRingMatchTheDecidedValues() {
+    func testD56DimHoleAndFeatherMatchTheDecidedValues() throws {
         let target = QuotaWidgetSpotlightTarget(widget: CGRect(x: 1_300, y: 300, width: 64, height: 320),
                                                 display: CGRect(x: 0, y: 0, width: 1_440, height: 900), displayID: "primary")
         XCTAssertEqual(QuotaWidgetSpotlightStyle.dimAlpha, 0.4)
         XCTAssertEqual(QuotaWidgetSpotlightStyle.holePadding, 8)
         XCTAssertEqual(QuotaWidgetSpotlightStyle.holeCornerRadius, 12)
-        XCTAssertEqual(QuotaWidgetSpotlightStyle.ringWidth, 2)
-        XCTAssertEqual(QuotaWidgetSpotlightStyle.ringAlpha, 0.9)
-        XCTAssertEqual(QuotaWidgetSpotlightStyle.ringGlowRadius, 10)
+        XCTAssertTrue((16...28).contains(QuotaWidgetSpotlightStyle.featherRadius), "a 16 to 28 pt falloff")
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.dimAlpha(atDistance: 0), 0)
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.dimAlpha(atDistance: -5), 0)
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.dimAlpha(atDistance: QuotaWidgetSpotlightStyle.featherRadius), 0.4, accuracy: 0.0001)
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.dimAlpha(atDistance: 500), 0.4, accuracy: 0.0001)
+        var last: CGFloat = -1
+        for step in 0...24 {
+            let a = QuotaWidgetSpotlightStyle.dimAlpha(atDistance: CGFloat(step))
+            XCTAssertGreaterThanOrEqual(a, last, "the falloff never steps back"); last = a
+        }
         let hole = QuotaWidgetSpotlightStyle.hole(for: target)
         XCTAssertEqual(hole, CGRect(x: 1_292, y: 292, width: 80, height: 336), "8 pt around the widget")
         // A widget at the display edge keeps its hole on that display.
@@ -183,10 +190,16 @@ private actor D56SyntheticEngine: EngineClient {
         XCTAssertEqual(drawn.dimAlpha, 0.4, accuracy: 0.001)
         XCTAssertFalse(drawn.dimContainsHoleCentre, "the hole is undimmed")
         XCTAssertTrue(drawn.dimContainsCorner, "the rest of the display is dimmed")
-        XCTAssertEqual(drawn.ringWidth, 2); XCTAssertTrue(drawn.ringIsWhite)
-        XCTAssertEqual(drawn.ringAlpha, 0.9, accuracy: 0.001)
-        XCTAssertEqual(drawn.glowRadius, 10); XCTAssertGreaterThan(drawn.glowOpacity, 0)
-        XCTAssertEqual(drawn.ringBounds, hole, "the ring runs along the hole's edge")
+        XCTAssertFalse(drawn.hasStrokeOrBorder, "no ring, frame or stroke of any colour")
+        XCTAssertFalse(drawn.hasShadow, "no glow layer either")
+        XCTAssertTrue(drawn.featherHasImage, "the edge is a soft gradient")
+        let inner = try? XCTUnwrap(drawn.alphaAt(CGPoint(x: hole.minX - 1, y: hole.midY)))
+        let mid = try? XCTUnwrap(drawn.alphaAt(CGPoint(x: hole.minX - 12, y: hole.midY)))
+        let far = try? XCTUnwrap(drawn.alphaAt(CGPoint(x: hole.minX - 23, y: hole.midY)))
+        XCTAssertLessThan(inner ?? 1, 0.05, "almost clear right at the hole's edge")
+        XCTAssertGreaterThan(mid ?? 0, 0.1); XCTAssertLessThan(mid ?? 1, 0.3)
+        XCTAssertGreaterThan(far ?? 0, 0.37, "reaches the dim level at the end of the feather")
+        XCTAssertEqual(drawn.alphaAt(CGPoint(x: hole.midX, y: hole.midY)) ?? 1, 0, accuracy: 0.01, "the hole is clear")
     }
 
     // MARK: Find Quota Widget
@@ -207,7 +220,7 @@ private actor D56SyntheticEngine: EngineClient {
         let target = try XCTUnwrap(try surface(app).shown)
         XCTAssertEqual(target.displayID, "primary"); XCTAssertEqual(target.display, primary.frame, "the whole display, menu bar included")
         let painted = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
-        XCTAssertTrue(painted.insetBy(dx: -0.5, dy: -0.5).contains(target.widget), "the ring follows the widget")
+        XCTAssertTrue(painted.insetBy(dx: -0.5, dy: -0.5).contains(target.widget), "the clearing follows the widget")
         XCTAssertTrue(target.display.contains(QuotaWidgetSpotlightStyle.hole(for: target)))
         XCTAssertEqual(app.spotlight.lastFadeIn, 0.2, "dims within 0.2 s")
         XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.showDock, true, "Find never turns the widget off")
