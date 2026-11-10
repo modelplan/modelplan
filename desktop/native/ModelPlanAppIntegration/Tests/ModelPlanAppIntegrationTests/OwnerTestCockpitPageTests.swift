@@ -332,8 +332,9 @@ extension CommunityCockpitEntryTests {
         let client = RouteClient(); await client.suspendCockpit()
         let composition = EngineDockMenuComposition(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:]), createsNativePanels: false, makeClient: { _, _ in client })
         let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
-        // An Air-width screen: Auto would draw 85 %, so 90 % and 100 % can only come from the setting.
-        let air = CGRect(x: 0, y: 0, width: 1470, height: 919)
+        // An Air-width screen: Auto would draw 85 %, so 90 % and 100 % can only come from the setting. Tall enough
+        // for the full 939 pt canvas (905 canopy + 34) at 100 %, so only the setting, never the height fit, sets the scale.
+        let air = CGRect(x: 0, y: 0, width: 1470, height: 1026)
         var page: CockpitWindowController?
         let coordinator = EngineCockpitCoordinator { context in
             let made = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
