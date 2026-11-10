@@ -25,7 +25,7 @@ import ModelPlanWire
             var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
             value["appearance"] = nil
             value["shell"] = nil
-            value["redBelow"] = nil
+            value["redBelow"] = nil; value["showUsedPercent"] = nil
             value["type"] = "ready"
             value["sequence"] = "1"
             value["appearanceVersion"] = 2
