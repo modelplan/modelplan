@@ -74,9 +74,13 @@ public struct DockInstrumentReading: Sendable {
     /// Position count comes from the frozen appearance provider, not quota percentage or a ten-point helper.
     public func litTimePoints(positions: Int) -> Int? {
         guard (1...128).contains(positions),let timeLeftFraction else{return nil}
-        return max(0,min(positions,Int(ceil(timeLeftFraction*Double(positions)))))
+        // D129: the clock follows the remaining/used choice: time left in remaining mode, time elapsed in used mode.
+        let shown = clockShowsElapsed ? 1-timeLeftFraction : timeLeftFraction
+        return max(0,min(positions,Int(ceil(shown*Double(positions)))))
     }
     public let isWorking: Bool, jetEligible: Bool
+    /// True when the Settings choice is "used": the clock lights time elapsed instead of time left.
+    public var clockShowsElapsed = false
     /// A transient display frame; the admitted reading and its observation time are never changed.
     func refreshSweepFrame(progress: Double) -> DockInstrumentReading {
         let p = progress.isFinite ? min(1, max(0, progress)) : 1
@@ -91,7 +95,7 @@ public struct DockInstrumentReading: Sendable {
             selectedWindowLabel: selectedWindowLabel, selectedResetAt: selectedResetAt,
             remainingPercent: remainingPercent, readout: text, status: status, dataState: dataState,
             unavailableReason: unavailableReason, timeLeftFraction: timeLeftFraction,
-            isWorking: isWorking, jetEligible: jetEligible)
+            isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed)
     }
     /// Gallery-only fixture: the prototype varies level independently of its fixed 75% arc.
     @_spi(DockResourceChecks) public func comparisonFixture(status: DockQuotaStatus) -> DockInstrumentReading {
@@ -100,7 +104,7 @@ public struct DockInstrumentReading: Sendable {
             duplicateAccountTag:duplicateAccountTag,
             outer: fixtureOuter, inner: inner, selectedWindowID: selectedWindowID, selectedWindowLabel: selectedWindowLabel,
             selectedResetAt: selectedResetAt, remainingPercent: remainingPercent, readout: readout, status: status,
-            dataState: dataState, unavailableReason:unavailableReason, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible)
+            dataState: dataState, unavailableReason:unavailableReason, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed)
     }
 }
 
@@ -159,6 +163,6 @@ public enum DockInstrumentProjection {
             outer:arc(outer),inner:arc(inner),selectedWindowID:selected?.id,selectedWindowLabel:selected?.label,
             selectedResetAt:selected.flatMap { value($0) == nil ? nil : $0.resetsAt },
             remainingPercent:remaining,readout:text,status:selectedStatus,dataState:input.dataState,
-            unavailableReason:(remaining == nil || input.dataState == .stale) ? input.unavailableReason : nil,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil)
+            unavailableReason:(remaining == nil || input.dataState == .stale) ? input.unavailableReason : nil,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil,clockShowsElapsed:input.showUsedPercent)
     }
 }

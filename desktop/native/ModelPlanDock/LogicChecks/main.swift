@@ -306,7 +306,7 @@ do {
         try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","shortest outer, weekly inner")
         try expect(result.readout=="20%" && result.selectedWindowID=="week" && result.litTimePoints(positions:37)==19,"selected tightest quota, clock actual time")
         input.selectedWindowID="5h";input.showUsedPercent=true;result=try DockInstrumentProjection.evaluate(input,now:now)
-        try expect(result.readout=="20%" && result.status == .normal && result.litTimePoints(positions:37)==15,"used display does not invert status or clock")
+        try expect(result.readout=="20%" && result.status == .normal && result.litTimePoints(positions:37)==23,"used display does not invert status; clock lights time elapsed (D129)")
         try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","pin never swaps quota rings")
         input.windows=[week]; result=try DockInstrumentProjection.evaluate(input,now:now)
         try expect(result.outer?.windowID=="week" && result.inner==nil,"one weekly window uses the outer ring only")
@@ -331,6 +331,18 @@ do {
         try expect(old.dataState == .stale && old.readout=="--" && old.outer?.fraction==nil && old.litTimePoints(positions:37)==nil,"stale is neither zero nor full")
         i.dataState = .fresh;i.windows[0].resetsAt=now
         try expect(try DockInstrumentProjection.evaluate(i,now:now).readout=="--","passed reset retires quota")
+    }
+    try test("D129 clock dots follow the remaining/used choice") {
+        func lit(_ left:Double,used:Bool)throws->Int?{
+            let w=DockQuotaWindowInput(id:"w",period:.fiveHour,label:"5h",remainingPercent:50,resetsAt:now.addingTimeInterval(18000*left),durationSeconds:18000)
+            var i=DockInstrumentInput(id:"s",name:"Synthetic",windows:[w]);i.dataState = .fresh;i.showUsedPercent=used
+            return try DockInstrumentProjection.evaluate(i,now:now).litTimePoints(positions:37)
+        }
+        try expect(try lit(0.4,used:false)==15,"remaining mode lights time left")
+        try expect(try lit(0.4,used:true)==23,"used mode lights time elapsed")
+        try expect(try lit(1,used:false)==37 && try lit(1,used:true)==0,"full time left: all dots remaining, none used")
+        try expect(try lit(0.0001,used:false)==1 && (try lit(0.0001,used:true))==37,"time almost gone: one dot remaining, all dots used")
+        try expect(try lit(0.5,used:false)==19 && (try lit(0.5,used:true))==19,"half time lights the same count in both modes")
     }
     try test("configured critical thresholds include equality for saved and new choices") {
         for threshold in [40.0, 30, 25, 20, 15, 10] {
