@@ -105,13 +105,13 @@ final class ShellLayoutTests: XCTestCase {
         }
     }
     /// D60 + #713 review: placement uses the final scale (the 85 % default, not only the fit-to-screen scale),
-    /// so the window is the 85 % width where it is anchored and its right-edge clamp uses that width.
+    /// so the window is the 85 % width, centred under the icon (D88), and its right-edge clamp uses that width.
     func testD60PlacementUsesTheFinalScaledWidth() throws {
         let value = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: 0, width: 1680, height: 1026),
             anchor: .init(x: 800, y: 1026, width: 28, height: 24), shutterClosed: false, size: .percent85))
         XCTAssertEqual(value.scale, 0.85)
         XCTAssertEqual(value.frame.width, 636 * 0.85, accuracy: 1e-9)
-        XCTAssertEqual(value.frame.minX, 800 - 8 * 0.85, accuracy: 1e-9, "the left edge sits under the icon at the scaled margin")
+        XCTAssertEqual(value.frame.midX, 814, accuracy: 1e-9, "D88: the scaled window is centred under the icon (anchor midX 814)")
         let edge = try XCTUnwrap(CockpitShellLayout.fit(usable: .init(x: 0, y: 0, width: 1680, height: 1026),
             anchor: .init(x: 1670, y: 1026, width: 28, height: 24), shutterClosed: false, size: .percent85))
         XCTAssertEqual(edge.frame.maxX, 1680, accuracy: 1e-9, "the right-edge clamp uses the scaled width")
