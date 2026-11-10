@@ -854,7 +854,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let paintDeadline=ContinuousClock.now + .seconds(30)
         let web=try XCTUnwrap(page.verificationWebView)
         let script="""
-        (()=>{const ch=document.querySelector('.fd-ch[data-model="synthetic-model"]');if(!ch)return 'no-fader';
+        (()=>{const ch=document.querySelector('.fd-ch:not(.empty)');if(!ch)return 'no-fader';
         const bars=[...ch.querySelectorAll('.fd-strip .eb')].filter(e=>/px$/.test(e.style.getPropertyValue('--h'))).length;
         const rec=ch.querySelector('.fd-marks .fd-rec');const k=rec?rec.style.getPropertyValue('--k'):'';
         return bars+'|'+(rec?'rec':'norec')+'|'+(k!==''&&Number.isFinite(Number(k))?'k':'nok');})()
