@@ -95,8 +95,13 @@ Not in rows v1: reset `cards` (local.json reset reminders). They stay on `accoun
 rowsSummary
   state         ok | readers_off | no_consent | empty | pending
                 pending = the publication check failed closed; declared rows still show
-  reason        {code, text {en, zh}} (codes: ok, readers_off, no_consent, no_dock_rows, consent_changed)
-                empty = something is allowed or declared, but no row has a Dock surface with a value or a next step (for example every allowed tool is unsupported); text says so and nextStep opens Settings
+  reason        {code, text {en, zh}} (codes: ok, readers_off, no_consent, no_dock_rows, consent_changed, not_read_yet, and the reason code of a tool that needs an action)
+                A tool with no value has no Dock surface (G3-38), so the Dock summary speaks for those tools:
+                pending + not_read_yet  = allowed tools still waiting for their first read; text is
+                  "Reading {tool names}…" / "正在读取 {tool names}…", nextStep is null (never consent settings)
+                empty + the row's reason code = allowed tools need a user action (sign in, allow Keychain, install);
+                  text names the tools and the action, nextStep is that action (open_tool, open_settings_keychain, install_runtime)
+                empty + no_dock_rows = nothing is detected or allowed to read, and no tool is waiting or needs an action; nextStep opens Settings
   text          {en, zh}
   nextStep      as above
 ```
@@ -133,7 +138,7 @@ Candidates are the union of four sets:
 Then the rules apply in order:
 
 1. **Readers off globally:** no tool rows. `rowsSummary.state = readers_off`, with its next step. Declared rows still show: they are the user's own data and read nothing.
-2. **Consent allowed or implicit:** the tool always gets a dock/menu/settings row, whether or not it is still detected or in the catalogue. When it is not detected, `state = needs_action`, code `tool_not_found`. When it is retired, `consent = retired`, code `catalogue_retired`. **This is the invariant the respins kept breaking.**
+2. **Consent allowed or implicit:** the tool always gets a menu/settings row, and a dock row too unless it holds no reading and nothing is being read (G3-38, owner decision D76: a detected subscription that cannot be read, for any reason, has no ring; a pending first read has no ring until a reading arrives), whether or not it is still detected or in the catalogue. When it is not detected, `state = needs_action`, code `tool_not_found`. When it is retired, `consent = retired`, code `catalogue_retired`. **This is the invariant the respins kept breaking.**
 3. **Denied, or Forget cleanup pending:** a settings row only. Its accounts are never exported (`accounts = []`) and never shown, so a revoked tool's readings cannot reappear. `cleanup_pending` is the code.
 4. **Detected but unset:** a settings row only.
 5. **Declared plans:** dock/menu/settings rows with `consent = not_required`. They skip the tool predicates (detection, reader, consent, Keychain): only rows 1 (privacy veto), 8–10 below apply. A declared plan without a manual reading is `pending`, code `no_manual_reading`, action `none`.
@@ -275,7 +280,7 @@ A single Go table maps every status, reason, errorCode and blocked value to `(st
   - the classifier's table tests, including the overlapping conditions
   - the mapping tests: exhaustive known values, plus the separate unknown fallback
   - the exactly-once publication check (revoke between ReadPermitted and output)
-  - the membership invariant: every allowed tool has exactly one Dock row in every state
+  - the membership invariant: every allowed tool has a menu/settings row in every state, and exactly one Dock row unless it is unreadable (G3-38, D76)
   - the privacy validators and canaries
   - `quota --json` stays byte-identical across the change (plugin and Skill gate)
 - **Swift tests** render the Dock, the menu bar and Settings from every capture:
