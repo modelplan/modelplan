@@ -18,7 +18,7 @@ import (
 )
 
 // The history importer reads the Claude Code and Codex logs written before the live observers
-// started, so a later slice can fill charts and the effort suggestion from day one (nothing reads the ledger back yet). It reads what the live
+// started, so a later slice can fill charts and the effort suggestion from day one (the cockpit's 7- and 30-day views read it back through speed.PerfView.ImportedRows). It reads what the live
 // parsers read (timestamps, token counts, model, effort, speed mode) and nothing else: never a
 // prompt, reply, tool input or output, path, project or id. Its ledger is <cache>/observed/
 // imported.json; every row in it carries origin "import" and a per-source coverage span. It is

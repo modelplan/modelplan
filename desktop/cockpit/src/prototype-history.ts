@@ -9,7 +9,7 @@ const dayKey=(at:number)=>{const d=new Date(at);return `${d.getFullYear()}-${Str
 const startOfDay=(key:string)=>{const [y,m,d]=key.split('-').map(Number);return new Date(y!,m!-1,d!).getTime();};
 
 export interface HistoryView {
- readonly daily:readonly {accountId:string;values:(number|null)[];coverageStart:number}[];
+ readonly daily:readonly {accountId:string;values:(number|null)[];imported:(number|null)[];coverageStart:number}[];
  readonly hourly:readonly {accountId:string;instants:number[];values:(number|null)[]}[];
  readonly projectRanking:{recent7d:unknown[];recent30d:unknown[]};
  readonly paceHistory:Record<string,Record<string,unknown[]>>;
@@ -19,7 +19,7 @@ export const noHistory:HistoryView={daily:[],hourly:[],projectRanking:{recent7d:
 
 export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<string,string>,now:number,locale:string):HistoryView {
  const h=data?.history;if(!h||h.coverage!=='local-history')return noHistory;
- const daily:{accountId:string;values:(number|null)[];coverageStart:number}[]=[],hourly:{accountId:string;instants:number[];values:(number|null)[]}[]=[];
+ const daily:{accountId:string;values:(number|null)[];imported:(number|null)[];coverageStart:number}[]=[],hourly:{accountId:string;instants:number[];values:(number|null)[]}[]=[];
  const first=h.dailyFrom?startOfDay(h.dailyFrom):null;
  // Local top of the hour, which is not a UTC hour in a fractional-offset zone. Steps stay absolute, so a repeated
  // daylight-saving hour keeps its own bucket.
@@ -31,8 +31,11 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
   const accountId=ids.get(sub.subscriptionRef);if(!accountId)continue;
   const sources=new Set(sub.sources.map(s=>s.source));
   if(first!==null){
-   const byDay=new Map<string,number>();for(const b of h.daily)if(sources.has(b.source))byDay.set(b.at,(byDay.get(b.at)??0)+b.observedOutputTokens);
-   daily.push({accountId,values:days.map(day=>byDay.get(day)??null),coverageStart:first});
+   // A day's value is live and imported output together; `imported` is the imported part alone (null: none), so the chart can
+   // draw a day that only older, imported history covers lighter. Imported history never replaces a live figure.
+   const byDay=new Map<string,number>(),importedByDay=new Map<string,number>();
+   for(const b of h.daily)if(sources.has(b.source)){byDay.set(b.at,(byDay.get(b.at)??0)+b.observedOutputTokens);if(b.origin==='import')importedByDay.set(b.at,(importedByDay.get(b.at)??0)+b.observedOutputTokens);}
+   daily.push({accountId,values:days.map(day=>byDay.get(day)??null),imported:days.map(day=>importedByDay.get(day)??null),coverageStart:first});
   }
   const values:(number|null)[]=instants.map(()=>null);
   for(const b of h.hourly){const index=Math.floor((Date.parse(b.at)-instants[0]!)/HOUR);if(sources.has(b.source)&&index>=0&&index<values.length)values[index]=(values[index]??0)+b.observedOutputTokens;}

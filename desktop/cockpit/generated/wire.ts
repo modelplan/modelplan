@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 96c8506e349512baf97e27f81ec141bb2951041256628015de899685d0f0ef6a
+// Schema SHA-256: 9598549447eee6b8e24487f5f60a376a46e8ca11dbc7e078208541b83f508f71
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -221,6 +221,7 @@ export type WireCockpitSession = {
 export type WireCockpitSourceBucket = {
   readonly "at": string;
   readonly "observedOutputTokens": number;
+  readonly "origin": string;
   readonly "source": string;
 };
 
@@ -1659,6 +1660,9 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "observedOutputTokens": {
         "type": "integer"
       },
+      "origin": {
+        "type": "string"
+      },
       "source": {
         "type": "string"
       }
@@ -1666,6 +1670,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "required": [
       "at",
       "source",
+      "origin",
       "observedOutputTokens"
     ],
     "type": "object"
