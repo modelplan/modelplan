@@ -13,6 +13,8 @@ import ModelPlanWire
     /// The product entry attaches the local-history import here; Settings shows it when present.
     public var historyImport: HistoryImportModel?
     private weak var firstRunView:SettingsScopeConsentView?
+    /// G3-45: vendor marks for the first-run tool list; the app supplies its checked marks.
+    public var markImage: (@MainActor (String) -> NSImage?)?
     public enum PresentationError:Error { case mutationInProgress }
 
     public init(client: any EngineClient, ready: @escaping @MainActor () -> Bool,
@@ -29,7 +31,7 @@ import ModelPlanWire
     public func makeFirstRunView(language:SettingsLanguage) throws -> SettingsScopeConsentView {
         if let firstRunView { firstRunView.apply(language:language);return firstRunView }
         guard controller.beginFirstRunDraft() else { throw PresentationError.mutationInProgress }
-        let view=SettingsScopeConsentView(controller:controller,language:language,buildSigning:buildSigning,firstRun:true)
+        let view=SettingsScopeConsentView(controller:controller,language:language,buildSigning:buildSigning,firstRun:true,markImage:markImage)
         firstRunView=view;return view
     }
     /// Close only that presentation. Current accepted permissions remain available
