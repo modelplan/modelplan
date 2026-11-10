@@ -301,13 +301,25 @@ enum ModelRocket {
         if !parts.contains(.hull) {
             for child in body.children where child.name != glassName { child.isEnabled = false }
         }
-        if flat {
-            forEachModel(body) { e in
-                guard var model = e.components[ModelComponent.self] else { return }
+        // Both faces, as the reference draws the model (DoubleSide): with the aft face hidden, the plate holes look
+        // into the hull, whose inside must not cull away to the background.
+        forEachModel(body) { e in
+            guard var model = e.components[ModelComponent.self] else { return }
+            if flat {
                 let level = greyLevel(partName(e))
-                model.materials = model.materials.map { _ in UnlitMaterial(color: .init(white: level / 255, alpha: 1)) }
-                e.components.set(model)
+                model.materials = model.materials.map { _ in
+                    var m = UnlitMaterial(color: .init(white: level / 255, alpha: 1))
+                    m.faceCulling = .none
+                    return m
+                }
+            } else {
+                model.materials = model.materials.map { material -> any RealityKit.Material in
+                    guard var pbr = material as? PhysicallyBasedMaterial else { return material }
+                    pbr.faceCulling = .none
+                    return pbr
+                }
             }
+            e.components.set(model)
         }
         guard parts.contains(.hull) else { return }
         if capsuleDetail { try CapsuleDetail.add(to: body, stage: stage, geometry: geometry) }
@@ -566,8 +578,13 @@ public enum EntranceLookImages {
             for x in 0..<w {
                 let az = 360 * (Double(x) + 0.5) / Double(w) - 180
                 var v = e >= 0 ? 0.32 + 0.38 * sin(e * Double.pi / 180) : 0.12 + 0.08 * (1 + e / 90)
-                if abs(az + 50) < 22, e > 20, e < 60 { v = 1.0 }
-                if abs(az - 120) < 10, e > 0, e < 40 { v = max(v, 0.8) }
+                // Soft-edged boxes: a hard edge reflects as a sharp line down a metal cylinder.
+                func box(_ da: Double, _ de: Double, _ half: (Double, Double)) -> Double {
+                    let fx = max(0, 1 - max(0, abs(da) - half.0) / 25), fy = max(0, 1 - max(0, abs(de) - half.1) / 20)
+                    return fx * fx * (3 - 2 * fx) * fy * fy * (3 - 2 * fy)
+                }
+                v = max(v, box(az + 50, e - 40, (10, 8)))
+                v = max(v, 0.8 * box(az - 120, e - 20, (4, 10)))
                 let r = day ? v * 0.95 : v, g = day ? v * 0.98 : v, b = day ? min(1, v * 1.06) : v
                 let o = (y * w + x) * 4
                 p[o] = UInt8(r * 255); p[o + 1] = UInt8(g * 255); p[o + 2] = UInt8(b * 255); p[o + 3] = 255
