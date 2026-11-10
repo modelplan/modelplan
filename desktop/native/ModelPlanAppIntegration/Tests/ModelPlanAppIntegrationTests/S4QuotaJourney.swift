@@ -608,13 +608,13 @@ private actor S4RowsClient: EngineClient {
         try require(firstCard.plan == "synthetic","card must carry the reported plan name")
         try require(firstCard.sourceAndAge.hasPrefix("Local history · "),"card header must use the admitted window source, even when the account route differs")
         func reserveParts(_ row:DockCardRow)->[String]{row.value.components(separatedBy:" · ")}
-        try require(firstCard.rows.contains{$0.kind == .reserve && reserveParts($0).contains("43 credits")},"first card needs its own rounded credits")
-        try require(secondCard.rows.contains{$0.kind == .reserve && reserveParts($0).contains("7 credits")},"second card needs its own reported credits")
+        try require(firstCard.rows.contains{$0.kind == .reserve && reserveParts($0).contains("Credits 43")},"first card needs its own rounded credits")
+        try require(secondCard.rows.contains{$0.kind == .reserve && reserveParts($0).contains("Credits 7")},"second card needs its own reported credits")
         try require(firstCard.name == "synthetic" && secondCard.name == "synthetic · 2","duplicate cards are told apart by number without an alias")
         try await store.update { $0.subscriptionSettings["fedcba9876543210"] = SubscriptionSetting(alias:"Work") };await entry.prepare()
         try require(try entry.composition.dock.cardContent(for:"fedcba9876543210")?.name == "synthetic · Work","a duplicate with an alias shows the alias instead of the number")
         try require(try entry.composition.dock.cardContent(for:"0123456789abcdef")?.name == "synthetic","the alias belongs to its own subscription only")
-        try require(!secondCard.rows.contains{$0.kind == .reserve && reserveParts($0).contains("43 credits")},"source totals must not leak across members")
+        try require(!secondCard.rows.contains{$0.kind == .reserve && reserveParts($0).contains("Credits 43")},"source totals must not leak across members")
         var old=SettingsPreferences();old.subscriptionSettings["codex"] = .init(alias:"Wrong shared alias",percentagePin:.fiveHour)
         old.subscriptions = .init(order:["codex"],hiddenIDs:["codex"])
         let migrated=entry.composition.accountMembers.migratingRowPreferences(old)
@@ -778,8 +778,8 @@ private actor S4RowsClient: EngineClient {
                 visible += card.rows.flatMap{[$0.label,$0.value,$0.detail]}
             }
             let balanceLabels = cards.map { $0.rows.first { $0.id == "reserve" && $0.kind == .reserve }?.label }
-            let expectedBalanceLabels = language == .chinese ? ["余额", "储备", "储备"] : ["Balance", "Reserve", "Reserve"]
-            try require(balanceLabels == expectedBalanceLabels,"wire units must map to localized balance facts without inventing a currency")
+            let expectedBalanceLabels = language == .chinese ? ["储备", "储备", "储备"] : ["Reserve", "Reserve", "Reserve"]
+            try require(balanceLabels == expectedBalanceLabels,"the reserve row keeps one neutral name; the money balance is named in its text, without inventing a currency")
             if language == .chinese {
                 // D40: the card's compact reset time ("3h18", "5d20h", "45m") is the prototype's form in both languages.
                 let prose = visible.joined().replacingOccurrences(of: #"\d+(\.\d+)?[kM]|\d+(d\d+h|h\d{2}|m)|t/s"#, with: "", options: .regularExpression)
