@@ -88,9 +88,9 @@ public struct DockContentRow: Sendable {
         var seen = Set<String>()
         let notes = ([expiryText] + [count?.detail ?? "", credits?.detail ?? ""].flatMap { $0.components(separatedBy: " · ") })
             .filter { !$0.isEmpty && seen.insert($0).inserted }
-        // The prototype has no money row: a money balance keeps its own name on the one line.
-        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: credits?.label ?? (english ? "Reserve" : "储备"),
-            value: [count?.value ?? "", credits?.value ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
+        // The line is plain labelled text ("Resets 1 · Credits 19,614"), never an icon plus bare figures and never swapped on hover.
+        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: english ? "Reserve" : "储备",
+            value: Self.reserveText(resets: count?.value, credits: credits?.value, creditsClass: credits?.hint ?? "", creditsLabel: credits?.label ?? "", english: english),
             detail: notes.joined(separator: " · "))
         var placed = false
         return additionalRows.flatMap { row -> [DockCardRow] in
@@ -99,6 +99,26 @@ public struct DockContentRow: Sendable {
             placed = true
             return [reserve]
         }
+    }
+    /// The reserve line's text with each figure named. `resets` is the reset-count row's value ("↺1");
+    /// `creditsClass` is the producer's classification on the credits row ("credits", "money" or "" when the unit is unclassified).
+    /// Only a classified figure is called Credits or Balance; an unclassified unit keeps the row's own neutral name and its unit text.
+    static func reserveText(resets: String?, credits: String?, creditsClass: String = "", creditsLabel: String = "", english: Bool) -> String {
+        var parts = [String]()
+        if let resets {
+            let number = String(resets.drop { $0 == "↺" })
+            parts.append((english ? "Resets " : "重置次数 ") + (number.isEmpty ? "--" : number))
+        }
+        if let credits {
+            switch creditsClass {
+            case "money": parts.append((english ? "Balance " : "余额 ") + credits)
+            case "credits":
+                let number = credits.replacingOccurrences(of: english ? " credits" : " 点数", with: "")
+                parts.append((english ? "Credits " : "点数 ") + number)
+            default: parts.append(creditsLabel.isEmpty ? credits : creditsLabel + " " + credits)
+            }
+        }
+        return parts.joined(separator: " · ")
     }
     public func resetDetails(at now:Date,english:Bool,selectedWindowID:String?=nil) -> [String:String] {
         let selectedObservation = selectedWindowID.map { observationText(for: $0, at: now, english: english) }

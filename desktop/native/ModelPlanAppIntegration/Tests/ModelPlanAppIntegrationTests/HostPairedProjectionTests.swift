@@ -647,12 +647,12 @@ actor EntrySyntheticClient: EngineClient {
             let content = try XCTUnwrap(try dock.cardContent(for: id, at: wall))
             return try XCTUnwrap(content.rows.first { $0.id == "reserve" })
         }
-        XCTAssertEqual(try balance().label, "Balance")
-        XCTAssertEqual(try balance().value, "↺1 · 14,207.86")
+        XCTAssertEqual(try balance().label, "Reserve")
+        XCTAssertEqual(try balance().value, "Resets 1 · Balance 14,207.86")
         XCTAssertEqual(try balance().detail, "expired · Currency not reported")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertEqual(try balance().label, "余额")
-        XCTAssertEqual(try balance().value, "↺1 · 14,207.86")
+        XCTAssertEqual(try balance().label, "储备")
+        XCTAssertEqual(try balance().value, "重置次数 1 · 余额 14,207.86")
     }
 
     /// DOCK-3.6-18: an open card, including its scoped extra-quota rows, shows no native tooltip.
@@ -735,10 +735,93 @@ actor EntrySyntheticClient: EngineClient {
             let name = try XCTUnwrap(field(dock.card, id: "row.reserve.label"))
             let value = try XCTUnwrap(field(dock.card, id: "row.reserve.value"))
             try assertVisible(name, text: title)
-            try assertVisible(value, text: "↺1 · 19,614")
+            // The line wraps inside its column when long, so check the text and that it is on the card, not its one-line width.
+            XCTAssertEqual(value.stringValue, language == .english ? "Resets 1 · Reserve 19,614" : "重置次数 1 · 储备 19,614")
+            XCTAssertFalse(value.isHiddenOrHasHiddenAncestor)
+            XCTAssertTrue(dock.card.bounds.contains(dock.card.convert(value.bounds, from: value)), "the reserve text is not clipped by the card")
             XCTAssertLessThanOrEqual(dock.card.convert(name.bounds, from: name).maxX,
                 dock.card.convert(value.bounds, from: value).minX)
         }
+    }
+
+    /// G3-75 (build 14b): the reserve line is plain labelled text that hovering never changes, with no native tooltip,
+    /// and VoiceOver reads it once. Unit-level copy for every case lives in `testReserveLineNamesEachFigureInBothLanguages`.
+    func testNormalReserveRowHoverLeavesTheTextAndSpeechUnchanged() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-hover-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try Self.rows(weekly: 75, reserveBalance: 19_613.9573653333, reserveUnit: "credits")
+        let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
+        var pointer = CGPoint(x: 700, y: 450)
+        var elapsed = 0.0
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let dock = app.composition.dock, view = dock.dockView
+        let id = "aaaaaaaaaaaaaaaa"
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let nozzle = try XCTUnwrap(view.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + nozzle.midX - view.bounds.minX,
+            y: placement.frame.maxY - nozzle.midY + view.bounds.minY)
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+        elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
+        XCTAssertFalse(dock.card.isHidden)
+        func texts(_ root: NSView) -> [String] {
+            ((root as? NSTextField).flatMap { $0.isHiddenOrHasHiddenAncestor ? nil : [$0.stringValue] } ?? []) + root.subviews.flatMap(texts)
+        }
+        func tooltips(_ root: NSView) -> [String] { (root.toolTip.map { [$0] } ?? []) + root.subviews.flatMap(tooltips) }
+        for (language, expected) in [(SettingsLanguage.english, "Resets 1 · Credits 19,614"), (.chinese, "重置次数 1 · 点数 19,614")] {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
+            let before = texts(dock.card)
+            XCTAssertTrue(before.contains(expected), "the labelled reserve text is on the card without any hover: \(before)")
+            // Pointer onto the row: a real mouse-entered on the row view, and the pointer inside the card.
+            var rowView: NSView?
+            func find(_ root: NSView) { if !(root is NSTextField), root !== dock.card, root.accessibilityLabel()?.contains(expected) == true { rowView = root }; root.subviews.forEach(find) }
+            find(dock.card)
+            let row = try XCTUnwrap(rowView, "the reserve row is an accessibility group carrying the text")
+            let event = try XCTUnwrap(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+            row.mouseEntered(with: event)
+            elapsed += 0.5; dock.interactionControllerForChecks?.refresh()
+            XCTAssertEqual(texts(dock.card), before, "hovering the reserve row does not replace its text")
+            XCTAssertEqual(tooltips(dock.card), [], "no tooltip appears on the reserve row")
+            row.mouseExited(with: event)
+            XCTAssertEqual(texts(dock.card), before)
+            // VoiceOver: the row speaks the text once; its text fields are not read again.
+            let speech = try XCTUnwrap(dock.card.rowSpeechForChecks("reserve"))
+            XCTAssertEqual(speech.label?.components(separatedBy: expected).count, 2, "the labelled text is spoken once: \(speech)")
+            XCTAssertEqual(speech.spokenChildren, [], "the row's text fields are not read a second time")
+        }
+    }
+
+    /// G3-75: every shape of the reserve line, in both languages: resets only, credits only, both, and a money balance.
+    func testReserveLineNamesEachFigureInBothLanguages() {
+        func text(_ resets: String?, _ credits: String?, _ cls: String, _ english: Bool) -> String {
+            DockContentRow.reserveText(resets: resets, credits: credits, creditsClass: cls, creditsLabel: english ? "Reserve" : "储备", english: english)
+        }
+        // Resets only.
+        XCTAssertEqual(text("↺3", nil, "", true), "Resets 3"); XCTAssertEqual(text("↺3", nil, "", false), "重置次数 3")
+        // Credits only (the producer's value carries a unit suffix that the label replaces).
+        XCTAssertEqual(text(nil, "19,614 credits", "credits", true), "Credits 19,614")
+        XCTAssertEqual(text(nil, "19,614 点数", "credits", false), "点数 19,614")
+        // Both.
+        XCTAssertEqual(text("↺1", "19,614 credits", "credits", true), "Resets 1 · Credits 19,614")
+        XCTAssertEqual(text("↺1", "19,614 点数", "credits", false), "重置次数 1 · 点数 19,614")
+        // Money balance keeps the currency formatting it arrived with, and is never called credits.
+        XCTAssertEqual(text("↺1", "14,207.86", "money", true), "Resets 1 · Balance 14,207.86")
+        XCTAssertEqual(text(nil, "$14,207.86", "money", true), "Balance $14,207.86")
+        XCTAssertEqual(text("↺1", "14,207.86", "money", false), "重置次数 1 · 余额 14,207.86")
+        XCTAssertEqual(text(nil, "¥14,207.86", "money", false), "余额 ¥14,207.86")
+        // An unclassified unit makes no claim about what it is.
+        XCTAssertEqual(text(nil, "19,614", "", true), "Reserve 19,614"); XCTAssertEqual(text(nil, "19,614", "", false), "储备 19,614")
+        // A reset line with no count.
+        XCTAssertEqual(text("↺", nil, "", true), "Resets --")
     }
 
     func testResetSourceURLRejectsUnsafeAddressParts() throws {
