@@ -9,6 +9,7 @@ let package = Package(name: "ModelPlanOfficialRocket", platforms: [.macOS(.v14)]
         .target(name: "ModelPlanOfficialRocket", dependencies: [.product(name: "ModelPlanEntrance", package: "ModelPlanNative")],
                 path: ".", exclude: ["Tests", "manifest.json", "README.md", "SOURCES.md"],
                 sources: ["OfficialRocket.swift"], resources: [.copy("Resources")]),
-        .testTarget(name: "ModelPlanOfficialRocketTests", dependencies: ["ModelPlanOfficialRocket", .product(name: "ModelPlanEntrance", package: "ModelPlanNative")], path: "Tests/ModelPlanOfficialRocketTests",
+        .testTarget(name: "ModelPlanOfficialRocketTests", dependencies: ["ModelPlanOfficialRocket", .product(name: "ModelPlanEntrance", package: "ModelPlanNative"),
+                                                                 .product(name: "ModelPlanEntranceScene", package: "ModelPlanNative")], path: "Tests/ModelPlanOfficialRocketTests",
                     resources: [.copy("c01-aperture-890.json")]),
     ])
