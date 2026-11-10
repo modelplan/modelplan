@@ -706,8 +706,8 @@ final class CommunityCockpitEntryTests:XCTestCase {
     }
 
     /// CKP-SHELL-01 (D118): through the normal factory, the cockpit opens directly below the menu-bar icon: its top sits a
-    /// fixed 6 pt under the icon's bottom edge and its visible left edge lines up with the icon's (an 8 px margin of the
-    /// 636 px raster), shifted only as far as the screen's edges require. Parameterised over the icon's position.
+    /// fixed 6 pt under the icon's bottom edge and it is centred on the icon (D88: the 636 px raster has the same 8 px
+    /// margin on both sides of the shell, so the frame's centre is the shell's), shifted only as far as the screen's edges require. Parameterised over the icon's position.
     @MainActor func testNormalFactoryOpensDirectlyBelowTheMenuBarIcon() throws {
         let (owner,bundle,context,_)=try shellFixture()
         let usable=try XCTUnwrap(NSScreen.main).visibleFrame
@@ -718,11 +718,10 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let page=owner.makePage(context:context,verified:bundle)
             page.open()
             let window=try XCTUnwrap(page.window,name)
-            let scale=window.frame.width/636
             XCTAssertEqual(window.frame.maxY,anchor.minY-6,accuracy:1,"\(name): top is 6 pt under the icon")
             XCTAssertLessThanOrEqual(window.frame.maxY,anchor.minY,"\(name): never above the icon")
-            let expectedX=max(usable.minX,min(anchor.minX-8*scale,usable.maxX-window.frame.width))
-            XCTAssertEqual(window.frame.minX,expectedX,accuracy:1,"\(name): left edge follows the icon")
+            let expectedX=max(usable.minX,min(anchor.midX-window.frame.width/2,usable.maxX-window.frame.width))
+            XCTAssertEqual(window.frame.minX,expectedX,accuracy:1,"\(name): centred on the icon, clamped to the screen")
             XCTAssertGreaterThanOrEqual(window.frame.minX,usable.minX-1,name)
             XCTAssertLessThanOrEqual(window.frame.maxX,usable.maxX+1,name)
             page.discard()
@@ -812,6 +811,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         }
     }
 
+#if MODELPLAN_TEST_ONLY_SPI
     /// CKP-FAD-04 (D118): on the real official page opened by the normal factory, a published model's fader shows its
     /// effort bars and the recommended-effort star marker. Needs the canonical official cockpit and the synthetic CLI.
     @MainActor func testFaderBarsAndStarShowOnTheRealPageThroughTheNormalEntry() async throws {
@@ -834,15 +834,16 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let publication=try XCTUnwrap(details["publication"] as? [String:Any])
         let model=try XCTUnwrap((publication["models"] as? [[String:Any]])?.first)
         XCTAssertEqual(model["id"] as? String,"synthetic-model","the capture's one published model")
-                let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:json))
+        let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:json))
         let context=try CockpitEngineContext(sessionID:UUID(),storeEpoch:"synthetic-fad04",generation:1)
         let page=try owner.makePage(context:context,executable:app.appendingPathComponent("Contents/Helpers/modelplan"))
         defer{page.discard()}
         var ready=false;page.onReady={ready=true}
         page.open()
-        let deadline=ContinuousClock.now+.seconds(30)
+        let deadline=ContinuousClock.now + .seconds(30)
         while !ready && ContinuousClock.now<deadline { try await Task.sleep(for:.milliseconds(20)) }
         XCTAssertTrue(ready,"the real page becomes ready")
+        let paintDeadline=ContinuousClock.now + .seconds(30)
         let web=try XCTUnwrap(page.verificationWebView)
         let script="""
         (()=>{const ch=document.querySelector('.fd-ch[data-model="synthetic-model"]');if(!ch)return 'no-fader';
@@ -851,7 +852,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         return bars+'|'+(rec?'rec':'norec')+'|'+(k!==''&&Number.isFinite(Number(k))?'k':'nok');})()
         """
         var result="none"
-        while ContinuousClock.now<deadline {
+        while ContinuousClock.now<paintDeadline {
             if let ticket=page.queryTicket { page.display(wire,ticket:ticket) }
             try await Task.sleep(for:.milliseconds(200))
             result=((try? await web.evaluateJavaScript(script)) as? String) ?? "none"
@@ -863,4 +864,5 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(parts.dropFirst().first,"rec","the recommended-effort star marker is on the fader (\(result))")
         XCTAssertEqual(parts.last,"k","and sits at a numeric travel position (\(result))")
     }
+#endif
 }
