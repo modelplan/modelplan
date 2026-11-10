@@ -51,6 +51,18 @@ type CockpitDetails struct {
 	// device last observed within the past seven days, newest first. LastObservedAt is a last sighting,
 	// never an end time; there are no titles or token counts.
 	RecentSessions []CockpitRecentSession `json:"recentSessions,omitempty" schema:"maxItems=200" null:"forbidden"`
+	// Peaks is present only for a client that negotiated cockpitPeaksV1: for each declared plan row, its current
+	// or next published time-of-day window with a raised rate within 24 hours. EndsAt is null when the window does
+	// not end within the published horizon.
+	Peaks []CockpitPeak `json:"peaks,omitempty" schema:"maxItems=32" null:"forbidden"`
+}
+
+// CockpitPeak is one declared plan's peak-rate window from the publication's multiplier windows.
+type CockpitPeak struct {
+	RowID    string     `json:"rowId" schema:"minLength=1,maxLength=128"`
+	StartsAt time.Time  `json:"startsAt"`
+	EndsAt   *time.Time `json:"endsAt" null:"coalesced"`
+	Status   string     `json:"status"` // confirmed | tentative
 }
 
 // CockpitRecentSession is one recorded session. Model is a published model ID or "unknown";
