@@ -767,18 +767,21 @@ final class CommunityCockpitEntryTests:XCTestCase {
             ("rocket click",.openFieldAt("Synthetic"),"synthetic-model"),("unpublished rocket",.openFieldAt("Not published"),nil)]
         for (name,intent,focus) in cases {
             let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-port12-"+UUID().uuidString)
-            try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+            // The bundle sits in its own folder: the verified bundle refuses any file its manifest does not list, so the
+            // settings store's support folder must not share the bundle's root.
+            let bundleRoot=root.appendingPathComponent("bundle")
+            try FileManager.default.createDirectory(at:bundleRoot,withIntermediateDirectories:true)
             defer{try? FileManager.default.removeItem(at:root)}
             let html=Data("<!doctype html><title>synthetic field</title>".utf8)
-            for file in ["index.html","field.html"] { try html.write(to:root.appendingPathComponent(file)) }
+            for file in ["index.html","field.html"] { try html.write(to:bundleRoot.appendingPathComponent(file)) }
             let manifest=try JSONSerialization.data(withJSONObject:["schemaVersion":1,"edition":"community","interfaceOnly":true,
                 "files":["index.html":VerifiedCockpitBundle.digest(html),"field.html":VerifiedCockpitBundle.digest(html)]])
-            try manifest.write(to:root.appendingPathComponent("bundle-manifest.json"))
+            try manifest.write(to:bundleRoot.appendingPathComponent("bundle-manifest.json"))
             let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root.appendingPathComponent("support"))
             let client=RouteClient();await client.suspendCockpit()
             let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
-            let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
-            owner.verifiedBundle=try VerifiedCockpitBundle(root:root,manifestSHA256:VerifiedCockpitBundle.digest(manifest))
+            let owner=CockpitConsoleOwner(bundle:bundleRoot,settingsStore:settings)
+            owner.verifiedBundle=try VerifiedCockpitBundle(root:bundleRoot,manifestSHA256:VerifiedCockpitBundle.digest(manifest))
             let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
             let coordinator=EngineCockpitCoordinator { _ in page }
             coordinator.bind(client:client);owner.coordinator=coordinator
@@ -839,6 +842,9 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let page=try owner.makePage(context:context,executable:app.appendingPathComponent("Contents/Helpers/modelplan"))
         defer{page.discard()}
         var ready=false;page.onReady={ready=true}
+        // The page takes data only once it is confirmed visible (a hidden page drops it), so send it from onShown, as the
+        // coordinator does, instead of repeating display while the first receipt is pending.
+        page.onShown={ if let ticket=page.queryTicket { page.display(wire,ticket:ticket) } }
         page.open()
         let deadline=ContinuousClock.now + .seconds(30)
         while !ready && ContinuousClock.now<deadline { try await Task.sleep(for:.milliseconds(20)) }
@@ -853,7 +859,6 @@ final class CommunityCockpitEntryTests:XCTestCase {
         """
         var result="none"
         while ContinuousClock.now<paintDeadline {
-            if let ticket=page.queryTicket { page.display(wire,ticket:ticket) }
             try await Task.sleep(for:.milliseconds(200))
             result=((try? await web.evaluateJavaScript(script)) as? String) ?? "none"
             if result != "none" && result != "no-fader" { break }
