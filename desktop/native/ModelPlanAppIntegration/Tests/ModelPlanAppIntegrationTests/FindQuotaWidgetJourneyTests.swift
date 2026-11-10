@@ -318,7 +318,8 @@ private actor D56SyntheticEngine: EngineClient {
         view.setGeometry(frame: CGRect(origin: .zero, size: display.size), hole: QuotaWidgetSpotlightStyle.hole(for: target), silhouette: nil)
         let drawn = view.drawnForChecks
         XCTAssertEqual(drawn.alphaAt(CGPoint(x: widget.midX, y: widget.midY)) ?? 1, 0, accuracy: 0.01, "the hole is clear")
-        XCTAssertGreaterThan(try XCTUnwrap(drawn.alphaAt(CGPoint(x: widget.minX - 20, y: widget.midY))), 0.2, "dimmed beyond the padded edge")
+        // 22 points outside the padded edge (feather 24): about 0.39; the midpoint (0.2) is too close to call after rounding.
+        XCTAssertGreaterThan(try XCTUnwrap(drawn.alphaAt(CGPoint(x: widget.minX - 30, y: widget.midY))), 0.3, "dimmed beyond the padded edge")
     }
 
     /// The host: the polled target is frame and display only; the silhouette is built once, for the presented target, and
