@@ -582,7 +582,19 @@ do {
         var input=DockInstrumentInput(id:"a",name:"Synthetic",windows:[.init(id:"five",period:.fiveHour,label:"Short",remainingPercent:0,resetsAt:now.addingTimeInterval(100),durationSeconds:18000),.init(id:"week",period:.week,label:"Long",remainingPercent:nil,resetsAt:nil,durationSeconds:nil)])
         input.dataState = .fresh;input.showUsedPercent=true
         let card=try DockCardProjection.content(input:input,at:now)
-        try expect(card.rows[0].value=="100%" && card.rows[0].remainingFraction==0 && card.rows[0].tone == .critical,"used display never reverses status truth (D130: ring arcs are checked separately)")
+        try expect(card.rows[0].value=="100%" && card.rows[0].remainingFraction==0 && card.rows[0].tone == .critical,"used display never reverses status truth (tone and remaining truth)")
+        try expect(card.rows[0].fillFraction==1,"D130: the bar fills with used in used mode")
+        input.showUsedPercent=false
+        let remCard=try DockCardProjection.content(input:input,at:now)
+        try expect(remCard.rows[0].fillFraction==0 && remCard.rows[0].tone == .critical && remCard.rows[0].remainingFraction==0,"D130: remaining mode bar = remaining, same tone")
+        for r in [0.0,30,60,100] {
+            for used in [false,true] {
+                var i=DockInstrumentInput(id:"a",name:"S",windows:[.init(id:"five",period:.fiveHour,label:"Short",remainingPercent:r,resetsAt:nil,durationSeconds:nil)]);i.dataState = .fresh;i.showUsedPercent=used
+                let row=try DockCardProjection.content(input:i,at:now).rows[0]
+                try expect(abs(row.remainingFraction!-r/100)<1e-9 && abs(row.fillFraction!-(used ? 1-r/100:r/100))<1e-9,"D130 card bar fill, both modes, 0 and 100 boundaries")
+            }
+        }
+        input.showUsedPercent=true
         try expect(card.rows[1].value=="--" && card.rows[1].remainingFraction==nil,"missing is not zero")
         input.dataState = .stale
         let stale=try DockCardProjection.content(input:input,at:now)
