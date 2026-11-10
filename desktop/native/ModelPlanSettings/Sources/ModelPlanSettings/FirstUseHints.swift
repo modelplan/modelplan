@@ -221,7 +221,7 @@ public struct FirstUseHints: Sendable {
         if context.v1MinimalHints {
             if context.dockReveal != nil && context.widgetTurnedOff { request(.widgetOff) }
             if context.dockReveal != nil { request(.findWidget) }
-            if context.dockReveal != nil && preferences.seen.contains(.findWidget) { request(.ringRefresh) }
+            if context.dockReveal != nil && (!context.widgetConcealed || preferences.seen.contains(.findWidget)) { request(.ringRefresh) }
             return
         }
         if context.cockpitOpen != nil {

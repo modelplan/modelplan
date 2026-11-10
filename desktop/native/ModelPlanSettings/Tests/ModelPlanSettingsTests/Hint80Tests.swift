@@ -49,6 +49,24 @@ final class Hint80Tests: XCTestCase {
         try value.updateContext(context, at: 0)
         XCTAssertEqual(try value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 0)?.kind, .ringRefresh)
     }
+    /// D114 fresh install: expanded -> ring hint first (findWidget never seen), then the collapse hint once, no repeats.
+    func testD114FreshInstallReachesRingHintThenCollapseHintOnce() throws {
+        var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        context.v1MinimalHints = true; context.ringRefreshAvailable = true; context.statusAnchorAvailable = true
+        try value.updateContext(context, at: 0)
+        XCTAssertFalse(value.preferences.seen.contains(.findWidget))
+        let ring = try XCTUnwrap(value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 0))
+        XCTAssertEqual(ring.kind, .ringRefresh)
+        try value.confirmShown(ring, at: 0); value.dismiss()
+        context.dockReveal = UUID(); try value.updateContext(context, at: 1)
+        XCTAssertNil(try value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 1), "expanded: nothing left, ring does not repeat")
+        context.widgetConcealed = true; context.dockReveal = UUID(); try value.updateContext(context, at: 2)
+        let find = try XCTUnwrap(value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 2))
+        XCTAssertEqual(find.kind, .findWidget)
+        try value.confirmShown(find, at: 2); value.dismiss()
+        context.dockReveal = UUID(); try value.updateContext(context, at: 3)
+        XCTAssertNil(try value.nextOffer(placeable: Set(FirstUseHintKind.allCases), at: 3), "neither repeats")
+    }
     /// G3-28 (owner 11-06): turning the widget off from the status menu or Settings shows a
     /// one-time hint at the menu bar icon. Collapsing to the strip never does.
     func testTurningTheWidgetOffOffersItsOneTimeHintButCollapsingDoesNot() throws {
