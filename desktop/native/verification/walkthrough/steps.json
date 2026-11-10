@@ -1511,7 +1511,7 @@
     {
       "id": "cockpit-detach",
       "title": "Cockpit detached",
-      "expected": "Detach turns the cockpit into its own window; the button now reads Put back (G3-43).",
+      "expected": "The detach key (strip slot 502) turns the cockpit into its own window where it is; the same slot now holds Put back and the menu bar icon is no longer pressed (D88, G3-54).",
       "requires": [
         "cockpit-reopen"
       ],
@@ -1588,7 +1588,7 @@
     {
       "id": "cockpit-put-back",
       "title": "Cockpit put back",
-      "expected": "Put back returns the cockpit under the menu bar icon.",
+      "expected": "The put-back key returns the cockpit centred under the menu bar icon; the slot reads Detach again (D88, G3-54).",
       "requires": [
         "cockpit-detach"
       ],

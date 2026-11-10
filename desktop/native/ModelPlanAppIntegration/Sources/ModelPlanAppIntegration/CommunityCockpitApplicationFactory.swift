@@ -102,6 +102,9 @@ import ModelPlanDock
             if prewarms { owner.startPrewarm(applied: { [weak application] in application?.composition.latestSettings }) }
         }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
+        owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
+        owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
+        application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
         return application
     }
 }
@@ -117,6 +120,21 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
+    /// Right-click menu hooks, set by the factory beside `settings`.
+    var setSize: ((SettingsSize) -> Void)?
+    var currentSize: (() -> SettingsSize?)?
+    weak var currentPage: CockpitWindowController?
+    private var contextMenu: CockpitContextMenu?
+    /// The cockpit's own right-click menu: Settings…, Reset Position, Quota Widget Size, Help.
+    func makeContextMenu(page: CockpitWindowController?) -> NSMenu {
+        let menu = CockpitContextMenu(language: appearance.locale == .en ? .english : .chinese, size: currentSize?(),
+            actions: .init(settings: { [weak self] in self?.settings?() },
+                           resetPosition: { [weak page] in page?.resetPosition() },
+                           help: { [weak page] in page?.showHelpMap() },
+                           setSize: { [weak self] in self?.setSize?($0) }))
+        contextMenu = menu
+        return menu.menu
+    }
     /// The one way a cockpit website link leaves the app; tests read the URL instead of a browser.
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
@@ -189,6 +207,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
+        currentPage = page
+        page.contextMenuProvider = { [weak self, weak page] in self?.makeContextMenu(page: page) }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
         #endif
@@ -249,6 +269,7 @@ struct CockpitUnavailableNotice {
     var showTask: Task<Void,Never>?
     var wantsVisible=false
     private var pageOpened = false
+    private var entrance: CockpitEntrance = .fade
     var fallback: EngineRowsConsole?
     private var appliedSettings: SettingsApplication?
     private let isForeground: @MainActor () -> Bool
@@ -267,6 +288,8 @@ struct CockpitUnavailableNotice {
             self?.pageOpened = true
             onOpened?()
         }
+        // D88: a detach, a put back or the settled open refreshes the icon highlight and the hints.
+        owner.coordinator?.onShellChanged = { [weak self] in self?.onShowingChanged?() }
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
             self.wantsVisible = false
@@ -317,7 +340,12 @@ struct CockpitUnavailableNotice {
         owner.appearance=owner.cockpitAppearance(value)
         owner.coordinator?.updateAppearance(owner.appearance)
     }
-    func show() {
+    var isDetached: Bool { owner.shell.detached }
+    var attachmentHintAnchor: CockpitAttachmentHintAnchor? { wantsVisible ? owner.coordinator?.attachmentHintAnchor : nil }
+    func show() { show(fromStatusItem: false) }
+    func show(fromStatusItem: Bool) {
+        // D88: only the menu bar icon grows the cockpit out of itself; the ignition keeps its own entrance.
+        entrance = fromStatusItem ? .growFromIcon : .fade
         wantsVisible=true
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
@@ -333,7 +361,9 @@ struct CockpitUnavailableNotice {
             if owner.coordinator?.presented == false { owner.coordinator?.updateAppearance(owner.appearance) }
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
+            owner.shell.nextEntrance = entrance
             owner.coordinator?.open()
+            owner.shell.nextEntrance = .fade
             showTask = nil
         }
     }
