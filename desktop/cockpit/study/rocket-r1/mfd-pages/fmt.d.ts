@@ -3,3 +3,4 @@ export function relativeMoment(ms:number,ui:{now:number;lang:'en'|'zh-CN'},full?
 export function tok(n:number|null):string;
 export function until(ms:number,ui:{now:number;lang:'en'|'zh-CN'}):string;
 export function dhm(minutes:number|null):string;
+export function md(ms:number,ui:{lang:'en'|'zh-CN'}):string;

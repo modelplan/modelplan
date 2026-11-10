@@ -84,7 +84,7 @@ public enum T2DockSkin {
         let palette: [String: [String: Double]] = ["body":ink(16,19,24),"case":ink(5,6,8),"track":ink(255,255,255,28/255),"notch":ink(14,17,22),"normal":ink(90,217,186),"warning":ink(234,193,123),"critical":ink(239,68,68),"unknown":ink(125,134,142),"clock":ink(255,255,255,0.6),"clockBack":ink(5,6,8,0.55),"text":ink(255,255,255),"lcdWhite":ink(233,237,240),"alias":ink(230,233,235),"noticeBlue":ink(159,210,255),"noticeAmber":ink(234,193,123),"noticeWhite":ink(255,255,255),"eventBackdrop":ink(16,21,28),"eventOutline":ink(16,21,28,0.6),"emptyFill":ink(20,22,26,221/255),"emptyStroke":ink(255,255,255,0.2),"emptyText":ink(154,160,166),
             // D65 (owner 11-08, option B): a used-up window: dark red track, light red face, dimmed mark.
             "usedUpTrack":ink(156,52,39,0.95),"usedUpFace":ink(223,96,76,0.20),"usedUpMark":ink(11,15,19,0.45)]
-        let text: [String: Any] = ["fontResource":"font-jetbrains-mono","size":11*unit,"weight":400]
+        let text: [String: Any] = ["fontResource":"font-jetbrains-mono","size":13*unit,"weight":400]
         let alias: [String: Any] = ["useSystemUIFont":true,"size":10*unit,"weight":400]
         let object: [String: Any] = ["schemaVersion":1,"bounds":rect(bounds),"bodyPolygon":g.outline.map{[$0.x,$0.y]},"fixedLayers":fixed,"stations":stations,"palette":palette,"text":text,"aliasText":alias,"readoutPalette":["normal":"lcdWhite"]]
         return try JSONDecoder().decode(DockInstrumentSkin.self, from: JSONSerialization.data(withJSONObject: object))
