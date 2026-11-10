@@ -749,7 +749,7 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalReserveRowHoverLeavesTheTextAndSpeechUnchanged() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-hover-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try Self.rows(weekly: 75, reserveBalance: 19_613.9573653333, reserveUnit: "credits")
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
