@@ -34,6 +34,7 @@ public struct EffectiveSettings: Equatable, Sendable {
     public let revealSeconds: Double, magnification: HoverMagnification, size: SettingsSize
     public let menuDisplay: MenuDisplay, language: SettingsLanguage, showProjectNames: Bool
     public let opening: OpeningPreference, ignitionSeconds: Double?
+    public let cockpitSize: SettingsCockpitSize
     public let redBelow: Int
     public init(_ p: SettingsPreferences, environment e: SettingsEnvironment) {
         darkAppearance = e.v1NormalEntry || p.theme == .night || (p.theme == .system && e.darkAppearance)
@@ -48,6 +49,7 @@ public struct EffectiveSettings: Equatable, Sendable {
         size = p.size; magnification = reduceMotion ? .none : p.magnification
         menuDisplay = p.menuDisplay; language = p.language; showProjectNames = p.showProjectNames; redBelow = p.effectiveRedBelow
         opening = e.v1NormalEntry || p.opening == .quick || reduceMotion || e.macOSMajor < 15 || !e.entranceAccepted ? .quick : .hold
+        cockpitSize = p.cockpitSize
         ignitionSeconds = opening == .hold ? 0.2 + 3 * Double(p.beatMilliseconds) / 1000 : nil
     }
     public var visibilityPolicy: DockVisibilityPolicy {
