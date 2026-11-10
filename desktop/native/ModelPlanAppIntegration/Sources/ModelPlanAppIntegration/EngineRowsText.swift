@@ -12,6 +12,10 @@ enum EngineRowsText {
     static let widgetTurnedOffHint = SettingsText(
         "Quota Widget is off. Right-click the menu bar icon and choose Show Quota Widget.",
         "额度挂件已关闭，可右键点菜单栏图标，勾选「显示额度挂件」重新打开")
+    /// D114: one-time hint the first time the widget collapses to its strip.
+    static let widgetCollapsedHint = SettingsText(
+        "Quota Widget is now a strip on the screen edge. Hover it, or right-click the menu bar icon and choose Find Quota Widget.",
+        "额度挂件已收成屏幕边缘的细条，鼠标移上去可展开，也可右键点菜单栏图标，选「找到额度挂件」")
     static let refresh = SettingsText("Refresh", "刷新")
     static let settings = SettingsText("Settings…", "设置…")
     static let contextSettings = SettingsText("Settings", "设置")

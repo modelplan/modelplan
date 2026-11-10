@@ -100,7 +100,7 @@ struct DockStatusHelpDismissal {
                 let zh = language == .chinese
                 switch kind {
                 case .ringRefresh: return (zh ? "悬停查看详情 · 点击刷新" : "Hover to see details · click to refresh", zh ? "不再显示" : "Don't show again")
-                case .findWidget: return (zh ? "右键点菜单栏图标，选「找到额度挂件」可再次找到" : "Find it again: right-click the menu bar icon, Find Quota Widget", zh ? "不再显示" : "Don't show again")
+                case .findWidget: return (EngineRowsText.widgetCollapsedHint.value(zh ? .chinese : .english), zh ? "知道了" : "OK")
                 case .widgetOff: return (EngineRowsText.widgetTurnedOffHint.value(zh ? .chinese : .english), zh ? "知道了" : "OK")
                 case .ignition: return (zh ? "点按打开驾驶舱" : "Tap to open Cockpit", zh ? "关闭" : "Close")
                 case .drag: return (zh ? "拖喷口换顺序，拖底座换到别的边" : "Drag a nozzle to reorder; drag the base to move to another edge", zh ? "关闭" : "Close")
