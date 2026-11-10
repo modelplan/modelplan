@@ -41,6 +41,8 @@ public struct StoryboardRail: Sendable {
     public static let defaultFov = 30.0
     public static let liftMetres = 14.2
     public static let minWindowIoU = 0.80
+    /// Upper bound of the end-pose elevation search (camera below the window, looking up at it).
+    static let maxEndElevation = 80.0
     static let solveTailSamples = 64
 
     public let input: StoryboardRailInput
@@ -117,34 +119,51 @@ public struct StoryboardRail: Sendable {
         let centre = EntranceVector(geometry.glassCentre.x, geometry.glassCentre.y + Self.liftMetres, geometry.glassCentre.z)
         let apertureBounds = EntranceRect.bounds(polygon)
         let target = polygon
-        var bestEnd: (camera: EntranceCamera, elevation: Double, iou: Double)?
-        for elevation in stride(from: 20.0, through: 75.0, by: 2.5) {
+        // Each candidate is scored on the camera it actually produces (aimed, then projected), not on a translated
+        // hull: the translation shortcut ranked a 70-degree pose first although the aimed 62.5-degree pose overlaps
+        // more (slice 4, real glass). Coarse grid first, then a finer grid around the best candidate.
+        var framed: [String: (camera: EntranceCamera, hull: EntranceRect)] = [:]
+        func frame(_ elevation: Double, _ widthFactor: Double) -> (camera: EntranceCamera, hull: EntranceRect) {
+            let key = "\(elevation)/\(widthFactor)"
+            if let hit = framed[key] { return hit }
             let e = elevation * Double.pi / 180
             let direction = EntranceVector(0, -sin(e), cos(e))
-            for widthFactor in [1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3] {
-                func cameraAt(_ d: Double) -> EntranceCamera {
-                    Self.aim(centre + direction * d, toPut: centre, at: apertureBounds.centre, lookingAt: centre, fov: fov, viewport: vp, shift: shift)
-                }
-                var lo = 0.8, hi = 40.0
-                for _ in 0..<30 {
-                    let m = (lo + hi) / 2
-                    if cameraAt(m).projectBounds(glass).width > widthFactor * apertureBounds.width { lo = m } else { hi = m }
-                }
-                let camera = cameraAt((lo + hi) / 2)
-                let hull = Self.convexHull(glass.map { camera.project($0).point })
-                let hb = EntranceRect.bounds(hull)
-                // Small pitch changes translate the image vertically; search that offset on the hull, then aim exactly.
-                for lift in stride(from: -50.0, through: 10.0, by: 10.0) {
-                    let dy = apertureBounds.centre.y - hb.centre.y + lift
-                    let moved = hull.map { EntrancePoint($0.x, $0.y + dy) }
-                    let iou = Self.iou(moved, target, step: 6)
-                    if bestEnd == nil || iou > bestEnd!.iou {
-                        let aimed = Self.aim(camera.position, toPut: centre,
-                                             at: .init(camera.project(centre).point.x, camera.project(centre).point.y + dy),
-                                             lookingAt: centre, fov: fov, viewport: vp, shift: shift)
-                        bestEnd = (aimed, elevation, iou)
-                    }
-                }
+            func cameraAt(_ d: Double) -> EntranceCamera {
+                Self.aim(centre + direction * d, toPut: centre, at: apertureBounds.centre, lookingAt: centre, fov: fov, viewport: vp, shift: shift)
+            }
+            var lo = 0.8, hi = 40.0
+            for _ in 0..<30 {
+                let m = (lo + hi) / 2
+                if cameraAt(m).projectBounds(glass).width > widthFactor * apertureBounds.width { lo = m } else { hi = m }
+            }
+            let camera = cameraAt((lo + hi) / 2)
+            let result = (camera, EntranceRect.bounds(Self.convexHull(glass.map { camera.project($0).point })))
+            framed[key] = result
+            return result
+        }
+        func candidate(_ elevation: Double, _ widthFactor: Double, _ lift: Double, step: Double) -> (camera: EntranceCamera, iou: Double) {
+            let (camera, hb) = frame(elevation, widthFactor)
+            // Pitch so the window's box centre (not the glass centre point) sits on the aperture centre, plus `lift`.
+            let c = camera.project(centre).point
+            let aimed = Self.aim(camera.position, toPut: centre, at: .init(c.x, c.y + apertureBounds.centre.y - hb.centre.y + lift),
+                                 lookingAt: centre, fov: fov, viewport: vp, shift: shift)
+            return (aimed, Self.iou(Self.convexHull(glass.map { aimed.project($0).point }), target, step: step))
+        }
+        var bestEnd: (camera: EntranceCamera, elevation: Double, width: Double, lift: Double, iou: Double)?
+        func consider(_ elevation: Double, _ width: Double, _ lift: Double, step: Double = 6) {
+            let c = candidate(elevation, width, lift, step: step)
+            if bestEnd == nil || c.iou > bestEnd!.iou { bestEnd = (c.camera, elevation, width, lift, c.iou) }
+        }
+        for elevation in stride(from: 20.0, through: Self.maxEndElevation, by: 2.5) {
+            for width in [1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3] {
+                for lift in stride(from: -50.0, through: 10.0, by: 10.0) { consider(elevation, width, lift) }
+            }
+        }
+        let coarse = bestEnd!
+        bestEnd = nil  // the fine pass scores on a finer sampling grid
+        for elevation in stride(from: coarse.elevation - 2, through: coarse.elevation + 2, by: 0.5) where elevation <= Self.maxEndElevation {
+            for width in stride(from: coarse.width - 0.04, through: coarse.width + 0.04, by: 0.02) {
+                for lift in stride(from: coarse.lift - 8, through: coarse.lift + 8, by: 2) { consider(elevation, width, lift, step: 4) }
             }
         }
         end = bestEnd!.camera
