@@ -45,7 +45,7 @@ private actor S04SyntheticClient: EngineClient {
     #if MODELPLAN_DOCK_NATIVE_JOURNEY
     /// Real panels in an admitted GUI session. The native-journey profile isolates the reset
     /// notification ledger and the status item (no system delivery, no autosaved position).
-    func testNormalEntryShowsWidgetThenRingHintOnRealSurfaces() async throws {
+    func testNormalEntryShowsRingHintOnTheExpandedWidget() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("s04-hints-" + UUID().uuidString)
         EngineRowsEntry.nativeJourneyProfile = profile
@@ -67,21 +67,15 @@ private actor S04SyntheticClient: EngineClient {
         defer { app.composition.dock.close() }
         // The widget takes about three seconds to settle on a hosted Mac.
         for _ in 0..<1000 where liveHintLayers().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
-        // #529 supplies the real visible-widget anchor, so the first hint must now appear.
-        let first = try XCTUnwrap(liveHintLayers().first, "The first hint must appear on the real visible widget")
-        let firstCard = try XCTUnwrap(first.input?.firstUse)
+        // D114: the widget starts expanded, so the first automatic hint is the ring hint; the
+        // "where it went" hint waits for the first collapse.
+        let ring = try XCTUnwrap(liveHintLayers().first, "The ring hint must appear on the real visible widget")
+        let ringCard = try XCTUnwrap(ring.input?.firstUse)
         XCTAssertEqual(liveHintLayers().count, 1)
-        XCTAssertEqual(firstCard.anchorID, "dock.findWidget")
-        first.onAction?(.dismissHint(offerID: firstCard.offerID, reason: .explicitButton))
-        for _ in 0..<1000 where !liveHintLayers().contains(where: { $0.input?.firstUse?.anchorID == "dock.ringRefresh" }) {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        let second = try XCTUnwrap(liveHintLayers().first { $0.input?.firstUse?.anchorID == "dock.ringRefresh" })
-        XCTAssertEqual(liveHintLayers().count, 1)
-        let secondCard = try XCTUnwrap(second.input?.firstUse)
-        second.onAction?(.dismissHint(offerID: secondCard.offerID, reason: .explicitButton))
+        XCTAssertEqual(ringCard.anchorID, "dock.ringRefresh")
+        ring.onAction?(.dismissHint(offerID: ringCard.offerID, reason: .explicitButton))
         try await Task.sleep(for: .milliseconds(100))
-        XCTAssertTrue(liveHintLayers().isEmpty, "There must not be a third automatic hint")
+        XCTAssertTrue(liveHintLayers().isEmpty, "There must not be a second automatic hint while the widget is expanded")
         await app.composition.stop()
     }
 

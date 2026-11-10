@@ -85,7 +85,7 @@ import ModelPlanSettings
     }
 }
 
-/// D56 (owner 2026-11-08) made a fresh profile start with the Quota Widget collapsed. Journeys
+/// D56 (owner 2026-11-08) made a fresh profile start collapsed; D114 (2026-11-10) reversed that. Journeys
 /// written for an expanded widget open a new profile with Auto-Collapse saved off; a profile that
 /// already exists keeps whatever it saved. Fresh defaults are covered by FindQuotaWidgetJourneyTests
 /// and SET909DockDefaultsJourneyTests, which use EngineRowsEntry.makeSettingsStore directly.
