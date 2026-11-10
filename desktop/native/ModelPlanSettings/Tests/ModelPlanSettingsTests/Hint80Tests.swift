@@ -42,6 +42,32 @@ final class Hint80Tests: XCTestCase {
         var fresh = FirstUseHints(); try fresh.updateContext(context, at: 3)
         XCTAssertNil(try fresh.nextOffer(placeable: [.widgetOff], at: 3), "without the menu bar icon there is nothing to point at")
     }
+    /// D88: the first attached open explains detach, the first detach explains put back; each shows once,
+    /// is kept in the same hints-seen preference, and needs the cockpit key as its anchor.
+    func testD88DetachAndPutBackHintsEachShowOnce() throws {
+        var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        context.v1MinimalHints = true; context.cockpitAttached = true
+        try value.updateContext(context, at: 0)
+        let detach = try XCTUnwrap(value.nextOffer(placeable: [.detach, .putBack], at: 0))
+        XCTAssertEqual(detach.kind, .detach, "attached: the detach hint")
+        try value.confirmShown(detach, at: 0); value.dismiss()
+        context.dockReveal = UUID(); try value.updateContext(context, at: 1)
+        XCTAssertNil(try value.nextOffer(placeable: [.detach, .putBack], at: 1), "the detach hint shows once")
+        context.cockpitAttached = false; context.dockReveal = UUID(); try value.updateContext(context, at: 2)
+        let putBack = try XCTUnwrap(value.nextOffer(placeable: [.detach, .putBack], at: 2))
+        XCTAssertEqual(putBack.kind, .putBack, "first detach: the put-back hint")
+        try value.confirmShown(putBack, at: 2); value.dismiss()
+        context.dockReveal = UUID(); try value.updateContext(context, at: 3)
+        XCTAssertNil(try value.nextOffer(placeable: [.detach, .putBack], at: 3), "the put-back hint shows once")
+        context.cockpitAttached = true; context.dockReveal = UUID(); try value.updateContext(context, at: 4)
+        XCTAssertNil(try value.nextOffer(placeable: [.detach, .putBack], at: 4))
+        XCTAssertEqual(value.preferences.seen, [.detach, .putBack])
+        let stored = try JSONDecoder().decode(FirstUseHintPreferences.self, from: JSONEncoder().encode(value.preferences))
+        XCTAssertEqual(stored.seen, [.detach, .putBack], "both are kept in the hints-seen preference")
+        var fresh = FirstUseHints(); context.cockpitAttached = nil; context.dockReveal = UUID()
+        try fresh.updateContext(context, at: 5)
+        XCTAssertNil(try fresh.nextOffer(placeable: [.detach, .putBack], at: 5), "no open cockpit key, no hint")
+    }
     func testUnavailableIgnitionDoesNotBlockDragOrBecomeSeen() throws {
         var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
         context.ignitionAvailable = false
@@ -59,7 +85,7 @@ final class Hint80Tests: XCTestCase {
         try value.updateContext(context, at: 0); return value
     }
     func testNineKindPriorityDetachFirstOpenThenOptionOnNextOpen() throws {
-        XCTAssertEqual(FirstUseHintKind.allCases, [.ignition,.detach,.optionHelp,.shutter,.field,.drag,.page,.pinned,.trial,.ringRefresh,.findWidget,.widgetOff])
+        XCTAssertEqual(FirstUseHintKind.allCases, [.ignition,.detach,.optionHelp,.shutter,.field,.drag,.page,.pinned,.trial,.ringRefresh,.findWidget,.widgetOff,.putBack])
         var value = try cockpit()
         let detach = try XCTUnwrap(value.nextOffer(placeable: [.detach,.optionHelp], at: 0))
         XCTAssertEqual(detach.kind, .detach); try value.confirmShown(detach, at: 0); value.dismiss()

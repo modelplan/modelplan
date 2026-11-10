@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanCockpitWeb
 import ModelPlanDock
 import ModelPlanSettings
 
@@ -14,8 +15,17 @@ import ModelPlanSettings
     func requestClose()
     /// Called when `isShowing` may have changed without a call from the owner, such as the page's own close.
     var onShowingChanged: (() -> Void)? { get set }
+    /// D88: an open from the menu bar icon grows the cockpit out of the icon; every other entry fades.
+    func show(fromStatusItem: Bool)
+    /// D88: the open cockpit was detached from the menu bar icon (its pressed highlight is then off).
+    var isDetached: Bool { get }
+    /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
+    var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
 }
 public extension EngineRowsConsoleSurface {
+    func show(fromStatusItem: Bool) { show() }
+    var isDetached: Bool { false }
+    var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
     func applySettings(_ value: SettingsApplication) {}
     var isShowing: Bool { false }
     func requestClose() { hide() }
