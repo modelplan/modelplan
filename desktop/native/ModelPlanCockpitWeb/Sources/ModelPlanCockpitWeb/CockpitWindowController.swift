@@ -726,7 +726,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// D88: the grow and shrink animate the frame; the content keeps its 636 pt bounds so it scales with it.
   public func windowDidResize(_ notification: Notification) {
     guard let layout, let content = window?.contentView else { return }
-    let size = CGSize(width: 636, height: layout.rootHeight + 34)
+    // Scaled layouts (CKP-SHELL-07): the settled canvas is the scaled frame, not the 636-pt page.
+    let size = layout.frame.size
     if content.bounds.size != size { content.setBoundsSize(size) }
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
@@ -877,7 +878,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let window, shown, !ending, !entering, closeTask == nil, dragStart == nil, window.isVisible,
           window.alphaValue > 0, let layout, let content = window.contentView else { return nil }
     let height = layout.rootHeight + 34, size = Self.attachmentKeySize
+    // The page lays out in CSS px and renders at `layout.scale`, so the key sits at the scaled position.
     let local = CGRect(x: Self.attachmentKeyX, y: height - size - 2, width: size, height: size)
+      .applying(.init(scaleX: layout.scale, y: layout.scale))
     let frame = window.convertToScreen(content.convert(local, to: nil))
     guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
           [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
