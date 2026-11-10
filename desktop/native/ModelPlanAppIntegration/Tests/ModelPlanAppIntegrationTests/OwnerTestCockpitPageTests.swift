@@ -483,7 +483,10 @@ extension CommunityCockpitEntryTests {
             // The whole canvas, root plus the flame reserve, is laid out at 636 CSS px and fits the window.
             XCTAssertEqual(painted["width"]!, 636, accuracy: 1, name)
             XCTAssertEqual(painted["height"]!, 939, accuracy: 1, name)
-            XCTAssertEqual(painted["height"]! - painted["rootBottom"]!, 34, accuracy: 1, "\(name): the flame reserve is inside the window")
+            // Whole-point window frames (fit rounds up) leave under 1 pt of transparent slack below the page: up to 1/scale CSS px.
+            let reserve = painted["height"]! - painted["rootBottom"]!
+            XCTAssertGreaterThanOrEqual(reserve, 33, "\(name): the flame reserve is inside the window")
+            XCTAssertLessThanOrEqual(reserve, 34 + 1 / Double(scale) + 0.01, "\(name): the flame reserve plus at most 1 pt of rounding slack")
             // The window server places borderless panels on whole points.
             XCTAssertEqual(window.frame.width, 636 * scale, accuracy: 1, name)
             XCTAssertEqual(window.frame.height, 939 * scale, accuracy: 1, name)
