@@ -35,8 +35,10 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let redBelow: Int
   /// Settings "Project names": off withholds project labels from every cockpit surface.
   public let showProjectNames: Bool
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true) {
-    self.showProjectNames = showProjectNames
+  /// Settings "Cockpit size": native window geometry only, never sent to the page.
+  public let size: CockpitSize
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, size: CockpitSize = .standard) {
+    self.showProjectNames = showProjectNames; self.size = size
     if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
       self.redBelow = redBelow
     } else {
