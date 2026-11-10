@@ -255,6 +255,7 @@
       {
         "at": "synthetic",
         "source": "synthetic",
+        "origin": "synthetic",
         "observedOutputTokens": 1
       }
     ],
@@ -262,6 +263,7 @@
       {
         "at": "synthetic",
         "source": "synthetic",
+        "origin": "synthetic",
         "observedOutputTokens": 1
       }
     ],

@@ -21,7 +21,7 @@ function fixture(extra={}) {
  data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:localDay(9),
   subscriptions:[{subscriptionRef:ref,sources:[{source:'codex',bindingBasis:'source-wide-current-binding',recent7d:sums(1200,300),recent30d:sums(4800,900)}]}],
   models:ranking,tools:ranking,
-  daily:[{at:localDay(1),source:'codex',observedOutputTokens:1000},{at:localDay(0),source:'codex',observedOutputTokens:200},{at:localDay(1),source:'other',observedOutputTokens:9999}],hourly:[],
+  daily:[{at:localDay(1),source:'codex',origin:'live',observedOutputTokens:1000},{at:localDay(0),source:'codex',origin:'live',observedOutputTokens:200},{at:localDay(1),source:'other',origin:'live',observedOutputTokens:9999}],hourly:[],
   projects:{recent7d:[{ref:'p1',label:null,model:null,effort:'high',observedOutputTokens:1200,share:1}],recent30d:[{ref:'p1',label:null,model:null,effort:'high',observedOutputTokens:1200,share:1}]},cycles:[],...extra};
  return {data,ref};
 }
@@ -97,7 +97,7 @@ for(const [zone,clock,buckets,last] of [
 ])test.describe(zone,()=>{
  test.use({timezoneId:zone});
  test(`D36 local-hour buckets land in the right bar in ${zone}`,async({page})=>{
-  const {data}=fixture({hourly:buckets.map(([at,n])=>({at,source:'codex',observedOutputTokens:n}))});
+  const {data}=fixture({hourly:buckets.map(([at,n])=>({at,source:'codex',origin:'live',observedOutputTokens:n}))});
   await open(page,data,'en',Date.parse(clock));
   await page.locator('[data-opt="days"] b',{hasText:/^24h$/}).click();
   const values=await totals(page);expect(values.length).toBe(24);expect(values.slice(-last.length)).toEqual(last);
