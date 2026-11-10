@@ -602,7 +602,7 @@ enum SmoothNormals {
                 bitangents.append(b)
             }
             result.tangents = MeshBuffers.Tangents(tangents)
-            result.bitangents = MeshBuffers.Bitangents(bitangents)
+            result.bitangents = MeshBuffers.Tangents(bitangents)
         }
         return result
     }
