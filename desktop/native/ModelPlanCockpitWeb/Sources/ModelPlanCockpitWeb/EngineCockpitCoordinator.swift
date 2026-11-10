@@ -10,6 +10,10 @@ import ModelPlanWire
   var onClosed: (() -> Void)? { get set }
   /// CKP-SHELL-20: once per open, when the page is first confirmed visible.
   var onShown: (() -> Void)? { get set }
+  /// D88: the attachment or the settled open changed (detach, put back, drop, entrance end).
+  var onShellChanged: (() -> Void)? { get set }
+  /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
+  var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
   /// CKP-SHELL-20: build and load the page without showing it or taking focus.
   func prewarm()
   func open()
@@ -24,6 +28,8 @@ import ModelPlanWire
 }
 public extension CockpitPageSurface {
   var onShown: (() -> Void)? { get { nil } set {} }
+  var onShellChanged: (() -> Void)? { get { nil } set {} }
+  var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
   func prewarm() {}
   func requestClose() { discard() }
   func updateAppearance(_ appearance: CockpitAppearance) {}
@@ -135,6 +141,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public var onUnavailable: ((CockpitUnavailableReason) -> Void)?
   public var onClosed: (() -> Void)?
   public var onOpened: (() -> Void)?
+  /// D88: forwarded from the presented page only.
+  public var onShellChanged: (() -> Void)?
+  /// D88: the presented page's detach / put-back key, for the one-time hints.
+  public var attachmentHintAnchor: CockpitAttachmentHintAnchor? { presented ? page?.attachmentHintAnchor : nil }
 
   public init(downstream: (any EngineClientEventConsumer)? = nil, makePage: @escaping PageFactory) {
     self.downstream = downstream
@@ -235,6 +245,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       self.showLastReply()
       // A query already running was asked after this page loaded; its reply is fresh.
       if self.request == nil { self.refresh() }
+    }
+    newPage.onShellChanged = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.onShellChanged?()
     }
     newPage.onIntent = { [weak self] intent in
       guard self?.pageGeneration == generation else { return }; self?.receiveIntent(intent)

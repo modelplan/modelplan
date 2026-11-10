@@ -11,7 +11,7 @@ import ModelPlanCockpitWeb
 /// milliseconds. These run the normal entry (`EngineRowsEntry.make` with `cockpitEntryEnabled: true`), the
 /// production factory and console, the real CLI app-server on synthetic data and the real WKWebView page.
 extension CommunityCockpitEntryTests {
-    private static func syntheticHome(_ root: URL, helper: URL) async throws -> [String: String] {
+    static func syntheticHome(_ root: URL, helper: URL) async throws -> [String: String] {
         let home = root.appendingPathComponent("home")
         try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/Caches/modelplan/observed"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: home.appendingPathComponent(".codex"), withIntermediateDirectories: true)
