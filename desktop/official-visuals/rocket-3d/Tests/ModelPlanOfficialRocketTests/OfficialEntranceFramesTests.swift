@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0
 // Slice 4: the brand rocket in the native entrance scene. The main package never references this pack, so the
-// official-model frames are rendered here: grey box (pose gates against the storyboard), night look, the capsule
-// close-up with the code detail (asset audit option A) and the day-sky trial. With MODELPLAN_ENTRANCE_FRAMES_DIR
-// set, full-size PNGs and the comparison JSON are written there for the owner boards.
+// official-model frames are rendered here: grey box (pose gates against the storyboard) and the night and day
+// looks with the canopy glass, both on black space (owner D116). With MODELPLAN_ENTRANCE_FRAMES_DIR set,
+// full-size PNGs and the comparison JSON are written there for the owner boards.
 #if canImport(RealityKit) && canImport(Metal)
 import CoreGraphics
 import Foundation
 import ModelPlanEntrance
 import ModelPlanEntranceScene
+import RealityKit
 @testable import ModelPlanOfficialRocket
 import XCTest
 
@@ -65,27 +66,48 @@ final class OfficialEntranceFramesTests: XCTestCase {
         }
     }
 
-    /// Night look and the day-sky trial with the official finishes, right edge, three stages; the end frame also
-    /// renders with the capsule detail (option A) so the owner can compare the close-up with and without it.
+    /// Night and day looks with the official finishes, right edge, every storyboard stage. Both themes are black
+    /// space (no sky); day only has the stronger sun. The canopy is the glass material (owner D116).
     @MainActor
-    func testOfficialRocketLookFramesNightDayAndCapsuleDetail() async throws {
+    func testOfficialRocketLookFramesNightAndDay() async throws {
         guard #available(macOS 15.0, *) else { throw XCTSkip("the native entrance needs macOS 15") }
         let source = try OfficialRocket.source()
         for theme in EntranceTheme.allCases {
             let plan = StoryboardScenario.plan(edge: "right", theme: theme, geometry: source.geometry)
-            for detail in [false, true] {
-                let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: false, rocket: source, capsuleDetail: detail)
-                try await scene.setEnvironment(XCTUnwrap(EntranceLookImages.studio(day: theme == .day)),
-                                               intensityExponent: theme == .day ? 0.5 : -0.5)
-                if theme == .day { try await scene.setSky(XCTUnwrap(EntranceLookImages.daySkyStrip())) }
-                for (shot, t) in StoryboardScenario.stages(plan) where !detail || shot != "shot3start" {
-                    let frame = try await scene.render(at: t)
-                    let covered = coverage(frame.image)
-                    print("OFFICIAL-FRAME \(theme.rawValue) \(shot) detail \(detail) coverage \(String(format: "%.3f", covered))")
-                    if theme == .night { XCTAssertGreaterThan(covered, 0.01, "\(theme) \(shot) is empty") }
-                    try save(frame.image, "official-right-\(shot)-\(theme.rawValue)\(detail ? "-detail" : "")")
-                }
+            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: false, rocket: source)
+            try await scene.setEnvironment(XCTUnwrap(EntranceLook.studio()), intensityExponent: EntranceLook.environmentExponent)
+            for (shot, t) in StoryboardScenario.stages(plan) {
+                let frame = try await scene.render(at: t)
+                let covered = coverage(frame.image)
+                print("OFFICIAL-FRAME \(theme.rawValue) \(shot) coverage \(String(format: "%.3f", covered))")
+                XCTAssertGreaterThan(covered, 0.01, "\(theme) \(shot) is empty")
+                try save(frame.image, "official-right-\(shot)-\(theme.rawValue)")
             }
+        }
+    }
+
+    /// The canopy in look mode is the glass material: see-through, glossy, clear-coated, never the flat grey.
+    @MainActor
+    func testOfficialCanopyIsGlassInLookMode() async throws {
+        guard #available(macOS 15.0, *) else { throw XCTSkip("the native entrance needs macOS 15") }
+        let source = try OfficialRocket.source()
+        let plan = StoryboardScenario.plan(edge: "right", theme: .night, geometry: source.geometry)
+        let scene = try EntranceScene(plan: plan, parts: [.glass], flat: false, rocket: source)
+        let glass = try XCTUnwrap(scene.entity(named: "curved_canopy_glass"))
+        var materials: [any RealityKit.Material] = []
+        func collect(_ e: Entity) {
+            if let model = e.components[ModelComponent.self] { materials += model.materials }
+            e.children.forEach(collect)
+        }
+        collect(glass)
+        XCTAssertFalse(materials.isEmpty)
+        for material in materials {
+            let pbr = try XCTUnwrap(material as? PhysicallyBasedMaterial, "the canopy must be a PBR glass")
+            XCTAssertLessThanOrEqual(pbr.roughness.scale, 0.1)
+            XCTAssertGreaterThanOrEqual(pbr.clearcoat.scale, 0.9)
+            guard case .transparent(let opacity) = pbr.blending else { return XCTFail("the canopy must be see-through") }
+            XCTAssertLessThan(opacity.scale, 0.8)
+            XCTAssertGreaterThan(opacity.scale, 0.2)
         }
     }
 }
