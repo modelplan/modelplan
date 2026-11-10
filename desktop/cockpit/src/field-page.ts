@@ -68,6 +68,9 @@ function mount(root:HTMLElement) {
    close.textContent='×';close.setAttribute('aria-label',w.close);mineKey.textContent=w.mine;allKey.textContent=w.all;search.placeholder=w.search;search.setAttribute('aria-label',w.search);
    models=value.models.flatMap(m=>{const f=fieldModel(m,shortLabel);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
    chosen=new Set((mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT));
+   // A rocket clicked in the porthole joins the field (the last of a full fleet makes room) and takes the focus.
+   if(focus!==null&&!models.some(m=>m.id===focus))focus=null;
+   if(focus!==null&&!chosen.has(focus))chosen=new Set([...[...chosen].slice(0,FIELD_LIMIT-1),focus]);
    refresh();// the picker and its count show at once; the scene joins when it has loaded
    if(!models.length){fallback(w.empty);refresh();post({type:'ready'});return;}
    if(!webgl()){fallback(w.noGl);refresh();post({type:'ready'});return;}
