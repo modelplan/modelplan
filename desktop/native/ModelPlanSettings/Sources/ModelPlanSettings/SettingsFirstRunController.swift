@@ -112,7 +112,7 @@ import AppKit
         loginButton.setAccessibilityIdentifier("firstRun.login")
         loginSubtitle.font = .systemFont(ofSize: 12); loginSubtitle.textColor = .secondaryLabelColor
         // Wrapping copy wraps at the column width instead of growing past it or clipping a line.
-        for field in [privacy, subscriptions, loginSubtitle, status] {
+        for field in [privacy, recommendation, subscriptions, loginSubtitle, status] {
             field.preferredMaxLayoutWidth = Self.column; field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
         }
         let login = NSStackView(views: [loginButton,loginSubtitle]); login.orientation = .vertical; login.alignment = .leading; login.spacing = 5
