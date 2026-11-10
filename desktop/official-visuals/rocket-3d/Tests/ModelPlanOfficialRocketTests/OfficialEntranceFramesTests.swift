@@ -4,11 +4,13 @@
 // looks with the canopy glass, both on black space (owner D116). With MODELPLAN_ENTRANCE_FRAMES_DIR set,
 // full-size PNGs and the comparison JSON are written there for the owner boards.
 #if canImport(RealityKit) && canImport(Metal)
+import AppKit
 import CoreGraphics
 import Foundation
 import ModelPlanEntrance
 import ModelPlanEntranceScene
 import RealityKit
+import simd
 @testable import ModelPlanOfficialRocket
 import XCTest
 
@@ -75,13 +77,66 @@ final class OfficialEntranceFramesTests: XCTestCase {
         for theme in EntranceTheme.allCases {
             let plan = StoryboardScenario.plan(edge: "right", theme: theme, geometry: source.geometry)
             let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: false, rocket: source)
-            try await scene.setEnvironment(XCTUnwrap(EntranceLook.studio()), intensityExponent: EntranceLook.environmentExponent)
+            try await scene.setEnvironment(XCTUnwrap(EntranceLook.studio(theme)), intensityExponent: EntranceLook.environmentExponent(theme))
             for (shot, t) in StoryboardScenario.stages(plan) {
                 let frame = try await scene.render(at: t)
                 let covered = coverage(frame.image)
                 print("OFFICIAL-FRAME \(theme.rawValue) \(shot) coverage \(String(format: "%.3f", covered))")
                 XCTAssertGreaterThan(covered, 0.01, "\(theme) \(shot) is empty")
                 try save(frame.image, "official-right-\(shot)-\(theme.rawValue)")
+            }
+        }
+    }
+
+    /// Look mode dresses the hull as smooth polished metal (owner 2026-11-10: metal like the pass-5 art, not foam):
+    /// metallic 1, satin roughness, no grainy normal map; joints are dark metal, not ink; and the normals are
+    /// smooth and radial, so the 24-sided hull has no facets and no hard seam where the texture wraps.
+    @MainActor
+    func testOfficialHullIsSmoothMetalInLookMode() async throws {
+        guard #available(macOS 15.0, *) else { throw XCTSkip("the native entrance needs macOS 15") }
+        let source = try OfficialRocket.source()
+        for theme in EntranceTheme.allCases {
+            let plan = StoryboardScenario.plan(edge: "right", theme: theme, geometry: source.geometry)
+            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: false, rocket: source)
+            func models(_ name: String) throws -> [ModelComponent] {
+                let root = try XCTUnwrap(scene.entity(named: name), "no \(name)")
+                var found: [ModelComponent] = []
+                func collect(_ e: Entity) {
+                    if let model = e.components[ModelComponent.self] { found.append(model) }
+                    e.children.forEach(collect)
+                }
+                collect(root)
+                XCTAssertFalse(found.isEmpty, "\(name) has no mesh")
+                return found
+            }
+            for model in try models("slender_upper_body") {
+                for material in model.materials {
+                    let pbr = try XCTUnwrap(material as? PhysicallyBasedMaterial, "the hull must be a PBR metal")
+                    XCTAssertEqual(pbr.metallic.scale, 1, accuracy: 0.001, "\(theme) hull metallic")
+                    XCTAssertNil(pbr.metallic.texture, "\(theme) hull metallic texture")
+                    XCTAssertLessThanOrEqual(pbr.roughness.scale, 0.4, "\(theme) hull roughness")
+                    XCTAssertNil(pbr.roughness.texture, "\(theme) hull roughness texture")
+                    XCTAssertNil(pbr.normal.texture, "\(theme) hull normal map")
+                }
+                // Normals point straight out from the axis: no 2.5-7.5 degree offsets, no 15 degree seam jump.
+                var worst: Float = 0
+                for part in model.mesh.contents.models.flatMap({ Array($0.parts) }) {
+                    let positions = part.positions.elements
+                    let normals = try XCTUnwrap(part.normals?.elements)
+                    for (p, n) in zip(positions, normals) where simd_length(SIMD2<Float>(p.x, p.z)) > 0.1 {
+                        let radial = simd_normalize(SIMD2<Float>(p.x, p.z)), side = simd_normalize(SIMD2<Float>(n.x, n.z))
+                        worst = max(worst, acos(min(1, simd_dot(radial, side))) * 180 / .pi)
+                    }
+                }
+                print("OFFICIAL-NORMALS \(theme.rawValue) slender_upper_body worst \(String(format: "%.2f", worst)) deg")
+                XCTAssertLessThan(worst, 1, "\(theme) hull normals are not radial")
+            }
+            for model in try models("panel_joint_118") {
+                for material in model.materials {
+                    let pbr = try XCTUnwrap(material as? PhysicallyBasedMaterial)
+                    let tint = try XCTUnwrap(pbr.baseColor.tint.usingColorSpace(.sRGB))
+                    XCTAssertGreaterThan(tint.redComponent, 0.15, "\(theme) joints must not be ink black")
+                }
             }
         }
     }
