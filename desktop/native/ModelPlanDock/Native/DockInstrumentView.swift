@@ -809,7 +809,7 @@ enum DockGripInk {
         let p=convert(event.locationInWindow,from:nil)
         let grip = isPainted(atLocal: p) ? registeredGripRects.firstIndex { $0.contains(p) } : nil
         if hoveredGripIndex != grip { hoveredGripIndex = grip; updateGripEmphasis() }
-        if case .subscription(let id)?=pointerAction(atLocal:p),isPainted(atLocal:p){nozzleEventDelegate?.hoverNozzle(id)}else{nozzleEventDelegate?.hoverNozzle(nil)}
+        nozzleEventDelegate?.hoverNozzle(hoverUnitID(atLocal:p))
         onHelpPointerMoved?()
     }
     public override func mouseEntered(with event:NSEvent){mouseMoved(with:event)}
@@ -859,6 +859,30 @@ enum DockGripInk {
         }
         super.keyDown(with:event)
     }
+    /// G3-73: hover is one continuous region per subscription unit (the ring, its percentage readout,
+    /// alias and notice dot, and the gap between them), like Pulse's single per-row hover region, so the
+    /// magnification stays on while the pointer travels from the number to the ring. Clicks keep the
+    /// tighter `pointerAction` rects.
+    private func hoverUnitRect(_ s:DockStationRecipe,id:String)->CGRect?{
+        guard var r=stationRect(id) else{return nil}
+        if community{return r}
+        let o=layoutOrigin
+        if s.showsReadout != false{r=r.union(s.readout.offsetBy(dx:-o.x,dy:-o.y))}
+        if let a=s.aliasRect{r=r.union(a.offsetBy(dx:-o.x,dy:-o.y))}
+        if notices[id] != nil{r=r.union(s.eventRect.offsetBy(dx:-o.x,dy:-o.y))}
+        return r
+    }
+    private func hoverUnitID(atLocal p:NSPoint)->String?{
+        guard !failed,!isHiddenOrHasHiddenAncestor,bounds.contains(p) else{return nil}
+        if let skin,!community{
+            for s in skin.stations.reversed(){
+                if let id=s.subscriptionID,let r=hoverUnitRect(s,id:id),r.contains(p){return id}
+            }
+            return nil
+        }
+        return orderedIDs.first{stationRect($0)?.contains(p)==true}
+    }
+    @_spi(DockResourceChecks) public func hoverUnitIDForChecks(atLocal p:NSPoint)->String?{hoverUnitID(atLocal:p)}
     private func pointerAction(atLocal p:NSPoint)->DockInstrumentAction?{
         if let skin,!community {
             let global=CGPoint(x:p.x+layoutOrigin.x,y:p.y+layoutOrigin.y)

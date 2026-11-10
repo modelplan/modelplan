@@ -1261,6 +1261,9 @@
         "observedOutputTokens": {
           "type": "integer"
         },
+        "origin": {
+          "type": "string"
+        },
         "source": {
           "type": "string"
         }
@@ -1268,6 +1271,7 @@
       "required": [
         "at",
         "source",
+        "origin",
         "observedOutputTokens"
       ],
       "type": "object"
@@ -2202,6 +2206,7 @@
             "catalogue_retired",
             "http_401",
             "unsupported_login",
+            "not_signed_in",
             "privacy_blocked",
             "catalogue_off",
             "not_admitted",
@@ -3498,6 +3503,7 @@
             "catalogue_retired",
             "http_401",
             "unsupported_login",
+            "not_signed_in",
             "privacy_blocked",
             "catalogue_off",
             "not_admitted",
@@ -4772,6 +4778,7 @@
             "catalogue_retired",
             "http_401",
             "unsupported_login",
+            "not_signed_in",
             "privacy_blocked",
             "catalogue_off",
             "not_admitted",

@@ -29,7 +29,12 @@ func claudeCredentialFailure(status string) readerOutcome {
 	default:
 		status = "unavailable"
 	}
-	return readerOutcome{Entry: readerEntry{Status: status, NextStep: next, CredentialReadState: status}}
+	out := readerOutcome{Entry: readerEntry{Status: status, NextStep: next, CredentialReadState: status}}
+	if status == "not-found" {
+		// G3-38 (owner D52): the app found no Claude Code login in the Keychain.
+		out.Entry.ErrorCode = "not_signed_in"
+	}
+	return out
 }
 
 // WithClaudeCredential supplies one app result to one reader invocation. The
@@ -112,7 +117,7 @@ func recordClaudeCredentialOutcome(p Paths, g ReaderGrant, profileKey, status st
 				}
 				e.CredentialReadState, e.NextStep = "", ""
 			} else {
-				e.Status, e.NextStep, e.CredentialReadState = fact.Status, fact.NextStep, fact.CredentialReadState
+				e.Status, e.NextStep, e.CredentialReadState, e.ErrorCode = fact.Status, fact.NextStep, fact.CredentialReadState, fact.ErrorCode
 			}
 			found = true
 		}
