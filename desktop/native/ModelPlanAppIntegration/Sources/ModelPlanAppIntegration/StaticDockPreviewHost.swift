@@ -284,22 +284,32 @@ struct DockHelpInteraction: Equatable {
               !createsNativePanels || panel?.isVisible == true,
               let display = topology(of: sampleEnvironment()).display(placement.displayID) else { return nil }
         var widget = frame
+        var toLocal: ((CGPoint) -> CGPoint)?
+        var silhouette: QuotaWidgetSilhouette?
         do {
             let view = edgeViews[placement.edge] ?? dockView
             let local = view.registeredMoveOutlinePath?.boundingBox ?? view.bounds
             let global: CGRect
             if createsNativePanels, let window = view.window, window === panel {
                 global = window.convertToScreen(view.convert(local, to: nil))
+                toLocal = { view.convert(window.convertFromScreen(CGRect(origin: $0, size: .zero)).origin, from: nil) }
             } else {
                 // Detached checks: the view sits at the container origin, which fills the painted frame.
                 let y = view.isFlipped ? view.bounds.height - local.maxY : local.minY
                 global = CGRect(x: frame.minX + view.frame.minX + local.minX, y: frame.minY + view.frame.minY + y,
                                 width: local.width, height: local.height)
+                toLocal = { CGPoint(x: $0.x - frame.minX - view.frame.minX,
+                                    y: view.isFlipped ? view.bounds.height - ($0.y - frame.minY - view.frame.minY)
+                                                      : $0.y - frame.minY - view.frame.minY) }
             }
             let clipped = global.intersection(frame)
             if !clipped.isNull, !clipped.isEmpty { widget = clipped }
+            // The real drawn outline (rounded ends, ring bumps): the painted pixels of the instrument, sampled once.
+            if let toLocal {
+                silhouette = QuotaWidgetSilhouette(frame: widget) { view.isPainted(atLocal: toLocal($0)) }
+            }
         }
-        return .init(widget: widget, display: display.frame, displayID: placement.displayID)
+        return .init(widget: widget, display: display.frame, displayID: placement.displayID, silhouette: silhouette)
     }
     /// Presentation is allowed by the lifecycle, so a Show request can make the widget visible now.
     var canPresentForHelp: Bool { permitted && !retired && !retiring }

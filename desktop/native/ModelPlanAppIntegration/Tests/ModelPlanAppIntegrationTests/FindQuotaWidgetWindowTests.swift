@@ -70,10 +70,10 @@ import XCTest
             let c = bitmap.colorAt(x: Int(x * scale), y: Int((display.height - y) * scale))?.usingColorSpace(.sRGB)
             return c.map { 0.2126 * $0.redComponent + 0.7152 * $0.greenComponent + 0.0722 * $0.blueComponent } ?? 0
         }
-        /// Mean luminance of the halo band (2 to 12 pt outside the hole's left edge) and of the dimmed area beyond the feather.
+        /// Mean luminance of the halo band (2 to 12 pt outside the glow's peak, 8 pt out from the widget's left edge) and of the dimmed area beyond the feather.
         func bandAndSurround(_ bitmap: NSBitmapImageRep) -> (band: CGFloat, surround: CGFloat) {
             let y = hole.midY
-            let band = (2...12).map { luma(bitmap, x: hole.minX - CGFloat($0), y: y) }
+            let band = (2...12).map { luma(bitmap, x: hole.minX - QuotaWidgetSpotlightStyle.haloOffset - CGFloat($0), y: y) }
             let surround = (40...60).map { luma(bitmap, x: hole.minX - CGFloat($0), y: y) }
             return (band.reduce(0, +) / CGFloat(band.count), surround.reduce(0, +) / CGFloat(surround.count))
         }
