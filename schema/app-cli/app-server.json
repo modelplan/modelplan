@@ -520,6 +520,13 @@
           "maxItems": 128,
           "type": "array"
         },
+        "peaks": {
+          "items": {
+            "$ref": "#/$defs/CockpitPeak"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
         "publication": {
           "anyOf": [
             {
@@ -865,6 +872,41 @@
         "generationTps",
         "observedRequests",
         "eligibleRequests"
+      ],
+      "type": "object"
+    },
+    "CockpitPeak": {
+      "additionalProperties": false,
+      "properties": {
+        "endsAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "startsAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rowId",
+        "startsAt",
+        "endsAt",
+        "status"
       ],
       "type": "object"
     },

@@ -277,6 +277,14 @@ while project labels are on, a subscription only under a verified binding, and `
 which is a last sighting, never an end time. There are no titles or token counts. Without the
 capability the field is omitted.
 
+Clients can declare `cockpitPeaksV1`, together with `cockpitDetailsV1`, to receive
+`details.peaks`: for each declared plan row, its current or next window within 24 hours in
+which the publication's time-of-day multiplier is higher than outside it, read from the same
+multiplier windows as the advice. Each has the plan's `rowId`, `startsAt`, `endsAt` (null when
+the window does not end within the published horizon) and `status` (`confirmed` or
+`tentative`). A plan without published windows, or with an unknown rate, has no entry. Without
+the capability the field is omitted.
+
 Clients can declare `cockpitHistoryV1` to receive `history` from `cockpit/query`:
 7/30-day sums per subscription and source, model and tool rankings, `daily` (last
 182 local days from `dailyFrom`) and `hourly` (last 48 local hours) buckets per
