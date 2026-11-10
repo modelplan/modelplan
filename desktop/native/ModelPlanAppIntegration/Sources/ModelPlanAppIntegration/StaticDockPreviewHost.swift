@@ -663,12 +663,11 @@ struct DockHelpInteraction: Equatable {
             switch preferences.magnification {
             case .none: continue
             case .subtle:
-                // G3-29: like the prototype, the hovered ring grows outward (away from the screen
-                // edge, along the station's inward normal), never toward the readout below it.
+                // G3-74 (owner, deviation from DOCK-3.8-01a): the hovered ring grows concentrically,
+                // the hovered ring alone grows 1.15x about its own centre with no travel; the label stays put.
                 guard member == id else { continue }
-                let length = hypot(station.inward.dx, station.inward.dy)
                 scale = 1.15
-                offset = length > 0 ? CGPoint(x: 6 * station.inward.dx / length, y: 6 * station.inward.dy / length) : .zero
+                offset = .zero
             case .strong:
                 guard station.pitch > 0, let anchor = displayed.interactionAnchor(member) else { continue }
                 let centre = horizontal ? anchor.midX : anchor.midY
