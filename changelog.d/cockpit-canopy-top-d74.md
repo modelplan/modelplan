@@ -1,0 +1,1 @@
+The cockpit porthole canopy keeps the shipped lower body and adds the missing top: completed shoulders and arc with a rounded outer wall edge (D74 and D100, art pending owner acceptance); the tall window grows by 28 points and the compact window by 8 (root 635), and the compact strip moves into the glass.
