@@ -30,8 +30,9 @@ import ModelPlanCommunityHost
         let target = try XCTUnwrap(item.target as? NSObject)
         _ = target.perform(try XCTUnwrap(item.action), with: item)
         await fulfillment(of: [shown], timeout: 2)
+        for _ in 0..<200 where activated < 2 { try await Task.sleep(for: .milliseconds(10)) }
         session.suspend()
-        XCTAssertEqual(activated, 1); XCTAssertEqual(surface.shown.count, 1); XCTAssertEqual(surface.hidden, 1)
+        XCTAssertEqual(activated, 2, "a user-initiated open activates again once Settings has made the app regular"); XCTAssertEqual(surface.shown.count, 1); XCTAssertEqual(surface.hidden, 1)
     }
     func testSettingsMenuUsesTheCurrentLanguageWithoutOpeningAWindow() async throws {
         let app = try application()
