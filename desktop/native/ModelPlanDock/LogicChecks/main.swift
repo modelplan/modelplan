@@ -338,11 +338,15 @@ do {
             var i=DockInstrumentInput(id:"s",name:"Synthetic",windows:[w]);i.dataState = .fresh;i.showUsedPercent=used
             return try DockInstrumentProjection.evaluate(i,now:now).litTimePoints(positions:37)
         }
-        try expect(try lit(0.4,used:false)==15,"remaining mode lights time left")
-        try expect(try lit(0.4,used:true)==23,"used mode lights time elapsed")
-        try expect(try lit(1,used:false)==37 && try lit(1,used:true)==0,"full time left: all dots remaining, none used")
-        try expect(try lit(0.0001,used:false)==1 && (try lit(0.0001,used:true))==37,"time almost gone: one dot remaining, all dots used")
-        try expect(try lit(0.5,used:false)==19 && (try lit(0.5,used:true))==19,"half time lights the same count in both modes")
+        let a1:Int?=try lit(0.4,used:false), a2:Int?=try lit(0.4,used:true)
+        try expect(a1==15,"remaining mode lights time left")
+        try expect(a2==23,"used mode lights time elapsed")
+        let b1:Int?=try lit(1,used:false), b2:Int?=try lit(1,used:true)
+        try expect(b1==37 && b2==0,"full time left: all dots remaining, none used")
+        let c1:Int?=try lit(0.0001,used:false), c2:Int?=try lit(0.0001,used:true)
+        try expect(c1==1 && c2==37,"time almost gone: one dot remaining, all dots used")
+        let d1:Int?=try lit(0.5,used:false), d2:Int?=try lit(0.5,used:true)
+        try expect(d1==19 && d2==19,"half time lights the same count in both modes")
     }
     try test("D130 quota arcs follow the remaining/used choice; colours stay keyed to remaining") {
         func reading(_ r:Double,used:Bool)throws->DockInstrumentReading{
@@ -351,19 +355,25 @@ do {
             var i=DockInstrumentInput(id:"s",name:"Synthetic",windows:[a,b]);i.dataState = .fresh;i.showUsedPercent=used
             return try DockInstrumentProjection.evaluate(i,now:now)
         }
-        for r in [0.0,10,25,40,50,75,100] {
+        let levels:[Double]=[0,10,25,40,50,75,100]
+        for r in levels {
             let rem=try reading(r,used:false),used=try reading(r,used:true)
-            try expect(abs(rem.outer!.fraction!-r/100)<1e-9 && abs(rem.inner!.fraction!-(100-r)/100)<1e-9,"remaining mode arcs = remaining")
-            try expect(abs(used.outer!.fraction!-(1-r/100))<1e-9 && abs(used.inner!.fraction!-r/100)<1e-9,"used mode arcs = used")
-            try expect(rem.outer!.status==used.outer!.status && rem.inner!.status==used.inner!.status && rem.status==used.status,"colours identical across modes")
-            try expect(rem.outer!.remainingFraction==used.outer!.remainingFraction && abs(used.outer!.remainingFraction!-r/100)<1e-9,"remaining truth identical across modes")
+            let remOuter:Double=rem.outer?.fraction ?? -1, remInner:Double=rem.inner?.fraction ?? -1
+            let usedOuter:Double=used.outer?.fraction ?? -1, usedInner:Double=used.inner?.fraction ?? -1
+            let remTruth:Double=used.outer?.remainingFraction ?? -1
+            try expect(abs(remOuter-r/100)<1e-9 && abs(remInner-(100-r)/100)<1e-9,"remaining mode arcs = remaining")
+            try expect(abs(usedOuter-(1-r/100))<1e-9 && abs(usedInner-r/100)<1e-9,"used mode arcs = used")
+            try expect(rem.outer?.status==used.outer?.status && rem.inner?.status==used.inner?.status && rem.status==used.status,"colours identical across modes")
+            try expect(rem.outer?.remainingFraction==used.outer?.remainingFraction && abs(remTruth-r/100)<1e-9,"remaining truth identical across modes")
         }
         let empty=try reading(0,used:true),full=try reading(100,used:true)
-        try expect(empty.outer!.fraction==1 && empty.outer!.status == .critical && empty.outer!.remainingFraction==0,"0% remaining: full used arc, still critical and used-up")
-        try expect(full.outer!.fraction==0 && full.outer!.status == .normal && full.outer!.remainingFraction==1,"100% remaining: empty used arc, still normal")
+        try expect(empty.outer?.fraction==1 && empty.outer?.status == .critical && empty.outer?.remainingFraction==0,"0% remaining: full used arc, still critical and used-up")
+        try expect(full.outer?.fraction==0 && full.outer?.status == .normal && full.outer?.remainingFraction==1,"100% remaining: empty used arc, still normal")
         let swept=try reading(30,used:true).refreshSweepFrame(progress:0.5)
-        try expect(abs(swept.outer!.fraction!-0.35)<1e-9 && abs(swept.outer!.remainingFraction!-0.15)<1e-9,"refresh sweep scales both fractions")
-        try expect(DockQuotaArc(windowID:"x",fraction:nil,status:.unknown).remainingFraction==nil,"unknown stays unknown")
+        let sweptFill:Double=swept.outer?.fraction ?? -1, sweptRem:Double=swept.outer?.remainingFraction ?? -1
+        try expect(abs(sweptFill-0.35)<1e-9 && abs(sweptRem-0.15)<1e-9,"refresh sweep scales both fractions")
+        let unknown=DockQuotaArc(windowID:"x",fraction:nil,status:.unknown)
+        try expect(unknown.remainingFraction==nil,"unknown stays unknown")
     }
     try test("configured critical thresholds include equality for saved and new choices") {
         for threshold in [40.0, 30, 25, 20, 15, 10] {
@@ -587,11 +597,14 @@ do {
         input.showUsedPercent=false
         let remCard=try DockCardProjection.content(input:input,at:now)
         try expect(remCard.rows[0].fillFraction==0 && remCard.rows[0].tone == .critical && remCard.rows[0].remainingFraction==0,"D130: remaining mode bar = remaining, same tone")
-        for r in [0.0,30,60,100] {
+        let cardLevels:[Double]=[0,30,60,100]
+        for r in cardLevels {
             for used in [false,true] {
                 var i=DockInstrumentInput(id:"a",name:"S",windows:[.init(id:"five",period:.fiveHour,label:"Short",remainingPercent:r,resetsAt:nil,durationSeconds:nil)]);i.dataState = .fresh;i.showUsedPercent=used
                 let row=try DockCardProjection.content(input:i,at:now).rows[0]
-                try expect(abs(row.remainingFraction!-r/100)<1e-9 && abs(row.fillFraction!-(used ? 1-r/100:r/100))<1e-9,"D130 card bar fill, both modes, 0 and 100 boundaries")
+                let rowRem:Double=row.remainingFraction ?? -1, rowFill:Double=row.fillFraction ?? -1
+                let expectedFill:Double=used ? 1-r/100:r/100
+                try expect(abs(rowRem-r/100)<1e-9 && abs(rowFill-expectedFill)<1e-9,"D130 card bar fill, both modes, 0 and 100 boundaries")
             }
         }
         input.showUsedPercent=true
