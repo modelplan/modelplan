@@ -22,20 +22,21 @@ struct QuotaWidgetSilhouette: Equatable {
     let frame: CGRect
     let columns: Int, rows: Int, step: CGFloat
     private let covered: [Bool]
-    /// nil when nothing in `frame` is painted.
+    /// nil when nothing, or everything, in `frame` is painted.
     init?(frame: CGRect, step: CGFloat = 0.5, covered isPainted: (CGPoint) -> Bool) {
         guard !frame.isEmpty, step > 0 else { return nil }
         let columns = max(1, Int((frame.width / step).rounded(.up))), rows = max(1, Int((frame.height / step).rounded(.up)))
         var bits = [Bool](repeating: false, count: columns * rows)
-        var any = false
+        var any = false, all = true
         for row in 0..<rows {
             let y = frame.maxY - (CGFloat(row) + 0.5) * step
             for column in 0..<columns {
                 let hit = isPainted(CGPoint(x: frame.minX + (CGFloat(column) + 0.5) * step, y: y))
-                bits[row * columns + column] = hit; any = any || hit
+                bits[row * columns + column] = hit; any = any || hit; all = all && hit
             }
         }
-        guard any else { return nil }
+        // Nothing painted, or the whole frame painted (community mode paints its bounds): no outline to follow.
+        guard any, !all else { return nil }
         self.frame = frame; self.columns = columns; self.rows = rows; self.step = step; self.covered = bits
     }
     private init(moved other: QuotaWidgetSilhouette, by offset: CGSize) {
@@ -94,10 +95,14 @@ enum QuotaWidgetSpotlightStyle {
         if d < 0 { return peak * smooth((d + haloInnerFade) / haloInnerFade) }
         return peak * smooth(1 - d / haloRadius)
     }
-    /// The undimmed hole's bounds: the widget's frame, kept on its display. The hole itself is the widget's drawn silhouette.
+    /// The undimmed hole's bounds, kept on its display: the widget's frame when its drawn silhouette is the hole,
+    /// else the frame padded by `holePadding` (the fallback rounded rectangle).
     static func hole(for target: QuotaWidgetSpotlightTarget) -> CGRect {
-        target.widget.intersection(target.display)
+        let base = target.silhouette == nil ? target.widget.insetBy(dx: -holePadding, dy: -holePadding) : target.widget
+        return base.intersection(target.display)
     }
+    /// Padding around the widget for the fallback rounded rectangle only (no silhouette).
+    static let holePadding: CGFloat = 8
     /// Above the menu bar and its status items, so the whole display dims.
     static var level: NSWindow.Level { NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1) }
     /// The current Space only, full-screen Spaces included; never in the window cycle.
@@ -145,9 +150,11 @@ enum QuotaWidgetSpotlightEnd: Equatable { case timeout, input, withdrawn, unavai
     }
 
     /// `prepare` makes the widget visible and expanded (it may save Show); `target` reads where it
-    /// is now, nil while it is not expanded on screen. A new request replaces a running one.
+    /// is now, nil while it is not expanded on screen (polled, so it must stay cheap); `silhouette` is asked once,
+    /// for the target actually presented. A new request replaces a running one.
     func run(reduceMotion: @escaping () -> Bool, prepare: @escaping @MainActor () async -> Bool,
-             target: @escaping @MainActor () -> QuotaWidgetSpotlightTarget?) {
+             target: @escaping @MainActor () -> QuotaWidgetSpotlightTarget?,
+             silhouette: (@MainActor (QuotaWidgetSpotlightTarget) -> QuotaWidgetSilhouette?)? = nil) {
         if isActive { finish(.cancelled) }
         generation &+= 1
         let current = generation
@@ -168,7 +175,9 @@ enum QuotaWidgetSpotlightEnd: Equatable { case timeout, input, withdrawn, unavai
             }
             guard self.generation == current, !Task.isCancelled else { return }
             guard let found else { self.finish(.unavailable); return }
-            self.present(found)
+            var shownTarget = found
+            shownTarget.silhouette = silhouette?(found)
+            self.present(shownTarget)
             let end = ContinuousClock.now + .seconds(self.timing.hold)
             while ContinuousClock.now < end, !Task.isCancelled, self.generation == current {
                 try? await Task.sleep(for: .seconds(min(self.timing.tick, self.timing.hold)))
@@ -221,10 +230,10 @@ enum QuotaWidgetSpotlightEnd: Equatable { case timeout, input, withdrawn, unavai
         let panel = window ?? makeWindow()
         window = panel
         panel.setFrame(target.display, display: false)
-        view.frame = CGRect(origin: .zero, size: target.display.size)
         let hole = QuotaWidgetSpotlightStyle.hole(for: target)
-        view.silhouette = target.silhouette?.offsetBy(dx: -target.display.minX, dy: -target.display.minY)
-        view.hole = hole.offsetBy(dx: -target.display.minX, dy: -target.display.minY)
+        view.setGeometry(frame: CGRect(origin: .zero, size: target.display.size),
+                         hole: hole.offsetBy(dx: -target.display.minX, dy: -target.display.minY),
+                         silhouette: target.silhouette?.offsetBy(dx: -target.display.minX, dy: -target.display.minY))
         panel.alphaValue = fadeIn > 0 ? 0 : 1
         panel.orderFrontRegardless()
         view.pulseHalo(duration: fadeIn > 0 ? QuotaWidgetSpotlightStyle.haloPulse : 0)
@@ -275,9 +284,17 @@ private final class QuotaWidgetSpotlightPanel: NSPanel {
 final class QuotaWidgetSpotlightView: NSView {
     /// Flat dim everywhere beyond the feather; the feather layer carries the soft edge.
     private let dim = CAShapeLayer(), feather = CALayer(), halo = CALayer()
-    var hole: CGRect = .zero { didSet { layoutLayers() } }
+    var hole: CGRect = .zero { didSet { if !batching { layoutLayers() } } }
+    private var batching = false
+    /// Frame, hole and silhouette together: one layout pass, never one with a stale partner.
+    func setGeometry(frame newFrame: CGRect, hole newHole: CGRect, silhouette newSilhouette: QuotaWidgetSilhouette?) {
+        batching = true
+        frame = newFrame; hole = newHole; silhouette = newSilhouette
+        batching = false
+        layoutLayers()
+    }
     /// The widget's drawn outline inside `hole`; nil: a rounded rectangle.
-    var silhouette: QuotaWidgetSilhouette? { didSet { layoutLayers() } }
+    var silhouette: QuotaWidgetSilhouette? { didSet { if !batching { layoutLayers() } } }
     /// Whether the desktop under the widget is dark. nil: follow the effective appearance (the window server's
     /// pixels need Screen Recording permission, which a find command must not ask for).
     var backdropIsDark: Bool? { didSet { layoutLayers() } }
@@ -307,7 +324,7 @@ final class QuotaWidgetSpotlightView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func layout() { super.layout(); layoutLayers() }
-    override var frame: NSRect { didSet { layoutLayers() } }
+    override var frame: NSRect { didSet { if !batching { layoutLayers() } } }
     var dimAlphaForChecks: CGFloat { dim.fillColor.flatMap { NSColor(cgColor: $0)?.alphaComponent } ?? 0 }
     /// What is drawn, for checks: no stroke or border anywhere, and the feathered edge.
     struct DrawnForChecks {
@@ -378,13 +395,15 @@ final class QuotaWidgetSpotlightView: NSView {
         var dimBytes = [UInt8](repeating: 0, count: w * h * 4), haloBytes = dimBytes
         let radius = QuotaWidgetSpotlightStyle.holeCornerRadius
         // Signed distance to the widget's edge per pixel (negative inside), computed once for this geometry.
-        let silhouetteDistances = silhouette.map { signedDistances(width: w, height: h, region: region, scale: scale, inside: $0.contains) }
+        let silhouetteDistances = silhouette.flatMap { signedDistances(width: w, height: h, region: region, scale: scale, inside: $0.contains) }
+        // No covered pixel in the region (a sampling miss): the padded rounded rectangle, never a fully dimmed display.
+        let fallbackHole = silhouette == nil ? hole : hole.insetBy(dx: -QuotaWidgetSpotlightStyle.holePadding, dy: -QuotaWidgetSpotlightStyle.holePadding)
         for row in 0..<h {
             let y = region.maxY - (CGFloat(row) + 0.5) / scale
             for column in 0..<w {
                 let x = region.minX + (CGFloat(column) + 0.5) / scale
                 let d = silhouetteDistances.map { CGFloat($0[row * w + column]) }
-                    ?? distance(from: CGPoint(x: x, y: y), toRounded: hole, radius: radius)
+                    ?? distance(from: CGPoint(x: x, y: y), toRounded: fallbackHole, radius: radius)
                 let i = (row * w + column) * 4
                 dimBytes[i + 3] = UInt8((QuotaWidgetSpotlightStyle.dimAlpha(atDistance: d) * 255).rounded())
                 let a = QuotaWidgetSpotlightStyle.haloAlpha(atDistance: d - QuotaWidgetSpotlightStyle.haloOffset, peak: peak)
@@ -405,13 +424,14 @@ final class QuotaWidgetSpotlightView: NSView {
 
     /// Signed distance (points, negative inside) from each pixel centre to the edge of the shape `inside` describes,
     /// by an exact two-pass squared-distance transform; row 0 is the top of `region`.
-    static func signedDistances(width w: Int, height h: Int, region: CGRect, scale: CGFloat, inside: (CGPoint) -> Bool) -> [Float] {
+    static func signedDistances(width w: Int, height h: Int, region: CGRect, scale: CGFloat, inside: (CGPoint) -> Bool) -> [Float]? {
         let far: Float = 1e9
         var covered = [Bool](repeating: false, count: w * h)
         for row in 0..<h {
             let y = region.maxY - (CGFloat(row) + 0.5) / scale
             for column in 0..<w { covered[row * w + column] = inside(CGPoint(x: region.minX + (CGFloat(column) + 0.5) / scale, y: y)) }
         }
+        guard covered.contains(true) else { return nil }
         func squaredDistance(toward target: Bool) -> [Float] {
             var f = covered.map { $0 == target ? Float(0) : far }
             var line = [Float](repeating: 0, count: max(w, h))
@@ -479,7 +499,7 @@ final class QuotaWidgetSpotlightView: NSView {
             let y = region.maxY - (CGFloat(row) + 0.5) / scale
             for column in 0..<w {
                 let x = region.minX + (CGFloat(column) + 0.5) / scale
-                let d = distance(from: CGPoint(x: x, y: y), toRounded: hole, radius: radius)
+                let d = distance(from: CGPoint(x: x, y: y), toRounded: fallbackHole, radius: radius)
                 let alpha = QuotaWidgetSpotlightStyle.dimAlpha(atDistance: d)
                 bytes[(row * w + column) * 4 + 3] = UInt8((alpha * 255).rounded())
             }

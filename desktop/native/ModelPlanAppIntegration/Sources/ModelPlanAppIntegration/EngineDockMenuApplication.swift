@@ -921,6 +921,8 @@ struct StatusNoticePresentation {
         }, target: { [weak self] in
             guard let self, !self.terminating, !self.lifecyclePaused else { return nil }
             return self.composition.dock.spotlightTarget
+        }, silhouette: { [weak self] target in
+            self?.composition.dock.spotlightSilhouette(for: target)
         })
     }
     func showFeedbackText(_ language: SettingsLanguage) -> String? {

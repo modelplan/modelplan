@@ -112,6 +112,36 @@ import XCTest
         }
     }
 
+    /// A display that does not start at (0, 0): the hole and the silhouette are moved into the display's own coordinates,
+    /// and the drawn clearing keeps the shape's orientation (bump near the top stays near the top).
+    func testD56SilhouetteHoleOnADisplayWithANonZeroOrigin() throws {
+        _ = NSApplication.shared
+        let display = CGRect(x: 2_000, y: -300, width: 640, height: 480)
+        let body = CGRect(x: 2_540, y: -220, width: 64, height: 320)
+        let frame = body.insetBy(dx: -14, dy: 0)
+        let bump = CGPoint(x: body.minX, y: body.maxY - 60)
+        func painted(_ p: CGPoint) -> Bool {
+            let inner = body.insetBy(dx: 32, dy: 32)
+            let nearest = CGPoint(x: min(max(p.x, inner.minX), inner.maxX), y: min(max(p.y, inner.minY), inner.maxY))
+            return hypot(p.x - nearest.x, p.y - nearest.y) <= 32 || hypot(p.x - bump.x, p.y - bump.y) <= 12
+        }
+        let silhouette = try XCTUnwrap(QuotaWidgetSilhouette(frame: frame, covered: painted))
+        let target = QuotaWidgetSpotlightTarget(widget: frame, display: display, displayID: "offset", silhouette: silhouette)
+        let surface = QuotaWidgetSpotlightWindowSurface()
+        surface.show(target, fadeIn: 0)
+        defer { surface.hide(fadeOut: 0) }
+        let view = try XCTUnwrap(surface.window?.contentView as? QuotaWidgetSpotlightView)
+        XCTAssertEqual(view.hole, frame.offsetBy(dx: -display.minX, dy: -display.minY))
+        XCTAssertEqual(view.silhouette?.frame, frame.offsetBy(dx: -display.minX, dy: -display.minY))
+        let drawn = view.drawnForChecks
+        func alpha(_ p: CGPoint) throws -> CGFloat {
+            try XCTUnwrap(drawn.alphaAt(CGPoint(x: p.x - display.minX, y: p.y - display.minY)), "inside the drawn image at \(p)")
+        }
+        XCTAssertEqual(try alpha(CGPoint(x: body.midX, y: body.midY)), 0, accuracy: 0.01, "the body is clear")
+        XCTAssertEqual(try alpha(CGPoint(x: body.minX - 6, y: bump.y)), 0, accuracy: 0.01, "the bump near the top is clear")
+        XCTAssertGreaterThan(try alpha(CGPoint(x: body.minX - 6, y: body.minY + 60)), 0.04, "its mirror near the bottom is dimmed")
+    }
+
     /// glm-780-1: the feather raster must land upright on the layer. The hole sits within 24 pt of the display top, so the
     /// feather region is clipped and not mirror-symmetric; a vertically mirrored image would show the dimmed far end of
     /// the ramp flush against the widget's lower edge.
