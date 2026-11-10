@@ -1,0 +1,1 @@
+The first-run page now shows the approved recommendation line, "Recommendations use ModelPlan's published model data; your usage never leaves this Mac." (and its Chinese counterpart), instead of the shorter placeholder, so it says plainly that recommendations come from published data and that usage stays on the Mac.
