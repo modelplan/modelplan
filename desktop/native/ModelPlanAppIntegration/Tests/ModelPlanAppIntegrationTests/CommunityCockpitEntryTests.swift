@@ -705,4 +705,162 @@ final class CommunityCockpitEntryTests:XCTestCase {
         }
     }
 
+    /// CKP-SHELL-01 (D118): through the normal factory, the cockpit opens directly below the menu-bar icon: its top sits a
+    /// fixed 6 pt under the icon's bottom edge and its visible left edge lines up with the icon's (an 8 px margin of the
+    /// 636 px raster), shifted only as far as the screen's edges require. Parameterised over the icon's position.
+    @MainActor func testNormalFactoryOpensDirectlyBelowTheMenuBarIcon() throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        let usable=try XCTUnwrap(NSScreen.main).visibleFrame
+        let cases:[(String,CGFloat)]=[("near the left edge",usable.minX+2),("middle",usable.midX),("near the right edge",usable.maxX-22)]
+        for (name,x) in cases {
+            let anchor=CGRect(x:x,y:usable.maxY,width:20,height:20)
+            owner.anchor={ anchor }
+            let page=owner.makePage(context:context,verified:bundle)
+            page.open()
+            let window=try XCTUnwrap(page.window,name)
+            let scale=window.frame.width/636
+            XCTAssertEqual(window.frame.maxY,anchor.minY-6,accuracy:1,"\(name): top is 6 pt under the icon")
+            XCTAssertLessThanOrEqual(window.frame.maxY,anchor.minY,"\(name): never above the icon")
+            let expectedX=max(usable.minX,min(anchor.minX-8*scale,usable.maxX-window.frame.width))
+            XCTAssertEqual(window.frame.minX,expectedX,accuracy:1,"\(name): left edge follows the icon")
+            XCTAssertGreaterThanOrEqual(window.frame.minX,usable.minX-1,name)
+            XCTAssertLessThanOrEqual(window.frame.maxX,usable.maxX+1,name)
+            page.discard()
+        }
+    }
+
+    /// macrev2-435-1 (D118): the Reduce transparency setting is read back by the cockpit at open and on change, as reduceMotion is.
+    @MainActor func testReduceTransparencySettingReachesTheCockpitAtOpenAndOnChange() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-reduce-transparency-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        _=try await settings.update { $0.transparency = .on }
+        var applied:[SettingsApplication]=[]
+        let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
+        await app.reload()
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        XCTAssertFalse(owner.appearance.reduceTransparency)
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertTrue(owner.appearance.reduceTransparency,"Opening keeps the setting")
+        _=try await settings.update { $0.transparency = .system }
+        await app.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let delivered=try XCTUnwrap(page.appearances.last,"A change reaches the open page")
+        XCTAssertFalse(delivered.reduceTransparency,"System follows the (unreduced) CI display setting")
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
+    /// CKP-PORT-12 (D118): the three porthole gestures, through the Swift path from the page's intent to the panel. The
+    /// page sends an unfocused openField for the ⤢ key and for a double-click, and openField with the rocket's published
+    /// name for a click on a rocket; the console opens the field, focused only when the name is published.
+    /// (The bridge's own message validation is covered by V2BridgeContractTests.)
+    @MainActor func testPortholeGesturesOpenTheFieldThroughTheProductionConsole() async throws {
+        let cases:[(String,CockpitIntent,String?)]=[("expand key",.openField,nil),("double-click",.openField,nil),
+            ("rocket click",.openFieldAt("Synthetic"),"synthetic-model"),("unpublished rocket",.openFieldAt("Not published"),nil)]
+        for (name,intent,focus) in cases {
+            let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-port12-"+UUID().uuidString)
+            try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+            defer{try? FileManager.default.removeItem(at:root)}
+            let html=Data("<!doctype html><title>synthetic field</title>".utf8)
+            for file in ["index.html","field.html"] { try html.write(to:root.appendingPathComponent(file)) }
+            let manifest=try JSONSerialization.data(withJSONObject:["schemaVersion":1,"edition":"community","interfaceOnly":true,
+                "files":["index.html":VerifiedCockpitBundle.digest(html),"field.html":VerifiedCockpitBundle.digest(html)]])
+            try manifest.write(to:root.appendingPathComponent("bundle-manifest.json"))
+            let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root.appendingPathComponent("support"))
+            let client=RouteClient();await client.suspendCockpit()
+            let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+            let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+            owner.verifiedBundle=try VerifiedCockpitBundle(root:root,manifestSHA256:VerifiedCockpitBundle.digest(manifest))
+            let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+            let coordinator=EngineCockpitCoordinator { _ in page }
+            coordinator.bind(client:client);owner.coordinator=coordinator
+            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+            var capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent()
+            while !FileManager.default.fileExists(atPath:capture.appendingPathComponent("schema/app-cli/captures").path) { capture.deleteLastPathComponent() }
+            capture=capture.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+            var data=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
+            var details=try XCTUnwrap(data["details"] as? [String:Any])
+            details["publishedModels"]=[["id":"synthetic-model","name":"Synthetic","developerId":"openai","recommended":"medium",
+                "efforts":[["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]]]]
+            data["details"]=details
+            let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+            let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+            await composition.store.consume(.connection(.ready(context)));await composition.store.consume(.context(context))
+            await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:wire),delivery:context))))
+            await coordinator.consume(.context(context));surface.show()
+            for _ in 0..<200 where page.onClosed == nil { try await Task.sleep(for:.milliseconds(10)) }
+            XCTAssertNotNil(page.onClosed,"\(name): the cockpit page opened")
+            XCTAssertFalse(surface.fieldIsOpen,name)
+            let deliver=try XCTUnwrap(page.onIntent,"\(name): the coordinator listens to the page")
+            deliver(intent)
+            XCTAssertTrue(surface.fieldIsOpen,"\(name): the gesture opens the enlarged field")
+            let payload=try XCTUnwrap(surface.fieldPayload(focusName:{ if case .openFieldAt(let n)=intent { return n }; return nil }()))
+            if let focus { XCTAssertTrue(payload.contains(#""focus":"\#(focus)""#),"\(name): \(payload)") }
+            else { XCTAssertTrue(payload.contains(#""focus":null"#) || !payload.contains(#""focus""#),"\(name): no focus") }
+            surface.hide()
+            XCTAssertFalse(surface.fieldIsOpen,"\(name): closing the cockpit closes the field")
+            await coordinator.shutdown();await composition.stop()
+        }
+    }
+
+    /// CKP-FAD-04 (D118): on the real official page opened by the normal factory, a published model's fader shows its
+    /// effort bars and the recommended-effort star marker. Needs the canonical official cockpit and the synthetic CLI.
+    @MainActor func testFaderBarsAndStarShowOnTheRealPageThroughTheNormalEntry() async throws {
+        let official=Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path=ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],FileManager.default.isExecutableFile(atPath:path),
+              FileManager.default.fileExists(atPath:official.appendingPathComponent("bundle-manifest.json").path),
+              !CommunityCockpitApplicationFactory.manifestPins.isEmpty else {
+            throw XCTSkip("The real page needs the canonical official cockpit, its pins and the synthetic-test CLI")
+        }
+        _ = NSApplication.shared
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("fad04-"+UUID().uuidString).resolvingSymlinksInPath()
+        defer{try? FileManager.default.removeItem(at:root)}
+        let helper=URL(fileURLWithPath:path)
+        let app=try Self.ownerTestShapedApp(at:root,helper:helper,ownerTest:true,official:official)
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root.appendingPathComponent("support"),preferredLanguages:["en"])
+        let owner=CockpitConsoleOwner(bundle:app,settingsStore:settings)
+        let capture=Self.repoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        var json=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
+        let details=try XCTUnwrap(json["details"] as? [String:Any])
+        let publication=try XCTUnwrap(details["publication"] as? [String:Any])
+        let model=try XCTUnwrap((publication["models"] as? [[String:Any]])?.first)
+        XCTAssertEqual(model["id"] as? String,"synthetic-model","the capture's one published model")
+                let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:json))
+        let context=try CockpitEngineContext(sessionID:UUID(),storeEpoch:"synthetic-fad04",generation:1)
+        let page=try owner.makePage(context:context,executable:app.appendingPathComponent("Contents/Helpers/modelplan"))
+        defer{page.discard()}
+        var ready=false;page.onReady={ready=true}
+        page.open()
+        let deadline=ContinuousClock.now+.seconds(30)
+        while !ready && ContinuousClock.now<deadline { try await Task.sleep(for:.milliseconds(20)) }
+        XCTAssertTrue(ready,"the real page becomes ready")
+        let web=try XCTUnwrap(page.verificationWebView)
+        let script="""
+        (()=>{const ch=document.querySelector('.fd-ch[data-model="synthetic-model"]');if(!ch)return 'no-fader';
+        const bars=[...ch.querySelectorAll('.fd-strip .eb')].filter(e=>/px$/.test(e.style.getPropertyValue('--h'))).length;
+        const rec=ch.querySelector('.fd-marks .fd-rec');const k=rec?rec.style.getPropertyValue('--k'):'';
+        return bars+'|'+(rec?'rec':'norec')+'|'+(k!==''&&Number.isFinite(Number(k))?'k':'nok');})()
+        """
+        var result="none"
+        while ContinuousClock.now<deadline {
+            if let ticket=page.queryTicket { page.display(wire,ticket:ticket) }
+            try await Task.sleep(for:.milliseconds(200))
+            result=((try? await web.evaluateJavaScript(script)) as? String) ?? "none"
+            if result != "none" && result != "no-fader" { break }
+        }
+        let parts=result.split(separator:"|").map(String.init)
+        XCTAssertEqual(parts.count,3,"the fader painted: \(result)")
+        XCTAssertGreaterThan(Int(parts.first ?? "0") ?? 0,0,"the fader shows effort bars (\(result))")
+        XCTAssertEqual(parts.dropFirst().first,"rec","the recommended-effort star marker is on the fader (\(result))")
+        XCTAssertEqual(parts.last,"k","and sits at a numeric travel position (\(result))")
+    }
 }
