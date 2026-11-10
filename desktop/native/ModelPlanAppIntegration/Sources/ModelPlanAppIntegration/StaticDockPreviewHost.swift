@@ -279,29 +279,59 @@ struct DockHelpInteraction: Equatable {
     }
     /// Where the expanded widget is on screen now, and the whole display it is on; nil while it
     /// is collapsed, hidden or withdrawn. The hull comes from the registered outline, not the panel.
-    var spotlightTarget: QuotaWidgetSpotlightTarget? {
+    var spotlightTarget: QuotaWidgetSpotlightTarget? { spotlightGeometry()?.target }
+
+    /// Frame and display only (cheap, polled every tick), plus how to read the widget view's pixels.
+    private struct SpotlightGeometry {
+        let target: QuotaWidgetSpotlightTarget
+        let view: DockInstrumentView
+        /// Global screen point to the view's own coordinates.
+        let toLocal: (CGPoint) -> CGPoint
+    }
+    private func spotlightGeometry() -> SpotlightGeometry? {
         guard permitted, !retired, !retiring, preferences.showDock, let presentation = edge.presentation,
               presentation.state == .expanded, let frame = presentation.paintedFrame,
               let placement = presentation.placement,
               !createsNativePanels || panel?.isVisible == true,
               let display = topology(of: sampleEnvironment()).display(placement.displayID) else { return nil }
         var widget = frame
-        do {
-            let view = edgeViews[placement.edge] ?? dockView
-            let local = view.registeredMoveOutlinePath?.boundingBox ?? view.bounds
-            let global: CGRect
-            if createsNativePanels, let window = view.window, window === panel {
-                global = window.convertToScreen(view.convert(local, to: nil))
-            } else {
-                // Detached checks: the view sits at the container origin, which fills the painted frame.
-                let y = view.isFlipped ? view.bounds.height - local.maxY : local.minY
-                global = CGRect(x: frame.minX + view.frame.minX + local.minX, y: frame.minY + view.frame.minY + y,
-                                width: local.width, height: local.height)
+        let view = edgeViews[placement.edge] ?? dockView
+        let local = view.registeredMoveOutlinePath?.boundingBox ?? view.bounds
+        let global: CGRect
+        let toLocal: (CGPoint) -> CGPoint
+        if createsNativePanels, let window = view.window, window === panel {
+            global = window.convertToScreen(view.convert(local, to: nil))
+            toLocal = { view.convert(window.convertFromScreen(CGRect(origin: $0, size: .zero)).origin, from: nil) }
+        } else {
+            // Detached checks: the view sits at the container origin, which fills the painted frame.
+            let y = view.isFlipped ? view.bounds.height - local.maxY : local.minY
+            global = CGRect(x: frame.minX + view.frame.minX + local.minX, y: frame.minY + view.frame.minY + y,
+                            width: local.width, height: local.height)
+            toLocal = { (point: CGPoint) -> CGPoint in
+                let x = point.x - frame.minX - view.frame.minX
+                let up = point.y - frame.minY - view.frame.minY
+                return CGPoint(x: x, y: view.isFlipped ? view.bounds.height - up : up)
             }
-            let clipped = global.intersection(frame)
-            if !clipped.isNull, !clipped.isEmpty { widget = clipped }
         }
-        return .init(widget: widget, display: display.frame, displayID: placement.displayID)
+        let clipped = global.intersection(frame)
+        if !clipped.isNull, !clipped.isEmpty { widget = clipped }
+        return SpotlightGeometry(target: .init(widget: widget, display: display.frame, displayID: placement.displayID),
+                                 view: view, toLocal: toLocal)
+    }
+
+    private struct SilhouetteKey: Equatable { let widget: CGRect, displayID: String, view: ObjectIdentifier }
+    private var silhouetteCache: (key: SilhouetteKey, at: Date, value: QuotaWidgetSilhouette?)?
+    /// The widget's real drawn outline (painted pixels), sampled once for the target that is presented. The
+    /// result is kept briefly per geometry so a repeated call for the same target costs nothing. nil: the widget
+    /// is not there, nothing (or everything) is painted; the overlay then draws a padded rounded rectangle.
+    func spotlightSilhouette(for target: QuotaWidgetSpotlightTarget) -> QuotaWidgetSilhouette? {
+        guard let geometry = spotlightGeometry() else { return nil }
+        let key = SilhouetteKey(widget: target.widget, displayID: target.displayID, view: ObjectIdentifier(geometry.view))
+        if let cached = silhouetteCache, cached.key == key, Date().timeIntervalSince(cached.at) < 2 { return cached.value }
+        let view = geometry.view, toLocal = geometry.toLocal
+        let value = QuotaWidgetSilhouette(frame: target.widget) { (point: CGPoint) -> Bool in view.isPainted(atLocal: toLocal(point)) }
+        silhouetteCache = (key, Date(), value)
+        return value
     }
     /// Presentation is allowed by the lifecycle, so a Show request can make the widget visible now.
     var canPresentForHelp: Bool { permitted && !retired && !retiring }

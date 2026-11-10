@@ -70,10 +70,10 @@ import XCTest
             let c = bitmap.colorAt(x: Int(x * scale), y: Int((display.height - y) * scale))?.usingColorSpace(.sRGB)
             return c.map { 0.2126 * $0.redComponent + 0.7152 * $0.greenComponent + 0.0722 * $0.blueComponent } ?? 0
         }
-        /// Mean luminance of the halo band (2 to 12 pt outside the hole's left edge) and of the dimmed area beyond the feather.
+        /// Mean luminance of the halo band (2 to 12 pt outside the glow's peak, 8 pt out from the widget's left edge) and of the dimmed area beyond the feather.
         func bandAndSurround(_ bitmap: NSBitmapImageRep) -> (band: CGFloat, surround: CGFloat) {
             let y = hole.midY
-            let band = (2...12).map { luma(bitmap, x: hole.minX - CGFloat($0), y: y) }
+            let band = (2...12).map { luma(bitmap, x: hole.minX - QuotaWidgetSpotlightStyle.haloOffset - CGFloat($0), y: y) }
             let surround = (40...60).map { luma(bitmap, x: hole.minX - CGFloat($0), y: y) }
             return (band.reduce(0, +) / CGFloat(band.count), surround.reduce(0, +) / CGFloat(surround.count))
         }
@@ -110,6 +110,36 @@ import XCTest
                 XCTAssertGreaterThan(abs(band - surround), 0.02, "\(name): the halo is visible on a light desktop (band \(band), around \(surround))")
             }
         }
+    }
+
+    /// A display that does not start at (0, 0): the hole and the silhouette are moved into the display's own coordinates,
+    /// and the drawn clearing keeps the shape's orientation (bump near the top stays near the top).
+    func testD56SilhouetteHoleOnADisplayWithANonZeroOrigin() throws {
+        _ = NSApplication.shared
+        let display = CGRect(x: 2_000, y: -300, width: 640, height: 480)
+        let body = CGRect(x: 2_540, y: -220, width: 64, height: 320)
+        let frame = body.insetBy(dx: -14, dy: 0)
+        let bump = CGPoint(x: body.minX, y: body.maxY - 60)
+        func painted(_ p: CGPoint) -> Bool {
+            let inner = body.insetBy(dx: 32, dy: 32)
+            let nearest = CGPoint(x: min(max(p.x, inner.minX), inner.maxX), y: min(max(p.y, inner.minY), inner.maxY))
+            return hypot(p.x - nearest.x, p.y - nearest.y) <= 32 || hypot(p.x - bump.x, p.y - bump.y) <= 12
+        }
+        let silhouette = try XCTUnwrap(QuotaWidgetSilhouette(frame: frame, covered: painted))
+        let target = QuotaWidgetSpotlightTarget(widget: frame, display: display, displayID: "offset", silhouette: silhouette)
+        let surface = QuotaWidgetSpotlightWindowSurface()
+        surface.show(target, fadeIn: 0)
+        defer { surface.hide(fadeOut: 0) }
+        let view = try XCTUnwrap(surface.window?.contentView as? QuotaWidgetSpotlightView)
+        XCTAssertEqual(view.hole, frame.offsetBy(dx: -display.minX, dy: -display.minY))
+        XCTAssertEqual(view.silhouette?.frame, frame.offsetBy(dx: -display.minX, dy: -display.minY))
+        let drawn = view.drawnForChecks
+        func alpha(_ p: CGPoint) throws -> CGFloat {
+            try XCTUnwrap(drawn.alphaAt(CGPoint(x: p.x - display.minX, y: p.y - display.minY)), "inside the drawn image at \(p)")
+        }
+        XCTAssertEqual(try alpha(CGPoint(x: body.midX, y: body.midY)), 0, accuracy: 0.01, "the body is clear")
+        XCTAssertEqual(try alpha(CGPoint(x: body.minX - 6, y: bump.y)), 0, accuracy: 0.01, "the bump near the top is clear")
+        XCTAssertGreaterThan(try alpha(CGPoint(x: body.minX - 6, y: body.minY + 60)), 0.04, "its mirror near the bottom is dimmed")
     }
 
     /// glm-780-1: the feather raster must land upright on the layer. The hole sits within 24 pt of the display top, so the
