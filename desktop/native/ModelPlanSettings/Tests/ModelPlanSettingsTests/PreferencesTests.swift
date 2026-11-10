@@ -19,7 +19,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(p.motion, .system); XCTAssertEqual(p.transparency, .system)
         XCTAssertEqual(p.percentageMode, .remaining); XCTAssertTrue(p.showPercentages)
         XCTAssertEqual(p.redBelow, 25); XCTAssertTrue(p.sliverAlert)
-        XCTAssertTrue(p.showDock); XCTAssertTrue(p.autoHide, "D56: an unset auto-collapse starts on"); XCTAssertEqual(p.revealMilliseconds, 150)
+        XCTAssertTrue(p.showDock); XCTAssertFalse(p.autoHide, "D114: an unset auto-collapse starts off"); XCTAssertEqual(p.revealMilliseconds, 150)
         XCTAssertFalse(p.showOverFullscreen); XCTAssertFalse(p.followActiveDisplay)
         XCTAssertEqual(p.menuDisplay, .tightest); XCTAssertEqual(p.opening, .hold); XCTAssertEqual(p.beatMilliseconds, 250)
         XCTAssertTrue(p.showProjectNames); XCTAssertFalse(p.notifications.optedIn)
@@ -28,13 +28,13 @@ final class PreferencesTests: XCTestCase {
             XCTAssertThrowsError(try JSONDecoder().decode(SettingsPreferences.self, from: Data(bad.utf8)), bad)
         }
     }
-    /// D56 (owner 2026-11-08): a fresh install starts collapsed; a saved choice either way is kept,
-    /// including a saved "off" written by an earlier version whose default was off.
-    func testD56AutoCollapseDefaultsOnAndSavedChoicesAreKept() async throws {
-        XCTAssertTrue(SettingsPreferences().autoHide, "a fresh install starts collapsed")
+    /// D114 (owner 2026-11-10, supersedes D56): a fresh install starts expanded; a saved choice either
+    /// way is kept, including a saved "on" written while D56 made auto-collapse the default.
+    func testD114AutoCollapseDefaultsOffAndSavedChoicesAreKept() async throws {
+        XCTAssertFalse(SettingsPreferences().autoHide, "a fresh install starts expanded")
         let fresh = try SettingsStore(url: try file())
         let freshAutoHide = await fresh.snapshot().preferences.autoHide
-        XCTAssertTrue(freshAutoHide, "no settings file: the new default")
+        XCTAssertFalse(freshAutoHide, "no settings file: the new default")
         for saved in [false, true] {
             let stored = try JSONDecoder().decode(SettingsPreferences.self, from: Data("{\"autoHide\":\(saved)}".utf8))
             XCTAssertEqual(stored.autoHide, saved, "a saved value is never replaced by the default")
@@ -46,7 +46,7 @@ final class PreferencesTests: XCTestCase {
             XCTAssertEqual(restarted.autoHide, saved, "a saved value survives restart and unrelated edits")
         }
         let unset = try JSONDecoder().decode(SettingsPreferences.self, from: Data("{\"showDock\":true}".utf8))
-        XCTAssertTrue(unset.autoHide, "a file without the key gets the new default")
+        XCTAssertFalse(unset.autoHide, "a file without the key gets the new default")
     }
     func testExplicitAutoHideOptInSurvivesRestart() async throws {
         let url = try file(), first = try SettingsStore(url: url)

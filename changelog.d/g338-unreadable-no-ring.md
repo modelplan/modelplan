@@ -1,0 +1,1 @@
+A subscription with no reading gets no Dock ring from the first frame, whatever the reason (not signed in, waiting for permission or consent, an unsupported sign-in, a reader error, or still waiting on its first read); it gets its ring when a reading arrives. The Settings subscription list and the menu still list it with the reason.

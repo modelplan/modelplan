@@ -47,8 +47,9 @@ private actor D56SyntheticEngine: EngineClient {
     func unregisterAll() { registered = [:] }
 }
 
-/// D56 (owner 2026-11-08) through the normal entry, without windows: a fresh profile starts with
-/// the Quota Widget collapsed and a saved choice is kept; Find Quota Widget from the status menu,
+/// D56 (owner 2026-11-08) through the normal entry, without windows. D114 (owner 2026-11-10) then made
+/// auto-collapse off by default: a fresh profile starts with the Quota Widget expanded and a saved
+/// choice either way is kept. The Find journeys below start from a saved "on" (collapsed widget); Find Quota Widget from the status menu,
 /// the shortcut and the end of first run slides the widget out, dims only the widget's display,
 /// ends on any click or key, honours Reduce Motion, and lets the widget collapse again afterwards.
 /// The native overlay window itself is checked in FindQuotaWidgetWindowTests (GUI leg).
@@ -71,15 +72,19 @@ private actor D56SyntheticEngine: EngineClient {
     }
 
     /// `firstRunDone` skips first run, as a returning user. The pointer rests away from every edge.
+    /// The Find journeys need a collapsed widget, so the profile is saved with auto-collapse on; pass
+    /// `freshDefault: true` to leave the setting untouched (D114: a new profile starts expanded).
     private func make(_ root: URL, displays: [DockDisplayArea]? = nil, firstRunDone: Bool = true,
+                      freshDefault: Bool = false,
                       surface given: D56QuietSurface? = nil, registrar: D56ShortcutRegistrar? = nil,
                       edit: ((inout SettingsPreferences) -> Void)? = nil) async throws -> EngineDockMenuApplication {
         let surface = given ?? D56QuietSurface()
         let fixture = try rows()
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        if firstRunDone || edit != nil {
+        if firstRunDone || edit != nil || !freshDefault {
             _ = try await store.update { p in
                 if firstRunDone { for _ in 0..<16 { p.onboarding.next() } }
+                if !freshDefault { p.autoHide = true }
                 edit?(&p)
             }
         }
@@ -130,19 +135,46 @@ private actor D56SyntheticEngine: EngineClient {
 
     // MARK: Default
 
-    func testD56FreshProfileStartsCollapsed() async throws {
-        let app = try await make(profile())
+    func testD114FreshProfileStartsExpanded() async throws {
+        let app = try await make(profile(), freshDefault: true)
         let editor = app.settingsHost.application.editor
         let preferences = try XCTUnwrap(editor.snapshot).preferences
         XCTAssertTrue(preferences.showDock, "the widget is on")
-        XCTAssertTrue(preferences.autoHide, "D56: auto-collapse is on for a fresh install")
+        XCTAssertFalse(preferences.autoHide, "D114: auto-collapse is off for a fresh install")
         let rows = try SettingsCatalogue.rows(preferences: preferences, context: editor.context, paneID: "dock")
-        XCTAssertEqual(rows.first { $0.key == .autoHide }?.value, .toggle(true), "Settings shows the switch on")
+        XCTAssertEqual(rows.first { $0.key == .autoHide }?.value, .toggle(false), "Settings shows the switch off")
         try await start(app)
-        try await wait { app.composition.dock.edgePresentation?.state == .sliver }
-        XCTAssertTrue(app.composition.dock.menu().items.contains { $0.title == "Auto-Collapse" && $0.state == .on },
+        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(app.composition.dock.edgePresentation?.state, .expanded, "the widget stays out after first run")
+        XCTAssertTrue(app.composition.dock.menu().items.contains { $0.title == "Auto-Collapse" && $0.state == .off },
                       "the widget menu shows the same setting")
-        XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.autoHide, true)
+        XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.autoHide, false)
+    }
+
+    func testD114SavedAutoCollapseOnIsKeptAcrossRelaunchAndCollapses() async throws {
+        let root = profile()
+        let first = try await make(root) { $0.autoHide = true }
+        try await start(first)
+        try await wait { first.composition.dock.edgePresentation?.state == .sliver }
+        await first.stopLifecycle(); first.composition.dock.close()
+        let relaunched = try await make(root, firstRunDone: false, freshDefault: true)
+        XCTAssertEqual(relaunched.settingsHost.application.editor.snapshot?.preferences.autoHide, true,
+                       "a saved 'on' is not replaced by the new default")
+        try await start(relaunched)
+        try await wait { relaunched.composition.dock.edgePresentation?.state == .sliver }
+    }
+
+    /// The first manual collapse (turning Auto-Collapse on) takes the widget to its strip; the
+    /// one-time "where it went" hint then follows (FirstUseHints and DockHelpBinding cover it once-only).
+    func testD114ManualCollapseFoldsTheExpandedWidget() async throws {
+        let app = try await make(profile(), freshDefault: true)
+        try await start(app)
+        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
+        let editor = app.settingsHost.application.editor
+        try await editor.commit(SettingsB21Edit.autoHide(true))
+        try await wait { app.composition.dock.edgePresentation?.state == .sliver }
+        XCTAssertEqual(editor.snapshot?.preferences.autoHide, true)
     }
 
     func testD56SavedAutoCollapseOffIsKeptAcrossRelaunch() async throws {
@@ -151,7 +183,7 @@ private actor D56SyntheticEngine: EngineClient {
         try await start(first)
         try await wait { first.composition.dock.edgePresentation?.state == .expanded }
         await first.stopLifecycle(); first.composition.dock.close()
-        let relaunched = try await make(root, firstRunDone: false)
+        let relaunched = try await make(root, firstRunDone: false, freshDefault: true)
         XCTAssertEqual(relaunched.settingsHost.application.editor.snapshot?.preferences.autoHide, false,
                        "an existing user's saved choice is not replaced by the new default")
         try await start(relaunched)
