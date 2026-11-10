@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -20,6 +21,7 @@ import ModelPlanWire
             guard let snapshot = store?.snapshot, case .ready = snapshot.connection else { return false }
             return true
         }, makeGrant: { intent in try factory.make(intent) })
+        entry.markImage = { ScopeConsentMarks.image(for: $0) }
         // HIST-IMP-02/03: the local-history import, over the same engine client.
         let importer = HistoryImportModel(commands: EngineHistoryImportCommands(client: composition.client, ready: { [weak store] in
             guard let snapshot = store?.snapshot, case .ready = snapshot.connection else { return false }
