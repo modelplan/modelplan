@@ -7,7 +7,7 @@ import {visualFixture} from '../visual-fixture.mjs';
 // one bell per visible subscription under its engine column; a subscription with a running session of its own
 // burns. Sizes follow the base-bells notes: width min(120, column x 121/133), height width x 10/81.
 async function open(page,{tier='tall',reduceMotion=false}={}){
- await page.setViewportSize({width:636,height:tier==='tall'?911:661});
+ await page.setViewportSize({width:636,height:tier==='tall'?939:669});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const data=visualFixture().data;
@@ -78,7 +78,7 @@ test('G3-47 hovering a bell lights its column and shows its name (CKP-ENG-20)',a
 });
 
 test('G3-47 a session whose ref names no subscription lights no bell',async({page})=>{
- await page.setViewportSize({width:636,height:911});
+ await page.setViewportSize({width:636,height:939});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const data=visualFixture().data;
