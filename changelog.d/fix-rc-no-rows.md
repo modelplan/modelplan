@@ -1,0 +1,1 @@
+The Mac app accepts a release-candidate helper such as 0.5.58-rc.1 again: its app-server version floor now follows Semantic Versioning precedence, so a candidate above the floor connects and delivers readings instead of leaving the app at "Waiting for current readings", while prereleases of the floor itself and malformed versions still fail closed.
