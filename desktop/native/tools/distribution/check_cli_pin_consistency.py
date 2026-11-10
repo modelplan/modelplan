@@ -14,7 +14,7 @@ from pathlib import Path
 
 PIN = 'desktop/native/consent-cli-pin.json'
 MINIMUM = 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineRowsEntry.swift'
-VERSION = r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+VERSION = r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-rc\.[0-9]+)?'
 
 
 def git(repo, *args):
@@ -55,7 +55,7 @@ def assert_pin_matches(repo, pin=None):
     if len(matches) != 1:
         raise ValueError('invalid app minimum CLI version')
     minimum = matches[0][0]
-    if tuple(map(int, version.split('.'))) < tuple(map(int, minimum.split('.'))):
+    if tuple(map(int, version.split('-')[0].split('.'))) < tuple(map(int, minimum.split('.'))):
         raise ValueError('pinned CLI version is older than the app minimum ' + minimum)
     tag = 'refs/tags/v' + version
     if git(repo, 'rev-parse', '--verify', tag + '^{commit}').returncode:
