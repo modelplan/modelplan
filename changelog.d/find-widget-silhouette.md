@@ -1,0 +1,1 @@
+Find Quota Widget now clears the dimmed screen around the widget's real drawn outline, rounded ends and ring bumps included, instead of a rounded rectangle; the dim still fades in smoothly over about 24 points from the widget's edge, with no border or shadow.

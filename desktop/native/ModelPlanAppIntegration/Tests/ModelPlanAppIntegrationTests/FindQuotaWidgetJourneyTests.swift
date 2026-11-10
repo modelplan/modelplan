@@ -198,8 +198,7 @@ private actor D56SyntheticEngine: EngineClient {
         let target = QuotaWidgetSpotlightTarget(widget: CGRect(x: 1_300, y: 300, width: 64, height: 320),
                                                 display: CGRect(x: 0, y: 0, width: 1_440, height: 900), displayID: "primary")
         XCTAssertEqual(QuotaWidgetSpotlightStyle.dimAlpha, 0.4)
-        XCTAssertEqual(QuotaWidgetSpotlightStyle.holePadding, 8)
-        XCTAssertEqual(QuotaWidgetSpotlightStyle.holeCornerRadius, 12)
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.holeCornerRadius, 12, "fallback outline only")
         XCTAssertTrue((16...28).contains(QuotaWidgetSpotlightStyle.featherRadius), "a 16 to 28 pt falloff")
         XCTAssertEqual(QuotaWidgetSpotlightStyle.dimAlpha(atDistance: 0), 0)
         XCTAssertEqual(QuotaWidgetSpotlightStyle.dimAlpha(atDistance: -5), 0)
@@ -211,7 +210,7 @@ private actor D56SyntheticEngine: EngineClient {
             XCTAssertGreaterThanOrEqual(a, last, "the falloff never steps back"); last = a
         }
         let hole = QuotaWidgetSpotlightStyle.hole(for: target)
-        XCTAssertEqual(hole, CGRect(x: 1_292, y: 292, width: 80, height: 336), "8 pt around the widget")
+        XCTAssertEqual(hole, target.widget, "the hole's bounds are the widget's own frame, no padding")
         // A widget at the display edge keeps its hole on that display.
         let edge = QuotaWidgetSpotlightTarget(widget: CGRect(x: 1_376, y: 300, width: 64, height: 320), display: target.display, displayID: "primary")
         XCTAssertEqual(QuotaWidgetSpotlightStyle.hole(for: edge).maxX, 1_440)
@@ -232,6 +231,58 @@ private actor D56SyntheticEngine: EngineClient {
         XCTAssertGreaterThan(mid ?? 0, 0.1); XCTAssertLessThan(mid ?? 1, 0.3)
         XCTAssertGreaterThan(far ?? 0, 0.37, "reaches the dim level at the end of the feather")
         XCTAssertEqual(drawn.alphaAt(CGPoint(x: hole.midX, y: hole.midY)) ?? 1, 0, accuracy: 0.01, "the hole is clear")
+    }
+
+    /// Owner 2026-11-10: the clearing follows the widget's real drawn silhouette, not a rounded rectangle.
+    func testD56HoleFollowsTheWidgetsDrawnSilhouette() throws {
+        let display = CGRect(x: 0, y: 0, width: 1_440, height: 900)
+        // A stand-in widget: a fully rounded capsule (64 x 320) with a 12 pt ring bump on its left side at mid height.
+        let frame = CGRect(x: 1_288, y: 300, width: 76, height: 320)
+        let body = CGRect(x: 1_300, y: 300, width: 64, height: 320)
+        let capsuleRadius: CGFloat = 32
+        let bump = CGPoint(x: body.minX, y: body.midY), bumpRadius: CGFloat = 12
+        func painted(_ p: CGPoint) -> Bool {
+            let inner = body.insetBy(dx: capsuleRadius, dy: capsuleRadius)
+            let nearest = CGPoint(x: min(max(p.x, inner.minX), inner.maxX), y: min(max(p.y, inner.minY), inner.maxY))
+            return hypot(p.x - nearest.x, p.y - nearest.y) <= capsuleRadius || hypot(p.x - bump.x, p.y - bump.y) <= bumpRadius
+        }
+        let silhouette = try XCTUnwrap(QuotaWidgetSilhouette(frame: frame, step: 0.5, covered: painted))
+        let target = QuotaWidgetSpotlightTarget(widget: frame, display: display, displayID: "primary", silhouette: silhouette)
+        XCTAssertEqual(QuotaWidgetSpotlightStyle.hole(for: target), frame)
+
+        let view = QuotaWidgetSpotlightView(frame: CGRect(origin: .zero, size: display.size))
+        view.silhouette = silhouette
+        view.hole = QuotaWidgetSpotlightStyle.hole(for: target)
+        let drawn = view.drawnForChecks
+        XCTAssertFalse(drawn.hasStrokeOrBorder, "no ring, frame or stroke"); XCTAssertFalse(drawn.hasShadow)
+        XCTAssertEqual(drawn.dimAlpha, 0.4, accuracy: 0.001)
+        func alpha(_ x: CGFloat, _ y: CGFloat) throws -> CGFloat { try XCTUnwrap(drawn.alphaAt(CGPoint(x: x, y: y)), "inside the drawn image at \(x),\(y)") }
+
+        // On the widget: clear. The body, the bump and the middle of the rounded end.
+        XCTAssertEqual(try alpha(body.midX, body.midY), 0, accuracy: 0.01)
+        XCTAssertEqual(try alpha(body.minX - 6, body.midY), 0, accuracy: 0.01, "on the ring bump")
+        XCTAssertEqual(try alpha(body.midX, body.maxY - 2), 0, accuracy: 0.01, "on the rounded end")
+        // Just outside the rounded end, at the corner the old rectangle (8 pt padded) cleared: now dimmed (about 9 pt from the edge).
+        let corner = try alpha(body.minX + 3, body.maxY - 3)
+        XCTAssertGreaterThan(corner, 0.08, "the corner beyond the rounded end is no longer cleared")
+        XCTAssertGreaterThan(try alpha(body.maxX - 3, body.minY + 3), 0.08, "same at the bottom corner")
+        // Beside the bump, above it: 10 pt from the nearest painted edge; the old rectangle (bump included, padded) cleared it.
+        let besideBump = try alpha(body.minX - 10, body.midY + 30)
+        XCTAssertGreaterThan(besideBump, 0.12, "beside the ring bump the dim has already started")
+        // Right at the edge the dim is almost none.
+        XCTAssertLessThan(try alpha(body.maxX + 1, body.midY), 0.05)
+        // Monotonic falloff away from the edge: straight out of the body, out of the bump and out of the end.
+        for (name, point) in [("body", { (d: CGFloat) in CGPoint(x: body.maxX + d, y: body.midY) }),
+                              ("bump", { d in CGPoint(x: body.minX - bumpRadius - d, y: body.midY) }),
+                              ("end", { d in CGPoint(x: body.midX, y: body.maxY + d) })] {
+            var last: CGFloat = -1
+            for d in stride(from: CGFloat(0.5), through: 24, by: 0.5) {
+                let p = point(d)
+                let a = try alpha(p.x, p.y)
+                XCTAssertGreaterThanOrEqual(a, last - 0.004, "\(name): the falloff never steps back at \(d) pt"); last = a
+            }
+            XCTAssertGreaterThan(last, 0.37, "\(name): reaches the dim level 24 pt out")
+        }
     }
 
     // MARK: Find Quota Widget
