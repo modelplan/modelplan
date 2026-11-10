@@ -945,7 +945,7 @@ actor EntrySyntheticClient: EngineClient {
         }
         XCTAssertTrue(text(dock.card).contains("Reset 17:00 announced"))
         // card.js:79-81: the count leads the one reserve line, its earliest expiry on the right.
-        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺2") })
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Resets 2") })
         XCTAssertTrue(text(dock.card).contains("exp in 30h"))
         // DOCK-3.8-11: the announced reset is its own section: the title spans the readout window in reset blue.
         func fields(_ root: NSView) -> [NSTextField] { ((root as? NSTextField).map { [$0] } ?? []) + root.subviews.flatMap(fields) }
@@ -976,7 +976,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(opened.count, 1)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertTrue(text(dock.card).contains("预告 17:00 重置"))
-        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺2") })
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("重置次数 2") })
         XCTAssertTrue(text(dock.card).contains("30h 后到期"))
         let chinese = try XCTUnwrap(dock.cardContent(for: id, at: wall))
         XCTAssertEqual(chinese.links.map(\.url.absoluteString), [aihotURL, officialURL, originalURL, publicationURL])
@@ -1003,12 +1003,12 @@ actor EntrySyntheticClient: EngineClient {
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         try await render(Self.rows(weekly: 75, sequence: 9, resetCardClock: wall, resetConfirmed: true,
             resetFacts: .init(count: 1, expiresIn: 12 * 60, retainedPartial: true)))
-        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺1") })
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Resets 1") })
         XCTAssertTrue(text(dock.card).contains("exp in 12m · Reported subset · Details truncated · Last known reading"))
         try await render(Self.rows(weekly: 75, sequence: 10, resetCardClock: wall, resetConfirmed: true,
             resetFacts: .init(count: 1, expiresIn: -60, restarted: true)))
         XCTAssertTrue(text(dock.card).contains("Reset confirmed"))
-        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("↺1") })
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Resets 1") })
         XCTAssertTrue(text(dock.card).contains("expired"))
         let confirmedAction = try XCTUnwrap(dock.card.onOpenURL)
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: delivery, nextFloor: nil)))
