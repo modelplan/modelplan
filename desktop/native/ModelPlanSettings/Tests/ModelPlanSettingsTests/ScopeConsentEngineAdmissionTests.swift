@@ -78,6 +78,10 @@ import ModelPlanWire
         XCTAssertFalse(status.english.hasPrefix("On by default"), "the switch is unticked, so the line must not claim it is on")
         XCTAssertTrue(status.english.hasPrefix("Not being read"))
         XCTAssertTrue(status.chinese.hasPrefix("目前未读取"))
+        // Receiving the facts pre-selects a default-check path as a pending "allow" choice (the select-then-confirm flow);
+        // that is a selection, not reading. With no pending choice the switch is unticked, as the status line says.
+        controller.choose(id, selected: false)
+        XCTAssertFalse(controller.selectedIDs.contains(id))
         let view = SettingsScopeConsentView(controller: controller, language: .english)
         let box = try XCTUnwrap(find(view, id: "scope.allow." + id))
         XCTAssertEqual(box.state, .off, "the switch agrees: unticked, Allow this path")
