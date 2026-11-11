@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { ALLOWED_ROUTES, GUI_LEND_GUARD, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
 
@@ -278,4 +280,91 @@ test("D94: non-GUI jobs refuse GUI runners unless gui-2 is lent; the V1 host is 
   assert.ok(guiGuardProblems(reusable.replace("  gui-probe:\n", "  gui-probe:\n    env:\n      MAC_GUI_LEND: ${{ vars.MAC_GUI_LEND }}\n")).length > 0);
   assert.ok(workflowProblems("on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    env:\n      X: ${{ vars.MAC_GUI_LEND }}\n", ".github/workflows/other.yml").includes("GUI lending switch outside trusted-mac.yml"));
   assert.deepEqual(workflowProblems(reusable, ".github/workflows/trusted-mac.yml"), []);
+});
+
+test("D134: owner merge-queue runs may use the non-GUI Macs, GUI tasks and everyone else stay as before", () => {
+  const route = TRUSTED_MAC_ROUTE;
+  const queue = /\(vars\.MAC_CI_QUEUE == 'enabled' && (.*?)\) && fromJSON\('(\[[^\]]*\])'\)/.exec(route);
+  assert.ok(queue, "the queue branch is behind its own MAC_CI_QUEUE switch");
+  assert.deepEqual(JSON.parse(queue[2]), ["self-hosted", "macOS", "ARM64", "modelplan-mac-nongui"], "only the non-GUI label");
+  for (const gate of [
+    "needs.queue-trust.outputs.trusted == 'true'", "github.repository == 'modelplan/modelplan'",
+    // merge_group: queued by the owner, on main's queue
+    "github.event_name == 'merge_group' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear'",
+    "github.event.merge_group.base_ref == 'refs/heads/main' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')",
+    // push: the queue's own push to main (or the owner re-running it)
+    "github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor_id == '118344674' && github.actor == 'github-merge-queue[bot]'",
+    "(github.triggering_actor == 'github-merge-queue[bot]' || github.triggering_actor == 'guanbear')",
+    // never a GUI task
+    "inputs.task != 'native' && inputs.task != 'native-owner-gui' && inputs.task != 'native-hosted-gui' && inputs.task != 'gui-probe'",
+    // the existing switches still apply
+    "(inputs.os == 'macos-latest' && vars.MAC_CI_RUNNER_V2 == 'self-hosted')",
+    "(inputs.task == 'u11-native' && inputs.os == 'macos-15' && vars.MAC_CI_NONGUI == 'enabled')",
+  ]) assert.ok(queue[1].includes(gate), gate);
+  assert.ok(!queue[1].includes("pull_request"), "no pull_request event takes the queue branch");
+  // The other owner branches did not gain merge_group or bot pushes.
+  assert.equal(route.split("merge_group").length - 1, 2, "merge_group appears only in the queue branch");
+  assert.equal(route.split("github-merge-queue[bot]").length - 1, 2, "the queue bot appears only in the queue branch");
+  // Every Mac job waits for the trust walk; the walk itself runs hosted.
+  const reusable = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  const jobs = reusable.split("\njobs:\n")[1].split(/\n(?=  [a-z0-9-]+:\n)/);
+  const names = jobs.map((j) => /^ {2}([a-z0-9-]+):/.exec(j.replace(/^\n/, ""))[1]);
+  assert.equal(names[0], "queue-trust");
+  assert.match(jobs[0], /\n    runs-on: ubuntu-latest\n/);
+  for (const job of jobs.slice(1)) {
+    assert.ok(job.includes("\n    " + route + "\n    needs: queue-trust\n"), job.slice(0, 40));
+  }
+});
+
+test("D134: the queue trust walk admits only the owner's same-repository PRs behind GitHub-signed merges", { skip: spawnSync("jq", ["--version"]).status !== 0 && "jq missing" }, () => {
+  const reusable = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  const job = reusable.split("\n  queue-trust:\n")[1].split(/\n  [a-z0-9-]+:\n/)[0];
+  const script = job.split("      run: |\n")[1].split("\n").map((l) => l.replace(/^ {8}/, "")).join("\n");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "d134-"));
+  try {
+    fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\n[ "$1" = api ] && [ "$3" = --jq ] || exit 2\nf="$FIXTURES/$(printf %s "$2" | tr / _).json"\n[ -f "$f" ] || exit 1\nexec jq -r "$4" "$f"\n', { mode: 0o755 });
+    const REPO = "modelplan/modelplan", OWNER = { login: "guanbear", id: 11829005 };
+    const sha = (c) => c.repeat(40);
+    const [base, h1, m1, h2, m2] = ["a", "b", "c", "d", "e"].map(sha);
+    const commit = (parents, verified = true) => ({ commit: { verification: { verified } }, parents: parents.map((s) => ({ sha: s })) });
+    const pr = (head, { repo = REPO, user = OWNER, ref = "main" } = {}) => [{ base: { ref, repo: { full_name: REPO } }, head: { sha: head, repo: { full_name: repo } }, user }];
+    const owner2 = { [m2]: commit([m1, h2]), [m1]: commit([base, h1]), pulls: { [h1]: pr(h1), [h2]: pr(h2) } };
+    const run = (fixture, env) => {
+      const fx = fs.mkdtempSync(`${dir}/fx-`);
+      for (const [k, v] of Object.entries(fixture)) {
+        if (k === "pulls") for (const [h, body] of Object.entries(v)) fs.writeFileSync(`${fx}/repos_${REPO.replace("/", "_")}_commits_${h}_pulls.json`, JSON.stringify(body));
+        else fs.writeFileSync(`${fx}/repos_${REPO.replace("/", "_")}_commits_${k}.json`, JSON.stringify(v));
+      }
+      const out = `${fx}/output`;
+      fs.writeFileSync(out, "");
+      const r = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", script], {
+        env: { PATH: `${dir}:${process.env.PATH}`, FIXTURES: fx, GITHUB_OUTPUT: out, REPO, ...env }, encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      const m = /^trusted=(true|false)$/m.exec(fs.readFileSync(out, "utf8"));
+      assert.ok(m, r.stdout);
+      return m[1] === "true";
+    };
+    const group = { EVENT: "merge_group", QUEUE_BASE_REF: "refs/heads/main", HEAD: m2, BASE: base };
+    assert.equal(run(owner2, group), true, "two owner PRs in one group");
+    assert.equal(run(owner2, { EVENT: "push", REF: "refs/heads/main", HEAD: m2, BASE: base }), true, "the queue's push of that group");
+    assert.equal(run(owner2, { ...group, HEAD: m1 }), true, "one owner PR");
+    const fork = { ...owner2, pulls: { ...owner2.pulls, [h1]: pr(h1, { repo: "someone/modelplan" }) } };
+    assert.equal(run(fork, group), false, "a fork PR anywhere in the group");
+    assert.equal(run(fork, { EVENT: "push", REF: "refs/heads/main", HEAD: m2, BASE: base }), false, "a fork PR in the pushed group");
+    assert.equal(run({ ...owner2, pulls: { ...owner2.pulls, [h2]: pr(h2, { user: { login: "guanbear", id: 1 } }) } }, group), false, "another account named like the owner");
+    assert.equal(run({ ...owner2, pulls: { ...owner2.pulls, [h2]: [...pr(h2), ...pr(h2, { user: { login: "x", id: 2 } })] } }, group), false, "two PRs share the head");
+    assert.equal(run({ ...owner2, pulls: { ...owner2.pulls, [h2]: [] } }, group), false, "no PR for a merge");
+    assert.equal(run({ ...owner2, [m2]: commit([m1, h2], false) }, group), false, "unsigned merge commit");
+    assert.equal(run({ ...owner2, [m2]: commit([m1]) }, group), false, "not a merge");
+    assert.equal(run({ pulls: owner2.pulls }, group), false, "API error");
+    assert.equal(run(owner2, { ...group, QUEUE_BASE_REF: "refs/heads/release" }), false, "a queue on another branch");
+    assert.equal(run(owner2, { EVENT: "push", REF: "refs/heads/feature", HEAD: m2, BASE: base }), false, "a push to another branch");
+    assert.equal(run(owner2, { ...group, BASE: "" }), false, "missing base");
+    assert.equal(run(owner2, { ...group, HEAD: base }), false, "nothing merged");
+    assert.equal(run(owner2, { ...group, BASE: sha("f") }), false, "base never reached");
+    for (const EVENT of ["pull_request", "pull_request_target", "workflow_dispatch", "workflow_run"])
+      assert.equal(run(owner2, { ...group, EVENT }), false, EVENT);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
