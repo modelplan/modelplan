@@ -27,11 +27,11 @@ import XCTest
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
   /// The production controller with the app's anchor and open-point closures, on the fixed arrangement.
-  private func page(session: CockpitShellSession = CockpitShellSession(), click: CGPoint?) throws -> CockpitWindowController {
+  private func page(session: CockpitShellSession? = nil, click: CGPoint?) throws -> CockpitWindowController {
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let icon = self.icon
     let page = CockpitWindowController(bundle: try bundle(), context: context, appearance: .init(theme: .night, locale: .en, profile: .full),
-                                       shellSession: session, anchor: { icon }, openPoint: { click })
+                                       shellSession: session ?? CockpitShellSession(), anchor: { icon }, openPoint: { click })
     let displays = [a, b]
     page.screens = { displays }
     return page
