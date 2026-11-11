@@ -42,10 +42,6 @@ on:
         description: Re-evaluate one PR head
         type: string
         default: ""
-      all_open:
-        description: Re-evaluate every open PR (run after changing CODEX_REVIEW_OFF)
-        type: string
-        default: ""
       group_sha:
         description: Re-evaluate one merge-group commit
         type: string
@@ -108,5 +104,3 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           # GLM-out fallback window (rules.mjs): unset = closed, so (sonnet) DESIGN/GLMREV markers never pass.
           GLM_FALLBACK_UNTIL: ${{ vars.GLM_FALLBACK_UNTIL }}
-          # Codex-off switch (rules.mjs): unset = closed, so a (sonnet) VERDICT never replaces the GPT reviewer.
-          CODEX_REVIEW_OFF: ${{ vars.CODEX_REVIEW_OFF }}

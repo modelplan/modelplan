@@ -31,8 +31,8 @@ const pr = (over = {}) => ({
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
-const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, p = pr(), codexReviewOff = false } = {}) =>
-  R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, conf, codexReviewOff });
+const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, p = pr() } = {}) =>
+  R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, conf });
 const v = (verdict, sha = H, lane = "macrev") => `Review\n\nVERDICT: ${verdict} @ ${sha}${lane ? ` (${lane})` : ""}`;
 
 test("trust needs the login and the numeric id; deleted authors and drafts never count", () => {
@@ -84,25 +84,15 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs macrev2/macrevb, macrev
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev")), glm] }).state, R.PENDING);
   assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrev")), comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS);
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), comment(v("block", H, "glm")), glm] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm], codexReviewOff: true }).state, R.SUCCESS, "Sonnet stands in for macrev2 while Codex is off");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.SUCCESS, "Sonnet stands in for macrev2 as on main");
   assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "sonnet")), comment(v("merge", H, "macrev2")), glm] }).state, R.FAILURE);
-  // Owner D149: GPT reviewer required; (sonnet) only while the Codex-off switch is on
-  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.PENDING, "tier 2 sonnet, switch closed");
+  // Owner D149: a GPT reviewer lane is required; sonnet keeps counting as on main (the coordinator enforces the switch)
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevb")), glm] }).state, R.SUCCESS, "tier 2 macrevb");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS, "tier 2 macrev2");
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevc")), glm] }).state, R.PENDING, "tier 2 macrevc is Terra");
   assert.equal(evalPr({ comments: [comment(v("merge", H, "glm"))] }).state, R.PENDING, "tier 1 GLM-only");
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrevc"))] }).state, R.SUCCESS, "tier 1 macrevc");
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
-  assert.equal(evalPr({ comments: [comment(v("merge", H, "sonnet"))] }).state, R.PENDING, "tier 1 sonnet, switch closed");
-  const open = evalPr({ comments: [comment(v("merge", H, "sonnet"))], codexReviewOff: true });
-  assert.equal(open.state, R.SUCCESS, "tier 1 sonnet, switch open");
-  assert.match(open.why, /via \(sonnet\) under codex-review-off/, "status records the rule used");
-  assert.doesNotMatch(evalPr({ comments: [comment(v("merge", H, "macrevc"))], codexReviewOff: true }).why, /sonnet/);
-  // same comments, switch flipped back: recomputed to pending (what the all_open sweep does)
-  assert.equal(evalPr({ comments: [comment(v("merge", H, "sonnet"))], codexReviewOff: false }).state, R.PENDING, "recomputed after the switch closes");
-  assert.equal(evalPr({ files: [file("docs/a.md")] }).state, R.SUCCESS, "tier 0 needs no verdict");
-  assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(v("block"))] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment("REVIEW-TIER: 1")] }).state, R.PENDING);
 });
 
 test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothing looser does", () => {
@@ -864,26 +854,4 @@ test("an action_required run never ran: it is skipped when picking the latest ru
   assert.equal(failed.state, R.FAILURE, failed.why);
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "failure", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.FAILURE);
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "success", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.SUCCESS);
-});
-
-test("switch fence: an older run that evaluated with the switch on cannot post a Sonnet-only success after the sweep posted pending", async () => {
-  const comments = [comment(v("merge", H, "sonnet"))];
-  const run = async (off) => ({ result: evalPr({ comments, codexReviewOff: off }) });
-  let live = true;
-  const posted = [];
-  // older run evaluated under switch=on (initial true); meanwhile the switch is turned off and the sweep posts pending
-  live = false;
-  posted.push((await run(false)).result.state);
-  const late = await R.fencedEvaluate({ evaluate: run, readSwitch: async () => live, initial: true });
-  posted.push(late.result.state);
-  assert.deepEqual(posted, [R.PENDING, R.PENDING], "the late run re-evaluates instead of posting success");
-  // switch still on: the success stands
-  assert.equal((await R.fencedEvaluate({ evaluate: run, readSwitch: async () => true, initial: true })).result.state, R.SUCCESS);
-  // unreadable switch: a Sonnet-based success is recomputed closed; a non-Sonnet success is kept
-  assert.equal((await R.fencedEvaluate({ evaluate: run, readSwitch: async () => null, initial: true })).result.state, R.PENDING);
-  const gpt = async (off) => ({ result: evalPr({ comments: [comment(v("merge", H, "macrevc"))], codexReviewOff: off }) });
-  assert.equal((await R.fencedEvaluate({ evaluate: gpt, readSwitch: async () => null, initial: true })).result.state, R.SUCCESS);
-  // switch flapping every read ends closed
-  let n = 0;
-  assert.equal((await R.fencedEvaluate({ evaluate: run, readSwitch: async () => n++ % 2 === 0, initial: false })).result.state, R.PENDING);
 });

@@ -491,8 +491,7 @@ export function dataSyncProblem({ pr, files, items, sync }) {
 // verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
-// codexReviewOff: mirrors the coordinator switch file codex-review-off (owner D149, 2026-11-11); default false = closed.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, codexReviewOff = false, now = Date.now() }) {
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -530,15 +529,12 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   const missing = [];
   if (evidence.state === PENDING) missing.push(evidence.why);
   // Owner D149 (2026-11-11): GPT review is back. Tier 2 needs a Sol verdict (macrev2 or macrevb); tier 1 needs a
-  // Terra verdict (macrevc, legacy name macrev) or a Sol one. A (sonnet) merge stands in for either tier ONLY
-  // while the Codex-off switch is on (codexReviewOff; default closed). Without it GLM alone never lands a PR.
-  const sonnetOk = codexReviewOff && lanes.get("(sonnet)") === "merge";
+  // Terra verdict (macrevc, legacy name macrev) or a Sol one; GLM-only or unnamed verdicts do not land. A (sonnet)
+  // merge keeps counting as on main; the coordinator's review-land.sh enforces "sonnet only while codex-review-off".
+  const sonnetOk = lanes.get("(sonnet)") === "merge";
   const merged = (names) => names.some((n) => lanes.get(n) === "merge");
-  // Record the rule used, so a status that passed on the Sonnet fallback says so (and a sweep can recompute it).
-  if (sonnetOk && !merged(tier === 2 ? SOL_LANES : [...SOL_LANES, ...TERRA_LANES])) fb.used.push("(sonnet) under codex-review-off");
-  if (tier === 2 && !merged(SOL_LANES) && !sonnetOk) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge${codexReviewOff ? " or (sonnet)" : ""}`);
-  // A data-sync bot PR keeps its own admission (dataSyncProblem already demands a trusted exact-head merge verdict).
-  if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES]) && !sonnetOk) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge${codexReviewOff ? " or (sonnet)" : ""}`);
+  if (tier === 2 && !merged(SOL_LANES) && !sonnetOk) missing.push(`VERDICT ${SOL_LANES.join(" or ")} or (sonnet) merge`);
+  if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES]) && !sonnetOk) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} or (sonnet) merge`);
   if (design.touching) {
     const d = designVerdict(items, head, carried, fb);
     if (d === "fail") return res(FAILURE, `DESIGN fail (${design.surfaces.join(",")})`, extra);
@@ -576,24 +572,4 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [], repo = REP
 
 export function description(text) {
   return text.length <= 140 ? text : text.slice(0, 139) + "…";
-}
-
-// ---- Switch fence (owner D149) ----
-// Overlapping evaluator runs each read CODEX_REVIEW_OFF when they start, so an older run could post a Sonnet-only
-// success after a newer run (the all_open sweep) posted pending. fencedEvaluate re-reads the switch right before the
-// caller posts: evaluate(off) computes a result under a given switch value, readSwitch() returns the live value
-// (true/false) or null when it cannot be read. If the live value differs from the one used, evaluate again; an
-// unreadable switch never keeps a result that used the Sonnet fallback (it is recomputed with the switch closed).
-export async function fencedEvaluate({ evaluate, readSwitch, initial, max = 3 }) {
-  let off = initial, out = await evaluate(off);
-  for (let i = 0; i < max; i++) {
-    const live = await readSwitch();
-    const usedSonnet = (out?.result?.glmFallback ?? []).some((u) => /sonnet\) under codex-review-off/.test(u));
-    const want = live ?? (usedSonnet ? false : off);
-    if (want === off) return out;
-    off = want;
-    out = await evaluate(off);
-  }
-  // Still moving after `max` tries: only a result computed with the switch closed is safe to publish.
-  return off ? await evaluate(false) : out;
 }

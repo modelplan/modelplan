@@ -11,7 +11,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
-import { CONTEXT, fencedEvaluate, FAILURE, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
+import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -75,15 +75,7 @@ async function readDataSync(pr) {
   return { run, commit };
 }
 
-const parseSwitch = (v) => /^(1|true|on)$/i.test(String(v ?? ""));
-const CODEX_OFF_START = parseSwitch(env.CODEX_REVIEW_OFF);
-// The live switch value for the fence; null when the token cannot read repository variables (fail closed for Sonnet).
-async function readSwitch() {
-  try { return parseSwitch((await gh.get("/actions/variables/CODEX_REVIEW_OFF")).value); }
-  catch (e) { return /HTTP 404/.test(String(e)) ? false : null; }
-}
-
-async function prResult(number, codexOff = CODEX_OFF_START) {
+async function prResult(number) {
   const pr = await gh.get(`/pulls/${number}`);
   const head = pr.head.sha;
   const [comments, reviews, files, runs, combined, members] = await Promise.all([
@@ -97,13 +89,12 @@ async function prResult(number, codexOff = CODEX_OFF_START) {
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
   const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);
-  // Codex-off switch (repository variable CODEX_REVIEW_OFF, mirrors the coordinator codex-review-off file); unset = closed.
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, codexReviewOff: codexOff, now });
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now });
   return { pr, result };
 }
 
 async function evaluatePrAndPost(number) {
-  const { pr, result } = await fencedEvaluate({ evaluate: (off) => prResult(number, off), readSwitch, initial: CODEX_OFF_START });
+  const { pr, result } = await prResult(number);
   if (pr.state !== "open") return log({ pr: number, skipped: `PR is ${pr.state}` });
   // Never publish a verdict for a head that moved while we were reading: the newer event re-evaluates it.
   const now = await gh.get(`/pulls/${number}`);
@@ -146,12 +137,6 @@ async function fromEvent() {
   if (name === "issue_comment") return ev.issue?.pull_request ? evaluatePrAndPost(ev.issue.number) : null;
   if (name === "workflow_dispatch") {
     if (ev.inputs?.group_sha) return evaluateGroupAndPost(ev.inputs.group_sha);
-    // Sweep: re-evaluate every open PR. Run it after CODEX_REVIEW_OFF changes (the variable change emits no event),
-    // so a status that passed on the Sonnet fallback is recomputed under the new switch.
-    if (/^(1|true)$/i.test(ev.inputs?.all_open || "")) {
-      for (const p of await gh.all("/pulls?state=open&base=main")) await evaluatePrAndPost(p.number);
-      return;
-    }
     if (ev.inputs?.pr) return evaluatePrAndPost(Number(ev.inputs.pr));
     return null;
   }
