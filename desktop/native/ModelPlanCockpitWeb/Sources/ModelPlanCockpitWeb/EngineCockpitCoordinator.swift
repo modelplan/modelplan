@@ -123,6 +123,13 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// Hidden pages that ended on their own (a failure, not a release or a clear) since the last open.
   /// Three stop prewarming until the next open, so a page that cannot load is not rebuilt in a loop.
   private var warmFailures = 0
+  /// G3-66: an open that found no engine context yet. The first context completes it, so a click during the
+  /// engine start is not lost and needs no second click.
+  private var pendingOpen = false
+  /// Which engine-side inputs exist, for the failure log. Counters and flags only, never engine data.
+  public var diagnosticState: String {
+    "client=\(client != nil) delivery=\(delivery != nil) page=\(page != nil) presented=\(presented) pendingOpen=\(pendingOpen) warmFailures=\(warmFailures)"
+  }
   private var memoryPressured = false
   private var releasingWarmPage = false
   private var memorySource: (any DispatchSourceMemoryPressure)?
@@ -198,7 +205,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   }
   public func open() {
     guard client != nil else { onUnavailable?(.noClient); return }
-    guard let delivery else { onUnavailable?(.noDelivery); return }
+    guard let delivery else { pendingOpen = true; onUnavailable?(.noDelivery); return }
     guard let context = try? Self.bridgeContext(delivery) else { onUnavailable?(.invalidContext); return }
     prewarmTask?.cancel(); prewarmTask = nil
     warmFailures = 0
@@ -373,6 +380,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     cancelQuery(); page?.requestClose()
   }
   public func close() {
+    pendingOpen = false
     cancelQuery()
     prewarmTask?.cancel(); prewarmTask = nil
     let previous = page, wasPresented = presented
@@ -436,6 +444,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       let context = try Self.bridgeContext(next)
       if let page { await clearKeepingWarmCount(page, adopting: context); page.updateScope(selectedScope) }
       refresh()
+      if pendingOpen { pendingOpen = false; open() }
       schedulePrewarm()
     } catch {
       delivery = nil

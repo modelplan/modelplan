@@ -1,0 +1,1 @@
+Opening the cockpit while the engine is still starting no longer flashes the "Cockpit unavailable" notice: the open completes as soon as the engine is ready, and the notice appears only if the failure lasts a few seconds.
