@@ -7,7 +7,7 @@ import XCTest
 final class ReaderCauseTableTests: XCTestCase {
     func testEachCauseHasItsOwnReasonAndActionInBothLanguages() throws {
         let cases: [(String, String?, String?, String, String, String, String, ReaderCauseTarget)] = [
-            ("runtime_missing", nil, nil, "Node.js is required", "需要 Node.js", "Install Node.js from nodejs.org, then refresh", "从 nodejs.org 安装 Node.js 后刷新", .guidance),
+            ("runtime_missing", nil, nil, "Node.js is required", "需要 Node.js", "Install Node.js, then refresh", "安装 Node.js 后刷新", .guidance),
             ("not_found", "codex", "Codex", "Can't find the Codex command", "找不到 Codex 命令", "Check connected tools in Settings", "在设置检查已连接工具", .openSettings),
             ("timeout", nil, nil, "The reading timed out; it will retry on its own", "读取超时，稍后自动重试", "No action needed; it retries on its own", "无需操作，会自动重试", .guidance),
             ("rpc_error", "codex", "Codex", "Codex's background service returned an error", "Codex 后台服务出错", "It retries on its own; reopen the tool if it keeps failing", "会自动重试；若持续失败请重新打开该工具", .guidance),
@@ -78,7 +78,7 @@ final class ReaderCauseTableTests: XCTestCase {
         var preferences = SettingsPreferences(); preferences.language = .chinese
         let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: preferences, context: context).first { $0.key == .source })
         guard case .subscriptions(let values) = row.value else { return XCTFail("not per-subscription") }
-        XCTAssertEqual(values.first { $0.id == "codex" }?.value, "需要 Node.js · 从 nodejs.org 安装 Node.js 后刷新")
+        XCTAssertEqual(values.first { $0.id == "codex" }?.value, "需要 Node.js · 安装 Node.js 后刷新")
         XCTAssertEqual(values.first { $0.id == "grok" }?.value, "unavailable")
     }
 }

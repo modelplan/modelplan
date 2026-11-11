@@ -46,7 +46,7 @@ public enum ReaderCauseTable {
                          action: .init("Check connected tools in Settings", "在设置检查已连接工具"), target: .openSettings)
         case "runtime_missing":
             return .init(reason: .init("Node.js is required", "需要 Node.js"),
-                         action: .init("Install Node.js from nodejs.org, then refresh", "从 nodejs.org 安装 Node.js 后刷新"), target: .guidance)
+                         action: .init("Install Node.js, then refresh", "安装 Node.js 后刷新"), target: .guidance)
         case "timeout":
             return .init(reason: .init("The reading timed out; it will retry on its own", "读取超时，稍后自动重试"),
                          action: .init("No action needed; it retries on its own", "无需操作，会自动重试"), target: .guidance)
