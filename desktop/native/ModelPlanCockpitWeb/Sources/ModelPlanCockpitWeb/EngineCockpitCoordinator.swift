@@ -14,6 +14,8 @@ import ModelPlanWire
   var onShellChanged: (() -> Void)? { get set }
   /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
+  /// G3-80: the cockpit window's frame while it is on screen; the enlarged field opens on its display.
+  var cockpitFrame: CGRect? { get }
   /// CKP-SHELL-20: build and load the page without showing it or taking focus.
   func prewarm()
   func open()
@@ -30,6 +32,7 @@ public extension CockpitPageSurface {
   var onShown: (() -> Void)? { get { nil } set {} }
   var onShellChanged: (() -> Void)? { get { nil } set {} }
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
+  var cockpitFrame: CGRect? { nil }
   func prewarm() {}
   func requestClose() { discard() }
   func updateAppearance(_ appearance: CockpitAppearance) {}
@@ -145,6 +148,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public var onShellChanged: (() -> Void)?
   /// D88: the presented page's detach / put-back key, for the one-time hints.
   public var attachmentHintAnchor: CockpitAttachmentHintAnchor? { presented ? page?.attachmentHintAnchor : nil }
+  /// G3-80: the presented page's window frame.
+  public var cockpitFrame: CGRect? { presented ? page?.cockpitFrame : nil }
 
   public init(downstream: (any EngineClientEventConsumer)? = nil, makePage: @escaping PageFactory) {
     self.downstream = downstream
