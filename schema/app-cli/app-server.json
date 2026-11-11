@@ -1298,6 +1298,16 @@
             }
           ]
         },
+        "fast": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "lastObservedAt": {
           "format": "date-time",
           "type": "string"

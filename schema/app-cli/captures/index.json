@@ -1138,6 +1138,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "fast",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [

@@ -2922,6 +2922,7 @@ public struct WireCockpitSession: Codable, Sendable {
     public let `lastObservedAt`: WireTimestamp
     public let `state`: String
     public let `rate`: Double?
+    public let `fast`: Bool?
     private enum CodingKeys: String, CodingKey {
         case `sessionRef`
         case `source`
@@ -2932,8 +2933,9 @@ public struct WireCockpitSession: Codable, Sendable {
         case `lastObservedAt`
         case `state`
         case `rate`
+        case `fast`
     }
-    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil) throws {
+    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil, `fast`: Bool? = nil) throws {
         self.`sessionRef` = `sessionRef`
         self.`source` = `source`
         self.`subscriptionRef` = `subscriptionRef`
@@ -2943,6 +2945,7 @@ public struct WireCockpitSession: Codable, Sendable {
         self.`lastObservedAt` = `lastObservedAt`
         self.`state` = `state`
         self.`rate` = `rate`
+        self.`fast` = `fast`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -2956,6 +2959,8 @@ public struct WireCockpitSession: Codable, Sendable {
         self.`lastObservedAt` = try c.decode(WireTimestamp.self, forKey: .`lastObservedAt`)
         self.`state` = try c.decode(String.self, forKey: .`state`)
         self.`rate` = try c.decodeIfPresent(Double.self, forKey: .`rate`)
+        if c.contains(.`fast`), try c.decodeNil(forKey: .`fast`) { throw WireDecodeError.invalidIdentity }
+        self.`fast` = try c.decodeIfPresent(Bool.self, forKey: .`fast`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -2970,6 +2975,7 @@ public struct WireCockpitSession: Codable, Sendable {
         try c.encode(`lastObservedAt`, forKey: .`lastObservedAt`)
         try c.encode(`state`, forKey: .`state`)
         try c.encode(`rate`, forKey: .`rate`)
+        try c.encodeIfPresent(`fast`, forKey: .`fast`)
     }
     private func validate() throws {
         try WireValidation.reference(`sessionRef`)

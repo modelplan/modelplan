@@ -109,6 +109,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// delivery change, feature failure and shutdown. The page applies the same freshness rules to it as
   /// to any data, against the clock at display time.
   private var lastReply: (delivery: EngineDeliveryContext, data: WireCockpitData)?
+  /// The last settled history-import state seen for this delivery (phase, rows, coverage). The cockpit reads
+  /// imported history on every query, but an import finishing or a removal need not change the engine's rows,
+  /// so a change here is what asks the cockpit again (HIST-IMP-05).
+  private var importState: String?
   /// CKP-SHELL-20 (owner D50): keep one loaded, hidden, empty page ready so a click does not wait for a
   /// WebKit cold start. Off by default; the app turns it on when the cockpit entry is enabled.
   public var prewarmEnabled = false {
@@ -435,7 +439,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func adopt(_ next: EngineDeliveryContext) async {
     guard delivery != next else { return }
     cancelQuery()
-    lastReply = nil
+    lastReply = nil; importState = nil
     // A restored scope (D64) waits for the first context; a change of session or floor after that returns to All.
     if let previous = delivery, previous.sessionID != next.sessionID || previous.floor != next.floor { selectedScope="all" }
     scopeMembers.removeAll()
@@ -456,7 +460,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     switch event {
     case .clearPrivateViews(let invalidation):
       cancelQuery()
-      lastReply = nil
+      lastReply = nil; importState = nil
       // The engine's first floor arrives as a clear with no previous session; nothing private was shown yet, so a scope
       // restored for today (D64) stays, and is still checked against the first reply. After a session, a consent or
       // store change forgets the saved scope; an engine stop (the app quitting) keeps it for today.
@@ -492,6 +496,18 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         }
       }
     case .rowsChanged: refresh()
+    case .response(_, .historyImport(let reply)):
+      guard let delivery, reply.delivery == delivery else { break }
+      let status = reply.envelope.data
+      // Progress while running changes nothing the cockpit draws; a finished, cancelled or removed import may.
+      guard status.phase != .running else { break }
+      let state = "\(status.phase)|\(status.importedRows)|" + status.coverage.map { "\($0.source),\($0.from),\($0.through),\($0.rows)" }.joined(separator: ";")
+      guard state != importState else { break }
+      importState = state
+      // The first settled status after a running import is its completion, so it asks too. The kept reply may still hold the removed or superseded history; a hidden page refills too.
+      lastReply = nil
+      trace("import.changed")
+      refresh()
     case .featureFailure(.cockpit, _):
       cancelQuery()
       lastReply = nil

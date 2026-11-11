@@ -59,6 +59,8 @@ import ModelPlanWire
     func apply(_ snapshot: EngineStoreSnapshot) {
         // An unrelated snapshot fanout is not a new consent readback.
         entry.controller.refreshAvailability()
+        // A Privacy look before readiness asks for the import status once the engine is ready.
+        entry.historyImport?.readinessChanged()
     }
 }
 

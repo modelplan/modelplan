@@ -237,6 +237,50 @@ final class CoordinatorTests: XCTestCase {
     XCTAssertEqual(p.displays, 1, "Old query response cannot regain private DOM after clear")
     await coordinator.shutdown(); await client.stop()
   }
+
+  /// Audit B finding 4 (HIST-IMP-05): an import finishing or being removed in Settings asks an open cockpit
+  /// again, although the engine's rows did not change; running progress and repeated statuses do not.
+  @MainActor func testHistoryImportCompletionAndRemovalRequeryAnOpenCockpit() async throws {
+    let coordinator = EngineCockpitCoordinator { PageProbe($0) }
+    let client = HeldClient()
+    coordinator.bind(client: client)
+    let delivery = EngineDeliveryContext(
+      sessionID: "s-" + UUID().uuidString.lowercased(),
+      floor: .init(storeEpoch: "synthetic", generation: 3), revision: 2)
+    await coordinator.consume(.context(delivery))
+    coordinator.open()
+    func requests(_ n: Int) async throws {
+      for _ in 0..<200 {
+        if await client.requests == n { return }
+        try await Task.sleep(for: .milliseconds(5))
+      }
+      let seen = await client.requests
+      XCTFail("expected \(n) cockpit queries, saw \(seen)")
+    }
+    func settle() async { for _ in 0..<50 { await Task.yield() } }
+    func status(_ phase: String, rows: Int) throws -> EngineClientEvent {
+      let coverage = rows > 0 ? #"[{"source":"codex","from":"2026-10-10","through":"2026-11-08","rows":\#(rows)}]"# : "[]"
+      let json = #"{"schemaVersion":1,"phase":"\#(phase)","days":30,"filesDone":0,"filesTotal":0,"firstRunDone":true,"importedRows":\#(rows),"coverage":\#(coverage),"sources":[]}"#
+      let data = try WireDecoder.decode(WireHistoryImportStatus.self, from: Data(json.utf8))
+      let envelope = try WireEnvelope(
+        sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+        consentGeneration: delivery.floor.generation, data: data)
+      return .response(requestID: .string("import"), .historyImport(.init(envelope: envelope, delivery: delivery)))
+    }
+    try await requests(1)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("running", rows: 0)); await settle()
+    try await requests(1)
+    await coordinator.consume(try status("done", rows: 12))
+    try await requests(2)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("done", rows: 12)); await settle()
+    try await requests(2)
+    await coordinator.consume(try status("idle", rows: 0))
+    try await requests(3)
+    await client.complete(); await settle()
+    await coordinator.shutdown(); await client.stop()
+  }
 }
 
 @MainActor private final class ShellLifecyclePage: CockpitPageSurface {
