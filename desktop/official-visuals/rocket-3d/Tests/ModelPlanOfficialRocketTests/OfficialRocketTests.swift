@@ -30,8 +30,10 @@ final class OfficialRocketTests: XCTestCase {
         XCTAssertThrowsError(try OfficialRocket.verified("unregistered.usdz"))
     }
 
-    /// D111.4 with the real glass and the real c01 outline: the end pose reaches the 80 % window overlap.
-    func testD111EndPoseOverlapsTheRealCanopyWindowByAtLeast80Percent() throws {
+    /// D132 with the real glass and the real c01 outline: the end pose shows the front window with the nose above
+    /// it (not a glass dome on top), and the hand-over dollies through it until the glass covers the aperture.
+    /// The D111 window/c01 IoU is printed only: a front window cannot reach 0.80 against the 3:1 aperture.
+    func testD132EndPoseShowsTheFrontWindowAndTheHandoverGoesThroughIt() throws {
         struct Fixture: Decodable { let points: [[Double]] }
         let url = try XCTUnwrap(Bundle.module.url(forResource: "c01-aperture-890", withExtension: "json"))
         let aperture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url)).points.map { EntrancePoint($0[0], $0[1]) }
@@ -39,8 +41,15 @@ final class OfficialRocketTests: XCTestCase {
         let input = LiftOffInput(viewport: .init(width: 1470, height: 956), handoffDiameter: 496,
                                  tailPoint: .init(bounds.centre.x, 900), apertureRect: bounds)
         let rail = StoryboardRail(input: .init(liftOff: input, aperture: aperture, targetNoseY: 176), geometry: try OfficialRocket.source().geometry)
-        print("official end IoU \(rail.endIoU) at elevation \(rail.endElevationDegrees)")
-        XCTAssertGreaterThanOrEqual(rail.endIoU, StoryboardRail.minWindowIoU)
+        let end = rail.facts(at: 1), window = EntranceRect.bounds(end.windowHull)
+        print("OFFICIAL-D132 end elevation \(rail.endElevationDegrees) window top \(window.top) width \(window.width) nose \(end.noseY) " +
+              "IoU \(rail.endIoU) (reported) hand-over coverage \(rail.handoverCoverage)")
+        XCTAssertEqual(window.top, bounds.bottom, accuracy: 2, "window top on the aperture's bottom edge")
+        XCTAssertLessThanOrEqual(window.bottom, 956, "whole window on screen")
+        XCTAssertTrue(end.noseInFront)
+        XCTAssertLessThan(end.noseY, window.top - 40, "the nose shows above the front window")
+        XCTAssertEqual(end.topY, end.noseY, accuracy: 0.5, "the nose, not the glass, is the top of the silhouette")
+        XCTAssertGreaterThanOrEqual(rail.handoverCoverage, StoryboardRail.minHandoverCoverage, "the glass covers the aperture at the hand-over")
     }
 
     #if canImport(RealityKit)

@@ -8,6 +8,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ImageIO
 import Metal
 import ModelPlanEntrance
 import RealityKit
@@ -41,6 +42,9 @@ public final class EntranceScene {
     private let root = Entity()
     private let stage = Entity()
     private let camera = PerspectiveCamera()
+    /// Which hull albedo look mode uses: "cleaned WxH" (D132: the file's atlas with grime and baked shading
+    /// removed, panel lines kept), "file" (the atlas as shipped) or "none" (stand-in or grey box).
+    public private(set) var hullAlbedo = "none"
 
     /// Both themes are black space (owner D116): nothing is drawn behind the rocket, and day differs from night
     /// only by a stronger sun (`EntranceLook.sunIntensity`).
@@ -59,7 +63,7 @@ public final class EntranceScene {
         renderer = try RealityRenderer()
         root.addChild(stage)
         if let url = rocket.modelURL(for: plan.scenario.theme) {
-            try ModelRocket.build(into: stage, url: url, tail: plan.tail, parts: parts, flat: flat, theme: plan.scenario.theme)
+            hullAlbedo = try ModelRocket.build(into: stage, url: url, tail: plan.tail, parts: parts, flat: flat, theme: plan.scenario.theme)
         } else {
             StandInRocket.build(into: stage, tail: plan.tail, parts: parts, theme: plan.scenario.theme, flat: flat)
         }
@@ -120,10 +124,16 @@ public final class EntranceScene {
     public func render(at t: Double) async throws -> EntranceRenderedFrame {
         let facts = plan.facts(at: t)
         guard let pose = facts.liftOff else { throw SceneError.notA3DStage(facts.stage) }
-        stage.position = SIMD3<Float>(0, Float(pose.rise), 0)
-        let plan = pose.camera.renderPlan
-        camera.position = SIMD3<Float>(Float(pose.camera.position.x), Float(pose.camera.position.y), Float(pose.camera.position.z))
-        let q = pose.camera.orientation
+        return EntranceRenderedFrame(image: try await render(camera: pose.camera, rise: pose.rise), facts: facts)
+    }
+
+    /// Renders one frame from any camera with the rocket risen by `rise` metres (owner boards: the front-window
+    /// close-up beside the pass-5 window still, D132).
+    public func render(camera view: EntranceCamera, rise: Double) async throws -> CGImage {
+        stage.position = SIMD3<Float>(0, Float(rise), 0)
+        let plan = view.renderPlan
+        camera.position = SIMD3<Float>(Float(view.position.x), Float(view.position.y), Float(view.position.z))
+        let q = view.orientation
         camera.orientation = simd_quatf(ix: Float(q.x), iy: Float(q.y), iz: Float(q.z), r: Float(q.w))
         camera.camera.fieldOfViewInDegrees = Float(plan.canvasFovDegrees)
         camera.camera.near = Float(EntranceCamera.near)
@@ -146,9 +156,9 @@ public final class EntranceScene {
         }
         let full = try Self.image(from: texture, width: width, height: height)
         let crop = CGRect(x: plan.crop.x.rounded(), y: plan.crop.y.rounded(),
-                          width: pose.camera.viewport.width.rounded(), height: pose.camera.viewport.height.rounded())
+                          width: view.viewport.width.rounded(), height: view.viewport.height.rounded())
         guard let image = full.cropping(to: crop) else { throw SceneError.noImage }
-        return EntranceRenderedFrame(image: image, facts: facts)
+        return image
     }
 
     private static func image(from texture: MTLTexture, width: Int, height: Int) throws -> CGImage {
@@ -295,8 +305,10 @@ enum ModelRocket {
         for child in e.children { forEachModel(child, body) }
     }
 
+    /// Builds the model into `stage`; returns which hull albedo look mode uses (see `EntranceScene.hullAlbedo`).
+    @discardableResult
     static func build(into stage: Entity, url: URL, tail: [TailSlot], parts: Set<EntrancePart>, flat: Bool,
-                      theme: EntranceTheme) throws {
+                      theme: EntranceTheme) throws -> String {
         let loaded = try Entity.load(contentsOf: url)
         // Use the model itself, not the file's scene root: the root may carry AR anchoring, which an offscreen
         // renderer never resolves.
@@ -328,10 +340,19 @@ enum ModelRocket {
                 }
                 e.components.set(model)
             }
-        } else {
-            try HullFinish(theme).dress(body)
         }
-        guard parts.contains(.hull) else { return }
+        var albedo = "none"
+        var finish = HullFinish(theme)
+        if !flat {
+            if let clean = CleanAtlas.texture(modelURL: url) {
+                finish.albedo = clean.texture
+                albedo = "cleaned \(clean.width)x\(clean.height)"
+            } else {
+                albedo = "file"
+            }
+            try finish.dress(body)
+        }
+        guard parts.contains(.hull) else { return albedo }
         let engines = Entity()
         engines.name = "entry-engines"
         stage.addChild(engines)
@@ -353,7 +374,7 @@ enum ModelRocket {
                 bell.name = "entry-bell-\(slot.index)"
                 bell.position = [Float(slot.x), -0.394, Float(slot.z)]
                 bell.scale = [Float(slot.radius / 0.293), 0.78, Float(slot.radius / 0.293)]
-                try HullFinish(theme).dress(bell)
+                try finish.dress(bell)
                 engines.addChild(bell)
             }
         }
@@ -371,6 +392,7 @@ enum ModelRocket {
         plate.name = "entry-tail-plate"
         plate.position = [0, Float(TailLayout.plateY), 0]
         engines.addChild(plate)
+        return albedo
     }
 }
 
@@ -426,6 +448,8 @@ enum TailPlate {
 @MainActor
 struct HullFinish {
     let theme: EntranceTheme
+    /// D132: the cleaned hull albedo (`CleanAtlas`); nil keeps the file's atlas.
+    var albedo: TextureResource?
     init(_ theme: EntranceTheme) { self.theme = theme }
 
     /// The textured outer hull sections.
@@ -547,7 +571,11 @@ struct HullFinish {
             model.materials = model.materials.map { material -> any RealityKit.Material in
                 if Self.hullParts.contains(name) {
                     guard var pbr = material as? PhysicallyBasedMaterial else { return metal(plainColor, roughness: roughness) }
-                    pbr.baseColor.tint = tint
+                    if let albedo {
+                        pbr.baseColor = .init(tint: tint, texture: .init(albedo))
+                    } else {
+                        pbr.baseColor.tint = tint
+                    }
                     pbr.metallic = 1.0
                     pbr.roughness = .init(floatLiteral: roughness)
                     pbr.normal.texture = nil
@@ -968,10 +996,11 @@ enum CanopyGlass {
     }
 }
 
-/// The cockpit behind the canopy, drawn in code (no art files): the file's interior parts (`recessed_cockpit`,
-/// `cockpit_back_half_lining`) become a dim unlit room, and `interior_soft_screen_plane` becomes a dark console
-/// with a few softly lit screens, so the pass-5 "lit screens through the glass" reads faintly behind the
-/// reflections. Unlit, so the studio light does not wash it out and both themes show the same cockpit.
+/// The cockpit behind the front window. The file's interior parts (`recessed_cockpit`, `cockpit_back_half_lining`)
+/// become a dim unlit room. D132: `interior_soft_screen_plane` keeps the model file's own cockpit screen (the
+/// emissive cockpit image the pass-5 renders show through the window and the pass-5 hand-over ends on), shown
+/// unlit at `fileScreenBrightness`; only if the file has no screen image does it become a dark console with
+/// code-drawn panels. Unlit, so the studio light does not wash it out and both themes show the same cockpit.
 @available(macOS 15.0, *)
 @MainActor
 enum CockpitInterior {
@@ -982,6 +1011,22 @@ enum CockpitInterior {
 
     /// Screen brightness (multiplies every panel colour). The glass shows about half of it.
     static let brightness: Float = 1.0
+    /// The file's cockpit screen image, unlit, times this (the glass shows about half of it).
+    static let fileScreenBrightness: CGFloat = 0.85
+
+    /// The file's screen image as an unlit material, if the plane's material carries one (USD emissive texture).
+    static func fileScreen(_ materials: [any RealityKit.Material]) -> UnlitMaterial? {
+        for material in materials {
+            guard let pbr = material as? PhysicallyBasedMaterial else { continue }
+            let texture = pbr.emissiveColor.texture ?? pbr.baseColor.texture
+            guard let texture else { continue }
+            var m = UnlitMaterial()
+            m.color = .init(tint: NSColor(white: fileScreenBrightness, alpha: 1), texture: texture)
+            m.faceCulling = .none
+            return m
+        }
+        return nil
+    }
 
     /// Panels on the console in its own plane (metres; the plane is 0.92 x 0.76, facing the window along +z):
     /// centre x, centre y, width, height, colour (sRGB). Two clusters of screens and a status strip, like pass 5.
@@ -1006,6 +1051,11 @@ enum CockpitInterior {
 
     static func dress(_ e: Entity, name: String) {
         guard var model = e.components[ModelComponent.self] else { return }
+        if name == screenPlane, let screen = fileScreen(model.materials) {
+            model.materials = model.materials.map { _ in screen }
+            e.components.set(model)
+            return
+        }
         let room: SIMD3<Float> = name == screenPlane ? [0.025, 0.032, 0.045] : [0.018, 0.02, 0.026]
         let material = unlit(room)
         model.materials = model.materials.map { _ in material }
@@ -1028,8 +1078,9 @@ enum CockpitInterior {
     }
 }
 
-/// What the end-pose camera actually sees through the canopy (r3b feedback: the flat console read as a sticker on
-/// the rim). Measured on the model file (`entrance-r3/land3.py`): from the end pose, looking up about 62-65
+/// The dark lining inside the capsule (r3b-r3d; D132 moved its screens to the back side walls, see `screens`).
+/// History: what the 62-degree end-pose camera saw through the canopy (r3b feedback: the flat console read as a
+/// sticker on the rim). Measured on the model file (`entrance-r3/land3.py`): from the end pose, looking up about 62-65
 /// degrees, every sight line through the glass runs up inside the capsule and lands on the inside of the nose,
 /// about y 13.45-14.2, x within +-0.42, front half; a flat console anywhere inside is either cut by the rim or seen
 /// edge-on. So the interior is a dark lining just inside the skin (`radiusFraction` of the hull radius, y 12.3 to
@@ -1069,17 +1120,20 @@ enum CockpitCeiling {
     }
 
     /// Screens on the texture: azimuth (degrees, 0 = the window side), height (metres in the rocket frame),
-    /// width and height (metres along the surface), colour (sRGB). Spread over the band the sight lines land on.
+    /// width and height (metres along the surface), colour (sRGB). D132: the camera now looks through the front
+    /// window from about 20 degrees below, so the sight lines cross the capsule rising gently: the centre ones end
+    /// on the file's cockpit screen, the outer columns on the back side walls (|az| about 110-160, y 12.6-13.4) and
+    /// the top rows on the upper back wall (y 13.3-13.6). Screens sit there, in two clusters left and right of the
+    /// main screen like the pass-5 window still. (The r3 overhead band served the 62-degree dome view.)
     static let screens: [(az: Float, y: Float, w: Float, h: Float, rgb: SIMD3<Float>)] = {
         let cool: SIMD3<Float> = [0.58, 0.72, 0.95], dim: SIMD3<Float> = [0.32, 0.42, 0.58], amber: SIMD3<Float> = [1.0, 0.72, 0.38]
-        // Overhead band above the opening (where the sight lines from the window centre land) and side panels
-        // beside it (where the outer columns land).
         return [
-            (-34, 13.87, 0.09, 0.06, dim), (-12, 13.91, 0.08, 0.06, cool), (12, 13.91, 0.08, 0.06, amber),
-            (34, 13.87, 0.09, 0.06, cool), (0, 14.03, 0.06, 0.045, cool), (-22, 14.0, 0.05, 0.04, amber),
-            (22, 14.0, 0.05, 0.04, dim),
-            (-65, 13.5, 0.12, 0.09, cool), (65, 13.5, 0.12, 0.09, dim), (-63, 13.69, 0.08, 0.06, amber),
-            (63, 13.69, 0.08, 0.06, cool), (-76, 13.86, 0.07, 0.05, dim), (76, 13.86, 0.07, 0.05, cool),
+            (-118, 12.95, 0.15, 0.11, cool), (-118, 12.78, 0.15, 0.09, amber), (-134, 13.06, 0.12, 0.12, dim),
+            (-134, 12.86, 0.10, 0.07, cool), (-150, 13.18, 0.09, 0.07, amber), (-112, 13.2, 0.08, 0.05, dim),
+            (118, 12.95, 0.15, 0.11, dim), (118, 12.78, 0.15, 0.09, cool), (134, 13.06, 0.12, 0.12, cool),
+            (134, 12.86, 0.10, 0.07, amber), (150, 13.18, 0.09, 0.07, cool), (112, 13.2, 0.08, 0.05, amber),
+            (-165, 13.42, 0.12, 0.05, dim), (165, 13.42, 0.12, 0.05, cool), (-160, 13.55, 0.07, 0.035, amber),
+            (160, 13.55, 0.07, 0.035, dim),
         ]
     }()
 
@@ -1149,12 +1203,9 @@ enum CockpitCeiling {
         }
         // Faint console housings behind the screens: barely lighter than the lining, so no hard outline shows.
         c.setFillColor(color([0.03, 0.035, 0.045]))
-        // Every screen also at the mirrored height (top + bottom - y): if the texture's v runs the other way than
-        // assumed, the copies land on the band instead; the unused set falls in the opening or out of sight.
-        let mirrored = Self.screens.map { s -> (az: Float, y: Float, w: Float, h: Float, rgb: SIMD3<Float>) in
-            (s.az, bottom + top - s.y, s.w, s.h, s.rgb)
-        }
-        let screens = Self.screens + mirrored
+        // D132: no mirrored copies any more (the r3d hedge against a reversed v). Seen through the front window,
+        // a reversed v only moves the side screens up to the upper back wall, still in view.
+        let screens = Self.screens
         for s in screens {
             c.addPath(CGPath(roundedRect: rect(az: s.az, y: s.y, w: s.w * 1.35, h: s.h * 1.4).insetBy(dx: 0, dy: 0),
                              cornerWidth: 10, cornerHeight: 10, transform: nil))
@@ -1181,6 +1232,126 @@ enum CockpitCeiling {
         }
         guard let image = c.makeImage() else { throw TextureError.context }
         return image
+    }
+}
+
+/// D132 finish: the hull albedo without the grime. The model file's atlas (one 1024 x 2048 image for the five hull
+/// sections) carries panel lines and hatch outlines, but also blotchy grime and baked vertical shading bands that
+/// read as dirt on the polished metal. This derives a clean albedo from it in code: flat metal at the atlas's mean
+/// level, and only the thin dark features kept (a pixel stays dark when it is darker than its 21 x 21 neighbourhood
+/// by more than `lineThreshold` and lies on a straight run of such pixels, so spots and smudges drop out). No new art
+/// file: the source is the shipped atlas, read from the model file at run time; on any failure the file's atlas stays.
+@available(macOS 15.0, *)
+@MainActor
+enum CleanAtlas {
+    /// The hull atlas inside the model file (both finishes; a stored, uncompressed zip entry as USDZ requires).
+    static let entry = "textures/Texture_9_false.jpg"
+    static let lineThreshold: Float = 0.06
+    /// Line depth: 0 keeps no lines, 1 the full depth (lines at about a quarter of the metal level).
+    static let lineStrength: Float = 1.0
+    static var cache: [String: (texture: TextureResource, width: Int, height: Int)] = [:]
+
+    static func texture(modelURL url: URL) -> (texture: TextureResource, width: Int, height: Int)? {
+        if let hit = cache[url.path] { return hit }
+        guard let data = try? Data(contentsOf: url), let jpeg = storedEntry(entry, in: data),
+              let source = CGImageSourceCreateWithData(jpeg as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let clean = cleaned(image),
+              let resource = try? TextureResource.generate(from: clean, options: .init(semantic: .color))
+        else { return nil }
+        let result = (texture: resource, width: clean.width, height: clean.height)
+        cache[url.path] = result
+        return result
+    }
+
+    /// A stored (method 0) entry of a zip archive, by walking the local file headers.
+    static func storedEntry(_ name: String, in data: Data) -> Data? {
+        let bytes = [UInt8](data)
+        func u16(_ o: Int) -> Int { Int(bytes[o]) | Int(bytes[o + 1]) << 8 }
+        func u32(_ o: Int) -> Int { u16(o) | u16(o + 2) << 16 }
+        var offset = 0
+        while offset + 30 <= bytes.count, u32(offset) == 0x0403_4b50 {
+            let flags = u16(offset + 6), method = u16(offset + 8), size = u32(offset + 18)
+            let nameLength = u16(offset + 26), extra = u16(offset + 28)
+            let start = offset + 30 + nameLength + extra
+            // Bit 3: sizes follow the data, so the walk cannot continue.
+            guard flags & 0x8 == 0, nameLength > 0, start + size <= bytes.count else { return nil }
+            let entryName = String(decoding: bytes[(offset + 30)..<(offset + 30 + nameLength)], as: UTF8.self)
+            if entryName == name { return method == 0 ? Data(bytes[start..<(start + size)]) : nil }
+            offset = start + size
+        }
+        return nil
+    }
+
+    static func cleaned(_ image: CGImage) -> CGImage? {
+        let w = image.width, h = image.height, n = w * h
+        guard w > 32, h > 32 else { return nil }
+        var rgba = [UInt8](repeating: 0, count: n * 4)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let info = CGImageAlphaInfo.premultipliedLast.rawValue
+        let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
+            guard let c = CGContext(data: buffer.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                    space: space, bitmapInfo: info) else { return false }
+            c.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drawn else { return nil }
+        var level = [Float](repeating: 0, count: n)
+        var mean: Float = 0
+        for i in 0..<n {
+            level[i] = (Float(rgba[4 * i]) + Float(rgba[4 * i + 1]) + Float(rgba[4 * i + 2])) / (3 * 255)
+            mean += level[i]
+        }
+        mean /= Float(n)
+        // Separable box blur, radius 10 at 1024 wide.
+        let r = max(2, w / 100)
+        var row = [Float](repeating: 0, count: n), low = [Float](repeating: 0, count: n)
+        for y in 0..<h {
+            var sum: Float = 0
+            for x in -r...r { sum += level[y * w + min(w - 1, max(0, x))] }
+            for x in 0..<w {
+                row[y * w + x] = sum / Float(2 * r + 1)
+                sum += level[y * w + min(w - 1, x + r + 1)] - level[y * w + max(0, x - r)]
+            }
+        }
+        for x in 0..<w {
+            var sum: Float = 0
+            for y in -r...r { sum += row[min(h - 1, max(0, y)) * w + x] }
+            for y in 0..<h {
+                low[y * w + x] = sum / Float(2 * r + 1)
+                sum += row[min(h - 1, y + r + 1) * w + x] - row[max(0, y - r) * w + x]
+            }
+        }
+        var dark = [UInt8](repeating: 0, count: n)
+        for i in 0..<n where level[i] - low[i] < -lineThreshold * 0.6 { dark[i] = 1 }
+        // A straight run: at least 7 of the 9 pixels through it, vertically or horizontally.
+        func lineish(_ x: Int, _ y: Int) -> Bool {
+            var v = 0, hz = 0
+            for k in -4...4 {
+                v += Int(dark[min(h - 1, max(0, y + k)) * w + x])
+                hz += Int(dark[y * w + min(w - 1, max(0, x + k))])
+            }
+            return v >= 7 || hz >= 7
+        }
+        let base: Float = 0.62
+        var out = [UInt8](repeating: 255, count: n * 4)
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = y * w + x, d = level[i] - low[i]
+                var k: Float = 0
+                if d < -lineThreshold || d > lineThreshold * 1.4, lineish(x, y) {
+                    k = d < 0 ? max(-0.45, (d + lineThreshold) * 2.2) : min(0.05, (d - lineThreshold * 1.4) * 0.6)
+                }
+                let value = min(1, max(0, mean * (base + k * lineStrength) / base))
+                let byte = UInt8((value * 255).rounded())
+                out[4 * i] = byte; out[4 * i + 1] = byte; out[4 * i + 2] = byte
+            }
+        }
+        // An image that owns a copy of the bytes (a bitmap context's image may still point at `out`).
+        guard let provider = CGDataProvider(data: Data(out) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: space,
+                       bitmapInfo: CGBitmapInfo(rawValue: info), provider: provider, decode: nil, shouldInterpolate: true,
+                       intent: .defaultIntent)
     }
 }
 

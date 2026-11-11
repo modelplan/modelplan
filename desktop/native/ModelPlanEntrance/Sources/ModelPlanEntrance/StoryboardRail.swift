@@ -7,7 +7,11 @@
 //     constant horizontal shift that centres the rocket's plane on the cockpit column (a fixed shift lens, as
 //     architecture photography uses to keep verticals upright off-centre); the camera only pitches, never yaws
 //     or rolls, so the rocket stays upright;
-//  4. the end pose overlaps the rocket window with the cockpit's c01 aperture (IoU >= 0.80 when reachable).
+//  4. D132 (owner 2026-11-11, replaces D111.4's overlap search): the end pose looks at the FRONT window from
+//     slightly below, as the approved pass-5 window shot does, with the nose above it; the hand-over then dollies
+//     through that window until the glass covers the cockpit's c01 aperture, so the cockpit is seen through it.
+//     (The D111 search for the best window/c01 overlap ended 62-65 degrees below the window: foreshortened that
+//     much, the front window became the top of the silhouette and read as a glass dome.)
 // Pure Swift: every pose is solved numerically here, so the rules are checked on Linux.
 import Foundation
 
@@ -40,9 +44,16 @@ public struct StoryboardPoseFacts: Equatable, Sendable {
 public struct StoryboardRail: Sendable {
     public static let defaultFov = 30.0
     public static let liftMetres = 14.2
-    public static let minWindowIoU = 0.80
-    /// Upper bound of the end-pose elevation search (camera below the window, looking up at it).
-    static let maxEndElevation = 80.0
+    /// D132: the end-pose camera sits this many degrees below the window centre (the pass-5 window still looks up
+    /// at the window from slightly below; the c01 overlap search had ended at 62-65 degrees).
+    public static let frontElevation = 20.0
+    /// D132: window width at the end pose as a fraction of the aperture width; its top edge sits on the aperture's
+    /// bottom edge, so the nose shows above it.
+    public static let frontWindowWidth = 0.7
+    /// D132 hand-over gate: at the end of the map the glass covers at least this much of the c01 aperture. It
+    /// replaces D111.4's window/c01 IoU >= 0.80, which a front window cannot reach (its outline is about 1.5:1, the
+    /// aperture about 3:1; the IoU is still reported).
+    public static let minHandoverCoverage = 0.99
     static let solveTailSamples = 64
 
     public let input: StoryboardRailInput
@@ -50,8 +61,14 @@ public struct StoryboardRail: Sendable {
     public let start: EntranceCamera
     public let end: EntranceCamera
     public let startAngleDegrees: Double
+    /// Degrees the end-pose camera sits below the window centre (`frontElevation`).
     public let endElevationDegrees: Double
+    /// Window/aperture IoU at the end pose (reported only since D132).
     public let endIoU: Double
+    /// The camera at the end of the hand-over: closer along the same line, the glass covering the aperture.
+    public let handover: EntranceCamera
+    /// Fraction of the c01 aperture inside the projected glass at the hand-over camera.
+    public let handoverCoverage: Double
     let aperturePolygon: [EntrancePoint]
     let tailVertices: [EntranceVector]
 
@@ -114,76 +131,79 @@ public struct StoryboardRail: Sendable {
         start = opening.camera
         startAngleDegrees = opening.angle
 
-        // 4. End pose on the risen rocket: maximise the window / aperture overlap.
+        // 4. D132 end pose on the risen rocket: the front window seen from `frontElevation` below its centre, as
+        // wide as `frontWindowWidth` of the aperture, its top edge on the aperture's bottom edge (nose above it).
         let glass = geometry.glassVertices.map { EntranceVector($0.x, $0.y + Self.liftMetres, $0.z) }
         let centre = EntranceVector(geometry.glassCentre.x, geometry.glassCentre.y + Self.liftMetres, geometry.glassCentre.z)
         let apertureBounds = EntranceRect.bounds(polygon)
-        let target = polygon
-        // Each candidate is scored on the camera it actually produces (aimed, then projected), not on a translated
-        // hull: the translation shortcut ranked a 70-degree pose first although the aimed 62.5-degree pose overlaps
-        // more (slice 4, real glass). Coarse grid first, then a finer grid around the best candidate.
-        var framed: [String: (camera: EntranceCamera, hull: EntranceRect)] = [:]
-        func frame(_ elevation: Double, _ widthFactor: Double) -> (camera: EntranceCamera, hull: EntranceRect) {
-            let key = "\(elevation)/\(widthFactor)"
-            if let hit = framed[key] { return hit }
-            let e = elevation * Double.pi / 180
-            let direction = EntranceVector(0, -sin(e), cos(e))
-            func cameraAt(_ d: Double) -> EntranceCamera {
-                Self.aim(centre + direction * d, toPut: centre, at: apertureBounds.centre, lookingAt: centre, fov: fov, viewport: vp, shift: shift)
+        let e = Self.frontElevation * Double.pi / 180
+        let direction = EntranceVector(0, -sin(e), cos(e))
+        /// A pitch-only camera `d` metres from the window centre along `direction`: the window's top edge on
+        /// `windowTop`, or (nil) the window's box centre on the aperture centre.
+        func placed(_ d: Double, windowTop: Double?) -> EntranceCamera {
+            let position = centre + direction * d
+            var camera = Self.aim(position, toPut: centre, at: apertureBounds.centre, lookingAt: centre, fov: fov, viewport: vp, shift: shift)
+            for _ in 0..<8 {
+                let box = camera.projectBounds(glass)
+                let dy = windowTop.map { $0 - box.top } ?? (apertureBounds.centre.y - box.centre.y)
+                if abs(dy) < 0.25 { break }
+                let c = camera.project(centre).point
+                camera = Self.aim(position, toPut: centre, at: .init(c.x, c.y + dy), lookingAt: centre, fov: fov, viewport: vp, shift: shift)
             }
-            var lo = 0.8, hi = 40.0
-            for _ in 0..<30 {
-                let m = (lo + hi) / 2
-                if cameraAt(m).projectBounds(glass).width > widthFactor * apertureBounds.width { lo = m } else { hi = m }
-            }
-            let camera = cameraAt((lo + hi) / 2)
-            let result = (camera, EntranceRect.bounds(Self.convexHull(glass.map { camera.project($0).point })))
-            framed[key] = result
-            return result
+            return camera
         }
-        func candidate(_ elevation: Double, _ widthFactor: Double, _ lift: Double, step: Double) -> (camera: EntranceCamera, iou: Double) {
-            let (camera, hb) = frame(elevation, widthFactor)
-            // Pitch so the window's box centre (not the glass centre point) sits on the aperture centre, plus `lift`.
-            let c = camera.project(centre).point
-            let aimed = Self.aim(camera.position, toPut: centre, at: .init(c.x, c.y + apertureBounds.centre.y - hb.centre.y + lift),
-                                 lookingAt: centre, fov: fov, viewport: vp, shift: shift)
-            return (aimed, Self.iou(Self.convexHull(glass.map { aimed.project($0).point }), target, step: step))
+        var lo = 0.8, hi = 40.0
+        for _ in 0..<30 {
+            let m = (lo + hi) / 2
+            if placed(m, windowTop: apertureBounds.bottom).projectBounds(glass).width > Self.frontWindowWidth * apertureBounds.width { lo = m } else { hi = m }
         }
-        var bestEnd: (camera: EntranceCamera, elevation: Double, width: Double, lift: Double, iou: Double)?
-        func consider(_ elevation: Double, _ width: Double, _ lift: Double, step: Double = 6) {
-            let c = candidate(elevation, width, lift, step: step)
-            if bestEnd == nil || c.iou > bestEnd!.iou { bestEnd = (c.camera, elevation, width, lift, c.iou) }
+        let endDistance = (lo + hi) / 2
+        end = placed(endDistance, windowTop: apertureBounds.bottom)
+        endElevationDegrees = Self.frontElevation
+        endIoU = Self.iou(Self.convexHull(glass.map { end.project($0).point }), polygon, step: 2)
+
+        // The hand-over: the farthest camera on the same line whose glass covers the aperture.
+        func covered(_ camera: EntranceCamera, step: Double) -> Double {
+            let projected = glass.map { camera.project($0) }
+            guard projected.allSatisfy(\.inFront) else { return 0 }
+            return Self.coverage(of: polygon, by: Self.convexHull(projected.map(\.point)), step: step)
         }
-        for elevation in stride(from: 20.0, through: Self.maxEndElevation, by: 2.5) {
-            for width in [1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3] {
-                for lift in stride(from: -50.0, through: 10.0, by: 10.0) { consider(elevation, width, lift) }
-            }
+        lo = 1.0; hi = endDistance
+        for _ in 0..<30 {
+            let m = (lo + hi) / 2
+            if covered(placed(m, windowTop: nil), step: 3) >= Self.minHandoverCoverage + 0.005 { lo = m } else { hi = m }
         }
-        let coarse = bestEnd!
-        bestEnd = nil  // the fine pass scores on a finer sampling grid
-        for elevation in stride(from: coarse.elevation - 2, through: coarse.elevation + 2, by: 0.5) where elevation <= Self.maxEndElevation {
-            for width in stride(from: coarse.width - 0.04, through: coarse.width + 0.04, by: 0.02) {
-                for lift in stride(from: coarse.lift - 8, through: coarse.lift + 8, by: 2) { consider(elevation, width, lift, step: 4) }
-            }
-        }
-        end = bestEnd!.camera
-        endElevationDegrees = bestEnd!.elevation
-        endIoU = Self.iou(Self.convexHull(glass.map { bestEnd!.camera.project($0).point }), target, step: 2)
+        handover = placed(lo, windowTop: nil)
+        handoverCoverage = covered(handover, step: 2)
     }
 
     /// One continuous move: position along a straight smootherstep path, orientation slerped over the whole
     /// stage, constant field of view and one constant lens shift; the rocket rises one body length with the same easing.
     public func pose(at t: Double) -> LiftOffPose {
-        let t = min(1, max(0, t)), u = EntranceEasing.smootherstep(t), rise = Self.liftMetres * u
+        let t = min(1, max(0, t)), u = EntranceEasing.smootherstep(t)
         let camera = EntranceCamera(position: start.position.lerp(to: end.position, u),
                                     orientation: start.orientation.slerp(to: end.orientation, u),
                                     fovDegrees: input.fovDegrees, viewport: input.liftOff.viewport, shift: start.shift)
+        return pose(camera, rise: Self.liftMetres * u, progress: t, turnTarget: end.orientation)
+    }
+
+    /// D132 hand-over (the map stage): from the end pose the camera dollies along the same line toward the window
+    /// until the glass covers the c01 aperture. Same field of view and lens shift, pitch only; the rocket holds.
+    public func handoverPose(at t: Double) -> LiftOffPose {
+        let t = min(1, max(0, t)), u = EntranceEasing.smootherstep(t)
+        let camera = EntranceCamera(position: end.position.lerp(to: handover.position, u),
+                                    orientation: end.orientation.slerp(to: handover.orientation, u),
+                                    fovDegrees: input.fovDegrees, viewport: input.liftOff.viewport, shift: start.shift)
+        return pose(camera, rise: Self.liftMetres, progress: t, turnTarget: handover.orientation)
+    }
+
+    func pose(_ camera: EntranceCamera, rise: Double, progress: Double, turnTarget: EntranceQuaternion) -> LiftOffPose {
         let lift = { (p: EntranceVector) in EntranceVector(p.x, p.y + rise, p.z) }
         let tail = tailVertices.map(lift).map { camera.project($0) }
-        return LiftOffPose(progress: t, camera: camera, rise: rise,
+        return LiftOffPose(progress: progress, camera: camera, rise: rise,
                            windowRect: camera.projectBounds(geometry.glassVertices.map(lift)),
                            tailRect: .bounds(tail.map(\.point)), tailInFront: tail.allSatisfy(\.inFront),
-                           turnRemainingDegrees: camera.orientation.angle(to: end.orientation) * 180 / Double.pi)
+                           turnRemainingDegrees: camera.orientation.angle(to: turnTarget) * 180 / Double.pi)
     }
 
     public func facts(at t: Double) -> StoryboardPoseFacts {
@@ -264,6 +284,26 @@ public struct StoryboardRail: Sendable {
             j = i
         }
         return c
+    }
+
+    /// Fraction of polygon `a`'s area that lies inside polygon `b`, by grid sampling (`step` points).
+    public static func coverage(of a: [EntrancePoint], by b: [EntrancePoint], step: Double) -> Double {
+        guard a.count > 2, b.count > 2 else { return 0 }
+        let box = EntranceRect.bounds(a), bb = EntranceRect.bounds(b)
+        var inA = 0, both = 0
+        var y = box.top + step / 2
+        while y < box.bottom {
+            var x = box.left + step / 2
+            while x < box.right {
+                if inside(a, x, y) {
+                    inA += 1
+                    if x >= bb.left && x <= bb.right && y >= bb.top && y <= bb.bottom && inside(b, x, y) { both += 1 }
+                }
+                x += step
+            }
+            y += step
+        }
+        return inA > 0 ? Double(both) / Double(inA) : 0
     }
 
     /// Area overlap of two polygons by grid sampling (`step` points).

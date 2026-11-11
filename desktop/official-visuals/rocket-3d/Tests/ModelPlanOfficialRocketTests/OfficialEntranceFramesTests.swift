@@ -85,6 +85,20 @@ final class OfficialEntranceFramesTests: XCTestCase {
                 XCTAssertGreaterThan(covered, 0.01, "\(theme) \(shot) is empty")
                 try save(frame.image, "official-right-\(shot)-\(theme.rawValue)")
             }
+            // D132: the hand-over through the front window (end of the map stage: the glass covers the aperture).
+            let handover = try await scene.render(at: plan.timeline.mapEnd - 0.001)
+            XCTAssertGreaterThan(coverage(handover.image), 0.01, "\(theme) hand-over is empty")
+            try save(handover.image, "official-right-handover-\(theme.rawValue)")
+            // D132: the front window close-up, framed like the pass-5 window still (from about 20 degrees below,
+            // the window about 60 % of the width, the nose above it), for the owner board.
+            let windowCentre = EntranceVector(0, 12.835, 0.81), e = 20.0 * Double.pi / 180
+            let eye = windowCentre + EntranceVector(0, -sin(e), cos(e)) * 4.0
+            let closeup = EntranceCamera(position: eye, orientation: .lookAt(eye: eye, target: .init(0, 13.0, 0.5)), fovDegrees: 30,
+                                         viewport: .init(width: 1000, height: 1000))
+            let image = try await scene.render(camera: closeup, rise: 0)
+            print("OFFICIAL-FRAME \(theme.rawValue) window-closeup coverage \(String(format: "%.3f", coverage(image)))")
+            XCTAssertGreaterThan(coverage(image), 0.2, "\(theme) close-up misses the capsule")
+            try save(image, "official-window-closeup-\(theme.rawValue)")
         }
     }
 
@@ -164,9 +178,17 @@ final class OfficialEntranceFramesTests: XCTestCase {
             let width = gasket.map { g in glass.map { simd_distance($0, g) }.min() ?? 0 }.max() ?? 0
             print("OFFICIAL-GASKET \(theme.rawValue) gasket width \(String(format: "%.1f", width * 100)) cm")
             XCTAssertLessThan(width, 0.02, "\(theme) gasket is still wide")
-            // The cockpit behind the glass: a lit console drawn in code.
-            XCTAssertNotNil(scene.entity(named: "cockpit-screen-0"), "\(theme) no cockpit screens behind the glass")
-            // The overhead cockpit lining the end-pose camera sees through the glass: an unlit textured surface.
+            // D132: the cockpit behind the front window is the file's own cockpit screen, unlit with its image.
+            for model in try models("interior_soft_screen_plane") {
+                for material in model.materials {
+                    let unlit = try XCTUnwrap(material as? UnlitMaterial, "\(theme) cockpit screen must be unlit")
+                    XCTAssertNotNil(unlit.color.texture, "\(theme) cockpit screen lost the file's screen image")
+                }
+            }
+            // D132: the hull albedo is the cleaned atlas (panel lines kept, grime and baked shading removed).
+            print("OFFICIAL-ALBEDO \(theme.rawValue) \(scene.hullAlbedo)")
+            XCTAssertTrue(scene.hullAlbedo.hasPrefix("cleaned"), "\(theme) hull albedo: \(scene.hullAlbedo)")
+            // The cockpit lining around the screen, with the side screens: an unlit textured surface.
             let ceiling = try XCTUnwrap(scene.entity(named: "cockpit-ceiling")?.components[ModelComponent.self], "\(theme) no cockpit lining")
             for material in ceiling.materials {
                 let unlit = try XCTUnwrap(material as? UnlitMaterial, "\(theme) cockpit lining must be unlit")

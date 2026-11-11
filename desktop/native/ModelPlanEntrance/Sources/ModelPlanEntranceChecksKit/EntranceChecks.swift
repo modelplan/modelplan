@@ -263,7 +263,7 @@ public enum EntranceChecks {
             var small = frame.measurement; small.areaFraction *= 0.5
             try run.expect(!KeyframeComparison.compare(native: small, to: frame).passed, "half the area fails")
         }
-        run.group("STORYBOARD D111 camera: whole rocket upright at the opening, one body length of lift, one constant lens, window on the aperture") {
+        run.group("STORYBOARD D111/D132 camera: whole rocket upright at the opening, one body length of lift, one constant lens, front window, hand-over through it") {
             let input = LiftOffInput(viewport: .init(width: 1470, height: 956), handoffDiameter: 496, tailPoint: .init(1117, 900),
                                      apertureRect: .init(left: 816, top: 41, width: 601.5, height: 199))
             let rail = StoryboardRail(input: .init(liftOff: input, targetNoseY: 176))
@@ -286,8 +286,36 @@ public enum EntranceChecks {
             try run.near(rail.pose(at: 1).rise, 14.2, 1e-9, "lifts one body length")
             let endFacts = rail.facts(at: 1)
             try run.expect(abs(EntranceRect.bounds(endFacts.windowHull).centre.x - 1117) < 2, "window on the cockpit column")
-            print("D111 stand-in end IoU vs rect aperture: \(rail.endIoU), elevation \(rail.endElevationDegrees), opening angle \(rail.startAngleDegrees)")
-            try run.expect(rail.endIoU >= 0.55, "stand-in window broadly overlaps the aperture: \(rail.endIoU)")
+            print("D132 stand-in end: elevation \(rail.endElevationDegrees), IoU vs rect aperture \(rail.endIoU) (reported), hand-over coverage \(rail.handoverCoverage), opening angle \(rail.startAngleDegrees)")
+            // D132: a front window. The end camera sits below the window centre at the pass-5 window-shot angle,
+            // the whole window is on screen with the nose above it (not the top of the silhouette), and the
+            // hand-over dollies through the window until the glass covers the aperture.
+            let window = EntranceRect.bounds(endFacts.windowHull)
+            let g = rail.geometry.glassCentre, risenGlass = EntranceVector(g.x, g.y + 14.2, g.z), seen = rail.end.position - risenGlass
+            let elevation = atan2(-seen.y, (seen.x * seen.x + seen.z * seen.z).squareRoot()) * 180 / Double.pi
+            try run.near(elevation, StoryboardRail.frontElevation, 0.01, "end camera below the window centre at the front-window angle")
+            try run.near(rail.endElevationDegrees, StoryboardRail.frontElevation, 0, "end camera at the front-window angle")
+            try run.expect(window.top >= 26 + 12 && window.bottom <= 956, "whole window on screen: \(window.top)...\(window.bottom)")
+            try run.near(window.top, 240, 2, "window top on the aperture's bottom edge")
+            try run.near(window.width, StoryboardRail.frontWindowWidth * 601.5, 3, "window width")
+            try run.expect(endFacts.noseInFront && endFacts.noseY < window.top - 40, "nose above the window: nose \(endFacts.noseY), window top \(window.top)")
+            try run.near(endFacts.topY, endFacts.noseY, 0.5, "the nose, not the glass, is the top of the silhouette")
+            try run.expect(rail.handoverCoverage >= StoryboardRail.minHandoverCoverage, "glass covers the aperture at the hand-over: \(rail.handoverCoverage)")
+            var lastDistance = Double.infinity
+            for i in 0...20 {
+                let pose = rail.handoverPose(at: Double(i) / 20)
+                try run.near(pose.rise, 14.2, 1e-9, "rocket holds during the hand-over")
+                try run.near(pose.camera.fovDegrees, StoryboardRail.defaultFov, 0, "hand-over: no zoom")
+                try run.expect(pose.camera.shift == open.camera.shift, "hand-over: same lens shift")
+                try run.near(pose.camera.position.x, 0, 1e-9, "hand-over: no sideways slide")
+                let distance = (pose.camera.position - risenGlass).length
+                try run.expect(distance <= lastDistance + 1e-9, "hand-over moves toward the window"); lastDistance = distance
+            }
+            let mapPlan = EntrancePlan(.init(dockIDs: ["a", "b"], rollDistance: 800, liftOff: input))
+            let atMapEnd = try XCTUnwrapLike(mapPlan.facts(at: mapPlan.timeline.mapEnd - 1e-6).liftOff, "map pose")
+            try run.expect((atMapEnd.camera.position - mapPlan.storyboard!.handover.position).length < 1e-3, "map stage ends on the hand-over camera")
+            let atMapStart = try XCTUnwrapLike(mapPlan.facts(at: mapPlan.timeline.mapStart).liftOff, "map start pose")
+            try run.expect((atMapStart.camera.position - mapPlan.storyboard!.end.position).length < 1e-6, "map stage starts on the end pose")
             let plan = EntrancePlan(.init(dockIDs: ["a", "b"], rollDistance: 800, liftOff: input))
             try run.near(plan.facts(at: plan.timeline.liftOffStart + 0.3).flameStrength, 1, 0, "flames full through the rise")
             try run.near(plan.facts(at: plan.timeline.mapStart + 0.225).flameStrength, 0.5, 1e-9, "flames go out with the map")
