@@ -6,8 +6,9 @@ import ModelPlanSettings
 import ModelPlanCommunityHost
 @testable import ModelPlanAppIntegration
 
-@MainActor private final class ConnectionSurfaceFake: SettingsWindowSurface {
-    var prepares = 0, shows = 0, hides = 0
+@MainActor private final class ConnectionSurfaceFake: SettingsWindowSurface, FirstRunFrontRaising {
+    var prepares = 0, shows = 0, hides = 0, raises = 0
+    func raiseToFront() { raises += 1 }
     var onPrepare: (() -> Void)?
     func prepare() async { prepares += 1; onPrepare?() }
     func show(paneID: String?) { shows += 1 }
@@ -62,8 +63,16 @@ import ModelPlanCommunityHost
             makeFirstRun: { current in XCTAssertTrue(current === editor); factories += 1; return surface })
         await flow.restoreFirstRunIfNeeded()
         XCTAssertEqual(backend.detects, 1); XCTAssertEqual(backend.mutations, 0)
-        XCTAssertEqual(factories, 1); XCTAssertEqual(surface.shows, 1); XCTAssertEqual(activations, 0)
-        await flow.openFirstRun(); XCTAssertEqual(factories, 1); XCTAssertEqual(surface.shows, 2); XCTAssertEqual(activations, 1)
+        // G3-37: an accessory app's window stays behind the front app unless the app activates.
+        XCTAssertEqual(factories, 1); XCTAssertEqual(surface.shows, 1); XCTAssertEqual(activations, 1, "the launch's first run comes to the front")
+        // Hosted macOS 15 evidence: activate() alone is ignored while another app is active, so the
+        // window itself is ordered above the front app's windows on that same presentation.
+        XCTAssertEqual(surface.raises, 1, "the launch's first run window is raised above the front app")
+        await flow.restoreFirstRunIfNeeded()
+        XCTAssertEqual(surface.shows, 2); XCTAssertEqual(activations, 1, "a restore after a wake takes no focus")
+        XCTAssertEqual(surface.raises, 1, "a restore after a wake is not raised over other apps")
+        await flow.openFirstRun(); XCTAssertEqual(factories, 1); XCTAssertEqual(surface.shows, 3); XCTAssertEqual(activations, 2)
+        XCTAssertEqual(surface.raises, 2, "an explicit open is raised too")
         flow.dispose()
     }
     func testExistingFirstRunActionReachesSurfaceWithoutTakingSystemEffectReceiver() async throws {

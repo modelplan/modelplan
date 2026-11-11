@@ -129,11 +129,11 @@ import ModelPlanSettings
             let start = horizontal ? hull.minX:hull.minY, length = horizontal ? hull.width:hull.height
             for station in geometry.stations {
                 let centre = horizontal ? station.centre.x-skin.bounds.minX : station.centre.y-skin.bounds.minY
-                let from = max(0,min(1,Double((centre-station.pitch/2-start)/length)))
-                let through = max(0,min(1,Double((centre+station.pitch/2-start)/length)))
+                let lower = Double((centre-station.pitch/2-start)/length), upper = Double((centre+station.pitch/2-start)/length)
+                let from = max(0,min(1,lower)), through = max(0,min(1,upper))
                 guard from < through else { continue }
                 let members = station.subscription.map { [$0.id] } ?? (station.isOverflow ? geometry.overflow.map(\.id):[])
-                for id in members { result.quotaPitchRanges[id]=from...through }
+                for id in members { result.quotaPitchRanges[id]=from...through; result.quotaPitchSpans[id]=lower...upper }
             }
         }
         return result

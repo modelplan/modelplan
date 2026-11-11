@@ -17,7 +17,10 @@ class BundleMetadataTests(unittest.TestCase):
     def test_appledouble_is_ignored_but_corruption_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            pins = {}
+            (root / 'source-policy.json').write_text(json.dumps({'reservedVisuals': {'prefix': 'desktop/reserved/', 'binaries': {}}}))
+            factory = root / guard.FACTORY
+            factory.parent.mkdir(parents=True)
+            factory.write_text('public static let manifestPins = CockpitBuildPins.manifest\n')
             for edition in ('community', 'official'):
                 bundle = root / 'desktop/cockpit/.tmp' / edition
                 bundle.mkdir(parents=True)
@@ -30,11 +33,7 @@ class BundleMetadataTests(unittest.TestCase):
                 metadata_dir = bundle / '._transport'
                 metadata_dir.mkdir()
                 (metadata_dir / 'unlisted').write_bytes(b'metadata')
-                pins[edition] = hashlib.sha256(manifest).hexdigest()
-            source = root / 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift'
-            source.parent.mkdir(parents=True)
-            source.write_text(json.dumps(pins))
-            self.assertEqual([entry['files'] for entry in guard.validate(root)], [1, 1])
+            self.assertEqual([entry['files'] for entry in guard.write(root)], [1, 1])
             result = subprocess.run([sys.executable, '-B', str(Path(guard.__file__)), '--repo', str(root)],
                                     check=True, capture_output=True, text=True)
             self.assertEqual([entry['files'] for entry in json.loads(result.stdout)], [1, 1])

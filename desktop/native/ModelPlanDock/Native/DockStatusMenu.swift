@@ -122,17 +122,41 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         // MENU-06: the dot belongs to the icon's top right in every display style. With a
         // percentage title after the leading icon, the button's right edge is the end of the
         // text, so the dot ends at the icon's right edge instead and stays with the icon.
+        // The icon is measured against the width the content needs, never the button's current
+        // bounds: right after a refresh those still hold the previous size, and a dot placed from
+        // them landed on the "%" and moved back on the next refresh (owner build 13: "0%" read "0").
         if !button.title.isEmpty, button.image != nil,
-           button.imagePosition == .imageLeading || button.imagePosition == .imageLeft,
-           let icon = button.cell?.imageRect(forBounds: bounds), !icon.isEmpty,
-           icon.maxX - side >= bounds.minX, icon.maxX < bounds.maxX {
-            frame = NSRect(x: icon.maxX - side, y: top, width: side, height: side)
-            autoresizingMask = [.maxXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
-        } else {
-            frame = NSRect(x: max(bounds.minX, bounds.maxX - side), y: top, width: side, height: side)
-            autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+           button.imagePosition == .imageLeading || button.imagePosition == .imageLeft {
+            // A fresh cell, never a copy of the button's: NSCell.copy() over-released the button's image (build 14 crash).
+            // The rect is computed from the width the content needs, not the button's current frame.
+            let cell = Self.measuringCell(for: button)
+            let content = NSRect(x: bounds.minX, y: bounds.minY, width: ceil(cell.cellSize.width), height: bounds.height)
+            let icon = cell.imageRect(forBounds: content)
+            if !icon.isEmpty, icon.maxX - side >= bounds.minX, icon.maxX < content.maxX {
+                frame = NSRect(x: icon.maxX - side, y: top, width: side, height: side)
+                autoresizingMask = [.maxXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+                if superview !== button { button.addSubview(self) }
+                return
+            }
         }
+        frame = NSRect(x: max(bounds.minX, bounds.maxX - side), y: top, width: side, height: side)
+        autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
         if superview !== button { button.addSubview(self) }
+    }
+    /// A FRESH cell configured like the button's (never a copy of its cell: NSCell.copy() shares the image without
+    /// retaining it and over-released it, build 14 crash; and the real cell's size follows the button's current frame).
+    /// The new cell owns its own retained image and is only ever measured against a rect we pass.
+    private static func measuringCell(for button: NSButton) -> NSButtonCell {
+        let cell = NSButtonCell()
+        cell.image = button.image
+        cell.title = button.title
+        cell.font = button.font
+        cell.imagePosition = button.imagePosition
+        cell.imageScaling = button.imageScaling
+        cell.bezelStyle = button.bezelStyle
+        cell.isBordered = button.isBordered
+        cell.alignment = button.alignment
+        return cell
     }
     public override func hitTest(_ point:NSPoint)->NSView?{nil}
     public override func draw(_ dirtyRect:NSRect){guard let notice else{return};let color=colors[notice.tone] ?? .secondaryLabelColor
