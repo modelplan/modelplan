@@ -135,7 +135,7 @@ import ModelPlanWire
     let page = try page(try bundle(), reduceMotion: false, icon: icon)
     let displays = [short, tall]
     page.screens = { displays }
-    page.prewarm()
+    page.prewarm(); detachSyntheticLoad(page) // the headless synthetic load fails (javascriptFailed) and discards the window otherwise
     defer { page.discard() }
     let window = try XCTUnwrap(page.window)
     let home = try XCTUnwrap(CockpitShellLayout.fit(usable: short.visibleFrame, anchor: icon, shutterClosed: false, screenWidth: short.frame.width))
