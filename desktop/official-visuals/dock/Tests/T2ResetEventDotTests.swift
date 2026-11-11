@@ -38,9 +38,23 @@ final class T2ResetEventDotTests: XCTestCase {
         XCTAssertEqual(readingOverflow.eventRect.midY, position.centre.y - 52 * 0.433013, accuracy: 1e-7)
     }
 
+    /// Reads the stored sRGB bytes of one pixel. The image is redrawn 1:1 into a known sRGB RGBA8 buffer, so no
+    /// NSColor colour-space conversion (NSBitmapImageRep.colorAt) can shift the value being compared.
     private func sample(_ image: CGImage, x: Int, y: Int) throws -> (r: Double, g: Double, b: Double, a: Double) {
-        let colour = try XCTUnwrap(NSBitmapImageRep(cgImage: image).colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-        return (Double(colour.redComponent) * 255, Double(colour.greenComponent) * 255, Double(colour.blueComponent) * 255, Double(colour.alphaComponent))
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        let drawn = bytes.withUnsafeMutableBytes { raw -> Bool in
+            guard let context = CGContext(data: raw.baseAddress, width: image.width, height: image.height, bitsPerComponent: 8,
+                bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return true
+        }
+        XCTAssertTrue(drawn)
+        // CGContext memory is top row first for a bitmap context.
+        let index = (y * image.width + x) * 4
+        let alpha = Double(bytes[index + 3]) / 255
+        XCTAssertGreaterThan(alpha, 0)
+        return (Double(bytes[index]) / alpha, Double(bytes[index + 1]) / alpha, Double(bytes[index + 2]) / alpha, alpha)
     }
 
     /// Draws the overflow station's notice dot with the real renderer on the real T2 skin. Artwork layers and
