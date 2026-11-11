@@ -306,6 +306,9 @@ struct CockpitUnavailableNotice {
             self?.pageOpened = true
             self?.openCount += 1
             self?.lastEventWasOpen = true
+            // A successful open after a failure is the recovery: the grace period and the rebuild state end here, so a
+            // later user close (page button, outside click) is an ordinary close, not another failure to rebuild from.
+            self?.noticeTask?.cancel(); self?.noticeTask=nil; self?.rebuilding=false
             onOpened?()
         }
         // D88: a detach, a put back or the settled open refreshes the icon highlight and the hints.

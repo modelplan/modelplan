@@ -539,8 +539,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let context = bridge.context, revision = bridge.viewRevision
     // JSON is an argument, never interpolated into executable JavaScript.
     let body = clear
-      ? "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.clear(raw)===true?'accepted':'rejected:'+String(window.modelPlanCockpit.reject?.()||'none')"
-      : "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.receive(raw)===true?'accepted':'rejected:'+String(window.modelPlanCockpit.reject?.()||'none')"
+      ? "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.clear(raw)===true?'accepted':'rejected:'+String((typeof window.modelPlanCockpit.reject==='function'?window.modelPlanCockpit.reject():null)||'none')"
+      : "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.receive(raw)===true?'accepted':'rejected:'+String((typeof window.modelPlanCockpit.reject==='function'?window.modelPlanCockpit.reject():null)||'none')"
     let code = (bootstrap ? "await import('modelplan-cockpit://bundle/src/main.js');" : "") + body
     let submitted = orderedDelivery.submit(OutboundMessage(code: code, raw: raw), isCurrent: { [weak self, weak web] in
       guard let self else { return false }

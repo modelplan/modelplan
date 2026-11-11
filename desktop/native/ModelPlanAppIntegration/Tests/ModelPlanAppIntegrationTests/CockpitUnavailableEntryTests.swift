@@ -97,5 +97,30 @@ extension CommunityCockpitEntryTests {
             surface.hide();await coordinator.shutdown();await composition.stop()
         }
     }
+    /// macrev2-786-1: after a recovered rebuild the user closes the cockpit through the controller's close path
+    /// (the coordinator's onClosed). That is an ordinary close: no reopen inside the grace period and no notice.
+    @MainActor func testUserCloseAfterARecoveredRebuildDoesNotReopenOrAnnounce() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("g3-66-userclose-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in RouteClient()})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        var opens=0
+        let coordinator=EngineCockpitCoordinator { _ in opens+=1; throw CockpitBridgeError.unavailable }
+        owner.coordinator=coordinator
+        var notices:[CockpitUnavailableNotice]=[]
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(300))
+        surface.show()
+        for _ in 0..<50 where !surface.wantsVisible { try await Task.sleep(for:.milliseconds(10)) }
+        owner.pageFailure?(.messageRejected)   // the first page fails
+        coordinator.onOpened?()                 // the rebuild opens: recovered
+        let before=opens
+        coordinator.onClosed?()                 // the user closes it
+        try await Task.sleep(for:.milliseconds(900))
+        XCTAssertFalse(surface.wantsVisible,"A user close after a recovery retires the presentation")
+        XCTAssertEqual(opens,before,"A user close is not rebuilt")
+        XCTAssertTrue(notices.isEmpty,"A user close is not a failure")
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
 }
 #endif
