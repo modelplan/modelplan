@@ -1,0 +1,1 @@
+The porthole frame on the tall cockpit no longer sticks out past the walls below it: its sides now run straight down onto the walls, so the cockpit is narrow at the top and wide at the bottom as in the design.
