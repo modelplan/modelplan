@@ -552,8 +552,10 @@ import ModelPlanSettings
         XCTAssertThrowsError(try SettingsB21Edit(key: .captureHiding, value: "true"))
         let covered: Set<SettingKey> = [.showDock, .autoHide, .reveal, .magnification, .size, .showPercentages,
             .percentageMode, .percentagePin, .redBelow, .sliverAlert, .dockDisplay, .dockEdge, .dockPosition,
-            .fullscreen, .captureHiding, .activeDisplay, .order]
+            .fullscreen, .captureHiding, .activeDisplay]
         XCTAssertEqual(Set(Settings65Homes.dock.flatMap(\.keys)), covered)
+        // G3-68 / D87 (1): subscription order lives in Settings > Subscriptions, not in the Quota Widget pane.
+        XCTAssertFalse(Settings65Homes.dock.flatMap(\.keys).contains(.order))
         try await editor.commit(.moveSubscription("synthetic-second", to: 0,
                                                  expectedOrder: ["synthetic-local", "synthetic-second"]))
         XCTAssertEqual(f.rows().map { $0.accessibilityIdentifier() },
