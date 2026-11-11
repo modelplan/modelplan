@@ -66,7 +66,7 @@ func ObserveZCode(cache, home string, in Ingest, now time.Time) error {
 		return nil
 	}
 	return observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return l.scanDB(path, "zcode", ParserZCode, now, readZCode)
+		return l.scanDB(path, "zcode", ParserZCode, "model_usage", now, readZCode)
 	})
 }
 

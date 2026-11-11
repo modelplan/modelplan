@@ -86,6 +86,6 @@ func ObserveOpenCode(cache, home string, in Ingest, now time.Time) error {
 		return nil
 	}
 	return observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return l.scanDB(path, "opencode", ParserOpenCode, now, readOpenCode)
+		return l.scanDB(path, "opencode", ParserOpenCode, "session_message", now, readOpenCode)
 	})
 }

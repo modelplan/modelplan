@@ -88,8 +88,8 @@ func hashID(s string) string {
 }
 
 // scanDB reads what is new in one database with read (rows past a rowid, plus listed rowids) and
-// adds the finished requests to the ledger under source.
-func (l *PerfLedger) scanDB(path, source, parser string, now time.Time, read func(db *sql.DB, after int64, pending []int64) ([]dbRow, error)) bool {
+// adds the finished requests to the ledger under source. table is the one read rows come from.
+func (l *PerfLedger) scanDB(path, source, parser, table string, now time.Time, read func(db *sql.DB, after int64, pending []int64) ([]dbRow, error)) bool {
 	if l.Stores == nil {
 		l.Stores = map[string]DBCursor{}
 	}
@@ -104,6 +104,18 @@ func (l *PerfLedger) scanDB(path, source, parser string, now time.Time, read fun
 		return false
 	}
 	defer db.Close()
+	if c.RowID > 0 {
+		// A database recreated (or emptied) at the same path numbers its rows from 1 again: past
+		// the old watermark nothing would ever be read. Start over; Seen and Mark still keep any
+		// request already counted from counting twice.
+		var last sql.NullInt64
+		if err := db.QueryRow(`SELECT max(rowid) FROM "` + table + `"`).Scan(&last); err != nil {
+			return false
+		}
+		if last.Int64 < c.RowID {
+			c.RowID, c.Pending = 0, nil
+		}
+	}
 	rows, err := read(db, c.RowID, c.Pending)
 	if err != nil {
 		return false

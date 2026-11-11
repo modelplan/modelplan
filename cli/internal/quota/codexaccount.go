@@ -496,6 +496,8 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 		return nil, err
 	}
 	cmd.Stderr = io.Discard
+	ownProcessGroup(cmd)
+	cmd.WaitDelay = time.Second
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -507,7 +509,11 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	defer func() { _ = in.Close(); killProcessGroup(cmd); _ = cmd.Wait() }()
+	// A descendant that inherited stdout can keep the pipe open after the launcher dies: on the
+	// deadline, stop the whole group and close the read end so the scan below returns.
+	stop := context.AfterFunc(ctx, func() { killProcessGroup(cmd); _ = out.Close() })
+	defer stop()
 	send := func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)

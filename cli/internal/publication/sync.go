@@ -207,8 +207,14 @@ func waitForCheck(ctx context.Context, delay time.Duration) error {
 }
 
 func (c *Client) sync(ctx context.Context, st *store.State) (Result, error) {
-	etag := ""
+	// The unchanged-publication shortcuts below hold only while the cached copy still verifies;
+	// a missing or damaged object is fetched again through the full verification path.
+	etag, cacheOK := "", false
 	if st.PublicationID != "" {
+		_, _, err := Load(c.Store)
+		cacheOK = err == nil
+	}
+	if cacheOK {
 		etag = st.ETag
 	}
 	body, newTag, status, err := c.get(ctx, "/publications/current.json", etag)
@@ -229,7 +235,7 @@ func (c *Client) sync(ctx context.Context, st *store.State) (Result, error) {
 	if p.SchemaVersion != 1 || !idRe.MatchString(p.PublicationID) || !hashRe.MatchString(p.ManifestHash) {
 		return Result{}, errors.New("pointer: unsupported schema or malformed ids")
 	}
-	if p.PublicationID == st.PublicationID && p.ManifestHash == st.ManifestHash {
+	if cacheOK && p.PublicationID == st.PublicationID && p.ManifestHash == st.ManifestHash {
 		if _, _, err := Load(c.Store); err != nil {
 			return Result{}, err
 		}
