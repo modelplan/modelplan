@@ -135,6 +135,12 @@ class Seed(unittest.TestCase):
 class Script(unittest.TestCase):
     STEPS = json.loads((ROOT / "steps.json").read_text(encoding="utf-8"))["steps"]
 
+    def test_widget_size_step_closes_settings_from_the_keyboard(self):
+        # The Settings close button sits under the widget, so a click on it hits the widget (runs 42970720668, 42997740903).
+        step = next(item for item in self.STEPS if item["id"] == "widget-size-M")
+        self.assertEqual(step["actions"][-2], {"op": "key", "name": "cmd-w"})
+        self.assertNotIn("subrole:AXCloseButton", json.dumps(step))
+
     def test_every_step_has_what_the_manifest_needs_and_only_known_verbs(self):
         ids = [s["id"] for s in self.STEPS]
         self.assertEqual(len(ids), len(set(ids)))

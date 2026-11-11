@@ -145,9 +145,11 @@ func glide(from: CGPoint, to: CGPoint, seconds: Double, type: CGEventType) {
     }
 }
 func cursor() -> CGPoint { CGEvent(source: nil)?.location ?? .zero }
-func key(_ code: CGKeyCode) {
+func key(_ code: CGKeyCode, flags: CGEventFlags = []) {
     for down in [true, false] {
-        CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)?.post(tap: .cghidEventTap)
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
+        event?.flags = flags
+        event?.post(tap: .cghidEventTap)
         usleep(40_000)
     }
 }
@@ -229,8 +231,10 @@ case ("stats", 2): emit(stats(path: arguments[1]))
 case ("diff", 3): emit(difference(arguments[1], arguments[2]))
 case ("hit", 3): emit(hit(x: number(arguments[1]), y: number(arguments[2])))
 case ("key", 2):
-    guard let code = ["escape": CGKeyCode(53), "return": CGKeyCode(36), "space": CGKeyCode(49)][arguments[1]] else { fail("unknown key") }
-    key(code)
+    // "cmd-w" closes the key window from the keyboard, for windows whose close button sits under another window.
+    let flags: CGEventFlags = arguments[1] == "cmd-w" ? .maskCommand : []
+    guard let code = ["escape": CGKeyCode(53), "return": CGKeyCode(36), "space": CGKeyCode(49), "cmd-w": CGKeyCode(13)][arguments[1]] else { fail("unknown key") }
+    key(code, flags: flags)
     emit(["key": arguments[1]])
 case ("move", 3), ("move", 4):
     let target = CGPoint(x: number(arguments[1]), y: number(arguments[2]))
