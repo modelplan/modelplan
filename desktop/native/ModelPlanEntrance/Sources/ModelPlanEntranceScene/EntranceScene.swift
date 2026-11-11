@@ -687,12 +687,22 @@ struct HullFinish {
                 return pbr
             }
             if round || (frame != nil && !rounded) { model.mesh = try RoundHull.mesh(model.mesh, entity: e, root: root) }
+            // D146: the hull behind the new window and its patch is cut away (the old opening is covered too).
+            if rounded, HullPanels.capsuleParts.contains(name) { model.mesh = try WindowShape.cut(model.mesh, entity: e, root: root) }
             // The panel maps are drawn around the rocket's axis: map the hull the same way.
             if let band, maps != nil { model.mesh = try HullPanels.remap(model.mesh, entity: e, root: root, band: band) }
             model.mesh = try SmoothNormals.mesh(model.mesh)
             e.components.set(model)
         }
         JointLine.draw(in: root, lip: metal(lipColor, roughness: 0.16))
+        // D146: the hull patch round the new window wears the capsule's own (panel) material.
+        if rounded, let shell = root.findEntity(named: "capsule_aperture_shell") {
+            var material: (any RealityKit.Material)?
+            ModelRocket.forEachModel(shell) { m in
+                if material == nil { material = m.components[ModelComponent.self]?.materials.first }
+            }
+            if let material { try WindowShape.addPatch(to: root, material: material) }
+        }
         if let plane = root.findEntity(named: CockpitInterior.screenPlane) {
             if let cockpitImage {
                 try CockpitBackdrop.add(to: root, image: cockpitImage)
@@ -1530,7 +1540,11 @@ enum HullPanels {
     static let joints: [Float] = [0.24, 1.88, 5.2, 6.57, 7.63, 10.7, 11.8, 13.56, 14.2]
     /// Rings drawn in the maps. On the capsule as on the pass-5 window still: a narrow sill band under the window
     /// (12.06, 12.29), a ring just above it (13.35), two rings on the nose and the tip cap (14.12).
-    static let rings: [Float] = [0.55, 1.25, 2.7, 3.55, 4.4, 5.9, 8.65, 9.65, 11.25, 12.06, 12.29, 13.35, 13.78, 13.98, 14.12]
+    /// Round 9 (D146): the sill ring and the ring above the window follow the new window (`sillRing`, `aboveRing`).
+    static let rings: [Float] = [0.55, 1.25, 2.7, 3.55, 4.4, 5.9, 8.65, 9.65, 11.25, 12.06, sillRing, aboveRing, 13.78, 13.98, 14.12]
+    /// Just under the window's surround, and a little above it, like the pass-5 window still.
+    static var sillRing: Float { WindowShape.bottom - WindowShape.bandsWidth - 0.012 }
+    static var aboveRing: Float { WindowShape.top + WindowShape.bandsWidth + 0.03 }
     static let tipCap: Float = 14.12
 
     /// Vertical seams of the panel row that starts at `y` (the `k`-th row from the bottom). The body has eight
@@ -1546,8 +1560,8 @@ enum HullPanels {
                 let a = offset + 45 * Float(i)
                 return a > 180 ? a - 360 : a
             }
-        case ..<12.28: return both([52, 100, 145, 180])
-        case ..<13.34: return both([60, 105, 150])
+        case ..<(sillRing - 0.01): return both([52, 100, 145, 180])
+        case ..<(aboveRing - 0.01): return both([60, 105, 150])
         case ..<13.55: return both([17, 60, 105, 150])
         case ..<13.77: return both([17, 75, 130])
         case ..<13.97: return both([17, 80, 140])
@@ -1787,7 +1801,7 @@ enum HullPanels {
             guard azimuths.count >= 2, y1 - y0 > 0.14 else { continue }
             for (i, a0) in azimuths.enumerated() {
                 let a1 = i + 1 < azimuths.count ? azimuths[i + 1] : azimuths[0] + 360
-                if y0 >= 12.28 && y1 <= 13.36 && a0 < 0 && a1 > 0 { continue }
+                if y0 >= sillRing - 0.01 && y1 <= aboveRing + 0.01 && a0 < 0 && a1 > 0 { continue }
                 let roll = random.next()
                 let r = radius((y0 + y1) / 2), arc = (a1 - a0) * .pi / 180 * r
                 guard arc > 0.14 else { continue }
@@ -1970,16 +1984,24 @@ enum LookImage {
 @MainActor
 enum CockpitBackdrop {
     static let name = "cockpit-backdrop"
-    static let centre = SIMD3<Float>(0, 12.99, 0.2)
+    /// Round 9 (D146): derived from the window, so it follows the new glass: where the end pose's sight line
+    /// through the glass centre (20 degrees below) crosses z = `depth` (r8: y 12.99 for the file's window).
+    static let depth: Float = 0.2
+    static var centre: SIMD3<Float> {
+        let g = WindowShape.point(WindowShape.centre, lift: WindowShape.glassLift)
+        return SIMD3<Float>(0, g.y + (g.z - depth) * tan(tilt * .pi / 180), depth)
+    }
     static let tilt: Float = 20
     /// The plane's extent along its up axis (metres from `centre`) and half-width before clipping.
     static let planeBottom: Float = -0.53, planeTop: Float = 0.55, planeHalfWidth: Float = 0.95
     /// The plane is clipped to this fraction of the capsule radius at each height.
     static let clearance: Float = 0.915
-    /// The image's height on the plane in metres (its width follows its aspect: 7:5, so 2.03 m) and its centre
-    /// along the up axis: screens (30 % up the image) at s = imageCentre - 0.2 x imageHeight = 0.
-    static let imageHeight: Float = 1.45
-    static let imageCentre: Float = 0.29
+    /// The image's height on the plane in metres (its width follows its aspect: 7:5) and its centre along the up
+    /// axis: screens (30 % up the image) at s = imageCentre - 0.2 x imageHeight. Round 9 (D146, the window is 0.58 m
+    /// tall, not 0.87): sight lines land on s -0.37...+0.29 (`entrance-r9/check9.py`), so 1.2 m (1.68 m wide) with
+    /// the screens at s -0.04 puts them at 37-63 % of the glass height and about 83 % of its width (r8: 1.45 / 0.29).
+    static let imageHeight: Float = 1.2
+    static let imageCentre: Float = 0.2
     /// Metres of faded continuation under the image.
     static let padBelow: Float = 0.12
     /// Exposure lift in linear light: out = (1 - e^(-k x)) / (1 - e^(-k)), about k times for the dark room.
@@ -2084,38 +2106,53 @@ enum CockpitBackdrop {
     }
 }
 
-/// D142 (owner): the front window with round corners like the pass-5 art. The file's glass is an 11 x 11 grid
-/// whose corner vertices are cut, so its outline is a chamfered quadrilateral. Look mode rebuilds the glass and the
-/// three frame strips from one rounded outline instead; the hull, its opening and everything else stay the file's.
+/// D142/D146 (owner): the front window. D142 rounded the file's chamfered window; D146 (round 9) makes its SHAPE
+/// follow the pass-5 prototype (it stands for the cockpit's top canopy window): wider and lower than the file's,
+/// top edge clearly shorter than the bottom, generous rounded corners, more nose above it. Look mode rebuilds the
+/// glass, the frame bands and a hull patch from one rounded outline; the hull is cut behind them.
 ///
 /// The outline lives in a chart on the capsule: X = azimuth (radians) x glass radius, Y = height. There the
-/// window is a trapezoid (measured from the glass edge with `entrance-r7/win.py`): bottom y 12.40, top 13.27, side
-/// edges from X -+0.761 at the bottom to -+0.508 at the top. Its corners are filleted with `bottomRadius` and
-/// `topRadius` metres, the smallest radii whose arcs stay inside the file's chamfers (so the glass only shrinks;
-/// pass 5 also has the larger top corners). Offsets of that outline give the bands, from the glass outwards:
+/// window is a trapezoid, bottom `bottom`, top `top`, side edges from X -+`sideAtBottom` to -+`sideAtTop`, its
+/// corners filleted with `bottomRadius` / `topRadius`. Round 9 measured it on the pass-5 window still
+/// (`references/night-window.jpg`): a camera fitted to the capsule silhouette round the window, the picked glass
+/// edge cast onto the hull, and this trapezoid fitted to it (`entrance-r9/cam3.py`, `fitshape.py`; numbers in the
+/// lane handoff). Offsets of the outline give the bands, from the glass outwards:
 /// - `canopy_inner_rim`: the bright rim, `rimWidth`, sloping from the frame top down to the glass;
 /// - `canopy_frame_bevel_2`: the dark frame, `frameWidth`, `frameLift` above the glass;
 /// - `canopy_frame_bevel_1`: the frame's outer wall, `wallWidth`, down to the hull;
-/// - `canopy_frame_bevel_0`: hull-coloured surround from there to the file's hull opening (its outer edge follows
-///   the opening loop exactly, as `RoundHull` places the opening's subdivided edge).
-/// Radii: the glass is `glassLift` (1.8 cm) above the capsule profile, as in the file; the opening ~4 mm.
-/// The camera rail, the D132 end pose and the hand-over coverage keep using the file's glass (rocket-geometry.json):
-/// the rounded glass lies inside it, so the window renders a few px narrower at the end pose and covers about
-/// 0.993 of the aperture at the hand-over instead of 0.995 (JS replica `entrance-r7/d132g.mjs`).
+/// - `canopy_frame_bevel_0`: the light surround, `surroundWidth`, down to `patchLift`;
+/// - `canopy-hull-patch`: hull metal (the hull's own panel material) from the surround out to an outline that
+///   also covers the file's old window opening (`patchMargin` beyond both), `patchLift` above the profile.
+/// The hull parts lose every triangle whose centre lies inside `cutOutline` (the patch outline `cutInset` in), so
+/// neither the old opening nor hull metal behind the new glass shows. The glass is `glassLift` above the profile.
+/// The camera rail, the D132 end pose and the hand-over use the same glass: the pack's rocket-geometry.json carries
+/// this outline (centre plus two rings), written by `entrance-r9/geometry.py` with the same construction.
 @available(macOS 15.0, *)
 @MainActor
 enum WindowShape {
-    static let bottomRadius: Float = 0.13
-    static let topRadius: Float = 0.2
-    static let bottom: Float = 12.4, top: Float = 13.27
-    static let sideAtBottom: Float = 0.7613, sideAtTop: Float = 0.5078
-    static let centre = SIMD2<Float>(0, 12.835)
+    static let bottomRadius: Float = 0.12
+    static let topRadius: Float = 0.13
+    static let bottom: Float = 12.49, top: Float = 13.07
+    static let sideAtBottom: Float = 0.695, sideAtTop: Float = 0.435
+    static var centre: SIMD2<Float> { SIMD2<Float>(0, (bottom + top) / 2) }
     static let glassLift: Float = 0.018, frameLift: Float = 0.022, openingLift: Float = 0.004
-    /// Round 8: rim 0.8 -> 1.0 cm (about 4.7 px in the close-up), frame 3.6 -> 3.4 cm, so the bands end where they did.
+    /// Round 8: rim 0.8 -> 1.0 cm (about 4.7 px in the close-up), frame 3.6 -> 3.4 cm.
     static let rimWidth: Float = 0.01, frameWidth: Float = 0.034, wallWidth: Float = 0.004
+    /// Round 9: the light surround outside the frame wall, and the hull patch.
+    static let surroundWidth: Float = 0.022
+    /// Rim, frame, wall and surround together, from the glass edge out.
+    static var bandsWidth: Float { rimWidth + frameWidth + wallWidth + surroundWidth }
+    static let patchMargin: Float = 0.06, patchLift: Float = 0.0015, cutInset: Float = 0.03
+    /// Rings of the patch ribbon, so it follows the curved hull instead of cutting chords under it.
+    static let patchRings = 8
     /// Points per corner arc and per straight edge.
     static let arcPoints = 16, edgePoints = 16
     static let glassRings = 12
+    /// Set by `build`: the outline (chart) inside which the hull parts are cut away, and the patch mesh in the
+    /// rocket frame.
+    static var cutOutline: [SIMD2<Float>] = []
+    static var patch: (positions: [SIMD3<Float>], triangles: [UInt32])?
+    static let patchName = "canopy-hull-patch"
 
     static func radius(_ y: Float) -> Float { CockpitCeiling.radius(y) }
 
@@ -2221,11 +2258,26 @@ enum WindowShape {
 
         let glassEdge = outline(0), rimOuter = outline(rimWidth)
         let frameOuter = outline(rimWidth + frameWidth), wallOuter = outline(rimWidth + frameWidth + wallWidth)
+        let surroundOuter = outline(rimWidth + frameWidth + wallWidth + surroundWidth)
         func ring(_ outline: [SIMD2<Float>], lift: Float) -> [SIMD3<Float>] { outline.map { point($0, lift: lift) } }
         let rim = ribbon(ring(rimOuter, lift: frameLift), ring(glassEdge, lift: glassLift))
         let frame = ribbon(ring(frameOuter, lift: frameLift), ring(rimOuter, lift: frameLift))
         let wall = ribbon(ring(wallOuter, lift: openingLift), ring(frameOuter, lift: frameLift))
-        let surround = ribbon(wallOuter.map(onOpening), ring(wallOuter, lift: openingLift))
+        let surround = ribbon(ring(surroundOuter, lift: patchLift), ring(wallOuter, lift: openingLift))
+        // D146: the patch reaches `patchMargin` beyond the surround and beyond the file's old opening, whichever is
+        // farther along each ray from the window centre, so the old opening is covered wherever it was larger.
+        let reach = outline(rimWidth + frameWidth + wallWidth + surroundWidth + patchMargin)
+        let patchOuter = reach.map { o -> SIMD2<Float> in
+            let d = o - centre, r = simd_length(d)
+            let q = simd_length(chart(onOpening(o)) - centre) + patchMargin
+            return centre + d * max(1, q / max(r, 1e-4))
+        }
+        cutOutline = patchOuter.map { o -> SIMD2<Float> in
+            let d = o - centre, r = simd_length(d)
+            return centre + d * max(0, 1 - cutInset / max(r, 1e-4))
+        }
+        let patchMesh = band(surroundOuter, patchOuter, lift: patchLift, rings: patchRings)
+        patch = (positions: patchMesh.0, triangles: patchMesh.1)
 
         // Glass: rings from the centre out to the rounded edge.
         var glassPoints: [SIMD3<Float>] = [point(centre, lift: glassLift)], glassTriangles: [UInt32] = []
@@ -2253,6 +2305,92 @@ enum WindowShape {
         try replace(strips[2]!, with: frame, root: root)
         try replace(rimEntity, with: rim, root: root)
         return true
+    }
+
+    /// Two chart outlines in step joined by `rings` intermediate outlines, all at `lift` above the profile.
+    static func band(_ inner: [SIMD2<Float>], _ outer: [SIMD2<Float>], lift: Float, rings: Int) -> ([SIMD3<Float>], [UInt32]) {
+        let n = inner.count
+        var positions: [SIMD3<Float>] = [], triangles: [UInt32] = []
+        for k in 0...rings {
+            let t = Float(k) / Float(rings)
+            positions += zip(inner, outer).map { point($0 + ($1 - $0) * t, lift: lift) }
+        }
+        for k in 0..<rings {
+            let a0 = k * n, b0 = (k + 1) * n
+            for i in 0..<n {
+                let a = UInt32(a0 + i), b = UInt32(a0 + (i + 1) % n), c = UInt32(b0 + i), d = UInt32(b0 + (i + 1) % n)
+                triangles += [a, c, d, a, d, b]
+            }
+        }
+        return (positions, triangles)
+    }
+
+    /// True if the chart point lies inside `cutOutline`.
+    static func insideCut(_ c: SIMD2<Float>) -> Bool {
+        let poly = cutOutline
+        guard poly.count >= 3 else { return false }
+        var inside = false
+        var j = poly.count - 1
+        for i in 0..<poly.count {
+            let a = poly[i], b = poly[j]
+            if (a.y > c.y) != (b.y > c.y), c.x < (b.x - a.x) * (c.y - a.y) / (b.y - a.y) + a.x { inside.toggle() }
+            j = i
+        }
+        return inside
+    }
+
+    /// The hull mesh without the triangles whose centre lies inside `cutOutline` (the new window and the patch
+    /// cover that area); normals and texture coordinates are kept.
+    static func cut(_ mesh: MeshResource, entity: Entity, root: Entity) throws -> MeshResource {
+        guard !cutOutline.isEmpty else { return mesh }
+        let m = entity.transformMatrix(relativeTo: root)
+        var contents = mesh.contents
+        var models: [MeshResource.Model] = []
+        for var model in contents.models {
+            model.parts = MeshPartCollection(model.parts.map { part -> MeshResource.Part in
+                guard let triangles = part.triangleIndices?.elements else { return part }
+                let positions = part.positions.elements
+                var kept: [UInt32] = []
+                kept.reserveCapacity(triangles.count)
+                for f in 0..<(triangles.count / 3) {
+                    let a = Int(triangles[3 * f]), b = Int(triangles[3 * f + 1]), c = Int(triangles[3 * f + 2])
+                    guard a < positions.count, b < positions.count, c < positions.count else { continue }
+                    let local = (positions[a] + positions[b] + positions[c]) / 3
+                    let world = m * SIMD4<Float>(local, 1)
+                    let p = SIMD3<Float>(world.x, world.y, world.z)
+                    // Only the window side (the chart's azimuth wraps behind the rocket).
+                    if p.z > 0, insideCut(chart(p)) { continue }
+                    kept += [UInt32(a), UInt32(b), UInt32(c)]
+                }
+                var result = MeshResource.Part(id: part.id, materialIndex: part.materialIndex)
+                result.positions = part.positions
+                if let normals = part.normals { result.normals = normals }
+                if let uvs = part.textureCoordinates { result.textureCoordinates = uvs }
+                result.triangleIndices = MeshBuffer<UInt32>(kept)
+                return result
+            })
+            models.append(model)
+        }
+        contents.models = MeshModelCollection(models)
+        return try MeshResource.generate(from: contents)
+    }
+
+    /// The hull patch as an entity on `root`, with the hull's panel material and the panel maps' cylindrical
+    /// texture coordinates (u = azimuth / 360 + 0.5, v up the capsule band).
+    static func addPatch(to root: Entity, material: any RealityKit.Material) throws {
+        guard let patch, root.findEntity(named: patchName) == nil else { return }
+        let band = HullPanels.capsule
+        var descriptor = MeshDescriptor(name: patchName)
+        descriptor.positions = MeshBuffers.Positions(patch.positions)
+        descriptor.normals = MeshBuffers.Normals(patch.positions.map { simd_normalize(SIMD3<Float>($0.x, 0, $0.z)) })
+        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(patch.positions.map { p in
+            SIMD2<Float>(atan2(p.x, p.z) / (2 * .pi) + 0.5, (p.y - band.bottom) / (band.top - band.bottom))
+        })
+        descriptor.primitives = .triangles(patch.triangles)
+        let mesh = try SmoothNormals.mesh(try MeshResource.generate(from: [descriptor]))
+        let entity = ModelEntity(mesh: mesh, materials: [material])
+        entity.name = patchName
+        root.addChild(entity)
     }
 
     /// Two outlines in step joined into a strip (both faces are drawn by the materials).

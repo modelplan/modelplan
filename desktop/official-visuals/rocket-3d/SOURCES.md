@@ -14,6 +14,10 @@ Conversion: three.js 0.186.1 `GLTFLoader` → `USDZExporter.parseAsync(scene, {m
 quickLookCompatible: false})` in Chromium 1117 (headless). Node names, hierarchy, anchors, metres and +Y up are
 preserved; the 1024×2048 hull atlas is kept at full size. `rocket-geometry.json` is read directly from the night
 GLB's `curved_canopy_glass` POSITION accessor and `anchor_window` node (both finishes share the geometry).
+Owner D146 (2026-11-11, round 9): the glass in `rocket-geometry.json` was replaced by the window outline measured on
+the pass-5 prototype window still (a rounded trapezoid on the capsule: bottom 12.49 m, top 13.07 m, half-widths
+0.695/0.435 m along the glass arc, corner radii 0.12/0.13 m), written as its centre, a half-size ring and its edge;
+`windowAnchorY` is its centre (12.78 m). The model files keep the file's window; the entrance rebuilds it in code.
 
 The hull material masters were made with the built-in image generation tool in pass 4 (private provenance on the
 design branch, `pass4/prompts.json`). The two cockpit emission textures inside the canopy are blurred crops of

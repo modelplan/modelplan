@@ -13,7 +13,7 @@ public enum OfficialRocket {
     public static let files: [String: String] = [
         "modelplan-rocket-night-lod1.usdz": "3c8a377280f9828729fe2fd867b8cdf91d91336de1a9ae2e4b0b32a25e7a3a5a",
         "modelplan-rocket-day-lod1.usdz": "2dcd806d6ddbfd0c654e95b219bda50208673b121cb91e9d0688d6d5e8a53c9e",
-        "rocket-geometry.json": "ae0d124ac2ee2aa4088f3e254e38dfdd58af230254e3a04f20455b82da8c2f3d",
+        "rocket-geometry.json": "f707387ffac7c59166d52a8f3a8fcbd21a6f977ad62d358fecc6e26c14350c2d",
     ]
 
     /// The verified official source for the entrance.

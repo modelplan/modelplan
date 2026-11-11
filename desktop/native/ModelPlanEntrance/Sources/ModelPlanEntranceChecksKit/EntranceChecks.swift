@@ -299,6 +299,10 @@ public enum EntranceChecks {
             try run.near(window.top, 240, 2, "window top on the aperture's bottom edge")
             try run.near(window.width, StoryboardRail.frontWindowWidth * 601.5, 3, "window width")
             try run.expect(endFacts.noseInFront && endFacts.noseY < window.top - 40, "nose above the window: nose \(endFacts.noseY), window top \(window.top)")
+            try run.expect(endFacts.noseY >= 26 + 12, "nose below the menu bar at the end pose: \(endFacts.noseY)")
+            let peak = rail.handoverPeakIoU()
+            print("D146 stand-in hand-over peak window/aperture IoU \(peak.iou) at t \(peak.t) (reported)")
+            try run.expect(peak.iou > 0.3, "the window overlaps the aperture during the hand-over: \(peak.iou)")
             try run.near(endFacts.topY, endFacts.noseY, 0.5, "the nose, not the glass, is the top of the silhouette")
             try run.expect(rail.handoverCoverage >= StoryboardRail.minHandoverCoverage, "glass covers the aperture at the hand-over: \(rail.handoverCoverage)")
             var lastDistance = Double.infinity

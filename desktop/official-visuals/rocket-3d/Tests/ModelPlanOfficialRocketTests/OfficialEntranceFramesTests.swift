@@ -91,9 +91,10 @@ final class OfficialEntranceFramesTests: XCTestCase {
             try save(handover.image, "official-right-handover-\(theme.rawValue)")
             // D132: the front window close-up, framed like the pass-5 window still (from about 20 degrees below,
             // the window about 60 % of the width, the nose above it), for the owner board.
-            let windowCentre = EntranceVector(0, 12.835, 0.81), e = 20.0 * Double.pi / 180
+            // Round 9 (D146): centred on the new window (centre 12.78, glass surface z ~0.82).
+            let windowCentre = EntranceVector(0, 12.78, 0.82), e = 20.0 * Double.pi / 180
             let eye = windowCentre + EntranceVector(0, -sin(e), cos(e)) * 4.0
-            let closeup = EntranceCamera(position: eye, orientation: .lookAt(eye: eye, target: .init(0, 13.0, 0.5)), fovDegrees: 30,
+            let closeup = EntranceCamera(position: eye, orientation: .lookAt(eye: eye, target: .init(0, 12.945, 0.5)), fovDegrees: 30,
                                          viewport: .init(width: 1000, height: 1000))
             let image = try await scene.render(camera: closeup, rise: 0)
             print("OFFICIAL-FRAME \(theme.rawValue) window-closeup coverage \(String(format: "%.3f", coverage(image)))")
@@ -225,6 +226,35 @@ final class OfficialEntranceFramesTests: XCTestCase {
             }
             // D142: the window's corners are rounded (glass and frame bands rebuilt from one outline).
             XCTAssertTrue(scene.windowShape.hasPrefix("rounded"), "\(theme) window: \(scene.windowShape)")
+            // D146 (round 9): the window's shape follows the pass-5 prototype. Measured on the window still with a
+            // camera fitted to the capsule silhouette and two panel rings (entrance-r9/cam5.py): the cast glass
+            // edge is 2.09 x as wide as tall (chart width along the glass arc), its top quarter 0.77 x as wide as
+            // its bottom quarter, from y 12.48 to 13.08 (the file's window: 1.65, 0.79, 12.40-13.27).
+            let rocketFrame = try XCTUnwrap(scene.entity(named: "canopy-hull-patch")?.parent, "\(theme) no hull patch round the window")
+            var glassPoints: [SIMD3<Float>] = []
+            func gather(_ e: Entity) {
+                if let model = e.components[ModelComponent.self] {
+                    for part in model.mesh.contents.models.flatMap({ Array($0.parts) }) {
+                        glassPoints += part.positions.elements.map { e.convert(position: $0, to: rocketFrame) }
+                    }
+                }
+                e.children.forEach(gather)
+            }
+            gather(try XCTUnwrap(scene.entity(named: "curved_canopy_glass")))
+            let glassY = glassPoints.map(\.y)
+            let bottomY = try XCTUnwrap(glassY.min()), topY = try XCTUnwrap(glassY.max()), glassHeight = topY - bottomY
+            func chartWidth(_ lo: Float, _ hi: Float) -> Float {
+                let xs = glassPoints.filter { $0.y >= lo && $0.y <= hi }.map { atan2($0.x, $0.z) * ($0.x * $0.x + $0.z * $0.z).squareRoot() }
+                return (xs.max() ?? 0) - (xs.min() ?? 0)
+            }
+            let ratio = chartWidth(bottomY, topY) / glassHeight
+            let taper = chartWidth(topY - 0.25 * glassHeight, topY) / chartWidth(bottomY, bottomY + 0.25 * glassHeight)
+            print("OFFICIAL-WINDOW \(theme.rawValue) y \(String(format: "%.3f-%.3f", bottomY, topY)) width/height \(String(format: "%.2f", ratio)) " +
+                  "top/bottom \(String(format: "%.3f", taper)) nose above \(String(format: "%.2f", 14.2 - topY)) m")
+            XCTAssertEqual(ratio, 2.09, accuracy: 0.05 * 2.09, "\(theme) window proportions differ from the prototype")
+            XCTAssertEqual(taper, 0.77, accuracy: 0.05 * 0.77, "\(theme) window taper differs from the prototype")
+            XCTAssertEqual(bottomY, 12.48, accuracy: 0.03, "\(theme) window bottom")
+            XCTAssertEqual(topY, 13.08, accuracy: 0.03, "\(theme) window top")
             // Round 5: the hull albedo and normal map are the code-drawn panel maps.
             print("OFFICIAL-ALBEDO \(theme.rawValue) \(scene.hullAlbedo)")
             XCTAssertTrue(scene.hullAlbedo.hasPrefix("panels"), "\(theme) hull albedo: \(scene.hullAlbedo)")

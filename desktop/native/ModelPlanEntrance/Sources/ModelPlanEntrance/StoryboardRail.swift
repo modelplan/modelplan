@@ -48,11 +48,12 @@ public struct StoryboardRail: Sendable {
     /// at the window from slightly below; the c01 overlap search had ended at 62-65 degrees).
     public static let frontElevation = 20.0
     /// D132: window width at the end pose as a fraction of the aperture width; its top edge sits on the aperture's
-    /// bottom edge, so the nose shows above it.
-    public static let frontWindowWidth = 0.7
+    /// bottom edge, so the nose shows above it. Round 9 (D146, the lower, wider pass-5 window, about 2.4:1): 0.7 put
+    /// the official nose tip at y 10, under the menu bar; 0.58 keeps it at about y 41 (stand-in 131).
+    public static let frontWindowWidth = 0.58
     /// D132 hand-over gate: at the end of the map the glass covers at least this much of the c01 aperture. It
-    /// replaces D111.4's window/c01 IoU >= 0.80, which a front window cannot reach (its outline is about 1.5:1, the
-    /// aperture about 3:1; the IoU is still reported).
+    /// replaces D111.4's window/c01 IoU >= 0.80, which a front window cannot reach (the aperture is about 3:1; the D146
+    /// window about 2.4:1, the file's was 1.5:1; the IoU is still reported, and D146 makes a higher one a goal).
     public static let minHandoverCoverage = 0.99
     static let solveTailSamples = 64
 
@@ -206,6 +207,21 @@ public struct StoryboardRail: Sendable {
                            windowRect: camera.projectBounds(geometry.glassVertices.map(lift)),
                            tailRect: .bounds(tail.map(\.point)), tailInFront: tail.allSatisfy(\.inFront),
                            turnRemainingDegrees: camera.orientation.angle(to: turnTarget) * 180 / Double.pi)
+    }
+
+    /// D146 (reported, a goal, not a gate): the highest window/aperture IoU along the hand-over dolly, and where.
+    /// The end pose itself has the window under the aperture (IoU about 0); the canopy reads closest to the
+    /// cockpit's outline part-way through the dolly.
+    public func handoverPeakIoU(samples: Int = 20, step: Double = 3) -> (iou: Double, t: Double) {
+        var best = (iou: 0.0, t: 0.0)
+        for i in 0...samples {
+            let t = Double(i) / Double(samples), camera = handoverPose(at: t).camera
+            let projected = geometry.glassVertices.map { camera.project(.init($0.x, $0.y + Self.liftMetres, $0.z)) }
+            guard projected.allSatisfy(\.inFront) else { continue }
+            let value = Self.iou(Self.convexHull(projected.map(\.point)), aperturePolygon, step: step)
+            if value > best.iou { best = (value, t) }
+        }
+        return best
     }
 
     public func facts(at t: Double) -> StoryboardPoseFacts {
