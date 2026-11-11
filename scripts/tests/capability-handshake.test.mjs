@@ -20,6 +20,19 @@ const NOT_DECLARED = new Map([
   ["forecastProducerV1", "server-side fact read by the app through supportsCapability; not a client opt-in"],
 ]);
 
+// Declared by the Swift client, not advertised by SharedBackend.Capabilities(): the plain names gate the client's
+// own request methods (ProcessEngineClient checks them against the server's answer) and memberRefreshV1 is a
+// client opt-in the server reads from clientCapabilities.
+const CLIENT_ONLY = new Map([
+  ["refresh", "plain capability name gating refresh/request on the client side"],
+  ["history", "plain capability name gating history/query on the client side"],
+  ["cockpit", "plain capability name gating cockpit/query on the client side"],
+  ["publication", "plain capability name gating publication/get on the client side"],
+  ["plugin_install", "plain capability name gating plugin/install on the client side"],
+  ["history_import_v1", "plain capability name gating the history/import_* methods on the client side"],
+  ["memberRefreshV1", "client opt-in the server reads from clientCapabilities, not an advertised feature"],
+]);
+
 function goConstants() {
   const map = new Map();
   for (const f of readdirSync(appserver).filter((n) => n.endsWith(".go") && !n.endsWith("_test.go"))) {
@@ -33,6 +46,9 @@ function advertised() {
   const start = src.indexOf("func (b *SharedBackend) Capabilities()");
   assert.ok(start >= 0, "SharedBackend.Capabilities not found");
   const body = src.slice(start, src.indexOf("\n}\n", start));
+  // The scan below includes the signature line. Its method name "Capabilities" is not picked up as a constant:
+  // the pattern needs the literal stem "Capability" and "Capabilities" has "ies" where that has "y", and it is
+  // not a quoted string either (checked for glm-846-1).
   const consts = goConstants();
   const out = new Set();
   for (const m of body.matchAll(/"([A-Za-z0-9_]+)"|\b(Capability\w+)\b/g)) {
@@ -72,5 +88,16 @@ test("the allowlist holds only capabilities the server still advertises, and non
     assert.ok(reason.length > 10, name);
     assert.ok(server.has(name), `${name} is no longer advertised: drop it from the allowlist`);
     assert.ok(!client.has(name), `${name} is declared: drop it from the allowlist`);
+  }
+});
+
+test("every capability the Swift client declares is advertised by the server or in the client-only allowlist", () => {
+  const server = advertised();
+  const extra = [...declared()].filter((c) => !server.has(c) && !CLIENT_ONLY.has(c));
+  assert.deepEqual(extra, [], `Swift declares capabilities the server does not advertise: ${extra.join(", ")}`);
+  for (const [name, reason] of CLIENT_ONLY) {
+    assert.ok(reason.length > 10, name);
+    assert.ok(declared().has(name), `${name} is no longer declared: drop it from CLIENT_ONLY`);
+    assert.ok(!server.has(name), `${name} is now advertised: drop it from CLIENT_ONLY`);
   }
 });
