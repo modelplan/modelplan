@@ -4,6 +4,10 @@ import WebKit
 
 @MainActor private final class FieldWindow: NSPanel {
   override var canBecomeKey: Bool { true }
+  /// G3-80: the panel's frame is already placed by the field's own rule, 16 pt inside the visible frame of the display
+  /// chosen for it. AppKit's constraint judged it against another screen and pulled a field placed on another display
+  /// down to y = 0 (hosted CI run 43021491370), so the panel keeps the frame it was given.
+  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 @MainActor private final class FieldMessageProxy: NSObject, WKScriptMessageHandler {
   weak var owner: CockpitFieldPanel?
