@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+import AppKit
 import XCTest
 import ModelPlanEngineClient
 import ModelPlanWire
@@ -65,5 +66,27 @@ import ModelPlanWire
         controller.receiveAcceptedFacts(try facts(localAllowed: true))
         controller.receiveAcceptedRows(try rows(toolConsent: "allowed"))
         XCTAssertTrue(controller.isReading(ScopeConsentFixtures.local))
+    }
+    func testStatusLineAgreesWithTheSwitchWhenTheEngineIsNotReading() throws {
+        let controller = controller(ScopeConsentTestClient())
+        controller.receiveAcceptedFacts(try facts(localAllowed: false))
+        let id = ScopeConsentFixtures.local
+        XCTAssertEqual(SettingsScopeConsentView.pathStatus(controller, id: id, denied: false).english.hasPrefix("On by default"), true, "before rows the default stands")
+        controller.receiveAcceptedRows(try rows(toolConsent: nil))
+        XCTAssertFalse(controller.isReading(id))
+        let status = SettingsScopeConsentView.pathStatus(controller, id: id, denied: false)
+        XCTAssertFalse(status.english.hasPrefix("On by default"), "the switch is unticked, so the line must not claim it is on")
+        XCTAssertTrue(status.english.hasPrefix("Not being read"))
+        XCTAssertTrue(status.chinese.hasPrefix("目前未读取"))
+        let view = SettingsScopeConsentView(controller: controller, language: .english)
+        let box = try XCTUnwrap(find(view, id: "scope.allow." + id))
+        XCTAssertEqual(box.state, .off, "the switch agrees: unticked, Allow this path")
+        controller.receiveAcceptedRows(try rows(toolConsent: "implicit"))
+        XCTAssertTrue(SettingsScopeConsentView.pathStatus(controller, id: id, denied: false).english.hasPrefix("On by default"))
+    }
+    private func find(_ root: NSView, id: String) -> NSButton? {
+        if let button = root as? NSButton, button.accessibilityIdentifier() == id { return button }
+        for child in root.subviews { if let hit = find(child, id: id) { return hit } }
+        return nil
     }
 }
