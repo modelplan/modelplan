@@ -423,8 +423,10 @@ struct CockpitUnavailableNotice {
     /// window stays up. A later successful open drops the notice; a failure that outlasts the grace period, or
     /// that keeps repeating, is announced.
     private func unavailable(path:String,history:Bool=false) {
+        // The open already being waited on reports again (a late open step): that says nothing new and must not
+        // undo a recovery already seen. Decided before any state changes, so it cannot race the open event.
+        if noticeTask != nil, !history, !path.hasPrefix("page.") { return }
         lastEventWasOpen = false
-        if noticeTask != nil, !history, !path.hasPrefix("page.") { return } // the open already being waited on
         let initiatedInForeground=isForeground()
         // A failure in the background or after a close shows nothing, so the log is all there is.
         CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened) "
