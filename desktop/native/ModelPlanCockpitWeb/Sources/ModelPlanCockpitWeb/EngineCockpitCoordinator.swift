@@ -151,6 +151,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public var onUnavailable: ((CockpitUnavailableReason) -> Void)?
   public var onClosed: (() -> Void)?
   public var onOpened: (() -> Void)?
+  /// A fresh reply was handed to the presented page: the cockpit is showing data again (audit A-5: a query failure
+  /// followed by this is a recovery, not an unavailable cockpit).
+  public var onDisplayed: (() -> Void)?
   /// D88: forwarded from the presented page only.
   public var onShellChanged: (() -> Void)?
   /// D88: the presented page's detach / put-back key, for the one-time hints.
@@ -489,6 +492,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
           if CockpitMemberScopes.isIndexedFallback(selectedScope) || !scopeMembers.contains(selectedScope) { selectedScope="all" }
           page?.display(reply.envelope.data, ticket: ticket)
           page?.updateScope(selectedScope)
+          onDisplayed?()
         }
       }
     case .rowsChanged: refresh()

@@ -292,6 +292,9 @@ struct CockpitUnavailableNotice {
     /// next page cannot be created, is not a recovery (macrevc-786-1).
     private var lastEventWasOpen = false
     private var noticeTask: Task<Void,Never>?
+    /// The engine reported the cockpit feature failed: the close the coordinator makes next is that failure's, and its
+    /// notice outlives it. Any other close of a presented cockpit is the user's and retires the notice (audit A-5).
+    private var failureClosesPage = false
     private var rebuilding = false
     private var rebuilds = 0
     static let maxRebuilds = 2
@@ -314,6 +317,16 @@ struct CockpitUnavailableNotice {
             self?.noticeTask?.cancel(); self?.noticeTask=nil; self?.rebuilding=false
             onOpened?()
         }
+        // Audit A-5: fresh data on the presented page is a recovery too. A query that failed and then succeeded on the
+        // same page must not announce an unavailable cockpit.
+        let onDisplayed = owner.coordinator?.onDisplayed
+        owner.coordinator?.onDisplayed = { [weak self] in
+            if let self, self.noticeTask != nil, !self.rebuilding {
+                self.lastEventWasOpen = true
+                self.noticeTask?.cancel(); self.noticeTask=nil
+            }
+            onDisplayed?()
+        }
         // D88: a detach, a put back or the settled open refreshes the icon highlight and the hints.
         owner.coordinator?.onShellChanged = { [weak self] in self?.onShowingChanged?() }
         owner.coordinator?.onClosed = { [weak self] in
@@ -328,6 +341,10 @@ struct CockpitUnavailableNotice {
                 }
                 return
             }
+            // Audit A-5: a user close (the page's close key, an outside click) retires a notice still in its grace
+            // period; the close that follows an engine feature failure keeps it.
+            if self.failureClosesPage { self.failureClosesPage = false }
+            else { self.noticeTask?.cancel(); self.noticeTask=nil; self.rebuilding=false }
             self.wantsVisible = false
             self.onShowingChanged?()
             self.fieldPanel?.close()
@@ -392,7 +409,7 @@ struct CockpitUnavailableNotice {
         // D88: only the menu bar icon grows the cockpit out of itself; the ignition keeps its own entrance.
         entrance = fromStatusItem ? .growFromIcon : .fade
         wantsVisible=true
-        noticeTask?.cancel(); noticeTask=nil; rebuilding=false; rebuilds=0 // a new click starts its own grace period
+        noticeTask?.cancel(); noticeTask=nil; rebuilding=false; rebuilds=0; failureClosesPage=false // a new click starts its own grace period
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
         CockpitTimingLog.markClick()
@@ -440,6 +457,8 @@ struct CockpitUnavailableNotice {
     private func unavailable(path:String,history:Bool=false) {
         // The open already being waited on reports again (a late open step): that says nothing new and must not
         // undo a recovery already seen. Decided before any state changes, so it cannot race the open event.
+        // The coordinator closes the page right after a feature failure; that close is the failure's, not the user's.
+        if wantsVisible, path == CockpitUnavailableReason.featureFailure.path { failureClosesPage = true }
         if noticeTask != nil, !history, !path.hasPrefix("page.") { return }
         lastEventWasOpen = false
         let initiatedInForeground=isForeground()

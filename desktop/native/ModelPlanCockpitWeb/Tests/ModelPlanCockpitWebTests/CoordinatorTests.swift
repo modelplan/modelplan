@@ -318,6 +318,27 @@ extension CoordinatorTests {
     await client.complete();await coordinator.joinCurrentQueryForVerification()
     await coordinator.shutdown();await client.stop()
   }
+  /// Audit A-5: a reply handed to the presented page reports that the cockpit is showing data again (the console drops a
+  /// query failure's pending notice on it); a page that is not presented reports nothing.
+  @MainActor func testAReplyShownOnThePresentedPageReportsTheDisplay() async throws {
+    var pages:[PageProbe]=[]
+    let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
+    var displayed=0
+    coordinator.onDisplayed={ displayed+=1 }
+    let client=HeldClient();coordinator.bind(client:client)
+    let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+    await coordinator.consume(.context(delivery));coordinator.open()
+    for _ in 0..<100 { if await client.requests==1 { break };await Task.yield() }
+    let data=try JSONDecoder().decode(WireCockpitData.self,from:Data(contentsOf:XCTUnwrap(Bundle.module.url(forResource:"cockpit",withExtension:"json",subdirectory:"Fixtures"))))
+    await coordinator.consume(.response(requestID:.string("audit-a5"),.cockpit(.init(envelope:try .init(sessionId:delivery.sessionID,storeEpoch:delivery.floor.storeEpoch,consentGeneration:1,data:data),delivery:delivery))))
+    XCTAssertEqual(pages.last?.displays,1)
+    XCTAssertEqual(displayed,1,"the presented page's display is reported once")
+    await client.complete();await coordinator.joinCurrentQueryForVerification()
+    coordinator.close()
+    await coordinator.consume(.response(requestID:.string("audit-a5-closed"),.cockpit(.init(envelope:try .init(sessionId:delivery.sessionID,storeEpoch:delivery.floor.storeEpoch,consentGeneration:1,data:data),delivery:delivery))))
+    XCTAssertEqual(displayed,1,"nothing is reported without a presented page")
+    await coordinator.shutdown();await client.stop()
+  }
   /// G3-56: the caution identities the page reports are kept by the app's memory and handed to the next page, including
   /// one made by a new coordinator (an app restart); a store change forgets them.
   @MainActor final class CautionMemoryProbe: CockpitCautionMemory {

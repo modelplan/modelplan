@@ -132,5 +132,55 @@ extension CommunityCockpitEntryTests {
         XCTAssertTrue(notices.isEmpty,"A user close is not a failure")
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
+    /// Audit A-5: a query that fails on the open cockpit and then succeeds on the same page is a recovery, so its notice
+    /// is dropped; without the fresh data the failure is still announced once its grace period ends.
+    @MainActor func testAQueryFailureFollowedByFreshDataOnTheSamePageIsNotAnnounced() async throws {
+        for recovers in [false,true] {
+            let root=FileManager.default.temporaryDirectory.appendingPathComponent("audit-a5-query-"+UUID().uuidString)
+            defer{try? FileManager.default.removeItem(at:root)}
+            let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+            let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in RouteClient()})
+            let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+            let coordinator=EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+            owner.coordinator=coordinator
+            var notices:[CockpitUnavailableNotice]=[]
+            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(300))
+            surface.show()
+            try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
+            coordinator.onOpened?()                          // the cockpit is up
+            coordinator.onUnavailable?(.query("timeout"))     // a query on it fails ...
+            if recovers { coordinator.onDisplayed?() }        // ... and the next one shows fresh data
+            try await Task.sleep(for:.milliseconds(900))
+            XCTAssertEqual(notices.count,recovers ? 0 : 1,recovers ? "Fresh data on the same page is a recovery: no notice" : "A query failure that lasts is announced")
+            XCTAssertTrue(surface.wantsVisible,"the cockpit stays up either way")
+            surface.hide();await coordinator.shutdown();await composition.stop()
+        }
+    }
+    /// Audit A-5: closing the cockpit through the page (its close key, an outside click: the coordinator's onClosed) while
+    /// a query failure is in its grace period retires the notice. The close the coordinator makes after an engine feature
+    /// failure is that failure's own, and its notice still appears.
+    @MainActor func testAUserCloseRetiresAPendingNoticeButAFeatureFailureCloseKeepsIt() async throws {
+        for featureFailure in [false,true] {
+            let root=FileManager.default.temporaryDirectory.appendingPathComponent("audit-a5-close-"+UUID().uuidString)
+            defer{try? FileManager.default.removeItem(at:root)}
+            let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+            let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in RouteClient()})
+            let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+            let coordinator=EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+            owner.coordinator=coordinator
+            var notices:[CockpitUnavailableNotice]=[]
+            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(300))
+            surface.show()
+            try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
+            coordinator.onOpened?()                                  // the cockpit is up
+            if featureFailure { coordinator.onUnavailable?(.featureFailure) } // the engine says the feature failed; the coordinator closes
+            else { coordinator.onUnavailable?(.query("timeout")) }    // a query fails; then the user closes the cockpit
+            coordinator.onClosed?()
+            try await Task.sleep(for:.milliseconds(900))
+            XCTAssertFalse(surface.wantsVisible)
+            XCTAssertEqual(notices.count,featureFailure ? 1 : 0,featureFailure ? "A feature failure is announced after its own close" : "A user close is not followed by a notice")
+            surface.hide();await coordinator.shutdown();await composition.stop()
+        }
+    }
 }
 #endif
