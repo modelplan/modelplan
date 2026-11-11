@@ -41,3 +41,27 @@ extension RocketGeometry {
                               windowAnchorY: pack.windowAnchorY)
     }
 }
+
+/// Optional look images that come with the official model (owner D142, generated under D116): a tileable
+/// brushed-metal detail for the hull and the cockpit seen through the front window. Each is a URL to a verified
+/// file of the official pack, or nil; the entrance scene draws its own code fallbacks for anything missing.
+public struct RocketLookImages: Equatable, Sendable {
+    /// Greyscale, tileable brushed-steel detail (1024 x 1024), tiled about every half metre on the hull.
+    public var brushedDetail: URL?
+    /// The dim cockpit interior shown behind the front window, per theme (day falls back to night).
+    public var cockpitInteriorNight: URL?
+    public var cockpitInteriorDay: URL?
+
+    public init(brushedDetail: URL? = nil, cockpitInteriorNight: URL? = nil, cockpitInteriorDay: URL? = nil) {
+        self.brushedDetail = brushedDetail
+        self.cockpitInteriorNight = cockpitInteriorNight
+        self.cockpitInteriorDay = cockpitInteriorDay
+    }
+
+    /// No images: every look element is code-drawn.
+    public static let none = RocketLookImages()
+
+    public func cockpitInterior(for theme: EntranceTheme) -> URL? {
+        theme == .day ? (cockpitInteriorDay ?? cockpitInteriorNight) : cockpitInteriorNight
+    }
+}

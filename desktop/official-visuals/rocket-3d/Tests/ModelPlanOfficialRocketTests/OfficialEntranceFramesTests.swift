@@ -73,10 +73,10 @@ final class OfficialEntranceFramesTests: XCTestCase {
     @MainActor
     func testOfficialRocketLookFramesNightAndDay() async throws {
         guard #available(macOS 15.0, *) else { throw XCTSkip("the native entrance needs macOS 15") }
-        let source = try OfficialRocket.source()
+        let source = try OfficialRocket.source(), look = try OfficialRocket.lookImages()
         for theme in EntranceTheme.allCases {
             let plan = StoryboardScenario.plan(edge: "right", theme: theme, geometry: source.geometry)
-            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: false, rocket: source)
+            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: false, rocket: source, look: look)
             try await scene.setEnvironment(XCTUnwrap(EntranceLook.studio(theme)), intensityExponent: EntranceLook.environmentExponent(theme))
             for (shot, t) in StoryboardScenario.stages(plan) {
                 let frame = try await scene.render(at: t)
@@ -109,10 +109,10 @@ final class OfficialEntranceFramesTests: XCTestCase {
     @MainActor
     func testOfficialHullIsSmoothMetalInLookMode() async throws {
         guard #available(macOS 15.0, *) else { throw XCTSkip("the native entrance needs macOS 15") }
-        let source = try OfficialRocket.source()
+        let source = try OfficialRocket.source(), look = try OfficialRocket.lookImages()
         for theme in EntranceTheme.allCases {
             let plan = StoryboardScenario.plan(edge: "right", theme: theme, geometry: source.geometry)
-            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: false, rocket: source)
+            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: false, rocket: source, look: look)
             func models(_ name: String) throws -> [ModelComponent] {
                 let root = try XCTUnwrap(scene.entity(named: name), "no \(name)")
                 var found: [ModelComponent] = []
@@ -192,16 +192,28 @@ final class OfficialEntranceFramesTests: XCTestCase {
             XCTAssertLessThan(rim, 0.012, "\(theme) inner rim is too wide")
             // Round 5/6: the cockpit is dim: the code-drawn console texture with small glowing screens and two nearer
             // screens, not the file's bright UI.
-            for model in try models("interior_soft_screen_plane") {
-                for material in model.materials {
-                    XCTAssertNotNil(material as? UnlitMaterial, "\(theme) cockpit console must be unlit")
+            if look.cockpitInterior(for: theme) == nil {
+                for model in try models("interior_soft_screen_plane") {
+                    for material in model.materials {
+                        XCTAssertNotNil(material as? UnlitMaterial, "\(theme) cockpit console must be unlit")
+                    }
                 }
             }
-            XCTAssertNotNil(scene.entity(named: "cockpit-screen-0"), "\(theme) cockpit has no screens")
-            let console = try XCTUnwrap(scene.entity(named: "cockpit-console")?.components[ModelComponent.self], "\(theme) no console")
-            for material in console.materials {
-                XCTAssertNotNil((material as? UnlitMaterial)?.color.texture, "\(theme) console is not the drawn texture")
+            // D142: the pack's cockpit image when it ships, the code console until then.
+            print("OFFICIAL-COCKPIT \(theme.rawValue) \(scene.cockpit) WINDOW \(scene.windowShape)")
+            if look.cockpitInterior(for: theme) != nil {
+                XCTAssertEqual(scene.cockpit, "image")
+                XCTAssertNotNil(scene.entity(named: "cockpit-backdrop"), "\(theme) no cockpit image behind the window")
+            } else {
+                XCTAssertEqual(scene.cockpit, "code")
+                XCTAssertNotNil(scene.entity(named: "cockpit-screen-0"), "\(theme) cockpit has no screens")
+                let console = try XCTUnwrap(scene.entity(named: "cockpit-console")?.components[ModelComponent.self], "\(theme) no console")
+                for material in console.materials {
+                    XCTAssertNotNil((material as? UnlitMaterial)?.color.texture, "\(theme) console is not the drawn texture")
+                }
             }
+            // D142: the window's corners are rounded (glass and frame bands rebuilt from one outline).
+            XCTAssertTrue(scene.windowShape.hasPrefix("rounded"), "\(theme) window: \(scene.windowShape)")
             // Round 5: the hull albedo and normal map are the code-drawn panel maps.
             print("OFFICIAL-ALBEDO \(theme.rawValue) \(scene.hullAlbedo)")
             XCTAssertTrue(scene.hullAlbedo.hasPrefix("panels"), "\(theme) hull albedo: \(scene.hullAlbedo)")

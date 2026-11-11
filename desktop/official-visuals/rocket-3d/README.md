@@ -10,6 +10,8 @@ not link this package and draw the neutral stand-in from `ModelPlanEntrance` (`R
 | `Resources/modelplan-rocket-night-lod1.usdz` | Shared pass-5 model, LOD1, night finish (graphite gunmetal) |
 | `Resources/modelplan-rocket-day-lod1.usdz` | The same model, day finish (satin aluminium) |
 | `Resources/rocket-geometry.json` | Canopy glass vertices, window anchor height, height and skirt radius, used by the entrance camera |
+| `Resources/rocket-brushed-steel-detail.png` | Optional (owner D142, not shipped yet): tileable brushed-steel detail for the hull; the entrance draws code grain without it |
+| `Resources/rocket-cockpit-interior-{night,day}.png` | Optional (owner D142, not shipped yet): the dim cockpit behind the front window; the entrance draws a code console without it |
 
 The geometry, node names and anchors (`anchor_window`, `anchor_top`, `anchor_base`, `anchor_cockpit_*`,
 `curved_canopy_glass`, `engine_0` …) are identical in both files; only the material textures differ (one model,

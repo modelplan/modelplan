@@ -8,6 +8,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ImageIO
 import Metal
 import ModelPlanEntrance
 import RealityKit
@@ -44,6 +45,10 @@ public final class EntranceScene {
     /// Which hull albedo look mode uses: "panels ..." (round 5: the code-drawn panel maps of `HullPanels`),
     /// "file" (the atlas as shipped, if the maps could not be made) or "none" (stand-in or grey box).
     public private(set) var hullAlbedo = "none"
+    /// The front window in look mode: "rounded ..." (owner D142: corners rounded like the pass-5 art) or "file".
+    public private(set) var windowShape = "none"
+    /// What is behind the front window in look mode: "image" (the pack's cockpit interior) or "code" (the console).
+    public private(set) var cockpit = "none"
     /// Look-mode frames are rendered at this multiple of the output size and scaled down (round 5: the day
     /// silhouette and the hairline seams aliased at 1x). Flat mode stays at 1, so the pose gates see the same pixels.
     public var supersample: Int
@@ -56,8 +61,9 @@ public final class EntranceScene {
     ///   - flat: unlit flat materials (the reference's `look=grey`); false uses the theme finish (stand-in values).
     ///   - rocket: the stand-in, or a model file (the official edition's brand rocket). Build the plan with
     ///     `rocket.geometry` so the camera frames the rocket that is drawn.
+    ///   - look: optional look images that come with the model file (owner D142); missing ones are code-drawn.
     public init(plan: EntrancePlan, parts: Set<EntrancePart> = [.hull, .glass], flat: Bool = true,
-                rocket: RocketModelSource = .communityDefault) throws {
+                rocket: RocketModelSource = .communityDefault, look: RocketLookImages = .none) throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw SceneError.noMetalDevice }
         self.device = device
         self.plan = plan
@@ -66,7 +72,11 @@ public final class EntranceScene {
         renderer = try RealityRenderer()
         root.addChild(stage)
         if let url = rocket.modelURL(for: plan.scenario.theme) {
-            hullAlbedo = try ModelRocket.build(into: stage, url: url, tail: plan.tail, parts: parts, flat: flat, theme: plan.scenario.theme)
+            let built = try ModelRocket.build(into: stage, url: url, tail: plan.tail, parts: parts, flat: flat,
+                                              theme: plan.scenario.theme, look: look)
+            hullAlbedo = built.albedo
+            windowShape = built.window
+            cockpit = built.cockpit
         } else {
             StandInRocket.build(into: stage, tail: plan.tail, parts: parts, theme: plan.scenario.theme, flat: flat)
         }
@@ -325,10 +335,11 @@ enum ModelRocket {
         for child in e.children { forEachModel(child, body) }
     }
 
-    /// Builds the model into `stage`; returns which hull albedo look mode uses (see `EntranceScene.hullAlbedo`).
+    /// Builds the model into `stage`; returns what look mode used (see `EntranceScene.hullAlbedo`, `windowShape`
+    /// and `cockpit`).
     @discardableResult
     static func build(into stage: Entity, url: URL, tail: [TailSlot], parts: Set<EntrancePart>, flat: Bool,
-                      theme: EntranceTheme) throws -> String {
+                      theme: EntranceTheme, look: RocketLookImages = .none) throws -> (albedo: String, window: String, cockpit: String) {
         let loaded = try Entity.load(contentsOf: url)
         // Use the model itself, not the file's scene root: the root may carry AR anchoring, which an offscreen
         // renderer never resolves.
@@ -364,16 +375,19 @@ enum ModelRocket {
         var albedo = "none"
         var finish = HullFinish(theme)
         if !flat {
-            if let maps = HullPanels.maps() {
+            let detail = look.brushedDetail.flatMap(LookImage.load)
+            if let maps = HullPanels.maps(detail: detail) {
                 finish.panels = maps
                 albedo = "panels " + [HullPanels.capsule, HullPanels.body].map { "\($0.name) \($0.width)x\($0.height)" }
-                    .joined(separator: ", ")
+                    .joined(separator: ", ") + (detail != nil ? ", detail image" : ", detail code")
             } else {
                 albedo = "file"
             }
+            finish.cockpitImage = look.cockpitInterior(for: theme).flatMap(LookImage.load)
             try finish.dress(body)
         }
-        guard parts.contains(.hull) else { return albedo }
+        let result = (albedo: albedo, window: flat ? "none" : finish.windowShape, cockpit: flat ? "none" : finish.cockpitUsed)
+        guard parts.contains(.hull) else { return result }
         let engines = Entity()
         engines.name = "entry-engines"
         stage.addChild(engines)
@@ -413,7 +427,7 @@ enum ModelRocket {
         plate.name = "entry-tail-plate"
         plate.position = [0, Float(TailLayout.plateY), 0]
         engines.addChild(plate)
-        return albedo
+        return result
     }
 }
 
@@ -473,6 +487,11 @@ struct HullFinish {
     let theme: EntranceTheme
     /// Round 5: the code-drawn panel maps (`HullPanels`); nil keeps the file's atlas.
     var panels: [String: HullPanels.Maps]?
+    /// D142: the pack's cockpit interior image for this theme; nil draws the code console.
+    var cockpitImage: CGImage?
+    /// What `dress` did with the window and the cockpit (reported by the scene).
+    private(set) var windowShape = "file"
+    private(set) var cockpitUsed = "code"
     init(_ theme: EntranceTheme) { self.theme = theme }
 
     /// The textured outer hull sections.
@@ -580,10 +599,17 @@ struct HullFinish {
     }
 
     /// Materials, geometry and normals for everything under `root` (the model, or one cloned bell).
-    func dress(_ root: Entity) throws {
-        // The window surround first: it reshapes three meshes together (and adds the inner rim), before they are
-        // rounded and smoothed.
-        try GasketFrame.reshape(in: root)
+    mutating func dress(_ root: Entity) throws {
+        // The window first, before the meshes are rounded and smoothed. D142: the glass and the frame bands are
+        // rebuilt with round corners (`WindowShape`); if the file does not have the expected window, the round-5
+        // reshape of the file's strips is the fallback.
+        let rounded = try WindowShape.build(in: root)
+        if rounded {
+            windowShape = String(format: "rounded r %.2f/%.2f", WindowShape.bottomRadius, WindowShape.topRadius)
+        } else {
+            try GasketFrame.reshape(in: root)
+        }
+        if cockpitImage != nil, root.findEntity(named: CockpitInterior.screenPlane) != nil { cockpitUsed = "image" }
         var models: [Entity] = []
         ModelRocket.forEachModel(root) { models.append($0) }
         for e in models where e.isEnabledInHierarchy {
@@ -597,10 +623,23 @@ struct HullFinish {
                 continue
             }
             if CockpitInterior.isInterior(name) {
+                if cockpitImage != nil, name != "cockpit_back_half_lining" {
+                    // D142: the cockpit image replaces the file's screen plane and recess (it sits where they are).
+                    var node: Entity? = e
+                    while let n = node, n.name != name { node = n.parent }
+                    (node ?? e).isEnabled = false
+                    continue
+                }
                 CockpitInterior.dress(e, name: name)
                 continue
             }
-            let round = RoundHull.applies(to: name)
+            var frame = GasketFrame.role(of: e)
+            // D142: in the rebuilt window the outer strip is the surround and the middle one the frame's outer wall.
+            if rounded, let role = frame {
+                frame = role == .outerLine ? .surround : role == .surround ? .outerLine : role
+            }
+            // Rebuilt window meshes are already round and dense.
+            let round = RoundHull.applies(to: name) && !(rounded && (ModelRocket.isGlass(e) || frame != nil))
             if ModelRocket.isGlass(e) {
                 // Owner D116: the canopy is real glass, not the model's flat grey.
                 let glass = CanopyGlass.material()
@@ -610,7 +649,6 @@ struct HullFinish {
                 e.components.set(model)
                 continue
             }
-            let frame = GasketFrame.role(of: e)
             let band = Self.hullParts.contains(name) ? HullPanels.band(for: name) : nil
             let maps = band.flatMap { panels?[$0.name] }
             model.materials = model.materials.map { material -> any RealityKit.Material in
@@ -646,15 +684,20 @@ struct HullFinish {
                 pbr.faceCulling = .none
                 return pbr
             }
-            if round || frame != nil { model.mesh = try RoundHull.mesh(model.mesh, entity: e, root: root) }
+            if round || (frame != nil && !rounded) { model.mesh = try RoundHull.mesh(model.mesh, entity: e, root: root) }
             // The panel maps are drawn around the rocket's axis: map the hull the same way.
             if let band, maps != nil { model.mesh = try HullPanels.remap(model.mesh, entity: e, root: root, band: band) }
             model.mesh = try SmoothNormals.mesh(model.mesh)
             e.components.set(model)
         }
         JointLine.draw(in: root, lip: metal(lipColor, roughness: 0.16))
-        if let plane = root.findEntity(named: CockpitInterior.screenPlane), plane.isEnabledInHierarchy {
-            try CockpitCeiling.add(to: root)
+        if let plane = root.findEntity(named: CockpitInterior.screenPlane) {
+            if let cockpitImage {
+                try CockpitBackdrop.add(to: root, image: cockpitImage)
+                try CockpitCeiling.add(to: root, screens: false)
+            } else if plane.isEnabledInHierarchy {
+                try CockpitCeiling.add(to: root)
+            }
         }
     }
 }
@@ -1311,9 +1354,10 @@ enum CockpitCeiling {
         ]
     }()
 
-    static func add(to root: Entity) throws {
+    /// - Parameter screens: false draws the lining only (D142: the cockpit image carries the screens).
+    static func add(to root: Entity, screens: Bool = true) throws {
         guard root.findEntity(named: name) == nil else { return }
-        let image = try texture()
+        let image = try texture(screens: screens)
         let resource = try TextureResource.generate(from: image, options: .init(semantic: .color))
         var material = UnlitMaterial()
         material.color = .init(tint: .white, texture: .init(resource))
@@ -1357,7 +1401,7 @@ enum CockpitCeiling {
 
     /// 2048 x 1024: near-black lining, faint panel structure, and the screens as soft-edged rounded rectangles
     /// with a blurred glow and dim content lines, so they read as lit displays seen through tinted glass.
-    static func texture() throws -> CGImage {
+    static func texture(screens drawScreens: Bool = true) throws -> CGImage {
         let w = 2048, h = 1024
         guard let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                                 space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -1379,7 +1423,7 @@ enum CockpitCeiling {
         c.setFillColor(color([0.03, 0.035, 0.045]))
         // D132: no mirrored copies any more (the r3d hedge against a reversed v). Seen through the front window,
         // a reversed v only moves the side screens up to the upper back wall, still in view.
-        let screens = Self.screens
+        let screens = drawScreens ? Self.screens : []
         for s in screens {
             c.addPath(CGPath(roundedRect: rect(az: s.az, y: s.y, w: s.w * 1.35, h: s.h * 1.4).insetBy(dx: 0, dy: 0),
                              cornerWidth: 10, cornerHeight: 10, transform: nil))
@@ -1598,17 +1642,51 @@ enum HullPanels {
 
     static var cache: [String: Maps] = [:]
 
-    /// Both bands' maps (made once per process), or nil if a texture could not be made.
-    static func maps() -> [String: Maps]? {
+    /// D142: a generated brushed-steel tile replaces the code grain and scratches when the pack has one. It is
+    /// tiled every `detailTile` metres (rotated a quarter turn on panels whose grain runs along the hull) and enters
+    /// the albedo at `detailAlbedo` and the height (normal map) at `detailHeight` per standard deviation.
+    static let detailTile: Float = 0.5
+    static let detailAlbedo: Float = 0.05
+    static let detailHeight: Float = 0.1
+
+    /// A greyscale detail tile, normalised to zero mean and unit deviation (clamped to +-3).
+    struct Detail {
+        let size: Int
+        let values: [Float]
+
+        init?(_ image: CGImage) {
+            let n = 1024
+            var grey = [UInt8](repeating: 0, count: n * n)
+            let drawn = grey.withUnsafeMutableBytes { buffer -> Bool in
+                guard let c = CGContext(data: buffer.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n,
+                                        space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+                else { return false }
+                c.interpolationQuality = .high
+                c.draw(image, in: CGRect(x: 0, y: 0, width: n, height: n))
+                return true
+            }
+            guard drawn else { return nil }
+            let raw = grey.map { Float($0) / 255 }
+            let mean = raw.reduce(0, +) / Float(raw.count)
+            let deviation = max(0.01, (raw.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Float(raw.count)).squareRoot())
+            size = n
+            values = raw.map { min(3, max(-3, ($0 - mean) / deviation)) }
+        }
+    }
+
+    /// Both bands' maps (made once per process and detail source), or nil if a texture could not be made.
+    static func maps(detail image: CGImage? = nil) -> [String: Maps]? {
         var result: [String: Maps] = [:]
+        let detail = image.flatMap(Detail.init)
         for band in [capsule, body] {
-            if let hit = cache[band.name] { result[band.name] = hit; continue }
-            guard let drawn = try? images(band),
+            let key = band.name + (detail != nil ? "+detail" : "")
+            if let hit = cache[key] { result[band.name] = hit; continue }
+            guard let drawn = try? images(band, detail: detail),
                   let albedo = try? TextureResource.generate(from: drawn.albedo, options: .init(semantic: .color)),
                   let normal = try? TextureResource.generate(from: drawn.normal, options: .init(semantic: .normal))
             else { return nil }
             let maps = Maps(albedo: albedo, normal: normal)
-            cache[band.name] = maps
+            cache[key] = maps
             result[band.name] = maps
         }
         return result
@@ -1627,7 +1705,7 @@ enum HullPanels {
     }
 
     /// The albedo and normal images of one band.
-    static func images(_ band: Band) throws -> (albedo: CGImage, normal: CGImage) {
+    static func images(_ band: Band, detail: Detail? = nil) throws -> (albedo: CGImage, normal: CGImage) {
         let w = band.width, h = band.height
         // Masks, drawn additively with CoreGraphics: red = grooves, green = lips, blue = scratches. Drawing y is
         // texture v (CoreGraphics' origin is bottom left; the image's top row is v = 1).
@@ -1732,7 +1810,7 @@ enum HullPanels {
             }
         }
         // Micro-scratches: short thin strokes at random angles, mostly faint.
-        for _ in 0..<(scratches[band.name] ?? 0) {
+        for _ in 0..<(detail == nil ? scratches[band.name] ?? 0 : 0) {
             let az = random.signed() * 180, y = band.bottom + random.next() * span
             let length = 0.008 + 0.05 * random.next() * random.next(), angle = random.next() * .pi
             let perU = pxPerMetreU(y)
@@ -1782,25 +1860,39 @@ enum HullPanels {
         var height = [Float](repeating: 0, count: w * h)
         var albedo = [UInt8](repeating: 255, count: w * h * 4), normal = albedo
         func srgb(_ linearish: Float) -> UInt8 { UInt8((min(1, max(0, linearish)) * 255).rounded()) }
+        // The detail tile's texel size in metres, and the hull circumference per texel row (u spans it).
+        let tileScale = Float(detail?.size ?? 1) / detailTile
+        let circumference = (0..<h).map { row -> Float in
+            2 * .pi * radius(band.bottom + (Float(h - 1 - row) + 0.5) / Float(h) * span)
+        }
         height.withUnsafeMutableBufferPointer { hb in
             albedo.withUnsafeMutableBufferPointer { ab in
                 for row in 0..<h {
+                    let metresV = (Float(h - 1 - row) + 0.5) / Float(h) * span, metresPerCol = circumference[row] / Float(w)
                     for col in 0..<w {
                         let i = row * w + col
                         let g = Float(masks[4 * i]) / 255, l = Float(masks[4 * i + 1]) / 255, s = Float(masks[4 * i + 2]) / 255
                         let t = Int(tones[i]), along = t >= 128
                         let variation = (Float(along ? t - 150 : t - 20) / 80) * 2 - 1
-                        let streak = along ? colNoise[col] * (0.5 + 0.5 * runNoise[(row / 48 + col * 7) & 4095])
-                            : rowNoise[row] * (0.5 + 0.5 * runNoise[(col / 48 + row * 7) & 4095])
+                        var streak: Float = 0, grain: Float = 0
+                        if let detail {
+                            let mu = Float(col) * metresPerCol
+                            let tx = Int((along ? metresV : mu) * tileScale), ty = Int((along ? mu : metresV) * tileScale)
+                            let n = detail.size
+                            grain = detail.values[(ty % n) * n + tx % n]
+                        } else {
+                            streak = along ? colNoise[col] * (0.5 + 0.5 * runNoise[(row / 48 + col * 7) & 4095])
+                                : rowNoise[row] * (0.5 + 0.5 * runNoise[(col / 48 + row * 7) & 4095])
+                        }
                         let shade = min(1, ao[i] * 2.5)
-                        var v = base * (1 + brush * streak) * (1 + panelTone * variation)
+                        var v = base * (1 + brush * streak + detailAlbedo * grain) * (1 + panelTone * variation)
                         v *= 1 - aoStrength * shade
                         v *= 1 - grooveDark * g
                         v += (1 - v) * lipLight * l
                         v += (1 - v) * scratchLight * s
                         let byte = srgb(v)
                         ab[4 * i] = byte; ab[4 * i + 1] = byte; ab[4 * i + 2] = byte
-                        hb[i] = -g - 0.6 * shade + 0.5 * l - 0.35 * s + 0.12 * streak
+                        hb[i] = -g - 0.6 * shade + 0.5 * l - 0.35 * s + 0.12 * streak + detailHeight * grain
                     }
                 }
             }
@@ -1833,6 +1925,251 @@ enum HullPanels {
         }
         return (try image(albedo, space: CGColorSpace(name: CGColorSpace.sRGB)!),
                 try image(normal, space: CGColorSpace(name: CGColorSpace.linearSRGB)!))
+    }
+}
+
+/// Loads a look image (PNG or JPEG) from a file URL; nil if it cannot be read.
+enum LookImage {
+    static func load(_ url: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+}
+
+/// D142: the cockpit interior image behind the front window, in place of the code console. One unlit trapezoid in
+/// the rocket frame, where the file's screen plane sits, tilted `tilt` degrees to face the end-pose camera (20
+/// degrees below the window), wider at the bottom like the window and the capsule. The image spans the trapezoid's
+/// bounding rectangle (`bottomWidth` x `height`), so its top corners are cut off. All four corners stay inside the
+/// capsule (checked against `CockpitCeiling.profile`: top half-width 0.5 m where 0.52 m is free).
+@available(macOS 15.0, *)
+@MainActor
+enum CockpitBackdrop {
+    static let name = "cockpit-backdrop"
+    static let centre = SIMD3<Float>(0, 12.85, 0.2)
+    static let tilt: Float = 20
+    static let bottomWidth: Float = 1.4, topWidth: Float = 1.0, height: Float = 1.0
+    /// Multiplies the image (the glass shows about 40 % of it).
+    static let brightness: CGFloat = 1.0
+
+    static func add(to root: Entity, image: CGImage) throws {
+        guard root.findEntity(named: name) == nil else { return }
+        let a = tilt * .pi / 180
+        // Plane axes in the rocket frame: right = +x, up = y tilted toward +z, normal toward the camera below.
+        let up = SIMD3<Float>(0, cos(a), sin(a))
+        let corners: [(x: Float, y: Float)] = [(-bottomWidth / 2, -height / 2), (bottomWidth / 2, -height / 2),
+                                               (topWidth / 2, height / 2), (-topWidth / 2, height / 2)]
+        let positions = corners.map { centre + SIMD3<Float>($0.x, 0, 0) + up * $0.y }
+        let uvs = corners.map { SIMD2<Float>(($0.x + bottomWidth / 2) / bottomWidth, ($0.y + height / 2) / height) }
+        var descriptor = MeshDescriptor(name: name)
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(uvs)
+        descriptor.primitives = .triangles([0, 1, 2, 0, 2, 3])
+        let resource = try TextureResource.generate(from: image, options: .init(semantic: .color))
+        var material = UnlitMaterial()
+        material.color = .init(tint: NSColor(white: brightness, alpha: 1), texture: .init(resource))
+        material.faceCulling = .none
+        let entity = ModelEntity(mesh: try MeshResource.generate(from: [descriptor]), materials: [material])
+        entity.name = name
+        root.addChild(entity)
+    }
+}
+
+/// D142 (owner): the front window with round corners like the pass-5 art. The file's glass is an 11 x 11 grid
+/// whose corner vertices are cut, so its outline is a chamfered quadrilateral. Look mode rebuilds the glass and the
+/// three frame strips from one rounded outline instead; the hull, its opening and everything else stay the file's.
+///
+/// The outline lives in a chart on the capsule: X = azimuth (radians) x glass radius, Y = height. There the
+/// window is a trapezoid (measured from the glass edge with `entrance-r7/win.py`): bottom y 12.40, top 13.27, side
+/// edges from X -+0.761 at the bottom to -+0.508 at the top. Its corners are filleted with `bottomRadius` and
+/// `topRadius` metres, the smallest radii whose arcs stay inside the file's chamfers (so the glass only shrinks;
+/// pass 5 also has the larger top corners). Offsets of that outline give the bands, from the glass outwards:
+/// - `canopy_inner_rim`: the bright rim, `rimWidth`, sloping from the frame top down to the glass;
+/// - `canopy_frame_bevel_2`: the dark frame, `frameWidth`, `frameLift` above the glass;
+/// - `canopy_frame_bevel_1`: the frame's outer wall, `wallWidth`, down to the hull;
+/// - `canopy_frame_bevel_0`: hull-coloured surround from there to the file's hull opening (its outer edge follows
+///   the opening loop exactly, as `RoundHull` places the opening's subdivided edge).
+/// Radii: the glass is `glassLift` (1.8 cm) above the capsule profile, as in the file; the opening ~4 mm.
+/// The camera rail, the D132 end pose and the hand-over coverage keep using the file's glass (rocket-geometry.json):
+/// the rounded glass lies inside it, so the window renders a few px narrower at the end pose and covers about
+/// 0.993 of the aperture at the hand-over instead of 0.995 (JS replica `entrance-r7/d132g.mjs`).
+@available(macOS 15.0, *)
+@MainActor
+enum WindowShape {
+    static let bottomRadius: Float = 0.13
+    static let topRadius: Float = 0.2
+    static let bottom: Float = 12.4, top: Float = 13.27
+    static let sideAtBottom: Float = 0.7613, sideAtTop: Float = 0.5078
+    static let centre = SIMD2<Float>(0, 12.835)
+    static let glassLift: Float = 0.018, frameLift: Float = 0.022, openingLift: Float = 0.004
+    static let rimWidth: Float = 0.008, frameWidth: Float = 0.036, wallWidth: Float = 0.004
+    /// Points per corner arc and per straight edge.
+    static let arcPoints = 16, edgePoints = 16
+    static let glassRings = 12
+
+    static func radius(_ y: Float) -> Float { CockpitCeiling.radius(y) }
+
+    /// A chart point at `lift` above the capsule profile, in the rocket frame.
+    static func point(_ c: SIMD2<Float>, lift: Float) -> SIMD3<Float> {
+        let a = c.x / (radius(c.y) + glassLift), r = radius(c.y) + lift
+        return SIMD3<Float>(r * sin(a), c.y, r * cos(a))
+    }
+
+    static func chart(_ p: SIMD3<Float>) -> SIMD2<Float> {
+        SIMD2<Float>(atan2(p.x, p.z) * (radius(p.y) + glassLift), p.y)
+    }
+
+    /// The rounded outline offset `d` metres outwards, counter-clockwise from the bottom-left corner arc. Every
+    /// offset has the same number of points, in step, so neighbouring outlines join into ribbons.
+    static func outline(_ d: Float) -> [SIMD2<Float>] {
+        let quad: [SIMD2<Float>] = [[-sideAtBottom, bottom], [sideAtBottom, bottom], [sideAtTop, top], [-sideAtTop, top]]
+        let radii = [bottomRadius, bottomRadius, topRadius, topRadius].map { $0 + d }
+        // Edge lines (point, unit direction), moved outwards (to the right of a counter-clockwise edge).
+        let lines: [(p: SIMD2<Float>, t: SIMD2<Float>)] = (0..<4).map { i in
+            let a = quad[i], b = quad[(i + 1) % 4], t = simd_normalize(b - a)
+            return (a + SIMD2<Float>(t.y, -t.x) * d, t)
+        }
+        func intersect(_ l1: (p: SIMD2<Float>, t: SIMD2<Float>), _ l2: (p: SIMD2<Float>, t: SIMD2<Float>)) -> SIMD2<Float> {
+            let den = l1.t.x * l2.t.y - l1.t.y * l2.t.x
+            let s = ((l2.p.x - l1.p.x) * l2.t.y - (l2.p.y - l1.p.y) * l2.t.x) / den
+            return l1.p + l1.t * s
+        }
+        // Corner i joins edge i-1 (incoming) and edge i (outgoing).
+        var arcs: [(start: SIMD2<Float>, end: SIMD2<Float>, centre: SIMD2<Float>, r: Float)] = []
+        for i in 0..<4 {
+            let incoming = lines[(i + 3) % 4].t, outgoing = lines[i].t
+            let corner = intersect(lines[(i + 3) % 4], lines[i])
+            let angle = acos(max(-1, min(1, -simd_dot(incoming, outgoing))))
+            let tangent = radii[i] / tan(angle / 2)
+            let bisector = simd_normalize(outgoing - incoming)
+            arcs.append((corner - incoming * tangent, corner + outgoing * tangent,
+                         corner + bisector * (radii[i] / sin(angle / 2)), radii[i]))
+        }
+        var points: [SIMD2<Float>] = []
+        for i in 0..<4 {
+            let arc = arcs[i]
+            let a0 = atan2(arc.start.y - arc.centre.y, arc.start.x - arc.centre.x)
+            var a1 = atan2(arc.end.y - arc.centre.y, arc.end.x - arc.centre.x)
+            while a1 < a0 { a1 += 2 * .pi }
+            for k in 0..<arcPoints {
+                let a = a0 + (a1 - a0) * Float(k) / Float(arcPoints)
+                points.append(arc.centre + SIMD2<Float>(cos(a), sin(a)) * arc.r)
+            }
+            let next = arcs[(i + 1) % 4].start
+            for k in 0..<edgePoints {
+                points.append(arc.end + (next - arc.end) * (Float(k) / Float(edgePoints)))
+            }
+        }
+        return points
+    }
+
+    /// Rebuilds the glass and the strips under `root`; false (nothing changed) if the file's window is not there.
+    static func build(in root: Entity) throws -> Bool {
+        guard let glass = root.findEntity(named: ModelRocket.glassName) else { return false }
+        let strips = GasketFrame.names.map { root.findEntity(named: $0) }
+        guard strips.allSatisfy({ $0 != nil }), root.findEntity(named: GasketFrame.rimName) == nil else { return false }
+        // The hull opening: the outer strip's vertices that it does not share with the middle strip.
+        func rootPoints(_ e: Entity) -> [SIMD3<Float>] {
+            var points: [SIMD3<Float>] = []
+            ModelRocket.forEachModel(e) { m in
+                guard let model = m.components[ModelComponent.self] else { return }
+                for part in model.mesh.contents.models.flatMap({ Array($0.parts) }) {
+                    points += part.positions.elements.map { m.convert(position: $0, to: root) }
+                }
+            }
+            return points
+        }
+        let middle = Set(rootPoints(strips[1]!).map(GasketFrame.key))
+        var seen = Set<SIMD3<Int32>>()
+        let opening = rootPoints(strips[0]!).filter { p in
+            let k = GasketFrame.key(p)
+            return !middle.contains(k) && seen.insert(k).inserted
+        }
+        guard opening.count >= 8 else { return false }
+        // The opening as a polygon around the window centre, by angle in the chart.
+        let around = opening.map { p -> (angle: Float, p: SIMD3<Float>) in
+            let c = chart(p) - centre
+            return (atan2(c.y, c.x), p)
+        }.sorted { $0.angle < $1.angle }
+
+        /// The opening's edge where the ray from the centre through `c` crosses it: azimuth, height and radius
+        /// interpolated between the two opening vertices, as `RoundHull` subdivides that edge.
+        func onOpening(_ c: SIMD2<Float>) -> SIMD3<Float> {
+            let d = c - centre, angle = atan2(d.y, d.x)
+            var i = around.lastIndex { $0.angle <= angle } ?? around.count - 1
+            if around[i].angle > angle { i = around.count - 1 }
+            let a = around[i].p, b = around[(i + 1) % around.count].p
+            let ca = chart(a) - centre, cb = chart(b) - centre
+            // Solve d * s = ca + (cb - ca) * t for t (all relative to the centre): t = -(d x ca) / (d x e).
+            let e = cb - ca, den = d.x * e.y - d.y * e.x
+            let t = abs(den) > 1e-9 ? max(0, min(1, (d.y * ca.x - d.x * ca.y) / den)) : 0.5
+            let az = atan2(a.x, a.z) + (atan2(b.x, b.z) - atan2(a.x, a.z)) * t
+            let y = a.y + (b.y - a.y) * t
+            let r = simd_length(SIMD2<Float>(a.x, a.z)) + (simd_length(SIMD2<Float>(b.x, b.z)) - simd_length(SIMD2<Float>(a.x, a.z))) * t
+            return SIMD3<Float>(r * sin(az), y, r * cos(az))
+        }
+
+        let glassEdge = outline(0), rimOuter = outline(rimWidth)
+        let frameOuter = outline(rimWidth + frameWidth), wallOuter = outline(rimWidth + frameWidth + wallWidth)
+        func ring(_ outline: [SIMD2<Float>], lift: Float) -> [SIMD3<Float>] { outline.map { point($0, lift: lift) } }
+        let rim = ribbon(ring(rimOuter, lift: frameLift), ring(glassEdge, lift: glassLift))
+        let frame = ribbon(ring(frameOuter, lift: frameLift), ring(rimOuter, lift: frameLift))
+        let wall = ribbon(ring(wallOuter, lift: openingLift), ring(frameOuter, lift: frameLift))
+        let surround = ribbon(wallOuter.map(onOpening), ring(wallOuter, lift: openingLift))
+
+        // Glass: rings from the centre out to the rounded edge.
+        var glassPoints: [SIMD3<Float>] = [point(centre, lift: glassLift)], glassTriangles: [UInt32] = []
+        let n = glassEdge.count
+        for k in 1...glassRings {
+            let s = Float(k) / Float(glassRings)
+            glassPoints += glassEdge.map { point(centre + ($0 - centre) * s, lift: glassLift) }
+        }
+        for i in 0..<n { glassTriangles += [0, UInt32(1 + i), UInt32(1 + (i + 1) % n)] }
+        for k in 1..<glassRings {
+            let inner = 1 + (k - 1) * n, outer = 1 + k * n
+            for i in 0..<n {
+                let a = UInt32(inner + i), b = UInt32(inner + (i + 1) % n), c = UInt32(outer + i), d = UInt32(outer + (i + 1) % n)
+                glassTriangles += [a, c, d, a, d, b]
+            }
+        }
+
+        try replace(glass, with: (glassPoints, glassTriangles), root: root)
+        try replace(strips[0]!, with: surround, root: root)
+        try replace(strips[1]!, with: wall, root: root)
+        // The rim is a copy of the inner strip (its materials and place in the hierarchy), then rebuilt.
+        let rimEntity = strips[2]!.clone(recursive: true)
+        rimEntity.name = GasketFrame.rimName
+        strips[2]!.parent?.addChild(rimEntity)
+        try replace(strips[2]!, with: frame, root: root)
+        try replace(rimEntity, with: rim, root: root)
+        return true
+    }
+
+    /// Two outlines in step joined into a strip (both faces are drawn by the materials).
+    static func ribbon(_ outer: [SIMD3<Float>], _ inner: [SIMD3<Float>]) -> ([SIMD3<Float>], [UInt32]) {
+        let n = outer.count
+        var triangles: [UInt32] = []
+        for i in 0..<n {
+            let a = UInt32(i), b = UInt32((i + 1) % n), c = UInt32(n + i), d = UInt32(n + (i + 1) % n)
+            triangles += [a, c, d, a, d, b]
+        }
+        return (outer + inner, triangles)
+    }
+
+    /// Puts the mesh (rocket-frame positions) on the first model under `entity`, in that model's own space, with
+    /// outward (radial) normals for `SmoothNormals` to orient by; any further models under it are hidden.
+    static func replace(_ entity: Entity, with mesh: ([SIMD3<Float>], [UInt32]), root: Entity) throws {
+        var models: [Entity] = []
+        ModelRocket.forEachModel(entity) { models.append($0) }
+        guard let first = models.first, var model = first.components[ModelComponent.self] else { return }
+        var descriptor = MeshDescriptor(name: entity.name)
+        descriptor.positions = MeshBuffers.Positions(mesh.0.map { first.convert(position: $0, from: root) })
+        descriptor.normals = MeshBuffers.Normals(mesh.0.map { p in
+            first.convert(direction: simd_normalize(SIMD3<Float>(p.x, 0, p.z)), from: root)
+        })
+        descriptor.primitives = .triangles(mesh.1)
+        model.mesh = try MeshResource.generate(from: [descriptor])
+        first.components.set(model)
+        for other in models.dropFirst() { other.isEnabled = false }
     }
 }
 

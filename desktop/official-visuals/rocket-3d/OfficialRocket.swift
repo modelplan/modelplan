@@ -7,7 +7,7 @@ import Foundation
 import ModelPlanEntrance
 
 public enum OfficialRocket {
-    public enum PackError: Error, Equatable { case missing(String), altered(String) }
+    public enum PackError: Error, Equatable { case missing(String), altered(String), unregistered(String) }
 
     /// Shipped files and their SHA-256 (also recorded in manifest.json and source-policy.json).
     public static let files: [String: String] = [
@@ -22,6 +22,27 @@ public enum OfficialRocket {
         let day = try verified("modelplan-rocket-day-lod1.usdz")
         let geometry = try RocketGeometry.decodePack(Data(contentsOf: verified("rocket-geometry.json")))
         return .official(night: night, day: day, geometry: geometry)
+    }
+
+    /// Optional look images (owner D142, generated under D116). They ship only once generated and approved; each
+    /// then gets its SHA-256 here, in manifest.json and in source-policy.json. Until then the entrance draws its code
+    /// fallbacks. A file in Resources without an entry here is refused, never used unverified.
+    public static let lookFiles: [String: String] = [:]
+    static let brushedDetailName = "rocket-brushed-steel-detail.png"
+    static let cockpitNightName = "rocket-cockpit-interior-night.png"
+    static let cockpitDayName = "rocket-cockpit-interior-day.png"
+
+    /// The look images present in the pack, verified; absent ones are nil.
+    public static func lookImages() throws -> RocketLookImages {
+        RocketLookImages(brushedDetail: try optional(brushedDetailName), cockpitInteriorNight: try optional(cockpitNightName),
+                         cockpitInteriorDay: try optional(cockpitDayName))
+    }
+
+    static func optional(_ name: String) throws -> URL? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Resources") else { return nil }
+        guard let expected = lookFiles[name] else { throw PackError.unregistered(name) }
+        try verify(url, expected: expected, name: name)
+        return url
     }
 
     static func verified(_ name: String) throws -> URL {
