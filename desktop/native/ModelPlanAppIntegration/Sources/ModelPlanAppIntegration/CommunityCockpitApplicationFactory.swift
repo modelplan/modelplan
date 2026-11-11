@@ -309,6 +309,11 @@ struct CockpitUnavailableNotice {
         let language:String,reduceMotion:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
     }
     private var fieldPanel:CockpitFieldPanel?
+    /// G3-80 seams: where the pointer is, the cockpit's frame and the displays the field is placed on.
+    var pointerLocation: @MainActor () -> CGPoint = { NSEvent.mouseLocation }
+    var cockpitFrameForField: (@MainActor () -> CGRect?)?
+    var fieldScreens: (@MainActor () -> [CockpitScreen])?
+    var fieldWindowFrame: CGRect? { fieldPanel?.isOpen == true ? fieldPanel?.windowFrame : nil }
     var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
     /// `focusName`: the published display name of a rocket clicked in the porthole still (D63); an unknown name
     /// focuses nothing. Only the matching public model ID crosses.
@@ -337,8 +342,11 @@ struct CockpitUnavailableNotice {
     private func openField(focusName:String?=nil) {
         guard let bundle=owner.verifiedBundle,let payload=fieldPayload(focusName:focusName) else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
-        // Build 14c (G3-80): on the cockpit's display, where the user clicked to open it.
-        fieldPanel=panel;panel.open(payload:payload,near:owner.coordinator?.attachmentHintAnchor?.frame ?? owner.anchor?(),at:NSEvent.mouseLocation)
+        if let fieldScreens { panel.screens=fieldScreens }
+        // Build 14c (G3-80): on the cockpit's display. The intent does not say whether a click or a key opened it, so
+        // the pointer counts only while it is over the cockpit (macrev2-845-2).
+        let cockpit=cockpitFrameForField?() ?? owner.coordinator?.cockpitFrame
+        fieldPanel=panel;panel.open(payload:payload,cockpit:cockpit,pointer:pointerLocation(),fallback:owner.anchor?())
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
     func applySettings(_ value: SettingsApplication) {

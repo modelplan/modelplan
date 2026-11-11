@@ -36,7 +36,9 @@ import WebKit
   private var dragStart: (point: CGPoint, frame: NSRect, moved: Bool)?
   private var screenObserver: NSObjectProtocol?
   /// The displays placement and drags use; tests replace it with a fixed arrangement.
-  var screens: @MainActor () -> [CockpitScreen] = { CockpitScreenSelection.system() }
+  public var screens: @MainActor () -> [CockpitScreen] = { CockpitScreenSelection.system() }
+  /// The open panel's window frame (nil when closed).
+  public var windowFrame: NSRect? { window?.frame }
   /// The drag strip, for tests; nil until the page has laid out its card.
   var dragRegionFrame: NSRect? { dragRegion?.isHidden == false ? dragRegion?.frame : nil }
   /// Where the card's blur sits in the panel's content view, for tests.
@@ -88,6 +90,18 @@ import WebKit
   /// The page's card rect (CSS px from the top left, which are points at page zoom 1) in a bottom-left content view.
   nonisolated public static func cardFrame(x: Double, y: Double, width: Double, height: Double, in bounds: NSRect) -> NSRect {
     NSRect(x: x, y: bounds.height - y - height, width: width, height: height).intersection(bounds)
+  }
+  /// macrev2-845-2: the point that picks the field's display. A pointer open happens on the cockpit, so the pointer
+  /// counts only while it is over the cockpit (one that spans two displays); a keyboard open (Enter or Space on the
+  /// enlarge key) with the pointer resting elsewhere uses the cockpit's own display.
+  nonisolated public static func openPoint(pointer: CGPoint?, cockpit: NSRect?) -> CGPoint? {
+    guard let pointer, let cockpit, cockpit.contains(pointer) else { return nil }
+    return pointer
+  }
+  /// G3-80: the normal entry from the cockpit: on the cockpit's display (the pointer's while it is over the cockpit),
+  /// else on the display that shows most of `fallback` (the menu bar icon).
+  public func open(payload: String, cockpit: NSRect?, pointer: CGPoint?, fallback: NSRect?) {
+    open(payload: payload, near: cockpit ?? fallback, at: Self.openPoint(pointer: pointer, cockpit: cockpit))
   }
   /// `payload` is the JSON the page's `show` takes: public model data and presentation only.
   /// `point` is where the user clicked (the cockpit is on that display); without it the field opens on the display

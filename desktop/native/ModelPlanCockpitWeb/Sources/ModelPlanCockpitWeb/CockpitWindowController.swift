@@ -734,6 +734,24 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   ) { fail(.provisionalNavigationFailed) }
   public func windowWillClose(_ notification: Notification) { discard() }
   public func windowDidResignKey(_ notification: Notification) { cancelDrag() }
+  /// macrev2-845-1: a detached cockpit that lands on another display without a drag (the system moved it) is fitted
+  /// to that display, as a drop is.
+  public func windowDidChangeScreen(_ notification: Notification) {
+    guard let window, shown, shellSession.detached, dragStart == nil, !entering, closeTask == nil, !ending else { return }
+    fitToDropDisplay(window)
+  }
+  /// The detached cockpit's current place becomes its remembered origin, and the layout (zoom, profile, forced shutter)
+  /// is fitted to the display that origin is on, so the whole cockpit is inside that display's visible frame.
+  private func fitToDropDisplay(_ window: NSWindow) {
+    shellSession.remember(window.frame.origin, arrangement: arrangement)
+    applyLayout()
+    shellSession.remember(window.frame.origin, arrangement: arrangement)
+  }
+  /// The cockpit window's frame while it is on screen (the field opens on its display), else nil.
+  public var cockpitFrame: CGRect? {
+    guard let window, window.isVisible, !ending else { return nil }
+    return window.frame
+  }
   /// D88: the grow and shrink animate the frame; the content keeps its 636 pt bounds so it scales with it.
   public func windowDidResize(_ notification: Notification) {
     guard let layout, let content = window?.contentView else { return }
@@ -955,7 +973,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       if let (_, _) = environment(), let home = layout?.frame,
          hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40 {
         setAttached(true)
-      } else { shellSession.remember(window.frame.origin, arrangement: arrangement); onShellChanged?() }
+      } else {
+        // macrev2-845-1: a drop on a shorter display refits there; the drag kept the old size, which can overhang it.
+        fitToDropDisplay(window); onShellChanged?()
+      }
     case .cancelled: cancelDrag()
     }
   }

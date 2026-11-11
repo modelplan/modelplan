@@ -101,6 +101,35 @@ import XCTest
     XCTAssertEqual(session.origin(for: page.arrangement), window.frame.origin, "the place on B is remembered")
   }
 
+  /// macrev2-845-1: a drop on a shorter display fits the cockpit there. Before, the drag kept B's full-size frame and
+  /// clamped only its origin, so on a 775 pt visible frame its top stayed above the display.
+  func testADropOnAShorterDisplayFitsTheCockpitThere() throws {
+    let short = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1280, height: 800), visibleFrame: CGRect(x: 0, y: 0, width: 1280, height: 775))
+    let large = CockpitScreen(frame: CGRect(x: 1280, y: 0, width: 2560, height: 1440), visibleFrame: CGRect(x: 1280, y: 0, width: 2560, height: 1415))
+    let session = CockpitShellSession()
+    let page = try page(session: session, click: CGPoint(x: 3000, y: 700))
+    let displays = [short, large]
+    page.screens = { displays }
+    page.prewarm()
+    defer { page.discard() }
+    let window = try XCTUnwrap(page.window)
+    assertInside(window.frame, large.visibleFrame, "opened on the large display, where the click was")
+    XCTAssertGreaterThan(window.frame.height, short.visibleFrame.height, "the large display's cockpit is taller than the short display")
+    let from = CGPoint(x: window.frame.minX + 60, y: window.frame.maxY - 30)
+    page.titleDrag(.began, point: from)
+    page.titleDrag(.moved, point: CGPoint(x: from.x - 40, y: from.y))
+    page.titleDrag(.moved, point: CGPoint(x: 600, y: 400))
+    page.titleDrag(.ended, point: CGPoint(x: 600, y: 400))
+    XCTAssertFalse(page.isAttached)
+    assertInside(window.frame, short.visibleFrame, "the whole cockpit is on the short display after the drop")
+    let fitted = try XCTUnwrap(page.placement())
+    XCTAssertEqual(window.frame, fitted.frame, "the layout is the short display's fit")
+    let expected = try XCTUnwrap(CockpitShellLayout.fit(usable: short.visibleFrame, anchor: CockpitShellLayout.hiddenIconAnchor(usable: short.visibleFrame),
+                                                        shutterClosed: false, screenWidth: short.frame.width))
+    XCTAssertEqual(fitted.frame.size, expected.frame.size, "zoom and profile are the short display's")
+    XCTAssertEqual(session.origin(for: page.arrangement), window.frame.origin, "the fitted place is remembered")
+  }
+
   /// A remembered origin on a display that is no longer there is not replayed; the open goes to the click's display.
   func testAStaleDetachedOriginIsPlacedOnTheClickScreen() throws {
     let session = CockpitShellSession()
