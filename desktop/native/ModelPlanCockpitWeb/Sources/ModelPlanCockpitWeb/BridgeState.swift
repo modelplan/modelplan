@@ -168,11 +168,13 @@ enum FlatReply {
       white()
       if i < a.count, a[i] == 34 {
         _ = try string()
-      } else if key == "capabilities", i < a.count, a[i] == 91 {
+      } else if key == "capabilities" || key == "ids", i < a.count, a[i] == 91 {
+        // Flat arrays of strings only: the ready capabilities and the cautionAck identities (G3-56).
+        let limit = key == "ids" ? CockpitCautionIdentities.maxCount : 3
         i += 1; white()
         var count = 0
         while i < a.count, a[i] != 93 {
-          guard count < 3 else { throw CockpitBridgeError.limit }
+          guard count < limit else { throw CockpitBridgeError.limit }
           _ = try string(); count += 1; white()
           guard i < a.count else { throw CockpitBridgeError.invalidMessage }
           if a[i] == 93 { break }
