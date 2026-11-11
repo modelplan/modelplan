@@ -9,9 +9,21 @@ import {inflateSync} from 'node:zlib';
 // study is narrow at the top and wide at the bottom: its frame never leaves the wall line, and every row of the
 // silhouette is at least as wide as every row above it. This measures what the page actually paints (alpha >= 128,
 // transparent screenshot) rather than boxes, at 1x and at the 2x the owner's Mac draws.
+//
+// Prototype profile: painted width (px, alpha >= 128) of the opus-r7 study (rocket-r1.html, night, 956 / 700 px
+// tall, 2x) at heights measured from the strip's top (negative = canopy). Ours must be within 1% of the 636 px hull
+// (6.4 px) from the canopy's lower flank down; higher up, where the D74/D100 canopy (owner-approved art, 28/8 px
+// taller than the study's) rounds into its dome, it may be narrower but never wider than the study.
+const TOL=6.4;
+const PROTO={
+ tall:{flank:-180,rows:[[-225,510.5],[-215,560],[-200,585],[-180,596],[-160,604],[-140,610],[-120,617],[-100,620],[-80,620],[-60,620],
+  [-40,620],[-20,620],[-5,620],[5,620],[40,620],[120,620],[200,620],[260,620],[300,636],[400,636],[600,636]]},
+ compact:{flank:-20,rows:[[-55,560],[-50,590],[-45,600],[-40,608],[-30,620],[-20,620],[-10,620],[-5,620],[5,620],[40,620],[120,620],
+  [200,620],[250,620],[300,636],[500,636]]},
+};
 const shapes=[
- {tier:'tall',closed:false,canvas:939,root:905,cap:244},
- {tier:'compact',closed:false,canvas:669,root:635,cap:56},
+ {tier:'tall',closed:false,canvas:939,root:905,cap:244,proto:PROTO.tall},
+ {tier:'compact',closed:false,canvas:669,root:635,cap:56,proto:PROTO.compact},
  {tier:'tall',closed:true,canvas:725,root:691,cap:30},
  {tier:'compact',closed:true,canvas:643,root:609,cap:30},
 ];
@@ -61,5 +73,9 @@ for(const scale of [1,2])test.describe(`@${scale}x`,()=>{
    if(edge&&(r[0]>edge[0]||r[1]<edge[1]))bad.push(`${(y/scale).toFixed(1)}: [${r}] narrower than [${edge}] above`);
    edge=edge?[Math.min(edge[0],r[0]),Math.max(edge[1],r[1])]:r;}
   expect(bad.slice(0,8),'every row at least as wide as every row above it').toEqual([]);
+  if(s.proto){const off=[];
+   for(const [y,want] of s.proto.rows){const r=rows[Math.round((strip[0]+y)*scale)],got=r?r[1]-r[0]:0;
+    if(y>=s.proto.flank?Math.abs(got-want)>TOL:got>want+TOL)off.push(`${y}: ${got} vs study ${want}`);}
+   expect(off,'silhouette profile vs the opus-r7 study (1% of 636 px)').toEqual([]);}
  });
 });
