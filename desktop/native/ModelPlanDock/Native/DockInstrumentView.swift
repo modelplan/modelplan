@@ -283,6 +283,7 @@ enum DockGripInk {
     /// appearance input). Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:68 (.dk-n.hot).
     private var hotGlow: CALayer?
     @_spi(DockResourceChecks) public private(set) var hotNozzleForChecks: String?
+    @_spi(DockResourceChecks) public var hotGlowForChecks: CALayer? { hotGlow }
     public func setHotNozzle(_ id: String?, glow colour: CGColor? = nil, blur: CGFloat = 7) {
         guard id != hotNozzleForChecks || (id != nil && hotGlow == nil) else { return }
         hotGlow?.removeFromSuperlayer(); hotGlow = nil; hotNozzleForChecks = nil
