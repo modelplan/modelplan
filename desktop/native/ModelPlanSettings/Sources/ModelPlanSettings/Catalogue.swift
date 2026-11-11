@@ -20,7 +20,11 @@ public enum SettingKey: String, CaseIterable, Sendable {
 public enum SettingAvailability: Equatable, Sendable {
     case available, readOnly, unsupportedCaptureHiding, cliOwned, serviceUnavailable, cacheUnavailable
 }
-public enum SubscriptionSourceState: String, Sendable { case fresh, stale, unavailable, denied, readerDisabled }
+public enum SubscriptionSourceState: String, Sendable {
+    case fresh, stale, unavailable, denied, readerDisabled
+    /// Separates the raw state from an optional cause sentence in the Settings source row value.
+    static let causeSeparator = "\u{1F}"
+}
 public struct SettingsReaderDiagnostic: Equatable, Sendable {
     public let name: SettingsText
     public let source: SettingsText?
@@ -417,8 +421,11 @@ public enum SettingsCatalogue {
         case .visible: return perSub(options: ["true", "false"]) { String(!p.subscriptions.hiddenIDs.contains($0.id)) }
         case .alias: return perSub { p.subscriptionSettings[$0.id]?.alias ?? "" }
         case .source: return perSub { sub in
-            guard let code = sub.causeCode, let entry = ReaderCauseTable.entry(code: code, tool: sub.vendor, toolName: sub.name.value(p.language)) else { return sub.source.rawValue }
-            return entry.reason.value(p.language) + " · " + entry.action.value(p.language)
+            // The raw state stays first so the renderer can still parse it; the cause text rides after a
+            // separator. A stale or current source keeps its own status: a cause only explains a failure.
+            guard sub.source != .stale, sub.source != .fresh, let code = sub.causeCode,
+                  let entry = ReaderCauseTable.entry(code: code, tool: sub.vendor, toolName: sub.name.value(p.language)) else { return sub.source.rawValue }
+            return sub.source.rawValue + SubscriptionSourceState.causeSeparator + entry.reason.value(p.language) + " · " + entry.action.value(p.language)
         }
         case .projectNames: return .toggle(p.showProjectNames)
         case .retention: return .text("sessions=35d; dailyTotals=371d; owner=CLI")

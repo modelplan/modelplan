@@ -78,7 +78,38 @@ final class ReaderCauseTableTests: XCTestCase {
         var preferences = SettingsPreferences(); preferences.language = .chinese
         let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: preferences, context: context).first { $0.key == .source })
         guard case .subscriptions(let values) = row.value else { return XCTFail("not per-subscription") }
-        XCTAssertEqual(values.first { $0.id == "codex" }?.value, "需要 Node.js · 安装 Node.js 后刷新")
+        XCTAssertEqual(values.first { $0.id == "codex" }?.value, "unavailable" + SubscriptionSourceState.causeSeparator + "需要 Node.js · 安装 Node.js 后刷新")
         XCTAssertEqual(values.first { $0.id == "grok" }?.value, "unavailable")
+    }
+
+    private func texts(in view: NSView) -> [String] {
+        var out: [String] = []
+        if let field = view as? NSTextField { out.append(field.stringValue) }
+        for sub in view.subviews { out += texts(in: sub) }
+        return out
+    }
+
+    /// The real renderer: the cause must reach the native row, and a stale source keeps its own status.
+    @MainActor func testNativeSourceRowShowsTheCauseAndStaleKeepsItsStatus() throws {
+        var context = SettingsPageContext(); context.configureV1NormalEntry()
+        context.subscriptions = [SettingsSubscription(id: "codex", name: .init("Codex", "Codex"), source: .unavailable, causeCode: "runtime_missing"),
+                                 SettingsSubscription(id: "claude", name: .init("Claude", "Claude"), source: .stale, causeCode: "timeout"),
+                                 SettingsSubscription(id: "grok", name: .init("Grok", "Grok"), source: .unavailable)]
+        for language in [SettingsLanguage.english, .chinese] {
+            var preferences = SettingsPreferences(); preferences.language = language
+            let snapshot = SettingsSnapshot(revision: 0, preferences: preferences)
+            let rows = try SettingsCatalogue.rows(preferences: preferences, context: context)
+            let row = SettingsNativeRow(key: .source)
+            row.apply(try XCTUnwrap(rows.first { $0.key == .source }), language: language, saving: false,
+                input: nil, reduced: false, onChoice: #selector(NSObject.description), target: self,
+                snapshot: snapshot, context: context, holdAvailable: false, hasHost: true,
+                onEdit: { _, _ in }, onSurfaceAction: { _, _ in }, onDraftCleared: { _ in })
+            let shown = texts(in: row).joined(separator: "\n")
+            let cause = try XCTUnwrap(ReaderCauseTable.entry(code: "runtime_missing", tool: "", toolName: "Codex"))
+            XCTAssertTrue(shown.contains(cause.reason.value(language)), shown)
+            XCTAssertTrue(shown.contains(cause.action.value(language)), shown)
+            XCTAssertTrue(shown.contains("Claude · " + (language == .english ? "Stale" : "数据已过时")), shown)
+            XCTAssertTrue(shown.contains("Grok · " + (language == .english ? "Unavailable" : "不可用")), shown)
+        }
     }
 }

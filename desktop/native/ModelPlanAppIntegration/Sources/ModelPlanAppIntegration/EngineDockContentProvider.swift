@@ -303,10 +303,11 @@ public enum EngineDeadlineFacts {
         let subscriptions: [SettingsSubscription] = members.map { member -> SettingsSubscription in
             let failing = member.row.state == .failed || member.row.state == .needsAction
             let causeCode: String?
+            // Only a member that is failing carries a cause; a stale but live row keeps its own status.
             if failing {
                 causeCode = message(member.row, now: context.now).0.code.rawValue
             } else {
-                causeCode = member.account.lastFailure?.code.rawValue
+                causeCode = nil
             }
             let planName: String = member.account.plan.name.map { text($0) } ?? ""
             return SettingsSubscription(id: member.id,
