@@ -158,9 +158,10 @@ public struct StoryboardRail: Sendable {
             if placed(m, windowTop: apertureBounds.bottom).projectBounds(glass).width > Self.frontWindowWidth * apertureBounds.width { lo = m } else { hi = m }
         }
         let endDistance = (lo + hi) / 2
-        end = placed(endDistance, windowTop: apertureBounds.bottom)
+        let endCamera = placed(endDistance, windowTop: apertureBounds.bottom)
+        end = endCamera
         endElevationDegrees = Self.frontElevation
-        endIoU = Self.iou(Self.convexHull(glass.map { end.project($0).point }), polygon, step: 2)
+        endIoU = Self.iou(Self.convexHull(glass.map { endCamera.project($0).point }), polygon, step: 2)
 
         // The hand-over: the farthest camera on the same line whose glass covers the aperture.
         func covered(_ camera: EntranceCamera, step: Double) -> Double {
@@ -173,8 +174,9 @@ public struct StoryboardRail: Sendable {
             let m = (lo + hi) / 2
             if covered(placed(m, windowTop: nil), step: 3) >= Self.minHandoverCoverage + 0.005 { lo = m } else { hi = m }
         }
-        handover = placed(lo, windowTop: nil)
-        handoverCoverage = covered(handover, step: 2)
+        let handoverCamera = placed(lo, windowTop: nil)
+        handover = handoverCamera
+        handoverCoverage = covered(handoverCamera, step: 2)
     }
 
     /// One continuous move: position along a straight smootherstep path, orientation slerped over the whole
