@@ -49,7 +49,10 @@ public struct CockpitAttachmentHintAnchor: Equatable {
 /// D88: the cockpit's own right-click menu target. WebKit's menu (Reload and the rest) is never shown.
 @MainActor final class CockpitMenuTarget: NSObject {
   var fire: (() -> Void)?
-  @objc func perform(_ sender: Any?) { fire?() }
+  /// Never named `perform(_:)`: NSObject's `performSelector:` is also `perform(_:)` in Swift, `#selector` resolved to
+  /// it, and AppKit then sent the menu item itself as the selector (unrecognized-selector crash on Detach / Put back).
+  @objc(cockpitAttachmentItemChosen:) func attachmentItemChosen(_ sender: Any?) { fire?() }
+  static let action = #selector(CockpitMenuTarget.attachmentItemChosen(_:))
 }
 
 public enum CockpitBridgeDiagnostic: String {
@@ -277,6 +280,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     public var verificationShellState: CockpitShellState? { currentShell }
     public var verificationRootHeight: CGFloat? { layout?.rootHeight }
+    public var verificationLayout: CockpitShellLayout? { layout }
     public var verificationDragRegion: NSView? { dragRegion }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
@@ -725,7 +729,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// D88: the grow and shrink animate the frame; the content keeps its 636 pt bounds so it scales with it.
   public func windowDidResize(_ notification: Notification) {
     guard let layout, let content = window?.contentView else { return }
-    let size = CGSize(width: 636, height: layout.rootHeight + 34)
+    // Scaled layouts (CKP-SHELL-07): the settled canvas is the scaled frame, not the 636-pt page.
+    let size = layout.frame.size
     if content.bounds.size != size { content.setBoundsSize(size) }
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
@@ -734,13 +739,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     scope=key; publishAppearance()
   }
   public func updateAppearance(_ value: CockpitAppearance) {
+    let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: .night, locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       window?.alphaValue = 1
     }
-    publishAppearance()
+    // Settings "Cockpit size" applies live to an open cockpit; the relayout publishes the appearance.
+    if resized, window != nil { applyLayout() } else { publishAppearance() }
   }
   private var currentShell: CockpitShellState? {
     #if MODELPLAN_TEST_ONLY_SPI
@@ -791,17 +798,25 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let icon = requested ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
+  /// D66: Auto judges the full width of the screen the cockpit opens on (the icon's screen), whatever the Dock takes.
+  private func screenWidth(_ usable: CGRect) -> CGFloat {
+    NSScreen.screens.first { $0.visibleFrame == usable }?.frame.width ?? usable.width
+  }
   private func applyLayout() {
     guard let window, let (usable, icon) = environment(),
-          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed) else { return }
+          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return }
     layout = fit
     appearance = .init(theme: .night, locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size)
     let frame = shellSession.detached ? fit.clamping(origin: shellSession.origin(for: arrangement) ?? window.frame.origin, usable: usable) : fit.frame
     window.setFrame(frame, display: true)
-    window.contentView?.setBoundsSize(.init(width: 636, height: fit.rootHeight + 34))
-    web?.frame = .init(x: 0, y: 0, width: 636, height: fit.rootHeight + 34)
-    dragRegion?.frame = fit.titleDragFrame
+    // CKP-SHELL-07 (owner D51): a scaled cockpit is the same page at a uniform WebKit page zoom, not a
+    // scaled bitmap, so text is drawn at its final size and the page hit-tests its own controls.
+    let bounds = CGRect(origin: .zero, size: frame.size)
+    window.contentView?.setBoundsSize(bounds.size)
+    web?.frame = bounds
+    web?.pageZoom = fit.scale
+    dragRegion?.frame = fit.scaledTitleDragFrame
     publishAppearance()
   }
   /// Context menu "Reset position": a dragged-out cockpit goes back under the menu bar icon.
@@ -835,7 +850,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
     } else {
       shellSession.detached = false
-      guard let (usable, icon) = environment(), let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed) else { return }
+      guard let (usable, icon) = environment(), let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return }
       if appearance.reduceMotion { applyLayout() }
       else {
         NSAnimationContext.runAnimationGroup { context in
@@ -855,7 +870,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // The host's menu (Settings, Reset Position, size, Help) with the detach / put-back item on top.
     let menu = contextMenuProvider?() ?? NSMenu(); menu.autoenablesItems = false
     let item = NSMenuItem(title: detached ? (zh ? "放回" : "Put back") : (zh ? "分离" : "Detach"),
-                          action: #selector(CockpitMenuTarget.perform(_:)), keyEquivalent: "")
+                          action: CockpitMenuTarget.action, keyEquivalent: "")
     item.target = menuTarget; item.identifier = NSUserInterfaceItemIdentifier("cockpit.attachment")
     if !menu.items.isEmpty { menu.insertItem(.separator(), at: 0) }
     menu.insertItem(item, at: 0)
@@ -866,7 +881,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let window, shown, !ending, !entering, closeTask == nil, dragStart == nil, window.isVisible,
           window.alphaValue > 0, let layout, let content = window.contentView else { return nil }
     let height = layout.rootHeight + 34, size = Self.attachmentKeySize
-    let local = CGRect(x: Self.attachmentKeyX, y: height - size - 2, width: size, height: size)
+    // The page lays out in CSS px and renders at `layout.scale`, top-anchored in the whole-point window.
+    let local = layout.windowRect(page: CGRect(x: Self.attachmentKeyX, y: height - size - 2, width: size, height: size))
     let frame = window.convertToScreen(content.convert(local, to: nil))
     guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
           [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }

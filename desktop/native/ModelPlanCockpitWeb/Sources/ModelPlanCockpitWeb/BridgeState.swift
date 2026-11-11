@@ -37,8 +37,10 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let showProjectNames: Bool
   /// Settings "Percentage mode" = used (SET-9-10): the engine table shows used, text and bars.
   public let showUsedPercent: Bool
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false) {
-    self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent
+  /// Settings "Cockpit size": native window geometry only, never sent to the page.
+  public let size: CockpitSize
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, size: CockpitSize = .standard) {
+    self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent; self.size = size
     if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
       self.redBelow = redBelow
     } else {
