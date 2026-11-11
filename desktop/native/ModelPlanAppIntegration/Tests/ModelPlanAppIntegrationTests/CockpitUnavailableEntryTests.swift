@@ -71,6 +71,16 @@ extension CommunityCockpitEntryTests {
         XCTAssertEqual(notices.count,1,"A failure that outlasts the grace period is announced once")
         await app.composition.stop()
     }
+    /// show() opens from a task after a settings hop. The tests below simulate page events, so they first wait for
+    /// that open step (which reports "no client" in this setup) to have run; otherwise it lands after the simulated
+    /// recovery and starts a grace period of its own, which is a test ordering artefact, not product behaviour.
+    @MainActor static func untilTheConsoleOpenStepRan(_ coordinator:EngineCockpitCoordinator,_ surface:SharedEngineCockpitConsole) async throws {
+        var ran=false
+        let previous=coordinator.onUnavailable
+        coordinator.onUnavailable={ reason in previous?(reason); ran=true }
+        for _ in 0..<500 where !ran { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertTrue(ran,"the console's open step ran")
+    }
     /// macrevc-786-1: the grace period only ends as a recovery when a page opened and nothing failed after it.
     /// A rebuild that opens, then fails, and whose next page cannot be created, must still announce the failure.
     @MainActor func testFailedRebuildAfterAPageFailureStillShowsTheNoticeAndASuccessfulRebuildDoesNot() async throws {
@@ -85,7 +95,7 @@ extension CommunityCockpitEntryTests {
             var notices:[CockpitUnavailableNotice]=[]
             let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(300))
             surface.show()
-            for _ in 0..<50 where !surface.wantsVisible { try await Task.sleep(for:.milliseconds(10)) }
+            try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
             owner.pageFailure?(.messageRejected)          // the first page fails
             coordinator.onOpened?()                        // the rebuild opens ...
             if !recovers {
@@ -111,7 +121,7 @@ extension CommunityCockpitEntryTests {
         var notices:[CockpitUnavailableNotice]=[]
         let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(300))
         surface.show()
-        for _ in 0..<50 where !surface.wantsVisible { try await Task.sleep(for:.milliseconds(10)) }
+        try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
         owner.pageFailure?(.messageRejected)   // the first page fails
         coordinator.onOpened?()                 // the rebuild opens: recovered
         let before=opens
