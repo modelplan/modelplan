@@ -429,4 +429,30 @@ final class BridgeTests: XCTestCase {
     XCTAssertThrowsError(try state.accept(action("all",6),source:source))
   }
 
+  /// G3-56: the page reports acknowledged cautions as an `ids` string array; the flat parser must carry it to an intent.
+  func testCautionAckCarriesTheIdsArrayAndKeepsItsBounds() throws {
+    let state = CockpitBridgeState(context: try context())
+    let load = try ready(state)
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: true))
+    var sequence = 2
+    func ack(_ ids: Any) throws -> String { sequence += 1; return try reply(load, "action", sequence, extra: ["action": "cautionAck", "ids": ids]) }
+    let two = [#"["0000000000000001","session:18000:main:main","red"]"#, #"["0000000000000001","session:604800:main:main","amber"]"#]
+    XCTAssertEqual(try state.accept(ack(two), source: source), .action(.cautionAck(two)))
+    XCTAssertEqual(try state.accept(ack([String]()), source: source), .action(.cautionAck([])))
+    let most = (0..<CockpitCautionIdentities.maxCount).map { "id-\($0)" }
+    XCTAssertEqual(try state.accept(ack(most), source: source), .action(.cautionAck(most)))
+    XCTAssertThrowsError(try state.accept(ack(most + ["one-too-many"]), source: source)) {
+      XCTAssertEqual($0 as? CockpitBridgeError, .limit)
+    }
+    XCTAssertThrowsError(try state.accept(ack([1, 2]), source: source), "A non-string element is rejected")
+    XCTAssertThrowsError(try state.accept(ack([["nested"]]), source: source), "A nested array is rejected")
+    XCTAssertThrowsError(try state.accept(ack("not-an-array"), source: source))
+    XCTAssertThrowsError(try state.accept(ack([String(repeating: "x", count: CockpitCautionIdentities.maxBytes + 1)]), source: source), "An over-long identity is rejected")
+    XCTAssertThrowsError(try state.accept(ack([""]), source: source), "An empty identity is rejected")
+    // `ids` is allowed only on cautionAck; capabilities keeps its three-string bound.
+    sequence += 1
+    XCTAssertThrowsError(try state.accept(reply(load, "action", sequence, extra: ["action": "openSettings", "ids": ["a"]]), source: source))
+    XCTAssertThrowsError(try FlatReply.parse(#"{"capabilities":["a","b","c","d"]}"#))
+    XCTAssertThrowsError(try FlatReply.parse(#"{"other":["a"]}"#))
+  }
 }

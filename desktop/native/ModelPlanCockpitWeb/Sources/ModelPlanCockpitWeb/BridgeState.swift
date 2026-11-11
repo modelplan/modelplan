@@ -122,7 +122,8 @@ public struct CockpitMessageSource {
   }
 }
 
-// Replies have scalar fields plus one bounded three-string capabilities array.
+// Replies have scalar fields plus two bounded flat string arrays: the three-string `capabilities` of `ready` and the
+// `ids` (at most CockpitCautionIdentities.maxCount) of `cautionAck`. No other key may carry an array.
 // Reject nesting/duplicate keys before JSONSerialization can collapse them.
 enum FlatReply {
   static func parse(_ raw: String) throws -> [String: Any] {
@@ -168,11 +169,13 @@ enum FlatReply {
       white()
       if i < a.count, a[i] == 34 {
         _ = try string()
-      } else if key == "capabilities", i < a.count, a[i] == 91 {
+      } else if key == "capabilities" || key == "ids", i < a.count, a[i] == 91 {
+        // Flat arrays of strings only: the ready capabilities and the cautionAck identities (G3-56).
+        let limit = key == "ids" ? CockpitCautionIdentities.maxCount : 3
         i += 1; white()
         var count = 0
         while i < a.count, a[i] != 93 {
-          guard count < 3 else { throw CockpitBridgeError.limit }
+          guard count < limit else { throw CockpitBridgeError.limit }
           _ = try string(); count += 1; white()
           guard i < a.count else { throw CockpitBridgeError.invalidMessage }
           if a[i] == 93 { break }
