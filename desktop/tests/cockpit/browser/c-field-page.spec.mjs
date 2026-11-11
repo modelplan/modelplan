@@ -42,25 +42,33 @@ test('the official porthole opens the field by click and keyboard',async({page})
  expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
- const port=page.locator('.ck-port');await expect(port).toHaveAttribute('role','button');await expect(port).toHaveAttribute('aria-label','Open the 3D view');
- await port.click();await port.focus();await page.keyboard.press('Enter');
+ const port=page.locator('.ck-port'),key=page.locator('.port-big[data-bigfield]');await expect(port).not.toHaveAttribute('tabindex');await expect(port).not.toHaveAttribute('role','button');
+ await expect(key).toHaveAttribute('aria-label',/^Open the 3D launch field/);
+ await port.click();await key.focus();await page.keyboard.press('Enter');
  expect(await page.evaluate(()=>window.posted.filter(m=>m.type==='action'&&m.action==='openField').length)).toBe(2);
 });
 // Build 14c: after a click on the porthole and a key press (the walk clicks the field open, then presses Escape), the
-// focused port drew WebKit's default blue focus ring round the whole port box, over the canopy frame. The port draws
-// no ring; keyboard focus is shown on its ⤢ key.
-test('build 14c: a focused porthole draws no ring round the canopy; keyboard focus shows on the ⤢ key',async({page})=>{
+// focused port drew WebKit's default blue focus ring round the whole port box, over the canopy frame; with that ring
+// removed, the same click and key press lit the ⤢ key gold although nobody pressed it (owner, 14c). The port is not
+// focusable; only real keyboard navigation to the ⤢ key shows its ring.
+test('build 14c: a click and Escape on the porthole leave no ring on the port or its ⤢ key; Tab to the key shows it',async({page})=>{
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
- const port=page.locator('.ck-port');await port.click();await page.keyboard.press('Escape');await port.focus();
- const v=await page.evaluate(()=>{const p=document.querySelector('.ck-port'),k=p.querySelector('.port-big'),c=getComputedStyle(p),ck=getComputedStyle(k);
-  return {focused:document.activeElement===p,visible:p.matches(':focus-visible'),port:c.outlineStyle,key:ck.outlineStyle,keyWidth:ck.outlineWidth};});
- expect([v.focused,v.visible]).toEqual([true,true]);expect(v.port).toBe('none');
- expect([v.key,v.keyWidth]).toEqual(['solid','2px']);
+ const read=()=>page.evaluate(()=>{const p=document.querySelector('.ck-port'),k=p.querySelector('.port-big'),c=getComputedStyle(p),ck=getComputedStyle(k);
+  return {active:document.activeElement===p?'port':document.activeElement===k?'key':'other',port:c.outlineStyle,key:ck.outlineStyle,keyWidth:ck.outlineWidth};});
+ const port=page.locator('.ck-port');await port.click({position:{x:520,y:120}});await page.keyboard.press('Escape');
+ let v=await read();expect(v.active).not.toBe('port');expect([v.port,v.key]).toEqual(['none','none']);
+ await page.locator('.port-big').click();await page.keyboard.press('Escape');
+ v=await read();expect(v.active).not.toBe('key');expect(v.key).toBe('none');
+ // Real keyboard navigation: Tab from the control just before the key lands on it and shows the gold ring.
+ await page.evaluate(()=>{const k=document.querySelector('.port-big'),all=[...document.querySelectorAll('button,[tabindex="0"],a[href]')].filter(e=>e.offsetParent&&!e.disabled&&e.tabIndex>=0);
+  const i=all.indexOf(k);document.body.focus();if(i>0)all[i-1].focus();});
+ for(let n=0;n<40&&(await read()).active!=='key';n++)await page.keyboard.press('Tab');
+ v=await read();expect(v.active).toBe('key');expect([v.key,v.keyWidth]).toEqual(['solid','2px']);
 });
 test('D43 every vendor mark the scene asks for loads under the page CSP, close to square',async({page})=>{
  await open(page);
