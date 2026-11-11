@@ -197,6 +197,14 @@ public actor ProcessEngineClient: EngineClient {
         emit(.connection(.stopped(unreapedProcess == nil ? .requested : .processCleanupFailed)))
     }
 
+    /// Capabilities the client declares in `initialize`. The server only attaches an opt-in field (for example
+    /// `rows.Account.Today`, which feeds the today tokens and t/s) when the client lists its capability, so a
+    /// feature the app renders must be listed here. scripts/tests/capability-handshake.test.mjs checks this list
+    /// against the server's advertised capabilities.
+    static func declaredCapabilities(withCredentials: Bool) -> [String] {
+        ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "cockpitDetailsV1", "cockpitForecastV1", "cockpitHistoryV1", "cockpitModelsV1", "cockpitSessionsV1", "cockpitPeaksV1", "publication", "plugin_install", "history_import_v1", "resetEvents", "memberRefreshV1", "windowSourcesV1", "resetEventLinksV1", "accountTodayV1"] + (withCredentials ? ["credentials"] : [])
+    }
+
     func launch() {
         guard child == nil && unreapedProcess == nil && !stopped && !consumerBlocked && !stopping else { return }
         deliveryAuthority.replace(with: nil)
@@ -214,7 +222,7 @@ public actor ProcessEngineClient: EngineClient {
             child = process
             let params = try WireInitializeParams(sessionId: sessionID, protocolVersion: WireProtocol.version,
                 appVersion: configuration.applicationVersion,
-                capabilities: ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "cockpitDetailsV1", "cockpitForecastV1", "cockpitHistoryV1", "cockpitModelsV1", "cockpitSessionsV1", "cockpitPeaksV1", "publication", "plugin_install", "history_import_v1", "resetEvents", "memberRefreshV1", "windowSourcesV1", "resetEventLinksV1"] + (credentialAgent == nil ? [] : ["credentials"]))
+                capabilities: Self.declaredCapabilities(withCredentials: credentialAgent != nil))
             _ = try enqueue("initialize", params: wireJSON(params), purpose: .initialize, timeout: runtime.requestTimeout)
         } catch {
             failStarts(error as? EngineClientError ?? .invalidConfiguration)
