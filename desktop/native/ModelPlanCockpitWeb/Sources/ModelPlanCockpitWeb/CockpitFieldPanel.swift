@@ -58,13 +58,25 @@ import WebKit
     let height = min(visible.height - 32, min(900, max(600, (visible.height * 0.8).rounded())))
     return NSRect(x: visible.minX + (visible.width - width) / 2, y: visible.minY + (visible.height - height) / 2, width: width, height: height)
   }
-  /// G3-80: the same size rule on `visible`, centred on `centre` as far as the 16 pt margins allow (the field keeps
-  /// its place when it is refitted on the display it was moved to).
+  /// G3-80: the panel's window frame: the same size rule on `visible`, centred on `centre` (nil: the display's centre)
+  /// as far as the 16 pt margins allow, so the field keeps its place when it is refitted on the display it was moved to.
+  /// The origin is on whole points: the window server rounds a borderless panel's fractional origin outward, which
+  /// made a 900 pt high field 901 pt (Mac compile of b4b7180b, a 1415 pt visible frame centres at y + 257.5).
   nonisolated public static func frame(in visible: NSRect, centredAt centre: CGPoint?) -> NSRect {
     let fitted = frame(in: visible)
-    guard let centre, centre.x.isFinite, centre.y.isFinite else { return fitted }
-    let moved = NSRect(x: centre.x - fitted.width / 2, y: centre.y - fitted.height / 2, width: fitted.width, height: fitted.height)
-    return CockpitScreenSelection.clamp(moved, into: visible.insetBy(dx: 16, dy: 16))
+    var placed = fitted
+    if let centre, centre.x.isFinite, centre.y.isFinite {
+      placed.origin = CGPoint(x: centre.x - fitted.width / 2, y: centre.y - fitted.height / 2)
+    }
+    let inner = visible.insetBy(dx: 16, dy: 16)
+    return wholePoints(CockpitScreenSelection.clamp(placed, into: inner), inside: inner)
+  }
+  /// `rect` with its origin moved down/left onto whole points, or up/right when that would leave `inner`.
+  nonisolated static func wholePoints(_ rect: NSRect, inside inner: NSRect) -> NSRect {
+    var x = rect.minX.rounded(.down), y = rect.minY.rounded(.down)
+    if x < inner.minX { x = inner.minX.rounded(.up) }
+    if y < inner.minY { y = inner.minY.rounded(.up) }
+    return NSRect(x: x, y: y, width: rect.width, height: rect.height)
   }
   /// G3-80: the drag strip in the content view: the bare band above the card, as wide as the card, at most 20 pt
   /// high. The × sits right of the card, so the strip never covers it. Empty when there is no room.
@@ -89,7 +101,7 @@ import WebKit
     let proxy = FieldMessageProxy(); proxy.owner = self; self.proxy = proxy
     config.userContentController.add(proxy, name: "field")
     let screen = CockpitScreenSelection.openScreen(point: point, anchor: anchor, screens: screens())
-    let frame = Self.frame(in: screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768))
+    let frame = Self.frame(in: screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768), centredAt: nil)
     let panel = FieldWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
     // Task 91 round 5: a transparent composition on the desktop; the page draws a frosted card and the feathered scene.
     panel.isReleasedWhenClosed = false; panel.level = Self.level; panel.hasShadow = false
@@ -154,8 +166,9 @@ import WebKit
       guard var start = dragStart else { return }
       guard start.moved || hypot(point.x - start.point.x, point.y - start.point.y) >= 3 else { return }
       start.moved = true; dragStart = start
-      window.setFrame(CockpitScreenSelection.dragFrame(start: start.frame, from: start.point, to: point, screens: screens(),
-                                                       fallback: nil, inset: 16), display: true)
+      // Pointer locations are fractional on Retina displays; whole points keep the panel's size exact.
+      let moved = CockpitScreenSelection.dragFrame(start: start.frame, from: start.point, to: point, screens: screens(), fallback: nil, inset: 16)
+      window.setFrame(NSRect(x: moved.minX.rounded(), y: moved.minY.rounded(), width: moved.width, height: moved.height), display: true)
     case .ended:
       guard let start = dragStart else { return }
       dragStart = nil

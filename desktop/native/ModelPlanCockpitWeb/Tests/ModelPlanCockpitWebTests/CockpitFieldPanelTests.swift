@@ -135,7 +135,8 @@ final class CockpitFieldPanelTests: XCTestCase {
     defer { panel.close() }
     let window = try XCTUnwrap(panel.verificationWindow)
     XCTAssertTrue(window.isMovable)
-    XCTAssertEqual(window.frame, CockpitFieldPanel.frame(in: screenB.visibleFrame), "opens on the click's display B, not the icon's A")
+    XCTAssertEqual(window.frame, CockpitFieldPanel.frame(in: screenB.visibleFrame, centredAt: nil), "opens on the click's display B, not the icon's A")
+    XCTAssertEqual(window.frame.size, NSSize(width: 1440, height: 900), "whole points: the window server keeps the size exact")
     XCTAssertNil(panel.dragRegionFrame, "no strip before the page has laid out its card")
     let height = window.frame.height
     panel.receive(#"{"type":"card","x":0,"y":118,"width":430,"height":664,"radius":12}"#)
@@ -144,12 +145,40 @@ final class CockpitFieldPanelTests: XCTestCase {
     let from = CGPoint(x: window.frame.minX + 200, y: window.frame.maxY - 108)
     panel.drag(.began, point: from)
     panel.drag(.moved, point: CGPoint(x: from.x + 1, y: from.y))
-    XCTAssertEqual(window.frame, CockpitFieldPanel.frame(in: screenB.visibleFrame), "under 3 pt nothing moves")
+    XCTAssertEqual(window.frame, CockpitFieldPanel.frame(in: screenB.visibleFrame, centredAt: nil), "under 3 pt nothing moves")
     panel.drag(.moved, point: CGPoint(x: 600, y: 500))
     panel.drag(.ended, point: CGPoint(x: 600, y: 500))
     XCTAssertTrue(panel.isOpen, "a drag does not close the field")
     assertInside(window.frame, screenA.visibleFrame, "dropped on A")
     XCTAssertEqual(window.frame.size, CockpitFieldPanel.frame(in: screenA.visibleFrame).size, "refitted to A's size rule")
+  }
+  /// Owner 11-11: a drag in the 3D scene rotates the rocket, so only the strip moves the window. The panel is not
+  /// movable by its background, a press in the scene reaches the page's web view (never the strip), and a press on the
+  /// strip reaches the strip.
+  @MainActor func testADragInTheSceneNeverMovesTheWindow() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-scene-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let panel = CockpitFieldPanel(bundle: try bundle(root))
+    let displays = [screenA, screenB]
+    panel.screens = { displays }
+    panel.open(payload: "{}", near: nil, at: CGPoint(x: 2800, y: 700))
+    defer { panel.close() }
+    let window = try XCTUnwrap(panel.verificationWindow)
+    let web = try XCTUnwrap(panel.verificationWebView)
+    let content = try XCTUnwrap(window.contentView)
+    XCTAssertFalse(window.isMovableByWindowBackground, "no background drag anywhere in the field")
+    panel.receive(#"{"type":"card","x":0,"y":118,"width":430,"height":664,"radius":12}"#)
+    let strip = try XCTUnwrap(panel.dragRegionFrame)
+    let before = window.frame
+    // The scene starts 458 px from the left (cockpit.css .field-stage); its middle, its top edge level with the strip,
+    // and a point on the card all go to the page.
+    for point in [CGPoint(x: 900, y: content.bounds.midY), CGPoint(x: 900, y: strip.midY), CGPoint(x: 200, y: content.bounds.midY)] {
+      let hit = content.hitTest(point)
+      XCTAssertFalse(hit is CockpitTitleDrag, "a press at \(point) is the page's, not the strip's")
+      XCTAssertTrue(hit?.isDescendant(of: web) == true, "a press at \(point) reaches the web view")
+    }
+    XCTAssertTrue(content.hitTest(CGPoint(x: strip.midX, y: strip.midY)) is CockpitTitleDrag, "the strip takes its own presses")
+    XCTAssertEqual(window.frame, before, "nothing moved the window")
   }
   /// A press on the strip that never moves is a click on bare desktop: it closes the field, as the page does.
   @MainActor func testAClickOnTheStripClosesLikeBareDesktop() throws {
