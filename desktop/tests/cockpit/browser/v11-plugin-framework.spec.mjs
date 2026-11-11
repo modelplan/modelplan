@@ -6,7 +6,9 @@ import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.
 import {appearance,commands,pageId,sample,shell,excludePortholeFlicker} from '../fixture.mjs';
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 
-const on=(pinned=false,settings={})=>({version:1,entries:[{id:'placeholder',enabled:true,pinned}],settings:{placeholder:settings}});
+// The calendar plugin is default-on (D121); these framework specs keep it off so only the placeholder is laid out.
+const calendarOff={id:'calendar',enabled:false,pinned:false};
+const on=(pinned=false,settings={})=>({version:1,entries:[{id:'placeholder',enabled:true,pinned},calendarOff],settings:{placeholder:settings}});
 /** `count` connected subscriptions, plus tools found but not connected. */
 function dataWith(count,unconnected=[]) {
  const data=sample(),seed=data.projection.rows[1];
@@ -50,7 +52,7 @@ test('D124 layout rule: columns = max(3, subscriptions + plugins), at most 6, pl
   }
  }
  // Off (no host state or turned off): the v1 table, with "+" on the empty slots.
- expect(await receive(send('plugins',{plugins:{version:1,entries:[],settings:{}}}))).toBe(true);
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[calendarOff],settings:{}}}))).toBe(true);
  expect(await receive(send('display',{data:dataWith(2)}))).toBe(true);
  await expect(page.locator('.eng-keys')).toHaveAttribute('data-slots','3');
  await expect(page.locator('.eng-keys .ek-bay')).toHaveCount(1);
@@ -115,7 +117,7 @@ test('lifecycle: the plugin runs only while the cockpit is open and its column i
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  await page.getByRole('button',{name:'Remove Placeholder'}).click();
  await expect(page.locator('.eng-cols .pl-col')).toHaveCount(0);
- expect(await pluginEdits(page)).toEqual([{version:1,entries:[{id:'placeholder',enabled:false,pinned:false}],settings:{placeholder:{intervalSeconds:3}}}]);
+ expect(await pluginEdits(page)).toEqual([{version:1,entries:[{id:'placeholder',enabled:false,pinned:false},calendarOff],settings:{placeholder:{intervalSeconds:3}}}]);
  // Cleared readings stop everything.
  expect(await receive(send('plugins',{plugins:on(false)}))).toBe(true);
  await expect(panel(page)).toHaveAttribute('data-running','true');

@@ -129,6 +129,33 @@ page. The page has no timers; the host samples. Messages, all with the common he
 - page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's × or the "+" menu.
 - page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
 
+Defaults: a default-on plugin (D121) is on only once the host has sent `plugins`; a page whose host never did draws the
+v1 table.
+
+Framework additions for the calendar (v1.1, all generic):
+
+- Data shape: a plugin with `update` must declare `data: {maxBytes, parse}`. The framework refuses data larger than
+  `maxBytes` as JSON (at most 64 KiB) before `parse`, the plugin's strict structural check (exact keys, bounded lists),
+  runs; `update` receives what `parse` returns. This replaces the placeholder's single-key check.
+- Host-side shaping: a plugin may declare `derive(display, now)`. While it runs, the page shapes its data from the
+  `display` data it already has (no network, no new host message) on each render and deadline tick, through the same
+  shape check. A host that pushes a valid `pluginData` for that plugin takes over: shaping stops for it.
+- Tick: a running plugin may name its next repaint (`nextDeadline`, e.g. the next whole minute). The page reports the
+  earliest of its own deadlines and the plugins' in `nextDeadline`; the host's `tick` reaches the plugin's `tick`.
+  No page timers, and a stopped plugin asks for nothing.
+- Expand on MFD (CKP-PLG-07): a plugin with `expand` opens a temporary overlay inside `.mfd-screen` only (the faders,
+  the MFD page keys and the option keys stay usable) when its column or key is clicked (not its own buttons) or the
+  focused column gets Enter/Space. The framework owns the frame (‹ Back to <page>, title, a status slot, ×). It closes on
+  a second click on the plugin, ×, ‹ Back, Esc, an MFD page key (which then shows that page) or the alert lamp, and when
+  the plugin stops or the cockpit loses key. `expand.key` sees keys first while it is open. No host action is involved.
+- Settings kinds: the calendar has no settings, so `seconds` is still the only kind.
+
+Calendar (`src/calendar-plugin.ts`, `src/calendar-data.ts`, `src/calendar-time.ts`; CKP-PLG-06/07): default on, no
+settings. Its data (`version`, `subs` ≤16, `peaks` ≤64, `resets` ≤64, `spans` ≤16, epoch-ms times, ≤16 KiB) is shaped
+from `display`: published peak windows (`details.peaks`, cockpitPeaksV1), the user's own 5 h (`session`) and weekly
+window resets, reset cards (verified subscriptions only) and announced/confirmed reset events, for the user's own rows
+only. All times are local; day boundaries are local midnights (DST days have 23/25 hours).
+
 ## Animation budget and evidence
 
 The lamp is static at idle. A change in displayed readings, reasons, summary or

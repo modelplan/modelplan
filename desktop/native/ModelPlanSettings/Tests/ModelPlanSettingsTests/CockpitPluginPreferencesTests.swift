@@ -21,8 +21,8 @@ final class CockpitPluginPreferencesTests: XCTestCase {
 
     func testDefaultsComeFromTheCatalogueAndThePlaceholderIsOff() {
         let empty = CockpitPluginPreferences()
-        XCTAssertEqual(empty.enabledIDs(), [], "the framework placeholder is registered but off")
-        XCTAssertEqual(empty.materialized().entries, [.init(id: "placeholder", enabled: false, pinned: false)])
+        XCTAssertEqual(empty.enabledIDs(), ["calendar"], "the framework placeholder is registered but off; the calendar is default on (D121)")
+        XCTAssertEqual(empty.materialized().entries, [.init(id: "placeholder", enabled: false, pinned: false), .init(id: "calendar", enabled: true, pinned: false)])
         XCTAssertEqual(empty.enabledIDs(two), ["a", "c"])
         XCTAssertEqual(empty.value("placeholder", "intervalSeconds"), 10)
     }
@@ -59,7 +59,7 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         let good = #"{"version":1,"entries":[{"id":"future-plugin","enabled":true,"pinned":true},{"id":"placeholder","enabled":true,"pinned":false}],"settings":{"placeholder":{"intervalSeconds":5}}}"#
         let decoded = try JSONDecoder().decode(CockpitPluginPreferences.self, from: Data(good.utf8))
         XCTAssertEqual(decoded.entries.map(\.id), ["future-plugin", "placeholder"])
-        XCTAssertEqual(decoded.enabledIDs(), ["placeholder"])
+        XCTAssertEqual(decoded.enabledIDs(), ["placeholder", "calendar"])
         let round = try JSONDecoder().decode(CockpitPluginPreferences.self, from: try decoded.bridgeJSON())
         XCTAssertEqual(round, decoded)
         for bad in [
@@ -115,7 +115,7 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         XCTAssertEqual(saved, model.preferences)
         let fromPage = await model.acceptPageEdit(["version": 1, "entries": [["id": "placeholder", "enabled": false, "pinned": false]], "settings": [:] as [String: Any]] as [String: Any])
         XCTAssertTrue(fromPage)
-        XCTAssertEqual(model.preferences.enabledIDs(), [])
+        XCTAssertEqual(model.preferences.enabledIDs(), ["calendar"])
         XCTAssertEqual(sent.count, 2)
     }
 
@@ -143,7 +143,7 @@ final class CockpitPluginPreferencesTests: XCTestCase {
         enabled.state = .on
         XCTAssertTrue(enabled.sendAction(enabled.action, to: enabled.target))
         await fulfillment(of: [changed], timeout: 3)
-        XCTAssertEqual(model.preferences.enabledIDs(), ["placeholder"])
+        XCTAssertEqual(model.preferences.enabledIDs(), ["placeholder", "calendar"])
         // The section rebuilds after the save; the new pin box is enabled now.
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertTrue(try XCTUnwrap(find("settings.cockpitPlugins.placeholder.pinned", NSButton.self)).isEnabled)

@@ -29,11 +29,14 @@ public struct CockpitPluginDefinition: Equatable, Sendable {
 public enum CockpitPluginCatalogue {
     public static let maximumPinned = 2
     public static let maximumEntries = 32
-    /// Framework placeholder until the resource (D124) and cost (D126/D127) plugins land; off by default.
+    /// The framework placeholder (off by default) until the resource (D124) and cost (D126/D127) plugins land, then the calendar.
     public static let builtIn: [CockpitPluginDefinition] = [
         CockpitPluginDefinition(id: "placeholder", title: .init("Placeholder", "占位插件"), defaultEnabled: false, settings: [
             CockpitPluginSettingSpec(key: "intervalSeconds", minimum: 3, maximum: 30, defaultValue: 10, title: .init("Update interval", "更新间隔")),
         ]),
+        /// v1.1 calendar (D137/D138/D140/D141/D145, CKP-PLG-06/07): default on; no settings. The page shapes its data from
+        /// the display data the app already sends, so the app samples nothing for it.
+        CockpitPluginDefinition(id: "calendar", title: .init("Calendar", "日历"), defaultEnabled: true, settings: []),
     ]
     private static let lower: ClosedRange<Unicode.Scalar> = "a"..."z"
     private static let upper: ClosedRange<Unicode.Scalar> = "A"..."Z"
