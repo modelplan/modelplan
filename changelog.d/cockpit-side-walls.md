@@ -1,0 +1,1 @@
+At a scaled size, such as the 85 percent Auto default on a MacBook Air, the cockpit no longer cuts off the outer edges of the hull's side walls: its window is now sized in whole points, so the page always has room for the whole hull at every size.
