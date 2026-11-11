@@ -7,6 +7,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ImageIO
 import ModelPlanEntrance
 import ModelPlanEntranceScene
 import RealityKit
@@ -23,6 +24,20 @@ final class OfficialEntranceFramesTests: XCTestCase {
         guard let out else { return }
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         try EntranceFrameFile.writePNG(image, to: out.appendingPathComponent(name + ".png"))
+    }
+
+    /// Round 10 (owner Q3): a stored cockpit snapshot for the renders, from MODELPLAN_ENTRANCE_COCKPIT_NIGHT/_DAY
+    /// (a PNG of the cockpit page, 1 px per point of its 636 pt raster, transparent outside the shell). It covers
+    /// the storyboard cockpit's raster: x from the cockpit left minus its 8 pt margin, y from the cockpit top. Never
+    /// committed (it shows the user's own screen); without it the bundled cockpit image is used.
+    private func snapshot(_ theme: EntranceTheme) -> CockpitSnapshot? {
+        let key = "MODELPLAN_ENTRANCE_COCKPIT_" + (theme == .night ? "NIGHT" : "DAY")
+        guard let path = ProcessInfo.processInfo.environment[key],
+              let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let width = 636.0, height = width * Double(image.height) / Double(image.width)
+        return CockpitSnapshot(image: image, frame: .init(left: StoryboardScenario.cockpitLeft - 8, top: StoryboardScenario.cockpitTop,
+                                                          width: width, height: height))
     }
 
     /// Fraction of pixels that differ from the top-left background pixel.
@@ -76,7 +91,11 @@ final class OfficialEntranceFramesTests: XCTestCase {
         let source = try OfficialRocket.source(), look = try OfficialRocket.lookImages()
         for theme in EntranceTheme.allCases {
             let plan = StoryboardScenario.plan(edge: "right", theme: theme, geometry: source.geometry)
-            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: false, rocket: source, look: look)
+            let stored = StoredCockpitSnapshot(snapshot(theme))
+            let scene = try await EntranceScene.make(plan: plan, parts: [.hull, .glass], flat: false, rocket: source, look: look, cockpit: stored)
+            print("OFFICIAL-SNAPSHOT \(theme.rawValue) cockpit \(scene.cockpit)" +
+                  (stored.snapshot.map { " \($0.image.width)x\($0.image.height) px at \(Int($0.frame.left)),\(Int($0.frame.top))" } ?? ""))
+            if stored.snapshot != nil { XCTAssertEqual(scene.cockpit, "snapshot", "\(theme) snapshot not used") }
             try await scene.setEnvironment(XCTUnwrap(EntranceLook.studio(theme)), intensityExponent: EntranceLook.environmentExponent(theme))
             for (shot, t) in StoryboardScenario.stages(plan) {
                 let frame = try await scene.render(at: t)
@@ -100,6 +119,15 @@ final class OfficialEntranceFramesTests: XCTestCase {
             print("OFFICIAL-FRAME \(theme.rawValue) window-closeup coverage \(String(format: "%.3f", coverage(image)))")
             XCTAssertGreaterThan(coverage(image), 0.2, "\(theme) close-up misses the capsule")
             try save(image, "official-window-closeup-\(theme.rawValue)")
+            // Round 10 (owner: the lower body read as ceramic tile at night): a close-up of the lower stage, from
+            // about 4 m, slightly below and to the right, the key light from the upper left.
+            let bodyTarget = EntranceVector(0, 4.2, 0), bodyEye = EntranceVector(1.1, 2.9, 3.9)
+            let body = EntranceCamera(position: bodyEye, orientation: .lookAt(eye: bodyEye, target: bodyTarget), fovDegrees: 30,
+                                      viewport: .init(width: 1000, height: 1000))
+            let bodyImage = try await scene.render(camera: body, rise: 0)
+            print("OFFICIAL-FRAME \(theme.rawValue) lower-body coverage \(String(format: "%.3f", coverage(bodyImage)))")
+            XCTAssertGreaterThan(coverage(bodyImage), 0.3, "\(theme) lower-body close-up misses the hull")
+            try save(bodyImage, "official-lower-body-\(theme.rawValue)")
         }
     }
 
@@ -174,8 +202,9 @@ final class OfficialEntranceFramesTests: XCTestCase {
             for tint in try tints("canopy_frame_bevel_2") {
                 XCTAssertGreaterThan(tint, 0.05, "\(theme) frame must not be ink black")
             }
+            // Round 10 (owner on r9: "why is there a white frame round the window?"): the rim is dark metal now.
             for tint in try tints("canopy_inner_rim") {
-                XCTAssertGreaterThan(tint, 0.6, "\(theme) inner rim must be bright")
+                XCTAssertLessThan(tint, 0.35, "\(theme) inner rim must not be white")
             }
             func positions(_ name: String) throws -> [SIMD3<Float>] {
                 try models(name).flatMap { $0.mesh.contents.models.flatMap { Array($0.parts) } }.flatMap { $0.positions.elements }

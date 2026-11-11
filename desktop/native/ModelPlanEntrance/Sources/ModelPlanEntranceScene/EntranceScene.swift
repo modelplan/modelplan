@@ -30,6 +30,43 @@ public struct EntranceRenderedFrame: @unchecked Sendable {
     public let facts: EntranceFrameFacts
 }
 
+/// Round 10 (owner Q3, 2026-11-11: show the real cockpit inside the front window): a picture of the cockpit as it
+/// will appear when the entrance hands over, taken just before the entrance starts (the cockpit page's own
+/// snapshot), and where that picture lies on the entrance viewport. The scene shows it behind the front-window
+/// glass, mapped so that at the end of the hand-over every pixel lands where the real cockpit will draw it; the
+/// cut from the rocket window to the cockpit then changes nothing inside the glass. Held in memory only, never
+/// written anywhere. Transparent pixels (outside the cockpit's shell) show as the dark cabin.
+@available(macOS 15.0, *)
+public struct CockpitSnapshot: @unchecked Sendable {
+    public var image: CGImage
+    /// The rect the image covers on the entrance viewport, in points (top-left origin), usually the cockpit
+    /// window's frame. The image may have any pixel density.
+    public var frame: EntranceRect
+
+    public init(image: CGImage, frame: EntranceRect) {
+        self.image = image
+        self.frame = frame
+    }
+}
+
+/// Where the entrance gets the cockpit snapshot. The app passes its cockpit page (for a web view: its snapshot of
+/// the visible page and its frame on the entrance viewport); tests and renders inject a stored image. Returning nil
+/// falls back to the bundled cockpit image (the official pack), or to the code-drawn console without one.
+@available(macOS 15.0, *)
+@MainActor
+public protocol CockpitSnapshotSource: AnyObject {
+    func cockpitSnapshot() async -> CockpitSnapshot?
+}
+
+/// A fixed snapshot (tests, renders, or a snapshot the app already took).
+@available(macOS 15.0, *)
+@MainActor
+public final class StoredCockpitSnapshot: CockpitSnapshotSource {
+    public let snapshot: CockpitSnapshot?
+    public init(_ snapshot: CockpitSnapshot?) { self.snapshot = snapshot }
+    public func cockpitSnapshot() async -> CockpitSnapshot? { snapshot }
+}
+
 @available(macOS 15.0, *)
 @MainActor
 public final class EntranceScene {
@@ -47,7 +84,8 @@ public final class EntranceScene {
     public private(set) var hullAlbedo = "none"
     /// The front window in look mode: "rounded ..." (owner D142: corners rounded like the pass-5 art) or "file".
     public private(set) var windowShape = "none"
-    /// What is behind the front window in look mode: "image" (the pack's cockpit interior) or "code" (the console).
+    /// What is behind the front window in look mode: "snapshot" (round 10: the real cockpit), "image" (the pack's
+    /// cockpit interior) or "code" (the console).
     public private(set) var cockpit = "none"
     /// Look-mode frames are rendered at this multiple of the output size and scaled down (round 5: the day
     /// silhouette and the hairline seams aliased at 1x). Flat mode stays at 1, so the pose gates see the same pixels.
@@ -62,8 +100,11 @@ public final class EntranceScene {
     ///   - rocket: the stand-in, or a model file (the official edition's brand rocket). Build the plan with
     ///     `rocket.geometry` so the camera frames the rocket that is drawn.
     ///   - look: optional look images that come with the model file (owner D142); missing ones are code-drawn.
+    ///   - cockpitSnapshot: round 10, the real cockpit shown behind the front window (look mode, storyboard camera
+    ///     only); nil uses the bundled cockpit image in `look`, or the code console.
     public init(plan: EntrancePlan, parts: Set<EntrancePart> = [.hull, .glass], flat: Bool = true,
-                rocket: RocketModelSource = .communityDefault, look: RocketLookImages = .none) throws {
+                rocket: RocketModelSource = .communityDefault, look: RocketLookImages = .none,
+                cockpitSnapshot: CockpitSnapshot? = nil) throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw SceneError.noMetalDevice }
         self.device = device
         self.plan = plan
@@ -72,8 +113,12 @@ public final class EntranceScene {
         renderer = try RealityRenderer()
         root.addChild(stage)
         if let url = rocket.modelURL(for: plan.scenario.theme) {
+            // The snapshot is mapped from the hand-over camera (the end of the map stage, rocket risen one length).
+            let placement = cockpitSnapshot.flatMap { snapshot in
+                plan.storyboard.map { CockpitBackdrop.Placement(snapshot: snapshot, camera: $0.handover, rise: StoryboardRail.liftMetres) }
+            }
             let built = try ModelRocket.build(into: stage, url: url, tail: plan.tail, parts: parts, flat: flat,
-                                              theme: plan.scenario.theme, look: look)
+                                              theme: plan.scenario.theme, look: look, snapshot: placement)
             hullAlbedo = built.albedo
             windowShape = built.window
             cockpit = built.cockpit
@@ -100,6 +145,15 @@ public final class EntranceScene {
         renderer.entities.append(root)
         renderer.entities.append(camera)
         renderer.activeCamera = camera
+    }
+
+    /// Round 10: builds the scene with the cockpit snapshot from `source` (taken now, just before the entrance).
+    public static func make(plan: EntrancePlan, parts: Set<EntrancePart> = [.hull, .glass], flat: Bool = true,
+                            rocket: RocketModelSource = .communityDefault, look: RocketLookImages = .none,
+                            cockpit source: (any CockpitSnapshotSource)?) async throws -> EntranceScene {
+        var snapshot: CockpitSnapshot?
+        if !flat, let source { snapshot = await source.cockpitSnapshot() }
+        return try EntranceScene(plan: plan, parts: parts, flat: flat, rocket: rocket, look: look, cockpitSnapshot: snapshot)
     }
 
     /// Look mode: image-based lighting from an equirectangular image (top row = zenith) for every model in the
@@ -339,7 +393,8 @@ enum ModelRocket {
     /// and `cockpit`).
     @discardableResult
     static func build(into stage: Entity, url: URL, tail: [TailSlot], parts: Set<EntrancePart>, flat: Bool,
-                      theme: EntranceTheme, look: RocketLookImages = .none) throws -> (albedo: String, window: String, cockpit: String) {
+                      theme: EntranceTheme, look: RocketLookImages = .none,
+                      snapshot: CockpitBackdrop.Placement? = nil) throws -> (albedo: String, window: String, cockpit: String) {
         let loaded = try Entity.load(contentsOf: url)
         // Use the model itself, not the file's scene root: the root may carry AR anchoring, which an offscreen
         // renderer never resolves.
@@ -384,6 +439,7 @@ enum ModelRocket {
                 albedo = "file"
             }
             finish.cockpitImage = look.cockpitInterior(for: theme).flatMap(LookImage.load)
+            finish.snapshot = snapshot
             try finish.dress(body)
         }
         let result = (albedo: albedo, window: flat ? "none" : finish.windowShape, cockpit: flat ? "none" : finish.cockpitUsed)
@@ -489,6 +545,8 @@ struct HullFinish {
     var panels: [String: HullPanels.Maps]?
     /// D142: the pack's cockpit interior image for this theme; nil draws the code console.
     var cockpitImage: CGImage?
+    /// Round 10: the real cockpit snapshot and how it maps; it wins over `cockpitImage`.
+    var snapshot: CockpitBackdrop.Placement?
     /// What `dress` did with the window and the cockpit (reported by the scene).
     private(set) var windowShape = "file"
     private(set) var cockpitUsed = "code"
@@ -516,8 +574,11 @@ struct HullFinish {
     /// Roughness of the hull metal: satin, low enough to carry the studio strips as soft highlight bands.
     var roughness: Float { theme == .night ? 0.30 : 0.34 }
     /// A thin glossy layer over the metal: a crisp copy of the strips on top of the soft band. The clearcoat has no
-    /// normal map, so it stays smooth over the brushed grain.
-    var clearcoat: Float { theme == .night ? 0.35 : 0.2 }
+    /// normal map, so it stays smooth over the brushed grain. Round 10 (owner: the hull read as ceramic tile or
+    /// plaster up close; pass 5 is smooth painted/anodised metal under a gentle gloss): night 0.35 -> 0.5, day
+    /// 0.2 -> 0.3, with `clearcoatRoughness` 0.08.
+    var clearcoat: Float { theme == .night ? 0.5 : 0.3 }
+    static let clearcoatRoughness: Float = 0.08
     /// Brushed metal: how far the highlights stretch across the grain (0 = round highlights). The grain runs around
     /// the hull, like a turned part, so the studio strips stretch along the axis.
     static let anisotropy: Float = 0.3
@@ -543,25 +604,21 @@ struct HullFinish {
     /// The light lip beside each joint groove: polished, lighter than the hull, so it catches the studio strip as a
     /// faint bright edge like the pass-5 art.
     var lipColor: NSColor {
-        theme == .night ? NSColor(srgbRed: 0.45, green: 0.455, blue: 0.47, alpha: 1)
-            : NSColor(srgbRed: 0.9, green: 0.9, blue: 0.89, alpha: 1)
+        theme == .night ? NSColor(srgbRed: 0.36, green: 0.365, blue: 0.375, alpha: 1)
+            : NSColor(srgbRed: 0.84, green: 0.84, blue: 0.83, alpha: 1)
     }
     /// The window frame (round 5): a thin dark metal band like the pass-5 window, glossy enough to carry a highlight.
     var frameColor: NSColor {
         theme == .night ? NSColor(srgbRed: 0.085, green: 0.087, blue: 0.095, alpha: 1)
             : NSColor(srgbRed: 0.2, green: 0.2, blue: 0.205, alpha: 1)
     }
-    /// The bright inner rim between the frame and the glass (round 5). Round 6: polished metal plus a faint glow
-    /// of its own (`rimGlow`), so it reads as the one bright line round the glass even where it reflects dark room.
+    /// The inner rim between the frame and the glass. Round 10 (owner on r9: "why is there a white frame round the
+    /// window?"; pass 5 has a dark metal frame whose edge only catches a thin specular line): rounds 6-9 made it a
+    /// white polished strip with its own glow. It is now dark polished metal with no glow, a little lighter than the
+    /// frame, so it shows only where it reflects a studio strip.
     var rimColor: NSColor {
-        theme == .night ? NSColor(srgbRed: 0.95, green: 0.955, blue: 0.97, alpha: 1)
-            : NSColor(srgbRed: 0.97, green: 0.97, blue: 0.97, alpha: 1)
-    }
-    /// Round 8 (r7b: the rim read as a grey line on one side only; pass 5 has a crisp bright line all round): the
-    /// glow carries the line where the polished face reflects dark room (night 0.42 -> 0.85, day 0.3 -> 0.8).
-    var rimGlow: NSColor {
-        theme == .night ? NSColor(srgbRed: 0.85, green: 0.87, blue: 0.9, alpha: 1)
-            : NSColor(srgbRed: 0.8, green: 0.8, blue: 0.81, alpha: 1)
+        theme == .night ? NSColor(srgbRed: 0.16, green: 0.165, blue: 0.175, alpha: 1)
+            : NSColor(srgbRed: 0.3, green: 0.3, blue: 0.305, alpha: 1)
     }
 
     /// Round 6 (r5: the frame read as a light band along the bottom of the window, where its faces tilt up at the
@@ -583,9 +640,9 @@ struct HullFinish {
         return m
     }
     var rimMaterial: PhysicallyBasedMaterial {
-        var m = metal(rimColor, roughness: 0.05)
-        m.emissiveColor = .init(color: rimGlow)
-        m.emissiveIntensity = 1
+        var m = metal(rimColor, roughness: 0.14)
+        m.clearcoat = 0.6
+        m.clearcoatRoughness = 0.05
         return m
     }
 
@@ -595,7 +652,7 @@ struct HullFinish {
         m.metallic = 1.0
         m.roughness = .init(floatLiteral: roughness)
         m.clearcoat = .init(floatLiteral: clearcoat)
-        m.clearcoatRoughness = 0.06
+        m.clearcoatRoughness = .init(floatLiteral: Self.clearcoatRoughness)
         m.faceCulling = .none
         return m
     }
@@ -611,7 +668,8 @@ struct HullFinish {
         } else {
             try GasketFrame.reshape(in: root)
         }
-        if cockpitImage != nil, root.findEntity(named: CockpitInterior.screenPlane) != nil { cockpitUsed = "image" }
+        let backdrop = snapshot != nil || cockpitImage != nil
+        if backdrop, root.findEntity(named: CockpitInterior.screenPlane) != nil { cockpitUsed = snapshot != nil ? "snapshot" : "image" }
         var models: [Entity] = []
         ModelRocket.forEachModel(root) { models.append($0) }
         for e in models where e.isEnabledInHierarchy {
@@ -625,7 +683,7 @@ struct HullFinish {
                 continue
             }
             if CockpitInterior.isInterior(name) {
-                if cockpitImage != nil, name != "cockpit_back_half_lining" {
+                if backdrop, name != "cockpit_back_half_lining" {
                     // D142: the cockpit image replaces the file's screen plane and recess (it sits where they are).
                     var node: Entity? = e
                     while let n = node, n.name != name { node = n.parent }
@@ -668,7 +726,7 @@ struct HullFinish {
                     pbr.metallic = 1.0
                     pbr.roughness = .init(floatLiteral: roughness)
                     pbr.clearcoat = .init(floatLiteral: clearcoat)
-                    pbr.clearcoatRoughness = 0.06
+                    pbr.clearcoatRoughness = .init(floatLiteral: Self.clearcoatRoughness)
                     pbr.faceCulling = .none
                     return pbr
                 }
@@ -704,7 +762,10 @@ struct HullFinish {
             if let material { try WindowShape.addPatch(to: root, material: material) }
         }
         if let plane = root.findEntity(named: CockpitInterior.screenPlane) {
-            if let cockpitImage {
+            if let snapshot {
+                try CockpitBackdrop.add(to: root, snapshot: snapshot)
+                try CockpitCeiling.add(to: root, screens: false)
+            } else if let cockpitImage {
                 try CockpitBackdrop.add(to: root, image: cockpitImage)
                 try CockpitCeiling.add(to: root, screens: false)
             } else if plane.isEnabledInHierarchy {
@@ -1120,16 +1181,21 @@ enum SmoothNormals {
 enum CanopyGlass {
     /// Round 8: 0.62 -> 0.5, so half of the (now brighter) cockpit shows through, as in the pass-5 window. The
     /// blending also scales the glass's own reflection, so `EntranceLook.glassEnvironmentExponent` went up 0.5.
-    static let opacity: Float = 0.5
+    /// Round 10 (owner on r9: "the glass looks fake"): 0.5 laid a flat dark-milky layer over the cockpit. Real
+    /// window glass passes most light: 0.3 of a dark blue-grey tint, and the reflection (dielectric Fresnel, so it
+    /// grows toward the grazing edges) carries the glass; its environment exponent went up again to match.
+    static let opacity: Float = 0.3
+    /// The glass's own colour: a dark blue-grey, so what is seen through it is a little cooler and darker.
+    static let tint = NSColor(srgbRed: 0.035, green: 0.045, blue: 0.06, alpha: 1)
 
     static func material() -> PhysicallyBasedMaterial {
         var m = PhysicallyBasedMaterial()
-        m.baseColor = .init(tint: .init(srgbRed: 0.014, green: 0.018, blue: 0.026, alpha: 1))
+        m.baseColor = .init(tint: tint)
         m.metallic = 0.0
-        m.roughness = 0.03
+        m.roughness = 0.02
         m.specular = 1.0
         m.clearcoat = 1.0
-        m.clearcoatRoughness = 0.02
+        m.clearcoatRoughness = 0.01
         m.blending = .transparent(opacity: .init(floatLiteral: opacity))
         m.faceCulling = .none
         return m
@@ -1513,8 +1579,9 @@ enum HullPanels {
     /// close-up's scale (about 5 px per cm, then the 2x downsample); 4 / 2.5 mm are 2 and 1.2 output pixels there.
     /// Round 8 (r7b: the grid still too faint at the full close-up; pass 5's grooves read as about 2-3 px dark lines
     /// with a light edge at a smaller scale): 6 / 3 mm, about 2.8 and 1.4 px in the close-up.
-    static let grooveWidth: Float = 0.006
-    static let lipWidth: Float = 0.003
+    /// Round 10 (owner: fine panel seams, not tiles): 5 / 2.5 mm.
+    static let grooveWidth: Float = 0.005
+    static let lipWidth: Float = 0.0025
     /// How much darker a groove is (0-1) and how far a lip goes toward white.
     static let grooveDark: Float = 0.85
     static let lipLight: Float = 0.8
@@ -1522,15 +1589,24 @@ enum HullPanels {
     /// matching gentle slope into it in the normal map, so a seam still reads where the hairline itself is sub-pixel.
     /// Round 8: the blur runs twice (a tent, not a flat band) and is normalised so the shade is 1 at the groove and
     /// falls off linearly to nothing at about 2 x `aoWidth`; 8 mm and 0.55 (r7b: 6 mm, 0.45, a flat band at ~0.8).
+    /// Round 10: strength 0.55 -> 0.4 (thin, shallow seams).
     static let aoWidth: Float = 0.008
-    static let aoStrength: Float = 0.55
+    static let aoStrength: Float = 0.4
     /// Brushed grain: albedo streak contrast; the grain runs around the hull or along it, chosen per panel, and
     /// each panel's tone varies by up to +-`panelTone` (pass 5's panels are not one flat sheet).
     static let brush: Float = 0.06
     /// Round 8: 0.05 -> 0.07, so neighbouring panels separate a little more (pass 5's grid reads partly by tone).
     static let panelTone: Float = 0.07
     static let scratchLight: Float = 0.3
-    static let normalStrength: Float = 1.5
+    /// Round 10 (owner on r9: up close, at the end of the approach, at the hand-over and on the lower body at night,
+    /// the hull read as ceramic tile or rough plaster): the normal map now carries ONLY the seams (groove, lip and a
+    /// shallow slope into the groove) at a lower strength (1.5 -> 1.0). Grain, scratches and the detail tile no
+    /// longer bump the surface (`grainHeight`, `scratchHeight`, `detailHeight` 0); the panels are smooth, and
+    /// the brushed look comes from the anisotropic highlight and a faint albedo grain.
+    static let normalStrength: Float = 1.0
+    static let grooveSlope: Float = 0.3
+    static let grainHeight: Float = 0
+    static let scratchHeight: Float = 0
     /// Micro-scratches per band.
     static let scratches: [String: Int] = ["capsule": 9000, "body": 7000]
 
@@ -1669,9 +1745,15 @@ enum HullPanels {
     /// D142: a generated brushed-steel tile replaces the code grain and scratches when the pack has one. It is
     /// tiled every `detailTile` metres (rotated a quarter turn on panels whose grain runs along the hull) and enters
     /// the albedo at `detailAlbedo` and the height (normal map) at `detailHeight` per standard deviation.
+    ///
+    /// Round 10: the tile was point-sampled at the map's texel spacing (about 11 tile texels per map texel on the
+    /// body, 2-3 on the capsule), so the maps got aliased noise instead of brushing, which the normal map turned into
+    /// bumps: the "ceramic tile / plaster" of r9. It is now box-filtered over each map texel's footprint (a rip-map
+    /// per level pair, `Detail.box`) and enters the albedo only (`detailAlbedo` 0.05 -> 0.08 of the filtered value,
+    /// whose spread is smaller); `detailHeight` is 0.
     static let detailTile: Float = 0.5
-    static let detailAlbedo: Float = 0.05
-    static let detailHeight: Float = 0.1
+    static let detailAlbedo: Float = 0.08
+    static let detailHeight: Float = 0
 
     /// A greyscale detail tile, normalised to zero mean and unit deviation (clamped to +-3).
     struct Detail {
@@ -1696,6 +1778,29 @@ enum HullPanels {
             size = n
             values = raw.map { min(3, max(-3, ($0 - mean) / deviation)) }
         }
+
+        /// The tile averaged over boxes of 2^lx x 2^ly texels: (size >> lx) x (size >> ly) values.
+        func box(_ lx: Int, _ ly: Int) -> [Float] {
+            let n = size, fx = 1 << lx, fy = 1 << ly, wx = n >> lx, wy = n >> ly
+            var out = [Float](repeating: 0, count: wx * wy)
+            let norm = 1 / Float(fx * fy)
+            values.withUnsafeBufferPointer { v in
+                for y in 0..<wy {
+                    for x in 0..<wx {
+                        var sum: Float = 0
+                        for j in 0..<fy {
+                            let row = (y * fy + j) * n + x * fx
+                            for i in 0..<fx { sum += v[row + i] }
+                        }
+                        out[y * wx + x] = sum * norm
+                    }
+                }
+            }
+            return out
+        }
+
+        /// The rip-map level (0...10) for a footprint of `texels` tile texels.
+        static func level(_ texels: Float) -> Int { min(10, max(0, Int(log2(max(1, texels)).rounded()))) }
     }
 
     /// Both bands' maps (made once per process and detail source), or nil if a texture could not be made.
@@ -1891,10 +1996,22 @@ enum HullPanels {
         let circumference = (0..<h).map { row -> Float in
             2 * .pi * radius(band.bottom + (Float(h - 1 - row) + 0.5) / Float(h) * span)
         }
+        // Round 10: the detail tile filtered over each map texel's footprint (see `detailTile`).
+        var ripMaps: [Int: [Float]] = [:]
+        func ripMap(_ lx: Int, _ ly: Int) -> [Float] {
+            if let hit = ripMaps[lx * 16 + ly] { return hit }
+            let made = detail?.box(lx, ly) ?? []
+            ripMaps[lx * 16 + ly] = made
+            return made
+        }
+        let metresPerRow = span / Float(h)
         height.withUnsafeMutableBufferPointer { hb in
             albedo.withUnsafeMutableBufferPointer { ab in
                 for row in 0..<h {
                     let metresV = (Float(h - 1 - row) + 0.5) / Float(h) * span, metresPerCol = circumference[row] / Float(w)
+                    // Footprint levels: tile x runs around the hull on "around" panels and along it on "along" ones.
+                    let lu = Detail.level(metresPerCol * tileScale), lv = Detail.level(metresPerRow * tileScale)
+                    let around = detail == nil ? [] : ripMap(lu, lv), alongMap = detail == nil ? [] : ripMap(lv, lu)
                     for col in 0..<w {
                         let i = row * w + col
                         let g = Float(masks[4 * i]) / 255, l = Float(masks[4 * i + 1]) / 255, s = Float(masks[4 * i + 2]) / 255
@@ -1903,9 +2020,10 @@ enum HullPanels {
                         var streak: Float = 0, grain: Float = 0
                         if let detail {
                             let mu = Float(col) * metresPerCol
-                            let tx = Int((along ? metresV : mu) * tileScale), ty = Int((along ? mu : metresV) * tileScale)
-                            let n = detail.size
-                            grain = detail.values[(ty % n) * n + tx % n]
+                            let lx = along ? lv : lu, ly = along ? lu : lv
+                            let wx = detail.size >> lx, wy = detail.size >> ly
+                            let tx = Int((along ? metresV : mu) * tileScale) >> lx, ty = Int((along ? mu : metresV) * tileScale) >> ly
+                            grain = (along ? alongMap : around)[(ty % wy) * wx + tx % wx]
                         } else {
                             streak = along ? colNoise[col] * (0.5 + 0.5 * runNoise[(row / 48 + col * 7) & 4095])
                                 : rowNoise[row] * (0.5 + 0.5 * runNoise[(col / 48 + row * 7) & 4095])
@@ -1918,7 +2036,7 @@ enum HullPanels {
                         v += (1 - v) * scratchLight * s
                         let byte = srgb(v)
                         ab[4 * i] = byte; ab[4 * i + 1] = byte; ab[4 * i + 2] = byte
-                        hb[i] = -g - 0.6 * shade + 0.5 * l - 0.35 * s + 0.12 * streak + detailHeight * grain
+                        hb[i] = -g - grooveSlope * shade + 0.5 * l - scratchHeight * s + grainHeight * streak + detailHeight * grain
                     }
                 }
             }
@@ -2054,11 +2172,16 @@ enum CockpitBackdrop {
     /// The plane as a grid in (x, s), sides clipped to the capsule, with the image's texture coordinates
     /// (v = 0 at the bottom of the pad, 1 at the image's top row).
     static func mesh(imageAspect: Float, columns: Int = 24, rows: Int = 24) throws -> MeshResource {
+        let imageWidth = imageHeight * imageAspect
+        let vBottom = imageCentre - imageHeight / 2 - padBelow, vSpan = imageHeight + padBelow
+        return try mesh(columns: columns, rows: rows) { p, x, s in [x / imageWidth + 0.5, (s - vBottom) / vSpan] }
+    }
+
+    /// The plane grid with texture coordinates from `uv(position, x, s)`.
+    static func mesh(columns: Int = 24, rows: Int = 24, uv: (SIMD3<Float>, Float, Float) -> SIMD2<Float>) throws -> MeshResource {
         let angle = tilt * .pi / 180
         // Plane axes in the rocket frame: right = +x, up = y tilted toward +z, normal toward the camera below.
         let up = SIMD3<Float>(0, cos(angle), sin(angle))
-        let imageWidth = imageHeight * imageAspect
-        let vBottom = imageCentre - imageHeight / 2 - padBelow, vSpan = imageHeight + padBelow
         var positions: [SIMD3<Float>] = [], uvs: [SIMD2<Float>] = [], indices: [UInt32] = []
         for j in 0...rows {
             let s = planeBottom + (planeTop - planeBottom) * Float(j) / Float(rows)
@@ -2067,8 +2190,9 @@ enum CockpitBackdrop {
             let half = min(planeHalfWidth, sqrt(max(0, free * free - base.z * base.z)))
             for i in 0...columns {
                 let x = -half + 2 * half * Float(i) / Float(columns)
-                positions.append(base + SIMD3<Float>(x, 0, 0))
-                uvs.append([x / imageWidth + 0.5, (s - vBottom) / vSpan])
+                let p = base + SIMD3<Float>(x, 0, 0)
+                positions.append(p)
+                uvs.append(uv(p, x, s))
             }
         }
         let stride = UInt32(columns + 1)
@@ -2086,8 +2210,72 @@ enum CockpitBackdrop {
     }
 
     static func add(to root: Entity, image: CGImage) throws {
+        let aspect = Float(image.width) / Float(max(1, image.height))
+        try add(to: root, texture: prepared(image), mesh: mesh(imageAspect: aspect), brightness: brightness)
+    }
+
+    // MARK: Round 10: the real cockpit snapshot
+
+    /// A snapshot and the camera it is mapped from: the hand-over camera, with the rocket risen by `rise`.
+    struct Placement {
+        let snapshot: CockpitSnapshot
+        let camera: EntranceCamera
+        let rise: Double
+    }
+    /// The snapshot is a lit screen seen through glass: slightly below full brightness, its edges darkened by a soft
+    /// vignette (`vignette` at the corners), on the dark cabin colour where it is transparent or ends.
+    static let snapshotBrightness: CGFloat = 0.92
+    static let vignette: CGFloat = 0.35
+    static let cabin = CGColor(srgbRed: 0.018, green: 0.02, blue: 0.026, alpha: 1)
+    /// Dark texels round the picture, so clamp-to-edge continues the cabin colour, not the picture's edge.
+    static let border = 4
+
+    /// The snapshot on the dark cabin colour with the vignette and a dark border, as an sRGB bitmap.
+    static func preparedSnapshot(_ image: CGImage) throws -> CGImage {
+        let w = image.width + 2 * border, h = image.height + 2 * border
+        guard let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { throw BackdropError.context }
+        c.setFillColor(cabin)
+        c.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        c.interpolationQuality = .high
+        let inner = CGRect(x: border, y: border, width: image.width, height: image.height)
+        c.draw(image, in: inner)
+        if let shade = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+                                  colors: [CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0), CGColor(srgbRed: 0, green: 0, blue: 0, alpha: vignette)] as CFArray,
+                                  locations: [0.55, 1]) {
+            c.saveGState()
+            c.clip(to: inner)
+            let centre = CGPoint(x: inner.midX, y: inner.midY)
+            c.drawRadialGradient(shade, startCenter: centre, startRadius: 0, endCenter: centre,
+                                 endRadius: (inner.width * inner.width + inner.height * inner.height).squareRoot() / 2, options: [.drawsAfterEndLocation])
+            c.restoreGState()
+        }
+        guard let out = c.makeImage() else { throw BackdropError.context }
+        return out
+    }
+
+    /// The backdrop showing the real cockpit. Each grid vertex takes the texture coordinate of where the hand-over
+    /// camera sees it on the viewport, inside the snapshot's frame: projective texturing baked into the 24 x 24
+    /// grid. At the end of the hand-over the glass therefore shows the snapshot exactly where the cockpit will draw
+    /// it; from the end pose (the same line of sight, farther back) it reads as the same picture behind the glass.
+    static func add(to root: Entity, snapshot placement: Placement) throws {
+        let snapshot = placement.snapshot, frame = snapshot.frame
+        let image = try preparedSnapshot(snapshot.image)
+        let pxPerPoint = Double(snapshot.image.width) / max(1, frame.width)
+        let w = Double(image.width), h = Double(image.height), b = Double(border)
+        let grid = try mesh { p, _, _ in
+            let world = root.convert(position: p, to: nil)
+            let seen = placement.camera.project(EntranceVector(Double(world.x), Double(world.y) + placement.rise, Double(world.z))).point
+            let px = (seen.x - frame.left) * pxPerPoint + b, py = (seen.y - frame.top) * pxPerPoint + b
+            return [Float(px / w), Float(1 - py / h)]
+        }
+        try add(to: root, texture: image, mesh: grid, brightness: snapshotBrightness)
+    }
+
+    static func add(to root: Entity, texture image: CGImage, mesh: MeshResource, brightness: CGFloat) throws {
         guard root.findEntity(named: name) == nil else { return }
-        let resource = try TextureResource.generate(from: prepared(image), options: .init(semantic: .color))
+        let resource = try TextureResource.generate(from: image, options: .init(semantic: .color))
         var texture = MaterialParameters.Texture(resource)
         let d = MTLSamplerDescriptor()
         d.sAddressMode = .clampToEdge
@@ -2099,8 +2287,7 @@ enum CockpitBackdrop {
         var material = UnlitMaterial()
         material.color = .init(tint: NSColor(white: brightness, alpha: 1), texture: texture)
         material.faceCulling = .none
-        let aspect = Float(image.width) / Float(max(1, image.height))
-        let entity = ModelEntity(mesh: try mesh(imageAspect: aspect), materials: [material])
+        let entity = ModelEntity(mesh: mesh, materials: [material])
         entity.name = name
         root.addChild(entity)
     }
@@ -2438,7 +2625,8 @@ public enum EntranceLook {
 
     /// Image-based light exponent for the canopy glass's own environment (`glassStudio`).
     /// Round 8: +0.5 (night 1.5, day 2.0), making up for the lower glass opacity, which also dims the reflection.
-    public static func glassEnvironmentExponent(_ theme: EntranceTheme) -> Float { theme == .day ? 2.0 : 1.5 }
+    /// Round 10: +0.9 (night 2.4, day 2.9) for the glass opacity 0.5 -> 0.3, which dims the reflection with it.
+    public static func glassEnvironmentExponent(_ theme: EntranceTheme) -> Float { theme == .day ? 2.9 : 2.4 }
 
     /// The canopy glass's environment: a near-black room with no bright ceiling, so the glass never turns white at
     /// grazing angles. Round 5 (pass 5: curved reflection streaks along the glass's edges): the glass spans about
@@ -2454,12 +2642,37 @@ public enum EntranceLook {
             var v = 0.004 + 0.008 * max(0, sin(e * Double.pi / 180))
             v = max(v, 1.0 * strip(az, e, centre: -glassStreakAzimuth, half: 5, low: -15, high: 80, soft: 5))
             v = max(v, 0.8 * strip(az, e, centre: glassStreakAzimuth, half: 4, low: -15, high: 80, soft: 5))
-            v = max(v, 0.55 * strip(az, e, centre: -35, half: 25, low: 70, high: 84, soft: 8))
+            v = max(v, 0.35 * strip(az, e, centre: -35, half: 25, low: 70, high: 84, soft: 8))
             v = max(v, 0.2 * strip(az, e, centre: 0, half: 30, low: 36, high: 42, soft: 6))
             v = max(v, glassSheen * sheen(az, e))
+            v = max(v, sun(az, e))
             return v
-        }
+        } star: { x, y in EntranceLook.stars[y &* 512 &+ x] }
     }
+
+    /// Round 10 (owner: glass that looks real): what the glass reflects besides the studio strips, very faintly:
+    /// the sun where the key light comes from (above left, in front) and the starfield of the black sky.
+    public static let sunAzimuth = -38.7, sunElevation = 49.5
+    static func sun(_ az: Double, _ e: Double) -> Double {
+        let da = abs((az - sunAzimuth + 540).truncatingRemainder(dividingBy: 360) - 180) * cos(e * Double.pi / 180)
+        let d = (da * da + (e - sunElevation) * (e - sunElevation)).squareRoot()
+        return 0.9 * exp(-(d / 1.6) * (d / 1.6)) + 0.08 * exp(-(d / 6) * (d / 6))
+    }
+    /// About 600 single-texel stars in the upper hemisphere of the 512 x 256 glass environment (deterministic).
+    static let stars: [Double] = {
+        var field = [Double](repeating: 0, count: 512 * 256)
+        var state: UInt64 = 0x57A2_F1E1
+        func next() -> Double {
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Double(state >> 40) / Double(1 << 24)
+        }
+        for _ in 0..<600 {
+            let x = Int(next() * 512) % 512, y = Int(next() * 120) % 128
+            let level = next()
+            field[y * 512 + x] = 0.08 + 0.5 * level * level * level
+        }
+        return field
+    }()
 
     /// Round 8 (pass 5: soft reflection streaks across the glass, not only one glint): a broad, faint, slanted
     /// sheen. From 20 degrees below, the glass centre reflects about 49 degrees up in front (az 0), its top higher
@@ -2467,7 +2680,8 @@ public enum EntranceLook {
     /// the sky, leaning so their reflection runs diagonally from upper left to lower right across the glass, the
     /// left one brighter (the key side). Glass reflects only a few per cent at these angles, so `glassSheen` is
     /// high for a faint result.
-    public static let glassSheen = 0.3
+    /// Round 10: 0.3 -> 0 (owner: the glass looked fake; the broad soft bands read as a milky veil, not glass).
+    public static let glassSheen = 0.0
     static func sheen(_ az: Double, _ e: Double) -> Double {
         func band(_ centre: Double, _ half: Double) -> Double {
             // The band's centre azimuth moves with elevation, so it slants across the glass.
@@ -2494,7 +2708,7 @@ public enum EntranceLook {
 
     /// A 512 x 256 equirectangular grey image from linear light values (azimuth in the scene's convention,
     /// elevation, in degrees), sRGB-encoded.
-    static func equirect(_ value: (Double, Double) -> Double) -> CGImage? {
+    static func equirect(_ value: (Double, Double) -> Double, star: ((Int, Int) -> Double)? = nil) -> CGImage? {
         let w = 512, h = 256
         guard let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -2507,7 +2721,7 @@ public enum EntranceLook {
             for x in 0..<w {
                 let image = 360 * (Double(x) + 0.5) / Double(w) - 180
                 let az = (image + imageCentreAzimuth + 540).truncatingRemainder(dividingBy: 360) - 180
-                let linear = min(1, max(0, value(az, e)))
+                let linear = min(1, max(0, value(az, e) + (star?(x, y) ?? 0)))
                 let encoded = linear <= 0.0031308 ? 12.92 * linear : 1.055 * pow(linear, 1 / 2.4) - 0.055
                 let o = (y * w + x) * 4
                 let level = UInt8((encoded * 255).rounded())
