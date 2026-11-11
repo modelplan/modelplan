@@ -1,0 +1,26 @@
+{
+  "command": [
+    "consent",
+    "--json"
+  ],
+  "syntheticHomeOnly": true,
+  "ownerHomeDenied": true,
+  "networkDenied": true,
+  "allReadersOff": true,
+  "capturePlatform": "linux_arm64",
+  "sourceRelease": "https://github.com/modelplan/modelplan/releases/tag/v0.5.57",
+  "sourceCommit": "456e9d592b3fa6b140bfd18e7627023cd67bea28",
+  "sourceArchiveSHA256": "86acd765be274be2e5299c2a90f473229317349da8fa2f4588e1bf0dc03680ea",
+  "rawSourceHelperSHA256": "b99e72fbb58bea013e87ed5e12b63a20db982c11b48fd378193cfb6ee3ece8b9",
+  "outputSHA256": "0544eda3132bb8c863a813542df94a524659d6f6cadcb6949db1ed0405fee18c",
+  "bytes": 3328,
+  "exit": 0,
+  "isolation": {
+    "filesystem": "Landlock ABI 4 allowed file access only in the synthetic HOME and read/execute of the verified executable; an explicit read of a file outside it failed with EACCES before exec",
+    "network": "seccomp denied socket, connect and bind; an explicit socket probe failed with EPERM before exec, and MODELPLAN_BASE pointed at a closed local port with all readers, history, CodexBar and account reads off",
+    "outsideDirectoryReadDenied": true,
+    "networkSocketDenied": true
+  },
+  "purpose": "complete real released-CLI contract fixture; synthetic metadata only, not an owner observation",
+  "cliVersion": "0.5.57"
+}

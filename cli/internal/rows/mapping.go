@@ -9,6 +9,9 @@ type Outcome struct {
 	Text   Text
 }
 
+// G3-38 (owner D52): CodeNotSignedIn is a tool that is installed but signed out (for Claude
+// Code, no credentials file and no Keychain login item). Nothing to read and nothing to fix in
+// ModelPlan; the row stays in Settings and the menu and leaves the Dock.
 var outcomes = map[Code]Outcome{
 	CodeOK:                            {State: StateFresh, Code: CodeOK, Action: ActionNone, Text: Text{EN: "Reading available", ZH: "已读到用量"}},
 	CodeEstimated:                     {State: StateFresh, Code: CodeEstimated, Action: ActionNone, Text: Text{EN: "Estimated reading", ZH: "估算读数"}},
@@ -30,6 +33,7 @@ var outcomes = map[Code]Outcome{
 	CodeCatalogueRetired:              {State: StateNeedsAction, Code: CodeCatalogueRetired, Action: ActionOpenSettingsConsent, Text: Text{EN: "The allowed tool was retired from the catalogue", ZH: "已授权工具已从目录移除"}},
 	CodeHTTP401:                       {State: StateNeedsAction, Code: CodeHTTP401, Action: ActionOpenSettingsConsent, Text: Text{EN: "The provider rejected the saved sign-in", ZH: "服务商拒绝了已保存的登录"}},
 	CodeUnsupportedLogin:              {State: StateNeedsAction, Code: CodeUnsupportedLogin, Action: ActionOpenSettingsConsent, Text: Text{EN: "This saved sign-in is not supported", ZH: "不支持此已保存的登录"}},
+	CodeNotSignedIn:                   {State: StateNeedsAction, Code: CodeNotSignedIn, Action: ActionNone, Text: Text{EN: "Not signed in", ZH: "未登录"}},
 	CodePrivacyBlocked:                {State: StateOff, Code: CodePrivacyBlocked, Action: ActionOpenSettingsConsent, Text: Text{EN: "Privacy settings block this reader", ZH: "隐私设置阻止此读取器"}},
 	CodeCatalogueOff:                  {State: StateOff, Code: CodeCatalogueOff, Action: ActionOpenSettingsConsent, Text: Text{EN: "This reader route is disabled", ZH: "此读取路由已停用"}},
 	CodePolicyPending:                 {State: StateOff, Code: CodePolicyPending, Action: ActionOpenSettingsConsent, Text: Text{EN: "This scope is awaiting approval", ZH: "此读取范围正在等待批准"}},
@@ -99,6 +103,7 @@ var signalCodes = map[signalKey]Code{
 	{SignalError, "runtime_missing"}:                    CodeRuntimeMissing,
 	{SignalError, "http_401"}:                           CodeHTTP401,
 	{SignalError, "unsupported_login"}:                  CodeUnsupportedLogin,
+	{SignalError, "not_signed_in"}:                      CodeNotSignedIn,
 	{SignalError, "other"}:                              CodeOther,
 	{SignalError, "file_missing"}:                       CodeFileMissing,
 	{SignalError, "file_unreadable"}:                    CodeFileUnreadable,
@@ -152,7 +157,7 @@ var signalCodes = map[signalKey]Code{
 	{SignalKeychain, "denied"}:                          CodeKeychainDenied,
 	{SignalKeychain, "keychain_denied"}:                 CodeKeychainDenied,
 	{SignalKeychain, "canceled"}:                        CodeKeychainCanceled,
-	{SignalKeychain, "not-found"}:                       CodeKeychainNotFound,
+	{SignalKeychain, "not-found"}:                       CodeNotSignedIn,
 	{SignalKeychain, "unavailable"}:                     CodeKeychainUnavailable,
 	{SignalKeychain, "keychain-confirmation-needed"}:    CodeKeychainConfirmationNeeded,
 	{SignalKeychain, "confirmation-needed"}:             CodeKeychainConfirmationNeeded,

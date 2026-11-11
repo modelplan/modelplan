@@ -10,22 +10,31 @@ import ModelPlanWire
   var onClosed: (() -> Void)? { get set }
   /// CKP-SHELL-20: once per open, when the page is first confirmed visible.
   var onShown: (() -> Void)? { get set }
+  /// D88: the attachment or the settled open changed (detach, put back, drop, entrance end).
+  var onShellChanged: (() -> Void)? { get set }
+  /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
+  var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
   /// CKP-SHELL-20: build and load the page without showing it or taking focus.
   func prewarm()
   func open()
   func requestClose()
   func updateAppearance(_ appearance: CockpitAppearance)
   func updateScope(_ key:String)
+  /// G3-56: the acknowledged caution identities to restore; applied before the page loads.
+  func setAckedCautions(_ ids:[String])
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
   func clearPrivateViews(adopting: CockpitEngineContext?) async
   func discard()
 }
 public extension CockpitPageSurface {
   var onShown: (() -> Void)? { get { nil } set {} }
+  var onShellChanged: (() -> Void)? { get { nil } set {} }
+  var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
   func prewarm() {}
   func requestClose() { discard() }
   func updateAppearance(_ appearance: CockpitAppearance) {}
   func updateScope(_ key:String) {}
+  func setAckedCautions(_ ids:[String]) {}
 }
 extension CockpitWindowController: CockpitPageSurface {}
 
@@ -33,6 +42,12 @@ extension CockpitWindowController: CockpitPageSurface {}
 @MainActor public protocol CockpitScopeMemory: AnyObject {
   func load() -> (key: String, day: String)?
   func save(_ value: (key: String, day: String)?)
+}
+
+/// G3-56: where the app keeps the caution identities the owner acknowledged, so the lamp stays steady after a restart.
+@MainActor public protocol CockpitCautionMemory: AnyObject {
+  func load() -> [String]
+  func save(_ ids: [String])
 }
 
 private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked Sendable {
@@ -67,6 +82,11 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       guard let saved = scopeMemory?.load(), Self.persistable(saved.key), saved.day == dayKey(currentDate()) else { return }
       selectedScope = saved.key; scopeDay = calendarDay(currentDate())
     }
+  }
+  /// G3-56: the acknowledged caution identities. Restored at load, replaced whenever the page reports a press.
+  public private(set) var ackedCautions: [String] = []
+  public var cautionMemory: (any CockpitCautionMemory)? {
+    didSet { let ids = cautionMemory?.load() ?? []; ackedCautions = CockpitCautionIdentities.valid(ids) ? ids : [] }
   }
   private static func persistable(_ key: String) -> Bool {
     key != "all" && CockpitMemberScopes.isValidKey(key) && !CockpitMemberScopes.isIndexedFallback(key)
@@ -121,6 +141,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public var onUnavailable: ((CockpitUnavailableReason) -> Void)?
   public var onClosed: (() -> Void)?
   public var onOpened: (() -> Void)?
+  /// D88: forwarded from the presented page only.
+  public var onShellChanged: (() -> Void)?
+  /// D88: the presented page's detach / put-back key, for the one-time hints.
+  public var attachmentHintAnchor: CockpitAttachmentHintAnchor? { presented ? page?.attachmentHintAnchor : nil }
 
   public init(downstream: (any EngineClientEventConsumer)? = nil, makePage: @escaping PageFactory) {
     self.downstream = downstream
@@ -204,6 +228,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// One page and its callbacks; the same for a prewarmed page and one made by a click.
   private func makeWiredPage(_ context: CockpitEngineContext) throws -> any CockpitPageSurface {
     let newPage = try makePage(context)
+    newPage.setAckedCautions(ackedCautions)
     let generation = UUID()
     pageGeneration = generation
     newPage.onReady = { [weak self] in
@@ -220,6 +245,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       self.showLastReply()
       // A query already running was asked after this page loaded; its reply is fresh.
       if self.request == nil { self.refresh() }
+    }
+    newPage.onShellChanged = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.onShellChanged?()
     }
     newPage.onIntent = { [weak self] intent in
       guard self?.pageGeneration == generation else { return }; self?.receiveIntent(intent)
@@ -315,6 +344,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   }
   private func stopWatchingMemoryPressure() { memorySource?.cancel(); memorySource = nil }
   private func receiveIntent(_ intent:CockpitIntent) {
+    if case .cautionAck(let ids)=intent {
+      guard CockpitCautionIdentities.valid(ids) else { return }
+      ackedCautions=ids; cautionMemory?.save(ids); return
+    }
     if case .scopeSelect(let key)=intent {
       guard delivery != nil,scopeMembers.contains(key) else { return }
       selectedScope=key; scopeDay=calendarDay(currentDate()); page?.updateScope(key)
@@ -419,7 +452,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         if let page { await clearKeepingWarmCount(page, adopting: nil); page.updateScope(selectedScope) }
         break
       }
-      if invalidation.reason == .generationAdvanced || invalidation.reason == .epochChanged { scopeMemory?.save(nil) }
+      if invalidation.reason == .generationAdvanced || invalidation.reason == .epochChanged { scopeMemory?.save(nil); cautionMemory?.save([]); ackedCautions = [] }
       delivery = nil; selectedScope="all"; scopeMembers.removeAll()
       // Do not adopt a guessed session from nextFloor. The subsequent
       // admitted context event supplies the complete authoritative identity.

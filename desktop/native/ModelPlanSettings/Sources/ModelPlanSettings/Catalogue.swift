@@ -9,7 +9,7 @@ public struct SettingsText: Equatable, Sendable {
 public enum SettingKey: String, CaseIterable, Sendable {
     case theme, size, motion, transparency, percentageMode, showPercentages, percentagePin, redBelow, sliverAlert
     case showDock, autoHide, reveal, magnification, fullscreen, captureHiding, activeDisplay, order
-    case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints
+    case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints, cockpitSize
     case notificationConsent, forecast, reset, official, expiring, stale
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
     case appVersion, cliStatus, architecture, diagnostics, readerDetails, refreshHistory, feedback, licenses, consentHelp
@@ -139,12 +139,12 @@ public struct SettingsPageContext: Sendable {
         let shortcuts = SettingsText("Unavailable until shortcuts can be registered.", "快捷键可注册前不可用。")
         let notices = SettingsText("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
         let surfaces = SettingsText("Unavailable until all views support this setting.", "所有界面支持此设置前不可用。")
-        for key in [SettingKey.magnification, .showPercentages, .sliverAlert, .fullscreen, .redBelow] { unavailableControls[key] = dock }
+        for key in [SettingKey.magnification, .sliverAlert, .fullscreen] { unavailableControls[key] = dock }
         for key in [SettingKey.percentagePin, .order, .visible, .alias] { unavailableControls[key] = members }
         for key in [SettingKey.login, .notificationConsent, .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] { unavailableControls[key] = services }
         for key in [SettingKey.openShortcut, .dockShortcut] { unavailableControls[key] = shortcuts }
         for key in [SettingKey.forecast, .reset, .official, .expiring, .stale] { unavailableControls[key] = notices }
-        for key in [SettingKey.language, .menuDisplay, .projectNames] { unavailableControls[key] = surfaces }
+        for key in [SettingKey.menuDisplay, .projectNames] { unavailableControls[key] = surfaces }
         unavailableControls[.automaticUpdates] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.updateStatus] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")
@@ -259,6 +259,7 @@ public enum SettingsCatalogue {
         .init(.dockShortcut,"Find Quota Widget shortcut","找到额度挂件快捷键","Shows where the Quota Widget is. Text editing and composition do not trigger shortcuts.","显示额度挂件的位置；文本编辑与输入法组合期间不触发。"),
         .init(.language,"Language","语言","Choose Chinese or English.","选择中文或英文。"),
         .init(.opening,"Cockpit opening","打开驾驶舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
+        .init(.cockpitSize,"Cockpit size","驾驶舱大小","Auto uses 85 % on laptop screens and 100 % on larger displays. On a screen too short for the size, the whole cockpit is drawn smaller to fit.","自动：笔记本屏幕用 85%，更大的显示器用 100%。屏幕放不下时，整个驾驶舱会再缩小以适配。"),
         .init(.countdown,"Countdown beat","倒数节奏","Three beats follow the 200 ms hold boundary.","按住200毫秒后开始三拍倒数。"),
         .init(.resetHints,"Show hints again","重新显示提示","Reset the first-use hints and the cockpit and Quota Widget open budgets.","重置首次提示及打开驾驶舱、额度挂件展开的提示预算。"),
         .init(.notificationConsent,"Enable notifications","开启通知","Ask for permission only after explicit opt-in.","仅在主动开启后请求通知权限。"),
@@ -407,6 +408,7 @@ public enum SettingsCatalogue {
         case .dockShortcut: return .text(shortcut(p.dockShortcut))
         case .language: return choices(p.language)
         case .opening: return choices(p.opening)
+        case .cockpitSize: return choices(p.cockpitSize)
         case .countdown: return .choice(String(p.beatMilliseconds), options: [150,200,250].map(String.init))
         case .resetHints: return .action(.resetHelpHints)
         case .loginSystemSettings, .notificationSystemSettings: return .action(nil)

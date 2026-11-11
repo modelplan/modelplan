@@ -117,6 +117,21 @@ public enum HelpUILayout {
             let ends=[CGPoint(x:item.anchor.minX-4,y:item.anchor.midY),.init(x:item.anchor.maxX+4,y:item.anchor.midY),
                       .init(x:item.anchor.midX,y:item.anchor.minY-4),.init(x:item.anchor.midX,y:item.anchor.maxY+4)]
             var leader=[CGPoint]()
+            if input.map.straightLeaders {
+                // The caption edge that faces the target, to the target's nearest edge. Labels that share a target
+                // are spread along its edge so that their lines stay apart where they arrive.
+                let siblings=placed.filter { $0.0.anchor == item.anchor }.map { $0.0.id }
+                let rank=CGFloat(siblings.firstIndex(of:item.id) ?? 0)-CGFloat(siblings.count-1)/2
+                let spread=min(6,item.anchor.height/CGFloat(max(1,siblings.count)))
+                let toRight=frame.minX >= item.anchor.maxX, toLeft=frame.maxX <= item.anchor.minX
+                let start=toRight ? CGPoint(x:frame.minX-4,y:frame.midY) : toLeft ? CGPoint(x:frame.maxX+4,y:frame.midY)
+                    : CGPoint(x:frame.midX,y:frame.midY < item.anchor.midY ? frame.maxY+4:frame.minY-4)
+                let y=min(item.anchor.maxY-1,max(item.anchor.minY+1,item.anchor.midY+rank*spread))
+                let end=toRight ? CGPoint(x:item.anchor.maxX+4,y:y) : toLeft ? CGPoint(x:item.anchor.minX-4,y:y)
+                    : CGPoint(x:min(item.anchor.maxX-1,max(item.anchor.minX+1,item.anchor.midX+rank*spread)),
+                              y:frame.midY < item.anchor.midY ? item.anchor.minY-4:item.anchor.maxY+4)
+                leader=[start,end]
+            }
             for start in starts where leader.isEmpty {
                 for end in ends.sorted(by:{hypot($0.x-start.x,$0.y-start.y)<hypot($1.x-start.x,$1.y-start.y)}) where leader.isEmpty {
                     leader=HelpUIGeometry.leader(from:start,to:end,avoiding:blocks,viewport:input.viewport)

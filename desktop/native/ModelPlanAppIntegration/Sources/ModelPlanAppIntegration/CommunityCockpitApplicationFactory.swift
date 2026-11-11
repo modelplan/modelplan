@@ -75,6 +75,7 @@ import ModelPlanDock
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
                 coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
                 coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
+                coordinator.cautionMemory = FileCockpitCautionMemory(url: settingsStore.directory.appendingPathComponent("cockpit-cautions.json"))
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
@@ -101,6 +102,9 @@ import ModelPlanDock
             if prewarms { owner.startPrewarm(applied: { [weak application] in application?.composition.latestSettings }) }
         }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
+        owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
+        owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
+        application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
         return application
     }
 }
@@ -116,6 +120,21 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
+    /// Right-click menu hooks, set by the factory beside `settings`.
+    var setSize: ((SettingsSize) -> Void)?
+    var currentSize: (() -> SettingsSize?)?
+    weak var currentPage: CockpitWindowController?
+    private var contextMenu: CockpitContextMenu?
+    /// The cockpit's own right-click menu: Settings…, Reset Position, Quota Widget Size, Help.
+    func makeContextMenu(page: CockpitWindowController?) -> NSMenu {
+        let menu = CockpitContextMenu(language: appearance.locale == .en ? .english : .chinese, size: currentSize?(),
+            actions: .init(settings: { [weak self] in self?.settings?() },
+                           resetPosition: { [weak page] in page?.resetPosition() },
+                           help: { [weak page] in page?.showHelpMap() },
+                           setSize: { [weak self] in self?.setSize?($0) }))
+        contextMenu = menu
+        return menu.menu
+    }
     /// The one way a cockpit website link leaves the app; tests read the URL instead of a browser.
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
@@ -169,13 +188,15 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         case .system:theme=NSApplication.shared.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
         }
         appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
-            redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames)
+            redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,showUsedPercent:snapshot.preferences.percentageMode == .used,
+            size:CockpitSize(snapshot.preferences.cockpitSize))
         if let applied { appearance=cockpitAppearance(applied) }
     }
     func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
         let e=value.effective
         return .init(theme:appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
-            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames)
+            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames,showUsedPercent:e.showUsedPercent,
+            size:CockpitSize(e.cockpitSize))
     }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL
@@ -188,6 +209,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
+        currentPage = page
+        page.contextMenuProvider = { [weak self, weak page] in self?.makeContextMenu(page: page) }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
         #endif
@@ -214,6 +237,25 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
 }
 
+/// G3-56: the acknowledged caution identities in one small file beside the settings. Opaque ids only, no readings.
+@MainActor final class FileCockpitCautionMemory: CockpitCautionMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> [String] {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 16 * 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let ids = value["acked"] as? [String], CockpitCautionIdentities.valid(ids) else { return [] }
+        return ids
+    }
+    func save(_ ids: [String]) {
+        guard !ids.isEmpty else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["acked": ids], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
 /// Both menu and Dock actions are retained by EngineDockMenuApplication.showConsole.
 /// Rendering comes only from the same client's ordered typed response, never
 /// from retagging the Store's cached cockpit DTO with a newer context.
@@ -229,6 +271,7 @@ struct CockpitUnavailableNotice {
     var showTask: Task<Void,Never>?
     var wantsVisible=false
     private var pageOpened = false
+    private var entrance: CockpitEntrance = .fade
     var fallback: EngineRowsConsole?
     private var appliedSettings: SettingsApplication?
     private let isForeground: @MainActor () -> Bool
@@ -247,6 +290,8 @@ struct CockpitUnavailableNotice {
             self?.pageOpened = true
             onOpened?()
         }
+        // D88: a detach, a put back or the settled open refreshes the icon highlight and the hints.
+        owner.coordinator?.onShellChanged = { [weak self] in self?.onShowingChanged?() }
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
             self.wantsVisible = false
@@ -262,10 +307,13 @@ struct CockpitUnavailableNotice {
     }
     private var fieldPanel:CockpitFieldPanel?
     var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
-    func fieldPayload() -> String? {
+    /// `focusName`: the published display name of a rocket clicked in the porthole still (D63); an unknown name
+    /// focuses nothing. Only the matching public model ID crosses.
+    func fieldPayload(focusName:String?=nil) -> String? {
         guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
         let mine=details.publication?.models.map(\.id) ?? []
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:nil)
+        let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:focus)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -274,16 +322,17 @@ struct CockpitUnavailableNotice {
         case .chooseSetup,.openSettings:owner.settings?()
         case .openHistory:unavailable(path:"intent.openHistory",history:true)
         case .openField:openField()
+        case .openFieldAt(let name):openField(focusName:name)
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()
         }
     }
-    private func openField() {
-        guard let bundle=owner.verifiedBundle,let payload=fieldPayload() else { return }
+    private func openField(focusName:String?=nil) {
+        guard let bundle=owner.verifiedBundle,let payload=fieldPayload(focusName:focusName) else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
         fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
     }
@@ -293,7 +342,12 @@ struct CockpitUnavailableNotice {
         owner.appearance=owner.cockpitAppearance(value)
         owner.coordinator?.updateAppearance(owner.appearance)
     }
-    func show() {
+    var isDetached: Bool { owner.shell.detached }
+    var attachmentHintAnchor: CockpitAttachmentHintAnchor? { wantsVisible ? owner.coordinator?.attachmentHintAnchor : nil }
+    func show() { show(fromStatusItem: false) }
+    func show(fromStatusItem: Bool) {
+        // D88: only the menu bar icon grows the cockpit out of itself; the ignition keeps its own entrance.
+        entrance = fromStatusItem ? .growFromIcon : .fade
         wantsVisible=true
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
@@ -309,7 +363,9 @@ struct CockpitUnavailableNotice {
             if owner.coordinator?.presented == false { owner.coordinator?.updateAppearance(owner.appearance) }
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
+            owner.shell.nextEntrance = entrance
             owner.coordinator?.open()
+            owner.shell.nextEntrance = .fade
             showTask = nil
         }
     }
@@ -357,6 +413,19 @@ struct CockpitUnavailableNotice {
                 if fallback == nil { fallback=EngineRowsConsole(composition:composition) };fallback?.show()
             default:break
             }
+        }
+    }
+}
+
+/// Settings "Cockpit size" (CKP-SHELL-07) to the cockpit window's size: the same five choices.
+extension CockpitSize {
+    init(_ value: SettingsCockpitSize) {
+        switch value {
+        case .automatic: self = .automatic
+        case .percent80: self = .percent80
+        case .percent85: self = .percent85
+        case .percent90: self = .percent90
+        case .percent100: self = .percent100
         }
     }
 }
