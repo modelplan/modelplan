@@ -22,24 +22,27 @@ export function stillRocketAt(field:HTMLElement,x:number,y:number,radius=28):str
 }
 export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:StillPack|null,enlarge?:(focus?:string)=>void):{dispose():void}|null{
   if(!pack?.projections.length)return null;
-  // The port opens the enlarged field by click, double-click, Enter, Space or its ⤢ key (the community edition has no
-  // field). A click on a rocket focuses that rocket. The second click of a double-click and the dblclick itself do not
-  // ask again (prototype porthole.js bindPorthole: "idempotent after the first click").
+  // The port opens the enlarged field by click or double-click, and its ⤢ key opens it by click, Enter or Space (the
+  // community edition has no field). A click on a rocket focuses that rocket. The second click of a double-click and the
+  // dblclick itself do not ask again (prototype porthole.js bindPorthole: "idempotent after the first click").
+  // Build 14c: the port itself is not focusable. As a tabIndex=0 role=button div it kept focus after a click (or after the
+  // field closed), and the next key press made WebKit match :focus-visible, which lit the ⤢ key gold without it being
+  // pressed. The ⤢ key is the one keyboard control: Tab reaches it and its own :focus-visible draws the ring. A pointer
+  // press on the key does not move focus to it, so a later key press cannot light it either.
   const port=field.parentElement,opener=new AbortController();let big:HTMLButtonElement|null=null;
   if(port&&enlarge){
-   port.tabIndex=0;port.setAttribute('role','button');
+   port.dataset.opensField='';
    big=document.createElement('button');big.type='button';big.className='hud-x port-big';big.dataset.bigfield='';big.textContent='⤢';port.append(big);
-   const name=()=>{const en=document.documentElement.lang==='en';port.setAttribute('aria-label',en?'Open the 3D view':'打开 3D 视图');
+   const name=()=>{const en=document.documentElement.lang==='en';
     big?.setAttribute('aria-label',en?'Open the 3D launch field · Or click anywhere on the field':'打开 3D 发射场 · 点击视野也可以打开');};name();
-   port.addEventListener('focus',name,{signal:opener.signal});
    big.addEventListener('focus',name,{signal:opener.signal});
+   big.addEventListener('mousedown',e=>e.preventDefault(),{signal:opener.signal});
    big.addEventListener('click',e=>{e.stopPropagation();if(e.isTrusted&&e.detail<2)enlarge();},{signal:opener.signal});
    big.addEventListener('dblclick',e=>e.stopPropagation(),{signal:opener.signal});
    // The HUD lives inside the port and has its own actions; they must not open the field too.
    // A HUD click repaints the rows before it bubbles here, so the event's path is read, not the detached target.
    const inHud=(e:Event)=>e.composedPath().some(n=>n instanceof Element&&n.classList.contains('hud'));
    port.addEventListener('click',e=>{if(!e.isTrusted||inHud(e)||e.detail>1)return;const rocket=stillRocketAt(field,e.clientX,e.clientY);if(rocket)enlarge(rocket);else enlarge();},{signal:opener.signal});
-   port.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!inHud(e)&&e.target!==big){e.preventDefault();enlarge();}},{signal:opener.signal});
   }
   // A HUD row lights its rocket by published display name, the one key the still's roster and the publication share.
   const lit=(event:Event)=>{const name=(event as CustomEvent<string|null>).detail;for(const e of field.querySelectorAll<HTMLElement>('[data-model-name]'))e.classList.toggle('ck-hot',e.dataset.modelName===name);};
@@ -61,7 +64,10 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
     placeBig();
     const theme=document.documentElement.dataset.theme==='day'?'day':'night',layout=cockpit.dataset.layout==='640'?640:890;
     const frame=pack.projections.find(p=>p.theme===theme&&p.layout===layout);
-    const port=field.parentElement??field,W=port.clientWidth,H=port.clientHeight;
+    // The field may reach past the port's padding box (official edition, G3-82: the canopy art box); its
+    // computed insets hold even while it is hidden, so the still is sized to the box it will fill.
+    const port=field.parentElement??field,cs=getComputedStyle(field),inset=(v:string)=>parseFloat(v)||0;
+    const W=port.clientWidth-inset(cs.left)-inset(cs.right),H=port.clientHeight-inset(cs.top)-inset(cs.bottom);
     if(!frame||!W||!H){field.dataset.still=frame?'sizing':'none';return;}
     const key=`${frame.id}:${W}x${H}`;if(key===painted)return;painted=key;
     // Cover the field like a background: scale to the larger ratio and centre; the port clips the rest.

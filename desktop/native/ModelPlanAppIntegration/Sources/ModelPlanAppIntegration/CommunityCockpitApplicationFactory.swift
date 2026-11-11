@@ -31,6 +31,7 @@ import ModelPlanDock
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
     static var verificationConsoleNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
+    static var verificationNoticeGrace: Duration?
     /// The coordinator's prewarm and open steps, for timing tests.
     public static var verificationCockpitTrace: ((String) -> Void)?
     /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
@@ -82,7 +83,8 @@ import ModelPlanDock
                 if let makeConsole { return makeConsole(composition) }
                 #if MODELPLAN_TEST_ONLY_SPI
                 if let verificationNotice {
-                    return SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{ true },activate:{},requestNotice:verificationNotice)
+                    return SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{ true },activate:{},requestNotice:verificationNotice,
+                                                     noticeGrace:CommunityCockpitApplicationFactory.verificationNoticeGrace ?? SharedEngineCockpitConsole.defaultNoticeGrace)
                 }
                 if verificationFactory != nil {
                     return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
@@ -91,6 +93,7 @@ import ModelPlanDock
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
+        owner.openPoint = { [weak application] in application?.cockpitOpenPoint }
         if application.cockpitEntryEnabled {
             owner.prepare()
             // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
@@ -139,6 +142,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
+    /// Build 14c (G3-79): where the latest open was clicked; nil opens on the menu bar icon's display.
+    var openPoint: (() -> CGPoint?)?
     var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
@@ -207,7 +212,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
     func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
-            shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
+            shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() })
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
         currentPage = page
         page.contextMenuProvider = { [weak self, weak page] in self?.makeContextMenu(page: page) }
@@ -277,23 +282,52 @@ struct CockpitUnavailableNotice {
     private let isForeground: @MainActor () -> Bool
     private let activate: @MainActor () -> Void
     private let requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
+    /// G3-66: how long a failed open may still recover before the notice appears.
+    static let defaultNoticeGrace: Duration = .seconds(4)
+    private let noticeGrace: Duration
+    /// Counts successful page opens; a notice is dropped when one happened after the failure it was raised for.
+    private var openCount = 0
+    /// True when the latest thing that happened was a page open, false when it was a failure. A grace period only ends
+    /// as a recovery if the page opened and nothing failed after it: a rebuild that opens and then fails, or whose
+    /// next page cannot be created, is not a recovery (macrevc-786-1).
+    private var lastEventWasOpen = false
+    private var noticeTask: Task<Void,Never>?
+    private var rebuilding = false
+    private var rebuilds = 0
+    static let maxRebuilds = 2
     init(owner:CockpitConsoleOwner,composition:EngineDockMenuComposition,
          isForeground: @escaping @MainActor () -> Bool = { NSApp.isActive },
          activate: @escaping @MainActor () -> Void = { if !NSApp.isActive { NSApplication.shared.activate() } },
-         requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)? = nil) {
-        self.owner=owner;self.composition=composition
+         requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)? = nil,
+         noticeGrace: Duration = SharedEngineCockpitConsole.defaultNoticeGrace) {
+        self.owner=owner;self.composition=composition;self.noticeGrace=noticeGrace
         self.isForeground=isForeground;self.activate=activate;self.requestNotice=requestNotice
         owner.coordinator?.onUnavailable = { [weak self] reason in self?.unavailable(path:reason.path) }
         owner.pageFailure = { [weak self] failure in self?.unavailable(path:"page."+failure.rawValue) }
         let onOpened = owner.coordinator?.onOpened
         owner.coordinator?.onOpened = { [weak self] in
             self?.pageOpened = true
+            self?.openCount += 1
+            self?.lastEventWasOpen = true
+            // A successful open after a failure is the recovery: the grace period and the rebuild state end here, so a
+            // later user close (page button, outside click) is an ordinary close, not another failure to rebuild from.
+            self?.noticeTask?.cancel(); self?.noticeTask=nil; self?.rebuilding=false
             onOpened?()
         }
         // D88: a detach, a put back or the settled open refreshes the icon highlight and the hints.
         owner.coordinator?.onShellChanged = { [weak self] in self?.onShowingChanged?() }
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
+            if self.rebuilding, self.wantsVisible, self.noticeTask != nil {
+                // A failed page inside the grace period: keep the presentation and build the page again.
+                self.pageOpened=false
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(for:.milliseconds(150))
+                    guard let self,self.rebuilding,self.wantsVisible,self.noticeTask != nil else { return }
+                    self.owner.coordinator?.open()
+                }
+                return
+            }
             self.wantsVisible = false
             self.onShowingChanged?()
             self.fieldPanel?.close()
@@ -306,6 +340,11 @@ struct CockpitUnavailableNotice {
         let language:String,reduceMotion:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
     }
     private var fieldPanel:CockpitFieldPanel?
+    /// G3-80 seams: where the pointer is, the cockpit's frame and the displays the field is placed on.
+    var pointerLocation: @MainActor () -> CGPoint = { NSEvent.mouseLocation }
+    var cockpitFrameForField: (@MainActor () -> CGRect?)?
+    var fieldScreens: (@MainActor () -> [CockpitScreen])?
+    var fieldWindowFrame: CGRect? { fieldPanel?.isOpen == true ? fieldPanel?.windowFrame : nil }
     var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
     /// `focusName`: the published display name of a rocket clicked in the porthole still (D63); an unknown name
     /// focuses nothing. Only the matching public model ID crosses.
@@ -334,7 +373,11 @@ struct CockpitUnavailableNotice {
     private func openField(focusName:String?=nil) {
         guard let bundle=owner.verifiedBundle,let payload=fieldPayload(focusName:focusName) else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
-        fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
+        if let fieldScreens { panel.screens=fieldScreens }
+        // Build 14c (G3-80): on the cockpit's display. The intent does not say whether a click or a key opened it, so
+        // the pointer counts only while it is over the cockpit (macrev2-845-2).
+        let cockpit=cockpitFrameForField?() ?? owner.coordinator?.cockpitFrame
+        fieldPanel=panel;panel.open(payload:payload,cockpit:cockpit,pointer:pointerLocation(),fallback:owner.anchor?())
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
     func applySettings(_ value: SettingsApplication) {
@@ -349,6 +392,7 @@ struct CockpitUnavailableNotice {
         // D88: only the menu bar icon grows the cockpit out of itself; the ignition keeps its own entrance.
         entrance = fromStatusItem ? .growFromIcon : .fade
         wantsVisible=true
+        noticeTask?.cancel(); noticeTask=nil; rebuilding=false; rebuilds=0 // a new click starts its own grace period
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
         CockpitTimingLog.markClick()
@@ -373,11 +417,13 @@ struct CockpitUnavailableNotice {
     var onShowingChanged: (() -> Void)?
     /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
     func requestClose() {
+        noticeTask?.cancel(); noticeTask=nil
         if pageOpened { owner.coordinator?.requestClose() } else { hide() }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
         wantsVisible = false
+        noticeTask?.cancel(); noticeTask=nil
         onShowingChanged?()
         showTask?.cancel()
         showTask = nil
@@ -386,11 +432,39 @@ struct CockpitUnavailableNotice {
         pageOpened = false
         fallback?.hide()
     }
+    /// G3-66: a failure is only worth a notice when it lasts. The log line is written for every failure, with the
+    /// path, the time since launch and the engine's state. An open that finds no engine context yet is completed
+    /// by the first context (the coordinator keeps it pending); a failed page is rebuilt and reopened while the
+    /// window stays up. A later successful open drops the notice; a failure that outlasts the grace period, or
+    /// that keeps repeating, is announced.
     private func unavailable(path:String,history:Bool=false) {
+        // The open already being waited on reports again (a late open step): that says nothing new and must not
+        // undo a recovery already seen. Decided before any state changes, so it cannot race the open event.
+        if noticeTask != nil, !history, !path.hasPrefix("page.") { return }
+        lastEventWasOpen = false
         let initiatedInForeground=isForeground()
         // A failure in the background or after a close shows nothing, so the log is all there is.
-        CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened)")
+        CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened) "
+            + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] rebuilds=\(rebuilds)")
         guard wantsVisible else { return }
+        if history { presentNotice(history:true,initiatedInForeground:initiatedInForeground); return }
+        if path.hasPrefix("page.") {
+            rebuilds += 1
+            if rebuilds > Self.maxRebuilds { noticeTask?.cancel(); noticeTask=nil; presentNotice(history:false,initiatedInForeground:initiatedInForeground); return }
+            rebuilding=true // the coordinator's close that follows must not retire the presentation
+        }
+        guard noticeTask == nil else { return }
+        let epoch=openCount
+        noticeTask=Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for:self.noticeGrace)
+            guard !Task.isCancelled else { return }
+            self.noticeTask=nil; self.rebuilding=false
+            guard !(self.openCount != epoch && self.lastEventWasOpen) else { return } // a page opened and nothing failed after it: recovered
+            self.presentNotice(history:false,initiatedInForeground:initiatedInForeground)
+        }
+    }
+    private func presentNotice(history:Bool,initiatedInForeground:Bool) {
         let notice=CockpitUnavailableNotice(history:history)
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }
@@ -411,7 +485,9 @@ struct CockpitUnavailableNotice {
             case .alertFirstButtonReturn:owner.settings?()
             case .alertSecondButtonReturn:
                 if fallback == nil { fallback=EngineRowsConsole(composition:composition) };fallback?.show()
-            default:break
+            default:
+                // Cancel also cancels the open still waiting for the engine context, so the cockpit cannot appear uninvited later.
+                hide()
             }
         }
     }

@@ -108,6 +108,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var appearance: CockpitAppearance
   private let shellSession: CockpitShellSession
   private let anchor: () -> CGRect?
+  /// Build 14c (G3-79): the screen point an open came from (the widget's ignition click); nil opens on the icon's display.
+  private let openPoint: () -> CGPoint?
+  /// The displays placement and drags use; tests replace it with a fixed arrangement.
+  var screens: @MainActor () -> [CockpitScreen] = { CockpitScreenSelection.system() }
   private var layout: CockpitShellLayout?
   private var scope = "all"
   private var outsideMonitor: Any?, localMonitor: Any?
@@ -145,7 +149,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         case .success(let accepted):
           if accepted as? String == "accepted" { complete(.accepted) }
           else if accepted as? String == "missing" { complete(.missing) }
-          else { complete(.rejected) }
+          else {
+            // "rejected:<code>": the page's fixed code path for the refusal, never message content.
+            let code = (accepted as? String).flatMap { $0.hasPrefix("rejected:") ? String($0.dropFirst(9)) : nil } ?? "unknown"
+            self?.lastRejectCode = String(code.filter { $0.isLetter || $0.isNumber || $0 == "." }.prefix(40))
+            complete(.rejected)
+          }
         case .failure: complete(.failed)
         }
       }
@@ -200,6 +209,25 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard visibilityFence.isConfirmedVisible, appearanceGate.isDeferred, appearanceWatchdog.currentID == nil else { return }
     appearanceWatchdog.wait(for: UUID())
   }
+  /// Page-side code path of the last rejected host message (bridge.ts `lastReject`).
+  private var lastRejectCode = "none"
+  private var tickRetries = 0
+  private static let maxTickRetries = 3
+  /// A tick the page refuses only because its own visibility has not caught up (document still hidden, no
+  /// display yet) carries no state: the page learns the real state from the visibility message and its own
+  /// events. Retry it shortly instead of discarding the page. Any other rejection stays a failure.
+  private func retryRejectedTick(_ reason: CockpitDeadlineReason) -> Bool {
+    guard lastRejectCode.hasPrefix("tick."), lastRejectCode != "tick.view", tickRetries < Self.maxTickRetries else { return false }
+    tickRetries += 1
+    receiptWatchdog.cancel()
+    CockpitFailureLog.record("page-resync tick retry=\(tickRetries) code=\(lastRejectCode)")
+    Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(120))
+      guard let self, !self.ending else { return }
+      self.sendFreshnessTick(reason)
+    }
+    return true
+  }
   private func sendFreshnessTick(_ reason: CockpitDeadlineReason) {
     guard !ending, closeTask == nil else { return }
     // A newly opened page has no admitted data to re-evaluate yet. Do not send
@@ -211,7 +239,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let raw = try bridge.tick(nowUnixMs: deadlineNow(), reason: reason)
       guard let id = bridge.currentDeadlineTrigger else { throw CockpitBridgeError.unavailable }
       receiptWatchdog.wait(for: id)
-      send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentDeadlineTrigger(id) == true }, dropped: { [weak self] in
+      send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentDeadlineTrigger(id) == true },
+           onAccepted: { [weak self] in self?.tickRetries = 0 },
+           onRejected: { [weak self] in self?.retryRejectedTick(reason) ?? false },
+           dropped: { [weak self] in
         guard let self else { return }
         if self.receiptWatchdog.currentID == id { self.receiptWatchdog.cancel() }
         self.backlog.tick = reason
@@ -301,11 +332,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
 
   public init(
     bundle: VerifiedCockpitBundle, context: CockpitEngineContext, appearance: CockpitAppearance,
-    shellSession: CockpitShellSession? = nil, anchor: @escaping () -> CGRect? = { nil }
+    shellSession: CockpitShellSession? = nil, anchor: @escaping () -> CGRect? = { nil },
+    openPoint: @escaping () -> CGPoint? = { nil }
   ) {
     self.bundle = bundle
     self.shellSession = shellSession ?? CockpitShellSession()
     self.anchor = anchor
+    self.openPoint = openPoint
     self.appearance = appearance
     self.bridge = CockpitBridgeState(context: context)
     super.init(window: nil)
@@ -520,9 +553,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// Consecutive messages the ordered queue refused, reset by any accepted delivery.
   private var deliveryRefusals = 0
   static let maximumDeliveryRefusals = 8
-  /// `dropped` runs when the queue refuses the message: the caller undoes its wait and marks what to resend.
+  /// `onRejected` runs when the page refused a delivered message; returning true means the caller recovers
+  /// (a retry), false ends the page as `messageRejected`. `dropped` runs when the ordered queue refuses the
+  /// message before delivery: the caller undoes its wait and marks what to resend.
   private func send(_ raw: String, clear: Bool = false, bootstrap: Bool = false, coalesce: String? = nil,
-                    isCurrent: (() -> Bool)? = nil, onAccepted: (() -> Void)? = nil, dropped: (() -> Void)? = nil) {
+                    isCurrent: (() -> Bool)? = nil, onAccepted: (() -> Void)? = nil,
+                    onRejected: (() -> Bool)? = nil, dropped: (() -> Void)? = nil) {
     let web = self.web
     #if MODELPLAN_TEST_ONLY_SPI
     let noWindowTest = web == nil && verificationNoWindowDelivery != nil
@@ -533,8 +569,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let context = bridge.context, revision = bridge.viewRevision
     // JSON is an argument, never interpolated into executable JavaScript.
     let body = clear
-      ? "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.clear(raw)===true?'accepted':'rejected'"
-      : "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.receive(raw)===true?'accepted':'rejected'"
+      ? "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.clear(raw)===true?'accepted':'rejected:'+String((typeof window.modelPlanCockpit.reject==='function'?window.modelPlanCockpit.reject():null)||'none')"
+      : "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.receive(raw)===true?'accepted':'rejected:'+String((typeof window.modelPlanCockpit.reject==='function'?window.modelPlanCockpit.reject():null)||'none')"
     let code = (bootstrap ? "await import('modelplan-cockpit://bundle/src/main.js');" : "") + body
     #if MODELPLAN_TEST_ONLY_SPI
     let refused = verificationRefuseSubmissions > 0
@@ -557,7 +593,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       switch result {
       case .accepted: self.deliveryRefusals = 0; onAccepted?(); self.resyncAfterBacklog()
       case .missing: self.fail(.pageAPIUnavailable)
-      case .rejected: self.fail(.messageRejected)
+      case .rejected:
+        CockpitFailureLog.record("page-reject code=\(self.lastRejectCode)")
+        if onRejected?() != true { self.fail(.messageRejected) }
       case .failed: self.fail(.javascriptFailed)
       }
     }) }
@@ -791,6 +829,24 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   ) { fail(.provisionalNavigationFailed) }
   public func windowWillClose(_ notification: Notification) { discard() }
   public func windowDidResignKey(_ notification: Notification) { cancelDrag() }
+  /// macrev2-845-1: a detached cockpit that lands on another display without a drag (the system moved it) is fitted
+  /// to that display, as a drop is.
+  public func windowDidChangeScreen(_ notification: Notification) {
+    guard let window, shown, shellSession.detached, dragStart == nil, !entering, closeTask == nil, !ending else { return }
+    fitToDropDisplay(window)
+  }
+  /// The detached cockpit's current place becomes its remembered origin, and the layout (zoom, profile, forced shutter)
+  /// is fitted to the display that origin is on, so the whole cockpit is inside that display's visible frame.
+  private func fitToDropDisplay(_ window: NSWindow) {
+    shellSession.remember(window.frame.origin, arrangement: arrangement)
+    applyLayout()
+    shellSession.remember(window.frame.origin, arrangement: arrangement)
+  }
+  /// The cockpit window's frame while it is on screen (the field opens on its display), else nil.
+  public var cockpitFrame: CGRect? {
+    guard let window, window.isVisible, !ending else { return nil }
+    return window.frame
+  }
   /// D88: the grow and shrink animate the frame; the content keeps its 636 pt bounds so it scales with it.
   public func windowDidResize(_ notification: Notification) {
     guard let layout, let content = window?.contentView else { return }
@@ -856,29 +912,55 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       visibilityChanged()
     } catch { fail(error: error) }
   }
-  private var arrangement: String {
-    NSScreen.screens.map { NSStringFromRect($0.frame) }.sorted().joined(separator: ";")
+  var arrangement: String {
+    screens().map { NSStringFromRect($0.frame) }.sorted().joined(separator: ";")
   }
-  private func environment() -> (CGRect, CGRect)? {
+  /// Where a detached cockpit was: the origin remembered for this arrangement, else the laid-out window's own.
+  private var detachedOrigin: CGPoint? {
+    if let remembered = shellSession.origin(for: arrangement) { return remembered }
+    guard let window, !window.frame.isEmpty else { return nil }
+    return window.frame.origin
+  }
+  /// The usable frame and icon rect the layout is fitted to. Build 14c (G3-79): a detached cockpit stays on the
+  /// display its remembered origin is on while that is still a display; otherwise the open goes to the display the
+  /// user clicked on (the widget's), and only without a click to the menu bar icon's display. The icon rect is the
+  /// real icon only on its own display; elsewhere the cockpit opens at that display's top right, as with no icon.
+  func environment() -> (CGRect, CGRect)? {
     #if MODELPLAN_TEST_ONLY_SPI
     if let verificationPlacement { return (verificationPlacement.usable, verificationPlacement.anchor) }
     #endif
-    let requested = anchor()
-    guard let screen = NSScreen.screens.first(where: { screen in requested.map { screen.frame.intersects($0) } ?? false }) ?? NSScreen.main else { return nil }
-    let icon = requested ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
+    let displays = self.screens(), requested = anchor()
+    var remembered: CockpitScreen?
+    if shellSession.detached, let origin = detachedOrigin,
+       let replayed = CockpitScreenSelection.replayFrame(origin: origin, size: layout?.frame.size ?? CGSize(width: 1, height: 1), screens: displays) {
+      remembered = CockpitScreenSelection.overlapping(replayed, in: displays)
+    }
+    guard let screen = remembered ?? CockpitScreenSelection.openScreen(point: openPoint(), anchor: requested, screens: displays) else { return nil }
+    let icon = requested.flatMap { screen.frame.intersects($0) ? $0 : nil } ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
-  /// D66: Auto judges the full width of the screen the cockpit opens on (the icon's screen), whatever the Dock takes.
+  /// D66: Auto judges the full width of the screen the cockpit opens on, whatever the Dock takes.
   private func screenWidth(_ usable: CGRect) -> CGFloat {
-    NSScreen.screens.first { $0.visibleFrame == usable }?.frame.width ?? usable.width
+    screens().first { $0.visibleFrame == usable }?.frame.width ?? usable.width
+  }
+  /// The fit and the window frame an open or a relayout uses. Build 14c (G3-79): a detached cockpit's remembered
+  /// origin is replayed only while it is still on some display; otherwise the cockpit takes its attached place on
+  /// the display `environment()` chose (the click's).
+  func placement() -> (fit: CockpitShellLayout, frame: CGRect)? {
+    guard let (usable, icon) = environment(),
+          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return nil }
+    guard shellSession.detached else { return (fit, fit.frame) }
+    #if MODELPLAN_TEST_ONLY_SPI
+    if verificationPlacement != nil { return (fit, fit.clamping(origin: detachedOrigin ?? fit.frame.origin, usable: usable)) }
+    #endif
+    let replayed = detachedOrigin.flatMap { CockpitScreenSelection.replayFrame(origin: $0, size: fit.frame.size, screens: screens()) }
+    return (fit, replayed ?? fit.frame)
   }
   private func applyLayout() {
-    guard let window, let (usable, icon) = environment(),
-          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return }
+    guard let window, let (fit, frame) = placement() else { return }
     layout = fit
     appearance = .init(theme: .night, locale: appearance.locale, profile: fit.profile,
       reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size)
-    let frame = shellSession.detached ? fit.clamping(origin: shellSession.origin(for: arrangement) ?? window.frame.origin, usable: usable) : fit.frame
     window.setFrame(frame, display: true)
     // CKP-SHELL-07 (owner D51): a scaled cockpit is the same page at a uniform WebKit page zoom, not a
     // scaled bitmap, so text is drawn at its final size and the page hit-tests its own controls.
@@ -978,9 +1060,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let newlyDetached = !shellSession.detached
       shellSession.detached = true
       if newlyDetached { updateAppearance(appearance) }
-      if let (usable, _) = environment(), let layout {
-        window.setFrame(layout.clamping(origin: .init(x: start.frame.minX + dx, y: start.frame.minY + dy), usable: usable), display: true)
-      }
+      // Build 14c (G3-79): the window stays inside the display under the pointer, so it can go to any display.
+      window.setFrame(dragFrame(start: start.frame, from: start.point, to: point), display: true)
       if let home = layout?.frame {
         let ready = hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40
         showSnapGuide(home, ready: ready)
@@ -992,9 +1073,21 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       if let (_, _) = environment(), let home = layout?.frame,
          hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40 {
         setAttached(true)
-      } else { shellSession.remember(window.frame.origin, arrangement: arrangement); onShellChanged?() }
+      } else {
+        // macrev2-845-1: a drop on a shorter display refits there; the drag kept the old size, which can overhang it.
+        fitToDropDisplay(window); onShellChanged?()
+      }
     case .cancelled: cancelDrag()
     }
+  }
+  /// A drag's frame: on the display under the pointer (the test placement's usable frame under the SPI seam).
+  func dragFrame(start: CGRect, from: CGPoint, to point: CGPoint) -> CGRect {
+    #if MODELPLAN_TEST_ONLY_SPI
+    if let verificationPlacement {
+      return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: [], fallback: verificationPlacement.usable)
+    }
+    #endif
+    return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: screens(), fallback: environment()?.0)
   }
   private func showSnapGuide(_ frame: CGRect, ready: Bool) {
     guard let window else { return }
@@ -1094,7 +1187,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let detail: String = error.map { "error=\(Self.errorDetail($0)) " } ?? ""
     CockpitFailureLog.record("page-failure failure=\(failure.rawValue) at=\(site):\(line) ageMs=\(age.map(String.init) ?? "none") "
       + detail + "ready=\(bridge.ready) visible=\(visibilityFence.isConfirmedVisible) rendered=\(freshnessHasRendered) "
-      + "displayPending=\(bridge.hasPendingDisplay) occluded=\(lastVisibility?.occluded.description ?? "unknown")")
+      + "displayPending=\(bridge.hasPendingDisplay) occluded=\(lastVisibility?.occluded.description ?? "unknown") reject=\(lastRejectCode)")
     onFailure?(failure)
     discard()
   }

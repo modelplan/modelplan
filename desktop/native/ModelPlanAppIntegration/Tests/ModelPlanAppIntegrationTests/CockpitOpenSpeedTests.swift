@@ -278,8 +278,10 @@ extension CommunityCockpitEntryTests {
                 try await Task.sleep(for: .milliseconds(1000))
                 let pagesBefore = probe.made.count, click = ContinuousClock.now
                 entry.showConsole()
+                // G3-66: a page that fails while the open is still inside its grace period is rebuilt and the open
+                // continues, so the page that must show data is the latest one made, not the first.
                 for _ in 0..<5000 {
-                    if let page = probe.made.last, !probe.renders(page, after: click).isEmpty || page.verificationWebView == nil { break }
+                    if let page = probe.made.last, !probe.renders(page, after: click).isEmpty { break }
                     try await Task.sleep(for: .milliseconds(2))
                 }
                 let page = try XCTUnwrap(probe.made.last)

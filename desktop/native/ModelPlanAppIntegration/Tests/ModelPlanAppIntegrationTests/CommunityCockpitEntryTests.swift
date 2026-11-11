@@ -563,6 +563,71 @@ final class CommunityCockpitEntryTests:XCTestCase {
         await composition.stop()
     }
 
+    /// G3-80 / macrev2-845-2: the openField intent carries no pointer, and Enter or Space on the enlarge key sends the
+    /// same intent as a click. The field opens on the cockpit's display; the pointer decides only while it is over the
+    /// cockpit (a click), never when it rests on another display (a keyboard open).
+    @MainActor func testOpenFieldUsesTheCockpitDisplayUnlessThePointerIsOnTheCockpit() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-field-screen-"+UUID().uuidString)
+        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let html=Data("<!doctype html><title>synthetic field</title>".utf8)
+        for name in ["index.html","field.html"] { try html.write(to:root.appendingPathComponent(name)) }
+        let manifest=try JSONSerialization.data(withJSONObject:["schemaVersion":1,"edition":"community","interfaceOnly":true,
+            "files":["index.html":VerifiedCockpitBundle.digest(html),"field.html":VerifiedCockpitBundle.digest(html)]])
+        try manifest.write(to:root.appendingPathComponent("bundle-manifest.json"))
+        let support=FileManager.default.temporaryDirectory.appendingPathComponent("u11-field-screen-support-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:support)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:support)
+        let client=RouteClient()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        owner.verifiedBundle=try VerifiedCockpitBundle(root:root,manifestSHA256:VerifiedCockpitBundle.digest(manifest))
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        var capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent()
+        while !FileManager.default.fileExists(atPath:capture.appendingPathComponent("schema/app-cli/captures").path) { capture.deleteLastPathComponent() }
+        capture=capture.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        var data=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
+        var details=try XCTUnwrap(data["details"] as? [String:Any])
+        details["publishedModels"]=[["id":"synthetic-model","name":"Synthetic","developerId":"openai","recommended":"medium",
+            "efforts":[["effort":"medium","label":"Med","star":true,"ability":40.0,"cost":0.2,"time":30.0]]]]
+        data["details"]=details
+        let wire=try WireDecoder.decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:data))
+        let context=EngineDeliveryContext(sessionID:"s-field-screen",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await composition.store.consume(.connection(.ready(context)));await composition.store.consume(.context(context))
+        await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:wire),delivery:context))))
+        // A: the built-in display with the menu bar icon; B: a larger display to its right.
+        let a=CockpitScreen(frame:CGRect(x:0,y:0,width:1512,height:982),visibleFrame:CGRect(x:0,y:0,width:1512,height:949))
+        let b=CockpitScreen(frame:CGRect(x:1512,y:0,width:2560,height:1440),visibleFrame:CGRect(x:1512,y:0,width:2560,height:1415))
+        let displays=[a,b]
+        var cockpit=CGRect(x:3000,y:400,width:636,height:900)
+        var pointer=CGPoint(x:300,y:300)
+        surface.fieldScreens={ displays }
+        surface.cockpitFrameForField={ cockpit }
+        surface.pointerLocation={ pointer }
+        owner.anchor={ CGRect(x:1100,y:949,width:28,height:24) }
+        func open() throws -> CGRect {
+            surface.wantsVisible=true
+            surface.handle(.openField)
+            XCTAssertTrue(surface.fieldIsOpen)
+            let frame=try XCTUnwrap(surface.fieldWindowFrame)
+            surface.hide()
+            return frame
+        }
+        // Keyboard: cockpit on B, pointer resting on A.
+        var frame=try open()
+        XCTAssertTrue(b.visibleFrame.contains(frame),"a keyboard open lands on the cockpit's display B, not the pointer's A: \(NSStringFromRect(frame))")
+        // Click on the cockpit on B.
+        pointer=CGPoint(x:3100,y:800)
+        frame=try open()
+        XCTAssertTrue(b.visibleFrame.contains(frame),"a click on the cockpit on B: \(NSStringFromRect(frame))")
+        // A cockpit straddling A and B, clicked on its A part: the click's display A.
+        cockpit=CGRect(x:1300,y:300,width:636,height:600)
+        pointer=CGPoint(x:1400,y:600)
+        frame=try open()
+        XCTAssertTrue(a.visibleFrame.contains(frame),"a click on the cockpit's A part opens on A: \(NSStringFromRect(frame))")
+        await composition.stop()
+    }
+
     /// glm-660-3: the cockpit's own close button ends in the page's onClosed, not in `hide()`; the field panel closes with it.
     /// D49 review (#695): the widget stays at `.floating` under the cockpit, and every window the cockpit
     /// brings up is not hidden behind it. The snap guide shares its level so it can sit just below it.
@@ -760,7 +825,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let coordinator=EngineCockpitCoordinator { _ in page }
             coordinator.bind(client:client);owner.coordinator=coordinator
             var notices:[CockpitUnavailableNotice]=[]
-            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)})
+            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.zero)
             let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
             await coordinator.consume(.context(context));surface.show()
             for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }

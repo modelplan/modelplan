@@ -132,8 +132,10 @@ public struct StaticDockGeometry {
         let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
         addTrackingArea(area); hoverArea = area
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true; updatePose() }
-    override func mouseExited(with event: NSEvent) { hovered = false; updatePose() }
+    // G3-62: the key is its own view, so the widget's pointer tracking never sees the pointer leave it; without
+    // this the key's tip stayed up after the pointer had gone.
+    override func mouseEntered(with event: NSEvent) { hovered = true; updatePose(); onHelpFocusChanged?() }
+    override func mouseExited(with event: NSEvent) { hovered = false; updatePose(); onHelpFocusChanged?() }
     override func highlight(_ flag: Bool) { super.highlight(flag); pressed = flag; updatePose() }
 
     private var canPresentHelp: Bool { isEnabled && !isHiddenOrHasHiddenAncestor && !bounds.isEmpty }
@@ -222,8 +224,6 @@ struct DockHelpInteraction: Equatable {
     /// G3-28: the widget menu's Auto-Collapse item. The app writes the same stored setting
     /// as Settings' auto-collapse switch; without an app the preview applies nothing.
     public var requestAutoCollapse: ((Bool) -> Void)?
-    /// G3-22: shown as the first, disabled line of the widget menu (the status icon may be hidden).
-    public var statusIconNotice: SettingsText?
     /// Set only when the member-scoped refresh adapter is actually installed.
     public var ringRefreshAvailable = false
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
@@ -1944,10 +1944,6 @@ struct DockHelpInteraction: Equatable {
         }
         let available = permitted && !lifecycleSuspended
         var items: [DockMenuPresentationItem] = []
-        if let statusIconNotice {
-            items.append(.init(title: statusIconNotice.value(preferences.language), accessibilityID: "dock.menu.notice"))
-            items.append(.init(title: nil))
-        }
         if lifecycleSuspended {
             items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
             items.append(.init(title: nil))

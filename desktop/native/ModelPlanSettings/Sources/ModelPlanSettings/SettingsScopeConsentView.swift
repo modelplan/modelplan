@@ -80,6 +80,18 @@ import ModelPlanWire
     deinit {
         if let observer { let controller = controller; Task { @MainActor in controller.removeObserver(observer) } }
     }
+    /// The status line follows the same reading state as the switch (G3-67): "On by default" is only said while the
+    /// engine is actually reading the path; a compiled default the engine does not admit says so and how to turn it on.
+    static func pathStatus(_ controller: ScopeConsentController, id: String, denied: Bool) -> SettingsText {
+        if controller.isAllowed(id) { return .init("On", "已开启") }
+        if controller.isOnByDefault(id) {
+            return controller.isReading(id)
+                ? .init("On by default. Turn it off to stop reading this path.", "默认开启；关闭后不再读取此路径。")
+                : .init("Not being read right now: the engine has no permission for this path. Allow this path to start reading it.", "目前未读取：引擎尚无此路径的权限。授权此读取路径后才会开始读取。")
+        }
+        if denied { return .init("Off. Turn it on to read this path.", "已关闭；打开后才会读取此路径。") }
+        return .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。")
+    }
     private func label(_ text: SettingsText, secondary: Bool = false, heading: Bool = false) {
         let field = NSTextField(wrappingLabelWithString: text.value(language))
         field.font = heading ? .systemFont(ofSize: 13, weight: .semibold) : .systemFont(ofSize: secondary ? 12 : 13)
@@ -400,11 +412,7 @@ import ModelPlanWire
                 arrangedSubviews.last?.setAccessibilityIdentifier("scope.status." + id)
             }
             // D27: a standard reader is on by default; its row says so and its switch is on.
-            let status: SettingsText
-            if controller.isAllowed(id) { status = .init("On", "已开启") }
-            else if controller.isOnByDefault(id) { status = .init("On by default. Turn it off to stop reading this path.", "默认开启；关闭后不再读取此路径。") }
-            else if scope.state == .denied { status = .init("Off. Turn it on to read this path.", "已关闭；打开后才会读取此路径。") }
-            else { status = .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。") }
+            let status = Self.pathStatus(controller, id: id, denied: scope.state == .denied)
             label(status, secondary: true)
             let box: ConnectionButton
             if controller.isReading(id) {

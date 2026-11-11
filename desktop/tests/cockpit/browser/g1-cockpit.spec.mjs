@@ -17,12 +17,17 @@ async function open(page,data=visualFixture().data) {
 
 test('CKP-ENG-02 one or two subscriptions keep three engine columns',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);
+ // A row the widget hides (signed out: menu and settings only, no dock surface) gets no tab and no column either.
+ const hidden=structuredClone(data.projection.rows[0]);hidden.id='synthetic-signed-out';hidden.name={en:'Signed out',zh:'未登录'};hidden.surfaces=['menu','settings'];hidden.accounts[0].subscriptionRef=null;hidden.accounts[0].accountLocator=null;hidden.accounts[0].valueState='none';data.projection.rows.push(hidden);
  const {send,receive}=await open(page,data);
  for(const count of [1,2]){
   if(count===2){const row=structuredClone(data.projection.rows[0]);row.id='synthetic-second';row.accounts[0].subscriptionRef=null;row.accounts[0].accountLocator=null;data.projection.rows.push(row);expect(await receive(send('display',{data}))).toBe(true);}
   await expect(page.locator('.eng-keys')).toHaveAttribute('data-slots','3');
   await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(count);
   await expect(page.locator('.eng-keys .ek-bay')).toHaveCount(3-count);
+  // Build 14c (G3-77): the empty slots are unnamed add-subscription bays, never the hidden tool.
+  for(const bay of await page.locator('.eng-keys .ek-bay').all())await expect(bay).toHaveAttribute('data-add-subscription','');
+  await expect(page.locator('.ck-eng')).not.toContainText('Signed out');
  }
 });
 

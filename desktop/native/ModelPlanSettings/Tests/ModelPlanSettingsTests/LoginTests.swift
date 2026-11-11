@@ -113,4 +113,19 @@ final class LoginTests: XCTestCase {
         let snapshot = await store.snapshot()
         XCTAssertFalse(snapshot.preferences.openAtLogin); XCTAssertEqual(try Data(contentsOf: url), before)
     }
+    /// G3-69 / D87: copy mapping for the open-at-login row.
+    @MainActor func testNotInApplicationsCopyReplacesGenericUnavailableText() {
+        XCTAssertEqual(SettingsNativeRow.loginStatus(.unavailable, notInApplications: true, language: .chinese),
+                       "ModelPlan 不在“应用程序”文件夹里（例如从“下载”直接打开），所以不能设为登录项。")
+        XCTAssertEqual(SettingsNativeRow.loginStatus(.unavailable, notInApplications: true, language: .english),
+                       "ModelPlan isn't in the Applications folder (for example opened from Downloads), so it can't be a login item.")
+        XCTAssertEqual(SettingsNativeRow.loginStatus(.unavailable, language: .chinese), "系统服务不可用")
+        XCTAssertEqual(SettingsNativeRow.loginStatus(.enabled, notInApplications: true, language: .english), "System: enabled")
+        XCTAssertEqual(SettingsNativeRow.loginHowTo(language: .chinese), "把 ModelPlan 拖到“应用程序”文件夹，然后从那里重新打开。")
+        XCTAssertEqual(SettingsNativeRow.loginHowTo(language: .english), "Drag ModelPlan into the Applications folder, then reopen it from there.")
+    }
+    @MainActor func testShowHowButtonRevealsStepsOnlyWhenNotInApplications() {
+        let row = SettingsNativeRow(key: .login)
+        XCTAssertTrue(row.loginHowButton.isHidden); XCTAssertTrue(row.loginHowLabel.isHidden)
+    }
 }
