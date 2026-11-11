@@ -103,8 +103,9 @@ final class OfficialEntranceFramesTests: XCTestCase {
     }
 
     /// Look mode dresses the hull as smooth polished metal (owner 2026-11-10: metal like the pass-5 art, not foam):
-    /// metallic 1, satin roughness, no grainy normal map; joints are dark metal, not ink; and the normals are
-    /// smooth and radial, so the 24-sided hull has no facets and no hard seam where the texture wraps.
+    /// metallic 1, satin roughness, no roughness texture; joints are dark metal, not ink; and the normals are
+    /// smooth and radial, so the 24-sided hull has no facets and no hard seam where the texture wraps. Round 5: the
+    /// file's grainy normal map is replaced by the code-drawn panel maps (seams, hatches, brushed grain).
     @MainActor
     func testOfficialHullIsSmoothMetalInLookMode() async throws {
         guard #available(macOS 15.0, *) else { throw XCTSkip("the native entrance needs macOS 15") }
@@ -130,7 +131,8 @@ final class OfficialEntranceFramesTests: XCTestCase {
                     XCTAssertNil(pbr.metallic.texture, "\(theme) hull metallic texture")
                     XCTAssertLessThanOrEqual(pbr.roughness.scale, 0.4, "\(theme) hull roughness")
                     XCTAssertNil(pbr.roughness.texture, "\(theme) hull roughness texture")
-                    XCTAssertNil(pbr.normal.texture, "\(theme) hull normal map")
+                    XCTAssertNotNil(pbr.normal.texture, "\(theme) hull has no panel normal map")
+                    XCTAssertNotNil(pbr.baseColor.texture, "\(theme) hull has no panel albedo")
                 }
                 // Normals point straight out from the axis: no 2.5-7.5 degree offsets, no 15 degree seam jump.
                 var worst: Float = 0
@@ -167,27 +169,38 @@ final class OfficialEntranceFramesTests: XCTestCase {
             for tint in try tints("joint_edge_118") {
                 XCTAssertGreaterThan(tint, 0.08, "\(theme) joints must not be ink black")
             }
+            // Round 5: the window frame is a thin dark band (not ink) with a bright rim on the glass edge.
             for tint in try tints("canopy_frame_bevel_2") {
-                XCTAssertGreaterThan(tint, 0.05, "\(theme) gasket must not be ink black")
+                XCTAssertGreaterThan(tint, 0.05, "\(theme) frame must not be ink black")
             }
-            let gasket = try models("canopy_frame_bevel_2").flatMap { $0.mesh.contents.models.flatMap { Array($0.parts) } }
-                .flatMap { $0.positions.elements }
-            let glass = try models("curved_canopy_glass").flatMap { $0.mesh.contents.models.flatMap { Array($0.parts) } }
-                .flatMap { $0.positions.elements }
-            // Gasket width: how far its outer edge lies from the glass edge (the file's strip was up to 3.5 cm).
-            let width = gasket.map { g in glass.map { simd_distance($0, g) }.min() ?? 0 }.max() ?? 0
-            print("OFFICIAL-GASKET \(theme.rawValue) gasket width \(String(format: "%.1f", width * 100)) cm")
-            XCTAssertLessThan(width, 0.02, "\(theme) gasket is still wide")
-            // D132: the cockpit behind the front window is the file's own cockpit screen, unlit with its image.
+            for tint in try tints("canopy_inner_rim") {
+                XCTAssertGreaterThan(tint, 0.6, "\(theme) inner rim must be bright")
+            }
+            func positions(_ name: String) throws -> [SIMD3<Float>] {
+                try models(name).flatMap { $0.mesh.contents.models.flatMap { Array($0.parts) } }.flatMap { $0.positions.elements }
+            }
+            let glass = try positions("curved_canopy_glass")
+            // Band width: how far a strip's outer edge lies from the glass edge (the file's inner strip was up to
+            // 3.5 cm, the three strips 8-12 cm together).
+            func width(_ name: String) throws -> Float {
+                try positions(name).map { g in glass.map { simd_distance($0, g) }.min() ?? 0 }.max() ?? 0
+            }
+            let frame = try width("canopy_frame_bevel_2"), rim = try width("canopy_inner_rim")
+            print("OFFICIAL-GASKET \(theme.rawValue) frame to glass \(String(format: "%.1f", frame * 100)) cm, " +
+                  "rim \(String(format: "%.1f", rim * 100)) cm")
+            XCTAssertLessThan(frame, 0.04, "\(theme) window frame is still wide")
+            XCTAssertLessThan(rim, 0.012, "\(theme) inner rim is too wide")
+            // Round 5: the cockpit is dim: the code-drawn console with small screens, not the file's bright UI.
             for model in try models("interior_soft_screen_plane") {
                 for material in model.materials {
-                    let unlit = try XCTUnwrap(material as? UnlitMaterial, "\(theme) cockpit screen must be unlit")
-                    XCTAssertNotNil(unlit.color.texture, "\(theme) cockpit screen lost the file's screen image")
+                    XCTAssertNotNil(material as? UnlitMaterial, "\(theme) cockpit console must be unlit")
                 }
             }
-            // D132: the hull albedo is the cleaned atlas (panel lines kept, grime and baked shading removed).
+            XCTAssertNotNil(scene.entity(named: "cockpit-screen-0"), "\(theme) cockpit has no screens")
+            // Round 5: the hull albedo and normal map are the code-drawn panel maps.
             print("OFFICIAL-ALBEDO \(theme.rawValue) \(scene.hullAlbedo)")
-            XCTAssertTrue(scene.hullAlbedo.hasPrefix("cleaned"), "\(theme) hull albedo: \(scene.hullAlbedo)")
+            XCTAssertTrue(scene.hullAlbedo.hasPrefix("panels"), "\(theme) hull albedo: \(scene.hullAlbedo)")
+            XCTAssertEqual(scene.entity(named: "axial_panel_seam_0_66")?.isEnabled, false, "\(theme) file seam strips still drawn")
             // The cockpit lining around the screen, with the side screens: an unlit textured surface.
             let ceiling = try XCTUnwrap(scene.entity(named: "cockpit-ceiling")?.components[ModelComponent.self], "\(theme) no cockpit lining")
             for material in ceiling.materials {
