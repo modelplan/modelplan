@@ -91,7 +91,7 @@ test('CKP-PORT-08 a different current effort is a white dot linked to its ★',a
 test('CKP-PORT-05 the compact profile is one strip of three',async({page})=>{
  await open(page,{tier:'compact'});
  await expect(page.locator('.hud.hud-strip .hp')).toHaveCount(3);
- expect(await local(page)).toEqual([58,9,216,30]);
+ expect(await local(page)).toEqual([62,25,216,30]);
 });
 // G3-48: long published names overlapped their neighbours in three columns. The study's compact strip is an
 // 86x30 chart beside three stacked 10 px rows; each name stays inside its own row, before its ★ effort.

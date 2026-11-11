@@ -51,16 +51,16 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let chosen = size.scale(screenWidth: screenWidth ?? usable.width)
         func fitting(_ root: CGFloat) -> CGFloat { min(chosen, usable.width / Self.width, available / (root + Self.baseReserve)) }
         var profile = CockpitAppearance.Profile.full, forcedClosed = false
-        var scale = fitting(877)
+        var scale = fitting(905)
         if scale < Self.minimumFullScale {
             // The short version, as before D51: open when its root fits, otherwise forced closed.
             profile = .compact
-            forcedClosed = usable.height - 6 - Self.baseReserve < 627
-            scale = fitting(forcedClosed ? 609 : 627)
+            forcedClosed = usable.height - 6 - Self.baseReserve < 635
+            scale = fitting(forcedClosed ? 609 : 635)
         }
         let fellBack = scale < chosen
         let closed = shutterClosed || forcedClosed
-        let height: CGFloat = profile == .full ? (closed ? 691 : 877) : (closed ? 609 : 627)
+        let height: CGFloat = profile == .full ? (closed ? 691 : 905) : (closed ? 609 : 635)
         // The scale follows the open root, so closing the shutter never resizes the strip or the canopy.
         // The window server places borderless panels on whole points, so the frame is pixel-aligned here and the
         // controller, its content bounds and every expectation agree with the real window. Rounding up (never past
@@ -73,7 +73,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
         return Self(profile: profile, shutterClosed: closed, forcedClosed: forcedClosed, scale: scale, rootHeight: height,
                     frame: CGRect(x: x, y: top - canvas.height, width: canvas.width, height: canvas.height), sizeFellBack: fellBack)
     }
-    /// The smallest whole point count that holds `length`; float noise (843/911 * 911) never adds a point.
+    /// The smallest whole point count that holds `length`; float noise (913/939 * 939) never adds a point.
     static func wholePoints(_ length: CGFloat) -> CGFloat { (length - 1e-6).rounded(.up) }
     /// G3-46: with no visible menu bar icon, open at the top-right of the screen, directly below the menu bar.
     public static func hiddenIconAnchor(usable: CGRect) -> CGRect {
@@ -92,7 +92,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
     /// window-relative: the closed page draws its slab at the window's top edge (cockpit.css, 14 px above the study's
     /// slab row), so its strip is at 25, not the study's 39. Pinned on the page by b13-hull-taper.spec.mjs.
     public var titleDragFrame: CGRect {
-        let stripTop: CGFloat = shutterClosed ? 25 : (profile == .full ? 225 : 57)
+        let stripTop: CGFloat = shutterClosed ? 25 : (profile == .full ? 253 : 65)
         return CGRect(x: 24, y: rootHeight + 34 - stripTop - 29, width: 216, height: 32)
     }
     public var scaledTitleDragFrame: CGRect { windowRect(page: titleDragFrame) }

@@ -12,7 +12,7 @@ function data(vk={codex:'openai',claude:'claude',cursor:'cursor',gemini:'copilot
  return d;
 }
 async function open(page,d){
- await page.setViewportSize({width:636,height:911});
+ await page.setViewportSize({width:636,height:939});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell}))).toBe(true);

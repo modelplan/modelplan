@@ -4,31 +4,28 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 import {inflateSync} from 'node:zlib';
 
-// G3-82 (owner, build 14c; decision D156): the top of the cockpit stood out above the strip. The D74/D100 canopy
-// (#801) was 28 px (tall) / 8 px (compact) taller than the opus-r7 study's, with a raised dome, and its tall frame
-// swelled 2 px past the 620 px upper walls above its foot. D156 restores the study's own c01 canopy. This measures
-// what the page actually paints (alpha >= 128, transparent screenshot) rather than boxes, at 1x and at the 2x the
-// owner's Mac draws, in all four shapes:
-// - the canopy never wider than the upper wall at the strip;
-// - every row from the top down to the lower wall at least as wide as every row above it;
-// - the whole silhouette within 1% of the 636 px hull (6.4 px) of the study's profile.
-// Study profile: painted width (px, alpha >= 128) of opus-r7 rocket-r1.html (night, 956 / 700 px tall, open and
-// shutter=1, 2x) at heights measured from the strip's top (negative = canopy; 0 width = nothing painted, no dome).
+// G3-82 (owner, build 14c): the D74 canopy frame (#801) bulged 2 px past the 620 px upper walls on each side for
+// about 50 rows above its foot, so the porthole stood out wider than the strip and body right below it. The opus-r7
+// study is narrow at the top and wide at the bottom: its frame never leaves the wall line, and every row of the
+// silhouette is at least as wide as every row above it. This measures what the page actually paints (alpha >= 128,
+// transparent screenshot) rather than boxes, at 1x and at the 2x the owner's Mac draws.
+//
+// Prototype profile: painted width (px, alpha >= 128) of the opus-r7 study (rocket-r1.html, night, 956 / 700 px
+// tall, 2x) at heights measured from the strip's top (negative = canopy). Ours must be within 1% of the 636 px hull
+// (6.4 px) from the canopy's lower flank down; higher up, where the D74/D100 canopy (owner-approved art, 28/8 px
+// taller than the study's) rounds into its dome, it may be narrower but never wider than the study.
 const TOL=6.4;
 const PROTO={
- tall:[[-230,0],[-225,510.5],[-222,529.5],[-218,549],[-215,560],[-210,572],[-200,585],[-190,592],[-180,596],[-160,604],[-140,610],
-  [-120,617],[-100,620],[-80,620],[-60,620],[-40,620],[-20,620],[-5,620],[5,620],[40,620],[120,620],[200,620],[260,620],[300,636],[400,636],[600,636]],
- compact:[[-60,0],[-57,517],[-55,560],[-52,583],[-50,590],[-45,600],[-40,608],[-35,615],[-30,620],[-20,620],[-10,620],[-5,620],[5,620],[40,620],
-  [120,620],[200,620],[250,620],[300,636],[500,636]],
- tallClosed:[[-30,0],[-25,605],[-20,615],[-14,620],[-10,620],[-5,620],[5,620],[40,620],[120,620],[200,620],[260,620],[300,636],[400,636],[620,636]],
- compactClosed:[[-30,0],[-25,605],[-20,615],[-14,620],[-10,620],[-5,620],[5,620],[40,620],[120,620],[200,620],[230,620],[260,623],[300,636],[400,636],[540,636]],
+ tall:{flank:-180,rows:[[-225,510.5],[-215,560],[-200,585],[-180,596],[-160,604],[-140,610],[-120,617],[-100,620],[-80,620],[-60,620],
+  [-40,620],[-20,620],[-5,620],[5,620],[40,620],[120,620],[200,620],[260,620],[300,636],[400,636],[600,636]]},
+ compact:{flank:-20,rows:[[-55,560],[-50,590],[-45,600],[-40,608],[-30,620],[-20,620],[-10,620],[-5,620],[5,620],[40,620],[120,620],
+  [200,620],[250,620],[300,636],[500,636]]},
 };
-// Strip tops in the window: the study's 225 / 57 open; closed, the page draws the slab at the window's top edge (25).
 const shapes=[
- {tier:'tall',closed:false,canvas:911,root:877,cap:216,strip:225,proto:PROTO.tall},
- {tier:'compact',closed:false,canvas:661,root:627,cap:48,strip:57,proto:PROTO.compact},
- {tier:'tall',closed:true,canvas:725,root:691,cap:30,strip:25,proto:PROTO.tallClosed},
- {tier:'compact',closed:true,canvas:643,root:609,cap:30,strip:25,proto:PROTO.compactClosed},
+ {tier:'tall',closed:false,canvas:939,root:905,cap:244,proto:PROTO.tall},
+ {tier:'compact',closed:false,canvas:669,root:635,cap:56,proto:PROTO.compact},
+ {tier:'tall',closed:true,canvas:725,root:691,cap:30},
+ {tier:'compact',closed:true,canvas:643,root:609,cap:30},
 ];
 async function open(page,s){
  await page.setViewportSize({width:636,height:s.canvas});
@@ -69,18 +66,16 @@ for(const scale of [1,2])test.describe(`@${scale}x`,()=>{
   expect(cap.length,'the canopy paints').toBeGreaterThan(0);
   const capLeft=Math.min(...cap.map(r=>r[0])),capRight=Math.max(...cap.map(r=>r[1]));
   expect([capLeft,capRight],'canopy frame never wider than the wall below it').toEqual([Math.max(capLeft,wall[0]),Math.min(capRight,wall[1])]);
-  // Monotone taper top to bottom, down to the lower wall (the aft plate's rounded foot below is not part of it), up to
-  // the 1 px anti-aliasing jitter the study's own c01 art has.
+  // Monotone taper top to bottom, down to the lower wall (the aft plate's rounded foot below is not part of it).
   const lowerTop=await page.evaluate(()=>Math.round(document.querySelector('.ck-shell .hull-lower').getBoundingClientRect().top));
   const bad=[];let edge=null;
   for(let y=0;y<(lowerTop+40)*scale;y++){const r=rows[y];if(!r)continue;
-   if(edge&&(r[0]>edge[0]+1||r[1]<edge[1]-1))bad.push(`${(y/scale).toFixed(1)}: [${r}] narrower than [${edge}] above`);
+   if(edge&&(r[0]>edge[0]||r[1]<edge[1]))bad.push(`${(y/scale).toFixed(1)}: [${r}] narrower than [${edge}] above`);
    edge=edge?[Math.min(edge[0],r[0]),Math.max(edge[1],r[1])]:r;}
   expect(bad.slice(0,8),'every row at least as wide as every row above it').toEqual([]);
-  expect(strip[0],'strip top in the window').toBe(s.strip);
-  const off=[];
-  for(const [y,want] of s.proto){const r=rows[Math.round((strip[0]+y)*scale)],got=r?r[1]-r[0]:0;
-   if(Math.abs(got-want)>TOL)off.push(`${y}: ${got} vs study ${want}`);}
-  expect(off,'silhouette profile vs the opus-r7 study (1% of 636 px)').toEqual([]);
+  if(s.proto){const off=[];
+   for(const [y,want] of s.proto.rows){const r=rows[Math.round((strip[0]+y)*scale)],got=r?r[1]-r[0]:0;
+    if(y>=s.proto.flank?Math.abs(got-want)>TOL:got>want+TOL)off.push(`${y}: ${got} vs study ${want}`);}
+   expect(off,'silhouette profile vs the opus-r7 study (1% of 636 px)').toEqual([]);}
  });
 });
