@@ -56,6 +56,8 @@ public struct FirstRunTool: Sendable, Equatable {
     private var firstRunExplicitSelection=false
     /// G3-45: the user's own first-run changes; untouched tools follow their default.
     private var firstRunToolChoices: [String: Bool] = [:]
+    /// HIST-IMP-03: the request ID of the first-run Done grant, until its receipt arrives.
+    private var firstRunGrantRequestID: String?
     private var rowCodes: [String: RowsCode] = [:]
     private var rowStates: [String: RowsState] = [:]
     private var observers: [UUID: @MainActor () -> Void] = [:]
@@ -321,6 +323,8 @@ public struct FirstRunTool: Sendable, Equatable {
                 case .notReady, .localBusy, .invalidConfiguration, .unsupportedCapability,
                      .deadlineExceeded(.notSent), .interrupted(.notSent):
                     phase = .idle; notice = .requestFailed
+                // The engine answers consent/grant with an error only when nothing was committed.
+                case .rpc: phase = .idle; notice = .requestFailed
                 default: phase = .waitingForFacts; notice = .outcomeUnknown
                 }
             } else if error is ScopeConsentCommandFailure || error is EngineConsentGrantError {
@@ -432,10 +436,18 @@ public struct FirstRunTool: Sendable, Equatable {
         guard let intent = firstRunChoiceIntent() else { return true }
         guard canMutate else { return false }
         let value = ScopeConsentConfirmation(id: UUID(), intent: intent)
+        firstRunGrantRequestID = intent.requestID
         phase = .confirmation(value); changed()
         await confirm(value.id)
         if case .requestFailed = notice { return false }
         return true
+    }
+    /// HIST-IMP-03: true once, for the committed receipt of the first-run Done grant. Ordinary
+    /// Settings allow, revoke and forget receipts never start the first-run import.
+    public func takeCommittedFirstRunGrant(_ value: EngineGrantResult) -> Bool {
+        guard let id = firstRunGrantRequestID, value.receipt.requestId == id else { return false }
+        firstRunGrantRequestID = nil
+        return value.committedAt != nil && !value.supersededByLaterConsent && value.receipt.code == .ok
     }
     /// A user-triggered read only. Its completion cannot replace accepted permission facts.
     public func inspectConsent() async {

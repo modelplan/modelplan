@@ -517,6 +517,19 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 		}
 		doc[key], _ = json.Marshal(kept)
 	}
+	// The importer's per-source coverage (dates and grant) goes with that source's imported rows.
+	if name == "imported.json" && history && doc["coverage"] != nil && string(doc["coverage"]) != "null" {
+		var coverage map[string]json.RawMessage
+		if json.Unmarshal(doc["coverage"], &coverage) != nil {
+			return errors.New("cached coverage invalid")
+		}
+		for source := range coverage {
+			if source == tool || source == "claude-code" && tool == "claude" {
+				delete(coverage, source)
+			}
+		}
+		doc["coverage"], _ = json.Marshal(coverage)
+	}
 	b, _ = json.Marshal(doc)
 	if err := replace(path, append(b, '\n')); err != nil {
 		return err
