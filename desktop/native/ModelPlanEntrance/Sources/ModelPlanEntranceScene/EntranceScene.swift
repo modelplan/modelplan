@@ -1044,7 +1044,13 @@ enum CockpitCeiling {
     static let bottom: Float = 12.3
     static let top: Float = 14.17
     /// Multiplies the screen colours in the texture.
-    static let brightness: CGFloat = 0.8
+    static let brightness: CGFloat = 1.0
+    /// The opening in the lining behind the window (r3c showed nothing: every sight line through the glass first
+    /// crosses the lining just behind the glass, so the near wall hid the far one). Measured with
+    /// `entrance-r3/hole.py` for camera elevations 61-66 degrees: all entry points lie below y 13.75 within 52.3
+    /// degrees of the window side; 85 % of the landing points lie outside this opening, on the lining.
+    static let openingTop: Float = 13.78
+    static let openingHalfAzimuth: Float = 56
     /// The capsule's outer radius by height, measured on the brand rocket model file (rings of capsule_lower,
     /// capsule_aperture_shell and capsule_nose).
     static let profile: [(y: Float, r: Float)] = [
@@ -1065,13 +1071,15 @@ enum CockpitCeiling {
     /// Screens on the texture: azimuth (degrees, 0 = the window side), height (metres in the rocket frame),
     /// width and height (metres along the surface), colour (sRGB). Spread over the band the sight lines land on.
     static let screens: [(az: Float, y: Float, w: Float, h: Float, rgb: SIMD3<Float>)] = {
-        let cool: SIMD3<Float> = [0.50, 0.64, 0.86], dim: SIMD3<Float> = [0.26, 0.34, 0.48], amber: SIMD3<Float> = [0.95, 0.66, 0.34]
+        let cool: SIMD3<Float> = [0.58, 0.72, 0.95], dim: SIMD3<Float> = [0.32, 0.42, 0.58], amber: SIMD3<Float> = [1.0, 0.72, 0.38]
+        // Overhead band above the opening (where the sight lines from the window centre land) and side panels
+        // beside it (where the outer columns land).
         return [
-            (-52, 13.55, 0.15, 0.10, cool), (-30, 13.62, 0.12, 0.10, amber), (-10, 13.66, 0.10, 0.09, dim),
-            (12, 13.66, 0.10, 0.09, cool), (32, 13.62, 0.12, 0.10, cool), (54, 13.55, 0.15, 0.10, dim),
-            (-38, 13.86, 0.09, 0.07, dim), (-14, 13.92, 0.08, 0.07, cool), (14, 13.92, 0.08, 0.07, amber),
-            (38, 13.86, 0.09, 0.07, cool), (0, 14.07, 0.06, 0.05, cool), (-60, 13.42, 0.06, 0.05, amber),
-            (62, 13.42, 0.06, 0.05, cool),
+            (-34, 13.87, 0.09, 0.06, dim), (-12, 13.91, 0.08, 0.06, cool), (12, 13.91, 0.08, 0.06, amber),
+            (34, 13.87, 0.09, 0.06, cool), (0, 14.03, 0.06, 0.045, cool), (-22, 14.0, 0.05, 0.04, amber),
+            (22, 14.0, 0.05, 0.04, dim),
+            (-65, 13.5, 0.12, 0.09, cool), (65, 13.5, 0.12, 0.09, dim), (-63, 13.69, 0.08, 0.06, amber),
+            (63, 13.69, 0.08, 0.06, cool), (-76, 13.86, 0.07, 0.05, dim), (76, 13.86, 0.07, 0.05, cool),
         ]
     }()
 
@@ -1104,6 +1112,9 @@ enum CockpitCeiling {
         for j in 0..<UInt32(rows) {
             for i in 0..<UInt32(columns) {
                 let a = j * stride + i, b = a + 1, c = a + stride, d = c + 1
+                let centre = (positions[Int(a)] + positions[Int(d)]) / 2
+                let azimuth = atan2(centre.x, centre.z) * 180 / .pi
+                if centre.y < openingTop && abs(azimuth) < openingHalfAzimuth { continue }
                 indices += [a, b, d, a, d, c]
             }
         }
@@ -1138,6 +1149,12 @@ enum CockpitCeiling {
         }
         // Faint console housings behind the screens: barely lighter than the lining, so no hard outline shows.
         c.setFillColor(color([0.03, 0.035, 0.045]))
+        // Every screen also at the mirrored height (top + bottom - y): if the texture's v runs the other way than
+        // assumed, the copies land on the band instead; the unused set falls in the opening or out of sight.
+        let mirrored = Self.screens.map { s -> (az: Float, y: Float, w: Float, h: Float, rgb: SIMD3<Float>) in
+            (s.az, bottom + top - s.y, s.w, s.h, s.rgb)
+        }
+        let screens = Self.screens + mirrored
         for s in screens {
             c.addPath(CGPath(roundedRect: rect(az: s.az, y: s.y, w: s.w * 1.35, h: s.h * 1.4).insetBy(dx: 0, dy: 0),
                              cornerWidth: 10, cornerHeight: 10, transform: nil))
