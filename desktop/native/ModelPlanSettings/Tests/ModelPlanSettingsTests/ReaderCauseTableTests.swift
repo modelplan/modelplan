@@ -78,7 +78,7 @@ final class ReaderCauseTableTests: XCTestCase {
         var preferences = SettingsPreferences(); preferences.language = .chinese
         let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: preferences, context: context).first { $0.key == .source })
         guard case .subscriptions(let values) = row.value else { return XCTFail("not per-subscription") }
-        XCTAssertEqual(values.first { $0.id == "codex" }?.value, "需要 Node.js · 安装 Node.js")
+        XCTAssertEqual(values.first { $0.id == "codex" }?.value, "需要 Node.js · 从 nodejs.org 安装 Node.js 后刷新")
         XCTAssertEqual(values.first { $0.id == "grok" }?.value, "unavailable")
     }
 }

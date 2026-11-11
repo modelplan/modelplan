@@ -212,9 +212,11 @@ enum CommunityUnboundDockRows {
             case "not_detected": return ("Reader not detected / 未检测到读取组件", next("Sign in to the tool, then check Settings / 登录工具后在设置检查"))
             case "expired", "stale": return ("Reading expired / 读数已过期", next("Check this tool in Settings / 在设置检查此工具"))
             case "unsupported_schema": return ("Reader update required / 需要更新读取组件", next("Check component updates in Settings / 在设置检查组件更新"))
-            case "timeout", "runtime_missing", "not_found", "rpc_error", "closed", "region_refused", "no_key", "key_missing":
+            case "not_found", "rpc_error", "closed", "region_refused", "no_key", "key_missing":
                 return causeResult(code) ?? ("Reading unavailable / 读取暂不可用", next("Check reader status in Settings / 在设置检查读取状态"))
-            case "reader_error", "parse_error", "error", "unavailable": return ("Reading unavailable / 读取暂不可用", next("Check reader status in Settings / 在设置检查读取状态"))
+            // A bare `timeout` or `runtime_missing` reason string (no engine errorCode) stays the generic line; the
+            // specific cause above comes from the engine's errorCode.
+            case "reader_error", "parse_error", "timeout", "runtime_missing", "error", "unavailable": return ("Reading unavailable / 读取暂不可用", next("Check reader status in Settings / 在设置检查读取状态"))
             default: return ("No current reading / 暂无当前读数", next("Check connected tools in Settings / 在设置检查已连接工具"))
             }
         }
