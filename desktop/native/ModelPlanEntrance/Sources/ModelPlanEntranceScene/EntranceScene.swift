@@ -557,9 +557,11 @@ struct HullFinish {
         theme == .night ? NSColor(srgbRed: 0.95, green: 0.955, blue: 0.97, alpha: 1)
             : NSColor(srgbRed: 0.97, green: 0.97, blue: 0.97, alpha: 1)
     }
+    /// Round 8 (r7b: the rim read as a grey line on one side only; pass 5 has a crisp bright line all round): the
+    /// glow carries the line where the polished face reflects dark room (night 0.42 -> 0.85, day 0.3 -> 0.8).
     var rimGlow: NSColor {
-        theme == .night ? NSColor(srgbRed: 0.42, green: 0.44, blue: 0.48, alpha: 1)
-            : NSColor(srgbRed: 0.3, green: 0.3, blue: 0.31, alpha: 1)
+        theme == .night ? NSColor(srgbRed: 0.85, green: 0.87, blue: 0.9, alpha: 1)
+            : NSColor(srgbRed: 0.8, green: 0.8, blue: 0.81, alpha: 1)
     }
 
     /// Round 6 (r5: the frame read as a light band along the bottom of the window, where its faces tilt up at the
@@ -711,9 +713,10 @@ struct HullFinish {
 @MainActor
 enum JointLine {
     /// Groove height in metres (the edge ring is 6 mm in the file).
-    static let grooveHeight: Float = 0.0021
+    /// Round 8: 2.1 -> 4 mm and the lip 1.2 -> 2 mm, in step with the panel grooves in the maps (`HullPanels`).
+    static let grooveHeight: Float = 0.004
     /// Lip height in metres, directly above the groove.
-    static let lipHeight: Float = 0.0012
+    static let lipHeight: Float = 0.002
     /// The file's `joint_edge_*` ring height.
     static let fileEdgeHeight: Float = 0.006
 
@@ -1105,7 +1108,9 @@ enum SmoothNormals {
 @available(macOS 15.0, *)
 @MainActor
 enum CanopyGlass {
-    static let opacity: Float = 0.62
+    /// Round 8: 0.62 -> 0.5, so half of the (now brighter) cockpit shows through, as in the pass-5 window. The
+    /// blending also scales the glass's own reflection, so `EntranceLook.glassEnvironmentExponent` went up 0.5.
+    static let opacity: Float = 0.5
 
     static func material() -> PhysicallyBasedMaterial {
         var m = PhysicallyBasedMaterial()
@@ -1496,19 +1501,24 @@ enum HullPanels {
     static let base: Float = 0.74
     /// Groove and lip widths in metres (clamped to at least one texel). Round 6: r5's 2.5 / 1.2 mm vanished at the
     /// close-up's scale (about 5 px per cm, then the 2x downsample); 4 / 2.5 mm are 2 and 1.2 output pixels there.
-    static let grooveWidth: Float = 0.004
-    static let lipWidth: Float = 0.0025
+    /// Round 8 (r7b: the grid still too faint at the full close-up; pass 5's grooves read as about 2-3 px dark lines
+    /// with a light edge at a smaller scale): 6 / 3 mm, about 2.8 and 1.4 px in the close-up.
+    static let grooveWidth: Float = 0.006
+    static let lipWidth: Float = 0.003
     /// How much darker a groove is (0-1) and how far a lip goes toward white.
     static let grooveDark: Float = 0.85
     static let lipLight: Float = 0.8
     /// Round 6: a soft shadow beside every groove (`aoWidth` metres each side, `aoStrength` darkening) and a
     /// matching gentle slope into it in the normal map, so a seam still reads where the hairline itself is sub-pixel.
-    static let aoWidth: Float = 0.006
-    static let aoStrength: Float = 0.45
+    /// Round 8: the blur runs twice (a tent, not a flat band) and is normalised so the shade is 1 at the groove and
+    /// falls off linearly to nothing at about 2 x `aoWidth`; 8 mm and 0.55 (r7b: 6 mm, 0.45, a flat band at ~0.8).
+    static let aoWidth: Float = 0.008
+    static let aoStrength: Float = 0.55
     /// Brushed grain: albedo streak contrast; the grain runs around the hull or along it, chosen per panel, and
     /// each panel's tone varies by up to +-`panelTone` (pass 5's panels are not one flat sheet).
     static let brush: Float = 0.06
-    static let panelTone: Float = 0.05
+    /// Round 8: 0.05 -> 0.07, so neighbouring panels separate a little more (pass 5's grid reads partly by tone).
+    static let panelTone: Float = 0.07
     static let scratchLight: Float = 0.3
     static let normalStrength: Float = 1.5
     /// Micro-scratches per band.
@@ -1832,7 +1842,7 @@ enum HullPanels {
         let radiusAO = max(2, Int(aoWidth * Float(h) / span))
         var ao = [Float](repeating: 0, count: w * h), pass = ao
         for i in 0..<(w * h) { ao[i] = Float(masks[4 * i]) / 255 }
-        ao.withUnsafeMutableBufferPointer { a in
+        for _ in 0..<2 { ao.withUnsafeMutableBufferPointer { a in
             pass.withUnsafeMutableBufferPointer { t in
                 let norm = 1 / Float(2 * radiusAO + 1)
                 for row in 0..<h {
@@ -1852,7 +1862,9 @@ enum HullPanels {
                     }
                 }
             }
-        }
+        } }
+        // A groove `grooveTexels` wide blurred twice by a box of `2 r + 1` peaks at about grooveTexels / (2 r + 1).
+        let aoGain = Float(2 * radiusAO + 1) / max(1, grooveWidth * Float(h) / span)
 
         // Brushed grain: one random level per texel row (around) or column (along), broken into 48-texel runs.
         let rowNoise = (0..<h).map { _ in random.signed() }, colNoise = (0..<w).map { _ in random.signed() }
@@ -1884,7 +1896,7 @@ enum HullPanels {
                             streak = along ? colNoise[col] * (0.5 + 0.5 * runNoise[(row / 48 + col * 7) & 4095])
                                 : rowNoise[row] * (0.5 + 0.5 * runNoise[(col / 48 + row * 7) & 4095])
                         }
-                        let shade = min(1, ao[i] * 2.5)
+                        let shade = min(1, ao[i] * aoGain)
                         var v = base * (1 + brush * streak + detailAlbedo * grain) * (1 + panelTone * variation)
                         v *= 1 - aoStrength * shade
                         v *= 1 - grooveDark * g
@@ -1936,39 +1948,137 @@ enum LookImage {
     }
 }
 
-/// D142: the cockpit interior image behind the front window, in place of the code console. One unlit trapezoid in
-/// the rocket frame, where the file's screen plane sits, tilted `tilt` degrees to face the end-pose camera (20
-/// degrees below the window), wider at the bottom like the window and the capsule. The image spans the trapezoid's
-/// bounding rectangle (`bottomWidth` x `height`), so its top corners are cut off. All four corners stay inside the
-/// capsule (checked against `CockpitCeiling.profile`: top half-width 0.5 m where 0.52 m is free).
+/// D142: the cockpit interior image behind the front window, in place of the code console. One unlit plane in the
+/// rocket frame, tilted `tilt` degrees to face the end-pose camera (20 degrees below the window).
+///
+/// Round 8 (r7b: only a few screens peeked in along the bottom of the glass, and the room was far too dark): the
+/// r7 plane was centred at y 12.85, below the window-centre sight line, and the image's screens sit at 30 % of its
+/// height, so they landed in the bottom fifth of the glass. Now (measured with `entrance-r8/backdrop.py` on the
+/// rounded glass for the close-up, the end pose and the hand-over):
+/// - the plane is centred where the end pose's window-centre sight line crosses z = `centre.z` (y 12.99), and
+///   every sight line through the glass lands on it within s -0.47...+0.47 m;
+/// - the image is placed on the plane (`imageHeight`, `imageCentre`) so that its screen band (rows at 23-37 % of
+///   the height) lies on s -0.1...+0.1, the middle third of the visible glass, and the screen clusters span about
+///   80 % of the glass width; below the image a short `padBelow` continues its bottom rows, fading dark (the lower
+///   console in shadow), so no sight line runs off the picture;
+/// - the plane is a grid whose sides are clipped to `clearance` of the capsule radius, so it never pokes through
+///   the hull or the dark lining (0.92), whatever the placement;
+/// - the image gets an exposure lift (`exposure`, a soft shoulder in linear light): the dim room comes up about 5x
+///   (structure sRGB ~0.05 to ~0.2) while the lit screens only reach near white instead of clipping.
+/// The file's back-half lining sits at z <= 0, behind the plane's lowest edge (z ~0.02).
 @available(macOS 15.0, *)
 @MainActor
 enum CockpitBackdrop {
     static let name = "cockpit-backdrop"
-    static let centre = SIMD3<Float>(0, 12.85, 0.2)
+    static let centre = SIMD3<Float>(0, 12.99, 0.2)
     static let tilt: Float = 20
-    static let bottomWidth: Float = 1.4, topWidth: Float = 1.0, height: Float = 1.0
-    /// Multiplies the image (the glass shows about 40 % of it).
+    /// The plane's extent along its up axis (metres from `centre`) and half-width before clipping.
+    static let planeBottom: Float = -0.53, planeTop: Float = 0.55, planeHalfWidth: Float = 0.95
+    /// The plane is clipped to this fraction of the capsule radius at each height.
+    static let clearance: Float = 0.915
+    /// The image's height on the plane in metres (its width follows its aspect: 7:5, so 2.03 m) and its centre
+    /// along the up axis: screens (30 % up the image) at s = imageCentre - 0.2 x imageHeight = 0.
+    static let imageHeight: Float = 1.45
+    static let imageCentre: Float = 0.29
+    /// Metres of faded continuation under the image.
+    static let padBelow: Float = 0.12
+    /// Exposure lift in linear light: out = (1 - e^(-k x)) / (1 - e^(-k)), about k times for the dark room.
+    static let exposure: Double = 5
+    /// Multiplies the image (unlit tint, at most 1).
     static let brightness: CGFloat = 1.0
 
-    static func add(to root: Entity, image: CGImage) throws {
-        guard root.findEntity(named: name) == nil else { return }
-        let a = tilt * .pi / 180
+    enum BackdropError: Error { case context }
+
+    /// The image with `padBelow` added under it and the exposure lift applied, as an sRGB RGBA bitmap.
+    static func prepared(_ image: CGImage) throws -> CGImage {
+        let w = image.width, h = image.height
+        let pad = max(1, Int((Float(h) * padBelow / imageHeight).rounded()))
+        let total = h + pad
+        guard let c = CGContext(data: nil, width: w, height: total, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { throw BackdropError.context }
+        c.interpolationQuality = .high
+        // CoreGraphics draws from the bottom: the image on top, the pad under it.
+        c.draw(image, in: CGRect(x: 0, y: pad, width: w, height: h))
+        let strip = max(2, h / 40)
+        if let bottomRows = image.cropping(to: CGRect(x: 0, y: h - strip, width: w, height: strip)) {
+            c.draw(bottomRows, in: CGRect(x: 0, y: 0, width: w, height: pad))
+        }
+        if let fade = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+                                 colors: [CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.25), CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.9)] as CFArray,
+                                 locations: [0, 1]) {
+            c.saveGState()
+            c.clip(to: CGRect(x: 0, y: 0, width: w, height: pad))
+            c.drawLinearGradient(fade, start: CGPoint(x: 0, y: pad), end: CGPoint(x: 0, y: 0), options: [])
+            c.restoreGState()
+        }
+        guard let data = c.data else { throw BackdropError.context }
+        let lut: [UInt8] = (0..<256).map { b in
+            let s = Double(b) / 255
+            let linear = s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4)
+            let lifted = min(1, (1 - exp(-exposure * linear)) / (1 - exp(-exposure)))
+            let encoded = lifted <= 0.0031308 ? 12.92 * lifted : 1.055 * pow(lifted, 1 / 2.4) - 0.055
+            return UInt8((min(1, max(0, encoded)) * 255).rounded())
+        }
+        let p = data.bindMemory(to: UInt8.self, capacity: w * total * 4)
+        for i in 0..<(w * total) {
+            p[4 * i] = lut[Int(p[4 * i])]; p[4 * i + 1] = lut[Int(p[4 * i + 1])]; p[4 * i + 2] = lut[Int(p[4 * i + 2])]
+            p[4 * i + 3] = 255
+        }
+        guard let out = c.makeImage() else { throw BackdropError.context }
+        return out
+    }
+
+    /// The plane as a grid in (x, s), sides clipped to the capsule, with the image's texture coordinates
+    /// (v = 0 at the bottom of the pad, 1 at the image's top row).
+    static func mesh(imageAspect: Float, columns: Int = 24, rows: Int = 24) throws -> MeshResource {
+        let angle = tilt * .pi / 180
         // Plane axes in the rocket frame: right = +x, up = y tilted toward +z, normal toward the camera below.
-        let up = SIMD3<Float>(0, cos(a), sin(a))
-        let corners: [(x: Float, y: Float)] = [(-bottomWidth / 2, -height / 2), (bottomWidth / 2, -height / 2),
-                                               (topWidth / 2, height / 2), (-topWidth / 2, height / 2)]
-        let positions = corners.map { centre + SIMD3<Float>($0.x, 0, 0) + up * $0.y }
-        let uvs = corners.map { SIMD2<Float>(($0.x + bottomWidth / 2) / bottomWidth, ($0.y + height / 2) / height) }
+        let up = SIMD3<Float>(0, cos(angle), sin(angle))
+        let imageWidth = imageHeight * imageAspect
+        let vBottom = imageCentre - imageHeight / 2 - padBelow, vSpan = imageHeight + padBelow
+        var positions: [SIMD3<Float>] = [], uvs: [SIMD2<Float>] = [], indices: [UInt32] = []
+        for j in 0...rows {
+            let s = planeBottom + (planeTop - planeBottom) * Float(j) / Float(rows)
+            let base = centre + up * s
+            let free = clearance * CockpitCeiling.radius(base.y)
+            let half = min(planeHalfWidth, sqrt(max(0, free * free - base.z * base.z)))
+            for i in 0...columns {
+                let x = -half + 2 * half * Float(i) / Float(columns)
+                positions.append(base + SIMD3<Float>(x, 0, 0))
+                uvs.append([x / imageWidth + 0.5, (s - vBottom) / vSpan])
+            }
+        }
+        let stride = UInt32(columns + 1)
+        for j in 0..<UInt32(rows) {
+            for i in 0..<UInt32(columns) {
+                let a = j * stride + i, b = a + 1, c = a + stride, d = c + 1
+                indices += [a, b, d, a, d, c]
+            }
+        }
         var descriptor = MeshDescriptor(name: name)
         descriptor.positions = MeshBuffers.Positions(positions)
         descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(uvs)
-        descriptor.primitives = .triangles([0, 1, 2, 0, 2, 3])
-        let resource = try TextureResource.generate(from: image, options: .init(semantic: .color))
+        descriptor.primitives = .triangles(indices)
+        return try MeshResource.generate(from: [descriptor])
+    }
+
+    static func add(to root: Entity, image: CGImage) throws {
+        guard root.findEntity(named: name) == nil else { return }
+        let resource = try TextureResource.generate(from: prepared(image), options: .init(semantic: .color))
+        var texture = MaterialParameters.Texture(resource)
+        let d = MTLSamplerDescriptor()
+        d.sAddressMode = .clampToEdge
+        d.tAddressMode = .clampToEdge
+        d.minFilter = .linear
+        d.magFilter = .linear
+        d.mipFilter = .linear
+        texture.sampler = .init(d)
         var material = UnlitMaterial()
-        material.color = .init(tint: NSColor(white: brightness, alpha: 1), texture: .init(resource))
+        material.color = .init(tint: NSColor(white: brightness, alpha: 1), texture: texture)
         material.faceCulling = .none
-        let entity = ModelEntity(mesh: try MeshResource.generate(from: [descriptor]), materials: [material])
+        let aspect = Float(image.width) / Float(max(1, image.height))
+        let entity = ModelEntity(mesh: try mesh(imageAspect: aspect), materials: [material])
         entity.name = name
         root.addChild(entity)
     }
@@ -2001,7 +2111,8 @@ enum WindowShape {
     static let sideAtBottom: Float = 0.7613, sideAtTop: Float = 0.5078
     static let centre = SIMD2<Float>(0, 12.835)
     static let glassLift: Float = 0.018, frameLift: Float = 0.022, openingLift: Float = 0.004
-    static let rimWidth: Float = 0.008, frameWidth: Float = 0.036, wallWidth: Float = 0.004
+    /// Round 8: rim 0.8 -> 1.0 cm (about 4.7 px in the close-up), frame 3.6 -> 3.4 cm, so the bands end where they did.
+    static let rimWidth: Float = 0.01, frameWidth: Float = 0.034, wallWidth: Float = 0.004
     /// Points per corner arc and per straight edge.
     static let arcPoints = 16, edgePoints = 16
     static let glassRings = 12
@@ -2188,7 +2299,8 @@ public enum EntranceLook {
     public static func environmentExponent(_ theme: EntranceTheme) -> Float { theme == .day ? 1.0 : 2.5 }
 
     /// Image-based light exponent for the canopy glass's own environment (`glassStudio`).
-    public static func glassEnvironmentExponent(_ theme: EntranceTheme) -> Float { theme == .day ? 1.5 : 1.0 }
+    /// Round 8: +0.5 (night 1.5, day 2.0), making up for the lower glass opacity, which also dims the reflection.
+    public static func glassEnvironmentExponent(_ theme: EntranceTheme) -> Float { theme == .day ? 2.0 : 1.5 }
 
     /// The canopy glass's environment: a near-black room with no bright ceiling, so the glass never turns white at
     /// grazing angles. Round 5 (pass 5: curved reflection streaks along the glass's edges): the glass spans about
@@ -2206,8 +2318,24 @@ public enum EntranceLook {
             v = max(v, 0.8 * strip(az, e, centre: glassStreakAzimuth, half: 4, low: -15, high: 80, soft: 5))
             v = max(v, 0.55 * strip(az, e, centre: -35, half: 25, low: 70, high: 84, soft: 8))
             v = max(v, 0.2 * strip(az, e, centre: 0, half: 30, low: 36, high: 42, soft: 6))
+            v = max(v, glassSheen * sheen(az, e))
             return v
         }
+    }
+
+    /// Round 8 (pass 5: soft reflection streaks across the glass, not only one glint): a broad, faint, slanted
+    /// sheen. From 20 degrees below, the glass centre reflects about 49 degrees up in front (az 0), its top higher
+    /// and its bottom about 40 degrees, its sides about twice their own azimuth. Two wide soft bands in that part of
+    /// the sky, leaning so their reflection runs diagonally from upper left to lower right across the glass, the
+    /// left one brighter (the key side). Glass reflects only a few per cent at these angles, so `glassSheen` is
+    /// high for a faint result.
+    public static let glassSheen = 0.3
+    static func sheen(_ az: Double, _ e: Double) -> Double {
+        func band(_ centre: Double, _ half: Double) -> Double {
+            // The band's centre azimuth moves with elevation, so it slants across the glass.
+            strip(az, e, centre: centre - (e - 50) * 0.9, half: half, low: 25, high: 75, soft: 22)
+        }
+        return max(band(-30, 10), 0.6 * band(30, 6))
     }
 
     /// A tall strip centred at azimuth `centre`, `half` degrees wide, from elevation `low` to `high`, with soft

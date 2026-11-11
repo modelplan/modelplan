@@ -203,7 +203,18 @@ final class OfficialEntranceFramesTests: XCTestCase {
             print("OFFICIAL-COCKPIT \(theme.rawValue) \(scene.cockpit) WINDOW \(scene.windowShape)")
             if look.cockpitInterior(for: theme) != nil {
                 XCTAssertEqual(scene.cockpit, "image")
-                XCTAssertNotNil(scene.entity(named: "cockpit-backdrop"), "\(theme) no cockpit image behind the window")
+                let backdrop = try XCTUnwrap(scene.entity(named: "cockpit-backdrop"), "\(theme) no cockpit image behind the window")
+                // Round 8: the image sits behind the middle of the window (r7b: only its bottom edge showed) and
+                // stays inside the capsule (the plane is clipped to the capsule radius).
+                let box = backdrop.visualBounds(relativeTo: backdrop.parent)
+                print("OFFICIAL-BACKDROP \(theme.rawValue) y \(String(format: "%.2f-%.2f", box.min.y, box.max.y)) " +
+                      "x \(String(format: "%.2f-%.2f", box.min.x, box.max.x)) z \(String(format: "%.2f-%.2f", box.min.z, box.max.z))")
+                XCTAssertGreaterThan(box.max.y, 13.3, "\(theme) cockpit image does not reach above the window centre")
+                XCTAssertLessThan(box.min.y, 12.6, "\(theme) cockpit image does not reach below the window centre")
+                XCTAssertLessThan(max(abs(box.min.x), abs(box.max.x)), 0.85, "\(theme) cockpit image pokes out of the capsule")
+                for material in try XCTUnwrap(backdrop.components[ModelComponent.self]).materials {
+                    XCTAssertNotNil((material as? UnlitMaterial)?.color.texture, "\(theme) cockpit image is not an unlit texture")
+                }
             } else {
                 XCTAssertEqual(scene.cockpit, "code")
                 XCTAssertNotNil(scene.entity(named: "cockpit-screen-0"), "\(theme) cockpit has no screens")
