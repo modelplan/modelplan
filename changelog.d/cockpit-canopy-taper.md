@@ -1,1 +1,1 @@
-The porthole frame on the tall cockpit no longer sticks out past the walls below it: its sides now run straight down onto the walls, so the cockpit is narrow at the top and wide at the bottom as in the design.
+The cockpit's porthole canopy is the design's lower, gently curved one again (owner decision D156): the taller domed top that stood out above the title strip is gone, the cockpit is narrow at the top and wide at the bottom as in the design, and the window is 28 points shorter (tall) and 8 points shorter (compact).

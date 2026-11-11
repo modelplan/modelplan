@@ -8,11 +8,11 @@ import {inflateSync} from 'node:zlib';
 // opus-r7 study composes it (canopy-h1 + canopy-c01 + strip-hull-unify). Below the c01 canopy the side walls are an
 // upper wall 8 px in from the 636 px hull, a 31 px taper and the full-width lower wall, each the lower-skin tile cut
 // by the study's own alpha masks; the canopy frame takes the study's solid outline. Boxes measured on the study in
-// each shape, relative to the root. The D74 canopy (#801) is 28 px (tall) and 8 px (compact) taller than the study's,
-// so the open shapes, the root and every row below the canopy move down by as much; the closed shapes are unchanged.
+// each shape, relative to the root. D156 (G3-82): the canopy is the study's own c01 again (216 / 48 px), so every
+// box is the study's.
 const shapes=[
- {tier:'tall',closed:false,canvas:939,plate:890,upper:[244,270],cone:514,lower:338,phase:253},
- {tier:'compact',closed:false,canvas:669,plate:640,upper:[56,264],cone:320,lower:262,phase:65},
+ {tier:'tall',closed:false,canvas:911,plate:890,upper:[216,270],cone:486,lower:338,phase:225},
+ {tier:'compact',closed:false,canvas:661,plate:640,upper:[48,264],cone:312,lower:262,phase:57},
  {tier:'tall',closed:true,canvas:725,plate:890,upper:[30,270],cone:300,lower:338,phase:39},
  {tier:'compact',closed:true,canvas:643,plate:640,upper:[30,264],cone:294,lower:262,phase:39},
 ];
@@ -59,20 +59,20 @@ for(const s of shapes)test(`B13 ${s.tier}${s.closed?' closed':''}: study hull wa
  for(const part of [v.upper,v.cone,v.lower])expect(part.bg).toBe('lower-skin-890-1x.png,lower-skin-890-2x.png');
  expect(v.record).toBe('none');
  // The c01 frame's raw lower sides run straight to the image edge; the study rounds them with its solid outline.
- if(!s.closed)expect([v.canopyMask,v.canopySize]).toEqual([`solid-outline-${s.plate}-1x.png`,`636px ${s.plate===890?244:56}px`]);
+ if(!s.closed)expect([v.canopyMask,v.canopySize]).toEqual([`solid-outline-${s.plate}-1x.png`,`636px ${s.plate===890?216:48}px`]);
  expect(bad.filter(p=>/^\/(assets\/(hull\/|logo)|runtime\/canopy-c01\/)/.test(p))).toEqual([]);
 
  // Silhouette: the canopy frame and upper walls stand 8 px inside the 636 px lower body.
- const root=s.closed?(s.tier==='tall'?691:609):(s.tier==='tall'?905:635),top=s.closed?-14:0,rows=await silhouette(page,root+top);
+ const root=s.closed?(s.tier==='tall'?691:609):(s.tier==='tall'?877:627),top=s.closed?-14:0,rows=await silhouette(page,root+top);
  const at=y=>rows[y+top];
  if(!s.closed){
-  const foot=s.plate===890?228:48;
+  const foot=s.plate===890?200:40;
   expect(at(foot)[0],'canopy frame foot, left').toBeGreaterThanOrEqual(8);
   expect(at(foot)[1],'canopy frame foot, right').toBeLessThanOrEqual(627);
  }
  for(const y of [s.upper[0]+30,s.cone-2])expect(at(y),`upper wall at ${y}`).toEqual([8,627]);
  for(const y of [s.cone+40,s.cone+31+s.lower-10])expect(at(y),`lower wall at ${y}`).toEqual([0,635]);
- const frame=at(s.closed?20:(s.plate===890?228:48)),body=at(s.cone+60);
+ const frame=at(s.closed?20:(s.plate===890?200:40)),body=at(s.cone+60);
  expect(frame[1]-frame[0],'porthole frame narrower than the lower body').toBeLessThan(body[1]-body[0]);
 });
 
@@ -96,14 +96,14 @@ test('B13 strip shows the study rocket mark and the live ModelPlan wordmark',asy
   const cw=getComputedStyle(w);
   return {mark:getComputedStyle(m).backgroundImage.match(/[^/"]+\.svg/)?.[0],markBox:box(m),text:w.textContent,font:cw.fontSize+' '+cw.fontWeight+' '+cw.lineHeight,transform:cw.textTransform,
    plan:getComputedStyle(b).color,planSize:getComputedStyle(b).fontSize,raster:[getComputedStyle(w,'::before').content,getComputedStyle(w,'::after').content],wordBox:box(w)};});
- expect(v).toEqual({mark:'logo.svg',markBox:[24,252,28,28],text:'ModelPlan',font:'14px 600 20px',transform:'none',plan:'rgb(223, 96, 76)',planSize:'14px',raster:['none','none'],wordBox:[60,256,112,20]});
+ expect(v).toEqual({mark:'logo.svg',markBox:[24,224,28,28],text:'ModelPlan',font:'14px 600 20px',transform:'none',plan:'rgb(223, 96, 76)',planSize:'14px',raster:['none','none'],wordBox:[60,228,112,20]});
 });
 
 // glm-842-1 (G3-43 / CKP-SHELL-04): the native title-drag region is placed from the strip's window-relative top
-// (CockpitShellLayout.titleDragFrame: 253 tall, 65 compact, 25 closed). The closed page draws its slab at the window's
+// (CockpitShellLayout.titleDragFrame: 225 tall, 57 compact, 25 closed). The closed page draws its slab at the window's
 // top edge, so its strip is at 25, not the study's 39; the two sides must not drift apart again.
 for(const s of shapes)test(`B13 ${s.tier}${s.closed?' closed':''}: the strip's window-relative top matches the native drag region`,async({page})=>{
  await open(page,s);
  const top=await page.evaluate(()=>Math.round(document.querySelector('.ck-head').getBoundingClientRect().top));
- expect(top).toBe(s.closed?25:(s.tier==='tall'?253:65));
+ expect(top).toBe(s.closed?25:(s.tier==='tall'?225:57));
 });
