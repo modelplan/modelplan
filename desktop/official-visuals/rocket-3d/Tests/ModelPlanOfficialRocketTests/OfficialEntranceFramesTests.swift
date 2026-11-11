@@ -30,6 +30,7 @@ final class OfficialEntranceFramesTests: XCTestCase {
     /// (a PNG of the cockpit page, 1 px per point of its 636 pt raster, transparent outside the shell). It covers
     /// the storyboard cockpit's raster: x from the cockpit left minus its 8 pt margin, y from the cockpit top. Never
     /// committed (it shows the user's own screen); without it the bundled cockpit image is used.
+    @available(macOS 15.0, *)
     private func snapshot(_ theme: EntranceTheme) -> CockpitSnapshot? {
         let key = "MODELPLAN_ENTRANCE_COCKPIT_" + (theme == .night ? "NIGHT" : "DAY")
         guard let path = ProcessInfo.processInfo.environment[key],
