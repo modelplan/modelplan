@@ -124,6 +124,10 @@ Notification:
 | `credentials/result` | app → server | Outcome, and the token on success | first candidate |
 | `refresh/request` | app → server | Ask for refreshes within the shared budget | first candidate |
 | `plugin/install` | app → server | Same contract as `plugin install --json` | first candidate |
+| `history/import_start` | app → server | `{days 1..371, firstRun}`; starts the local usage-history import in the background and answers at once with the running `HistoryImportStatus`. `busy` while one runs. Capability `history_import_v1` | v1 (HIST-IMP-01) |
+| `history/import_status` | app → server | `{}` → `HistoryImportStatus` (phase, files done/total, coverage, imported rows, first-run marker). Read-only: reads `imported.json` only, never a log | v1 |
+| `history/import_cancel` | app → server | `{}`; stops a running import before it writes anything, answers when it has stopped | v1 |
+| `history/import_remove` | app → server | `{}`; deletes exactly the imported rows (`origin: "import"`), keeps the first-run marker; `busy` while running | v1 |
 | `diagnostics/get` | app → server | Sanitized engine health and per-scope state codes | first candidate |
 | `engine/health` | server → app | `ok`, `degraded` or `recovering`, with a code | first candidate |
 | `history/query` | app → server | Paged history items for one scope; fenced, see below | cockpit |

@@ -12,11 +12,12 @@ import {engineModel} from '../study/rocket-r1/engine-model.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-const palette:Readonly<Record<string,{colour:string;logo:string}>>={openai:{colour:'#6aa8ff',logo:'openai'},claude:{colour:'#ff9a6a',logo:'claude'},cursor:{colour:'#eef2f6',logo:'cursor'},copilot:{colour:'#c08cff',logo:'copilot'},kimi:{colour:'#ff8fcf',logo:'kimi'},glm:{colour:'#8f7dff',logo:'zai-white'},opencode:{colour:'#b5d65a',logo:'opencode'}};
+// Vendor marks are the bundled official-edition files under assets/brands/ (third-party marks, SOURCES.md).
+const palette:Readonly<Record<string,{colour:string;logo:string}>>={openai:{colour:'#6aa8ff',logo:'openai-white.svg'},claude:{colour:'#ff9a6a',logo:'claude-rounded.svg'},cursor:{colour:'#eef2f6',logo:'cursor.svg'},copilot:{colour:'#c08cff',logo:'copilot.svg'},kimi:{colour:'#ff8fcf',logo:'kimi-white.svg'},glm:{colour:'#8f7dff',logo:'zai-white.svg'},opencode:{colour:'#b5d65a',logo:'opencode.svg'}};
 const finite=(v:number|null)=>v!==null&&Number.isFinite(v)?v:null;
 const role=(w:WireWindow)=>w.role==='session'&&w.durationSeconds===18000?'5h':w.role==='weekly'&&w.durationSeconds===604800?'week':w.role==='daily'?'day':w.role==='monthly'?'month':'other';
 const general=(w:WireWindow)=>!w.modelScope&&w.poolKey==='main'&&(w.role==='session'?(w.limitKey==='main'||w.limitKey==='five_hour'):w.role==='weekly'?(w.limitKey==='main'||w.limitKey==='weekly'):false);
-export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0,initialNow=0,redBelow:()=>number=()=>effectiveRedBelow(undefined)):{table:HTMLElement;applyScope:(scope:string)=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null}|null {
+export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0,initialNow=0,redBelow:()=>number=()=>effectiveRedBelow(undefined),showUsed:()=>boolean=()=>false):{table:HTMLElement;applyScope:(scope:string)=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null}|null {
  const members=cockpitMembers(data);if(!members.length)return null;
  const seen=new Map(members.map(x=>[x.key,x]));let scope=seen.has(priorScope)?priorScope:'',page=Number.isSafeInteger(priorPage)?Math.max(0,Math.min(priorPage,Math.ceil(members.length/6)-1)):0;
  const host=document.createElement('div');host.className='u11-engine-table s6-page';const focusIdentities=new WeakMap<HTMLElement,string>();
@@ -36,7 +37,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
   const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?'../../vendor-marks/'+brand.logo+'.svg':'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
+  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?brand.logo:'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
@@ -47,8 +48,9 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  }
  let renderedNow=initialNow;
  const paint=(time?:number)=>{
-  if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:'left',redAt:redBelow(),ack:null,lang:locale,now};
-  const model=engineModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now});
+  if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now};
+  const model=engineModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));// Unknown vendors have no mark: drop the study's neutral placeholder before parsing so nothing is requested.
+  host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
   // Keep the selected source-window identity in memory, never in rendered HTML.
   for(const [index,column] of [...host.querySelectorAll<HTMLElement>('.eng-cols > .ec[data-col]')].entries()){const rendered=model.cols[index];for(const cell of column.querySelectorAll<HTMLElement>('.qcell[data-row]')){const identity=rendered?.cells?.[cell.dataset.row??'']?.focusIdentity;if(typeof identity==='string')focusIdentities.set(cell,identity);}}
   // Inline style attributes from the study HTML are blocked by the host CSP.

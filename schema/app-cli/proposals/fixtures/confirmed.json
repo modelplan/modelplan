@@ -20,7 +20,6 @@
             },
             "vendorKey": "openai",
             "surfaces": [
-              "dock",
               "menu",
               "settings"
             ],

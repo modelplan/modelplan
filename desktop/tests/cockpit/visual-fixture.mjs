@@ -7,6 +7,8 @@ export function visualFixture(){
  const data=sample(),subscriptions=[];
  data.subscriptions=[];
  for(const [index,row] of data.projection.rows.entries()){
+  // The CLI's real vendor keys (rows/catalogue.go): Gemini CLI has none.
+  row.vendorKey={codex:'openai',claude:'claude',cursor:'cursor'}[row.id]??null;
   const account=row.accounts[0],ref=(index+1).toString(16).padStart(16,'0'),seed=account.windows[0],until='2030-01-01T00:00:00Z';
   account.subscriptionRef=ref;account.accountLocator=ref;account.valueState='current';account.freshUntil=until;
   account.windows=[{...seed,id:'session:18000:main:main',role:'session',durationSeconds:18000,label:{en:'5h',zh:'5小时'},remainingPercent:75,current:true,validUntil:until,resetsAt:null},
