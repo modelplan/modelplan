@@ -174,7 +174,8 @@ enum CommunityUnboundDockRows {
             let source = sources.first { $0.source == "native:" + provider }
             let connection = connections.first { canonical($0.id) == provider }
             let pendingCodes: Set<String> = ["missing", "no-reading", "not-enabled", "not read yet", "not-read-yet", "not_read_yet", "pending"]
-            let machineCodes = pendingCodes.union(["consent_required", "keychain_choice_needed", "keychain_denied", "not_detected", "expired", "stale", "unsupported_schema", "reader_error", "parse_error", "timeout", "runtime_missing", "not_found", "rpc_error", "closed", "region_refused", "no_key", "key_missing", "error", "unavailable"])
+            let extraCodes: Set<String> = ["consent_required", "keychain_choice_needed", "keychain_denied", "not_detected", "expired", "stale", "unsupported_schema", "reader_error", "parse_error", "timeout", "runtime_missing", "not_found", "rpc_error", "closed", "region_refused", "no_key", "key_missing", "error", "unavailable"]
+            let machineCodes: Set<String> = pendingCodes.union(extraCodes)
             let reasonCode = (source?.reason).flatMap { machineCodes.contains($0) ? $0 : nil }
             func next(_ fallback: String) -> String {
                 let nativeRemedy = source.flatMap { value -> String? in
@@ -197,7 +198,10 @@ enum CommunityUnboundDockRows {
             let nativeFailure = source.map { ["consent_required", "unavailable", "error", "stale", "expired", "unsupported_schema", "keychain_choice_needed", "keychain_denied"].contains($0.status) || reasonCode.map { !pendingCodes.contains($0) } == true } ?? false
             let code = nativeFailure ? reasonCode ?? source?.status : reasonCode ?? connection?.quota?.reason ?? connection?.quotaAccess?.blocked ?? status
             // The engine's own failure code (Codex's account snapshot reports `codex-account`) beats a generic status.
-            let causeCode = source?.errorCode ?? (provider == "codex" ? sources.first { $0.source == "codex-account" }?.errorCode : nil)
+            var causeCode: String? = source?.errorCode
+            if causeCode == nil, provider == "codex" {
+                causeCode = sources.first(where: { $0.source == "codex-account" })?.errorCode
+            }
             if let causeCode, causeCode != "other", let result = causeResult(causeCode) { return result }
             if provider == "claude", ["consent_required", "keychain_choice_needed", "keychain_denied"].contains(code ?? "") {
                 return (code == "keychain_denied" ? "Keychain permission denied / 钥匙串许可被拒绝" : "Keychain permission required / 需要钥匙串许可",

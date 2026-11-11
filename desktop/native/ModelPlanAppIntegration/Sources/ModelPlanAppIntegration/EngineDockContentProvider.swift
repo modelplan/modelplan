@@ -258,10 +258,32 @@ public enum EngineDeadlineFacts {
             // D41: one plain sentence and one button, whatever the Keychain outcome was.
             let needsKeychain = row.id == "claude" && row.state == .needsKeychain
             let cause = needsKeychain ? nil : causeLine(member, now: context.now)
-            reasons[member.id] = .init(input: input, reason: needsKeychain ? (english ? "Keychain access needed" : "需要允许读取钥匙串") : cause?.reason ?? text(message.0.text),
-                nextStep: cause?.nextStep ?? message.1.map { text($0.text) } ?? "",
-                originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
-                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,resetCountExpiry:resetCount?.expiry,links: preferred.map(resetEventLinks) ?? [],windowObservations:observations,cardReadingState:cardState)
+            let keychainReason: String = english ? "Keychain access needed" : "需要允许读取钥匙串"
+            let messageReason: String = text(message.0.text)
+            let reasonText: String
+            if needsKeychain {
+                reasonText = keychainReason
+            } else if let causeReason = cause?.reason {
+                reasonText = causeReason
+            } else {
+                reasonText = messageReason
+            }
+            let nextStepText: String
+            if let causeNext = cause?.nextStep {
+                nextStepText = causeNext
+            } else if let messageNext = message.1 {
+                nextStepText = text(messageNext.text)
+            } else {
+                nextStepText = ""
+            }
+            let planName: String = account.plan.name.map { text($0) } ?? ""
+            let linkList = preferred.map(resetEventLinks) ?? []
+            let presentation = DockContentRow(input: input, reason: reasonText, nextStep: nextStepText,
+                originalObservedAt: date(account.observedAt), plan: planName,
+                sourceName: sourceName(account.route), resetTimes: resets, windowDescriptions: descriptions,
+                additionalRows: reserve, resetCountExpiry: resetCount?.expiry, links: linkList,
+                windowObservations: observations, cardReadingState: cardState)
+            reasons[member.id] = presentation
             if needsKeychain { reasons[member.id]?.actionLabel = english ? "Allow reading" : "允许读取" }
         }
         let status: String
@@ -278,11 +300,21 @@ public enum EngineDeadlineFacts {
             let number = reading?.remainingPercent.map { " · \(Int($0.rounded()))%" } ?? ""
             return member.name(english:english) + number + " · " + text(message(row, now: context.now).0.text)
         }
-        let subscriptions=members.map { member in SettingsSubscription(id:member.id,
-            name:.init(member.name(english:true),member.name(english:false)),
-            plan:member.account.plan.name.map{text($0)} ?? "",vendor:member.row.vendorKey ?? "",
-            source:sourceState(member,now:context.now),isUnstable:!member.isStable,
-            causeCode:(member.row.state == .failed || member.row.state == .needsAction) ? message(member.row, now: context.now).0.code.rawValue : member.account.lastFailure?.code.rawValue) }
+        let subscriptions: [SettingsSubscription] = members.map { member -> SettingsSubscription in
+            let failing = member.row.state == .failed || member.row.state == .needsAction
+            let causeCode: String?
+            if failing {
+                causeCode = message(member.row, now: context.now).0.code.rawValue
+            } else {
+                causeCode = member.account.lastFailure?.code.rawValue
+            }
+            let planName: String = member.account.plan.name.map { text($0) } ?? ""
+            return SettingsSubscription(id: member.id,
+                name: .init(member.name(english: true), member.name(english: false)),
+                plan: planName, vendor: member.row.vendorKey ?? "",
+                source: sourceState(member, now: context.now), isUnstable: !member.isStable,
+                causeCode: causeCode)
+        }
         let content = DockContent(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
         verifiedWindows = passWindows; recomputeDeadline = passDeadline
