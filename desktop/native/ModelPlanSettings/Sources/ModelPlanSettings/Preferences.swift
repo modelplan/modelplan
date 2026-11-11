@@ -76,6 +76,8 @@ public struct SettingsPreferences: Codable, Sendable {
     public static let redBelowChoices = [40, 30, 25, 20, 15, 10]
     public var effectiveRedBelow: Int { Self.redBelowChoices.contains(redBelow) ? redBelow : 25 }
     public var sliverAlert = true
+    /// D135: the cockpit deck lifts the own-plans filter and the 12-fader cap. Off by default.
+    public var showAllModels = false
     public var showDock = true
     /// D114 (owner 2026-11-10, supersedes D56): auto-collapse is off by default. A fresh install, or a saved
     /// file without this key, shows the widget expanded. A saved value, either way, is kept as it is.
@@ -110,7 +112,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
-        case theme, size, motion, transparency, percentageMode, showPercentages, redBelow, sliverAlert
+        case theme, size, motion, transparency, percentageMode, showPercentages, redBelow, sliverAlert, showAllModels
         case showDock, autoHide, revealMilliseconds, magnification, showOverFullscreen, followActiveDisplay
         case openAtLogin, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, beatMilliseconds, showProjectNames
         case notifications, subscriptions, subscriptionSettings, onboarding, dockEdge, dockDisplayID, dockAlongFraction, readerConsent, helpHints
@@ -126,6 +128,7 @@ public struct SettingsPreferences: Codable, Sendable {
         motion = try value(.motion, motion); transparency = try value(.transparency, transparency)
         percentageMode = try value(.percentageMode, percentageMode); showPercentages = try value(.showPercentages, showPercentages)
         redBelow = try value(.redBelow, redBelow); sliverAlert = try value(.sliverAlert, sliverAlert)
+        showAllModels = try value(.showAllModels, showAllModels)
         showDock = try value(.showDock, showDock); autoHide = try value(.autoHide, autoHide)
         revealMilliseconds = try value(.revealMilliseconds, revealMilliseconds); magnification = try value(.magnification, magnification)
         showOverFullscreen = try value(.showOverFullscreen, showOverFullscreen); followActiveDisplay = try value(.followActiveDisplay, followActiveDisplay)

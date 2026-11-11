@@ -729,13 +729,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if content.bounds.size != size { content.setBoundsSize(size) }
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
+  public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
   public func updateScope(_ key:String) {
     guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
     scope=key; publishAppearance()
   }
   public func updateAppearance(_ value: CockpitAppearance) {
     appearance = CockpitAppearance(theme: .night, locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, showAllModels: value.showAllModels)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       window?.alphaValue = 1
@@ -796,7 +797,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed) else { return }
     layout = fit
     appearance = .init(theme: .night, locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, showAllModels: appearance.showAllModels)
     let frame = shellSession.detached ? fit.clamping(origin: shellSession.origin(for: arrangement) ?? window.frame.origin, usable: usable) : fit.frame
     window.setFrame(frame, display: true)
     window.contentView?.setBoundsSize(.init(width: 636, height: fit.rootHeight + 34))

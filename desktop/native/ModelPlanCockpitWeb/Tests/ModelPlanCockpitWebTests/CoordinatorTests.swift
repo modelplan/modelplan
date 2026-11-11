@@ -55,13 +55,15 @@ private actor HeldClient: EngineClient {
   var scopeUpdates:[(String,Bool)]=[]
   func updateScope(_ key:String) { scopeUpdates.append((key,privateVisible)) }
   var restoredCautions:[[String]]=[]
+  var restoredPins:[[String]]=[]
+  func setPinnedModels(_ ids:[String]) { restoredPins.append(ids) }
   func setAckedCautions(_ ids:[String]) { restoredCautions.append(ids) }
   var clearWaiter: CheckedContinuation<Void, Never>?
   var sequence = 0
   init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
   func ack(_ raw: String, _ type: String) {
     var value = try! JSONSerialization.jsonObject(with: Data(raw.utf8)) as! [String: Any]
-    value["shell"] = nil; value["appearance"] = nil; value["redBelow"] = nil; value["showUsedPercent"] = nil
+    value["shell"] = nil; value["appearance"] = nil; value["redBelow"] = nil; value["showUsedPercent"] = nil; value["showAllModels"] = nil
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }
@@ -311,6 +313,37 @@ extension CoordinatorTests {
     let client2=HeldClient();restarted.bind(client:client2)
     await restarted.consume(.context(delivery));restarted.open()
     XCTAssertEqual(again.last?.restoredCautions,[[first,second]])
+    await restarted.shutdown()
+  }
+  /// D136: the favourite (pinned) model ids the page reports are kept by the app's memory and handed to the next page,
+  /// including one made by a new coordinator (an app restart).
+  @MainActor final class PinMemoryProbe: CockpitPinMemory {
+    var saved:[String]
+    init(_ saved:[String]) { self.saved=saved }
+    func load()->[String] { saved }
+    func save(_ ids:[String]) { saved=ids }
+  }
+  @MainActor func testPinnedModelsRoundTripThroughTheAppsMemoryAcrossARestart() async throws {
+    let memory=PinMemoryProbe(["model-a"])
+    var pages:[PageProbe]=[]
+    let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
+    coordinator.pinMemory=memory
+    let client=HeldClient();coordinator.bind(client:client)
+    let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+    await coordinator.consume(.context(delivery));coordinator.open()
+    XCTAssertEqual(pages.last?.restoredPins,[["model-a"]],"The page is given what the app remembered before it loads")
+    pages.last?.onIntent?(.pinnedModels(["model-b","model-a"]))
+    XCTAssertEqual(memory.saved,["model-b","model-a"])
+    pages.last?.onIntent?(.pinnedModels(["dup","dup"]))
+    pages.last?.onIntent?(.pinnedModels(["bad\u{7}id"]))
+    XCTAssertEqual(memory.saved,["model-b","model-a"],"A duplicate or an id with a control character is not kept")
+    await coordinator.shutdown()
+    var again:[PageProbe]=[]
+    let restarted=EngineCockpitCoordinator { context in let page=PageProbe(context);again.append(page);return page }
+    restarted.pinMemory=memory
+    let client2=HeldClient();restarted.bind(client:client2)
+    await restarted.consume(.context(delivery));restarted.open()
+    XCTAssertEqual(again.last?.restoredPins,[["model-b","model-a"]])
     await restarted.shutdown()
   }
   @MainActor func testScopeIsValidatedRetainedOnReopenAndClearedAtPrivacyBarrier() async throws {

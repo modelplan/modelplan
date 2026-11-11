@@ -51,3 +51,26 @@ test('D123 order: in use by recency, then starred recommendations, then others b
  // A subscription with no known developer cannot be matched, so nothing is filtered out.
  assert.ok(publicationFaders(publication,[],more,[...subs,{key:'s2',developer:null,colour:'#fff'}],{now,ownPlansOnly:true}).faders.some(f=>f.id==='foreign'));
 });
+
+test('D135 models used in the last 7 days stay even when no own plan offers them; others are still filtered',()=>{
+ const model=(id,ability,developerId='openai')=>({id,name:id,developerId,recommended:'medium',efforts:[{effort:'medium',star:true,ability,cost:1,time:null}]});
+ const now=Date.parse('2026-11-11T00:00:00Z'),day=86_400_000;
+ const live=[
+  {sessionRef:'0000000000000001',subscriptionRef:null,model:'api-key-model',lastObservedAt:new Date(now-2*day).toISOString()},
+  {sessionRef:'0000000000000002',subscriptionRef:null,model:'api-key-model',lastObservedAt:new Date(now-3*day).toISOString()},
+  {sessionRef:'0000000000000003',subscriptionRef:null,model:'stale-foreign',lastObservedAt:new Date(now-8*day).toISOString()},
+  {sessionRef:'0000000000000004',subscriptionRef:null,model:'retired-gone',lastObservedAt:new Date(now-1000).toISOString()},
+ ];
+ const subs=[{key:'s1',developer:'openai',colour:'#fff'}];
+ const publication={contractVersion:1,models:[model('rec1',50,'openai'),model('rec2',60,'openai'),model('rec3',40,'openai')]};
+ const more=[model('api-key-model',5,'google'),model('stale-foreign',99,'google'),model('unused-foreign',98,'google'),model('own-other',10)];
+ const ids=publicationFaders(publication,live,more,subs,{now,ownPlansOnly:true}).faders.map(f=>f.id);
+ // Used within 7 days: shown once, in the in-use group, before the starred recommendations.
+ assert.deepEqual(ids,['api-key-model','rec1','rec2','rec3','own-other']);
+ // A used model the publication no longer describes (retired) is skipped, not invented.
+ assert.ok(!ids.includes('retired-gone'));
+ // Show all lifts the plan filter; the in-use model is still listed once.
+ const all=publicationFaders(publication,live,more,subs,{now,ownPlansOnly:false}).faders.map(f=>f.id);
+ assert.equal(all.filter(id=>id==='api-key-model').length,1);
+ assert.ok(all.includes('unused-foreign')&&all.includes('stale-foreign'));
+});

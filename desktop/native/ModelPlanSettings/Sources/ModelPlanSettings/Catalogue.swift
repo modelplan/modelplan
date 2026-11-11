@@ -8,6 +8,7 @@ public struct SettingsText: Equatable, Sendable {
 }
 public enum SettingKey: String, CaseIterable, Sendable {
     case theme, size, motion, transparency, percentageMode, showPercentages, percentagePin, redBelow, sliverAlert
+    case showAllModels
     case showDock, autoHide, reveal, magnification, fullscreen, captureHiding, activeDisplay, order
     case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints
     case notificationConsent, forecast, reset, official, expiring, stale
@@ -236,6 +237,7 @@ public enum SettingsCatalogue {
         .init(.percentagePin,"Percentage window","百分比窗口","Select the tightest, 5-hour or weekly window per subscription.","为每个订阅选择最紧的、5小时或每周窗口。"),
         .init(.redBelow,"Critical threshold","变红阈值","Red at remaining quota ≤ the threshold, even when displaying used quota.","剩余额度 ≤ 阈值时变红，即使显示已用额度也一样。"),
         .init(.sliverAlert,"Sliver alert color","细条提示色","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
+        .init(.showAllModels,"Show all models","显示全部模型","Off: the cockpit shows your own plans' models, up to 12. On: every published model.","关闭：驾驶舱只显示你自己订阅的模型，最多 12 个；开启：显示所有已发布的模型。"),
         .init(.showDock,"Show Quota Widget","显示额度挂件","Same as Show Quota Widget in the menu bar icon's menu. When off, turn it back on there.","与菜单栏图标菜单里的「显示额度挂件」相同；关闭后可在那里重新打开。"),
         .init(.autoHide,"Auto-collapse when the pointer leaves","鼠标离开后自动收起","Shrinks to a strip on the edge; rest the pointer there to expand it. Same as Auto-Collapse in the Quota Widget menu.","缩成贴边细条，鼠标靠近稍停即可展开；与额度挂件右键菜单里的「自动收起」相同。"),
         .init(.reveal,"Reveal dwell","展开停留时间","Wait before revealing the edge Quota Widget.","在边缘停留后展开。"),
@@ -389,6 +391,7 @@ public enum SettingsCatalogue {
         case .percentagePin: return perSub(options: PercentagePin.allCases.map(\.rawValue)) { (p.subscriptionSettings[$0.id]?.percentagePin ?? .auto).rawValue }
         case .redBelow: return .choice(String(p.effectiveRedBelow), options: SettingsPreferences.redBelowChoices.map(String.init))
         case .sliverAlert: return .toggle(p.sliverAlert)
+        case .showAllModels: return .toggle(p.showAllModels)
         case .showDock: return .toggle(p.showDock)
         case .autoHide: return .toggle(p.autoHide)
         case .reveal: return .choice(String(p.revealMilliseconds), options: [100,150,300].map(String.init))

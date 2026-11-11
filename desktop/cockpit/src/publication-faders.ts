@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Map published model verdicts to the study's fader inputs. This does not fill
-// missing values. Models in use lead, then the publication's own recommended order.
+// missing values. D123 order: models in use (last 7 days, even when no own plan offers them, D135), then the
+// publication's starred recommendations, then the others by ability.
 import {speedTierFor,type FastTier} from './speed-tiers.js';
 type Fader = {id:string;name:string;short:string;rec:string;e:[string,number|null,number|null,number|null][];accounts:string[];sessions:{ref:string;sub:string|null}[];tier?:FastTier};
 const object=(value:unknown):Record<string,unknown>|null=>value!==null&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:null;
@@ -25,7 +26,8 @@ const DAY=86_400_000;
 export type FaderSetOptions={
  /** Current time (ms). With it, only sessions seen in the last 7 days count as "in use" (D123). */
  readonly now?:number;
- /** Keep only models of developers the user's subscriptions run (D123). Ignored when a subscription's developer is unknown. */
+ /** Keep only models of developers the user's subscriptions run (D123). Models used in the last 7 days are exempt (D135);
+  * ignored when a subscription's developer is unknown. */
  readonly ownPlansOnly?:boolean;
 };
 export function publicationFaders(publication:unknown,live:unknown=null,more:readonly unknown[]=[],subscriptions:readonly FaderSubscription[]=[],options:FaderSetOptions={}):{accounts:Account[];faders:Fader[]} {
