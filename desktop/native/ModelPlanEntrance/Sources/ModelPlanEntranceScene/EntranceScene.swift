@@ -558,7 +558,7 @@ struct HullFinish {
     }
     var surroundMaterial: PhysicallyBasedMaterial {
         var m = metal(plainColor.blended(withFraction: 0.35, of: .black) ?? plainColor, roughness: 0.55)
-        m.clearcoat = 0
+        m.clearcoat = 0.0
         return m
     }
     var rimMaterial: PhysicallyBasedMaterial {
