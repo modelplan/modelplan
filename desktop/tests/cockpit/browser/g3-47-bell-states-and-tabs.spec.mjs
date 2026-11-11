@@ -14,7 +14,7 @@ function data(){
  return d;
 }
 async function open(page){
- await page.setViewportSize({width:636,height:911});
+ await page.setViewportSize({width:636,height:939});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell}))).toBe(true);
@@ -47,7 +47,7 @@ test('G3-47 subscribed bells match the study; only the working bell lights its m
 
 // D70: only an empty slot (no subscription) is darker: the study's night/black bell, quietly dimmed, with no light.
 test('G3-47 an empty slot shows the darker night bell',async({page})=>{
- await page.setViewportSize({width:636,height:911});
+ await page.setViewportSize({width:636,height:939});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const d=data();d.projection.rows=d.projection.rows.slice(0,2);d.subscriptions=d.subscriptions.slice(0,2);if(d.details)d.details.subscriptions=d.details.subscriptions.slice(0,2);
@@ -65,7 +65,7 @@ test('G3-47 vendor keys keep their identity colour and mark',async({page})=>{
  await open(page);
  const keys=await page.evaluate(()=>[...document.querySelectorAll('.eng-keys .ek[data-sub]')].map(k=>{const i=k.querySelector('img.lamp');
   const n=k.querySelector('.ek-name').getBoundingClientRect(),m=i?.getBoundingClientRect();
-  return {name:k.querySelector('.ek-name')?.textContent,strip:getComputedStyle(k.querySelector('.bl')).backgroundColor,mark:i?{src:i.getAttribute('src'),loaded:i.complete&&i.naturalWidth>0,beside:m.right<=n.left&&Math.abs((m.top+m.height/2)-(n.top+n.height/2))<=1.5}:null};}));
+  return {name:k.querySelector('.ek-name')?.textContent,strip:getComputedStyle(k.querySelector('.bl')).backgroundColor,mark:i?{src:i.getAttribute('src'),loaded:i.complete&&i.naturalWidth>0,beside:m.left+m.width/2+7<=n.left&&Math.abs((m.top+m.height/2)-(n.top+n.height/2))<=1.5}:null};}));
  expect(keys.map(k=>k.strip)).toEqual(['rgb(106, 168, 255)','rgb(255, 154, 106)','rgb(238, 242, 246)','rgb(198, 204, 212)']);
  expect(keys.slice(0,3).map(k=>k.mark?.loaded)).toEqual([true,true,true]);
  // The mark sits beside the name on one centre line, as in the study.

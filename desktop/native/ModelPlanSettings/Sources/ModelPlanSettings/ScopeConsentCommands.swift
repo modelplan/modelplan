@@ -8,6 +8,9 @@ public enum ScopeConsentMutation: Sendable, Equatable {
     case allow(scopes: [String], keychain: [String])
     case revoke(scope: String)
     case forget(scope: String)
+    /// G3-45: the first-run choices, sent once on Done through the same grant request:
+    /// checked tools are allowed, unchecked ones refused.
+    case choose(allow: [String], deny: [String], keychain: [String])
 }
 public struct ScopeConsentIntent: Sendable, Equatable {
     public let requestID: String
@@ -15,10 +18,16 @@ public struct ScopeConsentIntent: Sendable, Equatable {
     public init(requestID: String = UUID().uuidString, mutation: ScopeConsentMutation) {
         self.requestID = requestID; self.mutation = mutation
     }
-    public var allowIDs: [String] { if case .allow(let ids, _) = mutation { return ids.sorted() }; return [] }
-    public var denyIDs: [String] { if case .revoke(let id) = mutation { return [id] }; return [] }
+    public var allowIDs: [String] {
+        switch mutation { case .allow(let ids, _), .choose(let ids, _, _): return ids.sorted(); default: return [] }
+    }
+    public var denyIDs: [String] {
+        switch mutation { case .revoke(let id): return [id]; case .choose(_, let ids, _): return ids.sorted(); default: return [] }
+    }
     public var forgetIDs: [String] { if case .forget(let id) = mutation { return [id] }; return [] }
-    public var keychainIDs: [String] { if case .allow(_, let ids) = mutation { return ids.sorted() }; return [] }
+    public var keychainIDs: [String] {
+        switch mutation { case .allow(_, let ids), .choose(_, _, let ids): return ids.sorted(); default: return [] }
+    }
 }
 // The client factory constructs wire parameters from its live accepted context.
 extension ScopeConsentIntent: EngineConsentGrantIntent {}

@@ -63,20 +63,40 @@ import ModelPlanWire
         addTeardownBlock { @MainActor in firstRunWindow.close() }
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
         func firstRunViews() throws -> [NSView] { descendants(try XCTUnwrap(firstRunWindow.contentView)) }
+        // Review evidence for the first-run sheet (G3-24, G3-25), collected with the Dock visual probes.
+        func writeReviewRender(_ language: String) throws {
+            let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
+            let output = root.appendingPathComponent("dock-instrument-checks/dock-visual/first-run", isDirectory: true)
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            let view = try XCTUnwrap(firstRunWindow.contentView)
+            view.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: output.appendingPathComponent("first-run-" + language + ".png"))
+        }
+        try writeReviewRender("en")
+        _ = try await first.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        try await Task.sleep(for: .milliseconds(200))
+        try writeReviewRender("zh")
+        _ = try await first.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
+        try await Task.sleep(for: .milliseconds(200))
         let scopeView = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "settings.scopeConsent" } as? SettingsScopeConsentView)
         XCTAssertFalse(scopeView.isHiddenOrHasHiddenAncestor)
         XCTAssertFalse(scopeView === first.scopeConsentEntry.view, "First run must not steal the Settings view")
         XCTAssertTrue(first.scopeConsentEntry.controller.selectedIDs.isEmpty, "Restoration must not select or grant any scope")
-        // G3-19 / D27 (owner 11-06): standard readers are on by default with no prompt. A fresh profile's
-        // first-run sheet shows one line — what is read and where to turn it off — and no per-reader boxes.
-        XCTAssertTrue(try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.") }.isEmpty,
-                      "the first-run sheet has no per-reader choices")
+        // G3-45 (owner 11-08) supersedes the G3-19 one-line notice: the page lists each detected tool
+        // with a checkbox, checked by default when it can be read (D27 keeps standard readers on), and
+        // no per-path controls. Browser sessions and unrecognised paths are not offered here.
+        let toolBoxes = try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.") }
+        XCTAssertEqual(Set(toolBoxes.map { $0.accessibilityIdentifier() }), ["scope.firstRun.tool.codex", "scope.firstRun.tool.cursor"],
+                       "one checkbox per detected tool and nothing else")
+        XCTAssertTrue(toolBoxes.allSatisfy { $0.state == .on }, "readable tools start checked")
         let notice = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.firstRun.notice" } as? NSTextField)
-        XCTAssertTrue(notice.stringValue.contains("Codex"), notice.stringValue)
         XCTAssertTrue(notice.stringValue.contains("Settings › Data & Privacy"), notice.stringValue)
         XCTAssertTrue(first.scopeConsentEntry.controller.isOnByDefault("codex.local_history"))
         XCTAssertFalse(first.scopeConsentEntry.controller.isOnByDefault("cursor.browser_session"), "browser sessions ask when first needed")
         // Settings lists the same reader as on, with an on switch; turning it off is a confirmed revoke.
+        first.scopeConsentEntry.view.setPathDetailsExpanded(true) // the per-path rows sit behind a disclosure
         let settingsViews = descendants(first.scopeConsentEntry.view)
         let settingsSwitch = try XCTUnwrap(settingsViews.first { $0.accessibilityIdentifier() == "scope.allow.codex.local_history" } as? NSButton)
         XCTAssertEqual(settingsSwitch.state, .on, "a default-on reader shows on in Settings")
@@ -96,10 +116,10 @@ import ModelPlanWire
         XCTAssertTrue(englishMenu.delegate is DockStatusMenu, "The normal status menu must use the shared component")
         let englishDockMenu = dock.menu()
         XCTAssertTrue(englishDockMenu.delegate is DockSliverMenu, "The Dock menu must use the shared component")
-        XCTAssertEqual(englishMenu.items.filter { !$0.isSeparatorItem }.map(\.title), ["Refresh", "Show Quota Widget", "Find Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"])
+        XCTAssertEqual(englishMenu.items.filter { !$0.isSeparatorItem }.map(\.title), ["Refresh", "Show Quota Widget", "Find Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "Reset Position", "About ModelPlan", "Quit ModelPlan"])
         let refreshItem = try XCTUnwrap(englishMenu.items.first { $0.title == "Refresh" })
         XCTAssertEqual(refreshItem.action, NSSelectorFromString("refreshRows"), "The existing Refresh arrival observer must retain its native selector")
-        XCTAssertEqual(Array(englishDockMenu.items.filter { !$0.isSeparatorItem }.suffix(4)).map(\.title), ["Open Cockpit", "Auto-Collapse", "Settings…", "Quit ModelPlan"])
+        XCTAssertEqual(Array(englishDockMenu.items.filter { !$0.isSeparatorItem }.suffix(5)).map(\.title), ["Open Cockpit", "Auto-Collapse", "Settings…", "Reset Position", "Quit ModelPlan"])
         let statusCockpit = try XCTUnwrap(englishMenu.items.first { $0.title == "Open Cockpit" })
         _ = (try XCTUnwrap(statusCockpit.target as? NSObject)).perform(try XCTUnwrap(statusCockpit.action), with: statusCockpit)
         let dockCockpit = try XCTUnwrap(englishDockMenu.items.first { $0.title == "Open Cockpit" })
@@ -188,15 +208,15 @@ import ModelPlanWire
         XCTAssertFalse(firstRunWindow.isVisible)
         XCTAssertTrue(scopeView.arrangedSubviews.isEmpty, "Closing first run retires its presentation")
         let grantsAfterDone = await syntheticClient.grantCount()
-        XCTAssertEqual(grantsAfterDone, 0, "Completing first run must not implicitly authorize selected scopes")
+        XCTAssertEqual(grantsAfterDone, 1, "Done sends the page's choices once, as the one first-run consent (G3-45)")
         XCTAssertFalse(first.scopeConsentEntry.view.arrangedSubviews.isEmpty, "Settings retains its separate consent view")
         XCTAssertEqual(cockpitButton.accessibilityLabel(), "打开驾驶舱")
         let chineseMenu = try XCTUnwrap(first.liveStatusMenu)
         XCTAssertTrue(chineseMenu.delegate is DockStatusMenu)
         let chineseDockMenu = dock.menu()
         XCTAssertTrue(chineseDockMenu.delegate is DockSliverMenu)
-        XCTAssertEqual(chineseMenu.items.filter { !$0.isSeparatorItem }.map(\.title), ["刷新", "显示额度挂件", "找到额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"])
-        XCTAssertEqual(Array(chineseDockMenu.items.filter { !$0.isSeparatorItem }.suffix(4)).map(\.title), ["打开驾驶舱", "自动收起", "设置…", "退出 ModelPlan"])
+        XCTAssertEqual(chineseMenu.items.filter { !$0.isSeparatorItem }.map(\.title), ["刷新", "显示额度挂件", "找到额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "重置位置", "关于 ModelPlan", "退出 ModelPlan"])
+        XCTAssertEqual(Array(chineseDockMenu.items.filter { !$0.isSeparatorItem }.suffix(5)).map(\.title), ["打开驾驶舱", "自动收起", "设置…", "重置位置", "退出 ModelPlan"])
         XCTAssertTrue(chineseMenu.items.contains { $0.title == "设置…" })
         XCTAssertTrue(chineseMenu.items.contains { $0.title == "打开驾驶舱" })
         XCTAssertFalse(chineseMenu.items.contains { $0.title.contains(" / ") || $0.title.contains("Dock") })

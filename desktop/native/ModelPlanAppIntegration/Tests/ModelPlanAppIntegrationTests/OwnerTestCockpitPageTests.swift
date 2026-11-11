@@ -332,8 +332,9 @@ extension CommunityCockpitEntryTests {
         let client = RouteClient(); await client.suspendCockpit()
         let composition = EngineDockMenuComposition(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:]), createsNativePanels: false, makeClient: { _, _ in client })
         let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
-        // An Air-width screen: Auto would draw 85 %, so 90 % and 100 % can only come from the setting.
-        let air = CGRect(x: 0, y: 0, width: 1470, height: 919)
+        // An Air-width screen: Auto would draw 85 %, so 90 % and 100 % can only come from the setting. Tall enough
+        // for the full 939 pt canvas (905 canopy + 34) at 100 %, so only the setting, never the height fit, sets the scale.
+        let air = CGRect(x: 0, y: 0, width: 1470, height: 1026)
         var page: CockpitWindowController?
         let coordinator = EngineCockpitCoordinator { context in
             let made = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
@@ -419,7 +420,7 @@ extension CommunityCockpitEntryTests {
                         windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)))
                 }
             }
-            for (closed, expectedRoot) in [(true, closedRoot), (false, tier == .tall ? 877 : 627)] {
+            for (closed, expectedRoot) in [(true, closedRoot), (false, tier == .tall ? 905 : 635)] {
                 try click()
                 deadline = ContinuousClock.now + .seconds(10)
                 while ContinuousClock.now < deadline, (page.verificationShellState?.profile == .closed) != closed { try await Task.sleep(for: .milliseconds(50)) }
@@ -451,7 +452,7 @@ extension CommunityCockpitEntryTests {
         }
         let cases: [(String, CGRect, CockpitSize?, CGFloat)] = [
             ("1470x956, Dock at the bottom (default 85 %)", CGRect(x: 0, y: 70, width: 1470, height: 849), nil, 0.85),
-            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 690), nil, 684 / 911),
+            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 711), nil, 705 / 939),
             ("80 % chosen live", CGRect(x: 0, y: 0, width: 1680, height: 1026), .percent80, 0.8),
         ]
         for (name, usable, live, expected) in cases {
@@ -478,14 +479,17 @@ extension CommunityCockpitEntryTests {
             let layout = try XCTUnwrap(page.verificationLayout), scale = layout.scale
             XCTAssertEqual(scale, expected, accuracy: 1e-6, name)
             XCTAssertEqual(page.verificationShellState?.tier, .tall, "\(name): the full cockpit, never the short one")
-            XCTAssertEqual(painted["root"]!, 877, accuracy: 0.5, "\(name): the full root")
+            XCTAssertEqual(painted["root"]!, 905, accuracy: 0.5, "\(name): the full root")
             // The whole canvas, root plus the flame reserve, is laid out at 636 CSS px and fits the window.
             XCTAssertEqual(painted["width"]!, 636, accuracy: 1, name)
-            XCTAssertEqual(painted["height"]!, 911, accuracy: 1, name)
-            XCTAssertEqual(painted["height"]! - painted["rootBottom"]!, 34, accuracy: 1, "\(name): the flame reserve is inside the window")
+            XCTAssertEqual(painted["height"]!, 939, accuracy: 1, name)
+            // Whole-point window frames (fit rounds up) leave under 1 pt of transparent slack below the page: up to 1/scale CSS px.
+            let reserve = painted["height"]! - painted["rootBottom"]!
+            XCTAssertGreaterThanOrEqual(reserve, 33, "\(name): the flame reserve is inside the window")
+            XCTAssertLessThanOrEqual(reserve, 34 + 1 / Double(scale) + 0.01, "\(name): the flame reserve plus at most 1 pt of rounding slack")
             // The window server places borderless panels on whole points.
             XCTAssertEqual(window.frame.width, 636 * scale, accuracy: 1, name)
-            XCTAssertEqual(window.frame.height, 911 * scale, accuracy: 1, name)
+            XCTAssertEqual(window.frame.height, 939 * scale, accuracy: 1, name)
             // Placement on the requested screen (the hosted runner's real display is smaller, so the window
             // server may move the panel; its size is what the test can hold it to).
             XCTAssertEqual(layout.frame.maxY, usable.maxY - 6, accuracy: 1e-6, name)

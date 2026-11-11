@@ -119,16 +119,17 @@ data and uploads screenshots and a manifest. See
 ## Merge queue
 
 A PR does not have to merge `main` before it lands. The queue builds "PR + latest
-`main`" and the `modelplan-gates` status on that commit requires `ci` and `desktop`
-to pass there (`QUEUE_WORKFLOWS` in `scripts/merge-gates/rules.mjs`). `desktop`'s
+`main`" and the `modelplan-gates` status on that commit requires `ci`, `desktop` and
+the Linux path-scoped `u11-cockpit`, `official-visuals`, `u11a-aggregate`, `u14-harness`
+and `transport-fuzz` workflows to pass there (`QUEUE_WORKFLOWS` in `scripts/merge-gates/rules.mjs`). `desktop`'s
 `queue-scope` job applies the workflow's pull-request path list, because
 `merge_group` has no paths filter, and skips the jobs when the group changes none
 of those paths or its tree equals the PR head. Otherwise `app`, `shell`,
 `native-partition`, `app-smoke` and `native-headless` run on the group commit. The
 pinned `trusted-mac.yml` has no `merge_group` route to the self-hosted group, so
 `native-headless` falls through to a hosted Mac there. Routing it to the dedicated
-group needs a new pin and a runner-group update together, as above. The GUI leg and
-the path-scoped `u*` workflows do not run in the queue.
+group needs a new pin and a runner-group update together, as above. The GUI leg does not run
+in the queue; the five Linux workflows have their own `queue-scope` job and no Mac job.
 
 ## Migration
 

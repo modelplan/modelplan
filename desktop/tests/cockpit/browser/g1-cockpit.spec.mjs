@@ -17,12 +17,17 @@ async function open(page,data=visualFixture().data) {
 
 test('CKP-ENG-02 one or two subscriptions keep three engine columns',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);
+ // A row the widget hides (signed out: menu and settings only, no dock surface) gets no tab and no column either.
+ const hidden=structuredClone(data.projection.rows[0]);hidden.id='synthetic-signed-out';hidden.name={en:'Signed out',zh:'未登录'};hidden.surfaces=['menu','settings'];hidden.accounts[0].subscriptionRef=null;hidden.accounts[0].accountLocator=null;hidden.accounts[0].valueState='none';data.projection.rows.push(hidden);
  const {send,receive}=await open(page,data);
  for(const count of [1,2]){
   if(count===2){const row=structuredClone(data.projection.rows[0]);row.id='synthetic-second';row.accounts[0].subscriptionRef=null;row.accounts[0].accountLocator=null;data.projection.rows.push(row);expect(await receive(send('display',{data}))).toBe(true);}
   await expect(page.locator('.eng-keys')).toHaveAttribute('data-slots','3');
   await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(count);
   await expect(page.locator('.eng-keys .ek-bay')).toHaveCount(3-count);
+  // Build 14c (G3-77): the empty slots are unnamed add-subscription bays, never the hidden tool.
+  for(const bay of await page.locator('.eng-keys .ek-bay').all())await expect(bay).toHaveAttribute('data-add-subscription','');
+  await expect(page.locator('.ck-eng')).not.toContainText('Signed out');
  }
 });
 
@@ -52,6 +57,14 @@ test('CKP-STRIP-07 Option opens and dismisses the help map without a help key',a
  const labelsBefore=await otherLabels();expect(await detach.boundingBox()).toEqual(before);await page.keyboard.up('Alt');await expect(map).toBeHidden();
  expect(await receive(send('shell',{...shell,attached:false}))).toBe(true);
  await page.keyboard.down('Alt');await expect(map.locator('[data-target="[data-detach]"]')).toContainText('Put back');expect(await otherLabels()).toEqual(labelsBefore);await page.keyboard.up('Alt');await expect(map).toBeHidden();
+});
+
+test('G3-55 right-click on the cockpit raises no browser context menu',async({page})=>{
+ await open(page);
+ for(const selector of ['.ck-head','.ck-port','body']){
+  const prevented=await page.locator(selector).first().evaluate(el=>{const e=new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2});el.dispatchEvent(e);return e.defaultPrevented;});
+  expect(prevented,selector).toBe(true);
+ }
 });
 
 test('CKP-STRIP-08 record strip has five or three lines including the collapsed profile',async({page})=>{
@@ -133,6 +146,20 @@ test('CKP-ENG-09 reserve uses reported reset counts and credits, not a public co
  detail.resetCounts=[{kind:'tokens',count:2,expiresAt:'2026-11-10T12:00:00Z'}];detail.credits={balance:19613.957,observedAt:'2026-11-04T12:00:00Z'};
  expect(await receive(send('display',{data}))).toBe(true);await expect(col.locator('.qrv-c')).toContainText('2');await expect(col.locator('.qrv-p')).toHaveText('19,614');
  for(const [value,expected] of [[0.2,'<1'],[0,'0']]){detail.credits.balance=value;expect(await receive(send('display',{data}))).toBe(true);await expect(col.locator('.qrv-p')).toHaveText(expected);}
+});
+
+test('D88 attached shows the detach key and detached shows put back in the same strip slot',async({page})=>{
+ const {send,receive}=await open(page);const key=page.locator('.ck-head [data-detach]');
+ const slots=async()=>Promise.all(['[data-settings]','[data-detach]','[data-close]'].map(s=>page.locator('.ck-head '+s).boundingBox()));
+ await expect(key).toBeVisible();await expect(key).toHaveAttribute('aria-label','Detach');await expect(key).toHaveAttribute('aria-pressed','false');
+ const attached=await slots();expect(attached[1].x).toBeGreaterThan(attached[0].x);expect(attached[2].x-attached[1].x).toBeCloseTo(attached[1].x-attached[0].x,0);
+ await key.click();expect(await page.evaluate(()=>window.__g1Messages.filter(m=>m.type==='action').at(-1)?.action)).toBe('detach');
+ expect(await receive(send('shell',{...shell,attached:false}))).toBe(true);
+ await expect(key).toBeVisible();await expect(key).toHaveAttribute('aria-label','Put back');await expect(key).toHaveAttribute('aria-pressed','true');
+ expect((await slots()).map(r=>r.x)).toEqual(attached.map(r=>r.x));
+ await key.click();expect(await page.evaluate(()=>window.__g1Messages.filter(m=>m.type==='action').at(-1)?.action)).toBe('putBack');
+ expect(await receive(send('shell',{...shell,attached:true}))).toBe(true);await expect(key).toHaveAttribute('aria-label','Detach');
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(key).toHaveAttribute('aria-label','分离');
 });
 
 test('CKP-SHELL-03 gear, detach and close share a strip key geometry and order',async({page})=>{

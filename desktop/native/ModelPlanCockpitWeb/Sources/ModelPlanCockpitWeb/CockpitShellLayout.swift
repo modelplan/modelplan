@@ -43,66 +43,63 @@ public struct CockpitShellLayout: Equatable, Sendable {
         guard !usable.isNull, !usable.isInfinite, usable.width.isFinite, usable.height.isFinite, usable.width > 0, usable.height > 40,
               usable.origin.x.isFinite, usable.origin.y.isFinite,
               anchor.origin.x.isFinite, anchor.origin.y.isFinite else { return nil }
-        // `usable` already excludes the menu bar; the top gap is 6 pt below the menu bar icon.
-        let top = min(usable.maxY, anchor.minY) - 6
+        // `usable` already excludes the menu bar; the top gap is 6 pt below the menu bar icon, on a whole point.
+        let top = (min(usable.maxY, anchor.minY) - 6).rounded(.down)
         let available = top - usable.minY
         guard available > 0 else { return nil }
         // The chosen size, or less when the screen is too short or narrow for it.
         let chosen = size.scale(screenWidth: screenWidth ?? usable.width)
-        // Whole points (G3-65): the window is rounded up to whole points below, so the scale fits the whole points the screen has.
-        let room = CGSize(width: usable.width.rounded(.down), height: available.rounded(.down))
-        func fitting(_ root: CGFloat) -> CGFloat { min(chosen, room.width / Self.width, room.height / (root + Self.baseReserve)) }
+        func fitting(_ root: CGFloat) -> CGFloat { min(chosen, usable.width / Self.width, available / (root + Self.baseReserve)) }
         var profile = CockpitAppearance.Profile.full, forcedClosed = false
-        var scale = fitting(877)
+        var scale = fitting(905)
         if scale < Self.minimumFullScale {
             // The short version, as before D51: open when its root fits, otherwise forced closed.
             profile = .compact
-            forcedClosed = usable.height - 6 - Self.baseReserve < 627
-            scale = fitting(forcedClosed ? 609 : 627)
+            forcedClosed = usable.height - 6 - Self.baseReserve < 635
+            scale = fitting(forcedClosed ? 609 : 635)
         }
         let fellBack = scale < chosen
         let closed = shutterClosed || forcedClosed
-        let height: CGFloat = profile == .full ? (closed ? 691 : 877) : (closed ? 609 : 627)
+        let height: CGFloat = profile == .full ? (closed ? 691 : 905) : (closed ? 609 : 635)
         // The scale follows the open root, so closing the shutter never resizes the strip or the canopy.
-        let canvas = windowSize(scale: scale, rootHeight: height)
-        let x = attachedX(anchor: anchor, width: canvas.width, scale: scale, usable: usable)
+        // The window server places borderless panels on whole points, so the frame is pixel-aligned here and the
+        // controller, its content bounds and every expectation agree with the real window. Rounding up (never past
+        // the usable area) keeps the scaled page inside the window: the page is top-anchored, so the < 1 pt of
+        // slack is transparent space under the base reserve.
+        let canvas = CGSize(width: min(Self.wholePoints(Self.width * scale), usable.width.rounded(.down)),
+                            height: min(Self.wholePoints((height + Self.baseReserve) * scale), available.rounded(.down)))
+        let x = max(usable.minX.rounded(.up), min(attachedX(anchor: anchor, width: canvas.width, scale: scale, usable: usable).rounded(),
+                                                  (usable.maxX - canvas.width).rounded(.down)))
         return Self(profile: profile, shutterClosed: closed, forcedClosed: forcedClosed, scale: scale, rootHeight: height,
                     frame: CGRect(x: x, y: top - canvas.height, width: canvas.width, height: canvas.height), sizeFellBack: fellBack)
     }
+    /// The smallest whole point count that holds `length`; float noise (913/939 * 939) never adds a point.
+    static func wholePoints(_ length: CGFloat) -> CGFloat { (length - 1e-6).rounded(.up) }
     /// G3-46: with no visible menu bar icon, open at the top-right of the screen, directly below the menu bar.
     public static func hiddenIconAnchor(usable: CGRect) -> CGRect {
         CGRect(x: usable.maxX, y: usable.maxY, width: 0, height: 0)
     }
-    /// G3-46 (owner D53): like other menu bar tools, the cockpit's visible left edge lines up with the menu
-    /// bar icon's left edge. The 636 px raster has an 8 px transparent margin around the 620 px shell. When
-    /// that would run past the right edge it shifts left just enough to stay on the screen.
+    /// Owner D88 (supersedes D53): the attached cockpit sits centred under the menu bar icon. The 636 px
+    /// raster has the same 8 px transparent margin on both sides of the 620 px shell, so the frame's centre is
+    /// the shell's centre. Near a screen edge it shifts just enough to stay on the screen.
     public static func attachedX(anchor: CGRect, width: CGFloat, scale: CGFloat, usable: CGRect) -> CGFloat {
-        max(usable.minX, min(anchor.minX - 8 * scale, usable.maxX - width))
-    }
-    /// G3-65: the window for a page canvas at `scale`, rounded UP to whole points. The hull's lower side walls are
-    /// painted across the whole 636 CSS px canvas, edge to edge, with no transparent gutter. WebKit sizes a WKWebView's
-    /// page in whole points, dropping the fraction, so a 636 x 0.85 = 540.6 pt window gave the page 540 pt = 635.3 CSS px;
-    /// the 620 px shell, centred by `margin: 0 auto`, then lost the outer columns of both side walls. Rounding up gives
-    /// the page at least 636 x (root + reserve) CSS px at every scale: 80 % is 509 pt, 85 % 541, 90 % 573, 100 % 636.
-    public static func windowSize(scale: CGFloat, rootHeight: CGFloat) -> CGSize {
-        func up(_ value: CGFloat) -> CGFloat { (value - 1e-6).rounded(.up) }
-        return CGSize(width: up(width * scale), height: up((rootHeight + baseReserve) * scale))
+        max(usable.minX, min(anchor.midX - width / 2, usable.maxX - width))
     }
     /// The page canvas in CSS px: the root plus the base reserve.
     public var pageSize: CGSize { .init(width: Self.width, height: rootHeight + Self.baseReserve) }
-    /// G3-65: what the page really lays out in, CSS px: the whole-point window divided by the page zoom.
-    /// Never narrower or shorter than `pageSize`, so no painted hull pixel falls outside the window.
-    public var pageViewport: CGSize { .init(width: frame.width / scale, height: frame.height / scale) }
     /// G3-43 / CKP-SHELL-04: the free left of the title strip in page px with Y up; the window uses
-    /// `scaledTitleDragFrame`. It stops short of the shutter so buttons keep their own input. Strip tops are the page's, shared with the study.
+    /// `scaledTitleDragFrame`. It stops short of the shutter so buttons keep their own input. Strip tops are the page's,
+    /// window-relative: the closed page draws its slab at the window's top edge (cockpit.css, 14 px above the study's
+    /// slab row), so its strip is at 25, not the study's 39. Pinned on the page by b13-hull-taper.spec.mjs.
     public var titleDragFrame: CGRect {
-        let stripTop: CGFloat = shutterClosed ? 45 : (profile == .full ? 225 : 57)
+        let stripTop: CGFloat = shutterClosed ? 25 : (profile == .full ? 253 : 65)
         return CGRect(x: 24, y: rootHeight + 34 - stripTop - 29, width: 216, height: 32)
     }
-    /// In window points, Y up. The page is laid out from the window's top edge, so the strip keeps its place below
-    /// the top when the window is rounded up to whole points (G3-65).
-    public var scaledTitleDragFrame: CGRect {
-        titleDragFrame.applying(.init(scaleX: scale, y: scale)).offsetBy(dx: 0, dy: frame.height - pageSize.height * scale)
+    public var scaledTitleDragFrame: CGRect { windowRect(page: titleDragFrame) }
+    /// A page rect (CSS px, Y up from the canvas bottom) in window points: scaled, then lifted by the slack the
+    /// whole-point frame leaves under the top-anchored page.
+    public func windowRect(page rect: CGRect) -> CGRect {
+        rect.applying(.init(scaleX: scale, y: scale)).offsetBy(dx: 0, dy: frame.height - pageSize.height * scale)
     }
 
     public func shellState(attached: Bool, scope: String = "all") -> CockpitShellState {
@@ -120,6 +117,8 @@ public struct CockpitShellLayout: Equatable, Sendable {
 @MainActor public final class CockpitShellSession {
     public var detached = false
     public var shutterClosed = false
+    /// D88: set by the console just before an open and consumed by it; the menu bar icon grows the cockpit.
+    public var nextEntrance: CockpitEntrance = .fade
     private var origins: [(String, CGPoint)] = []
     public init() {}
     public func origin(for arrangement: String) -> CGPoint? { origins.first { $0.0 == arrangement }?.1 }
