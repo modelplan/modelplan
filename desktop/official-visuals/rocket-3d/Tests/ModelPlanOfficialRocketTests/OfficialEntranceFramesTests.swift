@@ -131,13 +131,41 @@ final class OfficialEntranceFramesTests: XCTestCase {
                 print("OFFICIAL-NORMALS \(theme.rawValue) slender_upper_body worst \(String(format: "%.2f", worst)) deg")
                 XCTAssertLessThan(worst, 1, "\(theme) hull normals are not radial")
             }
-            for model in try models("panel_joint_118") {
-                for material in model.materials {
-                    let pbr = try XCTUnwrap(material as? PhysicallyBasedMaterial)
-                    let tint = try XCTUnwrap(pbr.baseColor.tint.usingColorSpace(.sRGB))
-                    XCTAssertGreaterThan(tint.redComponent, 0.15, "\(theme) joints must not be ink black")
+            // Round 3: the hull is round (96 sides, was 24), seen on the top rim of the upper body.
+            for model in try models("slender_upper_body") {
+                let positions = model.mesh.contents.models.flatMap { Array($0.parts) }.flatMap { $0.positions.elements }
+                let top = try XCTUnwrap(positions.map(\.y).max())
+                let sides = Set(positions.filter { abs($0.y - top) < 0.001 && simd_length(SIMD2<Float>($0.x, $0.z)) > 0.1 }
+                    .map { Int((atan2($0.x, $0.z) * 180 / .pi * 2).rounded()) })
+                print("OFFICIAL-ROUND \(theme.rawValue) slender_upper_body top rim \(sides.count) sides")
+                XCTAssertGreaterThanOrEqual(sides.count, 72, "\(theme) hull is still polygonal")
+            }
+            // Round 3: joints are hairlines. The proud torus is hidden; the edge ring is a dark-grey groove (not ink
+            // black) with a light lip copy above it.
+            XCTAssertEqual(scene.entity(named: "panel_joint_118")?.isEnabled, false, "\(theme) proud joint ring still drawn")
+            XCTAssertNotNil(scene.entity(named: "joint_lip_118"), "\(theme) joint has no light lip")
+            func tints(_ name: String) throws -> [CGFloat] {
+                try models(name).flatMap(\.materials).map { material in
+                    let pbr = try XCTUnwrap(material as? PhysicallyBasedMaterial, "\(name) is not a PBR")
+                    return try XCTUnwrap(pbr.baseColor.tint.usingColorSpace(.sRGB)).redComponent
                 }
             }
+            for tint in try tints("joint_edge_118") {
+                XCTAssertGreaterThan(tint, 0.08, "\(theme) joints must not be ink black")
+            }
+            for tint in try tints("canopy_frame_bevel_2") {
+                XCTAssertGreaterThan(tint, 0.05, "\(theme) gasket must not be ink black")
+            }
+            let gasket = try models("canopy_frame_bevel_2").flatMap { $0.mesh.contents.models.flatMap { Array($0.parts) } }
+                .flatMap { $0.positions.elements }
+            let glass = try models("curved_canopy_glass").flatMap { $0.mesh.contents.models.flatMap { Array($0.parts) } }
+                .flatMap { $0.positions.elements }
+            // Gasket width: how far its outer edge lies from the glass edge (the file's strip was up to 3.5 cm).
+            let width = gasket.map { g in glass.map { simd_distance($0, g) }.min() ?? 0 }.max() ?? 0
+            print("OFFICIAL-GASKET \(theme.rawValue) gasket width \(String(format: "%.1f", width * 100)) cm")
+            XCTAssertLessThan(width, 0.026, "\(theme) gasket is still wide")
+            // The cockpit behind the glass: a lit console drawn in code.
+            XCTAssertNotNil(scene.entity(named: "cockpit-screen-0"), "\(theme) no cockpit screens behind the glass")
         }
     }
 

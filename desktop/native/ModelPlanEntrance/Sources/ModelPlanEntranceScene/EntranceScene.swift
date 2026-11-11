@@ -90,8 +90,23 @@ public final class EntranceScene {
     public func setEnvironment(_ equirectangular: CGImage, intensityExponent: Float = 0) async throws {
         let environment = try await EnvironmentResource(equirectangular: equirectangular)
         root.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: intensityExponent))
+        // The model file's canopy glass reflects its own dark environment (round 3: no white chrome).
+        var glassLight: Entity?
+        if stage.findEntity(named: ModelRocket.glassName) != nil, let image = EntranceLook.glassStudio() {
+            let light = root.findEntity(named: "entry-glass-light") ?? Entity()
+            light.name = "entry-glass-light"
+            let glass = try await EnvironmentResource(equirectangular: image)
+            light.components.set(ImageBasedLightComponent(source: .single(glass),
+                                                          intensityExponent: EntranceLook.glassEnvironmentExponent(plan.scenario.theme)))
+            if light.parent == nil { root.addChild(light) }
+            glassLight = light
+        }
+        let glassSource = glassLight
         func receive(_ e: Entity) {
-            if e.components.has(ModelComponent.self) { e.components.set(ImageBasedLightReceiverComponent(imageBasedLight: root)) }
+            if e.components.has(ModelComponent.self) {
+                let source = glassSource.flatMap { ModelRocket.isGlass(e) ? $0 : nil } ?? root
+                e.components.set(ImageBasedLightReceiverComponent(imageBasedLight: source))
+            }
             e.children.forEach(receive)
         }
         receive(stage)
@@ -403,8 +418,10 @@ enum TailPlate {
 /// The model's own hull material reads as foam in RealityKit: its roughness and metallic come from a texture whose
 /// USD scale (roughness x 0.5) the import does not appear to apply, so the hull renders at roughness ~0.88; the
 /// normal map's 0.16 strength is likewise lost and its grain shows at full strength. Here the hull keeps the albedo
-/// atlas (panel lines, hatches) as the metal's colour and gets fixed metal values; the joint rings lose their
-/// near-black ink look; every mesh gets smooth vertex normals (`SmoothNormals`).
+/// atlas (panel lines, hatches) as the metal's colour and gets fixed metal values; every mesh gets smooth vertex
+/// normals (`SmoothNormals`). Round 3 (owner 11-10): joints and the window surround become hairlines
+/// (`JointLine`, `GasketFrame`), the hull is rounded to 96 sides (`RoundHull`), and the cockpit shows faintly
+/// through the glass (`CockpitInterior`).
 @available(macOS 15.0, *)
 @MainActor
 struct HullFinish {
@@ -415,20 +432,20 @@ struct HullFinish {
     static let hullParts: Set<String> = ["aft_skirt", "lower_stage", "long_slanted_interstage", "slender_upper_body",
                                          "capsule_aperture_shell", "capsule_lower", "capsule_nose"]
 
-    /// Ring joints, their edges, the axial seams and the dark canopy gasket: near-black in the file.
-    static func isJoint(_ name: String) -> Bool {
-        name.hasPrefix("panel_joint_") || name.hasPrefix("joint_edge_") || name.hasPrefix("axial_panel_seam_")
-            || name == "canopy_frame_bevel_0" || name == "canopy_frame_bevel_2"
-    }
+    /// The axial seams: thin strips along the body, near-black in the file. They keep their geometry and take the
+    /// groove colour.
+    static func isAxialSeam(_ name: String) -> Bool { name.hasPrefix("axial_panel_seam_") }
+
+    /// The proud 2 cm torus rings at the section joints. Seen from below at a metre or two they were the thick black
+    /// arcs (owner 11-10, round 2), so look mode hides them and draws each joint from its `joint_edge_*` ring
+    /// instead: a hairline groove with a light lip above it (`JointLine`).
+    static func isPanelJoint(_ name: String) -> Bool { name.hasPrefix("panel_joint_") }
+    static func isJointEdge(_ name: String) -> Bool { name.hasPrefix("joint_edge_") }
 
     /// The bells' outer wall and throat collar: white chrome in the file, the hull finish here.
     static func isBellMetal(_ name: String) -> Bool {
         name.hasPrefix("P1_outer_wall_") || name.hasPrefix("P1_throat_collar_")
     }
-
-    /// Height of the 2 cm `panel_joint_*` rings, as a fraction (their local z is the rocket axis). Thinner and
-    /// lighter seams, not heavy black lines. Look mode only; the grey box keeps the file's rings.
-    static let jointThickness: Float = 0.45
 
     /// Roughness of the hull metal: satin, low enough to carry the studio strips as soft highlight bands.
     var roughness: Float { theme == .night ? 0.30 : 0.34 }
@@ -439,15 +456,27 @@ struct HullFinish {
         theme == .night ? NSColor(srgbRed: 0.97, green: 0.98, blue: 1.0, alpha: 1)
             : NSColor(srgbRed: 1.0, green: 1.0, blue: 0.985, alpha: 1)
     }
-    /// The finish as a flat colour (bells, and the hull if its material is not a PBR).
+    /// The finish as a flat colour (bells, the window surround, and the hull if its material is not a PBR).
     var plainColor: NSColor {
         theme == .night ? NSColor(srgbRed: 0.36, green: 0.365, blue: 0.375, alpha: 1)
             : NSColor(srgbRed: 0.72, green: 0.72, blue: 0.71, alpha: 1)
     }
-    /// Joints: darker than the hull, never ink black.
-    var jointColor: NSColor {
-        theme == .night ? NSColor(srgbRed: 0.22, green: 0.225, blue: 0.235, alpha: 1)
-            : NSColor(srgbRed: 0.42, green: 0.42, blue: 0.41, alpha: 1)
+    /// Seam grooves (joint lines, axial seams, the outer line of the window surround): a dark-grey groove, never
+    /// ink black, so it reads as a cut in the metal rather than a drawn line.
+    var grooveColor: NSColor {
+        theme == .night ? NSColor(srgbRed: 0.12, green: 0.122, blue: 0.13, alpha: 1)
+            : NSColor(srgbRed: 0.30, green: 0.30, blue: 0.295, alpha: 1)
+    }
+    /// The light lip beside each groove: polished, lighter than the hull, so it catches the studio strip as a
+    /// faint bright edge like the pass-5 art.
+    var lipColor: NSColor {
+        theme == .night ? NSColor(srgbRed: 0.62, green: 0.625, blue: 0.64, alpha: 1)
+            : NSColor(srgbRed: 0.88, green: 0.88, blue: 0.87, alpha: 1)
+    }
+    /// The canopy gasket: dark grey with a soft sheen (rubber-like, not metal), not black.
+    var gasketColor: NSColor {
+        theme == .night ? NSColor(srgbRed: 0.075, green: 0.078, blue: 0.085, alpha: 1)
+            : NSColor(srgbRed: 0.14, green: 0.14, blue: 0.145, alpha: 1)
     }
 
     func metal(_ color: NSColor, roughness: Float) -> PhysicallyBasedMaterial {
@@ -461,20 +490,44 @@ struct HullFinish {
         return m
     }
 
-    /// Materials, normals and joint thickness for everything under `root` (the model, or one cloned bell).
+    var gasket: PhysicallyBasedMaterial {
+        var m = PhysicallyBasedMaterial()
+        m.baseColor = .init(tint: gasketColor)
+        m.metallic = 0.0
+        m.roughness = 0.38
+        m.clearcoat = 0.5
+        m.clearcoatRoughness = 0.12
+        m.faceCulling = .none
+        return m
+    }
+
+    /// Materials, geometry and normals for everything under `root` (the model, or one cloned bell).
     func dress(_ root: Entity) throws {
+        // The window surround first: it reshapes three meshes together, before they are rounded and smoothed.
+        try GasketFrame.reshape(in: root)
         var models: [Entity] = []
         ModelRocket.forEachModel(root) { models.append($0) }
-        for e in models {
+        for e in models where e.isEnabledInHierarchy {
             guard var model = e.components[ModelComponent.self] else { continue }
+            let name = ModelRocket.partName(e)
+            if Self.isPanelJoint(name) {
+                e.isEnabled = false
+                continue
+            }
+            if CockpitInterior.isInterior(name) {
+                CockpitInterior.dress(e, name: name)
+                continue
+            }
+            let round = RoundHull.applies(to: name)
             if ModelRocket.isGlass(e) {
                 // Owner D116: the canopy is real glass, not the model's flat grey.
                 let glass = CanopyGlass.material()
                 model.materials = model.materials.map { _ in glass }
+                if round { model.mesh = try RoundHull.mesh(model.mesh, entity: e, root: root) }
+                model.mesh = try SmoothNormals.mesh(model.mesh)
                 e.components.set(model)
                 continue
             }
-            let name = ModelRocket.partName(e)
             model.materials = model.materials.map { material -> any RealityKit.Material in
                 if Self.hullParts.contains(name) {
                     guard var pbr = material as? PhysicallyBasedMaterial else { return metal(plainColor, roughness: roughness) }
@@ -487,23 +540,286 @@ struct HullFinish {
                     pbr.faceCulling = .none
                     return pbr
                 }
-                if Self.isJoint(name) { return metal(jointColor, roughness: 0.45) }
+                if Self.isJointEdge(name) || Self.isAxialSeam(name) { return metal(grooveColor, roughness: 0.5) }
+                if let frame = GasketFrame.role(name) {
+                    switch frame {
+                    case .outerLine: return metal(grooveColor, roughness: 0.5)
+                    case .surround: return metal(plainColor, roughness: roughness - 0.06)
+                    case .gasket: return gasket
+                    }
+                }
                 if Self.isBellMetal(name) { return metal(plainColor, roughness: roughness + 0.02) }
                 guard var pbr = material as? PhysicallyBasedMaterial else { return material }
                 pbr.faceCulling = .none
                 return pbr
             }
+            if round { model.mesh = try RoundHull.mesh(model.mesh, entity: e, root: root) }
             model.mesh = try SmoothNormals.mesh(model.mesh)
             e.components.set(model)
         }
-        func thin(_ e: Entity) {
-            if e.name.hasPrefix("panel_joint_") {
-                e.scale = SIMD3<Float>(e.scale.x, e.scale.y, e.scale.z * Self.jointThickness)
-                return
-            }
-            e.children.forEach(thin)
+        JointLine.draw(in: root, lip: metal(lipColor, roughness: 0.16))
+    }
+}
+
+/// Each section joint as a hairline (owner 11-10, round 2: "why are the seams so big"). The file's joint is a
+/// proud 2 cm torus (hidden in look mode) plus a 6 mm `joint_edge_*` ring 17 mm above it. Here the edge ring moves
+/// down onto the joint, is cut to `grooveHeight` and keeps the dark groove colour; a copy of it, `lipHeight` tall,
+/// sits directly above as the light lip. At the end pose (about 850 px per metre on the capsule) the groove is
+/// about 2 px and the lip 1 px, like the pass-5 reference.
+@available(macOS 15.0, *)
+@MainActor
+enum JointLine {
+    /// Groove height in metres (the edge ring is 6 mm in the file).
+    static let grooveHeight: Float = 0.0021
+    /// Lip height in metres, directly above the groove.
+    static let lipHeight: Float = 0.0012
+    /// The file's `joint_edge_*` ring height.
+    static let fileEdgeHeight: Float = 0.006
+
+    static func draw(in root: Entity, lip: PhysicallyBasedMaterial) {
+        var edges: [Entity] = []
+        func find(_ e: Entity) {
+            if HullFinish.isJointEdge(e.name) { edges.append(e); return }
+            e.children.forEach(find)
         }
-        thin(root)
+        find(root)
+        for edge in edges {
+            guard let parent = edge.parent else { continue }
+            // Onto the joint itself (the section boundary), not 17 mm above it.
+            let suffix = String(edge.name.dropFirst("joint_edge_".count))
+            if let joint = parent.children.first(where: { $0.name == "panel_joint_" + suffix }) {
+                edge.position.y = joint.position.y
+            }
+            // The ring's local z is the rocket axis (it is rotated 90 degrees about x).
+            let base = edge.scale
+            edge.scale = SIMD3<Float>(base.x, base.y, base.z * grooveHeight / fileEdgeHeight)
+            let copy = edge.clone(recursive: true)
+            copy.name = "joint_lip_" + suffix
+            copy.scale = SIMD3<Float>(base.x, base.y, base.z * lipHeight / fileEdgeHeight)
+            copy.position.y = edge.position.y + (grooveHeight + lipHeight) / 2
+            ModelRocket.forEachModel(copy) { e in
+                guard var model = e.components[ModelComponent.self] else { return }
+                model.materials = model.materials.map { _ in lip }
+                e.components.set(model)
+            }
+            parent.addChild(copy)
+        }
+    }
+}
+
+/// The window surround (owner 11-10, round 2: "the seam around the window is very wide"). The file draws it as
+/// three nested strips of about 3.5 cm each between the hull opening and the glass: dark, light, dark, so about
+/// 10 cm of near-black frame. The pass-5 art has a hairline groove, a metal rim and a thin dark rounded gasket.
+/// The outer and inner edges stay where they are (the hull opening and the glass edge); the two inner boundaries
+/// move along each cross-section so the outer strip becomes the groove (`outerLine` of the width), the middle
+/// strip the metal surround, and the inner strip the gasket (`gasket` of the width, about 1.5 cm).
+@available(macOS 15.0, *)
+@MainActor
+enum GasketFrame {
+    enum Role { case outerLine, surround, gasket }
+    static let names = ["canopy_frame_bevel_0", "canopy_frame_bevel_1", "canopy_frame_bevel_2"]
+    /// Width fractions from the hull opening to the glass edge.
+    static let outerLine: Float = 0.04
+    static let gasket: Float = 0.16
+
+    static func role(_ name: String) -> Role? {
+        switch name {
+        case names[0]: return .outerLine
+        case names[1]: return .surround
+        case names[2]: return .gasket
+        default: return nil
+        }
+    }
+
+    static func key(_ p: SIMD3<Float>) -> SIMD3<Int32> { SIMD3<Int32>(p * 10_000, rounding: .toNearestOrAwayFromZero) }
+
+    /// Moves the shared edges between the three strips. Leaves the meshes alone if they do not have the expected
+    /// shape (three strips sharing two edge loops).
+    static func reshape(in root: Entity) throws {
+        let strips = names.map { root.findEntity(named: $0) }
+        guard strips.allSatisfy({ $0 != nil }) else { return }
+        // Every model entity of each strip, with its positions in root space.
+        var meshes: [[(entity: Entity, model: ModelComponent)]] = [[], [], []]
+        var points: [Set<SIMD3<Int32>>] = [[], [], []]
+        var at: [SIMD3<Int32>: SIMD3<Float>] = [:]
+        for (k, strip) in strips.enumerated() {
+            ModelRocket.forEachModel(strip!) { e in
+                guard let model = e.components[ModelComponent.self] else { return }
+                meshes[k].append((e, model))
+                for part in model.mesh.contents.models.flatMap({ Array($0.parts) }) {
+                    for p in part.positions.elements {
+                        let q = e.convert(position: p, to: root)
+                        points[k].insert(key(q))
+                        at[key(q)] = q
+                    }
+                }
+            }
+        }
+        let loop1 = points[0].intersection(points[1]), loop2 = points[1].intersection(points[2])
+        let loop0 = points[0].subtracting(loop1), loop3 = points[2].subtracting(loop2)
+        guard !loop0.isEmpty, loop0.count == loop1.count, loop1.count == loop2.count, loop2.count == loop3.count else { return }
+        let l1 = loop1.compactMap { at[$0] }, l2 = loop2.compactMap { at[$0] }, l3 = loop3.compactMap { at[$0] }
+        func nearest(_ p: SIMD3<Float>, _ loop: [SIMD3<Float>]) -> SIMD3<Float> {
+            loop.min { simd_distance($0, p) < simd_distance($1, p) }!
+        }
+        // Each cross-section is the polyline hull opening -> edge 1 -> edge 2 -> glass edge; loop points are 9 cm
+        // or more apart along the window and the strips are 2-5 cm wide, so the nearest point is the partner.
+        var moved: [SIMD3<Int32>: SIMD3<Float>] = [:]
+        for o in loop0.compactMap({ at[$0] }) {
+            let p1 = nearest(o, l1), p2 = nearest(p1, l2), p3 = nearest(p2, l3)
+            let polyline = [o, p1, p2, p3]
+            var lengths: [Float] = [0]
+            for i in 1..<4 { lengths.append(lengths[i - 1] + simd_distance(polyline[i - 1], polyline[i])) }
+            func along(_ f: Float) -> SIMD3<Float> {
+                let s = f * lengths[3]
+                for i in 1..<4 where s <= lengths[i] || i == 3 {
+                    let span = lengths[i] - lengths[i - 1]
+                    let t = span > 0 ? (s - lengths[i - 1]) / span : 0
+                    return polyline[i - 1] + (polyline[i] - polyline[i - 1]) * min(1, max(0, t))
+                }
+                return p3
+            }
+            moved[key(p1)] = along(outerLine)
+            moved[key(p2)] = along(1 - gasket)
+        }
+        for strip in meshes {
+            for (e, model) in strip {
+                var contents = model.mesh.contents
+                var models: [MeshResource.Model] = []
+                for var m in contents.models {
+                    m.parts = MeshPartCollection(m.parts.map { (original: MeshResource.Part) -> MeshResource.Part in
+                        var part = original
+                        let positions = part.positions.elements.map { p -> SIMD3<Float> in
+                            guard let to = moved[key(e.convert(position: p, to: root))] else { return p }
+                            return e.convert(position: to, from: root)
+                        }
+                        part.positions = MeshBuffers.Positions(positions)
+                        return part
+                    })
+                    models.append(m)
+                }
+                contents.models = MeshModelCollection(models)
+                var updated = model
+                updated.mesh = try MeshResource.generate(from: contents)
+                e.components.set(updated)
+            }
+        }
+    }
+}
+
+/// Round hull sections (owner 11-10, round 2: "the arc seam still looks polygonal"). The LOD1 file is 24-sided.
+/// Every triangle of a part that is a surface of revolution is split `steps` x `steps` and each new vertex is put
+/// back on the round surface: its distance from the rocket axis is interpolated from the corners' distances, its
+/// angle and height stay linear. With 4 steps the hull, joints, glass and window surround are 96-sided; with the
+/// recomputed smooth normals (`SmoothNormals`) neither the silhouette nor the joint arcs show corners. Look mode
+/// only: the grey box, its pose gates and the D111 overlap check keep the file's geometry (and its hashes).
+@available(macOS 15.0, *)
+@MainActor
+enum RoundHull {
+    static let steps = 4
+
+    /// Parts that are surfaces of revolution about their root's y axis (the rocket, or one bell).
+    static func applies(to name: String) -> Bool {
+        HullFinish.hullParts.contains(name) || name == "aft_skirt_inner_return" || HullFinish.isJointEdge(name)
+            || name == ModelRocket.glassName || GasketFrame.role(name) != nil || name.hasPrefix("P1_")
+    }
+
+    static func mesh(_ mesh: MeshResource, entity: Entity, root: Entity) throws -> MeshResource {
+        // The axis in the mesh's own space: the root's y axis through the root's origin.
+        let origin = entity.convert(position: .zero, from: root)
+        let axis = normalize(entity.convert(direction: [0, 1, 0], from: root))
+        var contents = mesh.contents
+        var models: [MeshResource.Model] = []
+        for var model in contents.models {
+            model.parts = MeshPartCollection(model.parts.map { subdivided($0, origin: origin, axis: axis, steps: RoundHull.steps) })
+            models.append(model)
+        }
+        contents.models = MeshModelCollection(models)
+        return try MeshResource.generate(from: contents)
+    }
+
+    static func subdivided(_ part: MeshResource.Part, origin: SIMD3<Float>, axis: SIMD3<Float>, steps n: Int) -> MeshResource.Part {
+        guard n > 1, let triangles = part.triangleIndices?.elements, triangles.count >= 3 else { return part }
+        var positions = part.positions.elements
+        guard triangles.allSatisfy({ Int($0) < positions.count }) else { return part }
+        let given = part.normals?.elements, uvGiven = part.textureCoordinates?.elements
+        var normals = given?.count == positions.count ? given : nil
+        var uvs = uvGiven?.count == positions.count ? uvGiven : nil
+        let radius = positions.map { p -> Float in
+            let d = p - origin
+            return length(d - axis * dot(d, axis))
+        }
+
+        // A new vertex from corner weights: linear, then pushed out (or in) to the interpolated distance from the axis.
+        func add(_ corners: [(index: Int, weight: Float)]) -> UInt32 {
+            var p = SIMD3<Float>.zero, r: Float = 0
+            var nn = SIMD3<Float>.zero, uv = SIMD2<Float>.zero
+            for c in corners {
+                p += positions[c.index] * c.weight
+                r += radius[c.index] * c.weight
+                if let normals { nn += normals[c.index] * c.weight }
+                if let uvs { uv += uvs[c.index] * c.weight }
+            }
+            let d = p - origin, h = dot(d, axis), q = d - axis * h
+            if length(q) > 1e-6 { p = origin + axis * h + q / length(q) * r }
+            positions.append(p)
+            if normals != nil { normals!.append(length(nn) > 0 ? normalize(nn) : [0, 1, 0]) }
+            if uvs != nil { uvs!.append(uv) }
+            return UInt32(positions.count - 1)
+        }
+
+        // Points inside an edge, shared by the two triangles on it: ordered from the lower index to the higher.
+        var edges: [SIMD2<UInt32>: [UInt32]] = [:]
+        func edgePoint(_ u: UInt32, _ v: UInt32, _ k: Int) -> UInt32 {
+            let lo = min(u, v), hi = max(u, v)
+            let points: [UInt32]
+            if let cached = edges[SIMD2(lo, hi)] {
+                points = cached
+            } else {
+                points = (1..<n).map { i in
+                    let t = Float(i) / Float(n)
+                    return add([(Int(lo), 1 - t), (Int(hi), t)])
+                }
+                edges[SIMD2(lo, hi)] = points
+            }
+            return u == lo ? points[k - 1] : points[n - k - 1]
+        }
+
+        var indices: [UInt32] = []
+        indices.reserveCapacity(triangles.count * n * n)
+        for f in 0..<(triangles.count / 3) {
+            let a = triangles[3 * f], b = triangles[3 * f + 1], c = triangles[3 * f + 2]
+            // Grid point (i, j): weight i/n on b, j/n on c, the rest on a.
+            var grid: [SIMD2<Int>: UInt32] = [:]
+            func point(_ i: Int, _ j: Int) -> UInt32 {
+                if let v = grid[SIMD2(i, j)] { return v }
+                let v: UInt32
+                if i == 0 && j == 0 { v = a }
+                else if i == n { v = b }
+                else if j == n { v = c }
+                else if j == 0 { v = edgePoint(a, b, i) }
+                else if i == 0 { v = edgePoint(a, c, j) }
+                else if i + j == n { v = edgePoint(b, c, j) }
+                else {
+                    let wb = Float(i) / Float(n), wc = Float(j) / Float(n)
+                    v = add([(Int(a), 1 - wb - wc), (Int(b), wb), (Int(c), wc)])
+                }
+                grid[SIMD2(i, j)] = v
+                return v
+            }
+            for j in 0..<n {
+                for i in 0..<(n - j) {
+                    indices += [point(i, j), point(i + 1, j), point(i, j + 1)]
+                    if i < n - j - 1 { indices += [point(i + 1, j), point(i + 1, j + 1), point(i, j + 1)] }
+                }
+            }
+        }
+        var result = MeshResource.Part(id: part.id, materialIndex: part.materialIndex)
+        result.positions = MeshBuffers.Positions(positions)
+        if let normals { result.normals = MeshBuffers.Normals(normals) }
+        if let uvs { result.textureCoordinates = MeshBuffers.TextureCoordinates(uvs) }
+        result.triangleIndices = MeshBuffer<UInt32>(indices)
+        return result
     }
 }
 
@@ -608,25 +924,88 @@ enum SmoothNormals {
     }
 }
 
-/// The canopy glass in look mode (owner D116): a clear, dark-tinted, glossy sheet. Clearcoat with a near-zero
-/// roughness carries the image-based light as crisp reflections, and partial opacity lets the dim capsule interior
-/// read through it. RealityKit has no transmission term, so see-through is opacity blending.
+/// The canopy glass in look mode (owner D116; round 3: "the glass does not look like glass yet"). Dark, glossy and
+/// partly see-through: clearcoat with a near-zero roughness carries crisp reflections, the dielectric Fresnel term
+/// makes the edges reflect more than the centre, and partial opacity lets the lit cockpit (`CockpitInterior`) show
+/// faintly. RealityKit has no transmission term, so see-through is opacity blending. Round 2 read as white chrome:
+/// seen from below, the glass reflected the bright studio ceiling at grazing angles. The glass therefore gets its
+/// own dark environment (`EntranceLook.glassStudio`, set by `EntranceScene.setEnvironment`) with one soft strip.
 @available(macOS 15.0, *)
 @MainActor
 enum CanopyGlass {
-    static let opacity: Float = 0.42
+    static let opacity: Float = 0.45
 
     static func material() -> PhysicallyBasedMaterial {
         var m = PhysicallyBasedMaterial()
-        m.baseColor = .init(tint: .init(srgbRed: 0.035, green: 0.045, blue: 0.06, alpha: 1))
+        m.baseColor = .init(tint: .init(srgbRed: 0.02, green: 0.026, blue: 0.036, alpha: 1))
         m.metallic = 0.0
-        m.roughness = 0.05
+        m.roughness = 0.04
         m.specular = 1.0
         m.clearcoat = 1.0
         m.clearcoatRoughness = 0.02
         m.blending = .transparent(opacity: .init(floatLiteral: opacity))
         m.faceCulling = .none
         return m
+    }
+}
+
+/// The cockpit behind the canopy, drawn in code (no art files): the file's interior parts (`recessed_cockpit`,
+/// `cockpit_back_half_lining`) become a dim unlit room, and `interior_soft_screen_plane` becomes a dark console
+/// with a few softly lit screens, so the pass-5 "lit screens through the glass" reads faintly behind the
+/// reflections. Unlit, so the studio light does not wash it out and both themes show the same cockpit.
+@available(macOS 15.0, *)
+@MainActor
+enum CockpitInterior {
+    static let screenPlane = "interior_soft_screen_plane"
+    static func isInterior(_ name: String) -> Bool {
+        name == screenPlane || name == "recessed_cockpit" || name == "cockpit_back_half_lining"
+    }
+
+    /// Screen brightness (multiplies every panel colour). The glass shows about half of it.
+    static let brightness: Float = 1.0
+
+    /// Panels on the console in its own plane (metres; the plane is 0.92 x 0.76, facing the window along +z):
+    /// centre x, centre y, width, height, colour (sRGB). Two clusters of screens and a status strip, like pass 5.
+    static let panels: [(x: Float, y: Float, w: Float, h: Float, rgb: SIMD3<Float>)] = {
+        let cool: SIMD3<Float> = [0.46, 0.58, 0.74], dim: SIMD3<Float> = [0.22, 0.29, 0.40], amber: SIMD3<Float> = [0.82, 0.58, 0.30]
+        return [
+            (-0.27, 0.06, 0.15, 0.11, cool), (-0.10, 0.06, 0.13, 0.11, amber),
+            (-0.27, -0.08, 0.15, 0.10, dim), (-0.10, -0.08, 0.13, 0.10, cool),
+            (0.15, 0.09, 0.14, 0.12, cool), (0.30, 0.09, 0.10, 0.12, dim),
+            (0.15, -0.07, 0.14, 0.10, amber), (0.30, -0.07, 0.10, 0.10, cool),
+            (0.0, 0.25, 0.56, 0.03, dim),
+            (-0.36, -0.22, 0.025, 0.025, amber), (-0.31, -0.22, 0.025, 0.025, cool), (0.36, -0.22, 0.025, 0.025, cool),
+        ]
+    }()
+
+    static func unlit(_ rgb: SIMD3<Float>) -> UnlitMaterial {
+        let c = rgb * brightness
+        var m = UnlitMaterial(color: NSColor(srgbRed: CGFloat(min(1, c.x)), green: CGFloat(min(1, c.y)), blue: CGFloat(min(1, c.z)), alpha: 1))
+        m.faceCulling = .none
+        return m
+    }
+
+    static func dress(_ e: Entity, name: String) {
+        guard var model = e.components[ModelComponent.self] else { return }
+        let room: SIMD3<Float> = name == screenPlane ? [0.025, 0.032, 0.045] : [0.018, 0.02, 0.026]
+        let material = unlit(room)
+        model.materials = model.materials.map { _ in material }
+        e.components.set(model)
+        guard name == screenPlane, e.findEntity(named: "cockpit-screen-0") == nil else { return }
+        // On both faces of the console: which face looks at the window is not checked on a render yet.
+        for (i, p) in panels.enumerated() {
+            for side: Float in [1, -1] {
+                // A soft halo (a larger, dimmer plane just behind) and the screen itself.
+                let halo = ModelEntity(mesh: .generatePlane(width: p.w * 1.35, height: p.h * 1.45), materials: [unlit(p.rgb * 0.28)])
+                halo.position = [p.x, p.y, 0.004 * side]
+                halo.name = "cockpit-halo-\(i)"
+                e.addChild(halo)
+                let screen = ModelEntity(mesh: .generatePlane(width: p.w, height: p.h), materials: [unlit(p.rgb)])
+                screen.position = [p.x, p.y, 0.007 * side]
+                screen.name = "cockpit-screen-\(i)"
+                e.addChild(screen)
+            }
+        }
     }
 }
 
@@ -644,38 +1023,43 @@ public enum EntranceLook {
     /// strips to show its bands) and 2 by day (aluminium, albedo ~0.45, would clip higher).
     public static func environmentExponent(_ theme: EntranceTheme) -> Float { theme == .day ? 1.0 : 2.5 }
 
-    /// Equirectangular studio, 512 x 256, sRGB-encoded linear light. Dark room (night) or a light grey one (day:
-    /// satin aluminium needs light to be light), a faint horizon band, and three tall soft strips: the key at upper
-    /// left (azimuth -50), a dim fill (+30) and a narrow rim (+125). Image-based light only; it is never drawn.
-    public static func studio(_ theme: EntranceTheme = .night) -> CGImage? {
+    /// Image-based light exponent for the canopy glass's own environment (`glassStudio`).
+    public static func glassEnvironmentExponent(_ theme: EntranceTheme) -> Float { theme == .day ? 1.5 : 1.0 }
+
+    /// The canopy glass's environment: the same strips as `studio` but in a near-black room with no bright
+    /// ceiling, so the glass reflects one soft streak and a faint rim instead of turning white at grazing angles.
+    public static func glassStudio() -> CGImage? {
+        equirect { az, e in
+            var v = 0.006 + 0.012 * max(0, sin(e * Double.pi / 180))
+            v = max(v, 0.7 * strip(az, e, centre: -50, half: 7, low: -10, high: 70, soft: 18))
+            v = max(v, 0.25 * strip(az, e, centre: 125, half: 3, low: 0, high: 60, soft: 14))
+            return v
+        }
+    }
+
+    /// A tall strip centred at azimuth `centre`, `half` degrees wide, from elevation `low` to `high`, with soft
+    /// edges (a hard edge reflects as a sharp line down a metal cylinder).
+    static func strip(_ az: Double, _ e: Double, centre: Double, half: Double, low: Double, high: Double, soft: Double = 12) -> Double {
+        let da = abs((az - centre + 540).truncatingRemainder(dividingBy: 360) - 180)
+        let fx = max(0, 1 - max(0, da - half) / soft)
+        let fy = max(0, 1 - max(0, low - e, e - high) / 15)
+        return fx * fx * (3 - 2 * fx) * fy * fy * (3 - 2 * fy)
+    }
+
+    /// A 512 x 256 equirectangular grey image from linear light values (azimuth, elevation in degrees), sRGB-encoded.
+    static func equirect(_ value: (Double, Double) -> Double) -> CGImage? {
         let w = 512, h = 256
         guard let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
               let data = context.data
         else { return nil }
-        let day = theme == .day
-        let floor = day ? 0.16 : 0.015, wall = day ? 0.30 : 0.04, ceiling = day ? 0.5 : 0.16, horizon = day ? 0.1 : 0.05
         let p = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
-        // A tall strip centred at azimuth `centre`, `half` degrees wide, from elevation `low` to `high`, with soft
-        // edges (a hard edge reflects as a sharp line down a metal cylinder).
-        func strip(_ az: Double, _ e: Double, centre: Double, half: Double, low: Double, high: Double) -> Double {
-            let da = abs((az - centre + 540).truncatingRemainder(dividingBy: 360) - 180)
-            let fx = max(0, 1 - max(0, da - half) / 12)
-            let fy = max(0, 1 - max(0, low - e, e - high) / 15)
-            return fx * fx * (3 - 2 * fx) * fy * fy * (3 - 2 * fy)
-        }
         for y in 0..<h {
             let e = 90 - 180 * (Double(y) + 0.5) / Double(h)
             for x in 0..<w {
                 let az = 360 * (Double(x) + 0.5) / Double(w) - 180
-                let s = sin(max(0, e) * Double.pi / 180)
-                var v = e >= 0 ? wall + (ceiling - wall) * s * s : floor + (wall - floor) * max(0, 1 + e / 25)
-                v += horizon * exp(-(e / 8) * (e / 8))
-                v = max(v, strip(az, e, centre: -50, half: 10, low: -25, high: 80))
-                v = max(v, 0.3 * strip(az, e, centre: 30, half: 5, low: -10, high: 70))
-                v = max(v, 0.85 * strip(az, e, centre: 125, half: 4, low: -15, high: 75))
-                let linear = min(1, v)
+                let linear = min(1, max(0, value(az, e)))
                 let encoded = linear <= 0.0031308 ? 12.92 * linear : 1.055 * pow(linear, 1 / 2.4) - 0.055
                 let o = (y * w + x) * 4
                 let level = UInt8((encoded * 255).rounded())
@@ -683,6 +1067,23 @@ public enum EntranceLook {
             }
         }
         return context.makeImage()
+    }
+
+    /// Equirectangular studio, 512 x 256, sRGB-encoded linear light. Dark room (night) or a light grey one (day:
+    /// satin aluminium needs light to be light), a faint horizon band, and three tall soft strips: the key at upper
+    /// left (azimuth -50), a dim fill (+30) and a narrow rim (+125). Image-based light only; it is never drawn.
+    public static func studio(_ theme: EntranceTheme = .night) -> CGImage? {
+        let day = theme == .day
+        let floor = day ? 0.16 : 0.015, wall = day ? 0.30 : 0.04, ceiling = day ? 0.5 : 0.16, horizon = day ? 0.1 : 0.05
+        return equirect { az, e in
+            let s = sin(max(0, e) * Double.pi / 180)
+            var v = e >= 0 ? wall + (ceiling - wall) * s * s : floor + (wall - floor) * max(0, 1 + e / 25)
+            v += horizon * exp(-(e / 8) * (e / 8))
+            v = max(v, strip(az, e, centre: -50, half: 10, low: -25, high: 80))
+            v = max(v, 0.3 * strip(az, e, centre: 30, half: 5, low: -10, high: 70))
+            v = max(v, 0.85 * strip(az, e, centre: 125, half: 4, low: -15, high: 75))
+            return v
+        }
     }
 }
 #endif
