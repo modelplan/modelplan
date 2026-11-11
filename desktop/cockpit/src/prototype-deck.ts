@@ -38,7 +38,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  let alertsView:{from:'caution'|'mfd';mark?:string|null;flash?:boolean}|null=null,returnPage:number|null=null,tuneModel:string|null=null;
  // The study's comparison view (mfd.js openComparison, views.js round D1): a fader trial shows "Compare · <model>" over
  // the current page, whose key goes dark; ‹ back, Esc, a page key or the same source again returns. One trial at a time.
- let compare:{modelId:string;current:string|null;trial?:string;fast?:boolean;currentFast:boolean}|null=null,cmpFill:{w:number;h:number}|null=null;root.dataset.detailsAvailable=String(details.liveSessions!==null);
+ let compare:{modelId:string;current:string|null;trial?:string;fast?:boolean;currentFast:boolean}|null=null,cmpFill:{w:number;h:number}|null=null,cmpWatch:ResizeObserver|null=null;root.dataset.detailsAvailable=String(details.liveSessions!==null);
  // The study controller's fixed three-channel skeleton. No fixture data is
  // bundled; absent publication and session capabilities leave all bays empty, and the bank row says so.
  const skeleton=(i:number)=>`<div class="fd-ch empty" data-slot="${i}"><div class="fd-leds"></div><button class="fd-strip" data-mat="well" tabindex="-1"></button>
@@ -230,9 +230,14 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   if(size&&size.w>0&&size.h>0&&(cmpFill?.w!==size.w||cmpFill?.h!==size.h)){cmpFill=size;draw();}
   ladder();
   // Build 14c: a fill measured at zero (the screen not laid out yet, e.g. the first paint after a fader trial) left the
-  // chart out for good. Measure again on the next frame and draw the chart then, if the same comparison is still shown.
-  if(!size||!size.w||!size.h){const shown=compare;requestAnimationFrame(()=>{if(compare!==shown||!page.classList.contains('pg-compare'))return;const next=measure();
-   if(next&&next.w>0&&next.h>0&&(cmpFill?.w!==next.w||cmpFill?.h!==next.h)){cmpFill=next;draw();ladder();}});}
+  // chart out for good. Watch the page's size (no timers: bundle rule) and draw the chart once the fill has a size, if
+  // the same comparison is still shown.
+  cmpWatch?.disconnect();cmpWatch=null;
+  if((!size||!size.w||!size.h)&&typeof ResizeObserver!=='undefined'){const shown=compare,watch=new ResizeObserver(()=>{
+    if(compare!==shown||!page.classList.contains('pg-compare')){watch.disconnect();if(cmpWatch===watch)cmpWatch=null;return;}
+    const next=measure();if(!next||!next.w||!next.h)return;watch.disconnect();if(cmpWatch===watch)cmpWatch=null;
+    if(cmpFill?.w!==next.w||cmpFill?.h!==next.h){cmpFill=next;draw();ladder();}});
+   cmpWatch=watch;watch.observe(page);}
   const keys=document.createElement('template');keys.innerHTML=compareKeys(view,ui,args,{back});
   footer.className='mfd-ok mfd-vk';footer.replaceChildren(...(keys.content.firstElementChild?.childNodes??[]));
   footer.onclick=e=>{if(!e.isTrusted)return;const key=(e.target as Element).closest<HTMLElement>('[data-mfd]');if(!key)return;
