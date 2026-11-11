@@ -108,7 +108,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var appearance: CockpitAppearance
   private let shellSession: CockpitShellSession
   private let anchor: () -> CGRect?
-  /// Build 14c (G3-76): the screen point an open came from (the widget's ignition click); nil opens on the icon's display.
+  /// Build 14c (G3-79): the screen point an open came from (the widget's ignition click); nil opens on the icon's display.
   private let openPoint: () -> CGPoint?
   /// The displays placement and drags use; tests replace it with a fixed arrangement.
   var screens: @MainActor () -> [CockpitScreen] = { CockpitScreenSelection.system() }
@@ -803,7 +803,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let window, !window.frame.isEmpty else { return nil }
     return window.frame.origin
   }
-  /// The usable frame and icon rect the layout is fitted to. Build 14c (G3-76): a detached cockpit stays on the
+  /// The usable frame and icon rect the layout is fitted to. Build 14c (G3-79): a detached cockpit stays on the
   /// display its remembered origin is on while that is still a display; otherwise the open goes to the display the
   /// user clicked on (the widget's), and only without a click to the menu bar icon's display. The icon rect is the
   /// real icon only on its own display; elsewhere the cockpit opens at that display's top right, as with no icon.
@@ -825,7 +825,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private func screenWidth(_ usable: CGRect) -> CGFloat {
     screens().first { $0.visibleFrame == usable }?.frame.width ?? usable.width
   }
-  /// The fit and the window frame an open or a relayout uses. Build 14c (G3-76): a detached cockpit's remembered
+  /// The fit and the window frame an open or a relayout uses. Build 14c (G3-79): a detached cockpit's remembered
   /// origin is replayed only while it is still on some display; otherwise the cockpit takes its attached place on
   /// the display `environment()` chose (the click's).
   func placement() -> (fit: CockpitShellLayout, frame: CGRect)? {
@@ -942,7 +942,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let newlyDetached = !shellSession.detached
       shellSession.detached = true
       if newlyDetached { updateAppearance(appearance) }
-      // Build 14c (G3-76): the window stays inside the display under the pointer, so it can go to any display.
+      // Build 14c (G3-79): the window stays inside the display under the pointer, so it can go to any display.
       window.setFrame(dragFrame(start: start.frame, from: start.point, to: point), display: true)
       if let home = layout?.frame {
         let ready = hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40

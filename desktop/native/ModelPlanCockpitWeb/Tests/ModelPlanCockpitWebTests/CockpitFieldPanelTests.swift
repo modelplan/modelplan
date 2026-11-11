@@ -86,7 +86,7 @@ final class CockpitFieldPanelTests: XCTestCase {
     XCTAssertEqual(frame.minX, 0)
   }
 
-  // MARK: Build 14c, G3-77: placement, moving and refitting across displays
+  // MARK: Build 14c, G3-80: placement, moving and refitting across displays
 
   private let screenA = CockpitScreen(frame: NSRect(x: 0, y: 0, width: 1512, height: 982), visibleFrame: NSRect(x: 0, y: 0, width: 1512, height: 949))
   private let screenB = CockpitScreen(frame: NSRect(x: 1512, y: 0, width: 2560, height: 1440), visibleFrame: NSRect(x: 1512, y: 0, width: 2560, height: 1415))

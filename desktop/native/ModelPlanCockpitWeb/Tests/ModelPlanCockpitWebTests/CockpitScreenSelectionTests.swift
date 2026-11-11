@@ -5,7 +5,7 @@ import XCTest
 
 @testable import ModelPlanCockpitWeb
 
-/// Build 14c, G3-76: with two displays the cockpit opens on the display the user clicked (the widget's ignition),
+/// Build 14c, G3-79: with two displays the cockpit opens on the display the user clicked (the widget's ignition),
 /// not on the menu bar icon's; a drag takes it to any display; a remembered detached origin is replayed only while it
 /// is still on a display. Uses a fixed two-display arrangement through the controller's `screens` seam.
 @MainActor final class CockpitScreenSelectionTests: XCTestCase {

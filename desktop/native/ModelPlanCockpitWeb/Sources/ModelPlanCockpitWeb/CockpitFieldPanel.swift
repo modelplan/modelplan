@@ -15,7 +15,7 @@ import WebKit
 /// The enlarged launch field: its own borderless panel and web view, because the cockpit window is 620 pt
 /// wide. Nothing exists until it opens, and closing destroys the page, which releases its WebGL context.
 /// Closes on ×, Esc, a click outside (the panel loses key) or `idleSeconds` without interaction.
-/// Build 14c (G3-77): it opens on the display the user clicked on, moves by the strip above its card to any display,
+/// Build 14c (G3-80): it opens on the display the user clicked on, moves by the strip above its card to any display,
 /// and refits its size rule to the display it is on whenever it changes display or the displays change.
 @MainActor public final class CockpitFieldPanel: NSObject, NSWindowDelegate {
   /// D49: the field opens from the cockpit, which sits above `.floating`, so it opens above the cockpit.
@@ -31,7 +31,7 @@ import WebKit
   /// The frosted card's blur: a transparent web view cannot blur the desktop with CSS, so the panel blurs behind the
   /// window where the page says its card is. Under Reduce Transparency AppKit draws it solid.
   private var cardBlur: NSVisualEffectView?
-  /// G3-77: the drag strip just above the card (bare desktop in the page, so it takes no control's input).
+  /// G3-80: the drag strip just above the card (bare desktop in the page, so it takes no control's input).
   private var dragRegion: CockpitTitleDrag?
   private var dragStart: (point: CGPoint, frame: NSRect, moved: Bool)?
   private var screenObserver: NSObjectProtocol?
@@ -58,7 +58,7 @@ import WebKit
     let height = min(visible.height - 32, min(900, max(600, (visible.height * 0.8).rounded())))
     return NSRect(x: visible.minX + (visible.width - width) / 2, y: visible.minY + (visible.height - height) / 2, width: width, height: height)
   }
-  /// G3-77: the same size rule on `visible`, centred on `centre` as far as the 16 pt margins allow (the field keeps
+  /// G3-80: the same size rule on `visible`, centred on `centre` as far as the 16 pt margins allow (the field keeps
   /// its place when it is refitted on the display it was moved to).
   nonisolated public static func frame(in visible: NSRect, centredAt centre: CGPoint?) -> NSRect {
     let fitted = frame(in: visible)
@@ -66,7 +66,7 @@ import WebKit
     let moved = NSRect(x: centre.x - fitted.width / 2, y: centre.y - fitted.height / 2, width: fitted.width, height: fitted.height)
     return CockpitScreenSelection.clamp(moved, into: visible.insetBy(dx: 16, dy: 16))
   }
-  /// G3-77: the drag strip in the content view: the bare band above the card, as wide as the card, at most 20 pt
+  /// G3-80: the drag strip in the content view: the bare band above the card, as wide as the card, at most 20 pt
   /// high. The × sits right of the card, so the strip never covers it. Empty when there is no room.
   nonisolated public static func dragStripFrame(card: NSRect, in bounds: NSRect) -> NSRect {
     let height = min(20, bounds.maxY - card.maxY)
@@ -132,7 +132,7 @@ import WebKit
     onClosed?()
   }
   public func windowDidResignKey(_ notification: Notification) { close() }
-  /// G3-77: moved (or pushed) onto another display: the size rule follows that display.
+  /// G3-80: moved (or pushed) onto another display: the size rule follows that display.
   public func windowDidChangeScreen(_ notification: Notification) { refit() }
   /// The size rule on the display that shows most of the field (the first display when it is on none), keeping its
   /// centre where it is. Not while a drag is moving it; the drag's end refits.

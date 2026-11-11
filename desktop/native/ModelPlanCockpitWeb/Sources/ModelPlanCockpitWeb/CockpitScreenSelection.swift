@@ -9,7 +9,7 @@ public struct CockpitScreen: Equatable, Sendable {
   public init(frame: CGRect, visibleFrame: CGRect) { self.frame = frame; self.visibleFrame = visibleFrame }
 }
 
-/// Build 14c (G3-76, G3-77): which display the cockpit and the launch field use. The screen the user clicked on
+/// Build 14c (G3-79, G3-80): which display the cockpit and the launch field use. The screen the user clicked on
 /// wins over the menu bar icon's screen, a drag follows the pointer to any display, and a remembered position is
 /// replayed only while it is still on some display.
 public enum CockpitScreenSelection {

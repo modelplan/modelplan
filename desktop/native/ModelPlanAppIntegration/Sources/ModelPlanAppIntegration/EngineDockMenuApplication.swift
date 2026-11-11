@@ -204,7 +204,7 @@ struct StatusNoticePresentation {
         composition.dock.menuNoticeDidChange = { [weak self] notice, first in self?.applyMenuNotice(notice, first: first) }
         composition.dock.showSettings = settingsHost.action
         composition.dock.resetPosition = { [weak self] in self?.resetPositions() }
-        // Build 14c (G3-76): the ignition opens the cockpit on the display the widget is on, where the user clicked.
+        // Build 14c (G3-79): the ignition opens the cockpit on the display the widget is on, where the user clicked.
         composition.dock.showConsole = { [weak self] in self?.showConsole(openPoint: NSEvent.mouseLocation) }
     }
     private func updateMemberRefreshCapability() {
@@ -306,7 +306,7 @@ struct StatusNoticePresentation {
         guard NSScreen.screens.contains(where: { $0.frame.intersects(rect) }) else { return nil }
         return rect
     }
-    /// Build 14c (G3-76): the screen point the latest open came from (the widget's ignition click). Nil for the menu
+    /// Build 14c (G3-79): the screen point the latest open came from (the widget's ignition click). Nil for the menu
     /// bar icon, the status menu and shortcuts, which open on the icon's display as before.
     var cockpitOpenPoint: CGPoint?
     /// D88: `fromStatusItem` is the menu bar icon's own click: the attached cockpit grows out of the icon.

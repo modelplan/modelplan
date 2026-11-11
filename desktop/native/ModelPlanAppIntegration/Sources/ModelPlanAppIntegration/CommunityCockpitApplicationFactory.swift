@@ -140,7 +140,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
-    /// Build 14c (G3-76): where the latest open was clicked; nil opens on the menu bar icon's display.
+    /// Build 14c (G3-79): where the latest open was clicked; nil opens on the menu bar icon's display.
     var openPoint: (() -> CGPoint?)?
     var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
@@ -337,7 +337,7 @@ struct CockpitUnavailableNotice {
     private func openField(focusName:String?=nil) {
         guard let bundle=owner.verifiedBundle,let payload=fieldPayload(focusName:focusName) else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
-        // Build 14c (G3-77): on the cockpit's display, where the user clicked to open it.
+        // Build 14c (G3-80): on the cockpit's display, where the user clicked to open it.
         fieldPanel=panel;panel.open(payload:payload,near:owner.coordinator?.attachmentHintAnchor?.frame ?? owner.anchor?(),at:NSEvent.mouseLocation)
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
