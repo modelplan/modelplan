@@ -46,14 +46,17 @@ test('G3-47 subscribed bells match the study; only the working bell lights its m
 });
 
 // D70: only an empty slot (no subscription) is darker: the study's night/black bell, quietly dimmed, with no light.
+// Owner, build 14c: one page of subscriptions has no empty bays, so the empty slots are those on the last of two pages.
 test('G3-47 an empty slot shows the darker night bell',async({page})=>{
  await page.setViewportSize({width:636,height:939});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const d=data();d.projection.rows=d.projection.rows.slice(0,2);d.subscriptions=d.subscriptions.slice(0,2);if(d.details)d.details.subscriptions=d.details.subscriptions.slice(0,2);
+ for(let i=2;i<7;i++){const row=structuredClone(d.projection.rows[0]);row.id='synthetic-'+i;row.name={en:'Synthetic '+i,zh:'模拟 '+i};for(const a of row.accounts){a.subscriptionRef=null;a.accountLocator=null;}d.projection.rows.push(row);}
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:d}))).toBe(true);
+ await page.locator('[data-bpage="1"]').click();
  await page.waitForFunction(()=>document.querySelectorAll('.ck-base .bz-empty').length>0);
  const empty=await page.evaluate(()=>[...document.querySelectorAll('.ck-base .bz-empty')].map(b=>{const c=getComputedStyle(b.querySelector('.bz-line'));return {filter:c.filter,image:c.backgroundImage,sheet:!!b.querySelector('.bz-sheet')};}));
  for(const e of empty){expect(e.filter).toBe('brightness(0.9)');expect(e.image).toContain('assets/bells/bell-night-');expect(e.sheet).toBe(false);}

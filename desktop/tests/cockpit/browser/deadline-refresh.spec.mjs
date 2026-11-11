@@ -9,6 +9,10 @@ function dataFor(details=false){
  a.windows=[{...w,id:'session:18000:main:main',role:'session',durationSeconds:18000,label:{en:'Session',zh:'会话'},remainingPercent:0,current:true,observedAt:start,resetsAt:at,validUntil:at},{...w,id:'weekly:604800:main:main',role:'weekly',durationSeconds:604800,label:{en:'Weekly',zh:'每周'},remainingPercent:80,current:true,observedAt:start,resetsAt:week,validUntil:week}];
  if(details)data.details={version:1,sources:['quota-thresholds'],subscriptions:[],sessions:[],sessionCoverage:'unavailable',resetEvents:[],alerts:[{source:row.id,subscriptionRef:a.subscriptionRef,windowId:a.windows[0].id,severity:'critical',remainingPercent:0}]};return data;
 }
+// Owner, build 14c: one page of subscriptions has no empty Add bays, so the Add-focus cases use seven subscriptions:
+// page 2 then holds one column and five Add bays.
+function sevenRows(){const data=dataFor(),base=data.projection.rows[0];for(let i=1;i<7;i++){const row=structuredClone(base);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);}return data;}
+const toPage2=page=>page.getByRole('button',{name:'Page 2'}).click();
 async function open(page,data){
  await page.addInitScript(()=>{window.__messages=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__messages.push(JSON.parse(raw));}}}};});
  await page.clock.install({time:new Date(start)});await page.clock.pauseAt(new Date(start));await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
@@ -97,7 +101,7 @@ test('appearance repaint preserves an active shutter drag',async({page})=>{
  expect(await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'))).toBe(before);await page.mouse.up();
 });
 for(const [from,to,fromLabel,toLabel] of [['en','zh-CN','＋ Add a subscription','＋ 添加订阅'],['zh-CN','en','＋ 添加订阅','＋ Add a subscription']])test(`Add subscription focus survives ${from} to ${to} and expiry`,async({page})=>{
- const {send,receive,tick}=await open(page,dataFor());
+ const {send,receive,tick}=await open(page,sevenRows());await toPage2(page);
  if(from!=='en')expect(await receive(send('appearance',{theme:'night',locale:from,reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
  const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await expect(add).toHaveAttribute('aria-label',fromLabel);await add.focus();await expect(add).toBeFocused();
  expect(await receive(send('appearance',{theme:'night',locale:to,reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
@@ -107,22 +111,22 @@ for(const [from,to,fromLabel,toLabel] of [['en','zh-CN','＋ Add a subscription'
 test('localization preserves focus on a non-Add control',async({page})=>{
  const {send,receive}=await open(page,dataFor());const all=page.locator('.eng-krow button[data-all]');await all.focus();await expect(all).toBeFocused();
  expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
- await expect(page.locator('.eng-krow button[data-all]')).toBeFocused();await expect(page.locator('.eng-keys button[data-add-subscription]').first()).not.toBeFocused();
+ await expect(page.locator('.eng-krow button[data-all]')).toBeFocused();await expect(page.locator('.eng-keys button[data-add-subscription]:focus')).toHaveCount(0);
 });
 test('display update preserves focused Add subscription and scope',async({page})=>{
- const data=dataFor(),{send,receive}=await open(page,data),ref=data.projection.rows[0].accounts[0].subscriptionRef;
- expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();
+ const data=sevenRows(),{send,receive}=await open(page,data),ref=data.projection.rows[0].accounts[0].subscriptionRef;
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);await toPage2(page);const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();
  data.projection.rows[0].accounts[0].windows[1].remainingPercent=70;expect(await receive(send('display',{data}))).toBe(true);
  const after=page.locator('.eng-keys button[data-add-subscription]').nth(1);await expect(after).toBeFocused();await expect(after).toHaveAttribute('aria-label','＋ Add a subscription');await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');
 });
 test('display update does not steal focus from a non-Add control',async({page})=>{
  const data=dataFor(),{send,receive}=await open(page,data);const settings=page.getByRole('button',{name:'Settings',exact:true});await settings.focus();await expect(settings).toBeFocused();
  data.projection.rows[0].accounts[0].windows[1].remainingPercent=70;expect(await receive(send('display',{data}))).toBe(true);
- await expect(settings).toBeFocused();await expect(page.locator('.eng-keys button[data-add-subscription]').first()).not.toBeFocused();
+ await expect(settings).toBeFocused();await expect(page.locator('.eng-keys button[data-add-subscription]:focus')).toHaveCount(0);
 });
 test('display update does not move focus when the focused Add bay disappears',async({page})=>{
- const data=dataFor(),{send,receive}=await open(page,data),add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();
- const base=data.projection.rows[0];for(let i=1;i<3;i++){const row=structuredClone(base);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);}
+ const data=sevenRows(),{send,receive}=await open(page,data);await toPage2(page);const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();
+ const base=data.projection.rows[0];for(let i=7;i<12;i++){const row=structuredClone(base);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);}
  expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.eng-keys button[data-add-subscription]')).toHaveCount(0);expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 test('display update keeps the current page and focused Add bay when that page still exists',async({page})=>{
@@ -134,7 +138,7 @@ test('display update keeps the current page and focused Add bay when that page s
 test('display update does not transfer Add focus to another page when its page disappears',async({page})=>{
  const data=dataFor(),base=data.projection.rows[0];for(let i=1;i<7;i++){const row=structuredClone(base);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);}
  const {send,receive}=await open(page,data);await page.getByRole('button',{name:'Page 2'}).click();const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();
- data.projection.rows=[base];expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.eng-keys button[data-add-subscription]')).toHaveCount(2);expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
+ data.projection.rows=[base];expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.eng-keys button[data-add-subscription]')).toHaveCount(0);expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 test('display update clamps a removed page without transferring Add focus',async({page})=>{
  const data=dataFor(),base=data.projection.rows[0];for(let i=1;i<13;i++){const row=structuredClone(base);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);}
@@ -143,13 +147,13 @@ test('display update clamps a removed page without transferring Add focus',async
  await expect(page.getByRole('button',{name:'Page 2'})).toHaveAttribute('aria-current','true');await expect(page.getByRole('button',{name:'Page 3'})).toHaveCount(0);expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 test('hidden display and stale delivery after clear cannot restore Add focus',async({page})=>{
- const data=dataFor(),{send,receive}=await open(page,data),add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();
+ const data=sevenRows(),{send,receive}=await open(page,data);await toPage2(page);const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();
  expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);expect(await receive(send('display',{data}))).toBe(true);expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
  const old=send('display',{data});expect(await receive(send('clear',{generation:'42',viewRevision:'4'}))).toBe(true);expect(await receive(old)).toBe(false);await expect(page.locator('.eng-keys button[data-add-subscription]')).toHaveCount(0);expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 test('display update preserves focus on the Engine All control',async({page})=>{
  const data=dataFor(),{send,receive}=await open(page,data),all=page.locator('.eng-krow button[data-all]');await all.focus();await expect(all).toBeFocused();data.projection.rows[0].accounts[0].windows[1].remainingPercent=70;
- expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.eng-krow button[data-all]')).toBeFocused();await expect(page.locator('.eng-keys button[data-add-subscription]').first()).not.toBeFocused();
+ expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.eng-krow button[data-all]')).toBeFocused();await expect(page.locator('.eng-keys button[data-add-subscription]:focus')).toHaveCount(0);
 });
 test('display removal of a focused subscription does not focus another member',async({page})=>{
  const data=dataFor(),{send,receive}=await open(page,data),selected=page.getByRole('button',{name:/^Codex · Shortcut key 1$/});await selected.focus();await expect(selected).toBeFocused();
@@ -162,9 +166,9 @@ function twoVerified(){
  row.accounts.push(b);const sub=structuredClone(data.subscriptions[0]);sub.subscriptionRef=ref;data.subscriptions.push(sub);return data;
 }
 test('filling the focused Add slot does not focus a different remaining slot',async({page})=>{
- const data=dataFor(),{send,receive}=await open(page,data),add=page.locator('.eng-keys button[data-add-subscription]').first();await add.focus();await expect(add).toBeFocused();
+ const data=sevenRows(),{send,receive}=await open(page,data);await toPage2(page);const add=page.locator('.eng-keys button[data-add-subscription]').first();await add.focus();await expect(add).toBeFocused();
  const row=structuredClone(data.projection.rows[0]);row.id='tool-new';row.name={en:'New',zh:'新'};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);
- expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.eng-keys button[data-add-subscription]')).toHaveCount(1);expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.eng-keys button[data-add-subscription]')).toHaveCount(4);expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 test('focused quota cell follows its verified member across reorder and never another after removal',async({page})=>{
  const data=twoVerified(),{send,receive}=await open(page,data),ref='0123456789abcdef';const cell=()=>page.locator(`.eng-cols .ec[data-col="${ref}"] .qcell[data-row="other"]`);await cell().focus();await expect(cell()).toBeFocused();
@@ -192,7 +196,7 @@ test('pointer release after replacing a target never activates another member',a
  const actions=await page.evaluate(()=>window.__messages.filter(m=>m.type==='action'&&m.action==='scopeSelect'));expect(actions.length).toBeLessThanOrEqual(1);if(actions.length)expect(actions[0].key).toBe('0123456789abcdef');
 });
 test('focus moved externally during redraw is not stolen back',async({page})=>{
- const data=dataFor(),{send,receive}=await open(page,data),add=page.locator('.eng-keys button[data-add-subscription]').first();await add.focus();await expect(add).toBeFocused();
+ const data=sevenRows(),{send,receive}=await open(page,data);await toPage2(page);const add=page.locator('.eng-keys button[data-add-subscription]').first();await add.focus();await expect(add).toBeFocused();
  await page.evaluate(()=>{const host=document.querySelector('.ck-eng'),original=host.replaceChildren.bind(host);host.replaceChildren=(...nodes)=>{original(...nodes);document.querySelector('.ck-head button[aria-label="Settings"]').focus();};});
  expect(await receive(send('display',{data}))).toBe(true);await expect(page.getByRole('button',{name:'Settings',exact:true})).toBeFocused();
 });
@@ -291,7 +295,6 @@ test('reset mode cannot distinguish otherwise identical quota siblings',async({p
  const {send,receive}=await open(page,data),cell=()=>page.locator('.eng-cols .ec[data-col="0123456789abcdef"] .qcell[data-row="other"]');await cell().focus();await expect(cell()).toBeFocused();
  a.windows[2].remainingPercent=70;expect(await receive(send('display',{data}))).toBe(true);await expect(cell()).not.toBeFocused();expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
-function sevenRows(){const data=dataFor(),base=data.projection.rows[0];for(let i=1;i<7;i++){const row=structuredClone(base);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);}return data;}
 test('appearance followed by unchanged selected shell preserves page and Add focus',async({page})=>{
  const data=sevenRows(),ref=data.projection.rows[0].accounts[0].subscriptionRef,{send,receive}=await open(page,data);expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);await page.getByRole('button',{name:'Page 2'}).click();
  const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);await expect(add).toBeFocused();
@@ -306,7 +309,7 @@ test('actual scope change retains its page behavior without moving focus to anot
  expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);await expect(page.getByRole('button',{name:'Page 1'})).toHaveAttribute('aria-current','true');expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 test('appearance and shell cannot steal external focus or revive cleared state',async({page})=>{
- const data=dataFor(),{send,receive}=await open(page,data);await page.locator('.eng-keys button[data-add-subscription]').first().focus();expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
+ const data=sevenRows(),{send,receive}=await open(page,data);await toPage2(page);await page.locator('.eng-keys button[data-add-subscription]').first().focus();expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
  const settings=page.getByRole('button',{name:'设置',exact:true});await settings.focus();expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(settings).toBeFocused();
  expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);const old=send('shell',{...shell,scope:'all'});expect(await receive(send('clear',{generation:'42',viewRevision:'4'}))).toBe(true);expect(await receive(old)).toBe(false);await expect(page.locator('.eng-keys button[data-add-subscription]')).toHaveCount(0);
 });

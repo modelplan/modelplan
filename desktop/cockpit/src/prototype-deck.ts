@@ -221,12 +221,18 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const args:CompareArgs={modelId:f.id,current:compare!.current,...(compare!.trial?{trial:compare!.trial}:{}),...(compare!.fast!==undefined?{fast:compare!.fast}:{}),currentFast:compare!.currentFast};
   const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=comparison(view,{...ui,scope:null,fill:cmpFill?{cmp:cmpFill}:{}},args);};
   bar.classList.add('dark');for(const {b} of buttons){b.classList.remove('on');b.setAttribute('aria-pressed','false');}
+  // CSP (style-src 'self') drops the ladder's inline geometry; apply it through CSSOM after every draw.
+  const ladder=()=>{for(const e of page.querySelectorAll<HTMLElement>('.cmp-lad[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}};
   page.className='mfd-page pg-compare is-view own-title';draw();
   // The chart is drawn at its measured size (mfd.js renderMfd), again once if that size changed.
-  const area=page.querySelector<HTMLElement>('[data-fill="cmp"]'),size=area?{w:Math.floor(area.clientWidth),h:Math.floor(area.clientHeight)}:null;
+  const measure=()=>{const area=page.querySelector<HTMLElement>('[data-fill="cmp"]');return area?{w:Math.floor(area.clientWidth),h:Math.floor(area.clientHeight)}:null;};
+  const size=measure();
   if(size&&size.w>0&&size.h>0&&(cmpFill?.w!==size.w||cmpFill?.h!==size.h)){cmpFill=size;draw();}
-  // CSP (style-src 'self') drops the ladder's inline geometry; apply it through CSSOM.
-  for(const e of page.querySelectorAll<HTMLElement>('.cmp-lad[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}
+  ladder();
+  // Build 14c: a fill measured at zero (the screen not laid out yet, e.g. the first paint after a fader trial) left the
+  // chart out for good. Measure again on the next frame and draw the chart then, if the same comparison is still shown.
+  if(!size||!size.w||!size.h){const shown=compare;requestAnimationFrame(()=>{if(compare!==shown||!page.classList.contains('pg-compare'))return;const next=measure();
+   if(next&&next.w>0&&next.h>0&&(cmpFill?.w!==next.w||cmpFill?.h!==next.h)){cmpFill=next;draw();ladder();}});}
   const keys=document.createElement('template');keys.innerHTML=compareKeys(view,ui,args,{back});
   footer.className='mfd-ok mfd-vk';footer.replaceChildren(...(keys.content.firstElementChild?.childNodes??[]));
   footer.onclick=e=>{if(!e.isTrusted)return;const key=(e.target as Element).closest<HTMLElement>('[data-mfd]');if(!key)return;

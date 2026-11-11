@@ -48,7 +48,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  }
  let renderedNow=initialNow;
  const paint=(time?:number)=>{
-  if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now};
+  if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'exact':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now};
   const model=engineModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));// Unknown vendors have no mark: drop the study's neutral placeholder before parsing so nothing is requested.
   host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
   // Keep the selected source-window identity in memory, never in rendered HTML.
