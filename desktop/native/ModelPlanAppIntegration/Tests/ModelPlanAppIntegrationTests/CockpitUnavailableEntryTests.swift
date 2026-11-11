@@ -71,5 +71,31 @@ extension CommunityCockpitEntryTests {
         XCTAssertEqual(notices.count,1,"A failure that outlasts the grace period is announced once")
         await app.composition.stop()
     }
+    /// macrevc-786-1: the grace period only ends as a recovery when a page opened and nothing failed after it.
+    /// A rebuild that opens, then fails, and whose next page cannot be created, must still announce the failure.
+    @MainActor func testFailedRebuildAfterAPageFailureStillShowsTheNoticeAndASuccessfulRebuildDoesNot() async throws {
+        for recovers in [false,true] {
+            let root=FileManager.default.temporaryDirectory.appendingPathComponent("g3-66-rebuild-"+UUID().uuidString)
+            defer{try? FileManager.default.removeItem(at:root)}
+            let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+            let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in RouteClient()})
+            let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+            let coordinator=EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+            owner.coordinator=coordinator
+            var notices:[CockpitUnavailableNotice]=[]
+            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(300))
+            surface.show()
+            for _ in 0..<50 where !surface.wantsVisible { try await Task.sleep(for:.milliseconds(10)) }
+            owner.pageFailure?(.messageRejected)          // the first page fails
+            coordinator.onOpened?()                        // the rebuild opens ...
+            if !recovers {
+                owner.pageFailure?(.messageRejected)       // ... then fails
+                coordinator.onUnavailable?(.pageCreation("synthetic")) // and the next page cannot be created
+            }
+            try await Task.sleep(for:.milliseconds(900))
+            XCTAssertEqual(notices.count,recovers ? 0 : 1,recovers ? "A rebuild that opened and stayed up is a recovery: no notice" : "A rebuild that failed again is announced, not treated as a recovery")
+            surface.hide();await coordinator.shutdown();await composition.stop()
+        }
+    }
 }
 #endif

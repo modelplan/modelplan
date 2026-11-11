@@ -284,6 +284,10 @@ struct CockpitUnavailableNotice {
     private let noticeGrace: Duration
     /// Counts successful page opens; a notice is dropped when one happened after the failure it was raised for.
     private var openCount = 0
+    /// True when the latest thing that happened was a page open, false when it was a failure. A grace period only ends
+    /// as a recovery if the page opened and nothing failed after it: a rebuild that opens and then fails, or whose
+    /// next page cannot be created, is not a recovery (macrevc-786-1).
+    private var lastEventWasOpen = false
     private var noticeTask: Task<Void,Never>?
     private var rebuilding = false
     private var rebuilds = 0
@@ -301,6 +305,7 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.onOpened = { [weak self] in
             self?.pageOpened = true
             self?.openCount += 1
+            self?.lastEventWasOpen = true
             onOpened?()
         }
         // D88: a detach, a put back or the settled open refreshes the icon highlight and the hints.
@@ -418,6 +423,7 @@ struct CockpitUnavailableNotice {
     /// window stays up. A later successful open drops the notice; a failure that outlasts the grace period, or
     /// that keeps repeating, is announced.
     private func unavailable(path:String,history:Bool=false) {
+        lastEventWasOpen = false
         if noticeTask != nil, !history, !path.hasPrefix("page.") { return } // the open already being waited on
         let initiatedInForeground=isForeground()
         // A failure in the background or after a close shows nothing, so the log is all there is.
@@ -437,7 +443,7 @@ struct CockpitUnavailableNotice {
             try? await Task.sleep(for:self.noticeGrace)
             guard !Task.isCancelled else { return }
             self.noticeTask=nil; self.rebuilding=false
-            guard self.openCount == epoch else { return } // recovered: nothing to tell the user
+            guard !(self.openCount != epoch && self.lastEventWasOpen) else { return } // a page opened and nothing failed after it: recovered
             self.presentNotice(history:false,initiatedInForeground:initiatedInForeground)
         }
     }
