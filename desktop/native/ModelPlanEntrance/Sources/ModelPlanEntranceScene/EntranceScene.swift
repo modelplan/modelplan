@@ -575,7 +575,7 @@ struct HullFinish {
         }
         JointLine.draw(in: root, lip: metal(lipColor, roughness: 0.16))
         if let plane = root.findEntity(named: CockpitInterior.screenPlane), plane.isEnabledInHierarchy {
-            CockpitInterior.addOverheadConsole(to: root)
+            try CockpitCeiling.add(to: root)
         }
     }
 }
@@ -952,7 +952,7 @@ enum SmoothNormals {
 @available(macOS 15.0, *)
 @MainActor
 enum CanopyGlass {
-    static let opacity: Float = 0.45
+    static let opacity: Float = 0.5
 
     static func material() -> PhysicallyBasedMaterial {
         var m = PhysicallyBasedMaterial()
@@ -1004,49 +1004,6 @@ enum CockpitInterior {
         return m
     }
 
-    /// Round 3 showed no screens: from the low end-pose camera (looking up about 55-68 degrees) the line of sight
-    /// through the glass passes above the file's screen plane into the capsule top. This console hangs where those
-    /// rays go, square to them: centre (0, 13.3, 0.25) in the rocket's frame, tilted 62 degrees, 0.68 x 0.32 m.
-    /// Measured on the model file: it stays inside the capsule skin (corners at most 0.84 of the local radius) and
-    /// projects inside the glass outline for camera elevations 55-68 degrees.
-    static let consoleCentre: SIMD3<Float> = [0, 13.3, 0.25]
-    static let consoleTilt: Float = 62
-    static let consoleSize: SIMD2<Float> = [0.68, 0.32]
-    /// Overhead console panels in its own plane (metres from its centre).
-    static let consolePanels: [(x: Float, y: Float, w: Float, h: Float, rgb: SIMD3<Float>)] = {
-        let cool: SIMD3<Float> = [0.55, 0.68, 0.86], dim: SIMD3<Float> = [0.26, 0.34, 0.47], amber: SIMD3<Float> = [0.92, 0.65, 0.34]
-        return [
-            (-0.24, 0.05, 0.13, 0.10, cool), (-0.09, 0.05, 0.11, 0.10, amber),
-            (-0.24, -0.07, 0.13, 0.08, dim), (-0.09, -0.07, 0.11, 0.08, cool),
-            (0.09, 0.05, 0.12, 0.10, cool), (0.23, 0.05, 0.12, 0.10, dim),
-            (0.09, -0.07, 0.12, 0.08, amber), (0.23, -0.07, 0.12, 0.08, cool),
-            (0.0, 0.135, 0.5, 0.02, dim),
-        ]
-    }()
-    static let consoleBrightness: Float = 1.25
-
-    static func addOverheadConsole(to root: Entity) {
-        guard root.findEntity(named: "cockpit-overhead-console") == nil else { return }
-        let console = ModelEntity(mesh: .generatePlane(width: consoleSize.x, height: consoleSize.y),
-                                  materials: [unlit([0.03, 0.04, 0.055])])
-        console.name = "cockpit-overhead-console"
-        console.position = consoleCentre
-        // The plane faces +z; tilt it about x so it faces down and forward, toward the camera below the rocket.
-        console.orientation = simd_quatf(angle: consoleTilt * .pi / 180, axis: [1, 0, 0])
-        for (i, p) in consolePanels.enumerated() {
-            let halo = ModelEntity(mesh: .generatePlane(width: p.w * 1.3, height: p.h * 1.5),
-                                   materials: [unlit(p.rgb * 0.3 * consoleBrightness)])
-            halo.position = [p.x, p.y, 0.003]
-            halo.name = "cockpit-console-halo-\(i)"
-            console.addChild(halo)
-            let screen = ModelEntity(mesh: .generatePlane(width: p.w, height: p.h), materials: [unlit(p.rgb * consoleBrightness)])
-            screen.position = [p.x, p.y, 0.006]
-            screen.name = "cockpit-console-screen-\(i)"
-            console.addChild(screen)
-        }
-        root.addChild(console)
-    }
-
     static func dress(_ e: Entity, name: String) {
         guard var model = e.components[ModelComponent.self] else { return }
         let room: SIMD3<Float> = name == screenPlane ? [0.025, 0.032, 0.045] : [0.018, 0.02, 0.026]
@@ -1068,6 +1025,145 @@ enum CockpitInterior {
                 e.addChild(screen)
             }
         }
+    }
+}
+
+/// What the end-pose camera actually sees through the canopy (r3b feedback: the flat console read as a sticker on
+/// the rim). Measured on the model file (`entrance-r3/land3.py`): from the end pose, looking up about 62-65
+/// degrees, every sight line through the glass runs up inside the capsule and lands on the inside of the nose,
+/// about y 13.45-14.2, x within +-0.42, front half; a flat console anywhere inside is either cut by the rim or seen
+/// edge-on. So the interior is a dark lining just inside the skin (`radiusFraction` of the hull radius, y 12.3 to
+/// the tip), textured in code with softly glowing screens on that overhead band. It also hides the lit metal of
+/// the hull's inner faces, which made the glass read light grey. Unlit: the same cockpit in both themes, veiled by
+/// the glass tint and under the glass reflection. No art files.
+@available(macOS 15.0, *)
+@MainActor
+enum CockpitCeiling {
+    static let name = "cockpit-ceiling"
+    static let radiusFraction: Float = 0.92
+    static let bottom: Float = 12.3
+    static let top: Float = 14.17
+    /// Multiplies the screen colours in the texture.
+    static let brightness: CGFloat = 0.8
+    /// The capsule's outer radius by height, measured on the brand rocket model file (rings of capsule_lower,
+    /// capsule_aperture_shell and capsule_nose).
+    static let profile: [(y: Float, r: Float)] = [
+        (12.061, 0.894), (12.281, 0.886), (12.4, 0.875), (12.487, 0.862), (12.574, 0.848), (12.661, 0.831),
+        (12.748, 0.812), (12.835, 0.791), (12.922, 0.768), (13.009, 0.743), (13.096, 0.715), (13.183, 0.686),
+        (13.27, 0.657), (13.4, 0.608), (13.587, 0.523), (13.78, 0.422), (13.95, 0.311), (14.07, 0.224),
+        (14.144, 0.146), (14.18, 0.086), (14.194, 0.039), (14.2, 0.0),
+    ]
+
+    static func radius(_ y: Float) -> Float {
+        guard let first = profile.first, y > first.y else { return profile.first?.r ?? 0 }
+        for (a, b) in zip(profile, profile.dropFirst()) where y <= b.y {
+            return a.r + (b.r - a.r) * (y - a.y) / (b.y - a.y)
+        }
+        return 0
+    }
+
+    /// Screens on the texture: azimuth (degrees, 0 = the window side), height (metres in the rocket frame),
+    /// width and height (metres along the surface), colour (sRGB). Spread over the band the sight lines land on.
+    static let screens: [(az: Float, y: Float, w: Float, h: Float, rgb: SIMD3<Float>)] = {
+        let cool: SIMD3<Float> = [0.50, 0.64, 0.86], dim: SIMD3<Float> = [0.26, 0.34, 0.48], amber: SIMD3<Float> = [0.95, 0.66, 0.34]
+        return [
+            (-52, 13.55, 0.15, 0.10, cool), (-30, 13.62, 0.12, 0.10, amber), (-10, 13.66, 0.10, 0.09, dim),
+            (12, 13.66, 0.10, 0.09, cool), (32, 13.62, 0.12, 0.10, cool), (54, 13.55, 0.15, 0.10, dim),
+            (-38, 13.86, 0.09, 0.07, dim), (-14, 13.92, 0.08, 0.07, cool), (14, 13.92, 0.08, 0.07, amber),
+            (38, 13.86, 0.09, 0.07, cool), (0, 14.07, 0.06, 0.05, cool), (-60, 13.42, 0.06, 0.05, amber),
+            (62, 13.42, 0.06, 0.05, cool),
+        ]
+    }()
+
+    static func add(to root: Entity) throws {
+        guard root.findEntity(named: name) == nil else { return }
+        let image = try texture()
+        let resource = try TextureResource.generate(from: image, options: .init(semantic: .color))
+        var material = UnlitMaterial()
+        material.color = .init(tint: .white, texture: .init(resource))
+        material.faceCulling = .none
+        let entity = ModelEntity(mesh: try mesh(), materials: [material])
+        entity.name = name
+        root.addChild(entity)
+    }
+
+    /// A surface of revolution at `radiusFraction` of the capsule radius. u runs with the azimuth (0.5 = the window
+    /// side, +z), v with the height (0 at `bottom`, 1 at `top`; the texture's top row is v = 1).
+    static func mesh(columns: Int = 128, rows: Int = 64) throws -> MeshResource {
+        var positions: [SIMD3<Float>] = [], uvs: [SIMD2<Float>] = [], indices: [UInt32] = []
+        for j in 0...rows {
+            let v = Float(j) / Float(rows), y = bottom + (top - bottom) * v
+            let r = radius(y) * radiusFraction
+            for i in 0...columns {
+                let u = Float(i) / Float(columns), a = (u - 0.5) * 2 * .pi
+                positions.append([sin(a) * r, y, cos(a) * r])
+                uvs.append([u, v])
+            }
+        }
+        let stride = UInt32(columns + 1)
+        for j in 0..<UInt32(rows) {
+            for i in 0..<UInt32(columns) {
+                let a = j * stride + i, b = a + 1, c = a + stride, d = c + 1
+                indices += [a, b, d, a, d, c]
+            }
+        }
+        var descriptor = MeshDescriptor(name: name)
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(uvs)
+        descriptor.primitives = .triangles(indices)
+        return try MeshResource.generate(from: [descriptor])
+    }
+
+    enum TextureError: Error { case context }
+
+    /// 2048 x 1024: near-black lining, faint panel structure, and the screens as soft-edged rounded rectangles
+    /// with a blurred glow and dim content lines, so they read as lit displays seen through tinted glass.
+    static func texture() throws -> CGImage {
+        let w = 2048, h = 1024
+        guard let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { throw TextureError.context }
+        // CoreGraphics' origin is bottom left, so drawing y = v * h puts content at texture v.
+        func color(_ rgb: SIMD3<Float>, _ k: CGFloat = 1, alpha: CGFloat = 1) -> CGColor {
+            CGColor(srgbRed: min(1, CGFloat(rgb.x) * k), green: min(1, CGFloat(rgb.y) * k), blue: min(1, CGFloat(rgb.z) * k), alpha: alpha)
+        }
+        c.setFillColor(color([0.012, 0.014, 0.02]))
+        c.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        func rect(az: Float, y: Float, w mw: Float, h mh: Float) -> CGRect {
+            let r = max(0.05, radius(y) * radiusFraction)
+            let cx = CGFloat((az / 360 + 0.5) * Float(w)), cy = CGFloat((y - bottom) / (top - bottom) * Float(h))
+            let pw = CGFloat(mw / (2 * .pi * r) * Float(w)), ph = CGFloat(mh / (top - bottom) * Float(h))
+            return CGRect(x: cx - pw / 2, y: cy - ph / 2, width: pw, height: ph)
+        }
+        // Faint console housings behind the screens: barely lighter than the lining, so no hard outline shows.
+        c.setFillColor(color([0.03, 0.035, 0.045]))
+        for s in screens {
+            c.addPath(CGPath(roundedRect: rect(az: s.az, y: s.y, w: s.w * 1.35, h: s.h * 1.4).insetBy(dx: 0, dy: 0),
+                             cornerWidth: 10, cornerHeight: 10, transform: nil))
+        }
+        c.fillPath()
+        for s in screens {
+            let r = rect(az: s.az, y: s.y, w: s.w, h: s.h)
+            // Glow: the screen drawn with a wide blurred shadow of its own colour.
+            c.saveGState()
+            c.setShadow(offset: .zero, blur: max(r.width, r.height) * 0.6, color: color(s.rgb, brightness * 0.9, alpha: 0.9))
+            c.setFillColor(color(s.rgb, brightness * 0.75))
+            c.addPath(CGPath(roundedRect: r, cornerWidth: min(r.width, r.height) * 0.12, cornerHeight: min(r.width, r.height) * 0.12, transform: nil))
+            c.fillPath()
+            c.restoreGState()
+            // Dim content: a few lighter lines and a darker block, low contrast.
+            c.setFillColor(color(s.rgb, brightness, alpha: 0.6))
+            for k in 0..<3 {
+                let line = CGRect(x: r.minX + r.width * 0.12, y: r.minY + r.height * (0.22 + 0.22 * CGFloat(k)),
+                                  width: r.width * (0.7 - 0.15 * CGFloat(k)), height: max(1, r.height * 0.06))
+                c.fill(line)
+            }
+            c.setFillColor(color(s.rgb, brightness * 0.45))
+            c.fill(CGRect(x: r.minX + r.width * 0.6, y: r.minY + r.height * 0.15, width: r.width * 0.28, height: r.height * 0.3))
+        }
+        guard let image = c.makeImage() else { throw TextureError.context }
+        return image
     }
 }
 

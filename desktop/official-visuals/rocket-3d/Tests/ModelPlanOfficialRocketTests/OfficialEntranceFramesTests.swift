@@ -166,7 +166,12 @@ final class OfficialEntranceFramesTests: XCTestCase {
             XCTAssertLessThan(width, 0.02, "\(theme) gasket is still wide")
             // The cockpit behind the glass: a lit console drawn in code.
             XCTAssertNotNil(scene.entity(named: "cockpit-screen-0"), "\(theme) no cockpit screens behind the glass")
-            XCTAssertNotNil(scene.entity(named: "cockpit-console-screen-0"), "\(theme) no overhead console where the end-pose camera looks")
+            // The overhead cockpit lining the end-pose camera sees through the glass: an unlit textured surface.
+            let ceiling = try XCTUnwrap(scene.entity(named: "cockpit-ceiling")?.components[ModelComponent.self], "\(theme) no cockpit lining")
+            for material in ceiling.materials {
+                let unlit = try XCTUnwrap(material as? UnlitMaterial, "\(theme) cockpit lining must be unlit")
+                XCTAssertNotNil(unlit.color.texture, "\(theme) cockpit lining has no screens texture")
+            }
         }
     }
 
