@@ -122,7 +122,8 @@ public struct CockpitMessageSource {
   }
 }
 
-// Replies have scalar fields plus one bounded three-string capabilities array.
+// Replies have scalar fields plus two bounded flat string arrays: the three-string `capabilities` of `ready` and the
+// `ids` (at most CockpitCautionIdentities.maxCount) of `cautionAck`. No other key may carry an array.
 // Reject nesting/duplicate keys before JSONSerialization can collapse them.
 enum FlatReply {
   static func parse(_ raw: String) throws -> [String: Any] {
