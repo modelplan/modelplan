@@ -12,8 +12,9 @@ import XCTest
 /// tests, and here the controller receives the intents they map to. Window server: GUI leg.
 @MainActor final class CockpitD88AttachmentTests: XCTestCase {
   private struct Fixture {
-    let page: CockpitWindowController, session: CockpitShellSession, icon: CGRect, usable: CGRect
-    var home: CGRect? { CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false)?.frame }
+    let page: CockpitWindowController, session: CockpitShellSession, icon: CGRect, usable: CGRect, screenWidth: CGFloat
+    /// The controller's own fit (Auto size judged on the full screen width); whole points, as the window server keeps them.
+    var home: CGRect? { CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false, screenWidth: screenWidth)?.frame }
   }
   private var failures: [CockpitWindowFailure] = []
 
@@ -38,7 +39,7 @@ import XCTest
       appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion),
       shellSession: session, anchor: { icon })
     page.onFailure = { [weak self] in self?.failures.append($0) }
-    return Fixture(page: page, session: session, icon: icon, usable: usable)
+    return Fixture(page: page, session: session, icon: icon, usable: usable, screenWidth: screen.frame.width)
   }
   /// Opens the way the console does: the entrance is set on the shared shell session just before open().
   private func openPage(_ fixture: Fixture, entrance: CockpitEntrance) throws -> NSWindow {
@@ -114,9 +115,13 @@ import XCTest
     XCTAssertTrue(fixture.page.isAttached, "the put-back key re-attaches")
     XCTAssertEqual(window.frame, home, "back under the icon")
     XCTAssertEqual(titles(fixture.page), ["Detach"])
-    fixture.page.contextMenu()?.performActionForItem(at: 0)
+    // CI 11-10: the item's action resolved to NSObject's performSelector: and AppKit sent the item as a selector.
+    let detach = try XCTUnwrap(fixture.page.contextMenu())
+    XCTAssertEqual(detach.items.first?.action.map(NSStringFromSelector), "cockpitAttachmentItemChosen:")
+    detach.performActionForItem(at: 0)
     XCTAssertFalse(fixture.page.isAttached, "the menu item detaches")
-    fixture.page.contextMenu()?.performActionForItem(at: 0)
+    let putBack = try XCTUnwrap(fixture.page.contextMenu())
+    putBack.performActionForItem(at: 0)
     XCTAssertTrue(fixture.page.isAttached, "and puts back")
     XCTAssertEqual(failures, [])
   }
