@@ -84,9 +84,10 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs macrev2/macrevb, macrev
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev")), glm] }).state, R.PENDING);
   assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrev")), comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS);
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), comment(v("block", H, "glm")), glm] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.SUCCESS, "Sonnet stands in for macrev2 as on main");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.PENDING, "tier 2: sonnet never counts");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "sonnet"))] }).state, R.PENDING, "tier 1: sonnet never counts");
   assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "sonnet")), comment(v("merge", H, "macrev2")), glm] }).state, R.FAILURE);
-  // Owner D149: a GPT reviewer lane is required; sonnet keeps counting as on main (the coordinator enforces the switch)
+  // Owner D149: a GPT reviewer lane is required; sonnet never counts in the public gate
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevb")), glm] }).state, R.SUCCESS, "tier 2 macrevb");
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS, "tier 2 macrev2");
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevc")), glm] }).state, R.PENDING, "tier 2 macrevc is Terra");
