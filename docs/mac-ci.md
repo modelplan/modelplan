@@ -3,7 +3,8 @@
 Hosted runners remain the default. The `MAC_CI_RUNNER_V2=self-hosted` repository
 variable opts the owner's same-repository checks into the dedicated Mac group.
 An external fork, another actor or rerun actor, a draft PR, an unsupported event,
-or an unset/other switch value uses hosted runners. Commit author text is not an
+or an unset/other switch value uses hosted runners. The owner's merge-queue runs have their own
+route and switch (D134, below). Commit author text is not an
 identity check. The allowlisted account is `guanbear` (GitHub user ID `11829005`).
 
 ## Admission boundary
@@ -124,11 +125,36 @@ to pass there (`QUEUE_WORKFLOWS` in `scripts/merge-gates/rules.mjs`). `desktop`'
 `queue-scope` job applies the workflow's pull-request path list, because
 `merge_group` has no paths filter, and skips the jobs when the group changes none
 of those paths or its tree equals the PR head. Otherwise `app`, `shell`,
-`native-partition`, `app-smoke` and `native-headless` run on the group commit. The
-pinned `trusted-mac.yml` has no `merge_group` route to the self-hosted group, so
-`native-headless` falls through to a hosted Mac there. Routing it to the dedicated
-group needs a new pin and a runner-group update together, as above. The GUI leg and
-the path-scoped `u*` workflows do not run in the queue.
+`native-partition`, `app-smoke` and `native-headless` run on the group commit. The GUI leg and the path-scoped `u*`
+workflows do not run in the queue.
+
+### Merge-queue runs on the non-GUI Macs (D134)
+
+Owner decision D134 (2026-11-11) lets the owner's merge-queue runs use the non-GUI Macs
+(`modelplan-mac-nongui`) instead of waiting for a hosted Mac. `trusted-mac.yml` routes a
+non-GUI task there only when all of these hold; anything else stays hosted exactly as before:
+
+- the repository variable `MAC_CI_QUEUE` is `enabled` (a separate switch, off by default),
+  and `MAC_CI_RUNNER_V2=self-hosted` for `macos-latest` tasks or `MAC_CI_NONGUI=enabled` for
+  `u11-native` on `macos-15`, as for the owner's other runs;
+- the event is either a `merge_group` on `main`'s queue (`gh-readonly-queue/main/...`) whose
+  actor and triggering actor are the owner (`guanbear`, `11829005`), that is the owner queued it,
+  or the queue's own push to `main` (actor `github-merge-queue[bot]`, `118344674`, triggering
+  actor the bot or the owner re-running it);
+- the `queue-trust` job, which runs on a hosted Ubuntu runner before every Mac job and executes
+  only the pinned script, walks the merge commits from the group head (or the pushed head) back to
+  the queue base (or the previous `main`) and finds that every merge is a GitHub-signed two-parent
+  merge commit whose second parent is the head of exactly one PR into `main`, and that PR comes
+  from this repository and was opened by the owner. A fork PR, another author, a squash or an API
+  error anywhere in the group makes it false;
+- the task is not a GUI task (`native`, `native-owner-gui`, `native-hosted-gui`, `gui-probe`).
+  GUI tasks and the GUI runners are unchanged, and every non-GUI job still opens with the D94
+  "Refuse the GUI Mac" step.
+
+The bot push needs the walk because GitHub records the bot, not the owner, as its actor and
+triggering actor. Pull requests are unaffected: they keep the existing owner, same-repository and
+non-draft route. The runner's pre-job gate on each Mac must also admit these two events; enable
+`MAC_CI_QUEUE` only after it does, or the queue's Mac jobs fail there instead of running.
 
 ## Migration
 
