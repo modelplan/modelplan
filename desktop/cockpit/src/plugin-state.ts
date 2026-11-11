@@ -36,30 +36,31 @@ export function parsePluginState(value:unknown):PluginState|null {
   }
   return Object.freeze({version:1,entries:Object.freeze(entries),settings:Object.freeze(settings)});
 }
-/** Every registered plugin gets an entry: missing ones are appended in registry order with their default. */
-export function materialize(state:PluginState,registry:PluginRegistry):PluginState {
+/** Every registered plugin gets an entry: missing ones are appended in registry order with their default (or off,
+ *  when `defaults` is false: a page whose host never sent plugin state shows no default-on plugin). */
+export function materialize(state:PluginState,registry:PluginRegistry,defaults=true):PluginState {
   const known=new Set(state.entries.map(e=>e.id)),missing=registry.list().filter(p=>!known.has(p.id));
   if(!missing.length)return state;
-  return {...state,entries:[...state.entries,...missing.map(p=>({id:p.id,enabled:p.defaultEnabled,pinned:false}))]};
+  return {...state,entries:[...state.entries,...missing.map(p=>({id:p.id,enabled:defaults&&p.defaultEnabled,pinned:false}))]};
 }
 export interface ResolvedPlugin {readonly id:string;readonly pinned:boolean;readonly settings:Readonly<Record<string,number>>}
 /** The enabled, registered plugins in user order, each with complete in-range settings. */
-export function enabledPlugins(state:PluginState,registry:PluginRegistry):ResolvedPlugin[] {
-  return materialize(state,registry).entries.filter(e=>e.enabled&&registry.get(e.id)).map(e=>({id:e.id,pinned:e.pinned,settings:pluginSettings(state,registry,e.id)}));
+export function enabledPlugins(state:PluginState,registry:PluginRegistry,defaults=true):ResolvedPlugin[] {
+  return materialize(state,registry,defaults).entries.filter(e=>e.enabled&&registry.get(e.id)).map(e=>({id:e.id,pinned:e.pinned,settings:pluginSettings(state,registry,e.id)}));
 }
 export function pluginSettings(state:PluginState,registry:PluginRegistry,id:string):Readonly<Record<string,number>> {
   const out:Record<string,number>={},saved=state.settings[id]??{};
   for(const spec of registry.get(id)?.settings??[]){const v=saved[spec.key];out[spec.key]=Number.isSafeInteger(v)&&v>=spec.min&&v<=spec.max?v:spec.default;}
   return Object.freeze(out);
 }
-const replace=(state:PluginState,registry:PluginRegistry,id:string,edit:(e:PluginEntry)=>PluginEntry):PluginState|null=>{
-  const full=materialize(state,registry);if(!full.entries.some(e=>e.id===id))return null;
+const replace=(state:PluginState,registry:PluginRegistry,id:string,edit:(e:PluginEntry)=>PluginEntry,defaults=true):PluginState|null=>{
+  const full=materialize(state,registry,defaults);if(!full.entries.some(e=>e.id===id))return null;
   return {...full,entries:full.entries.map(e=>e.id===id?edit(e):e)};
 };
 /** Add (or re-add) a plugin. Returns null for an unregistered id. */
-export const enablePlugin=(state:PluginState,registry:PluginRegistry,id:string)=>registry.get(id)?replace(state,registry,id,e=>({...e,enabled:true})):null;
+export const enablePlugin=(state:PluginState,registry:PluginRegistry,id:string,defaults=true)=>registry.get(id)?replace(state,registry,id,e=>({...e,enabled:true}),defaults):null;
 /** Remove = turn off; the entry keeps its place in the order. Removing also unpins. */
-export const disablePlugin=(state:PluginState,registry:PluginRegistry,id:string)=>replace(state,registry,id,e=>({...e,enabled:false,pinned:false}));
+export const disablePlugin=(state:PluginState,registry:PluginRegistry,id:string,defaults=true)=>replace(state,registry,id,e=>({...e,enabled:false,pinned:false}),defaults);
 /** Pin to page 1 (at most two). Returns null when the plugin is off or two others are already pinned. */
 export function pinPlugin(state:PluginState,registry:PluginRegistry,id:string,pinned:boolean):PluginState|null {
   const full=materialize(state,registry),entry=full.entries.find(e=>e.id===id);

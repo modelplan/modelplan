@@ -1,12 +1,42 @@
 // SPDX-License-Identifier: MIT
 // v1.1 cockpit plugin columns (owner D121/D124/D126/D127): the registry. A plugin is a fixed, bundled module; the
 // registry never loads code, markup or icons from the host or the wire. Settings and Swift mirror the ids, titles and
-// setting ranges in ModelPlanSettings/CockpitPluginCatalogue.swift (checked by tests/cockpit/unit/plugins.test.mjs).
+// setting ranges in ModelPlanSettings/CockpitPluginPreferences.swift (CockpitPluginCatalogue) (checked by tests/cockpit/unit/plugins.test.mjs).
+import type {WireCockpitData} from '../generated/wire.js';
+import {exact} from './schema.js';
 export type PluginLocale='en'|'zh-CN';
 export interface PluginText {readonly en:string;readonly 'zh-CN':string}
 /** One per-plugin setting. `seconds` is a whole number of seconds inside [min, max] (e.g. sampling 3–30 s, D124). */
 export interface PluginSettingSpec {readonly key:string;readonly kind:'seconds';readonly min:number;readonly max:number;readonly default:number;readonly label:PluginText}
-export interface PluginContext {readonly locale:PluginLocale;readonly settings:Readonly<Record<string,number>>}
+export interface PluginContext {
+  readonly locale:PluginLocale;readonly settings:Readonly<Record<string,number>>;
+  /** The host's clock: the time of the latest display render or deadline tick (the page has no clock of its own). */
+  readonly now:number;
+}
+/** v1.1 calendar additions: each plugin declares the shape of its data. The framework refuses anything larger than
+ *  `maxBytes` (as JSON, capped at PLUGIN_DATA_MAX_BYTES) before `parse` sees it; `parse` is the plugin's strict
+ *  structural check (exact keys, bounded lists) and returns the value `update` receives, or null to refuse it. */
+export interface PluginDataSpec<T=unknown> {readonly maxBytes:number;parse(raw:unknown):T|null}
+export const PLUGIN_DATA_MAX_BYTES=64*1024;
+/** Context of an expanded view (CKP-PLG-07): a temporary overlay inside the MFD screen only. */
+export interface PluginOverlayContext extends PluginContext {
+  /** True on the render that opens the overlay: per-open view state (zoom, scroll) starts over. */
+  readonly opening:boolean;
+  /** The MFD page the overlay sits over, for its "‹ Back to <page>" key. */
+  readonly returnTo:string;
+  /** The overlay header's status slot (right of the title), e.g. a zoom note. */
+  readonly status:HTMLElement;
+  /** Close the overlay. */
+  close():void;
+}
+export interface PluginExpand {
+  readonly title:PluginText;
+  /** Draws the overlay body into `body` (the framework owns the frame). Called on open and again after each update,
+   *  tick or locale change while open. `panel` is the plugin's column panel, for views that act on it. */
+  render(body:HTMLElement,panel:HTMLElement,context:PluginOverlayContext):void;
+  /** Keys while the overlay is open (before Esc closes it); true when handled. */
+  key?(event:KeyboardEvent,body:HTMLElement,panel:HTMLElement,context:PluginOverlayContext):boolean;
+}
 export interface CockpitPlugin {
   readonly id:string;
   readonly title:PluginText;
@@ -24,6 +54,19 @@ export interface CockpitPlugin {
    *  the host samples, at the plugin's interval, exactly the plugins the page reports as running (`pluginsRunning`).
    *  Returns false for data this plugin does not accept. */
   update?(panel:HTMLElement,data:unknown,context:PluginContext):boolean;
+  /** The data shape `update` accepts. A plugin without one receives no data. */
+  readonly data?:PluginDataSpec;
+  /** Host-side shaping from the cockpit display data the page already has (no network, no host round trip): called
+   *  for a running plugin on each display render and deadline tick, and its result goes through `data` and `update`
+   *  exactly like a host push. A host that pushes `pluginData` for this plugin takes over: shaping stops for it. */
+  derive?(display:WireCockpitData,now:number):unknown;
+  /** Host-driven tick: the next time (epoch ms) this running plugin must repaint (a now line, a day rollover). The
+   *  page reports the earliest one in `nextDeadline`; the host's `tick` then reaches `tick` here. No page timers. */
+  nextDeadline?(panel:HTMLElement,now:number):number|null;
+  tick?(panel:HTMLElement,context:PluginContext):void;
+  /** Opt in to "expand on MFD" (CKP-PLG-07): a click on the plugin's column or key (not on its own buttons) opens
+   *  this view as an overlay inside the MFD screen; the faders and MFD page keys stay usable. */
+  readonly expand?:PluginExpand;
 }
 export const PLUGIN_ID=/^[a-z][a-z0-9-]{0,31}$/;
 const SETTING_KEY=/^[a-zA-Z][a-zA-Z0-9]{0,31}$/;
@@ -34,6 +77,9 @@ export class PluginRegistry {
     for(const plugin of plugins){
       if(!PLUGIN_ID.test(plugin.id)||this.#plugins.has(plugin.id))throw TypeError('Invalid cockpit plugin id');
       if(!plugin.title.en||!plugin.title['zh-CN']||typeof plugin.render!=='function')throw TypeError('Invalid cockpit plugin');
+      if(plugin.update&&(!plugin.data||!Number.isSafeInteger(plugin.data.maxBytes)||plugin.data.maxBytes<1||plugin.data.maxBytes>PLUGIN_DATA_MAX_BYTES||typeof plugin.data.parse!=='function'))throw TypeError('Cockpit plugin data needs a bounded shape');
+      if(plugin.derive&&!plugin.update)throw TypeError('Cockpit plugin derive needs update');
+      if(plugin.expand&&(!plugin.expand.title.en||!plugin.expand.title['zh-CN']||typeof plugin.expand.render!=='function'))throw TypeError('Invalid cockpit plugin overlay');
       const keys=new Set<string>();
       for(const s of plugin.settings){
         if(!SETTING_KEY.test(s.key)||keys.has(s.key)||!Number.isSafeInteger(s.min)||!Number.isSafeInteger(s.max)||!Number.isSafeInteger(s.default)||s.min<1||s.min>s.default||s.default>s.max||s.max>86400)throw TypeError('Invalid cockpit plugin setting');
@@ -63,10 +109,9 @@ export const placeholderPlugin:CockpitPlugin=Object.freeze({
   defaultEnabled:false,
   settings:Object.freeze([Object.freeze({key:'intervalSeconds',kind:'seconds' as const,min:3,max:30,default:10,label:Object.freeze({en:'Update interval','zh-CN':'更新间隔'})})]),
   render:paintPlaceholder,
-  update(panel:HTMLElement,data:unknown,context:PluginContext){
-    const value=(data as {value?:unknown}|null)?.value;
-    if(data===null||typeof data!=='object'||Object.keys(data).length!==1||typeof value!=='number'||!Number.isSafeInteger(value))return false;
+  data:Object.freeze({maxBytes:64,parse:(raw:unknown)=>exact(raw,['value'])&&typeof raw.value==='number'&&Number.isSafeInteger(raw.value)?raw.value:null}),
+  update(panel:HTMLElement,value:unknown,context:PluginContext){
+    if(typeof value!=='number')return false;
     values.set(panel,value);paintPlaceholder(panel,context);return true;
   },
 });
-export const builtinPlugins:readonly CockpitPlugin[]=Object.freeze([placeholderPlugin]);

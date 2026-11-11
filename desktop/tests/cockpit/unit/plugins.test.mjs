@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {pluginLayout,pageOfSubscription} from '../../../cockpit/.tmp/compiled/src/plugin-layout.js';
-import {PluginRegistry,builtinPlugins} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
+import {PluginRegistry} from '../../../cockpit/.tmp/compiled/src/plugin-registry.js';
+import {builtinPlugins} from '../../../cockpit/.tmp/compiled/src/plugin-builtins.js';
 import {parsePluginState,emptyPluginState,materialize,enabledPlugins,enablePlugin,disablePlugin,pinPlugin,movePlugin,setPluginSetting,pluginSettings} from '../../../cockpit/.tmp/compiled/src/plugin-state.js';
 
 const plugin=(id,pinned=false)=>({id,pinned});
@@ -66,10 +67,14 @@ test('host state is parsed strictly and bounded',()=>{
 });
 
 test('registry defaults, enable/remove, pin limit, order and setting ranges',()=>{
- // The placeholder is registered but off by default, so a host without plugin state draws the v1 table.
- assert.deepEqual(enabledPlugins(emptyPluginState,registry),[]);
- assert.deepEqual(materialize(emptyPluginState,registry).entries,[{id:'placeholder',enabled:false,pinned:false}]);
- const on=enablePlugin(emptyPluginState,registry,'placeholder');
+ // The placeholder is registered but off by default; the calendar is default-on (D121) once a host sent plugin state.
+ // Without host state (defaults=false) nothing is on, so an older host draws the v1 table.
+ assert.deepEqual(enabledPlugins(emptyPluginState,registry),[{id:'calendar',pinned:false,settings:{}}]);
+ assert.deepEqual(enabledPlugins(emptyPluginState,registry,false),[]);
+ assert.deepEqual(materialize(emptyPluginState,registry).entries,[{id:'placeholder',enabled:false,pinned:false},{id:'calendar',enabled:true,pinned:false}]);
+ assert.deepEqual(materialize(emptyPluginState,registry,false).entries,[{id:'placeholder',enabled:false,pinned:false},{id:'calendar',enabled:false,pinned:false}]);
+ assert.deepEqual(enablePlugin(emptyPluginState,registry,'placeholder',false).entries.filter(e=>e.enabled).map(e=>e.id),['placeholder'],'a page edit before host state does not switch defaults on');
+ const on=disablePlugin(enablePlugin(emptyPluginState,registry,'placeholder'),registry,'calendar');
  assert.deepEqual(enabledPlugins(on,registry),[{id:'placeholder',pinned:false,settings:{intervalSeconds:10}}]);
  assert.equal(enablePlugin(emptyPluginState,registry,'unknown'),null);
  const pinned=pinPlugin(on,registry,'placeholder',true);assert.equal(pinned.entries[0].pinned,true);
@@ -78,9 +83,9 @@ test('registry defaults, enable/remove, pin limit, order and setting ranges',()=
  // Two other pins already: a third is refused. Unknown ids keep their place and survive edits.
  const crowded=parsePluginState({version:1,entries:[{id:'x',enabled:true,pinned:true},{id:'y',enabled:true,pinned:true},{id:'placeholder',enabled:true,pinned:false}],settings:{}});
  assert.equal(pinPlugin(crowded,registry,'placeholder',true),null);
- assert.deepEqual(movePlugin(crowded,registry,'placeholder',-1).entries.map(e=>e.id),['x','placeholder','y']);
+ assert.deepEqual(movePlugin(crowded,registry,'placeholder',-1).entries.map(e=>e.id),['x','placeholder','y','calendar']);
  assert.equal(movePlugin(crowded,registry,'x',-1),null);
- assert.deepEqual(enabledPlugins(crowded,registry).map(p=>p.id),['placeholder'],'unregistered ids are kept but not drawn');
+ assert.deepEqual(enabledPlugins(crowded,registry).map(p=>p.id),['placeholder','calendar'],'unregistered ids are kept but not drawn');
  // D124: sampling interval 3–30 s; out-of-range saved values fall back to the default.
  assert.equal(setPluginSetting(on,registry,'placeholder','intervalSeconds',2),null);
  assert.equal(setPluginSetting(on,registry,'placeholder','intervalSeconds',31),null);
