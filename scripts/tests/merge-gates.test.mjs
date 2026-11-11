@@ -31,8 +31,8 @@ const pr = (over = {}) => ({
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
-const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, p = pr() } = {}) =>
-  R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, conf });
+const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, p = pr(), codexReviewOff = false } = {}) =>
+  R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, conf, codexReviewOff });
 const v = (verdict, sha = H, lane = "macrev") => `Review\n\nVERDICT: ${verdict} @ ${sha}${lane ? ` (${lane})` : ""}`;
 
 test("trust needs the login and the numeric id; deleted authors and drafts never count", () => {
@@ -76,7 +76,7 @@ test("verdicts: exact full head, case-insensitive, latest per lane, trusted only
   assert.deepEqual([...R.verdicts(R.feed([comment(v("merge", H.toUpperCase(), ""))]), H, [])], [["(unnamed)", "merge"]]);
 });
 
-test("tier gates: tier 1 any merge, tier 2 needs macrev2, macrev is advice on tier 2, blocks stop every tier", () => {
+test("tier gates: tier 1 needs a GPT merge, tier 2 needs macrev2/macrevb, macrev is advice on tier 2, blocks stop every tier", () => {
   assert.equal(evalPr({ comments: [comment(v("merge"))] }).state, R.SUCCESS);
   assert.equal(evalPr().state, R.PENDING);
   const t2 = [file("clients/swift/Wire.swift")];
@@ -84,8 +84,17 @@ test("tier gates: tier 1 any merge, tier 2 needs macrev2, macrev is advice on ti
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev")), glm] }).state, R.PENDING);
   assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrev")), comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS);
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), comment(v("block", H, "glm")), glm] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.SUCCESS, "Sonnet stands in for macrev2");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm], codexReviewOff: true }).state, R.SUCCESS, "Sonnet stands in for macrev2 while Codex is off");
   assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "sonnet")), comment(v("merge", H, "macrev2")), glm] }).state, R.FAILURE);
+  // Owner D149: GPT reviewer required; (sonnet) only while the Codex-off switch is on
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.PENDING, "tier 2 sonnet, switch closed");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevb")), glm] }).state, R.SUCCESS, "tier 2 macrevb");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevc")), glm] }).state, R.PENDING, "tier 2 macrevc is Terra");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "glm"))] }).state, R.PENDING, "tier 1 GLM-only");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "macrevc"))] }).state, R.SUCCESS, "tier 1 macrevc");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "sonnet"))] }).state, R.PENDING, "tier 1 sonnet, switch closed");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "sonnet"))], codexReviewOff: true }).state, R.SUCCESS, "tier 1 sonnet, switch open");
   assert.equal(evalPr({ files: [file("docs/a.md")] }).state, R.SUCCESS, "tier 0 needs no verdict");
   assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(v("block"))] }).state, R.FAILURE);
   assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment("REVIEW-TIER: 1")] }).state, R.PENDING);

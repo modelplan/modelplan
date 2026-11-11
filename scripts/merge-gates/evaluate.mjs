@@ -89,7 +89,8 @@ async function prResult(number) {
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
   const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now });
+  // Codex-off switch (repository variable CODEX_REVIEW_OFF, mirrors the coordinator codex-review-off file); unset = closed.
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, codexReviewOff: /^(1|true|on)$/i.test(env.CODEX_REVIEW_OFF || ""), now });
   return { pr, result };
 }
 

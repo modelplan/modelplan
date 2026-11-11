@@ -104,3 +104,5 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           # GLM-out fallback window (rules.mjs): unset = closed, so (sonnet) DESIGN/GLMREV markers never pass.
           GLM_FALLBACK_UNTIL: ${{ vars.GLM_FALLBACK_UNTIL }}
+          # Codex-off switch (rules.mjs): unset = closed, so a (sonnet) VERDICT never replaces the GPT reviewer.
+          CODEX_REVIEW_OFF: ${{ vars.CODEX_REVIEW_OFF }}

@@ -163,6 +163,9 @@ export function carryChain(edges, head, verified = () => false) {
 }
 
 // ---- Verdicts ----
+// GPT reviewer lanes (owner D149): Sol = tier 2 (and tier 1), Terra = tier 1 only.
+export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)"]);
+export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)"]);
 // "VERDICT: merge|block @ <40 hex> (<lane>)" on its own line, case-insensitive, in trusted comments and
 // reviews. Counts for the head or a carried head; per lane the latest wins.
 export function verdicts(items, head, carried) {
@@ -488,7 +491,8 @@ export function dataSyncProblem({ pr, files, items, sync }) {
 // verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
+// codexReviewOff: mirrors the coordinator switch file codex-review-off (owner D149, 2026-11-11); default false = closed.
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, codexReviewOff = false, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -525,9 +529,14 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 
   const missing = [];
   if (evidence.state === PENDING) missing.push(evidence.why);
-  // Owner 2026-11-07: while Codex quota is out, a Sonnet reviewer stands in for macrev2 under its own label.
-  if (tier === 2 && lanes.get("(macrev2)") !== "merge" && lanes.get("(sonnet)") !== "merge") missing.push("VERDICT (macrev2) or (sonnet) merge");
-  if (tier === 1 && ![...lanes.values()].includes("merge")) missing.push("a VERDICT merge");
+  // Owner D149 (2026-11-11): GPT review is back. Tier 2 needs a Sol verdict (macrev2 or macrevb); tier 1 needs a
+  // Terra verdict (macrevc, legacy name macrev) or a Sol one. A (sonnet) merge stands in for either tier ONLY
+  // while the Codex-off switch is on (codexReviewOff; default closed). Without it GLM alone never lands a PR.
+  const sonnetOk = codexReviewOff && lanes.get("(sonnet)") === "merge";
+  const merged = (names) => names.some((n) => lanes.get(n) === "merge");
+  if (tier === 2 && !merged(SOL_LANES) && !sonnetOk) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge${codexReviewOff ? " or (sonnet)" : ""}`);
+  // A data-sync bot PR keeps its own admission (dataSyncProblem already demands a trusted exact-head merge verdict).
+  if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES]) && !sonnetOk) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge${codexReviewOff ? " or (sonnet)" : ""}`);
   if (design.touching) {
     const d = designVerdict(items, head, carried, fb);
     if (d === "fail") return res(FAILURE, `DESIGN fail (${design.surfaces.join(",")})`, extra);
