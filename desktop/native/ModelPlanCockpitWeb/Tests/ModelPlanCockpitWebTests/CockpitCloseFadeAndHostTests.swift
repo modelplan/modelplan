@@ -20,12 +20,12 @@ import XCTest
     try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
-  private func make(reduceMotion: Bool, session: CockpitShellSession = CockpitShellSession(), anchor: Bool = false) throws -> CockpitWindowController {
+  private func make(reduceMotion: Bool, session: CockpitShellSession? = nil, anchor: Bool = false) throws -> CockpitWindowController {
     _ = NSApplication.shared
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let page = CockpitWindowController(bundle: try bundle(), context: context,
       appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion),
-      shellSession: session, anchor: { anchor ? Self.iconFrame() : nil })
+      shellSession: session ?? CockpitShellSession(), anchor: { anchor ? Self.iconFrame() : nil })
     page.onFailure = { XCTFail("Unexpected cockpit failure: \($0)") }
     addTeardownBlock { @MainActor in page.discard() }
     return page
