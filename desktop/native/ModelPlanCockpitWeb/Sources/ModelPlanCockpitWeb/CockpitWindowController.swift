@@ -257,8 +257,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     var verificationNoWindowClock: (() -> UInt64)?
     var verificationNoWindowArm: CockpitDeadlineDriver.Arm?
     var verificationNoWindowShell: CockpitShellState?
-    func verificationConfirmVisible() throws {
-      _ = try bridge.setVisibility(.init(visible: true, occluded: false, key: false))
+    /// Actions are admitted only from the key window (`CockpitVisibility.active`), so a window that is shown for
+    /// an action test must be key; pass `key: false` for a shown-but-inactive window.
+    func verificationConfirmVisible(key: Bool = true) throws {
+      _ = try bridge.setVisibility(.init(visible: true, occluded: false, key: key))
       let token = visibilityFence.begin(visible: true); _ = visibilityFence.confirm(token)
       freshnessDriver.show()
     }
