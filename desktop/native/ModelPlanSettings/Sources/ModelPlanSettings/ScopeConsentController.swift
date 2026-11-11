@@ -164,9 +164,9 @@ public struct FirstRunTool: Sendable, Equatable {
                     if old.state != scope.state || old.keychain != scope.keychain || old.route != scope.route {
                         selectedIDs.remove(scope.scope)
                     }
-                } else if !firstRunExplicitSelection && scope.state == .unset && scope.route != .savedLoginApi && scope.route != .browserSession && scope.route != .knownUnknown && scope.route.isKnown && scope.defaultCheck && scope.detected && !scope.retired && scope.disabledReason == nil {
-                    selectedIDs.insert(scope.scope)
                 }
+                // No pre-selection: Settings shows a path the engine does not read as unticked until the user ticks it,
+                // and the first-run draft starts empty on purpose (G3-67).
             }
             if case .confirmation = phase { phase = .idle }
         }
