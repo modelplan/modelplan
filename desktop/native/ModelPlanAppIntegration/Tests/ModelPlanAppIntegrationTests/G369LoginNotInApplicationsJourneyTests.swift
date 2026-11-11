@@ -3,6 +3,7 @@ import AppKit
 import Foundation
 import XCTest
 import ModelPlanEngineClient
+import ModelPlanShell
 @testable import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
