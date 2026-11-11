@@ -1,1 +1,1 @@
-The porthole frame on the tall cockpit no longer sticks out past the walls below it: its sides now run straight down onto the walls, so the cockpit is narrow at the top and wide at the bottom as in the design.
+The porthole glass is filled right up to the canopy's top and sides again: the desktop no longer shows through as a light raised band on the top of the porthole and a bright line down its sides.

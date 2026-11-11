@@ -75,10 +75,6 @@
 /* The study rounds the c01 frame's lower sides with its solid outline (strip-hull-unify), so the frame's foot meets
    the 620 px upper walls. The D74 canopy (#801) is 636 x 244 tall and 636 x 56 compact, with its own solid outline. */
 #cockpit .ck-portrow::before{-webkit-mask:url('/runtime/canopy-c01/solid-outline-890-1x.png') 0 0/636px 244px no-repeat;mask:url('/runtime/canopy-c01/solid-outline-890-1x.png') 0 0/636px 244px no-repeat}
-/* G3-82 (owner, 14c): the D74 tall frame swells to x 6..629 for ~50 rows above its foot, 2 px past the 620 px upper
-   walls on each side, so the canopy stood out wider than the strip below it. The study's frame never leaves the wall
-   line (8..627), so the frame layer (636 px, x = art x) is cut there: the silhouette only widens downward. */
-#cockpit .ck-portrow::before{clip-path:inset(0 8px 0 8px)}
 #cockpit[data-layout="640"] .ck-portrow::before{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-640-1x.png');mask-image:url('/runtime/canopy-c01/solid-outline-640-1x.png');-webkit-mask-size:636px 56px;mask-size:636px 56px}
 @media(min-resolution:2dppx){
 #cockpit .ck-portrow::before{-webkit-mask-image:url('/runtime/canopy-c01/solid-outline-890-2x.png');mask-image:url('/runtime/canopy-c01/solid-outline-890-2x.png')}

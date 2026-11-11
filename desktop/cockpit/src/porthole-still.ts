@@ -61,7 +61,10 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
     placeBig();
     const theme=document.documentElement.dataset.theme==='day'?'day':'night',layout=cockpit.dataset.layout==='640'?640:890;
     const frame=pack.projections.find(p=>p.theme===theme&&p.layout===layout);
-    const port=field.parentElement??field,W=port.clientWidth,H=port.clientHeight;
+    // The field may reach past the port's padding box (official edition, G3-82: the canopy art box); its
+    // computed insets hold even while it is hidden, so the still is sized to the box it will fill.
+    const port=field.parentElement??field,cs=getComputedStyle(field),inset=(v:string)=>parseFloat(v)||0;
+    const W=port.clientWidth-inset(cs.left)-inset(cs.right),H=port.clientHeight-inset(cs.top)-inset(cs.bottom);
     if(!frame||!W||!H){field.dataset.still=frame?'sizing':'none';return;}
     const key=`${frame.id}:${W}x${H}`;if(key===painted)return;painted=key;
     // Cover the field like a background: scale to the larger ratio and centre; the port clips the rest.

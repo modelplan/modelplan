@@ -4,26 +4,25 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 import {inflateSync} from 'node:zlib';
 
-// G3-82 (owner, build 14c): the D74 canopy frame (#801) bulged 2 px past the 620 px upper walls on each side for
-// about 50 rows above its foot, so the porthole stood out wider than the strip and body right below it. The opus-r7
-// study is narrow at the top and wide at the bottom: its frame never leaves the wall line, and every row of the
-// silhouette is at least as wide as every row above it. This measures what the page actually paints (alpha >= 128,
-// transparent screenshot) rather than boxes, at 1x and at the 2x the owner's Mac draws.
-//
-// Prototype profile: painted width (px, alpha >= 128) of the opus-r7 study (rocket-r1.html, night, 956 / 700 px
-// tall, 2x) at heights measured from the strip's top (negative = canopy). Ours must be within 1% of the 636 px hull
-// (6.4 px) from the canopy's lower flank down; higher up, where the D74/D100 canopy (owner-approved art, 28/8 px
-// taller than the study's) rounds into its dome, it may be narrower but never wider than the study.
+// G3-82 (owner, build 14c): a raised light band stood on the top centre of the porthole and a bright line ran down its
+// sides. The owner-approved canopy (#801, 2026-11-09 v10: tall A3 as generated, compact A1, the current strip) has glass
+// up to the top of its art box, but the porthole still stopped at the port's padding box (12 px lower, 26 px in), so
+// the desktop showed through the window there. This measures what the page actually paints (transparent screenshot,
+// alpha), at 1x and at the 2x the owner's Mac draws:
+// - nothing inside the silhouette is see-through (no desktop through the canopy, frame or walls);
+// - open shapes: the outline is within 1% of the 636 px hull (6.4 px) of the approved v10 render, row by row from the
+//   canopy's top (A3 tall, A1 compact; read from the owner-approved side-by-side images, 2x, in px from the first
+//   painted row);
+// - below the canopy the hull only widens.
 const TOL=6.4;
-const PROTO={
- tall:{flank:-180,rows:[[-225,510.5],[-215,560],[-200,585],[-180,596],[-160,604],[-140,610],[-120,617],[-100,620],[-80,620],[-60,620],
-  [-40,620],[-20,620],[-5,620],[5,620],[40,620],[120,620],[200,620],[260,620],[300,636],[400,636],[600,636]]},
- compact:{flank:-20,rows:[[-55,560],[-50,590],[-45,600],[-40,608],[-30,620],[-20,620],[-10,620],[-5,620],[5,620],[40,620],[120,620],
-  [200,620],[250,620],[300,636],[500,636]]},
+const APPROVED={
+ tall:[[4,240.5],[6,281.5],[8,316],[10,345.5],[14,392.5],[20,448.5],[30,516],[40,554.5],[60,586.5],[80,599],[100,605.5],[120,611],
+  [140,616],[160,621],[180,624.5],[200,621],[220,620],[240,620],[260,620.5],[300,620.5],[400,620.5],[560,636],[700,636]],
+ compact:[[4,409.5],[6,482],[8,531.5],[10,559.5],[14,582.5],[20,595],[30,607],[40,615.5],[48,620],[100,620.5],[200,620.5],[400,636]],
 };
 const shapes=[
- {tier:'tall',closed:false,canvas:939,root:905,cap:244,proto:PROTO.tall},
- {tier:'compact',closed:false,canvas:669,root:635,cap:56,proto:PROTO.compact},
+ {tier:'tall',closed:false,canvas:939,root:905,cap:244,approved:APPROVED.tall},
+ {tier:'compact',closed:false,canvas:669,root:635,cap:56,approved:APPROVED.compact},
  {tier:'tall',closed:true,canvas:725,root:691,cap:30},
  {tier:'compact',closed:true,canvas:643,root:609,cap:30},
 ];
@@ -34,9 +33,11 @@ async function open(page,s){
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell:{...shell,tier:s.tier,profile:s.closed?'closed':'open'}}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ if(!s.closed)await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
  await page.waitForTimeout(300);
 }
-// Per-row [left,right] of the painted silhouette in CSS px (a device row counts if any of its pixels is >= 128 alpha).
+// Per device row: [left,right] of the painted silhouette in CSS px (alpha >= 128) and how many device pixels between
+// them are see-through (alpha < 128).
 async function silhouette(page,height,scale){
  const buffer=await page.screenshot({omitBackground:true,clip:{x:0,y:0,width:636,height}});
  let offset=8,width=0,rowsN=0;const data=[];
@@ -48,34 +49,37 @@ async function silhouette(page,height,scale){
   for(let i=0;i<stride;i++){const a=i>=4?row[i-4]:0,b=up[i],c=i>=4?up[i-4]:0;let p=src[i];
    if(f===1)p+=a;else if(f===2)p+=b;else if(f===3)p+=(a+b)>>1;else if(f===4){const q=a+b-c,pa=Math.abs(q-a),pb=Math.abs(q-b),pc=Math.abs(q-c);p+=pa<=pb&&pa<=pc?a:pb<=pc?b:c;}
    row[i]=p&255;}
-  let l=-1,r=-1;for(let x=0;x<width;x++)if(row[x*4+3]>=128){if(l<0)l=x;r=x;}rows.push(l<0?null:[l/scale,(r+1)/scale]);}
+  let l=-1,r=-1;for(let x=0;x<width;x++)if(row[x*4+3]>=128){if(l<0)l=x;r=x;}
+  let holes=0;for(let x=l+1;x<r;x++)if(row[x*4+3]<128)holes++;
+  rows.push(l<0?null:{l:l/scale,r:(r+1)/scale,holes});}
  return rows;
 }
 for(const scale of [1,2])test.describe(`@${scale}x`,()=>{
  test.use({deviceScaleFactor:scale});
- for(const s of shapes)test(`G3-82 ${s.tier}${s.closed?' closed':''} @${scale}x: the canopy stays inside the walls and the hull widens downward`,async({page})=>{
+ for(const s of shapes)test(`G3-82 ${s.tier}${s.closed?' closed':''} @${scale}x: the approved canopy outline, nothing see-through inside it`,async({page})=>{
   await open(page,s);
   // The closed page draws its slab at the window's top edge (#cockpit margin-top -14 px); open roots start at 0.
   const top=await page.evaluate(()=>Math.round(document.querySelector('#cockpit').getBoundingClientRect().top));
   const rows=await silhouette(page,s.root+top,scale);
-  // The walls under the cap: the narrowest painted body the canopy has to sit inside (the strip's own hull row).
-  const strip=await page.evaluate(()=>{const r=document.querySelector('.ck-head').getBoundingClientRect();return [Math.round(r.top),Math.round(r.bottom)];});
-  const wall=rows[strip[0]*scale+Math.round(4*scale)];
-  expect(wall,'upper wall at the strip').toEqual([8,628]);
-  const cap=rows.slice(0,(s.cap+top)*scale).filter(Boolean);
-  expect(cap.length,'the canopy paints').toBeGreaterThan(0);
-  const capLeft=Math.min(...cap.map(r=>r[0])),capRight=Math.max(...cap.map(r=>r[1]));
-  expect([capLeft,capRight],'canopy frame never wider than the wall below it').toEqual([Math.max(capLeft,wall[0]),Math.min(capRight,wall[1])]);
-  // Monotone taper top to bottom, down to the lower wall (the aft plate's rounded foot below is not part of it).
   const lowerTop=await page.evaluate(()=>Math.round(document.querySelector('.ck-shell .hull-lower').getBoundingClientRect().top));
-  const bad=[];let edge=null;
-  for(let y=0;y<(lowerTop+40)*scale;y++){const r=rows[y];if(!r)continue;
-   if(edge&&(r[0]>edge[0]||r[1]<edge[1]))bad.push(`${(y/scale).toFixed(1)}: [${r}] narrower than [${edge}] above`);
-   edge=edge?[Math.min(edge[0],r[0]),Math.max(edge[1],r[1])]:r;}
-  expect(bad.slice(0,8),'every row at least as wide as every row above it').toEqual([]);
-  if(s.proto){const off=[];
-   for(const [y,want] of s.proto.rows){const r=rows[Math.round((strip[0]+y)*scale)],got=r?r[1]-r[0]:0;
-    if(y>=s.proto.flank?Math.abs(got-want)>TOL:got>want+TOL)off.push(`${y}: ${got} vs study ${want}`);}
-   expect(off,'silhouette profile vs the opus-r7 study (1% of 636 px)').toEqual([]);}
+  // No desktop through the canopy, its frame or the walls, from the first painted row to the lower wall.
+  const seeThrough=[];
+  for(let y=0;y<(lowerTop+40)*scale;y++){const r=rows[y];if(r&&r.holes)seeThrough.push(`${(y/scale).toFixed(1)}: ${r.holes} px`);}
+  expect(seeThrough.slice(0,8),'see-through pixels inside the silhouette').toEqual([]);
+  // Below the canopy the hull only widens (the A3 frame's own slight flare above the strip is approved art).
+  const strip=await page.evaluate(()=>Math.round(document.querySelector('.ck-head').getBoundingClientRect().top));
+  const narrower=[];let edge=null;
+  for(let y=strip*scale;y<(lowerTop+40)*scale;y++){const r=rows[y];if(!r)continue;
+   if(edge&&(r.l>edge[0]||r.r<edge[1]))narrower.push(`${(y/scale).toFixed(1)}: [${r.l},${r.r}] narrower than [${edge}] above`);
+   edge=edge?[Math.min(edge[0],r.l),Math.max(edge[1],r.r)]:[r.l,r.r];}
+  expect(narrower.slice(0,8),'below the canopy every row at least as wide as every row above it').toEqual([]);
+  if(s.approved){
+   const first=rows.findIndex(Boolean),off=[];
+   // The approved render is 2x; at 1x a whole-pixel row cannot follow the arch's first rows (10-50 px per row), so 1x
+   // starts where the arch is gentler.
+   for(const [y,want] of s.approved.filter(([y])=>scale>1||y>=14)){const r=rows[first+Math.round(y*scale)],got=r?r.r-r.l:0;
+    if(Math.abs(got-want)>TOL)off.push(`${y}: ${got} vs approved ${want}`);}
+   expect(off,'outline vs the approved v10 A3/A1 render (1% of 636 px)').toEqual([]);
+  }
  });
 });
