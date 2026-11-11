@@ -47,6 +47,34 @@ type CockpitDetails struct {
 	PublishedModels []CockpitPublicationModel `json:"publishedModels,omitempty" schema:"maxItems=256" null:"forbidden"`
 	// Forecasts is present only for a client that negotiated cockpitForecastV1.
 	Forecasts []CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
+	// RecentSessions is present only for a client that negotiated cockpitSessionsV1: the sessions this
+	// device last observed within the past seven days, newest first. LastObservedAt is a last sighting,
+	// never an end time; there are no titles or token counts.
+	RecentSessions []CockpitRecentSession `json:"recentSessions,omitempty" schema:"maxItems=200" null:"forbidden"`
+	// Peaks is present only for a client that negotiated cockpitPeaksV1: for each declared plan row, its current
+	// or next published time-of-day window with a raised rate within 24 hours. EndsAt is null when the window does
+	// not end within the published horizon.
+	Peaks []CockpitPeak `json:"peaks,omitempty" schema:"maxItems=32" null:"forbidden"`
+}
+
+// CockpitPeak is one declared plan's peak-rate window from the publication's multiplier windows.
+type CockpitPeak struct {
+	RowID    string     `json:"rowId" schema:"minLength=1,maxLength=128"`
+	StartsAt time.Time  `json:"startsAt"`
+	EndsAt   *time.Time `json:"endsAt" null:"coalesced"`
+	Status   string     `json:"status"` // confirmed | tentative
+}
+
+// CockpitRecentSession is one recorded session. Model is a published model ID or "unknown";
+// SubscriptionRef is set only under a binding the cockpit already verified.
+type CockpitRecentSession struct {
+	SessionRef      string    `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Source          string    `json:"source"`
+	SubscriptionRef *string   `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
+	Model           string    `json:"model"`
+	Effort          *string   `json:"effort" null:"coalesced"`
+	ProjectLabel    *string   `json:"projectLabel" null:"coalesced"`
+	LastObservedAt  time.Time `json:"lastObservedAt"`
 }
 
 // CockpitForecast is the engine's outlook for one current window. RunsOutAt is
@@ -102,7 +130,40 @@ type CockpitPublication struct {
 	PublishedAt     time.Time                 `json:"publishedAt"`
 	Source          string                    `json:"source" schema:"minLength=1,maxLength=32"`
 	Models          []CockpitPublicationModel `json:"models" schema:"maxItems=3"`
-	Truncated       bool                      `json:"truncated"`
+	// SpeedTiers is the published client data.speedTiers, unchanged in shape; absent when none are published.
+	SpeedTiers []CockpitSpeedTier `json:"speedTiers,omitempty" schema:"maxItems=32" null:"forbidden"`
+	Truncated  bool               `json:"truncated"`
+}
+type CockpitSpeedTier struct {
+	ID          string                  `json:"id" schema:"maxLength=128"`
+	Harness     string                  `json:"harness" schema:"maxLength=64"`
+	Tier        string                  `json:"tier" schema:"maxLength=64"`
+	Label       string                  `json:"label" schema:"maxLength=128"`
+	Toggle      string                  `json:"toggle" schema:"maxLength=128"`
+	Eligibility CockpitSpeedEligibility `json:"eligibility"`
+	Models      []CockpitSpeedTierModel `json:"models" schema:"maxItems=256"`
+	Billing     []CockpitSpeedBilling   `json:"billing" schema:"maxItems=8"`
+	Caveats     []string                `json:"caveats" schema:"maxItems=16"`
+	Sources     []string                `json:"sources" schema:"maxItems=16"`
+}
+type CockpitSpeedEligibility struct {
+	Plans []string `json:"plans" schema:"maxItems=32"`
+	Note  string   `json:"note" schema:"maxLength=500"`
+}
+type CockpitSpeedTierModel struct {
+	VendorModelID string            `json:"vendorModelId" schema:"maxLength=128"`
+	ModelID       *string           `json:"modelId" null:"coalesced" schema:"maxLength=128"`
+	Speed         CockpitSpeedRatio `json:"speed"`
+}
+type CockpitSpeedRatio struct {
+	Ratio     *float64 `json:"ratio" null:"coalesced"`
+	Qualifier string   `json:"qualifier" schema:"maxLength=32"`
+}
+type CockpitSpeedBilling struct {
+	Account string  `json:"account" schema:"maxLength=32"`
+	BillsTo string  `json:"billsTo" schema:"maxLength=32"`
+	Basis   string  `json:"basis" schema:"maxLength=32"`
+	Ratio   float64 `json:"ratio"`
 }
 type CockpitPublicationModel struct {
 	ID          string                     `json:"id" schema:"minLength=1,maxLength=128"`

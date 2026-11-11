@@ -19,6 +19,17 @@ The runtime pack contains:
   joined outline coverage for the 640/890 layout tiers, at 1x and 2x. Tier names
   describe the layout, not image width. The window/aperture/outline images are
   final runtime coverage masks. Consumers use the recorded pixel dimensions.
+  D74/D100 (owner-approved 2026-11-09): the canopy layers are cut from complete canopy
+  images regenerated at the hull width (1780 source px = the 620 pt foot). Tall tier
+  (890): candidate A3 as generated, its walls (including their slight outward bulge) and
+  its own sill unmodified and not spliced, scaled uniformly by 1.0169 so its foot is
+  flush with the hull; the bulge reaches about 5.8 pt from the canvas edge, 2.2 pt
+  outside the hull line, and the topmost rows are squashed very slightly so the arc
+  closes inside the 244 pt canvas. Compact tier (640): candidate A1 on the shipped
+  compact mapping, its outer edge eased onto the hull line above the foot and its
+  foot/sill rows cross-faded into the shipped 14b foot. Both tiers use anti-aliased
+  silhouettes and smoothed glass-edge traces. Layer names and the 1x/2x sizes are
+  unchanged (636x244 tall, 636x56 compact).
 
 `manifest.json` binds every file to its SHA-256, byte size, pixel dimensions and
 reserved licence. Its eight baseline records point to the exact owner-confirmed

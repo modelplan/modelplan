@@ -19,10 +19,15 @@ import ModelPlanSettings
     private let accessibility: @MainActor () -> (motion: Bool, transparency: Bool)
     private let copy: @MainActor (FirstUseHintKind, InstrumentLanguage) -> Copy?
     private let dismiss: @MainActor (UUID) -> Void
+    /// Brings this app forward when a requested map opens, so Esc and outside clicks reach the
+    /// local monitor below (a nonactivating panel in an inactive app sees neither).
+    private let activate: @MainActor () -> Void
     private let layer: HelpUILayerView
     private var panel: NSPanel?
     private var eventMonitor: Any?
     private var deactivateObserver: NSObjectProtocol?
+    /// The app that was frontmost before a map activated this one; restored when the map closes.
+    private var previousApp: NSRunningApplication?
     private var currentOffer: HintOffer?
     private var currentExplanationID: String?
     private var currentSurfaceValue: DockHelpSurface?
@@ -38,11 +43,12 @@ import ModelPlanSettings
          accessibility: @escaping @MainActor () -> (motion: Bool, transparency: Bool),
          copy: @escaping @MainActor (FirstUseHintKind, InstrumentLanguage) -> Copy?,
          dismiss: @escaping @MainActor (UUID) -> Void,
+         activate: @escaping @MainActor () -> Void = { if !NSApp.isActive { NSApplication.shared.activate() } },
          layer: HelpUILayerView) {
         self.currentSurface = currentSurface; self.isCurrent = isCurrent
         self.blockers = blockers; self.windowPolicy = windowPolicy
         self.language = language; self.accessibility = accessibility
-        self.copy = copy; self.dismiss = dismiss
+        self.copy = copy; self.dismiss = dismiss; self.activate = activate
         self.layer = layer
     }
 
@@ -50,7 +56,7 @@ import ModelPlanSettings
         guard !retired, let surface = currentSurface(), surface.visible, !surface.dragging,
               context.dockReveal == surface.revealID, isCurrent(surface) else { return [] }
         let lang = language()
-        return Set([FirstUseHintKind.ignition, .drag, .pinned, .ringRefresh, .findWidget, .widgetOff].filter {
+        return Set([FirstUseHintKind.ignition, .drag, .pinned, .ringRefresh, .findWidget, .widgetOff, .detach, .putBack].filter {
             surface.anchors[$0] != nil && copy($0, lang) != nil
         })
     }
@@ -184,6 +190,8 @@ import ModelPlanSettings
         guard window.isVisible, window.alphaValue > 0, isCurrent(surface) else {
             window.orderOut(nil); return false
         }
+        // A second call replaces the first: one monitor and one observer at a time, never stacked.
+        removeEventMonitor(); removeDeactivateObserver()
         var optionHeld = NSEvent.modifierFlags.contains(.option)
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .flagsChanged]) { [weak self, weak window] event in
             guard let self, let window, window.isVisible, !self.retired, self.generation == token,
@@ -200,6 +208,13 @@ import ModelPlanSettings
         deactivateObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { dismissMap(nil) }
         }
+        // After the observer exists: activating must not read as the app losing focus. Esc and a click
+        // outside the map are local events only while the app is active.
+        if !NSApp.isActive, previousApp == nil {
+            let front = NSWorkspace.shared.frontmostApplication
+            if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
+        }
+        activate()
         return true
     }
 
@@ -262,6 +277,9 @@ import ModelPlanSettings
         generation &+= 1; currentSurfaceValue = nil
         removeEventMonitor(); removeDeactivateObserver()
         panel?.orderOut(nil); layer.removeFromSuperview()
+        // Give focus back only if this app still holds it; a user who switched away keeps their choice.
+        if let previousApp, NSApp.isActive { previousApp.activate() }
+        previousApp = nil
     }
 
     func dispose() {
@@ -285,6 +303,8 @@ import ModelPlanSettings
         window.isFloatingPanel = true; window.level = Self.overlayLevel; window.isOpaque = false
         window.backgroundColor = .clear; window.hasShadow = false; window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
+        // D88: a press on a hint over the attached cockpit is not an outside click that closes it.
+        window.identifier = CockpitWindowController.helpOverlayIdentifier
         return window
     }
 }

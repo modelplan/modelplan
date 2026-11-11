@@ -341,12 +341,13 @@ import ModelPlanShell
             let root = profile.appendingPathComponent(String(index))
             let legacy = root.appendingPathComponent("ModelPlan/Native/settings-v1.json")
             try FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
-            var placement: [String: Any] = ["dockEdge": "floating"]
+            // An app that wrote this file saved every key, Auto-Collapse (then off) included.
+            var placement: [String: Any] = ["dockEdge": "floating", "autoHide": false]
             placement["dockDisplayID"] = sample.savedDisplay
             placement["dockAlongFraction"] = sample.savedAlong
             let bytes = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "preferences": placement])
             try bytes.write(to: legacy)
-            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
             let status = await store.foundationStatus()
             XCTAssertEqual(status?.selection?.settings, .communitySettings)
             XCTAssertEqual(status?.issues, [.init(source: .communitySettings, failure: .invalidEdge)])
@@ -414,7 +415,7 @@ import ModelPlanShell
             if nativePanels { EngineRowsEntry.nativeJourneyProfile = root }
             defer { if nativePanels { EngineRowsEntry.nativeJourneyProfile = nil } }
             #endif
-            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
             let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
                 applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
                 createsNativePanels: nativePanels, dockEnvironment: topology.read, activateSettings: {})
@@ -515,7 +516,7 @@ import ModelPlanShell
                 if nativePanels { EngineRowsEntry.nativeJourneyProfile = root }
                 defer { if nativePanels { EngineRowsEntry.nativeJourneyProfile = nil } }
                 #endif
-                let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+                let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
                 let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
                     applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
                     createsNativePanels: nativePanels, dockEnvironment: topology.read, activateSettings: {})
@@ -672,7 +673,7 @@ import ModelPlanShell
             try writeReading(40)
 
             let topology = DragTopology()
-            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
             _ = try await store.update {
                 $0.dockDisplayID = "A"
                 $0.dockEdge = .right
@@ -763,7 +764,7 @@ import ModelPlanShell
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-drag-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         func launch() async throws -> EngineDockMenuApplication {
-            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            let store = try await expandedWidgetSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
             let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"),
                 applicationVersion: "drag-persistence", allowedEnvironment: [:]), settingsStore: store,
                 createsNativePanels: false, dockEnvironment: topology.read, activateSettings: {})
@@ -862,7 +863,7 @@ import ModelPlanShell
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-escape-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let settings = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         _ = try await settings.update { $0.autoHide = false; $0.dockEdge = .bottom }
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
         let snapshot = try HostPairedProjectionTests.rows(weekly: 75, secondWeekly: 55)
@@ -929,7 +930,7 @@ import ModelPlanShell
         let topology = DragTopology()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         EngineRowsEntry.nativeJourneyProfile = root
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         _ = try await store.update { $0.dockDisplayID = "A"; $0.dockEdge = .right; $0.followActiveDisplay = true }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "drag-journey", allowedEnvironment: [:]), settingsStore: store,

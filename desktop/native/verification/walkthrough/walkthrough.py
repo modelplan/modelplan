@@ -14,6 +14,7 @@ from pathlib import Path
 import plistlib
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -61,6 +62,7 @@ def matcher(target):
         "value": lambda n: n.get("value") == value,
         "dom^": lambda n: str(n.get("dom", "")).startswith(value),
         "role": lambda n: n.get("role") == value,
+        "subrole": lambda n: n.get("subrole") == value,
     }
     if kind not in tests:
         raise WalkthroughError("unknown target " + target)
@@ -169,6 +171,11 @@ class Host:
             command.append("-R%d,%d,%d,%d" % tuple(round(v) for v in rect))
         subprocess.run(command + [str(path)], check=True, timeout=30)
 
+    def capture_window(self, path, window_id):
+        """One window by its CGWindow number, without its shadow (-o). The PNG keeps the window's alpha, so a clear
+        window shows as transparent and an opaque backing does not; the visual comparison lane reads this."""
+        subprocess.run(["screencapture", "-x", "-o", "-l%d" % window_id, str(path)], check=True, timeout=30)
+
     def run(self, command, env, stdin=None, timeout=120):
         return subprocess.run(command, env=env, input=stdin, capture_output=True, text=True, timeout=timeout)
 
@@ -232,6 +239,28 @@ class Walkthrough:
         self.await_target(action["target"], action.get("timeout", 15))
         if action.get("timed"):
             self.measures["secondsTo:" + action["target"]] = round(self.host.now() - started, 2)
+
+    def op_awaitAbsent(self, action):
+        """Wait until a target has left the screen, such as the first-run page still looking for tools."""
+        deadline = self.host.now() + action.get("timeout", 15)
+        while resolve(self.tree(), action["target"]) is not None:
+            if self.host.now() >= deadline:
+                raise WalkthroughError("still on screen after %ss: %s" % (action.get("timeout", 15), action["target"]))
+            self.host.sleep(0.5)
+
+    def op_when(self, action):
+        """Run nested actions only when a target is on screen ("present"), is not ("absent"), or shows a value
+        ("equals": {"target", "value"}), so one walk fits a build with the flow and a build without it (the
+        first-run chooser, a widget that starts collapsed)."""
+        if "equals" in action:
+            node = resolve(self.tree(), action["equals"]["target"])
+            hit = node is not None and str(node.get("value")) == action["equals"]["value"]
+        else:
+            target = action.get("present") or action.get("absent")
+            hit = (resolve(self.tree(), target) is not None) == ("present" in action)
+        if hit:
+            for nested in action["then"]:
+                getattr(self, "op_" + nested["op"])(nested)
 
     def op_wait(self, action):
         self.host.sleep(action["seconds"])
@@ -506,6 +535,14 @@ class Walkthrough:
             if stats["colours"] < MIN_COLOURS or stats["dominantShare"] > MAX_DOMINANT:
                 raise WalkthroughError("blank render: %d colours, %.2f dominant" % (stats["colours"], stats["dominantShare"]))
 
+    def window_holding(self, frame):
+        """The smallest on-screen window of the app whose bounds contain the centre of `frame`."""
+        cx, cy = frame[0] + frame[2] / 2, frame[1] + frame[3] / 2
+        found = [win for win in self.windows() if win.get("onScreen") and win.get("bounds")
+                 and win["bounds"][0] <= cx <= win["bounds"][0] + win["bounds"][2]
+                 and win["bounds"][1] <= cy <= win["bounds"][1] + win["bounds"][3]]
+        return min(found, key=lambda win: win["bounds"][2] * win["bounds"][3], default=None)
+
     def run_step(self, index, step):
         name = "%02d-%s" % (index, step["id"])
         record = {"step": step["id"], "title": step["title"], "expected": step["expected"],
@@ -546,6 +583,14 @@ class Walkthrough:
                 self.host.capture(self.out / (name + ".crop.png"), node["frame"])
                 record["crop"] = name + ".crop.png"
                 self.crops[step["id"]] = record["crop"]
+        window = step.get("shot", {}).get("window")
+        if window:
+            # The app window that holds the target, captured alone with its alpha (visual comparison evidence).
+            node = {"frame": self.remembered} if window == "remembered" and self.remembered else resolve(tree, window)
+            shot = node and self.window_holding(node["frame"])
+            if shot is not None:
+                self.host.capture_window(self.out / (name + ".window.png"), shot["id"])
+                record["window"] = {"file": name + ".window.png", "bounds": shot["bounds"], "target": node["frame"]}
         if not reasons:
             for check in step.get("checks", []):
                 try:
@@ -795,6 +840,99 @@ def crash_reports(home):
     return sorted(p.name for p in reports.glob(APP_EXECUTABLE + "*")) if reports.is_dir() else []
 
 
+PATH_PATTERN = re.compile(r"(?:[A-Za-z]:\\|~?/)(?:[^\s\"'<>:,;()\[\]{}]+/)*[^\s\"'<>:,;()\[\]{}]*")
+UUID_PATTERN = re.compile(r"\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b")
+LONG_HEX_PATTERN = re.compile(r"\b[0-9A-Fa-f]{16,}\b")
+
+
+def secret_tokens(secrets):
+    """Every known user or host name, whole and split on whitespace, longest first."""
+    found = set()
+    for secret in secrets:
+        secret = str(secret or "").strip()
+        if len(secret) > 1:
+            found.add(secret)
+        found.update(part for part in secret.split() if len(part) > 1)
+    return sorted(found, key=len, reverse=True)
+
+
+def scrub_text(text, secrets=()):
+    """Replace anything that names the runner: absolute paths, UUIDs, long hex ids, and known user or host names
+    (the whole name and each whitespace-separated part, any script, any case)."""
+    text = UUID_PATTERN.sub("<id>", str(text))
+    text = PATH_PATTERN.sub("<path>", text)
+    text = LONG_HEX_PATTERN.sub("<id>", text)
+    for secret in secret_tokens(secrets):
+        text = re.sub(re.escape(secret), "<redacted>", text, flags=re.IGNORECASE)
+    return text
+
+
+def scrub_value(value, secrets=()):
+    """Scrub every string in a JSON value before it is serialised, so no escaping can hide a name."""
+    if isinstance(value, str):
+        return scrub_text(value, secrets)
+    if isinstance(value, list):
+        return [scrub_value(v, secrets) for v in value]
+    if isinstance(value, dict):
+        return {k: scrub_value(v, secrets) for k, v in value.items()}
+    return value
+
+
+def redact_crash_report(raw, secrets=()):
+    """Reduce a macOS .ips crash report (a JSON header line, then a JSON body) to what diagnosis needs: the app
+    version, the exception type and code, and the crashed thread's frames as image name, symbol and offset.
+    Everything else is dropped, so paths, user and host names, ids, procPath and userID never get through; a
+    regex pass then scrubs what remains. Returns None when the report cannot be parsed."""
+    head, _, rest = raw.partition("\n")
+    try:
+        header, body = json.loads(head), json.loads(rest)
+    except ValueError:
+        try:
+            header, body = {}, json.loads(raw)
+        except ValueError:
+            return None
+    if not isinstance(body, dict):
+        return None
+    header = header if isinstance(header, dict) else {}
+    images = body.get("usedImages") or []
+    threads = body.get("threads") or []
+    index = body.get("faultingThread")
+    thread = threads[index] if isinstance(index, int) and 0 <= index < len(threads) else {}
+    frames = []
+    for frame in thread.get("frames") or []:
+        image = images[frame["imageIndex"]] if isinstance(frame.get("imageIndex"), int) and 0 <= frame["imageIndex"] < len(images) else {}
+        name = image.get("name") or Path(str(image.get("path", ""))).name
+        frames.append({"image": name, "symbol": frame.get("symbol"), "symbolLocation": frame.get("symbolLocation"),
+                       "imageOffset": frame.get("imageOffset")})
+    exception = body.get("exception") or {}
+    kept = {"appVersion": body.get("bundleInfo", {}).get("CFBundleShortVersionString") or header.get("app_version"),
+            "build": body.get("bundleInfo", {}).get("CFBundleVersion") or header.get("build_version"),
+            "exceptionType": exception.get("type"), "signal": exception.get("signal"),
+            "exceptionCodes": exception.get("codes"), "subtype": exception.get("subtype"),
+            "terminationReason": (body.get("termination") or {}).get("indicator"),
+            "crashedThreadName": thread.get("name") or thread.get("queue"), "frames": frames}
+    kept = scrub_value(kept, secrets)
+    # Second pass on the serialised text, unescaped, in case a name only appears across fields.
+    return json.loads(scrub_text(json.dumps(kept, ensure_ascii=False), secrets))
+
+
+def keep_crash_reports(home, names, out):
+    """Keep a redacted summary of the app's crash reports next to the manifest: without it a crash on a hosted Mac
+    leaves no trace. The raw .ips is never copied, because it embeds absolute host paths, the session user name,
+    procPath, userID and host identifiers that must stay out of a public artifact (see the sessionUser note in run).
+    Each report becomes <name>.redacted.json, built by redact_crash_report from an allow-list of fields."""
+    if not names:
+        return
+    target = out / "crash-reports"
+    target.mkdir(exist_ok=True)
+    secrets = [home.name, os.environ.get("USER", ""), os.environ.get("LOGNAME", ""), socket.gethostname(),
+               socket.gethostname().split(".")[0]]  # scrub_text also splits each on whitespace
+    for name in names:
+        raw = (home / "Library/Logs/DiagnosticReports" / name).read_text(encoding="utf-8", errors="replace")
+        summary = redact_crash_report(raw, secrets) or {"unparsed": True}
+        (target / (Path(name).stem + ".redacted.json")).write_text(json.dumps(summary, indent=1, sort_keys=True, ensure_ascii=False), encoding="utf-8")
+
+
 def reader_rows(report):
     return {row.get("provider"): row for row in report.get("readers", [])}
 
@@ -829,6 +967,7 @@ def run(args, host):
         checks.append(outcome("harness", False, {"error": "%s: %s" % (type(error).__name__, error)}))
     crashes = crash_reports(Path.home())
     checks.append(outcome("no-crash-report", not crashes, {"reports": crashes}))
+    keep_crash_reports(Path.home(), crashes, out)
     # The session user name stays out of a public artifact even when it is only "runner".
     host_facts = {k: v for k, v in facts.items() if k != "sessionUser"}
     manifest = {"schemaVersion": 1, "profile": "synthetic", "sourceSHA": info.get("ModelPlanPublicSource"),

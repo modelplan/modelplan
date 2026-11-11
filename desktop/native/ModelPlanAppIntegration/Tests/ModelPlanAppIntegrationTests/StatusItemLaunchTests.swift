@@ -14,10 +14,28 @@ import XCTest
 @MainActor private final class TogglingStatusConsole: EngineRowsConsoleSurface {
     var shows = 0, closes = 0, hides = 0
     private(set) var isShowing = false
+    var onShowingChanged: (() -> Void)?
     func show() { shows += 1; isShowing = true }
+    /// The page closing by itself (its X key or an outside press).
+    func pageClosed() { isShowing = false; onShowingChanged?() }
     func render() {}
     func hide() { hides += 1; isShowing = false }
     func requestClose() { closes += 1; isShowing = false }
+}
+
+/// D88: an attachable console, as the cockpit is. It records which entry opened it.
+@MainActor private final class AttachableStatusConsole: EngineRowsConsoleSurface {
+    var entries: [Bool] = []
+    private(set) var isShowing = false
+    var isDetached = false
+    var onShowingChanged: (() -> Void)?
+    func show() { show(fromStatusItem: false) }
+    func show(fromStatusItem: Bool) { entries.append(fromStatusItem); isShowing = true }
+    func setDetached(_ value: Bool) { isDetached = value; onShowingChanged?() }
+    func pageClosed() { isShowing = false; onShowingChanged?() }
+    func render() {}
+    func hide() { isShowing = false }
+    func requestClose() { isShowing = false }
 }
 
 @MainActor final class StatusItemLaunchTests: XCTestCase {
@@ -82,6 +100,32 @@ import XCTest
         XCTAssertEqual(console.shows, 3); XCTAssertEqual(console.closes, 1, "the Open Cockpit entries never close")
     }
 
+    /// G3-49: the icon's tooltip covered the porthole. It is withdrawn while the cockpit shows, and comes
+    /// back on every way the cockpit closes; the accessible help is never withdrawn.
+    func testG3_49IconTooltipIsWithdrawnWhileTheCockpitShows() async throws {
+        let console = TogglingStatusConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        let tooltip = try XCTUnwrap(button.toolTip, "the icon has a tooltip while the cockpit is closed")
+        func press() throws {
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        }
+        try press()
+        XCTAssertNil(button.toolTip, "no tooltip over the open cockpit")
+        XCTAssertEqual(button.accessibilityHelp(), tooltip)
+        app.renderMenu()
+        XCTAssertNil(button.toolTip, "a menu refresh does not bring it back while open")
+        try press()
+        XCTAssertEqual(button.toolTip, tooltip, "back after the icon closes the cockpit")
+        app.showConsole()
+        XCTAssertNil(button.toolTip)
+        console.pageClosed()
+        XCTAssertEqual(button.toolTip, tooltip, "back after the cockpit closes itself")
+    }
+
     /// D44: these clicks are left to AppKit, which shows the attached menu; sending them would start real tracking.
     func testRightAndControlClickKeepTheMenu() async throws {
         let console = StatusClickConsole()
@@ -119,6 +163,47 @@ import XCTest
         }
     }
 
+    /// D88: only the icon's own click grows the cockpit out of the icon; Open Cockpit, the shortcut and the
+    /// widget ignition reach the same console as a plain entrance.
+    func testD88OnlyTheIconClickAsksForTheGrowEntrance() async throws {
+        let console = AttachableStatusConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        XCTAssertEqual(console.entries, [true], "the icon click grows from the icon")
+        console.pageClosed()
+        app.composition.dock.showConsole?()
+        XCTAssertEqual(console.entries, [true, false], "the widget ignition keeps its own entrance")
+        console.pageClosed()
+        app.showConsole()
+        XCTAssertEqual(console.entries, [true, false, false])
+    }
+
+    /// D88: the icon shows its native pressed highlight while the attached cockpit is open; a detached cockpit
+    /// is its own window, so the highlight goes off, and comes back when it is put back. Closing clears it.
+    func testD88IconIsPressedOnlyWhileTheAttachedCockpitIsOpen() async throws {
+        let console = AttachableStatusConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertFalse(button.isHighlighted, "closed: not pressed")
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        XCTAssertTrue(button.isHighlighted, "attached and open: pressed")
+        console.setDetached(true)
+        XCTAssertFalse(button.isHighlighted, "detached: not pressed")
+        console.setDetached(false)
+        XCTAssertTrue(button.isHighlighted, "put back: pressed again")
+        app.renderMenu()
+        XCTAssertTrue(button.isHighlighted, "a menu refresh keeps it")
+        console.pageClosed()
+        XCTAssertFalse(button.isHighlighted, "closed by the page: not pressed")
+    }
+
     private func application(cockpitEntryEnabled: Bool? = nil,
                              console: (any EngineRowsConsoleSurface)? = nil) async throws -> EngineDockMenuApplication {
         _ = NSApplication.shared
@@ -128,6 +213,21 @@ import XCTest
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, cockpitEntryEnabled: cockpitEntryEnabled, dockEnvironment: normalEntryTestEnvironment, makeConsole: console.map { surface in { _ in surface } }, activateSettings: {})
         await app.prepare()
         return app
+    }
+
+    /// G3-46: when macOS hides the icon behind a full menu bar, the cockpit has no anchor to open under and
+    /// uses the top-right fallback; once the icon shows again it anchors on the icon.
+    func testG3_46HiddenIconGivesNoCockpitAnchor() async throws {
+        let app = try await application(cockpitEntryEnabled: true)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        var visible = false
+        app.statusItemVisibility = { visible }
+        app.checkStatusItemVisibility()
+        XCTAssertNil(app.cockpitAnchor, "a hidden icon is not an anchor")
+        visible = true
+        app.checkStatusItemVisibility()
+        if app.statusButtonForTesting?.window?.isVisible == true { XCTAssertNotNil(app.cockpitAnchor, "a visible icon anchors again") }
     }
 
     func testLaunchedStatusButtonShowsTheTemplateImageOrAVisibleTitle() async throws {

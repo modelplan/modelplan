@@ -34,7 +34,10 @@ public struct EffectiveSettings: Equatable, Sendable {
     public let revealSeconds: Double, magnification: HoverMagnification, size: SettingsSize
     public let menuDisplay: MenuDisplay, language: SettingsLanguage, showProjectNames: Bool
     public let opening: OpeningPreference, ignitionSeconds: Double?
+    public let cockpitSize: SettingsCockpitSize
     public let redBelow: Int
+    /// SET-9-10 / CKP-ENG-23: the cockpit shows used instead of remaining.
+    public let showUsedPercent: Bool
     public init(_ p: SettingsPreferences, environment e: SettingsEnvironment) {
         darkAppearance = e.v1NormalEntry || p.theme == .night || (p.theme == .system && e.darkAppearance)
         reduceMotion = p.motion == .on || (p.motion == .system && e.reduceMotion)
@@ -46,8 +49,9 @@ public struct EffectiveSettings: Equatable, Sendable {
         autoHide = p.autoHide; revealSeconds = Double(p.revealMilliseconds) / 1000
         showPercentages = p.showPercentages; sliverAlert = p.sliverAlert
         size = p.size; magnification = reduceMotion ? .none : p.magnification
-        menuDisplay = p.menuDisplay; language = p.language; showProjectNames = p.showProjectNames; redBelow = p.effectiveRedBelow
+        menuDisplay = p.menuDisplay; language = p.language; showProjectNames = p.showProjectNames; redBelow = p.effectiveRedBelow; showUsedPercent = p.percentageMode == .used
         opening = e.v1NormalEntry || p.opening == .quick || reduceMotion || e.macOSMajor < 15 || !e.entranceAccepted ? .quick : .hold
+        cockpitSize = p.cockpitSize
         ignitionSeconds = opening == .hold ? 0.2 + 3 * Double(p.beatMilliseconds) / 1000 : nil
     }
     public var visibilityPolicy: DockVisibilityPolicy {
@@ -105,6 +109,8 @@ public enum AliasDisplay {
     }
 }
 
+/// D56 (owner 2026-11-08): the `toggleDock` slot (`dockShortcut`) is the Find Quota Widget shortcut.
+/// The stored key and case keep their names so a recorded chord keeps working.
 public enum ShortcutAction: String, Sendable { case openCockpit, toggleDock }
 public enum ShortcutRegistration: Equatable, Sendable { case notRequested, registered, conflict, denied, unavailable }
 public struct ShortcutPolicy: Sendable {

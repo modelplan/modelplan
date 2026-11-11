@@ -47,6 +47,8 @@ register('mfd', {
   heatAria: ['aria', '近 26 周每日输出 token', 'Daily output tokens, last 26 weeks'],
   since: ['line', '从 {d} 开始记录', 'Recorded since {d}'],
   noRecord: ['lcd', '无记录', 'No record'],
+  importedDay: ['lcd', '已导入', 'Imported'],
+  importedPart: ['lcd', '含已导入 {v}', 'incl. imported {v}'],
   moreAlerts: ['lcd', '+{n} ▸', '+{n} ▸'],
   alResetAnn: ['alert', '{s} 官方额外重置 · 约 {at}', '{s} official extra reset · ~{at}'],
   alResetSoon: ['alert', '{s} 官方额外重置 · 待定', '{s} official extra reset · time TBA'],

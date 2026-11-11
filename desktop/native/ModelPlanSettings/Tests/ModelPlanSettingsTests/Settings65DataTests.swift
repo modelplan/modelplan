@@ -19,7 +19,7 @@ final class Settings65DataTests: XCTestCase {
         XCTAssertEqual(SettingsStructure.task65.panes.last?.id, "about")
         XCTAssertEqual(Settings65Homes.dock.map(\.id), ["display","numbers","location","sequence"])
         XCTAssertTrue(Settings65Homes.dock[0].keys.contains(.size)); XCTAssertTrue(Settings65Homes.dock[2].keys.contains(.dockEdge))
-        XCTAssertEqual(Settings65Homes.cockpit.keys, [.opening,.countdown])
+        XCTAssertEqual(Settings65Homes.cockpit.keys, [.cockpitSize,.opening,.countdown])
         XCTAssertFalse(Settings65Homes.general.keys.contains(.opening)); XCTAssertFalse(Settings65Homes.appearance.keys.contains(.size))
     }
     func testCurrentTableHasEachKeyOnceAndDefaultCatalogueUsesConfirmedHomes() throws {
