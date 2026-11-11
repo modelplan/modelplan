@@ -1535,7 +1535,8 @@ enum HullPanels {
         for (k, (y0, y1)) in zip(heights, heights.dropFirst()).enumerated() where y1 > band.bottom && y0 < band.top {
             let azimuths = seamAzimuths(row: y0, index: k).sorted()
             let steps = 24
-            for az in azimuths {
+            // A seam at 180 degrees sits on the wrap: draw it at both edges of the map.
+            for az in azimuths + (azimuths.contains(180) ? [-180] : []) {
                 for s in 0..<steps {
                     let ya = y0 + (y1 - y0) * Float(s) / Float(steps), yb = y0 + (y1 - y0) * Float(s + 1) / Float(steps)
                     let perU = pxPerMetreU((ya + yb) / 2)
