@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 -->
 # Sources
 
-No new art was made for this pack. The files are mechanical conversions of the approved pass-5 rocket (owner
+The model files and `rocket-geometry.json` are are mechanical conversions of the approved pass-5 rocket (owner
 2026-10-24/25), which lives on the private design branch `design/entrance-storyboard-20261025`
 (commit `dc9a1b52d`) under `clients/official-visuals/rocket-3d/exports/`:
 
@@ -21,3 +21,16 @@ October study screenshots; they are hidden behind the dark glass in the entrance
 
 Licence: LicenseRef-ModelPlan-Visuals-1.0 (`desktop/official-visuals/LICENSE.md`); the earlier private-only note
 in the design branch's RIGHTS.md is superseded for these files by owner decision D109 (2026-11-09).
+
+## Generated look images (owner D142, 2026-11-11)
+
+Generated on 2026-11-11 by the M4 Codex lane's built-in image tool from the prompts in the private hand-off
+`specs/v11/entrance-dev/gen-prompts-r7.md`; two candidates each, candidate `a` chosen; use approved by the owner
+(D142, under the D116 allowance for generated textures). Post-processing is mechanical:
+
+| File | Source candidate (SHA-256) | Processing |
+| --- | --- | --- |
+| `rocket-brushed-steel-detail.png` | `rocket-brushed-steel-detail-a.png` (`3e1b25a36229bb4a1ce2265a49a274d49a3d765c0c1eb346eda79aa15ea4de91`) | greyscale; the left and right 96 px cross-faded with the tile shifted half a width, so the horizontal wrap is seamless |
+| `rocket-cockpit-interior-night.png` | `rocket-cockpit-interior-night-a.png` (`4b74e1e25a5505753d50d4bd8346124b0fc6252f883d918df5468d149fddb8cf`) | alpha dropped; cropped to x 242-1858, y 63-1217 (1617 x 1155, 7:5) to remove the window frame the image model drew round the edges (the 3D model has its own) |
+
+The day finish uses the night cockpit image (no day variant).

@@ -27,7 +27,10 @@ public enum OfficialRocket {
     /// Optional look images (owner D142, generated under D116). They ship only once generated and approved; each
     /// then gets its SHA-256 here, in manifest.json and in source-policy.json. Until then the entrance draws its code
     /// fallbacks. A file in Resources without an entry here is refused, never used unverified.
-    public static let lookFiles: [String: String] = [:]
+    public static let lookFiles: [String: String] = [
+        "rocket-brushed-steel-detail.png": "9ba43a1dd2d5adcc621db2e278e3115ce1c3db4dc310bc00e417872fabdc6643",
+        "rocket-cockpit-interior-night.png": "72c1d59e6ce9ed512fd18009e287eaa95f4218a0bac47a69a96ab0070c152d71",
+    ]
     static let brushedDetailName = "rocket-brushed-steel-detail.png"
     static let cockpitNightName = "rocket-cockpit-interior-night.png"
     static let cockpitDayName = "rocket-cockpit-interior-day.png"
