@@ -734,6 +734,13 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		}
 		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: "stale", ErrorCode: failed.failureCode(), Reason: reason})
 	}
+	// A recent failure with no usable retained reading (a first read that failed, or a retained
+	// reading past accountKeep) still names its cause; runtime_missing is reported above.
+	if failed == nil && s != nil && s.Status != "ok" && s.Status != toolcli.RuntimeMissing &&
+		now.Sub(s.ObservedAt) <= accountKeep && !s.ObservedAt.After(now.Add(5*time.Minute)) {
+		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: "error", ErrorCode: s.failureCode(),
+			Reason: "last refresh failed at " + s.ObservedAt.UTC().Format(time.RFC3339)})
+	}
 	if s == nil || s.Status != "ok" || now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now.Add(5*time.Minute)) {
 		return
 	}
