@@ -490,6 +490,19 @@ struct HullFinish {
         return m
     }
 
+    /// The window surround: a light satin dielectric, not metal. Seen from below, the surround faces down and, as
+    /// metal, mirrored the dark studio floor, so at night it read as part of a heavy dark band (round 3).
+    var surround: PhysicallyBasedMaterial {
+        var m = PhysicallyBasedMaterial()
+        m.baseColor = .init(tint: lipColor)
+        m.metallic = 0.0
+        m.roughness = 0.35
+        m.clearcoat = 0.4
+        m.clearcoatRoughness = 0.08
+        m.faceCulling = .none
+        return m
+    }
+
     var gasket: PhysicallyBasedMaterial {
         var m = PhysicallyBasedMaterial()
         m.baseColor = .init(tint: gasketColor)
@@ -511,7 +524,10 @@ struct HullFinish {
             guard var model = e.components[ModelComponent.self] else { continue }
             let name = ModelRocket.partName(e)
             if Self.isPanelJoint(name) {
-                e.isEnabled = false
+                // The named ring entity, not only the mesh entity under it (round 3 disabled only the child).
+                var node: Entity? = e
+                while let n = node, n.name != name { node = n.parent }
+                (node ?? e).isEnabled = false
                 continue
             }
             if CockpitInterior.isInterior(name) {
@@ -544,7 +560,7 @@ struct HullFinish {
                 if let frame = GasketFrame.role(name) {
                     switch frame {
                     case .outerLine: return metal(grooveColor, roughness: 0.5)
-                    case .surround: return metal(plainColor, roughness: roughness - 0.06)
+                    case .surround: return surround
                     case .gasket: return gasket
                     }
                 }
@@ -558,6 +574,9 @@ struct HullFinish {
             e.components.set(model)
         }
         JointLine.draw(in: root, lip: metal(lipColor, roughness: 0.16))
+        if let plane = root.findEntity(named: CockpitInterior.screenPlane), plane.isEnabledInHierarchy {
+            CockpitInterior.addOverheadConsole(to: root)
+        }
     }
 }
 
@@ -612,7 +631,7 @@ enum JointLine {
 /// 10 cm of near-black frame. The pass-5 art has a hairline groove, a metal rim and a thin dark rounded gasket.
 /// The outer and inner edges stay where they are (the hull opening and the glass edge); the two inner boundaries
 /// move along each cross-section so the outer strip becomes the groove (`outerLine` of the width), the middle
-/// strip the metal surround, and the inner strip the gasket (`gasket` of the width, about 1.5 cm).
+/// strip the metal surround, and the inner strip the gasket (`gasket` of the width, about 1 cm).
 @available(macOS 15.0, *)
 @MainActor
 enum GasketFrame {
@@ -620,7 +639,7 @@ enum GasketFrame {
     static let names = ["canopy_frame_bevel_0", "canopy_frame_bevel_1", "canopy_frame_bevel_2"]
     /// Width fractions from the hull opening to the glass edge.
     static let outerLine: Float = 0.04
-    static let gasket: Float = 0.16
+    static let gasket: Float = 0.10
 
     static func role(_ name: String) -> Role? {
         switch name {
@@ -983,6 +1002,49 @@ enum CockpitInterior {
         var m = UnlitMaterial(color: NSColor(srgbRed: CGFloat(min(1, c.x)), green: CGFloat(min(1, c.y)), blue: CGFloat(min(1, c.z)), alpha: 1))
         m.faceCulling = .none
         return m
+    }
+
+    /// Round 3 showed no screens: from the low end-pose camera (looking up about 55-68 degrees) the line of sight
+    /// through the glass passes above the file's screen plane into the capsule top. This console hangs where those
+    /// rays go, square to them: centre (0, 13.3, 0.25) in the rocket's frame, tilted 62 degrees, 0.68 x 0.32 m.
+    /// Measured on the model file: it stays inside the capsule skin (corners at most 0.84 of the local radius) and
+    /// projects inside the glass outline for camera elevations 55-68 degrees.
+    static let consoleCentre: SIMD3<Float> = [0, 13.3, 0.25]
+    static let consoleTilt: Float = 62
+    static let consoleSize: SIMD2<Float> = [0.68, 0.32]
+    /// Overhead console panels in its own plane (metres from its centre).
+    static let consolePanels: [(x: Float, y: Float, w: Float, h: Float, rgb: SIMD3<Float>)] = {
+        let cool: SIMD3<Float> = [0.55, 0.68, 0.86], dim: SIMD3<Float> = [0.26, 0.34, 0.47], amber: SIMD3<Float> = [0.92, 0.65, 0.34]
+        return [
+            (-0.24, 0.05, 0.13, 0.10, cool), (-0.09, 0.05, 0.11, 0.10, amber),
+            (-0.24, -0.07, 0.13, 0.08, dim), (-0.09, -0.07, 0.11, 0.08, cool),
+            (0.09, 0.05, 0.12, 0.10, cool), (0.23, 0.05, 0.12, 0.10, dim),
+            (0.09, -0.07, 0.12, 0.08, amber), (0.23, -0.07, 0.12, 0.08, cool),
+            (0.0, 0.135, 0.5, 0.02, dim),
+        ]
+    }()
+    static let consoleBrightness: Float = 1.25
+
+    static func addOverheadConsole(to root: Entity) {
+        guard root.findEntity(named: "cockpit-overhead-console") == nil else { return }
+        let console = ModelEntity(mesh: .generatePlane(width: consoleSize.x, height: consoleSize.y),
+                                  materials: [unlit([0.03, 0.04, 0.055])])
+        console.name = "cockpit-overhead-console"
+        console.position = consoleCentre
+        // The plane faces +z; tilt it about x so it faces down and forward, toward the camera below the rocket.
+        console.orientation = simd_quatf(angle: consoleTilt * .pi / 180, axis: [1, 0, 0])
+        for (i, p) in consolePanels.enumerated() {
+            let halo = ModelEntity(mesh: .generatePlane(width: p.w * 1.3, height: p.h * 1.5),
+                                   materials: [unlit(p.rgb * 0.3 * consoleBrightness)])
+            halo.position = [p.x, p.y, 0.003]
+            halo.name = "cockpit-console-halo-\(i)"
+            console.addChild(halo)
+            let screen = ModelEntity(mesh: .generatePlane(width: p.w, height: p.h), materials: [unlit(p.rgb * consoleBrightness)])
+            screen.position = [p.x, p.y, 0.006]
+            screen.name = "cockpit-console-screen-\(i)"
+            console.addChild(screen)
+        }
+        root.addChild(console)
     }
 
     static func dress(_ e: Entity, name: String) {

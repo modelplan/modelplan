@@ -163,9 +163,10 @@ final class OfficialEntranceFramesTests: XCTestCase {
             // Gasket width: how far its outer edge lies from the glass edge (the file's strip was up to 3.5 cm).
             let width = gasket.map { g in glass.map { simd_distance($0, g) }.min() ?? 0 }.max() ?? 0
             print("OFFICIAL-GASKET \(theme.rawValue) gasket width \(String(format: "%.1f", width * 100)) cm")
-            XCTAssertLessThan(width, 0.026, "\(theme) gasket is still wide")
+            XCTAssertLessThan(width, 0.02, "\(theme) gasket is still wide")
             // The cockpit behind the glass: a lit console drawn in code.
             XCTAssertNotNil(scene.entity(named: "cockpit-screen-0"), "\(theme) no cockpit screens behind the glass")
+            XCTAssertNotNil(scene.entity(named: "cockpit-console-screen-0"), "\(theme) no overhead console where the end-pose camera looks")
         }
     }
 
