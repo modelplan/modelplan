@@ -437,7 +437,7 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 	}
 	names := []string{"native.json", "codexbar.json"}
 	if history || identity {
-		names = append(names, "cycles.json", "pace.json", "speed.json", "perf.json", "daily-long.json")
+		names = append(names, "cycles.json", "pace.json", "speed.json", "perf.json", "daily-long.json", "imported.json")
 	}
 	for _, name := range names {
 		if scopeClass == consent.Bridge && name == "native.json" || scopeClass == consent.Credential && (name == "native.json" || name == "codexbar.json") {
@@ -476,7 +476,7 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 	if name == "cycles.json" || name == "pace.json" {
 		keys = []string{"cycles"}
 	}
-	if name == "speed.json" || name == "daily-long.json" {
+	if name == "speed.json" || name == "daily-long.json" || name == "imported.json" {
 		keys = []string{"rows"}
 	}
 	if name == "perf.json" {

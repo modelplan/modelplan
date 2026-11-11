@@ -231,7 +231,7 @@ extension ProcessEngineClient {
                        !meetsMinimumServerVersion(result.data.serverVersion, minimum: minimum) {
                         protocolMismatch(); return
                     }
-                    capabilities = Set(result.data.capabilities); handshaken = true
+                    capabilities = Set(result.data.capabilities); serverVersion = result.data.serverVersion; handshaken = true
                     finishRequest(key)
                     if !adopt(EngineConsentFloor(storeEpoch: envelope.storeEpoch, generation: envelope.consentGeneration)) {
                         epochUncertain = true; invalidate(.epochChanged, next: nil)
@@ -333,6 +333,7 @@ extension ProcessEngineClient {
         case "cockpit/query": feature = .cockpit
         case "publication/get": feature = .publication
         case "plugin/install": feature = .pluginInstall
+        case "history/import_start", "history/import_status", "history/import_cancel", "history/import_remove": feature = .historyImport
         case "refresh/request": feature = .rows
         default: feature = .diagnostics
         }
@@ -378,6 +379,8 @@ extension ProcessEngineClient {
                 guard decoded.data.tool == entry.pluginTool else { throw EngineClientError.protocolViolation }
                 pending[key]?.receiptKnown = true
                 result = .pluginInstall(EngineReply(envelope: decoded, delivery: context))
+            case "history/import_start", "history/import_status", "history/import_cancel", "history/import_remove":
+                result = .historyImport(EngineReply(envelope: try decodeEnvelope(envelope, as: WireHistoryImportStatus.self).value, delivery: context))
             case "diagnostics/get": result = .diagnostics(EngineReply(envelope: try decodeEnvelope(envelope, as: WireDiagnostics.self).value, delivery: context))
             default: throw EngineClientError.protocolViolation
             }

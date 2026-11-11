@@ -1,0 +1,1 @@
+Settings now lists each tool once, like the first-run list (mark, what is read, why a tool is not read), with the reading paths and saved-permission buttons behind a disclosure, and the "Request sent to the app" line clears itself.

@@ -453,9 +453,9 @@ private actor P1SyntheticEngine: EngineClient {
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
         let fresh = await store.snapshot().preferences
-        XCTAssertTrue(fresh.showDock); XCTAssertTrue(fresh.autoHide, "D56: a fresh install starts collapsed")
+        XCTAssertTrue(fresh.showDock); XCTAssertFalse(fresh.autoHide, "D114: a fresh install starts expanded")
         XCTAssertEqual(fresh.dockEdge, .right); XCTAssertNil(fresh.dockDisplayID)
-        // The rest of this journey starts from a saved "off", which D56 keeps as it is.
+        // The rest of this journey starts from a saved "off", which D114 keeps as it is.
         _ = try await store.update { p in for _ in 0..<16 { p.onboarding.next() }; p.autoHide = false }
         let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
         let entry = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
