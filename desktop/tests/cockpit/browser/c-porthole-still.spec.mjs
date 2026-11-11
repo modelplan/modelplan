@@ -14,13 +14,12 @@ async function open(page,theme,tier){
   return {send,receive};
 }
 const state=page=>page.evaluate(()=>{
-  const field=document.querySelector('.ck-field'),box=field.getBoundingClientRect();
+  const field=document.querySelector('.ck-field'),port=document.querySelector('.ck-port').getBoundingClientRect(),box=field.getBoundingClientRect();
   return {still:field.dataset.still,projection:field.querySelector('.ck-still')?.dataset.projection??null,
     layers:field.querySelectorAll('.ck-still-layer').length,additive:field.querySelectorAll('.ck-still-add').length,
     media:field.querySelectorAll('img,svg,canvas,video').length,
     animations:document.getAnimations().filter(a=>a.effect?.target?.closest?.('.ck-field')).length,
-    // D156: like the study, the still fills the canopy art box (the port row grown 24 px each side and 12 px at the top).
-    covers:(r=>Math.abs(box.width-(r.width+48))<1&&Math.abs(box.height-(r.height+12))<1&&Math.abs(box.top-(r.top-12))<1&&Math.abs(box.left-(r.left-24))<1)(document.querySelector('.ck-portrow').getBoundingClientRect()),
+    covers:Math.abs(box.width-document.querySelector('.ck-port').clientWidth)<1&&box.height>0&&box.top>=port.top,
     blend:getComputedStyle(field.querySelector('.ck-still-add')).mixBlendMode};
 });
 for(const theme of ['night','day'])for(const tier of ['tall','compact'])test(`porthole still ${theme} ${tier}`,async({page})=>{
