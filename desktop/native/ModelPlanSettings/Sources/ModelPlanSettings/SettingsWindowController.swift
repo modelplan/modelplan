@@ -127,6 +127,8 @@ enum SettingsWords {
     private lazy var connectionsView = SettingsConnectionsView(editor: editor)
     private let scopeConsentEntry: ScopeConsentEntry?
     private var historyImportView: SettingsHistoryImportView?
+    /// v1.1 "Cockpit plugins" section on the Cockpit pane, attached by the app once its plugin store is open.
+    public private(set) var cockpitPluginsView: SettingsCockpitPluginsView?
     private let heading = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
     private let empty = NSTextField(wrappingLabelWithString: "")
@@ -192,6 +194,15 @@ enum SettingsWords {
         refresh()
     }
     public func refreshEnvironment() { editor.update(environment: environmentProvider()) }
+    /// v1.1 (D121/D124): shows the "Cockpit plugins" section. It sits after the catalogue rows, so row insertion
+    /// indices are unchanged.
+    public func attachCockpitPlugins(_ model: CockpitPluginSettingsModel) {
+        guard cockpitPluginsView == nil else { return }
+        let view = SettingsCockpitPluginsView(model: model, language: language)
+        cockpitPluginsView = view; stack.addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        refresh()
+    }
     public func windowWillClose(_ notification: Notification) {
         for row in rows.values { row.diagram?.stop() }
         if scopeConsentEntry == nil { connectionsView.suspend() }
@@ -308,6 +319,7 @@ enum SettingsWords {
                 : !["import", "history", "usage", "导入", "历史", "使用"].contains(where: { query.localizedCaseInsensitiveContains($0) })
             if !view.isHidden, scopeConsentEntry?.historyImport?.status == nil { Task { await scopeConsentEntry?.historyImport?.refreshIfNeeded() } }
         }
+        cockpitPluginsView?.apply(language: language, paneID: selectedPaneID, query: query)
         if scopeConsentEntry == nil {
             if connectionContent.isHidden && !connectionsWereHidden { connectionsView.suspend() }
             connectionsView.apply(language: language)

@@ -111,6 +111,24 @@ Page responses include `ready`, `rendered`, `cleared`, `nextDeadline` and `actio
 maps these to typed UI intents, never to a command/URL interpreter. No credential,
 consent mutation or plugin-install message exists in this protocol.
 
+## Plugin columns (v1.1 framework, D121/D124/D126/D127)
+
+Plugins are bundled modules in `src/plugin-registry.ts` (id, bilingual title, trusted 16 px icon, settings specs,
+`render`, `start`/`stop`, `update`). `src/plugin-layout.ts` is the pure page rule: columns = max(3, subscriptions +
+plugins), at most six per page, subscriptions first; unpinned plugins only fill free slots of the last page; up to two
+pinned plugins stay on page 1. `src/plugin-host.ts` keeps one panel per plugin across repaints, turns empty slots into
+plugin columns and runs the empty-slot "+" menu (detected unconnected tools, then plugins).
+
+Lifecycle: a plugin runs only while the page is visible and not occluded (key or not) and its column is on the shown
+page. The page has no timers; the host samples. Messages, all with the common header:
+
+- host → page `{"type":"plugins","plugins":{"version":1,"entries":[{"id","enabled","pinned"}],"settings":{id:{key:int}}}}`:
+  the saved choices (Settings, `CockpitPluginPreferences.swift`). Sending it also tells the page the host accepts the
+  two actions below; without it the page posts neither and keeps page edits to itself.
+- host → page `{"type":"pluginData","id":…,"data":…}`: a reading for a running plugin; refused otherwise.
+- page → host action `pluginsEdit` with `plugins` (same shape): an edit made with a key's × or the "+" menu.
+- page → host action `pluginsRunning` with `ids`: the plugins now running, sent on every change; sample exactly these.
+
 ## Animation budget and evidence
 
 The lamp is static at idle. A change in displayed readings, reasons, summary or

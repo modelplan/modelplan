@@ -8,7 +8,9 @@ import type {Appearance} from './bridge.js';
 import {cockpitMembers} from './members.js';
 import {cautionItems,cautionLevel} from './caution.js';
 import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf} from './prototype-data-adapter.js';
-import {engineModel} from '../study/rocket-r1/engine-model.js';
+import {engineModel,statusBySub,widthClass} from '../study/rocket-r1/engine-model.js';
+import {pluginHostOf} from './plugin-host.js';
+import {pageOfSubscription,type LayoutPage} from './plugin-layout.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -46,11 +48,27 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(locale==='en'?'Alert active':'告警激活'):(locale==='en'?'Alert inactive':'告警未激活'));}
  return {now,accounts,alerts,caution:{level,key:''}};
  }
+ // v1.1 plugin columns (D124): with a plugin host, pages and widths follow the plugin layout; the study model still
+ // draws each page's subscriptions, and the host turns the page's first empty slots into its plugin columns.
+ const plugins=pluginHostOf(root);
+ const pageCount=()=>plugins?plugins.layout(members.length).pages.length:Math.ceil(members.length/6);
+ const pageOf=(index:number)=>plugins?pageOfSubscription(plugins.layout(members.length),index):Math.floor(index/6);
+ const pagedModel=(source:ReturnType<typeof sourceAt>,ui:{page:number}):{model:any;plugins:LayoutPage|null}=>{
+  if(!plugins)return {model:engineModel(source,ui),plugins:null};
+  const layout=plugins.layout(members.length),p=Math.max(0,Math.min(ui.page,layout.pages.length-1)),shown=layout.pages[p];
+  const model=engineModel({...source,accounts:source.accounts.slice(shown.from,shown.to)},{...ui,page:0,few:'c3'});
+  const status=statusBySub(source.alerts),grey=new Set(['stale','error','error-lastgood']),rank=(l:string|null)=>l==='red'?2:l==='amber'?1:0;
+  model.leds=layout.pages.map((x,i)=>{const list=source.accounts.slice(x.from,x.to),levels=list.map(a=>grey.has(a.state)?null:status.get(a.id)??null);
+   return {page:i,current:i===p,accounts:list.map((a,j)=>({name:a.name,status:levels[j]})),level:levels.reduce<string|null>((l,v)=>rank(v)>rank(l)?v:l,null)};});
+  Object.assign(model,{pages:layout.pages.length,page:p,slots:shown.slots,cls:widthClass(shown.slots)});
+  return {model,plugins:shown};
+ };
  let renderedNow=initialNow;
  const paint=(time?:number)=>{
   if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now};
-  const model=engineModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));// Unknown vendors have no mark: drop the study's neutral placeholder before parsing so nothing is requested.
+  const {model,plugins:pluginPage}=pagedModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));// Unknown vendors have no mark: drop the study's neutral placeholder before parsing so nothing is requested.
   host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
+  if(plugins&&pluginPage)plugins.decorate(host,pluginPage,locale);
   // Keep the selected source-window identity in memory, never in rendered HTML.
   for(const [index,column] of [...host.querySelectorAll<HTMLElement>('.eng-cols > .ec[data-col]')].entries()){const rendered=model.cols[index];for(const cell of column.querySelectorAll<HTMLElement>('.qcell[data-row]')){const identity=rendered?.cells?.[cell.dataset.row??'']?.focusIdentity;if(typeof identity==='string')focusIdentities.set(cell,identity);}}
   // Inline style attributes from the study HTML are blocked by the host CSP.
@@ -77,7 +95,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const all=host.querySelector<HTMLButtonElement>('.ek[data-all]');if(all){all.dataset.scope='';const shortcut=locale==='en'?'Shortcut key 0':'快捷键 0';all.setAttribute('aria-label',`${locale==='en'?'All':'全部'} · ${shortcut}`);all.title=shortcut;}
   root.dataset.scope=scope?'subscription':'all';
  };
- const choosePage=(element:Element)=>{const led=element.closest<HTMLElement>('.eng-led[data-page]');if(!led||!host.contains(led))return false;const requested=Number(led.dataset.page);if(Number.isInteger(requested)&&requested>=0&&requested<Math.ceil(members.length/6)){page=requested;paint();}return true;};
+ const choosePage=(element:Element)=>{const led=element.closest<HTMLElement>('.eng-led[data-page]');if(!led||!host.contains(led))return false;const requested=Number(led.dataset.page);if(Number.isInteger(requested)&&requested>=0&&requested<pageCount()){page=requested;paint();}return true;};
  host.onkeydown=e=>{if(e.isTrusted&&(e.key==='Enter'||e.key===' ')&&choosePage(e.target as Element))e.preventDefault();};
  // Owner D76: the Reserve label's hint, in the MFD's floating LCD tip style (study mfd.css .mfd-tip), on hover or focus.
  // Text only and never takes pointer events; the label also carries it as its accessible name.
@@ -91,11 +109,12 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  host.addEventListener('pointerover',e=>showHint(e.target));host.addEventListener('pointerleave',hideHint);
  host.addEventListener('focusin',e=>showHint(e.target));host.addEventListener('focusout',hideHint);
  host.onclick=e=>{if(!e.isTrusted)return;if(choosePage(e.target as Element))return;const b=(e.target as Element).closest<HTMLButtonElement>('button');if(!b||!host.contains(b))return;
-  if(b.hasAttribute('data-add-subscription')){onAdd();return;}
+  if(b.hasAttribute('data-add-subscription')){if(plugins){plugins.openMenu(b,{data,locale,mark:vendorKey=>vendorKey&&Object.hasOwn(palette,vendorKey)?'assets/brands/'+palette[vendorKey].logo:null,connect:onAdd});return;}onAdd();return;}
+  if(b.hasAttribute('data-plugin-remove')){plugins?.remove(b.dataset.pluginRemove??'');return;}
   if(b.hasAttribute('data-all')){if(onSelect('all')){scope='';paint();}return;}
   if(b.hasAttribute('data-sub')){const key=b.dataset.sub??'';if(seen.has(key)&&onSelect(key)){scope=key;paint();}return;}
-  if(b.hasAttribute('data-bpage')){const step=b.dataset.bpage==='1'?1:b.dataset.bpage==='-1'?-1:0;page=Math.max(0,Math.min(Math.ceil(members.length/6)-1,page+step));paint();}
+  if(b.hasAttribute('data-bpage')){const step=b.dataset.bpage==='1'?1:b.dataset.bpage==='-1'?-1:0;page=Math.max(0,Math.min(pageCount()-1,page+step));paint();}
  };
- const applyScope=(next:string)=>{scope=next!=='all'&&seen.has(next)?next:'';if(scope){const index=members.findIndex(m=>m.key===scope);page=Math.floor(index/6);}paint();};
- paint();return {table:host,applyScope,refresh:paint,setLocale(value,now){locale=value;paint(now);},focusIdentity(element){return focusIdentities.get(element)??null;}};
+ const applyScope=(next:string)=>{scope=next!=='all'&&seen.has(next)?next:'';if(scope){const index=members.findIndex(m=>m.key===scope);page=pageOf(index);}paint();};
+ plugins?.bindEngine(()=>paint());paint();return {table:host,applyScope,refresh:paint,setLocale(value,now){locale=value;paint(now);},focusIdentity(element){return focusIdentities.get(element)??null;}};
 }
