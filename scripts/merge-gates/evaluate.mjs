@@ -138,6 +138,12 @@ async function fromEvent() {
   if (name === "issue_comment") return ev.issue?.pull_request ? evaluatePrAndPost(ev.issue.number) : null;
   if (name === "workflow_dispatch") {
     if (ev.inputs?.group_sha) return evaluateGroupAndPost(ev.inputs.group_sha);
+    // Sweep: re-evaluate every open PR. Run it after CODEX_REVIEW_OFF changes (the variable change emits no event),
+    // so a status that passed on the Sonnet fallback is recomputed under the new switch.
+    if (/^(1|true)$/i.test(ev.inputs?.all_open || "")) {
+      for (const p of await gh.all("/pulls?state=open&base=main")) await evaluatePrAndPost(p.number);
+      return;
+    }
     if (ev.inputs?.pr) return evaluatePrAndPost(Number(ev.inputs.pr));
     return null;
   }

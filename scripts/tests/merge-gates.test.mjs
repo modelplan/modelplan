@@ -94,7 +94,12 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs macrev2/macrevb, macrev
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrevc"))] }).state, R.SUCCESS, "tier 1 macrevc");
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
   assert.equal(evalPr({ comments: [comment(v("merge", H, "sonnet"))] }).state, R.PENDING, "tier 1 sonnet, switch closed");
-  assert.equal(evalPr({ comments: [comment(v("merge", H, "sonnet"))], codexReviewOff: true }).state, R.SUCCESS, "tier 1 sonnet, switch open");
+  const open = evalPr({ comments: [comment(v("merge", H, "sonnet"))], codexReviewOff: true });
+  assert.equal(open.state, R.SUCCESS, "tier 1 sonnet, switch open");
+  assert.match(open.why, /via \(sonnet\) under codex-review-off/, "status records the rule used");
+  assert.doesNotMatch(evalPr({ comments: [comment(v("merge", H, "macrevc"))], codexReviewOff: true }).why, /sonnet/);
+  // same comments, switch flipped back: recomputed to pending (what the all_open sweep does)
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "sonnet"))], codexReviewOff: false }).state, R.PENDING, "recomputed after the switch closes");
   assert.equal(evalPr({ files: [file("docs/a.md")] }).state, R.SUCCESS, "tier 0 needs no verdict");
   assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(v("block"))] }).state, R.FAILURE);
   assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment("REVIEW-TIER: 1")] }).state, R.PENDING);

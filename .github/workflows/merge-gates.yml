@@ -42,6 +42,10 @@ on:
         description: Re-evaluate one PR head
         type: string
         default: ""
+      all_open:
+        description: Re-evaluate every open PR (run after changing CODEX_REVIEW_OFF)
+        type: string
+        default: ""
       group_sha:
         description: Re-evaluate one merge-group commit
         type: string

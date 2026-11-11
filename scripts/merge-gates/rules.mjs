@@ -534,6 +534,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   // while the Codex-off switch is on (codexReviewOff; default closed). Without it GLM alone never lands a PR.
   const sonnetOk = codexReviewOff && lanes.get("(sonnet)") === "merge";
   const merged = (names) => names.some((n) => lanes.get(n) === "merge");
+  // Record the rule used, so a status that passed on the Sonnet fallback says so (and a sweep can recompute it).
+  if (sonnetOk && !merged(tier === 2 ? SOL_LANES : [...SOL_LANES, ...TERRA_LANES])) fb.used.push("(sonnet) under codex-review-off");
   if (tier === 2 && !merged(SOL_LANES) && !sonnetOk) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge${codexReviewOff ? " or (sonnet)" : ""}`);
   // A data-sync bot PR keeps its own admission (dataSyncProblem already demands a trusted exact-head merge verdict).
   if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES]) && !sonnetOk) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge${codexReviewOff ? " or (sonnet)" : ""}`);
