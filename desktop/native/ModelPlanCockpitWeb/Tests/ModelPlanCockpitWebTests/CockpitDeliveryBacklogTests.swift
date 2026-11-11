@@ -71,7 +71,13 @@ import ModelPlanWire
     XCTAssertFalse(raw.contains("NaN") || raw.contains("Infinity") || raw.contains("nonfinite"))
     let paths = state.lastNonFinitePaths
     XCTAssertEqual(paths.count, 4, "two percents and two balances: \(paths)")
-    XCTAssertTrue(paths.allSatisfy { $0.hasPrefix("data.projection.rows[") })
+    // The fixture carries one set in the projection rows and one in the subscriptions.
+    XCTAssertEqual(Set(paths), [
+      "data.projection.rows[0].accounts[0].credits.balance",
+      "data.projection.rows[0].accounts[0].windows[0].remainingPercent",
+      "data.subscriptions[0].accounts[0].account.credits.balance",
+      "data.subscriptions[0].accounts[0].account.windows[0].remainingPercent",
+    ], "\(paths)")
     XCTAssertTrue(paths.contains { $0.hasSuffix(".credits.balance") })
     XCTAssertTrue(paths.contains { $0.hasSuffix(".remainingPercent") })
     let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
