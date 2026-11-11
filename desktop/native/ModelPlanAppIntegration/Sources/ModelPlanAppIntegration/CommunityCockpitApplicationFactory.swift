@@ -91,6 +91,7 @@ import ModelPlanDock
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
+        owner.openPoint = { [weak application] in application?.cockpitOpenPoint }
         if application.cockpitEntryEnabled {
             owner.prepare()
             // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
@@ -139,6 +140,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
+    /// Build 14c (G3-79): where the latest open was clicked; nil opens on the menu bar icon's display.
+    var openPoint: (() -> CGPoint?)?
     var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
@@ -207,7 +210,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
     func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
-            shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
+            shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() })
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
         currentPage = page
         page.contextMenuProvider = { [weak self, weak page] in self?.makeContextMenu(page: page) }
@@ -306,6 +309,11 @@ struct CockpitUnavailableNotice {
         let language:String,reduceMotion:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
     }
     private var fieldPanel:CockpitFieldPanel?
+    /// G3-80 seams: where the pointer is, the cockpit's frame and the displays the field is placed on.
+    var pointerLocation: @MainActor () -> CGPoint = { NSEvent.mouseLocation }
+    var cockpitFrameForField: (@MainActor () -> CGRect?)?
+    var fieldScreens: (@MainActor () -> [CockpitScreen])?
+    var fieldWindowFrame: CGRect? { fieldPanel?.isOpen == true ? fieldPanel?.windowFrame : nil }
     var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
     /// `focusName`: the published display name of a rocket clicked in the porthole still (D63); an unknown name
     /// focuses nothing. Only the matching public model ID crosses.
@@ -334,7 +342,11 @@ struct CockpitUnavailableNotice {
     private func openField(focusName:String?=nil) {
         guard let bundle=owner.verifiedBundle,let payload=fieldPayload(focusName:focusName) else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
-        fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
+        if let fieldScreens { panel.screens=fieldScreens }
+        // Build 14c (G3-80): on the cockpit's display. The intent does not say whether a click or a key opened it, so
+        // the pointer counts only while it is over the cockpit (macrev2-845-2).
+        let cockpit=cockpitFrameForField?() ?? owner.coordinator?.cockpitFrame
+        fieldPanel=panel;panel.open(payload:payload,cockpit:cockpit,pointer:pointerLocation(),fallback:owner.anchor?())
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
     func applySettings(_ value: SettingsApplication) {

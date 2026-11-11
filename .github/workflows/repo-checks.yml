@@ -86,6 +86,9 @@ jobs:
       - name: "source-policy: merge-gates tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/merge-gates.test.mjs
+      - name: "source-policy: no sound or haptics (MOT-2.3-12)"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/no-sound-haptics.test.mjs
       - name: "source-policy: reader tests"
         if: ${{ !cancelled() }}
         run: npm ci --ignore-scripts --no-audit --no-fund --prefix reader && npm test --prefix reader

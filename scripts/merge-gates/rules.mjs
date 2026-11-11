@@ -163,6 +163,9 @@ export function carryChain(edges, head, verified = () => false) {
 }
 
 // ---- Verdicts ----
+// GPT reviewer lanes (owner D149): Sol = tier 2 (and tier 1), Terra = tier 1 only.
+export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)"]);
+export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)"]);
 // "VERDICT: merge|block @ <40 hex> (<lane>)" on its own line, case-insensitive, in trusted comments and
 // reviews. Counts for the head or a carried head; per lane the latest wins.
 export function verdicts(items, head, carried) {
@@ -525,9 +528,12 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 
   const missing = [];
   if (evidence.state === PENDING) missing.push(evidence.why);
-  // Owner 2026-11-07: while Codex quota is out, a Sonnet reviewer stands in for macrev2 under its own label.
-  if (tier === 2 && lanes.get("(macrev2)") !== "merge" && lanes.get("(sonnet)") !== "merge") missing.push("VERDICT (macrev2) or (sonnet) merge");
-  if (tier === 1 && ![...lanes.values()].includes("merge")) missing.push("a VERDICT merge");
+  // Owner D149 (2026-11-11): GPT review is back. Tier 2 needs a Sol verdict (macrev2 or macrevb); tier 1 needs a
+  // Terra verdict (macrevc, legacy name macrev) or a Sol one; GLM-only, unnamed or (sonnet) verdicts do not land.
+  // A Sonnet fallback needs its own owner-approved change; the public gate stays strict.
+  const merged = (names) => names.some((n) => lanes.get(n) === "merge");
+  if (tier === 2 && !merged(SOL_LANES)) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge`);
+  if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES])) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge`);
   if (design.touching) {
     const d = designVerdict(items, head, carried, fb);
     if (d === "fail") return res(FAILURE, `DESIGN fail (${design.surfaces.join(",")})`, extra);

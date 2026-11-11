@@ -90,6 +90,24 @@ import XCTest
             XCTAssertEqual(actions.count,count);view.dispose()
         }
     }
+    /// G3-62: the ignition key's tip was a 370 pt white box for "Tap to open the Cockpit.". It is now as wide as its
+    /// text needs (the study's `width:max-content;max-width:370px`) on the study's dark tooltip panel, never white.
+    func testIgnitionTipIsSizedToItsTextOnTheDarkTooltipPanel() throws {
+        var input=M4HelpFixtures.hint();input.firstUse=nil
+        let explanation=HelpCatalog(.english).explanation(.ignition)
+        input.contextual = .init(id:"ignition",anchorID:"travel",explanation:explanation)
+        let recipe=NeutralHelpUIRecipeProvider()
+        let card=try XCTUnwrap(recipe.presentation(for:input).card)
+        let natural=max(recipe.measure(explanation.title,width:348,role:.contextTitle).width,
+                        recipe.measure(explanation.body,width:348,role:.contextBody).width)
+        XCTAssertLessThanOrEqual(card.frame.width,natural+24,"the card hugs its text")
+        XCTAssertLessThan(card.frame.width,200,"a one-line tip is not the 370 pt ceiling")
+        XCTAssertGreaterThanOrEqual(card.frame.width,natural+22)
+        var long=input;long.contextual = .init(id:"long",anchorID:"travel",explanation:.init(title:"T",body:String(repeating:"word ",count:80)))
+        XCTAssertEqual(try XCTUnwrap(recipe.presentation(for:long).card).frame.width,370,"long text still wraps at 370")
+        let panel=try XCTUnwrap(recipe.panelColor.usingColorSpace(.sRGB))
+        XCTAssertLessThan(panel.redComponent+panel.greenComponent+panel.blueComponent,0.5,"the tip panel is dark, not white")
+    }
     func testContextUsesCanonicalTwoLineContentAndUnboundLayerDoesNotTakeInput() throws {
         var input=M4HelpFixtures.hint();input.firstUse=nil
         let explanation=HelpCatalog(.english).explanation(.todaySpeed,context:.init(value:"58 t/s"))
