@@ -502,16 +502,17 @@ struct HullFinish {
     /// Brushed metal: how far the highlights stretch across the grain (0 = round highlights). The grain runs around
     /// the hull, like a turned part, so the studio strips stretch along the axis.
     static let anisotropy: Float = 0.3
-    /// Multiplies the panel maps (`HullPanels.base` 0.74 on a plain panel). Round 5: night is dark gunmetal (a
-    /// panel ~0.25 sRGB; r4 was ~0.35 and read mid-grey), day satin aluminium (~0.72).
+    /// Multiplies the panel maps (`HullPanels.base` 0.74 on a plain panel). Night is dark gunmetal: a panel ~0.31
+    /// sRGB (r4 ~0.35 read mid-grey; r5 ~0.25 read black, so the dark grooves had nothing to cut into); day satin
+    /// aluminium (~0.72).
     var tint: NSColor {
-        theme == .night ? NSColor(srgbRed: 0.33, green: 0.335, blue: 0.35, alpha: 1)
+        theme == .night ? NSColor(srgbRed: 0.42, green: 0.425, blue: 0.44, alpha: 1)
             : NSColor(srgbRed: 0.98, green: 0.98, blue: 0.97, alpha: 1)
     }
     /// The finish as a flat colour, the tone of a plain panel (bells, the window surround, and the hull if its
     /// material is not a PBR).
     var plainColor: NSColor {
-        theme == .night ? NSColor(srgbRed: 0.245, green: 0.248, blue: 0.26, alpha: 1)
+        theme == .night ? NSColor(srgbRed: 0.31, green: 0.315, blue: 0.325, alpha: 1)
             : NSColor(srgbRed: 0.725, green: 0.725, blue: 0.718, alpha: 1)
     }
     /// Seam grooves (joint lines, the outer line of the window surround): a dark-grey groove, never ink black, so it
@@ -531,10 +532,40 @@ struct HullFinish {
         theme == .night ? NSColor(srgbRed: 0.085, green: 0.087, blue: 0.095, alpha: 1)
             : NSColor(srgbRed: 0.2, green: 0.2, blue: 0.205, alpha: 1)
     }
-    /// The bright inner rim between the frame and the glass (round 5).
+    /// The bright inner rim between the frame and the glass (round 5). Round 6: polished metal plus a faint glow
+    /// of its own (`rimGlow`), so it reads as the one bright line round the glass even where it reflects dark room.
     var rimColor: NSColor {
-        theme == .night ? NSColor(srgbRed: 0.8, green: 0.81, blue: 0.84, alpha: 1)
-            : NSColor(srgbRed: 0.95, green: 0.95, blue: 0.95, alpha: 1)
+        theme == .night ? NSColor(srgbRed: 0.95, green: 0.955, blue: 0.97, alpha: 1)
+            : NSColor(srgbRed: 0.97, green: 0.97, blue: 0.97, alpha: 1)
+    }
+    var rimGlow: NSColor {
+        theme == .night ? NSColor(srgbRed: 0.42, green: 0.44, blue: 0.48, alpha: 1)
+            : NSColor(srgbRed: 0.3, green: 0.3, blue: 0.31, alpha: 1)
+    }
+
+    /// Round 6 (r5: the frame read as a light band along the bottom of the window, where its faces tilt up at the
+    /// lit studio ceiling): the frame is a dark non-metal (it reflects only a few per cent, plus one crisp clearcoat
+    /// line), and the surround outside it is the hull colour, darker and rougher, so it does not mirror the ceiling.
+    var frameMaterial: PhysicallyBasedMaterial {
+        var m = PhysicallyBasedMaterial()
+        m.baseColor = .init(tint: frameColor)
+        m.metallic = 0.0
+        m.roughness = 0.3
+        m.clearcoat = 0.7
+        m.clearcoatRoughness = 0.04
+        m.faceCulling = .none
+        return m
+    }
+    var surroundMaterial: PhysicallyBasedMaterial {
+        var m = metal(plainColor.blended(withFraction: 0.35, of: .black) ?? plainColor, roughness: 0.55)
+        m.clearcoat = 0
+        return m
+    }
+    var rimMaterial: PhysicallyBasedMaterial {
+        var m = metal(rimColor, roughness: 0.05)
+        m.emissiveColor = .init(color: rimGlow)
+        m.emissiveIntensity = 1
+        return m
     }
 
     func metal(_ color: NSColor, roughness: Float) -> PhysicallyBasedMaterial {
@@ -605,9 +636,9 @@ struct HullFinish {
                 if let frame {
                     switch frame {
                     case .outerLine: return metal(grooveColor, roughness: 0.5)
-                    case .surround: return metal(plainColor, roughness: roughness)
-                    case .frame: return metal(frameColor, roughness: 0.2)
-                    case .rim: return metal(rimColor, roughness: 0.08)
+                    case .surround: return surroundMaterial
+                    case .frame: return frameMaterial
+                    case .rim: return rimMaterial
                     }
                 }
                 if Self.isBellMetal(name) { return metal(plainColor, roughness: roughness + 0.02) }
@@ -682,9 +713,10 @@ enum JointLine {
 /// fractions of the width from the hull opening to the glass:
 /// - `canopy_frame_bevel_0`, 0 to `outerLine`: the groove;
 /// - `canopy_frame_bevel_1`, to `frameStart`: hull-coloured metal, so the surround reads as hull;
-/// - `canopy_frame_bevel_2`, to 1 - `rim` (its glass-side edge moves in too): the thin dark metal frame
-///   (about 2-2.5 cm);
-/// - `canopy_inner_rim`, a copy of the inner strip, to the glass edge: the bright polished rim (about 0.7 cm).
+/// - `canopy_frame_bevel_2`, to 1 - `rim` (its glass-side edge moves in too): the dark frame. Round 6: about
+///   4 cm (r5's 2-2.5 cm frame was lost beside the lit surround; the pass-5 frame is about 3 % of the window
+///   width, ~4 cm);
+/// - `canopy_inner_rim`, a copy of the inner strip, to the glass edge: the bright polished rim (about 0.8 cm).
 @available(macOS 15.0, *)
 @MainActor
 enum GasketFrame {
@@ -693,8 +725,8 @@ enum GasketFrame {
     static let rimName = "canopy_inner_rim"
     /// Width fractions from the hull opening to the glass edge.
     static let outerLine: Float = 0.04
-    static let frameStart: Float = 0.72
-    static let rim: Float = 0.07
+    static let frameStart: Float = 0.45
+    static let rim: Float = 0.09
 
     static func role(_ name: String) -> Role? {
         switch name {
@@ -1059,8 +1091,8 @@ enum CockpitInterior {
         name == screenPlane || name == "recessed_cockpit" || name == "cockpit_back_half_lining"
     }
 
-    /// Screen brightness (multiplies every panel colour). The glass shows about 40 % of it.
-    static let brightness: Float = 0.6
+    /// Screen brightness (multiplies every screen colour). The glass shows about 40 % of it.
+    static let brightness: Float = 0.75
     /// Round 5: the file's full cockpit screen read as a bright dashboard behind clear glass; pass 5 shows a dim
     /// cockpit with a few small warm and white screens mostly in shadow. So the code panels are the default; true
     /// shows the file's screen image again (unlit, times `fileScreenBrightness`).
@@ -1081,27 +1113,107 @@ enum CockpitInterior {
         return nil
     }
 
-    /// Panels on the console in its own plane (metres; the plane is 0.92 x 0.76, facing the window along +z):
-    /// centre x, centre y, width, height, colour (sRGB). Round 5, like the pass-5 window still: a dark console with
-    /// two small clusters of white-blue and amber screens left and right of a dark centre monitor, a few indicator
-    /// dots, and faint frame strips that give the room some structure.
-    static let panels: [(x: Float, y: Float, w: Float, h: Float, rgb: SIMD3<Float>)] = {
-        let white: SIMD3<Float> = [0.78, 0.84, 0.95], dim: SIMD3<Float> = [0.2, 0.25, 0.33], amber: SIMD3<Float> = [0.95, 0.66, 0.32]
-        let frame: SIMD3<Float> = [0.07, 0.075, 0.09], monitor: SIMD3<Float> = [0.05, 0.06, 0.08]
+    /// What is drawn on the console, in its own plane (metres; the plane is 0.92 x 0.76, facing the window along
+    /// +z): centre x, centre y, width, height, colour (sRGB), and whether it is a lit screen (soft glow, dim content
+    /// lines) or dark structure (a housing a little lighter than the room, with a faint edge). Round 6 (r5 read as
+    /// flat squares pasted on black): the console is one code-drawn texture with darker structure silhouettes and
+    /// screens that glow into the room, plus two screens nearer the window (`nearScreens`) for depth.
+    typealias Item = (x: Float, y: Float, w: Float, h: Float, rgb: SIMD3<Float>, lit: Bool)
+    static let panels: [Item] = {
+        let white: SIMD3<Float> = [0.78, 0.84, 0.95], dim: SIMD3<Float> = [0.22, 0.28, 0.38], amber: SIMD3<Float> = [0.95, 0.66, 0.32]
+        let housing: SIMD3<Float> = [0.045, 0.05, 0.062], monitor: SIMD3<Float> = [0.03, 0.036, 0.048]
+        let faint: SIMD3<Float> = [0.1, 0.13, 0.18]
         return [
-            (-0.30, 0.0, 0.012, 0.6, frame), (0.30, 0.0, 0.012, 0.6, frame), (0.0, 0.2, 0.62, 0.01, frame),
-            (0.0, -0.02, 0.2, 0.15, monitor),
-            (-0.21, 0.04, 0.075, 0.06, white), (-0.12, 0.04, 0.06, 0.06, amber),
-            (-0.21, -0.04, 0.075, 0.05, dim), (-0.12, -0.04, 0.06, 0.05, white),
-            (0.15, 0.05, 0.08, 0.07, dim), (0.23, 0.05, 0.05, 0.07, white),
-            (0.15, -0.04, 0.08, 0.05, amber), (0.23, -0.04, 0.05, 0.05, dim),
-            (-0.36, -0.2, 0.015, 0.015, white), (-0.33, -0.2, 0.015, 0.015, amber), (0.35, -0.2, 0.015, 0.015, white),
+            // Structure: two posts, a top beam, the two screen housings, the dark centre monitor, a lower desk.
+            (-0.33, 0.0, 0.03, 0.76, housing, false), (0.33, 0.0, 0.03, 0.76, housing, false), (0.0, 0.22, 0.66, 0.035, housing, false),
+            (-0.165, 0.0, 0.19, 0.2, housing, false), (0.19, 0.005, 0.17, 0.19, housing, false),
+            (0.0, -0.02, 0.17, 0.14, monitor, false), (0.0, -0.2, 0.6, 0.06, housing, false),
+            // Screens: white-blue and amber, small, mostly dim.
+            (-0.21, 0.045, 0.075, 0.06, white, true), (-0.12, 0.045, 0.06, 0.06, amber, true),
+            (-0.21, -0.04, 0.075, 0.05, dim, true), (-0.12, -0.04, 0.06, 0.05, white, true),
+            (0.15, 0.05, 0.075, 0.065, dim, true), (0.23, 0.05, 0.05, 0.065, white, true),
+            (0.15, -0.04, 0.075, 0.05, amber, true), (0.23, -0.04, 0.05, 0.05, dim, true),
+            (0.0, -0.02, 0.12, 0.08, faint, true),
+            (-0.36, -0.2, 0.014, 0.014, white, true), (-0.33, -0.2, 0.014, 0.014, amber, true), (0.35, -0.2, 0.014, 0.014, white, true),
         ]
     }()
+
+    /// Two small screens nearer the window than the console (x, y, distance in front of it, width, height,
+    /// colour), so the screens sit at different depths like the pass-5 cockpit.
+    static let nearScreens: [(x: Float, y: Float, z: Float, w: Float, h: Float, rgb: SIMD3<Float>)] = [
+        (-0.36, 0.1, 0.09, 0.07, 0.05, [0.78, 0.84, 0.95]), (0.37, -0.06, 0.06, 0.06, 0.045, [0.95, 0.66, 0.32]),
+    ]
+
+    enum ConsoleError: Error { case context }
+
+    /// Draws `items` on a `width` x `height` metre panel at 1600 px per metre: a near-black room with a soft
+    /// vignette, dark housings with a faint top edge, and screens with a blurred glow of their own colour and dim
+    /// content lines. `margin` metres of room around the items lets a glow fade out before the quad's edge.
+    static func consoleTexture(width mw: Float, height mh: Float, items: [Item]) throws -> CGImage {
+        let scale: Float = 1600
+        let w = Int(mw * scale), h = Int(mh * scale)
+        guard let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { throw ConsoleError.context }
+        func color(_ rgb: SIMD3<Float>, _ k: Float = 1, alpha: CGFloat = 1) -> CGColor {
+            CGColor(srgbRed: CGFloat(min(1, rgb.x * k)), green: CGFloat(min(1, rgb.y * k)), blue: CGFloat(min(1, rgb.z * k)), alpha: alpha)
+        }
+        // Room: darker towards the edges.
+        let room: SIMD3<Float> = [0.018, 0.021, 0.028]
+        c.setFillColor(color(room * 0.6))
+        c.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        if let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: [color(room * 1.5), color(room * 0.6)] as CFArray,
+                                     locations: [0, 1]) {
+            c.drawRadialGradient(gradient, startCenter: CGPoint(x: w / 2, y: h / 2), startRadius: 0,
+                                 endCenter: CGPoint(x: w / 2, y: h / 2), endRadius: CGFloat(max(w, h)) * 0.6, options: [.drawsAfterEndLocation])
+        }
+        func rect(_ i: Item) -> CGRect {
+            CGRect(x: CGFloat((i.x - i.w / 2 + mw / 2) * scale), y: CGFloat((i.y - i.h / 2 + mh / 2) * scale),
+                   width: CGFloat(i.w * scale), height: CGFloat(i.h * scale))
+        }
+        for i in items where !i.lit {
+            let r = rect(i)
+            c.setFillColor(color(i.rgb))
+            c.fill(r)
+            c.setFillColor(color(i.rgb, 1.8))
+            c.fill(CGRect(x: r.minX, y: r.maxY - 2, width: r.width, height: 2))
+        }
+        for i in items where i.lit {
+            let r = rect(i), k = brightness
+            let corner = min(r.width, r.height) * 0.1
+            // Glow: twice, a wide faint one and a tight one, from the screen's own shadow.
+            for (blur, alpha) in [(max(r.width, r.height) * 1.1, CGFloat(0.55)), (max(r.width, r.height) * 0.3, CGFloat(0.8))] {
+                c.saveGState()
+                c.setShadow(offset: .zero, blur: blur, color: color(i.rgb, k, alpha: alpha))
+                c.setFillColor(color(i.rgb, k * 0.8))
+                c.addPath(CGPath(roundedRect: r, cornerWidth: corner, cornerHeight: corner, transform: nil))
+                c.fillPath()
+                c.restoreGState()
+            }
+            // Content: a darker inset with a few lighter lines, low contrast.
+            c.setFillColor(color(i.rgb, k * 0.45))
+            c.fill(r.insetBy(dx: r.width * 0.1, dy: r.height * 0.14))
+            c.setFillColor(color(i.rgb, k * 1.1, alpha: 0.7))
+            for line in 0..<3 {
+                c.fill(CGRect(x: r.minX + r.width * 0.16, y: r.minY + r.height * (0.25 + 0.2 * CGFloat(line)),
+                              width: r.width * (0.6 - 0.12 * CGFloat(line)), height: max(1, r.height * 0.05)))
+            }
+        }
+        guard let image = c.makeImage() else { throw ConsoleError.context }
+        return image
+    }
 
     static func unlit(_ rgb: SIMD3<Float>) -> UnlitMaterial {
         let c = rgb * brightness
         var m = UnlitMaterial(color: NSColor(srgbRed: CGFloat(min(1, c.x)), green: CGFloat(min(1, c.y)), blue: CGFloat(min(1, c.z)), alpha: 1))
+        m.faceCulling = .none
+        return m
+    }
+
+    static func textured(_ image: CGImage) throws -> UnlitMaterial {
+        let resource = try TextureResource.generate(from: image, options: .init(semantic: .color))
+        var m = UnlitMaterial()
+        m.color = .init(tint: .white, texture: .init(resource))
         m.faceCulling = .none
         return m
     }
@@ -1113,22 +1225,29 @@ enum CockpitInterior {
             e.components.set(model)
             return
         }
-        let room: SIMD3<Float> = name == screenPlane ? [0.025, 0.032, 0.045] : [0.018, 0.02, 0.026]
+        let room: SIMD3<Float> = name == screenPlane ? [0.012, 0.014, 0.019] : [0.014, 0.016, 0.021]
         let material = unlit(room)
         model.materials = model.materials.map { _ in material }
         e.components.set(model)
-        guard name == screenPlane, e.findEntity(named: "cockpit-screen-0") == nil else { return }
-        // On both faces of the console: which face looks at the window is not checked on a render yet.
-        for (i, p) in panels.enumerated() {
-            for side: Float in [1, -1] {
-                // A soft halo (a larger, dimmer plane just behind) and the screen itself.
-                let halo = ModelEntity(mesh: .generatePlane(width: p.w * 1.35, height: p.h * 1.45), materials: [unlit(p.rgb * 0.28)])
-                halo.position = [p.x, p.y, 0.004 * side]
-                halo.name = "cockpit-halo-\(i)"
-                e.addChild(halo)
-                let screen = ModelEntity(mesh: .generatePlane(width: p.w, height: p.h), materials: [unlit(p.rgb)])
-                screen.position = [p.x, p.y, 0.007 * side]
+        guard name == screenPlane, e.findEntity(named: "cockpit-console") == nil,
+              let console = try? textured(consoleTexture(width: 0.92, height: 0.76, items: panels))
+        else { return }
+        // On both faces of the plane (which face looks at the window is not checked on a render yet); the back
+        // copy is turned round so it also reads the right way.
+        for side: Float in [1, -1] {
+            let quad = ModelEntity(mesh: .generatePlane(width: 0.92, height: 0.76), materials: [console])
+            quad.name = "cockpit-console"
+            quad.position = [0, 0, 0.004 * side]
+            if side < 0 { quad.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0]) }
+            e.addChild(quad)
+            for (i, n) in nearScreens.enumerated() {
+                // A small quad with the screen and its glow on room colour, so its edge disappears into the room.
+                let item: Item = (0, 0, n.w, n.h, n.rgb, true)
+                guard let near = try? textured(consoleTexture(width: n.w * 2.6, height: n.h * 3, items: [item])) else { continue }
+                let screen = ModelEntity(mesh: .generatePlane(width: n.w * 2.6, height: n.h * 3), materials: [near])
                 screen.name = "cockpit-screen-\(i)"
+                screen.position = [n.x * side, n.y, n.z * side]
+                if side < 0 { screen.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0]) }
                 e.addChild(screen)
             }
         }
@@ -1331,18 +1450,25 @@ enum HullPanels {
 
     /// Albedo of a plain panel (the theme tint multiplies it).
     static let base: Float = 0.74
-    /// Groove and lip widths in metres (clamped to at least one texel).
-    static let grooveWidth: Float = 0.0025
-    static let lipWidth: Float = 0.0012
+    /// Groove and lip widths in metres (clamped to at least one texel). Round 6: r5's 2.5 / 1.2 mm vanished at the
+    /// close-up's scale (about 5 px per cm, then the 2x downsample); 4 / 2.5 mm are 2 and 1.2 output pixels there.
+    static let grooveWidth: Float = 0.004
+    static let lipWidth: Float = 0.0025
     /// How much darker a groove is (0-1) and how far a lip goes toward white.
-    static let grooveDark: Float = 0.72
-    static let lipLight: Float = 0.45
-    /// Brushed grain: albedo streak contrast and normal-map strength.
-    static let brush: Float = 0.035
-    static let scratchLight: Float = 0.12
-    static let normalStrength: Float = 0.8
+    static let grooveDark: Float = 0.85
+    static let lipLight: Float = 0.8
+    /// Round 6: a soft shadow beside every groove (`aoWidth` metres each side, `aoStrength` darkening) and a
+    /// matching gentle slope into it in the normal map, so a seam still reads where the hairline itself is sub-pixel.
+    static let aoWidth: Float = 0.006
+    static let aoStrength: Float = 0.45
+    /// Brushed grain: albedo streak contrast; the grain runs around the hull or along it, chosen per panel, and
+    /// each panel's tone varies by up to +-`panelTone` (pass 5's panels are not one flat sheet).
+    static let brush: Float = 0.06
+    static let panelTone: Float = 0.05
+    static let scratchLight: Float = 0.3
+    static let normalStrength: Float = 1.5
     /// Micro-scratches per band.
-    static let scratches: [String: Int] = ["capsule": 2600, "body": 2200]
+    static let scratches: [String: Int] = ["capsule": 9000, "body": 7000]
 
     // MARK: Layout (metres, degrees; azimuth 0 faces the window, +x is positive)
 
@@ -1532,8 +1658,28 @@ enum HullPanels {
         // the radius so the groove stays the same in metres up the nose.
         let heights = Array(Set(rings + joints)).sorted()
         var random = Random(state: band.name == "capsule" ? 0x5EED_CA95 : 0x5EED_B0D4)
+        // Per-panel tone and grain direction (round 6), one grey byte per texel: below 128 the grain runs around
+        // the hull, from 128 along it; the rest is the tone. Not antialiased, so no edge texel mixes two panels
+        // (the grooves cover the edges anyway).
+        guard let tone = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                   space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { throw MapError.context }
+        tone.setShouldAntialias(false)
+        tone.setFillColor(gray: 60 / 255, alpha: 1)
+        tone.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        func panel(_ a0: Float, _ a1: Float, _ y0: Float, _ y1: Float) {
+            let along = random.next() < 0.35
+            let level = (along ? 150 : 20) + 80 * random.next()
+            tone.setFillColor(gray: CGFloat(level / 255), alpha: 1)
+            let lo = yv(max(y0, band.bottom)), hi = yv(min(y1, band.top))
+            for shift: Float in [0, -360] where a1 + shift > -180 {
+                tone.fill(CGRect(x: x(a0 + shift), y: lo, width: x(a1 + shift) - x(a0 + shift), height: hi - lo))
+            }
+        }
         for (k, (y0, y1)) in zip(heights, heights.dropFirst()).enumerated() where y1 > band.bottom && y0 < band.top {
             let azimuths = seamAzimuths(row: y0, index: k).sorted()
+            if azimuths.isEmpty { panel(-180, 180, y0, y1) }
+            for (i, a0) in azimuths.enumerated() { panel(a0, i + 1 < azimuths.count ? azimuths[i + 1] : azimuths[0] + 360, y0, y1) }
             let steps = 24
             // A seam at 180 degrees sits on the wrap: draw it at both edges of the map.
             for az in azimuths + (azimuths.contains(180) ? [-180] : []) {
@@ -1601,8 +1747,37 @@ enum HullPanels {
         guard let data = c.data else { throw MapError.context }
         let masks = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
 
-        // Brushed grain around the hull: one random level per texel row, broken into 48-texel runs.
-        let rowNoise = (0..<h).map { _ in random.signed() }
+        guard let toneData = tone.data else { throw MapError.context }
+        let tones = toneData.bindMemory(to: UInt8.self, capacity: w * h)
+
+        // Soft groove shadow: the groove mask box-blurred over `aoWidth` each side.
+        let radiusAO = max(2, Int(aoWidth * Float(h) / span))
+        var ao = [Float](repeating: 0, count: w * h), pass = ao
+        for i in 0..<(w * h) { ao[i] = Float(masks[4 * i]) / 255 }
+        ao.withUnsafeMutableBufferPointer { a in
+            pass.withUnsafeMutableBufferPointer { t in
+                let norm = 1 / Float(2 * radiusAO + 1)
+                for row in 0..<h {
+                    var sum: Float = 0
+                    for k in -radiusAO...radiusAO { sum += a[row * w + (k + w) % w] }
+                    for col in 0..<w {
+                        t[row * w + col] = sum * norm
+                        sum += a[row * w + (col + radiusAO + 1) % w] - a[row * w + (col - radiusAO + w) % w]
+                    }
+                }
+                for col in 0..<w {
+                    var sum: Float = 0
+                    for k in -radiusAO...radiusAO { sum += t[min(h - 1, max(0, k)) * w + col] }
+                    for row in 0..<h {
+                        a[row * w + col] = sum * norm
+                        sum += t[min(h - 1, row + radiusAO + 1) * w + col] - t[max(0, row - radiusAO) * w + col]
+                    }
+                }
+            }
+        }
+
+        // Brushed grain: one random level per texel row (around) or column (along), broken into 48-texel runs.
+        let rowNoise = (0..<h).map { _ in random.signed() }, colNoise = (0..<w).map { _ in random.signed() }
         let runNoise = (0..<4096).map { _ in random.next() }
         var height = [Float](repeating: 0, count: w * h)
         var albedo = [UInt8](repeating: 255, count: w * h * 4), normal = albedo
@@ -1613,14 +1788,19 @@ enum HullPanels {
                     for col in 0..<w {
                         let i = row * w + col
                         let g = Float(masks[4 * i]) / 255, l = Float(masks[4 * i + 1]) / 255, s = Float(masks[4 * i + 2]) / 255
-                        let streak = rowNoise[row] * (0.5 + 0.5 * runNoise[(col / 48 + row * 7) & 4095])
-                        var v = base * (1 + brush * streak)
+                        let t = Int(tones[i]), along = t >= 128
+                        let variation = (Float(along ? t - 150 : t - 20) / 80) * 2 - 1
+                        let streak = along ? colNoise[col] * (0.5 + 0.5 * runNoise[(row / 48 + col * 7) & 4095])
+                            : rowNoise[row] * (0.5 + 0.5 * runNoise[(col / 48 + row * 7) & 4095])
+                        let shade = min(1, ao[i] * 2.5)
+                        var v = base * (1 + brush * streak) * (1 + panelTone * variation)
+                        v *= 1 - aoStrength * shade
                         v *= 1 - grooveDark * g
                         v += (1 - v) * lipLight * l
                         v += (1 - v) * scratchLight * s
                         let byte = srgb(v)
                         ab[4 * i] = byte; ab[4 * i + 1] = byte; ab[4 * i + 2] = byte
-                        hb[i] = -g + 0.4 * l - 0.25 * s + 0.05 * streak
+                        hb[i] = -g - 0.6 * shade + 0.5 * l - 0.35 * s + 0.12 * streak
                     }
                 }
             }
@@ -1675,17 +1855,18 @@ public enum EntranceLook {
 
     /// The canopy glass's environment: a near-black room with no bright ceiling, so the glass never turns white at
     /// grazing angles. Round 5 (pass 5: curved reflection streaks along the glass's edges): the glass spans about
-    /// +-47 degrees of azimuth and reflects a direction at about twice its own azimuth, so two narrow bright strips
-    /// at +-`glassStreakAzimuth` land near its left and right edges (the left one brighter, on the key side). From
+    /// +-47 degrees of azimuth and reflects a direction at about twice its own azimuth plus the camera's own
+    /// angle to it (about 7 degrees from the 4 m close-up), so two bright strips at +-`glassStreakAzimuth` land
+    /// along its left and right edges (glass edge at 40-45 degrees: 87-97), the left one brighter, on the key side. From
     /// the end pose (about 20 degrees below) the top of the glass reflects the zenith and its bottom about 40 degrees
     /// up in front, so an overhead patch to the left curves along the top-left and a faint low band glints along
     /// the bottom.
-    public static let glassStreakAzimuth = 80.0
+    public static let glassStreakAzimuth = 88.0
     public static func glassStudio() -> CGImage? {
         equirect { az, e in
             var v = 0.004 + 0.008 * max(0, sin(e * Double.pi / 180))
-            v = max(v, 1.0 * strip(az, e, centre: -glassStreakAzimuth, half: 2.5, low: -15, high: 75, soft: 5))
-            v = max(v, 0.75 * strip(az, e, centre: glassStreakAzimuth, half: 2, low: -15, high: 75, soft: 5))
+            v = max(v, 1.0 * strip(az, e, centre: -glassStreakAzimuth, half: 5, low: -15, high: 80, soft: 5))
+            v = max(v, 0.8 * strip(az, e, centre: glassStreakAzimuth, half: 4, low: -15, high: 80, soft: 5))
             v = max(v, 0.55 * strip(az, e, centre: -35, half: 25, low: 70, high: 84, soft: 8))
             v = max(v, 0.2 * strip(az, e, centre: 0, half: 30, low: 36, high: 42, soft: 6))
             return v
@@ -1701,7 +1882,15 @@ public enum EntranceLook {
         return fx * fx * (3 - 2 * fx) * fy * fy * (3 - 2 * fy)
     }
 
-    /// A 512 x 256 equirectangular grey image from linear light values (azimuth, elevation in degrees), sRGB-encoded.
+    /// Where the image's centre column points, as an azimuth in this file's convention (0 = +z, the window side and
+    /// the end-pose camera; +90 = +x). Round 6: the r5 frames show the image centre faces -z, i.e. RealityKit's
+    /// forward: the rim strips meant for +-160 lit the middle of the hull (normal azimuth +-10) and the glass
+    /// streaks meant for its edges missed it, while the key meant for the upper left lit the right. So every
+    /// azimuth in `studio` and `glassStudio` is now written in the scene's convention and turned here.
+    public static let imageCentreAzimuth = 180.0
+
+    /// A 512 x 256 equirectangular grey image from linear light values (azimuth in the scene's convention,
+    /// elevation, in degrees), sRGB-encoded.
     static func equirect(_ value: (Double, Double) -> Double) -> CGImage? {
         let w = 512, h = 256
         guard let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
@@ -1713,7 +1902,8 @@ public enum EntranceLook {
         for y in 0..<h {
             let e = 90 - 180 * (Double(y) + 0.5) / Double(h)
             for x in 0..<w {
-                let az = 360 * (Double(x) + 0.5) / Double(w) - 180
+                let image = 360 * (Double(x) + 0.5) / Double(w) - 180
+                let az = (image + imageCentreAzimuth + 540).truncatingRemainder(dividingBy: 360) - 180
                 let linear = min(1, max(0, value(az, e)))
                 let encoded = linear <= 0.0031308 ? 12.92 * linear : 1.055 * pow(linear, 1 / 2.4) - 0.055
                 let o = (y * w + x) * 4
@@ -1733,7 +1923,7 @@ public enum EntranceLook {
     public static let rimAzimuth = 160.0
     public static func studio(_ theme: EntranceTheme = .night) -> CGImage? {
         let day = theme == .day
-        let floor = day ? 0.16 : 0.008, wall = day ? 0.30 : 0.02, ceiling = day ? 0.5 : 0.08, horizon = day ? 0.1 : 0.03
+        let floor = day ? 0.16 : 0.012, wall = day ? 0.30 : 0.04, ceiling = day ? 0.5 : 0.13, horizon = day ? 0.1 : 0.04
         let rim = day ? 0.8 : 1.0
         return equirect { az, e in
             let s = sin(max(0, e) * Double.pi / 180)

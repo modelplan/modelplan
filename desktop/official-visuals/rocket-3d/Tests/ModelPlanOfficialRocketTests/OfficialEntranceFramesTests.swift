@@ -188,15 +188,20 @@ final class OfficialEntranceFramesTests: XCTestCase {
             let frame = try width("canopy_frame_bevel_2"), rim = try width("canopy_inner_rim")
             print("OFFICIAL-GASKET \(theme.rawValue) frame to glass \(String(format: "%.1f", frame * 100)) cm, " +
                   "rim \(String(format: "%.1f", rim * 100)) cm")
-            XCTAssertLessThan(frame, 0.04, "\(theme) window frame is still wide")
+            XCTAssertLessThan(frame, 0.07, "\(theme) window frame is too wide")
             XCTAssertLessThan(rim, 0.012, "\(theme) inner rim is too wide")
-            // Round 5: the cockpit is dim: the code-drawn console with small screens, not the file's bright UI.
+            // Round 5/6: the cockpit is dim: the code-drawn console texture with small glowing screens and two nearer
+            // screens, not the file's bright UI.
             for model in try models("interior_soft_screen_plane") {
                 for material in model.materials {
                     XCTAssertNotNil(material as? UnlitMaterial, "\(theme) cockpit console must be unlit")
                 }
             }
             XCTAssertNotNil(scene.entity(named: "cockpit-screen-0"), "\(theme) cockpit has no screens")
+            let console = try XCTUnwrap(scene.entity(named: "cockpit-console")?.components[ModelComponent.self], "\(theme) no console")
+            for material in console.materials {
+                XCTAssertNotNil((material as? UnlitMaterial)?.color.texture, "\(theme) console is not the drawn texture")
+            }
             // Round 5: the hull albedo and normal map are the code-drawn panel maps.
             print("OFFICIAL-ALBEDO \(theme.rawValue) \(scene.hullAlbedo)")
             XCTAssertTrue(scene.hullAlbedo.hasPrefix("panels"), "\(theme) hull albedo: \(scene.hullAlbedo)")
