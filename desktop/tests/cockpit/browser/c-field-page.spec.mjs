@@ -46,6 +46,22 @@ test('the official porthole opens the field by click and keyboard',async({page})
  await port.click();await port.focus();await page.keyboard.press('Enter');
  expect(await page.evaluate(()=>window.posted.filter(m=>m.type==='action'&&m.action==='openField').length)).toBe(2);
 });
+// Build 14c: after a click on the porthole and a key press (the walk clicks the field open, then presses Escape), the
+// focused port drew WebKit's default blue focus ring round the whole port box, over the canopy frame. The port draws
+// no ring; keyboard focus is shown on its ⤢ key.
+test('build 14c: a focused porthole draws no ring round the canopy; keyboard focus shows on the ⤢ key',async({page})=>{
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ const port=page.locator('.ck-port');await port.click();await page.keyboard.press('Escape');await port.focus();
+ const v=await page.evaluate(()=>{const p=document.querySelector('.ck-port'),k=p.querySelector('.port-big'),c=getComputedStyle(p),ck=getComputedStyle(k);
+  return {focused:document.activeElement===p,visible:p.matches(':focus-visible'),port:c.outlineStyle,key:ck.outlineStyle,keyWidth:ck.outlineWidth};});
+ expect([v.focused,v.visible]).toEqual([true,true]);expect(v.port).toBe('none');
+ expect([v.key,v.keyWidth]).toEqual(['solid','2px']);
+});
 test('D43 every vendor mark the scene asks for loads under the page CSP, close to square',async({page})=>{
  await open(page);
  const sizes=await page.evaluate(async names=>Promise.all(names.map(name=>new Promise(done=>{const image=new Image();image.onload=()=>done([name,image.naturalWidth>0,Math.abs(image.naturalWidth/image.naturalHeight-1)<=.05]);image.onerror=()=>done([name,false,false]);image.src='./assets/brands/'+name;}))),

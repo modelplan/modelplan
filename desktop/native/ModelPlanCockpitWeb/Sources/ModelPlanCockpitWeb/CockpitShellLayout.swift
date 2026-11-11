@@ -88,9 +88,11 @@ public struct CockpitShellLayout: Equatable, Sendable {
     /// The page canvas in CSS px: the root plus the base reserve.
     public var pageSize: CGSize { .init(width: Self.width, height: rootHeight + Self.baseReserve) }
     /// G3-43 / CKP-SHELL-04: the free left of the title strip in page px with Y up; the window uses
-    /// `scaledTitleDragFrame`. It stops short of the shutter so buttons keep their own input. Strip tops are the page's, shared with the study.
+    /// `scaledTitleDragFrame`. It stops short of the shutter so buttons keep their own input. Strip tops are the page's,
+    /// window-relative: the closed page draws its slab at the window's top edge (cockpit.css, 14 px above the study's
+    /// slab row), so its strip is at 25, not the study's 39. Pinned on the page by b13-hull-taper.spec.mjs.
     public var titleDragFrame: CGRect {
-        let stripTop: CGFloat = shutterClosed ? 45 : (profile == .full ? 253 : 65)
+        let stripTop: CGFloat = shutterClosed ? 25 : (profile == .full ? 253 : 65)
         return CGRect(x: 24, y: rootHeight + 34 - stripTop - 29, width: 216, height: 32)
     }
     public var scaledTitleDragFrame: CGRect { windowRect(page: titleDragFrame) }
