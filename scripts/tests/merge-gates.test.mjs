@@ -544,6 +544,8 @@ test("merge-group evaluation: the group's own CI replaces any stale-base rule", 
   const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, ...o });
   const qci = greenQueue;
   assert.ok(R.QUEUE_WORKFLOWS.includes(".github/workflows/desktop.yml"), "the queue must test the Mac build class");
+  assert.deepEqual([...R.QUEUE_WORKFLOWS].sort(), [".github/workflows/ci.yml", ".github/workflows/desktop.yml", ".github/workflows/official-visuals.yml",
+    ".github/workflows/transport-fuzz.yml", ".github/workflows/u11-cockpit.yml", ".github/workflows/u11a-aggregate.yml", ".github/workflows/u14-harness.yml"], "queue membership is pinned");
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: qci }).state, R.SUCCESS);
   assert.equal(R.evaluateGroup({ steps: [], queueRuns: qci }).state, R.FAILURE);
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [] }).state, R.PENDING, "queue CI not started yet");

@@ -289,6 +289,22 @@ test("desktop.yml pr=<N> dispatch builds refs/pull/<N>/merge in every job it own
   const resolver = job("pr-ref");
   assert.match(resolver, /if: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.pr != '' /);
   assert.match(resolver, /refs\/pull\/\$PR\/merge/);
+  assert.match(resolver, /\.base\.ref <<<"\$j"\)" = main/, "a PR whose base is not main must be rejected");
+  {
+    // Execute the real resolver against a stubbed gh/git: non-main base fails with no SHA; main base succeeds.
+    const sh = /run: \|\n((?:          .*\n)+)/.exec(resolver)[1].replace(/^          /gm, "");
+    const dir = fs.mkdtempSync(new URL("file:///tmp/pr-ref-").pathname);
+    const head = "a".repeat(40), merge = "b".repeat(40);
+    fs.writeFileSync(`${dir}/gh`, `#!/bin/bash\ncase "$2" in\n repos/*/commits/*) echo ${head};;\n *) echo "{\\"state\\":\\"open\\",\\"mergeable\\":true,\\"base\\":{\\"ref\\":\\"$BASE\\"},\\"head\\":{\\"sha\\":\\"${head}\\"}}";;\nesac\n`, { mode: 0o755 });
+    fs.writeFileSync(`${dir}/git`, `#!/bin/bash\nprintf '${merge}\\trefs/pull/9/merge\\n'\n`, { mode: 0o755 });
+    const go = (base) => { const out = `${dir}/out-${base}`; fs.writeFileSync(out, "");
+      const r = spawnSync("bash", ["-c", sh], { env: { PATH: `${dir}:${process.env.PATH}`, BASE: base, GH_TOKEN: "x", REPO: "o/r", PR: "9", DISPATCHED: merge, GITHUB_OUTPUT: out, GITHUB_STEP_SUMMARY: `${dir}/sum` } });
+      return { status: r.status, out: fs.readFileSync(out, "utf8") }; };
+    const bad = go("qa-feature"), good = go("main");
+    fs.rmSync(dir, { recursive: true, force: true });
+    assert.notEqual(bad.status, 0); assert.equal(bad.out, "", "no SHA for a non-main PR");
+    assert.equal(good.status, 0); assert.match(good.out, new RegExp(`sha=${merge}`));
+  }
   assert.match(resolver, /grep -qx "\$head"/, "the merge must contain the PR's current head");
   for (const name of ["app", "shell", "native-partition", "cockpit-pins", "app-smoke"]) {
     const body = job(name);

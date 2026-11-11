@@ -79,6 +79,8 @@ jobs:
             sleep 6
           done
           [ "$(jq -r .state <<<"$j")" = open ] || { echo "::error::PR #$PR is not open"; exit 1; }
+          # refs/pull/<N>/merge is the PR merged into its own base branch; only main-based PRs are "merged with main".
+          [ "$(jq -r .base.ref <<<"$j")" = main ] || { echo "::error::PR #$PR targets '$(jq -r .base.ref <<<"$j")', not main: its merge ref is not a main integration"; exit 1; }
           [ "$(jq -r .mergeable <<<"$j")" = true ] || { echo "::error::PR #$PR does not merge cleanly with main (mergeable=$(jq -r .mergeable <<<"$j")): merge main into it first"; exit 1; }
           head=$(jq -r .head.sha <<<"$j")
           sha=$(git ls-remote "https://github.com/$REPO" "refs/pull/$PR/merge" | cut -f1)
