@@ -153,5 +153,13 @@
       "projectLabel": "synthetic",
       "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
     }
+  ],
+  "peaks": [
+    {
+      "rowId": "synthetic",
+      "startsAt": "2026-10-29T12:00:00.123456789Z",
+      "endsAt": "2026-10-29T12:00:00.123456789Z",
+      "status": "synthetic"
+    }
   ]
 }
