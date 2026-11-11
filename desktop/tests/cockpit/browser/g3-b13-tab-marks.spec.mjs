@@ -6,8 +6,8 @@ import {visualFixture} from '../visual-fixture.mjs';
 // Build 13 owner review, regressed in build 14c: the cockpit's tab marks differ in size (OpenAI's file keeps half of
 // its canvas clear, Claude's fills it), so the Codex tab showed a dot. Every vendor tab mark is fitted by its glyph
 // bounds, as the widget card does (#741). (Marks for keyless tools, #754's other half, are not part of this fix.)
-function data(){
- const d=visualFixture().data,vk={codex:'openai',claude:'claude',cursor:'cursor',gemini:'copilot'};
+function data(vk={codex:'openai',claude:'claude',cursor:'cursor',gemini:'copilot'}){
+ const d=visualFixture().data;
  for(const r of d.projection.rows)r.vendorKey=vk[r.id]??null;
  return d;
 }
@@ -35,11 +35,14 @@ function measure(){
  }));
 }
 
-test('Cockpit vendor tab marks have one visible size (the Codex tab is not a dot)',async({page})=>{
+for(const [label,vk,files] of [
+ ['openai, claude, cursor, copilot',{codex:'openai',claude:'claude',cursor:'cursor',gemini:'copilot'},['claude-rounded.svg','copilot.svg','cursor.svg','openai-white.svg']],
+ ['openai, kimi, opencode, claude (glm-842-3)',{codex:'openai',claude:'kimi',cursor:'opencode',gemini:'claude'},['claude-rounded.svg','kimi-white.svg','openai-white.svg','opencode.svg']],
+])test(`Cockpit vendor tab marks have one visible size (the Codex tab is not a dot): ${label}`,async({page})=>{
  const missing=[];page.on('response',r=>{if(r.status()>=400)missing.push(new URL(r.url()).pathname);});
- await open(page,data());
+ await open(page,data(vk));
  const marks=await page.evaluate(measure);
- expect(marks.map(m=>m.src.split('/').pop()).sort()).toEqual(['claude-rounded.svg','copilot.svg','cursor.svg','openai-white.svg']);
+ expect(marks.map(m=>m.src.split('/').pop()).sort()).toEqual(files);
  expect(marks.map(m=>m.loaded)).toEqual([true,true,true,true]);
  const sizes=marks.map(m=>m.glyph),mean=sizes.reduce((a,b)=>a+b,0)/sizes.length;
  for(const m of marks)expect(Math.abs(m.glyph-mean)/mean,`${m.src} glyph ${m.glyph.toFixed(2)}px against mean ${mean.toFixed(2)}`).toBeLessThan(0.06);

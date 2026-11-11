@@ -98,3 +98,12 @@ test('B13 strip shows the study rocket mark and the live ModelPlan wordmark',asy
    plan:getComputedStyle(b).color,planSize:getComputedStyle(b).fontSize,raster:[getComputedStyle(w,'::before').content,getComputedStyle(w,'::after').content],wordBox:box(w)};});
  expect(v).toEqual({mark:'logo.svg',markBox:[24,252,28,28],text:'ModelPlan',font:'14px 600 20px',transform:'none',plan:'rgb(223, 96, 76)',planSize:'14px',raster:['none','none'],wordBox:[60,256,112,20]});
 });
+
+// glm-842-1 (G3-43 / CKP-SHELL-04): the native title-drag region is placed from the strip's window-relative top
+// (CockpitShellLayout.titleDragFrame: 253 tall, 65 compact, 25 closed). The closed page draws its slab at the window's
+// top edge, so its strip is at 25, not the study's 39; the two sides must not drift apart again.
+for(const s of shapes)test(`B13 ${s.tier}${s.closed?' closed':''}: the strip's window-relative top matches the native drag region`,async({page})=>{
+ await open(page,s);
+ const top=await page.evaluate(()=>Math.round(document.querySelector('.ck-head').getBoundingClientRect().top));
+ expect(top).toBe(s.closed?25:(s.tier==='tall'?253:65));
+});

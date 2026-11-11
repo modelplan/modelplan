@@ -179,7 +179,7 @@ final class ShellLayoutTests: XCTestCase {
     }
     /// G3-43 / CKP-SHELL-04: the drag region sits on the strip, not on the canopy, in every shape.
     func testG3_43TitleDragFrameFollowsTheStrip() throws {
-        for (height, closed, stripTop) in [(1000, false, 253), (1000, true, 45), (680, false, 65), (680, true, 45)] as [(CGFloat, Bool, CGFloat)] {
+        for (height, closed, stripTop) in [(1000, false, 253), (1000, true, 25), (680, false, 65), (680, true, 25)] as [(CGFloat, Bool, CGFloat)] {
             let value = try fit(height, closed: closed), canvas = value.rootHeight + 34
             XCTAssertEqual(canvas - value.titleDragFrame.maxY, stripTop - 3, "top of the strip keys")
             XCTAssertEqual(value.titleDragFrame.height, 32)
