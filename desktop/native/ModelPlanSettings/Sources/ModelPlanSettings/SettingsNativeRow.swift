@@ -380,7 +380,10 @@ import AppKit
         case .unavailable: return SettingsWords.text("System service unavailable", "系统服务不可用", language)
         }
     }
-    private static func sourceStatus(_ raw: String, language: SettingsLanguage) -> String {
+    private static func sourceStatus(_ value: String, language: SettingsLanguage) -> String {
+        let parts = value.components(separatedBy: SubscriptionSourceState.causeSeparator)
+        if parts.count == 2, !parts[1].isEmpty { return parts[1] }
+        let raw = parts[0]
         switch SubscriptionSourceState(rawValue: raw) {
         case .fresh: return SettingsWords.text("Current", "最新", language)
         case .stale: return SettingsWords.text("Stale", "数据已过时", language)

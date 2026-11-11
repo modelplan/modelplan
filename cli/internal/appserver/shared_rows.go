@@ -118,7 +118,7 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 		for _, source := range report.Sources {
 			if rows.CanonicalTool(source.Source) == tool && source.ErrorCode != "" {
 				profile.LatestAttempt = rows.AttemptResultFailed
-				profile.LastFailure = &rows.FailureInput{Code: source.ErrorCode}
+				profile.LastFailure = &rows.FailureInput{Code: source.ErrorCode, At: timePointer(report.EvaluatedAt)}
 			}
 		}
 		if account.Source == "codex" && account.Via == "codex-account" {
