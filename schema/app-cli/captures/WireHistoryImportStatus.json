@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "phase": "idle",
+  "days": 1,
+  "filesDone": 1,
+  "filesTotal": 1,
+  "firstRunDone": false,
+  "importedRows": 1,
+  "coverage": [
+    {
+      "source": "synthetic",
+      "from": "synthetic",
+      "through": "synthetic",
+      "rows": 1
+    }
+  ],
+  "sources": [
+    {
+      "source": "synthetic",
+      "status": "imported",
+      "turns": 1
+    }
+  ]
+}

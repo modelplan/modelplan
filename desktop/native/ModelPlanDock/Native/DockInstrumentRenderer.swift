@@ -203,7 +203,7 @@ public struct DockNozzlePose: Equatable, Sendable {
             c.translateBy(x:rect.midX-CGFloat(advance)/2,y:baseline);c.scaleBy(x:1,y:-1);c.textMatrix = .identity
             c.textPosition = .zero;CTLineDraw(line,c);c.restoreGState()
         }
-        func usedUp(_ arc:DockQuotaArc?) -> Bool { arc?.fraction == 0 }
+        func usedUp(_ arc:DockQuotaArc?) -> Bool { arc?.remainingFraction == 0 }
         func ring(_ recipe:DockRingRecipe,_ arc:DockQuotaArc?,_ centre:CGPoint) throws {
             guard recipe.radius>0,recipe.width>0,recipe.radius.isFinite,recipe.width.isFinite,
                 recipe.opacity.isFinite,(0...1).contains(recipe.opacity),(0...1).contains(recipe.minimumVisibleFraction) else{throw DockArtworkError.invalidManifest}

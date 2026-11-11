@@ -328,4 +328,33 @@ private actor DockStripEngine: EngineClient {
             }
         }
     }
+
+    /// G3-58 (batch 2): a collapsed strip whose only low member is at 0% shows a red that is noticeable on its own,
+    /// not merely different from the alerts-off strip. The prototype state (.4 of --st-low at the plateau) is
+    /// pinned by testG351AlertPitchGlowsLikeThePrototype; this adds the absolute visibility at 0%.
+    func testG358CollapsedZeroPercentSliverRedIsVisible() async throws {
+        let fixture = try DockStripFixture(shortRemaining: [0, 90, 90], weekly: [90, 90, 90])
+        addTeardownBlock { @MainActor in await fixture.close() }
+        try await fixture.open(autoHide: true)
+        XCTAssertEqual(fixture.host.edgePresentation?.state, .sliver)
+        let size = try XCTUnwrap(fixture.host.edgePresentation?.placement).sliverFrame.size
+        func centre(_ view: DockSliverView, _ segment: DockSliverResolvedColorSegment) throws -> [Double] {
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            let vertical = size.height > size.width
+            let length = Double(vertical ? bitmap.pixelsHigh : bitmap.pixelsWide)
+            let along = Int((segment.span.lowerBound + segment.span.upperBound) / 2 * length)
+            let cross = (vertical ? bitmap.pixelsWide : bitmap.pixelsHigh) / 2
+            let c = try XCTUnwrap((vertical ? bitmap.colorAt(x: cross, y: along) : bitmap.colorAt(x: along, y: cross))?.usingColorSpace(.sRGB))
+            return [c.redComponent, c.greenComponent, c.blueComponent].map(Double.init)
+        }
+        let view = try fixture.host.prepareSliver(size: size, backingScale: 2)
+        let critical = try XCTUnwrap(view.quotaSegmentColorRolesForChecks.first { $0.quotaRole == .critical }, "0% is a critical pitch")
+        let red = try centre(view, critical)
+        _ = try await fixture.app.settingsHost.application.editor.commit(SettingsB20Edit.sliverAlert(false))
+        let neutralView = try fixture.host.prepareSliver(size: size, backingScale: 2)
+        let neutral = try centre(neutralView, critical)
+        XCTAssertGreaterThan(red[0] - max(red[1], red[2]), 0.10, "the 0% pitch reads red against its own green and blue: \(red)")
+        XCTAssertGreaterThan(red[0] - neutral[0], 0.05, "and clearly redder than the alerts-off strip: \(red) vs \(neutral)")
+    }
 }

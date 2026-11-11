@@ -82,101 +82,9 @@
     },
     {
       "id": "widget-found",
-      "title": "Widget found and kept out",
-      "expected": "A fresh install starts with the widget collapsed (D56, build 14). The walk turns Auto-Collapse off in Settings > Quota Widget (the widget's own menu cannot be reached while it is collapsed) and uses Find Quota Widget to bring it out, so the rest, card and size steps see the whole widget. A build without Find Quota Widget starts expanded and skips this.",
+      "title": "Widget starts expanded after first run",
+      "expected": "A fresh install shows the Quota Widget expanded after first run (D114, DOCK-3.1.1-02: auto-collapse is off by default), so the walk needs no Settings change and no Find Quota Widget. Later steps still turn Auto-Collapse on and off and use Find Quota Widget on purpose.",
       "actions": [
-        {
-          "op": "key",
-          "name": "escape"
-        },
-        {
-          "op": "click",
-          "target": "status-item",
-          "button": "right"
-        },
-        {
-          "op": "wait",
-          "seconds": 1.2
-        },
-        {
-          "op": "when",
-          "present": "ax:status.findQuotaWidget",
-          "then": [
-            {
-              "op": "press",
-              "by": "title",
-              "value": "Settings…"
-            },
-            {
-              "op": "await",
-              "target": "ax:settings.sidebar",
-              "timeout": 15
-            },
-            {
-              "op": "click",
-              "target": "ax:settings.pane.dock"
-            },
-            {
-              "op": "await",
-              "target": "ax:settings.autoHide",
-              "timeout": 5
-            },
-            {
-              "op": "when",
-              "then": [
-                {
-                  "op": "press",
-                  "by": "id",
-                  "value": "settings.autoHide"
-                },
-                {
-                  "op": "wait",
-                  "seconds": 0.6
-                },
-                {
-                  "op": "press",
-                  "by": "title",
-                  "value": "Off"
-                },
-                {
-                  "op": "wait",
-                  "seconds": 1.5
-                }
-              ],
-              "equals": {
-                "target": "ax:settings.autoHide",
-                "value": "On"
-              }
-            },
-            {
-              "op": "click",
-              "target": "subrole:AXCloseButton"
-            },
-            {
-              "op": "wait",
-              "seconds": 1
-            },
-            {
-              "op": "click",
-              "target": "status-item",
-              "button": "right"
-            },
-            {
-              "op": "wait",
-              "seconds": 1.2
-            },
-            {
-              "op": "press",
-              "by": "id",
-              "value": "status.findQuotaWidget"
-            },
-            {
-              "op": "await",
-              "target": "ax^:dock.subscription.",
-              "timeout": 10
-            }
-          ]
-        },
         {
           "op": "key",
           "name": "escape"
@@ -1511,7 +1419,7 @@
     {
       "id": "cockpit-detach",
       "title": "Cockpit detached",
-      "expected": "Detach turns the cockpit into its own window; the button now reads Put back (G3-43).",
+      "expected": "The detach key (strip slot 502) turns the cockpit into its own window where it is; the same slot now holds Put back and the menu bar icon is no longer pressed (D88, G3-54).",
       "requires": [
         "cockpit-reopen"
       ],
@@ -1588,7 +1496,7 @@
     {
       "id": "cockpit-put-back",
       "title": "Cockpit put back",
-      "expected": "Put back returns the cockpit under the menu bar icon.",
+      "expected": "The put-back key returns the cockpit centred under the menu bar icon; the slot reads Detach again (D88, G3-54).",
       "requires": [
         "cockpit-detach"
       ],
