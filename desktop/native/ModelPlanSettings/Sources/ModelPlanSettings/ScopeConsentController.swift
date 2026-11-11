@@ -26,7 +26,9 @@ public struct FirstRunTool: Sendable, Equatable {
     /// D61: a path of this tool can show a macOS Keychain prompt (the engine's access class,
     /// sent as a Keychain choice on the scope), so it is read only after Done and only if ticked.
     public let promptsKeychain: Bool
-    public var canRead: Bool { block == nil && !scopes.isEmpty }
+    /// False only for a supported tool this Mac does not have (Settings lists it with the reason; first run does not).
+    public var detected: Bool = true
+    public var canRead: Bool { detected && block == nil && !scopes.isEmpty }
 }
 /// Transient UI choices over already-accepted facts. No persistence or protocol acceptance logic.
 @MainActor public final class ScopeConsentController {
@@ -338,12 +340,39 @@ public struct FirstRunTool: Sendable, Equatable {
                                 promptsKeychain: standard.contains { $0.keychain != nil })
         }
     }
+    /// G3-59: Settings lists every tool first run would list (same rows, engine order), then each supported
+    /// tool this Mac does not have, so the user can always see what is supported and why it is not read.
+    public var settingsTools: [FirstRunTool] {
+        guard let facts else { return [] }
+        var seen = Set(facts.scopes.filter { $0.detected && !$0.retired }.map(\.tool)), absent: [FirstRunTool] = []
+        for scope in facts.scopes where !scope.retired && seen.insert(scope.tool).inserted {
+            absent.append(FirstRunTool(tool: scope.tool, scopes: [], routes: [], block: nil, promptsKeychain: false, detected: false))
+        }
+        return firstRunTools + absent
+    }
     /// Checked unless the user unchecked it, it cannot be read, or every path was already refused.
     public func isFirstRunToolChosen(_ tool: String) -> Bool {
         guard let entry = firstRunTools.first(where: { $0.tool == tool }), entry.canRead else { return false }
         if let choice = firstRunToolChoices[tool] { return choice }
         let states = entry.scopes.compactMap { id in facts?.scopes.first { $0.scope == id }?.state }
         return !states.allSatisfy { $0 == .denied }
+    }
+    /// Settings: a tool reads when every standard path of it is read (explicitly allowed or on by default).
+    public func isToolReading(_ tool: String) -> Bool {
+        guard let entry = firstRunTools.first(where: { $0.tool == tool }), entry.canRead else { return false }
+        return entry.scopes.allSatisfy { isReading($0) }
+    }
+    /// Settings: turn a whole tool on or off with one confirmed choice (the same grant the first-run Done sends).
+    @discardableResult public func requestToolChoice(_ tool: String, on: Bool) -> ScopeConsentConfirmation? {
+        guard canMutate, let facts, let entry = firstRunTools.first(where: { $0.tool == tool && $0.canRead }) else { return nil }
+        var allow: [String] = [], deny: [String] = []
+        for id in entry.scopes {
+            guard let scope = facts.scopes.first(where: { $0.scope == id }) else { continue }
+            if on { if scope.state != .allowed { allow.append(id) } } else if scope.state != .denied { deny.append(id) }
+        }
+        guard !allow.isEmpty || !deny.isEmpty else { return nil }
+        let value = ScopeConsentConfirmation(id: UUID(), intent: .init(mutation: .choose(allow: allow, deny: deny, keychain: [])))
+        phase = .confirmation(value); changed(); return value
     }
     public func chooseFirstRunTool(_ tool: String, chosen: Bool) {
         guard canMutate, firstRunTools.contains(where: { $0.tool == tool && $0.canRead }) else { return }
