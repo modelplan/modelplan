@@ -3,6 +3,7 @@ import CoreGraphics
 import XCTest
 import ModelPlanDock
 @testable import ModelPlanOfficialDock
+import AppKit
 
 /// Values the production Dock draws from, checked on the real skin at every size.
 /// DOCK-3.1-12, DOCK-3.1-22a, DOCK-3.2-02a, DOCK-3.2-03, DOCK-3.3-08 and DOCK-3.3-09.
@@ -94,5 +95,74 @@ final class T2SkinValueTests: XCTestCase {
         XCTAssertNil(value.readoutPalette?["critical"])
         let dim = try XCTUnwrap(value.palette["unknown"]), white = try XCTUnwrap(value.palette["lcdWhite"])
         XCTAssertLessThan(dim.g, white.g * 0.7, "-- reads dimmer than a live number")
+    }
+
+    /// DOCK-3.1-15 (upright readouts) is in T2GeometryTests; DOCK-3.2-12: the ring's vendor mark is 0.27 D wide
+    /// (owner D47), square and centred on the ring, at S, M and L.
+    func testVendorGlyphIsPointTwoSevenOfDiameter() throws {
+        for diameter in [CGFloat(36), 44, 52] {
+            let station = try skin(diameter).station
+            XCTAssertEqual(station.glyphRect.width, 0.27 * diameter, accuracy: 1e-6, "D\(diameter)")
+            XCTAssertEqual(station.glyphRect.height, 0.27 * diameter, accuracy: 1e-6, "D\(diameter)")
+            XCTAssertEqual(station.glyphRect.midX, station.centre.x, accuracy: 1e-6)
+            XCTAssertEqual(station.glyphRect.midY, station.centre.y, accuracy: 1e-6)
+        }
+    }
+
+    /// DOCK-3.1.1-11: the logo-to-flame keep-out. The throat (the radial overlay's radius) clears the mark's
+    /// corner by at least 3 x D/52, at S, M and L.
+    func testLogoToFlameKeepOutIsThreeUnits() throws {
+        for diameter in [CGFloat(36), 44, 52] {
+            let station = try skin(diameter).station, unit = diameter / 52
+            let corner = station.glyphRect.width * 2.0.squareRoot() / 2
+            let throat = try XCTUnwrap(station.radialOverlay).radius
+            XCTAssertGreaterThanOrEqual(throat - corner, 3 * unit - 1e-6, "D\(diameter): keep-out is \((throat - corner) / unit) units")
+        }
+    }
+
+    /// DOCK-3.1-20: layers back to front. Per station the bell wall, deep centre, throat lip and exit lip; then the
+    /// ignition's contact shadow, night cap, inner contact shadow and recessed guard.
+    func testLayerOrderBackToFront() throws {
+        for diameter in [CGFloat(36), 44, 52] {
+            let (station, value) = try skin(diameter)
+            let size = diameter <= 44 ? 44 : 52
+            XCTAssertEqual(station.layers, ["a1-01-bell-wall", "a1-03-deep-centre", "a1-02-throat-lip", "a1-04-exit-lip"].map { "\($0)-\(size)px@3x.webp" }, "D\(diameter)")
+            XCTAssertEqual(value.fixedLayers.map(\.resource), ["a5-outer-contact-shadow-56x56@3x.png", "a5-cap-night-idle-44x44@3x.png", "a5-inner-contact-shadow-52x52@3x.png", "a5-recessed-guard-52x52@3x.png"], "D\(diameter)")
+        }
+    }
+
+    /// DOCK-3.3-03: the percentage sits wholly on the shared aft surface with a scaled gap (at least 2 x D/52) to
+    /// the clock numbers. The text ink clears the clock envelope on every edge, and on the side edges (where the
+    /// readout sits under the ring) the whole readout box does too. The ink also lies inside the face outline.
+    func testPercentageSitsOnTheAftSurfaceWithScaledGap() throws {
+        for edge in [T2Edge.right, .left, .bottom, .top] {
+            for diameter in [CGFloat(36), 44, 52] {
+                for count in [1, 4] {
+                    let unit = diameter / 52
+                    let geometry = try T2Geometry.make(subscriptions: (0..<count).map { .init(id: "member-\($0)") }, input: .init(coordinates: .init(edge: edge, width: 1470, height: 956, menuBarExclusion: 26), diameter: diameter))
+                    let value = try T2DockSkin.make(geometry: geometry, rows: [], showsPercentages: true)
+                    let font = CTFontCreateUIFontForLanguage(.userFixedPitch, value.text.size, nil)!
+                    let line = CTLineCreateWithAttributedString(NSAttributedString(string: "100%", attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
+                    var a: CGFloat = 0, d: CGFloat = 0, l: CGFloat = 0
+                    let inkWidth = CGFloat(CTLineGetTypographicBounds(line, &a, &d, &l)), inkHeight = CTFontGetCapHeight(font)
+                    let outline = CGMutablePath(); outline.addLines(between: geometry.outline); outline.closeSubpath()
+                    func distance(_ rect: CGRect, from point: CGPoint) -> CGFloat {
+                        hypot(max(rect.minX - point.x, 0, point.x - rect.maxX), max(rect.minY - point.y, 0, point.y - rect.maxY))
+                    }
+                    for station in value.stations {
+                        let label = "\(edge) D\(diameter) x\(count)"
+                        let envelope = station.clock.radius + max(station.clock.dotRadius, station.clock.backWidth / 2)
+                        let ink = CGRect(x: station.readout.midX - inkWidth / 2, y: station.readout.midY - inkHeight / 2, width: inkWidth, height: inkHeight)
+                        XCTAssertGreaterThanOrEqual(distance(ink, from: station.centre) - envelope, 2 * unit - 1e-6, "\(label): text clears the clock numbers")
+                        if edge == .left || edge == .right {
+                            XCTAssertGreaterThanOrEqual(distance(station.readout, from: station.centre) - envelope, 2 * unit - 1e-6, "\(label): readout box clears the clock numbers")
+                        }
+                        for corner in [CGPoint(x: ink.minX, y: ink.minY), CGPoint(x: ink.maxX, y: ink.minY), CGPoint(x: ink.minX, y: ink.maxY), CGPoint(x: ink.maxX, y: ink.maxY)] {
+                            XCTAssertTrue(outline.contains(corner), "\(label): text corner \(corner) is on the aft surface")
+                        }
+                    }
+                }
+            }
+        }
     }
 }
