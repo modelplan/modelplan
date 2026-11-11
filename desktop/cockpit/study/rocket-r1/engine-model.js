@@ -106,9 +106,7 @@ export function engineModel(d, ui) {
   const cols = shown.map((a, i) => columnOf(a, i, ui, status, d.now));
   // Task 35 prototype: compare six fixed bays with richer columns only for 1–3 total subscriptions.
   const rich = ui.few === 'b' && list.length > 0 && list.length <= 3;
-  // 'exact' (owner, build 14c): one page shows exactly the user's subscriptions, with no empty padding bays; paged
-  // fleets keep six bays a page so a column keeps its width from page to page.
-  const slots = rich ? cols.length : ui.few === 'exact' && list.length <= PER ? Math.max(list.length, 1) : ['c', 'c3', 'c4'].includes(ui.few) && list.length <= PER ? Math.max(list.length, ui.few === 'c3' ? 3 : 4) : PER;
+  const slots = rich ? cols.length : ['c', 'c3', 'c4'].includes(ui.few) && list.length <= PER ? Math.max(list.length, ui.few === 'c3' ? 3 : 4) : PER;
   const rows = cols.length ? [...ROWS] : [];
   // A page LED lights in the colour of the worst subscription on its page; the current page's LED is the long one.
   const leds = Array.from({length: pages}, (_, p) => ({page: p, current: p === page, accounts:list.slice(p*PER,p*PER+PER).map(a=>({name:a.name,status:GREY.has(a.state)?null:status.get(a.id)||null})),

@@ -31,11 +31,3 @@ test('build 14c: rows the widget hides (no dock surface) are not cockpit members
  const loading=structuredClone(seed);loading.id='kimi';loading.name={en:'Kimi',zh:'Kimi'};loading.accounts.forEach(a=>{a.subscriptionRef=null;a.accountLocator=null;a.valueState='none';});
  data.projection.rows.push(loading);assert.deepEqual(cockpitMembers(data).map(m=>m.row.id),['codex','kimi']);
 });
-import {engineModel} from '../../../cockpit/study/rocket-r1/engine-model.js';
-test('build 14c: one page of subscriptions has exactly one engine bay each and no empty padding bays',()=>{
- const account={name:'Codex',short:'Codex',alias:'Codex',colour:'#6aa8ff',logo:'',state:'ok',ageMin:null,support:'quota-only',windows:[],extras:[],cards:[],credits:null};
- for(const n of [1,2,3,6]){
-  const m=engineModel({now:0,accounts:Array.from({length:n},(_,i)=>({...account,id:'a'+i})),alerts:[],caution:{level:null,key:''}},{few:'exact',page:0,scope:null,tint:true,pctMode:'left',redAt:25,lang:'en',now:0});
-  assert.equal(m.slots,n);assert.equal(m.cols.length,n);
- }
-});

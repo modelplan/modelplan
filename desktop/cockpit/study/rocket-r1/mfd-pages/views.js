@@ -14,9 +14,9 @@ const POOL_TOOL = {codex: 'Codex', claude: 'Claude Code'};
 /* ---------- comparison view (spec 6.4; round D1, owner 2026-10-23) ---------- */
 // args {modelId, current, trial, fast, currentFast}. Fixed current / trial / ★
 // slots; static backlights and equality tags identify matching configurations. Rows compare
-// against current. Build 14c (owner): when current is unreported, its column stays "--" and the try and ★ columns and
-// the chart are measured against ★ instead (the note says so), so a trial on a model with no live session still
-// shows numbers and lines. Chart ratios use the same reference configuration. Effort keys set the trial.
+// against current; unreported current never falls back to ★ in the table (CKP-MFD-19). Chart ratios use the same
+// current configuration; build 14c (owner): with current unreported the chart is still drawn, relative to ★ = 1, and
+// the note says so. Effort keys set the trial.
 // The bottom key row is the view's own (compareKeys): ‹ 返回 <page>, ⚡ 快速 关 | 开.
 
 // One reading of the comparison for the card, its keys and its clicks, so the three always agree.
@@ -56,9 +56,9 @@ export function comparison(d, ui, args) {
       tag: tc ? t('mfd.equalCurrent') : tr ? '= ★' : ''},
     {c: R, role: t('mfd.cRec'), id: 'rec', cls: 'gold cmp-panel', light: 'gold', known: true, tag: ''},
   ];
-  // The reference is the reported current configuration, or ★ (standard speed) when current is unreported.
+  for (const col of columns) col.values = comparisonValues(col.c, cur ? C : null);
+  // The chart's ×1: the reported current configuration, or ★ (standard speed) when current is unreported (build 14c).
   const reference = cur ? C : R;
-  for (const col of columns) col.values = comparisonValues(col.c, reference);
   const cells = f => columns.map(({values, id, cls, light, known, unlit}) => `<td data-role="${id}" data-light="${light}" class="${cls}"><span class="cmp-value"${unlit ? ' aria-hidden="true"' : ''}>${known ? f(values) : '--'}</span></td>`).join('');
   const rows = [
     [t('mfd.rAbility'), v => v.abilityDelta == null ? '—' : sign(v.abilityDelta)],
@@ -130,16 +130,18 @@ function configurationChart(m, columns, tier, fast, {w: W, h: H}, reference, ver
   const showFast=!!tier&&(fast||current?.fast);
   const configs = [];
   for (const {c, id, known, unlit, values} of columns) {
-    if (!known || unlit || values.ratios.every(v => v == null)) continue;
+    // Markers use the chart's own reference (the table may show dashes when current is unreported).
+    const ratios = current ? comparisonValues(c, current).ratios : values.ratios;
+    if (!known || unlit || ratios.every(v => v == null)) continue;
     const same = configs.find(x => x.c.label === c.label && x.c.fast === c.fast);
     if (same) same.roles.push(id);
-    else configs.push({c, roles: [id], values: values.ratios});
+    else configs.push({c, roles: [id], values: ratios});
   }
   const available = [...rows,...fastRows].some(r => r.some(plottable));
   const description = t(!current ? 'mfd.cmpChartUnknownAria' : !available ? 'mfd.cmpChartUnavailableAria' : versusRec ? 'mfd.cmpChartRecAria' : 'mfd.cmpChartAria', {m: m.short, efforts: efforts.join(' → ')});
   if (!available) return `<svg class="cmp-chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(description)}"></svg>`;
   // Current/★ points can be off the Fast trace. Their values are fixed, never trial-dependent.
-  const dom = ratioDomain([...rows.flat(),...fastRows.flat(), ...columns.filter(c => c.id !== 'trial' && c.known).flatMap(c => c.values.ratios)]), plotH = H - top - bottom;
+  const dom = ratioDomain([...rows.flat(),...fastRows.flat(), ...columns.filter(c => c.id !== 'trial' && c.known).flatMap(c => current ? comparisonValues(c.c, current).ratios : c.values.ratios)]), plotH = H - top - bottom;
   const X = i => L + (i + .5) * (end - L) / efforts.length, Y = v => top + (dom.max - Math.log2(v)) / (dom.max - dom.min) * plotH;
   const tickLabels = [1];
   for(const v of [dom.ticks[0],dom.ticks.at(-1),...dom.ticks]) {

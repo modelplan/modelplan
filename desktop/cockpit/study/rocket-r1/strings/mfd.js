@@ -109,8 +109,8 @@ register('mfd', {
   fastLine: ['line', '快速：速度 ×{s} · 成本 ×{c}', 'Fast: speed ×{s} · cost ×{c}'],
   fastRow: ['aria', '快速模式', 'Fast mode'], // the accessible name of the ⚡ glyph (drawn as SVG, polish A)
   currentUnknown: ['line', '当前未报告', 'current unknown'],
-  // Build 14c: with no reported current, the try and ★ columns and the chart are measured against ★.
-  currentUnknownVsRec: ['line', '当前未报告 · 相对 ★', 'current unknown · vs ★'],
+  // Build 14c: with no reported current, the table keeps dashes and the chart is drawn relative to ★.
+  currentUnknownVsRec: ['line', '当前未报告 · 图以 ★ 为基准', 'current unknown · chart relative to ★'],
   cmpAria: ['aria', '{m} 档位比较（只在本机，不改会话）', '{m} effort comparison (local only, no session changes)'],
   ladderAria: ['aria', '试 {e}', 'Try {e}'],
   // round D1 (owner 2026-10-23): the comparison names itself on the screen and has its own bottom keys
