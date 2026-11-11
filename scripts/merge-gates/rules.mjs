@@ -577,3 +577,23 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [], repo = REP
 export function description(text) {
   return text.length <= 140 ? text : text.slice(0, 139) + "…";
 }
+
+// ---- Switch fence (owner D149) ----
+// Overlapping evaluator runs each read CODEX_REVIEW_OFF when they start, so an older run could post a Sonnet-only
+// success after a newer run (the all_open sweep) posted pending. fencedEvaluate re-reads the switch right before the
+// caller posts: evaluate(off) computes a result under a given switch value, readSwitch() returns the live value
+// (true/false) or null when it cannot be read. If the live value differs from the one used, evaluate again; an
+// unreadable switch never keeps a result that used the Sonnet fallback (it is recomputed with the switch closed).
+export async function fencedEvaluate({ evaluate, readSwitch, initial, max = 3 }) {
+  let off = initial, out = await evaluate(off);
+  for (let i = 0; i < max; i++) {
+    const live = await readSwitch();
+    const usedSonnet = (out?.result?.glmFallback ?? []).some((u) => /sonnet\) under codex-review-off/.test(u));
+    const want = live ?? (usedSonnet ? false : off);
+    if (want === off) return out;
+    off = want;
+    out = await evaluate(off);
+  }
+  // Still moving after `max` tries: only a result computed with the switch closed is safe to publish.
+  return off ? await evaluate(false) : out;
+}

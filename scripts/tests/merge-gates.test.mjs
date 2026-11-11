@@ -865,3 +865,25 @@ test("an action_required run never ran: it is skipped when picking the latest ru
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "failure", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.FAILURE);
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "success", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.SUCCESS);
 });
+
+test("switch fence: an older run that evaluated with the switch on cannot post a Sonnet-only success after the sweep posted pending", async () => {
+  const comments = [comment(v("merge", H, "sonnet"))];
+  const run = async (off) => ({ result: evalPr({ comments, codexReviewOff: off }) });
+  let live = true;
+  const posted = [];
+  // older run evaluated under switch=on (initial true); meanwhile the switch is turned off and the sweep posts pending
+  live = false;
+  posted.push((await run(false)).result.state);
+  const late = await R.fencedEvaluate({ evaluate: run, readSwitch: async () => live, initial: true });
+  posted.push(late.result.state);
+  assert.deepEqual(posted, [R.PENDING, R.PENDING], "the late run re-evaluates instead of posting success");
+  // switch still on: the success stands
+  assert.equal((await R.fencedEvaluate({ evaluate: run, readSwitch: async () => true, initial: true })).result.state, R.SUCCESS);
+  // unreadable switch: a Sonnet-based success is recomputed closed; a non-Sonnet success is kept
+  assert.equal((await R.fencedEvaluate({ evaluate: run, readSwitch: async () => null, initial: true })).result.state, R.PENDING);
+  const gpt = async (off) => ({ result: evalPr({ comments: [comment(v("merge", H, "macrevc"))], codexReviewOff: off }) });
+  assert.equal((await R.fencedEvaluate({ evaluate: gpt, readSwitch: async () => null, initial: true })).result.state, R.SUCCESS);
+  // switch flapping every read ends closed
+  let n = 0;
+  assert.equal((await R.fencedEvaluate({ evaluate: run, readSwitch: async () => n++ % 2 === 0, initial: false })).result.state, R.PENDING);
+});
