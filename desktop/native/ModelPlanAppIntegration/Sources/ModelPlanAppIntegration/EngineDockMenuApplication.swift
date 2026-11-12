@@ -423,7 +423,6 @@ struct StatusNoticePresentation {
         context.capabilities.loginNotInApplications = loginServiceAdapter?.observedNotInApplications ?? false
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
-        composition.keyEntryAvailable = { [weak self] in self?.readerKeyBackend != nil }
         // D87 slice 9: the Keychain card still asks for Keychain access; any other cause opens its Subscriptions row.
         composition.dock.cardActionRequested = { [weak self] id in
             guard let self else { return }

@@ -626,7 +626,7 @@ public struct SubscriptionRowActions {
 
 /// Opening a tool or a help page for a fix action. Nothing here reads or writes a credential.
 @MainActor enum SubscriptionFixLauncher {
-    static func url(for target: ReaderCauseTarget, tool: String) -> URL? {
+    static func url(for target: RowFixTarget, tool: String) -> URL? {
         switch target {
         case .installNode: return URL(string: "https://nodejs.org/en/download")
         case .installTool:
