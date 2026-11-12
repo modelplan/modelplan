@@ -175,3 +175,67 @@ test('CKP-FAD-11 CKP-MFD-19: without the observed mode the same session stays st
  await solFader.locator('.fd-strip').click();
  await expect(page.locator('.mfd-vk button.vk-fast')).toHaveAttribute('aria-pressed','false');
 });
+
+// CKP-MFD-33 (demo v12, owner 11-12): fast mode on the big screen is only a number. Equal ability = one number with a blue
+// "="; a fast value past 100 % pins to the end with › and prints the exact value; no ⚡ and no time on the bars.
+const barsRead=page=>page.locator('.mfd-page svg.cmp-bars').evaluate(svg=>{const out={};for(const k of ['abl','cost']){const g=svg.querySelector(`.pc-${k}`),track=g.querySelector('.pc-track'),W=Number(track.getAttribute('width')),lane=g.querySelector('.pc-lane-trial');
+ out[k]={numbers:[...g.querySelectorAll('.pc-num')].map(e=>({role:e.dataset.role,text:e.textContent,equal:e.dataset.equal==='true'})),lane:lane?Number(lane.getAttribute('width'))/W:null,over:g.querySelector('.pc-over')?g.querySelector('.pc-over').classList.contains('trial'):null};}return out;});
+test('CKP-MFD-33 fast only: equal ability is one number with a blue "=", the cost shows both; nothing for fast on the big screen',async({page})=>{
+ await open(page,'en',true);
+ await sol(page).locator('.fd-strip').click();
+ const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
+ await page.locator('.mfd-vk button.vk-fast').click();
+ const b=await barsRead(page);
+ expect(b.abl.numbers.map(n=>[n.role,n.equal])).toEqual([['current',true]]);expect(b.abl.numbers[0].text).toMatch(/^=\d+%$/);
+ expect(b.abl.lane).toBeGreaterThan(.5);
+ expect(b.cost.numbers.map(n=>[n.role,n.equal])).toEqual([['current',false],['trial',false]]);
+ const [c,t]=b.cost.numbers.map(n=>parseInt(n.text));expect(t/c).toBeGreaterThan(2.3);expect(t/c).toBeLessThan(2.7); // the subscription ratio 2.5
+ expect(b.cost.over).toBeNull();
+ await expect(screen.locator('.g-bolt')).toHaveCount(0);
+ await expect(screen.locator('.cmp-note')).toHaveCount(0);
+});
+test('CKP-MFD-33 fast overflow: the bar pins to the end, › marks it, the number is exact',async({page})=>{
+ await open(page,'en',true);
+ await sol(page).locator('.fd-strip').click();
+ await page.locator('.mfd-vk button.vk-fast').click();
+ await page.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
+ const b=await barsRead(page);
+ // The top effort at fast = the cost of the top effort x 2.5 = 250 %
+ expect(b.cost.numbers.map(n=>n.role)).toEqual(['current','trial']);expect(b.cost.numbers[1].text).toBe('250%');
+ expect(b.cost.over).toBe(true);expect(b.cost.lane).toBeGreaterThan(.99);
+ expect(b.abl.over).toBeNull();
+});
+
+// Owner 11-12: fast mode on the small fader screen is a ⚡ beside the lamp, symbol only (no text), for both the real mode
+// (white) and the trial (solid blue = a trial turns it on, blue outline = a trial turns it off).
+test('CKP-FAD-24 fast symbol: ⚡ beside the lamp shows the real fast mode (white) and the trial (blue); no text; none without a fast mode',async({page})=>{
+ await open(page,'en',true,data=>{data.details.sessions[0].fast=true;});
+ const solFader=page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first(),bolt=solFader.locator('.fd-fast');
+ await expect(bolt).toHaveCount(1);await expect(bolt).toHaveAttribute('data-fast-state','on');
+ expect(await bolt.evaluate(e=>e.textContent.trim())).toBe('');
+ // the lamp stays a dot, the bolt stands right of it on the same row
+ const [lamp,sym]=await Promise.all([solFader.locator('.fd-indicator').boundingBox(),bolt.boundingBox()]);
+ expect(sym.x).toBeGreaterThanOrEqual(lamp.x+lamp.width/2);expect(Math.abs(sym.y+sym.height/2-(lamp.y+lamp.height/2))).toBeLessThan(2);
+ await expect(solFader.locator('.fd-indicator svg')).toHaveCount(0);
+ // trial turns it off: blue outline
+ await solFader.locator('.fd-strip').click();
+ await page.locator('.mfd-vk button.vk-fast').click();
+ await expect(solFader.locator('.fd-fast')).toHaveAttribute('data-fast-state','off');
+ await page.locator('.mfd-vk button.vk-fast').click();
+ await expect(solFader.locator('.fd-fast')).toHaveAttribute('data-fast-state','on');
+ // a model with no fast mode (Astra) shows none
+ await page.locator('.mfd-vk .vk-back').click();
+ await expect(page.locator('.fd-ch:not(.empty)').filter({hasText:'Astra'}).first().locator('.fd-fast')).toHaveCount(0);
+});
+test('CKP-FAD-24 fast symbol: a trial that turns fast on shows a solid blue ⚡; standard mode shows none',async({page})=>{
+ await open(page,'en',true);
+ const solFader=page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first();
+ await expect(solFader.locator('.fd-fast')).toHaveCount(0);
+ await solFader.locator('.fd-strip').click();
+ await page.locator('.mfd-vk button.vk-fast').click();
+ const bolt=solFader.locator('.fd-fast');
+ await expect(bolt).toHaveAttribute('data-fast-state','try');
+ expect(await bolt.locator('path').evaluate(p=>getComputedStyle(p).fill)).not.toBe('none');
+ await page.locator('.mfd-vk button.vk-fast').click();
+ await expect(solFader.locator('.fd-fast')).toHaveCount(0);
+});

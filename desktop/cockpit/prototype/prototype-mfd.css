@@ -179,20 +179,42 @@ img.mg{object-fit:contain;background:none}
 .cmp-bars-row{position:relative;flex:none;height:58px}
 .cmp-bars-row>svg{position:absolute;left:0;top:0;overflow:visible}
 .dk-mfd .cmp-bars .pc-label{font:9px var(--f-lcd);fill:var(--lcd-muted)}
-.dk-mfd .cmp-bars .pc-max{font:8px var(--f-lcd);fill:var(--pc-dim)}
-.dk-mfd .pc-abl .pc-chip{fill:var(--lcd-ink)}.dk-mfd .pc-cost .pc-chip{fill:var(--pc-violet)}
-.dk-mfd .pc-track{fill:#ffffff12}
-.dk-mfd .pc-abl .pc-fill{fill:var(--lcd-ink);opacity:.62}.dk-mfd .pc-cost .pc-fill{fill:var(--pc-violet);opacity:.8}
-.dk-mfd .pc-seg{fill:var(--trial);opacity:.55}
+.dk-mfd .cmp-bars .pc-max{font:7.5px var(--f-lcd);fill:var(--pc-dim)}
+.dk-mfd .pc-abl .pc-chip{fill:var(--lcd-ink);opacity:.85}.dk-mfd .pc-cost .pc-chip{fill:var(--pc-violet)}
+/* v12: stereo lanes with notches. Track = the whole 0-100 % length, a faint tint of the bar colour in a 1 px outline. */
+.dk-mfd .pc-abl .pc-track{fill:var(--lcd-ink);fill-opacity:.075}.dk-mfd .pc-cost .pc-track{fill:var(--pc-violet);fill-opacity:.11}
+.dk-mfd .pc-edge{fill:#000;opacity:.55}
+.dk-mfd .pc-outline{fill:none;stroke-width:1}
+.dk-mfd .pc-abl .pc-outline{stroke:var(--lcd-ink);stroke-opacity:.26}.dk-mfd .pc-cost .pc-outline{stroke:var(--pc-violet);stroke-opacity:.34}
+.dk-mfd .pc-g-abl0{stop-color:var(--lcd-ink);stop-opacity:.95}.dk-mfd .pc-g-abl1{stop-color:var(--lcd-ink);stop-opacity:.7}
+.dk-mfd .pc-g-cost0{stop-color:var(--pc-violet);stop-opacity:1}.dk-mfd .pc-g-cost1{stop-color:var(--pc-violet);stop-opacity:.78}
+.dk-mfd .pc-t0{stop-color:var(--trial);stop-opacity:1}.dk-mfd .pc-t1{stop-color:var(--trial);stop-opacity:.75}
+.dk-mfd .pc-glow{opacity:.3}.dk-mfd .pc-cost .pc-glow{opacity:.45}
+.dk-mfd .pc-abl .pc-glow.real rect{fill:var(--lcd-ink)}.dk-mfd .pc-cost .pc-glow.real rect{fill:var(--pc-violet)}.dk-mfd .pc-glow.trial rect{fill:var(--trial)}
+.dk-mfd .pc-hi{fill:#fff;opacity:.22}
+.dk-mfd .pc-abl .pc-cap{fill:var(--lcd-ink)}.dk-mfd .pc-cost .pc-cap{fill:var(--pc-violet)}.dk-mfd .pc-cap-trial{fill:#d6ecff}
+.dk-mfd .pc-notch{fill:var(--lcd-ink);opacity:.3}.dk-mfd .pc-cost .pc-notch{fill:var(--pc-violet);opacity:.4}
+.dk-mfd .pc-bar .pc-notch.on{fill:var(--pc-glass);opacity:.6}
+.dk-mfd .pc-abl .pc-end{fill:var(--lcd-ink);opacity:.75}.dk-mfd .pc-cost .pc-end{fill:var(--pc-violet);opacity:.9}
+.dk-mfd .pc-over{fill:none;stroke:var(--lcd-ink);stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round}.dk-mfd .pc-cost .pc-over{stroke:var(--pc-violet)}.dk-mfd .pc-bar .pc-over.trial{stroke:var(--trial)}
 .dk-mfd .pc-halo{fill:var(--pc-glass)}
 .dk-mfd .pc-rec{fill:var(--gold-lcd)}
 .dk-mfd .pc-star{fill:var(--gold-lcd);stroke:var(--pc-glass);stroke-width:.9;stroke-linejoin:round;paint-order:stroke}
-.dk-mfd .pc-tick{stroke:var(--pc-glass);stroke-width:.8}
-.dk-mfd .pc-tick.pc-current{fill:var(--lcd-ink)}.dk-mfd .pc-tick.pc-trial{fill:var(--trial)}
 .dk-mfd .pc-num{font:10px var(--f-lcd);stroke:var(--pc-glass);stroke-width:3;stroke-linejoin:round;paint-order:stroke}
 .dk-mfd .pc-num .pc-unit{font-size:7px}
 .dk-mfd .pc-num.pc-current{fill:var(--lcd-ink)}.dk-mfd .pc-num.pc-current .pc-unit{fill:var(--lcd-muted)}
-.dk-mfd .pc-num.pc-trial,.dk-mfd .pc-num.pc-trial .pc-unit{fill:var(--trial)}
+.dk-mfd .pc-num.pc-trial,.dk-mfd .pc-num.pc-trial .pc-unit,.dk-mfd .pc-num .pc-eq{fill:var(--trial)}
+/* the bars and the chart are linked: the pointer on an effort (a bar segment, a chart column, an effort key) previews it
+   on both, the pointer on an Ability / Cost row sets that line apart in the chart. */
+.dk-mfd .pc-hit{fill:transparent}.dk-mfd .pc-seg-hit{cursor:pointer}
+.dk-mfd .pc-preview{display:none;stroke:var(--trial);stroke-width:1.2;stroke-dasharray:2 1.5;opacity:.9}
+.dk-mfd .pc-preview.hot{display:inline}
+.dk-mfd .cmp-chart .pc-band-hover{display:none;fill:none;stroke:var(--trial);stroke-opacity:.5;stroke-dasharray:2 2}
+.dk-mfd .cmp-chart .pc-band-hover.hot{display:inline}
+.dk-mfd .pc-line{transition:opacity .12s}.dk-mfd .pc-line polyline{transition:stroke-width .12s}
+.pg-compare[data-hk="abl"] .pc-line.pc-cost,.pg-compare[data-hk="abl"] .pc-line.pc-time,.pg-compare[data-hk="cost"] .pc-line.pc-abl,.pg-compare[data-hk="cost"] .pc-line.pc-time{opacity:.22}
+.pg-compare[data-hk="abl"] .pc-line.pc-abl polyline,.pg-compare[data-hk="cost"] .pc-line.pc-cost polyline{stroke-width:2.3}
+.pg-compare[data-hk="abl"] .pc-bar.pc-abl .pc-label,.pg-compare[data-hk="cost"] .pc-bar.pc-cost .pc-label{fill:var(--lcd-ink)}
 .dk-mfd .cmp-chart .pc-band-current{fill:#e9edf00d}
 .dk-mfd .cmp-chart .pc-band-trial{fill:#9fd2ff26;stroke:var(--trial);stroke-opacity:.25}
 .dk-mfd .cmp-chart .pc-grid{stroke:#ffffff12;stroke-dasharray:2 3}.dk-mfd .cmp-chart .pc-grid.unit{stroke:#ffffff1f}

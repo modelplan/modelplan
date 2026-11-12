@@ -29,7 +29,6 @@ export const agoText = x => x.running ? t('fad.running', {t: dhm(x.startedMin)})
 
 // Glyphs drawn as SVG, so their width is the same on every platform and ⚡ never turns into a colour emoji.
 const STAR = '<svg class="g-star" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 .5L6.18 3.68 9.57 3.82 6.9 5.92 7.82 9.18 5 7.3 2.18 9.18 3.1 5.92 .43 3.82 3.82 3.68Z"/></svg>';
-const BOLT = '<svg class="g-bolt" viewBox="0 0 6 9" aria-hidden="true"><path d="M3.9 0 .3 5.1h2.4L2 9l3.7-5.4H3.3z"/></svg>';
 
 /* ---------- model ---------- */
 // d = faderData(), ui = faderUi() + {bankSize}. Returns {bank, banks, size, channels (this bank, null = empty slot),
@@ -121,7 +120,11 @@ export function indicatorView(c) {
   const label = t('fad.indicatorAria', {m: c.name, s: t(trying ? 'fad.indicatorTrying' : c.sel ? 'fad.indicatorSelected' : 'fad.indicatorIdle'),
     fast: c.tier ? t('fad.fastLampAria', {s: trying ? t(fast ? 'fad.tryFast' : 'fad.tryStd') : t(fast ? 'fad.lampOn' : 'fad.lampOff')}) : ''});
   const sessions = c.leds.map(x => `${x.account ? x.account + ' · ' : ''}${x.tool} · ${x.project} · ${agoText(x)}`).join('\n');
-  return `<span class="fd-indicator ${tone}${fast ? ' fast' : ''}" data-state="${tone}" data-fast="${fast}"${c.lamp ? ` data-fast-mode="${c.lamp}"` : ''} role="img" aria-label="${esc(label + (sessions ? '\n' + sessions : ''))}">${fast ? BOLT : ''}</span>`;
+  // CKP-FAD-24 / owner 11-12: fast mode is a ⚡ beside the lamp, symbol only: white = the real configuration is fast, solid blue =
+  // a trial turns it on, blue outline = a trial turns it off. The lamp itself stays a dot. Nothing for a tool without a fast mode.
+  const state = !c.tier ? '' : c.tFast === true ? 'try' : c.tFast === false ? 'off' : c.currentFast ? 'on' : '';
+  const bolt = state ? `<svg class="fd-fast ${state}" data-fast-state="${state}" viewBox="0 0 6 9" role="img" aria-label="${esc(t(state === 'on' ? 'fad.lampOn' : state === 'try' ? 'fad.tryFast' : 'fad.tryStd'))}"><path d="M3.9 0 .3 5.1h2.4L2 9l3.7-5.4H3.3z"/></svg>` : '';
+  return `<span class="fd-indicator ${tone}" data-state="${tone}" data-fast="${fast}"${c.lamp ? ` data-fast-mode="${c.lamp}"` : ''} role="img" aria-label="${esc(label + (sessions ? '\n' + sessions : ''))}"></span>${bolt}`;
 }
 // The travel's fixed marks: a tick per level the model has, the ★ detent (round D1: this fader's own ★ level, a short
 // gold notch beside the cap's lane and a tiny gold ★, because the shared scale cannot show each model's ★), and white

@@ -100,7 +100,7 @@ register('mfd', {
   pctAbility: ['lcd', '能力', 'Ability'],
   pctCost: ['lcd', '花费', 'Cost'],
   pctTime: ['lcd', '耗时', 'Time'],
-  pctMax: ['lcd', 'Max', 'Max'],
+  pctMax: ['lcd', '100%', '100%'],
   pctBarsAria: ['aria', '{m} {e}：能力 {a}、花费 {c}（占最高档）', '{m} {e}: ability {a}, cost {c} (share of the top effort)'],
   pctChartAria: ['aria', '{m}：已发布档位 {efforts} 的能力、花费、耗时，占最高档的百分比', '{m}: ability, cost and time for the published efforts {efforts}, as a share of the top effort'],
   fastOn: ['lcd', '开', 'on'],
