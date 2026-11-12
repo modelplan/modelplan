@@ -12,6 +12,10 @@ enum EngineRowsText {
     static let widgetTurnedOffHint = SettingsText(
         "Quota Widget is off. Right-click the menu bar icon and choose Show Quota Widget.",
         "额度挂件已关闭，可右键点菜单栏图标，勾选「显示额度挂件」重新打开")
+    /// D114: one-time hint the first time the widget collapses to its strip.
+    static let widgetCollapsedHint = SettingsText(
+        "Quota Widget is now a strip on the screen edge. Hover it, or right-click the menu bar icon and choose Find Quota Widget.",
+        "额度挂件已收成屏幕边缘的细条，鼠标移上去可展开，也可右键点菜单栏图标，选「找到额度挂件」")
     static let refresh = SettingsText("Refresh", "刷新")
     static let settings = SettingsText("Settings…", "设置…")
     static let contextSettings = SettingsText("Settings", "设置")
@@ -52,4 +56,15 @@ enum EngineRowsText {
         "Readings unavailable. Check the reading service connection in Settings.",
         "读数不可用，请在设置中检查读取服务连接。")
     static let waitingForFresh = SettingsText("Waiting for current readings. Refresh to retry.", "等待读数更新，可刷新重试。")
+}
+
+/// Right-click menus (cockpit, widget, status item). Terms follow the shared glossary and Settings.
+extension EngineRowsText {
+    static let resetPosition = SettingsText("Reset Position", "重置位置")
+    static let widgetSize = SettingsText("Quota Widget Size", "额度挂件大小")
+    static let sizeSmall = SettingsText("Small", "小")
+    static let sizeMedium = SettingsText("Medium", "中")
+    static let sizeLarge = SettingsText("Large", "大")
+    static let help = SettingsText("Help…", "说明…")
+    static let closeWindow = SettingsText("Close Window", "关闭窗口")
 }

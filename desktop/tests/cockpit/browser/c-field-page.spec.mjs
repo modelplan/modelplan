@@ -123,9 +123,33 @@ test('the official porthole opens the field by click and keyboard',async({page})
  expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
- const port=page.locator('.ck-port');await expect(port).toHaveAttribute('role','button');await expect(port).toHaveAttribute('aria-label','Open the 3D view');
- await port.click();await port.focus();await page.keyboard.press('Enter');
+ const port=page.locator('.ck-port'),key=page.locator('.port-big[data-bigfield]');await expect(port).not.toHaveAttribute('tabindex');await expect(port).not.toHaveAttribute('role','button');
+ await expect(key).toHaveAttribute('aria-label',/^Open the 3D launch field/);
+ await port.click();await key.focus();await page.keyboard.press('Enter');
  expect(await page.evaluate(()=>window.posted.filter(m=>m.type==='action'&&m.action==='openField').length)).toBe(2);
+});
+// Build 14c: after a click on the porthole and a key press (the walk clicks the field open, then presses Escape), the
+// focused port drew WebKit's default blue focus ring round the whole port box, over the canopy frame; with that ring
+// removed, the same click and key press lit the ⤢ key gold although nobody pressed it (owner, 14c). The port is not
+// focusable; only real keyboard navigation to the ⤢ key shows its ring.
+test('build 14c: a click and Escape on the porthole leave no ring on the port or its ⤢ key; Tab to the key shows it',async({page})=>{
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ const read=()=>page.evaluate(()=>{const p=document.querySelector('.ck-port'),k=p.querySelector('.port-big'),c=getComputedStyle(p),ck=getComputedStyle(k);
+  return {active:document.activeElement===p?'port':document.activeElement===k?'key':'other',port:c.outlineStyle,key:ck.outlineStyle,keyWidth:ck.outlineWidth};});
+ const port=page.locator('.ck-port');await port.click({position:{x:520,y:120}});await page.keyboard.press('Escape');
+ let v=await read();expect(v.active).not.toBe('port');expect([v.port,v.key]).toEqual(['none','none']);
+ await page.locator('.port-big').click();await page.keyboard.press('Escape');
+ v=await read();expect(v.active).not.toBe('key');expect(v.key).toBe('none');
+ // Real keyboard navigation: Tab from the control just before the key lands on it and shows the gold ring.
+ await page.evaluate(()=>{const k=document.querySelector('.port-big'),all=[...document.querySelectorAll('button,[tabindex="0"],a[href]')].filter(e=>e.offsetParent&&!e.disabled&&e.tabIndex>=0);
+  const i=all.indexOf(k);document.body.focus();if(i>0)all[i-1].focus();});
+ for(let n=0;n<40&&(await read()).active!=='key';n++)await page.keyboard.press('Tab');
+ v=await read();expect(v.active).toBe('key');expect([v.key,v.keyWidth]).toEqual(['solid','2px']);
 });
 test('D43 every vendor mark the scene asks for loads under the page CSP, close to square',async({page})=>{
  await open(page);
@@ -174,8 +198,35 @@ test('D63 the ⤢ key opens the field, with a label that says the field itself a
  await openCockpit(page);
  const key=page.locator('.ck-port [data-bigfield]');await expect(key).toBeVisible();await expect(key).toHaveText('⤢');
  await expect(key).toHaveAttribute('aria-label','Open the 3D launch field · Or click anywhere on the field');
- expect(await key.evaluate(e=>{const s=getComputedStyle(e);return [s.right,s.top,s.width,s.height];})).toEqual(['40px','36px','22px','22px']);
+ expect(await key.evaluate(e=>{const s=getComputedStyle(e);return [s.right,s.top,s.width,s.height];})).toEqual(['38px','52px','22px','22px']);
  await key.click();expect(await opens(page)).toEqual([null]);
+});
+// Owner 11-09: the key must sit inside the glass. The c01 canopy aperture mask (laid 1:1 on the canopy art box, see below; origin at the box's
+// top left) is the truth: every pixel of the key's rect keeps at least 8 px from any frame pixel, and it clears the HUD.
+for(const theme of ['night','day'])for(const tier of ['tall','compact'])test(`D63 the key lies inside the aperture mask with 8 px of glass (${theme} ${tier})`,async({page})=>{
+ await page.setViewportSize({width:636,height:tier==='tall'?905:635});
+ await page.addInitScript(()=>{window.posted=[];window.webkit={messageHandlers:{cockpit:{postMessage(m){window.posted.push(typeof m==='string'?JSON.parse(m):m);}}}};});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ await receive(send('load',{appearance:{...appearance,theme},shell:{...shell,tier}}));
+ await receive(send('visibility',{visible:true,occluded:false,key:true}));await receive(send('display',{data:visualFixture().data}));
+ await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
+ const layout=tier==='tall'?890:640;
+ const r=await page.evaluate(async layout=>{
+  // The art box is the port row grown by 24 px each side and 12 px at the top (cockpit.css .ck-portrow::before, inset -12px -24px 0),
+  // drawn 1:1 with the canopy mask. The mask pixel (px,y) therefore lies at the box's origin plus (px,y), never at the page's.
+  const img=new Image();img.src='./runtime/canopy-c01/aperture-'+layout+'-1x.png';await img.decode();
+  const row=document.querySelector('.ck-portrow').getBoundingClientRect(),box={left:row.left-24,top:row.top-12,width:row.width+48,height:row.height+12};
+  const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const x=c.getContext('2d');x.drawImage(img,0,0);const a=x.getImageData(0,0,c.width,c.height).data;
+  const k=document.querySelector('[data-bigfield]').getBoundingClientRect();let min=1e9;
+  for(let y=0;y<c.height;y++)for(let px=0;px<c.width;px++)if(a[(y*c.width+px)*4+3]<128){
+   const X=box.left+px,Y=box.top+y,dx=Math.max(k.left-X,0,X-(k.right-1)),dy=Math.max(k.top-Y,0,Y-(k.bottom-1));min=Math.min(min,Math.hypot(dx,dy));}
+  const huds=[...document.querySelectorAll('.ck-port .hud, .ck-port .hud *')].map(e=>e.getBoundingClientRect()).filter(h=>h.width>0&&h.height>0);
+  return {min,boxWidth:box.width,boxHeight:box.height,maskWidth:c.width,maskHeight:c.height,hudOverlap:huds.some(h=>k.left<h.right&&k.right>h.left&&k.top<h.bottom&&k.bottom>h.top)};
+ },layout);
+ expect([r.boxWidth,r.boxHeight],'the art box is 1:1 with the canopy mask').toEqual([r.maskWidth,r.maskHeight]);
+ expect(r.min,'glass margin around the key').toBeGreaterThanOrEqual(8);
+ expect(r.hudOverlap).toBe(false);
 });
 test('D63 a double-click on the field opens it once',async({page})=>{
  await openCockpit(page);
@@ -276,16 +327,29 @@ test('CKP-PORT-13 Chinese link text',async({page})=>{
 // CKP-PORT-11 (D63): the c01 porthole silhouette feathered ~10% into the desktop, derived from the published
 // window-890-1x.png at open. Reference: alpha samples of the prototype's approved mask (task 91 round 5,
 // feather-masks/A.png, 1000x650), read on the design branch; the mask image itself is not in this repository.
-// 91 A pins (owner 11-09): the approved matte (task 91 A, feather-masks/A.png) ships byte for byte and the page reads it.
-const MATTE_ASSET_SHA256='4c476c2a5dcb902065b20f9e365a2df5d1ac0cab8857f0d154dd45fb8f31ec41';
-const matteGrid=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,13,52,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,53,14,0,0,0,0,0,0,0,0,0,16,69,135,192,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,225,192,135,69,16,0,0,0,0,0,0,41,125,199,246,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,246,199,125,43,0,0,0,0,13,136,228,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,230,139,14,0,0,0,30,165,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,165,30,0,0,0,45,184,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,187,48,0,0,0,58,197,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,197,58,0,0,0,72,211,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,212,73,0,0,0,84,221,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,221,84,0,0,1,95,228,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,232,100,1,0,4,113,239,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,239,113,4,0,8,125,244,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,244,125,8,0,16,141,250,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,251,142,16,0,23,154,253,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,253,154,23,0,30,165,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,168,32,0,43,182,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,182,43,0,53,192,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,192,53,0,67,206,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,207,68,0,79,216,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,216,79,0,73,212,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,214,75,0,53,192,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,194,55,0,22,144,246,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,246,144,22,0,0,69,184,229,244,251,254,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,254,251,244,230,184,69,0,0,0,8,58,97,124,142,159,171,176,184,192,197,197,207,207,207,212,212,216,221,216,212,212,207,207,207,197,197,192,184,176,171,159,142,124,98,59,8,0,0,0,0,0,1,8,16,26,34,39,45,53,58,58,68,68,68,73,73,79,84,79,73,73,68,68,68,58,58,53,45,39,34,26,16,8,1,0,0,0];
-test('91 A the approved matte ships byte for byte, is 1000x650, and the page reads exactly its alpha',async({page})=>{
+// D110 (#801): the owner-approved redrawn c01 canopy changed window-890-1x.png, so these samples (same points, same tolerance) and the
+// matte pin below were re-measured from the published new mask with the same derivation.
+const featherReference=[[500,325,255],[0,0,0],[999,649,0],[500,0,0],[500,20,48],[500,40,160],[500,65,254],[500,100,255],[0,325,0],[20,325,3],[40,325,79],[65,325,216],[100,325,255],[500,649,0],[500,610,171],[500,585,255],[150,60,0],[850,60,0],[120,600,136],[60,120,0]];
+test('CKP-PORT-11 the feathered silhouette matches the approved mask',async({page})=>{
  await page.goto('/field.html');
- const got=await page.evaluate(async()=>{const url='runtime/canopy-c01/field-matte-A-1000x650.png';
-  const {featherShape}=await import('./src/field-shape.js');const shape=await featherShape(url);
-  const grid=[];for(let y=0;y<650;y+=25)for(let x=0;x<1000;x+=25)grid.push(shape.alpha[y*1000+x]);return {w:shape.width,h:shape.height,grid,mask:shape.maskUrl.endsWith('field-matte-A-1000x650.png')};});
- expect(createHash('sha256').update(readFileSync(new URL('../../../official-visuals/runtime/canopy-c01/field-matte-A-1000x650.png',import.meta.url))).digest('hex')).toBe(MATTE_ASSET_SHA256);expect([got.w,got.h]).toEqual([1000,650]);
- expect(got.grid).toEqual(matteGrid);expect(got.mask).toBe(true);
+ const got=await page.evaluate(async points=>{const {featherShape}=await import('./src/field-shape.js');const shape=await featherShape('runtime/canopy-c01/window-890-1x.png');
+  return shape&&{w:shape.width,h:shape.height,url:shape.maskUrl.slice(0,5),samples:points.map(([x,y])=>shape.alpha[y*shape.width+x])};},featherReference);
+ expect(got).not.toBeNull();expect([got.w,got.h,got.url]).toEqual([1000,650,'blob:']);
+ for(const [i,[x,y,want]] of featherReference.entries())expect(Math.abs(got.samples[i]-want),`(${x},${y}) ${got.samples[i]} vs ${want}`).toBeLessThanOrEqual(24);
+});
+// 91 A pins (owner 11-09). The approved matte is 1000x650 with a 65 px smooth inward ramp. Grid: its alpha every 25 px.
+// The page derives the matte from window-890-1x.png; it stays within 6/255 of the approved one (the resize kernel
+// differs from the study's), and its own bytes are pinned by hash so any change to the matte is a visible one.
+const matteGrid=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,39,48,58,63,73,73,73,73,73,63,58,48,39,11,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,48,119,176,187,197,202,212,212,212,212,212,202,197,187,176,117,43,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,21,41,95,169,233,255,255,255,255,255,255,255,255,255,255,255,255,255,230,166,92,39,21,3,0,0,0,0,0,0,0,0,0,0,0,0,1,24,63,107,150,179,228,254,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,253,226,176,150,107,63,23,1,0,0,0,0,0,0,0,3,41,99,156,202,236,253,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,253,236,202,154,99,39,2,0,0,0,0,10,84,166,228,254,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,253,227,164,84,8,0,0,0,39,176,251,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,251,171,34,0,0,0,63,202,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,197,58,0,0,0,79,216,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,216,78,0,0,1,95,228,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,225,90,0,0,3,107,236,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,232,101,2,0,8,124,244,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,242,119,6,0,13,136,249,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,247,130,11,0,19,148,252,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,251,145,18,0,30,165,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,254,160,27,0,39,176,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,171,34,0,52,191,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,187,48,0,63,202,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,197,58,0,73,212,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,209,70,0,90,225,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,221,84,0,79,216,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,216,79,0,65,204,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,202,62,0,28,144,228,243,251,253,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,253,250,242,227,142,25,0,0,46,94,121,142,154,165,176,182,192,192,197,202,207,207,207,212,212,221,221,221,212,212,207,207,207,202,197,192,191,182,176,165,154,141,119,93,46,0,0,0,0,1,7,16,23,30,39,43,53,53,58,63,68,68,68,73,73,84,84,84,73,73,68,68,68,63,58,53,52,43,39,30,23,16,6,1,0,0];
+const MATTE_SHA256='2acb9f8d65d79e44cd6760b14412ebbe028c458ad34f086d00f6066b5f15b070';
+test('91 A the matte is 1000x650, its ramp stays within 6/255 of the approved mask on a 25 px grid, and its bytes are pinned',async({page})=>{
+ await page.goto('/field.html');
+ const got=await page.evaluate(async()=>{const {featherShape}=await import('./src/field-shape.js');const shape=await featherShape('runtime/canopy-c01/window-890-1x.png');
+  const sha=[...new Uint8Array(await crypto.subtle.digest('SHA-256',shape.alpha))].map(b=>b.toString(16).padStart(2,'0')).join('');
+  const grid=[];for(let y=0;y<650;y+=25)for(let x=0;x<1000;x+=25)grid.push(shape.alpha[y*1000+x]);return {w:shape.width,h:shape.height,sha,grid};});
+ expect([got.w,got.h]).toEqual([1000,650]);expect(got.grid).toHaveLength(matteGrid.length);
+ const worst=Math.max(...got.grid.map((v,i)=>Math.abs(v-matteGrid[i])));expect(worst).toBeLessThanOrEqual(6);
+ expect(got.sha).toBe(MATTE_SHA256);
 });
 for(const [desktop,width,field] of [['1470x956',1323,[865,562.25]],['1440x900',1296,[838,544.69]]])test(`91 A geometry at ${desktop}: the field is ${field.join('x')} and the card is 430x664 at its left`,async({page})=>{
  await page.setViewportSize({width,height:Math.round(+desktop.split('x')[1]*.8)});await open(page);await show(page,payload());
@@ -298,7 +362,7 @@ test('CKP-PORT-11 the scene is masked by the silhouette; bare desktop and the fe
  await page.setViewportSize({width:1323,height:735});await open(page);await show(page,payload());
  await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
  await expect(page.locator('.field-stage')).toHaveAttribute('data-shape','feathered');
- expect(await page.locator('.field-stage').evaluate(e=>getComputedStyle(e).webkitMaskImage||getComputedStyle(e).maskImage)).toMatch(/^url\("http:\/\/[^"]+\/runtime\/canopy-c01\/field-matte-A-1000x650\.png"\)$/);
+ expect(await page.locator('.field-stage').evaluate(e=>getComputedStyle(e).webkitMaskImage||getComputedStyle(e).maskImage)).toMatch(/^url\("blob:/);
  expect(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
  const closes=()=>page.evaluate(()=>window.posted.filter(x=>x==='close').length);
  const stage=await page.locator('.field-stage').boundingBox(),card=await page.locator('.field-card').boundingBox();
@@ -346,4 +410,35 @@ test('CKP-PORT-11 the page reports the frosted card rect to the native panel, an
  expect(await page.evaluate(()=>getComputedStyle(document.getElementById('field')).getPropertyValue('--f-lcd'))).toMatch(/JetBrains Mono/);
  const plate=page.locator('.wb-plates .plate').first();
  if(await plate.count())expect(await plate.evaluate(e=>getComputedStyle(e).fontFamily)).toMatch(/JetBrains Mono/);
+});
+
+// CKP-PORT-11G: while the field is open there is one WebGL context. The page's capability probe releases its own, so only
+// the scene's remains. A counting stand-in for getContext makes this checkable whether or not the browser has WebGL.
+test('CKP-PORT-11G the capability probe releases its WebGL context, leaving at most the scene\'s while the field is open',async({page})=>{
+ await page.addInitScript(()=>{
+  window.glContexts=[];
+  HTMLCanvasElement.prototype.getContext=function(type){
+   if(!/webgl/.test(String(type)))return null;
+   const gl={lost:false,isContextLost(){return this.lost;},getExtension(name){return name==='WEBGL_lose_context'?{loseContext:()=>{gl.lost=true;}}:null;}};
+   window.glContexts.push(gl);return gl;
+  };
+ });
+ await open(page);expect(await show(page,payload(12))).toBe(true);
+ await page.waitForFunction(()=>window.glContexts.length>=1);
+ await page.waitForTimeout(500);
+ const live=await page.evaluate(()=>window.glContexts.filter(g=>!g.isContextLost()).length);
+ expect(live).toBeLessThanOrEqual(1);
+});
+
+// CKP-PORT-11D: only public data enters the field. The host's payload carries presentation and published models; the page
+// keeps nothing else and never asks the host for account or local readings.
+test('CKP-PORT-11D the field page takes only public model data and posts only its fixed events',async({page})=>{
+ await open(page);
+ const withPrivate=JSON.stringify({...JSON.parse(payload(4)),account:'someone@example.invalid',subscriptionRef:'secret-ref',usedPercent:73,projectName:'private'});
+ expect(await show(page,withPrivate)).toBe(true);
+ await page.waitForTimeout(300);
+ const text=await page.evaluate(()=>document.documentElement.innerText+document.documentElement.outerHTML);
+ for(const secret of ['someone@example.invalid','secret-ref','private'])expect(text).not.toContain(secret);
+ const posted=await page.evaluate(()=>window.posted);
+ for(const type of posted)expect(['loaded','ready','activity','card','close','failed']).toContain(type);
 });

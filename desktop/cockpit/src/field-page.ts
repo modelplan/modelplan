@@ -24,7 +24,8 @@ const words={en:{close:'Close',noGl:'The 3D view needs WebGL, which is not avail
  zh:{close:'关闭',noGl:'3D 视图需要 WebGL，当前不可用。',empty:'暂无已发布模型。'}} as const;
 const post=(message:Record<string,unknown>)=>(window.webkit?.messageHandlers as Record<string,{postMessage(m:string):void}>|undefined)?.field?.postMessage(JSON.stringify(message));
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
-const webgl=()=>{try{return !!document.createElement('canvas').getContext('webgl2');}catch{return false;}};
+// CKP-PORT-11G: the probe's context is released at once, so the scene's is the only live WebGL context while the field is open.
+const webgl=()=>{try{const gl=document.createElement('canvas').getContext('webgl2');if(!gl)return false;gl.getExtension('WEBGL_lose_context')?.loseContext();return true;}catch{return false;}};
 
 function mount(root:HTMLElement) {
  let scene:Scene|null=null,models:FieldModel[]=[],chosen=new Set<string>(),mine:string[]=[],focus:string|null=null,language:'en'|'zh'='en',disposed=false,reduceMotion=false,lowPower=false,quiet=false,launches=0,shape:FieldShape|null=null,stopAxes=()=>{};
@@ -43,7 +44,7 @@ function mount(root:HTMLElement) {
  });
  const card=picker.card;root.dataset.picker='open';
  root.append(picker.tools,card,stage,close);
- const shaped=featherShape(new URL('runtime/canopy-c01/field-matte-A-1000x650.png',document.baseURI).href).then(value=>{
+ const shaped=featherShape(new URL('runtime/canopy-c01/window-890-1x.png',document.baseURI).href).then(value=>{
   if(disposed){value?.dispose();return;}shape=value;if(value)stage.style.setProperty('--field-mask',`url("${value.maskUrl}")`);stage.dataset.shape=value?'feathered':'none';
  });
  // A transparent WKWebView cannot blur the desktop behind it, so the native panel puts a behind-window blur under the
@@ -74,7 +75,7 @@ function mount(root:HTMLElement) {
  // Builds a fresh scene host and mounts the reserved scene into it; a newer launch or dispose wins. Disposing a scene
  // forces its context loss, and the scene reports that loss as a failure afterwards: only the current launch may fall back.
  async function launch() {
-  const w=words[language],launch=++launches;
+  stopAxes();const w=words[language],launch=++launches;
   const host=el('div','r1-field p2-field'),canvas=el('div','wb-canvas'),plates=el('div','wb-plates'),voyage=el('div','wb-voyage');
   host.append(canvas,document.createElementNS('http://www.w3.org/2000/svg','svg'),plates,voyage);host.children[1]!.setAttribute('class','wb-leaders');stage.replaceChildren(host);
   const url='../runtime/field-scene/cockpit-scene.bundle.js';
@@ -84,8 +85,8 @@ function mount(root:HTMLElement) {
   const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;quiet=reduceMotion||lowPower;
   scene=mountWorkbenchField(host,{models:flown,focus,quiet,showPath:true,language,onDemand:true,noIntro:true,
    onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{if(disposed||launch!==launches)return;scene=null;fallback(w.noGl);}});
-  stopAxes();if(scene)stopAxes=layoutFieldAxes(host,shape?.span);
-  scene?.renderFor?.(1400);refresh();
+  if(scene)stopAxes=layoutFieldAxes(host,shape?.span);
+  scene.renderFor?.(1400);refresh();
  }
  return {
   async show(value:Show) {
@@ -97,6 +98,7 @@ function mount(root:HTMLElement) {
    // A rocket clicked in the porthole joins the field (the last of a full fleet makes room) and takes the focus.
    if(focus!==null&&!models.some(m=>m.id===focus))focus=null;
    if(focus!==null&&!chosen.has(focus)){chosen=new Set([...[...chosen].slice(0,FIELD_LIMIT-1),focus]);preset='custom';}
+   refresh();// the picker and its count show at once; the scene joins when it has loaded
    if(!models.length){fallback(w.empty);refresh();post({type:'ready'});return;}
    if(!webgl()){fallback(w.noGl);refresh();post({type:'ready'});return;}
    await launch();post({type:'ready'});

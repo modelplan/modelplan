@@ -520,6 +520,13 @@
           "maxItems": 128,
           "type": "array"
         },
+        "peaks": {
+          "items": {
+            "$ref": "#/$defs/CockpitPeak"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
         "publication": {
           "anyOf": [
             {
@@ -535,6 +542,13 @@
             "$ref": "#/$defs/CockpitPublicationModel"
           },
           "maxItems": 256,
+          "type": "array"
+        },
+        "recentSessions": {
+          "items": {
+            "$ref": "#/$defs/CockpitRecentSession"
+          },
+          "maxItems": 200,
           "type": "array"
         },
         "resetEvents": {
@@ -861,6 +875,41 @@
       ],
       "type": "object"
     },
+    "CockpitPeak": {
+      "additionalProperties": false,
+      "properties": {
+        "endsAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "startsAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rowId",
+        "startsAt",
+        "endsAt",
+        "status"
+      ],
+      "type": "object"
+    },
     "CockpitProjectRanking": {
       "additionalProperties": false,
       "properties": {
@@ -1156,6 +1205,68 @@
       ],
       "type": "object"
     },
+    "CockpitRecentSession": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastObservedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "projectLabel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$"
+        }
+      },
+      "required": [
+        "sessionRef",
+        "source",
+        "subscriptionRef",
+        "model",
+        "effort",
+        "projectLabel",
+        "lastObservedAt"
+      ],
+      "type": "object"
+    },
     "CockpitResetCount": {
       "additionalProperties": false,
       "properties": {
@@ -1198,6 +1309,16 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fast": {
+          "anyOf": [
+            {
+              "type": "boolean"
             },
             {
               "type": "null"
@@ -1278,6 +1399,9 @@
         "observedOutputTokens": {
           "type": "integer"
         },
+        "origin": {
+          "type": "string"
+        },
         "source": {
           "type": "string"
         }
@@ -1285,6 +1409,7 @@
       "required": [
         "at",
         "source",
+        "origin",
         "observedOutputTokens"
       ],
       "type": "object"
@@ -2219,6 +2344,7 @@
             "catalogue_retired",
             "http_401",
             "unsupported_login",
+            "not_signed_in",
             "privacy_blocked",
             "catalogue_off",
             "not_admitted",
@@ -2238,6 +2364,10 @@
             "http_5xx",
             "network",
             "timeout",
+            "not_found",
+            "rpc_error",
+            "closed",
+            "region_refused",
             "other",
             "readers_off",
             "no_consent",
@@ -2282,6 +2412,182 @@
         },
         "data": {
           "$ref": "#/$defs/Health"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "HistoryImportCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "rows": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "through": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "from",
+        "through",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "HistoryImportSource": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "imported",
+            "skipped_no_consent",
+            "nothing_found",
+            "off"
+          ],
+          "type": "string"
+        },
+        "turns": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source",
+        "status",
+        "turns"
+      ],
+      "type": "object"
+    },
+    "HistoryImportStartParams": {
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "maximum": 371,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "firstRun": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "days",
+        "firstRun"
+      ],
+      "type": "object"
+    },
+    "HistoryImportStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage": {
+          "items": {
+            "$ref": "#/$defs/HistoryImportCoverage"
+          },
+          "type": "array"
+        },
+        "days": {
+          "maximum": 371,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "filesDone": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "filesTotal": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "firstRunDone": {
+          "type": "boolean"
+        },
+        "importedRows": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "phase": {
+          "enum": [
+            "idle",
+            "running",
+            "done",
+            "cancelled",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
+        },
+        "schemaVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/HistoryImportSource"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "phase",
+        "days",
+        "filesDone",
+        "filesTotal",
+        "firstRunDone",
+        "importedRows",
+        "coverage",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "HistoryImportStatusEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/HistoryImportStatus"
         },
         "scopes": {
           "items": {
@@ -3350,6 +3656,7 @@
             "catalogue_retired",
             "http_401",
             "unsupported_login",
+            "not_signed_in",
             "privacy_blocked",
             "catalogue_off",
             "not_admitted",
@@ -3369,6 +3676,10 @@
             "http_5xx",
             "network",
             "timeout",
+            "not_found",
+            "rpc_error",
+            "closed",
+            "region_refused",
             "other",
             "readers_off",
             "no_consent",
@@ -3703,6 +4014,102 @@
             },
             "method": {
               "const": "diagnostics/get"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "history/import_cancel"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "history/import_remove"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "history/import_start"
+            },
+            "params": {
+              "$ref": "#/$defs/HistoryImportStartParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "history/import_status"
             },
             "params": {
               "maxProperties": 0,
@@ -4176,6 +4583,9 @@
                   "$ref": "#/$defs/MemberRefreshResultEnvelope"
                 },
                 {
+                  "$ref": "#/$defs/HistoryImportStatusEnvelope"
+                },
+                {
                   "$ref": "#/$defs/RefreshResultEnvelope"
                 },
                 {
@@ -4525,6 +4935,7 @@
             "catalogue_retired",
             "http_401",
             "unsupported_login",
+            "not_signed_in",
             "privacy_blocked",
             "catalogue_off",
             "not_admitted",
@@ -4544,6 +4955,10 @@
             "http_5xx",
             "network",
             "timeout",
+            "not_found",
+            "rpc_error",
+            "closed",
+            "region_refused",
             "other",
             "readers_off",
             "no_consent",

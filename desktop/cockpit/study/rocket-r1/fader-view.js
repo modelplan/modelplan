@@ -48,12 +48,15 @@ function channel(f, ui, colour) {
   const cur = f.current && row(f.current) ? f.current : null, base = cur || f.rec;
   const tier = f.tier, costOf = (l, fast) => { const n = row(l)?.[2], factor = fast && tier ? tier.cost : 1; return typeof n === 'number' && Number.isFinite(n) && n >= 0 && typeof factor === 'number' && Number.isFinite(factor) ? n * factor : null; }, speedOf = fast => fast && tier ? tier.speed : 1;
   // The trial: the effort being tried (S.previews, the ghost cap) and/or ⚡ being tried (the comparison view's args).
+  // G3-87 (build 14c, owner): an open comparison alone is not a trial. Pressing the LCD only selects the model for the
+  // comparison; a trial exists only while the ghost sits on another effort than the real cap (current, or ★ when
+  // current is unreported) or ⚡ is being tried. Moving the fader back onto the real cap ends it (CKP-FAD-09, -17).
   const v = ui.view && ui.view.modelId === f.id ? ui.view : null, pv = ui.previews[f.id];
-  const tEff = pv && row(pv) && pv !== cur ? pv : null;
+  const tEff = pv && row(pv) && pv !== base ? pv : null;
   const tFast = tier && v && v.fast != null && !!v.fast !== f.currentFast ? !!v.fast : null;
   let trial = null;
-  const trialEff = v ? (row(v.trial) ? v.trial : base) : tEff;
-  if (v || tEff || tFast != null) {
+  const trialEff = v && row(v.trial) && v.trial !== base ? v.trial : tEff;
+  if (trialEff || tFast != null) {
     const e = trialEff || base, fast = tFast ?? f.currentFast;
     trial = {effort: e, fast: tFast, matchesCurrent: e === cur && fast === f.currentFast, matchesRec: e === f.rec && !fast, cost: costRatio(costOf(e, fast), costOf(base, f.currentFast)), abl: row(e)[1] == null || row(base)[1] == null ? null : row(e)[1] - row(base)[1], speed: speedOf(fast) / speedOf(f.currentFast)};
   }

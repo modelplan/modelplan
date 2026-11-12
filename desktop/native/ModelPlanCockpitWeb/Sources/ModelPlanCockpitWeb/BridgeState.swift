@@ -35,8 +35,12 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let redBelow: Int
   /// Settings "Project names": off withholds project labels from every cockpit surface.
   public let showProjectNames: Bool
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true) {
-    self.showProjectNames = showProjectNames
+  /// Settings "Percentage mode" = used (SET-9-10): the engine table shows used, text and bars.
+  public let showUsedPercent: Bool
+  /// Settings "Cockpit size": native window geometry only, never sent to the page.
+  public let size: CockpitSize
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, size: CockpitSize = .standard) {
+    self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent; self.size = size
     if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
       self.redBelow = redBelow
     } else {
@@ -118,7 +122,8 @@ public struct CockpitMessageSource {
   }
 }
 
-// Replies have scalar fields plus one bounded three-string capabilities array.
+// Replies have scalar fields plus two bounded flat string arrays: the three-string `capabilities` of `ready` and the
+// `ids` (at most CockpitCautionIdentities.maxCount) of `cautionAck`. No other key may carry an array.
 // Reject nesting/duplicate keys before JSONSerialization can collapse them.
 enum FlatReply {
   static func parse(_ raw: String) throws -> [String: Any] {
@@ -164,11 +169,13 @@ enum FlatReply {
       white()
       if i < a.count, a[i] == 34 {
         _ = try string()
-      } else if key == "capabilities", i < a.count, a[i] == 91 {
+      } else if key == "capabilities" || key == "ids", i < a.count, a[i] == 91 {
+        // Flat arrays of strings only: the ready capabilities and the cautionAck identities (G3-56).
+        let limit = key == "ids" ? CockpitCautionIdentities.maxCount : 3
         i += 1; white()
         var count = 0
         while i < a.count, a[i] != 93 {
-          guard count < 3 else { throw CockpitBridgeError.limit }
+          guard count < limit else { throw CockpitBridgeError.limit }
           _ = try string(); count += 1; white()
           guard i < a.count else { throw CockpitBridgeError.invalidMessage }
           if a[i] == 93 { break }
@@ -282,7 +289,7 @@ public final class CockpitBridgeState {
         "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
         "showProjectNames": appearance.showProjectNames,
       ],
-      "shell": shell.fields, "redBelow": appearance.redBelow,
+      "shell": shell.fields, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent,
     ]
     // G3-56: sent only when there is something to restore, so a page that has none sees the unchanged contract.
     if CockpitCautionIdentities.valid(ackedCautions), !ackedCautions.isEmpty { extra["ackedCautions"] = ackedCautions }
@@ -294,7 +301,7 @@ public final class CockpitBridgeState {
     return try envelope("appearance", extra: [
       "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
       "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
-      "showProjectNames": appearance.showProjectNames, "redBelow": appearance.redBelow,
+      "showProjectNames": appearance.showProjectNames, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent,
     ], appearanceDeadline: correlated)
   }
   public func setShell(_ shell: CockpitShellState) throws -> String {

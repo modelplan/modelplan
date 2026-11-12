@@ -56,7 +56,7 @@ import ModelPlanSettings
         guard !retired, let surface = currentSurface(), surface.visible, !surface.dragging,
               context.dockReveal == surface.revealID, isCurrent(surface) else { return [] }
         let lang = language()
-        return Set([FirstUseHintKind.ignition, .drag, .pinned, .ringRefresh, .findWidget, .widgetOff].filter {
+        return Set([FirstUseHintKind.ignition, .drag, .pinned, .ringRefresh, .findWidget, .widgetOff, .detach, .putBack].filter {
             surface.anchors[$0] != nil && copy($0, lang) != nil
         })
     }
@@ -221,6 +221,8 @@ import ModelPlanSettings
     /// A first-use hint owns the panel while it is shown.
     var showsHint: Bool { currentOffer != nil }
     private(set) var shownExplanationForChecks: HelpExplanation?
+    /// The screen frame of the explanation card while it is shown (checks only).
+    var shownExplanationFrameForChecks: CGRect? { currentExplanationID != nil && panel?.isVisible == true ? panel?.frame : nil }
 
     /// G3-10: the prototype explanation card next to the hovered or focused widget element.
     /// The panel ignores the pointer, so the hover that produced it stays on the widget.
@@ -303,6 +305,8 @@ import ModelPlanSettings
         window.isFloatingPanel = true; window.level = Self.overlayLevel; window.isOpaque = false
         window.backgroundColor = .clear; window.hasShadow = false; window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
+        // D88: a press on a hint over the attached cockpit is not an outside click that closes it.
+        window.identifier = CockpitWindowController.helpOverlayIdentifier
         return window
     }
 }

@@ -1,0 +1,1 @@
+The widget and cockpit today row now shows today's tokens and output speed: the app declares the accountTodayV1 capability when it starts the CLI, so the CLI sends the today figures (build 14c always showed "-- · -- t/s").
