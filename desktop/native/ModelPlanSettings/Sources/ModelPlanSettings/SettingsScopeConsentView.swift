@@ -324,8 +324,8 @@ import ModelPlanWire
                                        "没有找到 OpenCode Go 密钥，所以暂未读取。请在 OpenCode 里登录，或在下面添加密钥。")
         }
     }
-    static let firstRunKeyLine = SettingsText("If no key is found on this Mac, you can add one later in Settings › Data & Privacy.",
-                                              "如果本机上没有找到密钥，之后可在 设置 › 数据与隐私 中添加。")
+    static let firstRunKeyLine = SettingsText("If no key is found on this Mac, you can add one later in Settings › Subscriptions.",
+                                              "如果本机上没有找到密钥，之后可在 设置 › 订阅 中添加。")
     static func blockLine(_ block: ScopeToolBlock, tool: String) -> SettingsText {
         let name = toolName(tool)
         switch block {
