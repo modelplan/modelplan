@@ -221,3 +221,5 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .ck-eng .ek .ek-identity .lamp[src$="openai-white.svg"]{--fit:1.75}
 .ck-eng .ek .ek-identity .lamp[src$="claude-rounded.svg"],.ck-eng .ek .ek-identity .lamp[src$="cursor.svg"],.ck-eng .ek .ek-identity .lamp[src$="copilot.svg"],.ck-eng .ek .ek-identity .lamp[src$="opencode.svg"]{--fit:.875}
 .ck-eng .ek .ek-identity .lamp[src$="kimi-white.svg"]{--fit:.91}
+/* CKP-FAD-17: the thin blue trial line belongs to the official throttle art; the community flat fader keeps its ghost cap only. */
+.dk-fad .fd-tline{display:none}
