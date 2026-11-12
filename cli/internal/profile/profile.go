@@ -15,6 +15,7 @@ package profile
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -27,29 +28,34 @@ const RootEnv = "MODELPLAN_PROFILE_ROOT"
 // the real profile).
 var ErrRelativeRoot = errors.New(RootEnv + " must be an absolute path")
 
-// ErrLinkedStore: a store folder or file inside the root that is a symbolic link
-// could lead back into the real profile, so the root is refused.
-var ErrLinkedStore = errors.New(RootEnv + " holds a linked store folder or file")
+// ErrLinkedStore: nothing under a root may be a symbolic link. Neither the engine
+// nor the app creates one there, so a link can only have been planted, and it
+// could lead a store back into the real profile.
+var ErrLinkedStore = errors.New(RootEnv + " holds a symbolic link")
 
 // unusable is where an invalid root's stores resolve: under /dev/null, so every
 // create or write fails instead of landing in the real profile.
 var unusable = filepath.Join(os.DevNull, "modelplan-unusable-profile")
 
-// linkable lists the store folders and fixed files ModelPlan opens under a root;
-// none of them may be a symbolic link. The store's own contents are written only
-// by the engine.
-var linkable = []string{
-	"engine",
-	filepath.Join("engine", "config"),
-	filepath.Join("engine", "cache"),
-	filepath.Join("engine", "cache", "state.json"),
-	filepath.Join("engine", "cache", "objects"),
-	filepath.Join("engine", "config", "consent.json"),
-	filepath.Join("engine", "config", "connections.json"),
-	filepath.Join("engine", "config", "local.json"),
-	filepath.Join("engine", "config", "codexbar.json"),
-	filepath.Join("engine", "config", "local-usage.json"),
-	filepath.Join("engine", "config", "project-labels.json"),
+// linked walks the whole root without following links, so every store path the
+// resolver builds under it (including ones added later) is covered.
+func linked(root string) bool {
+	found := false
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if path == root && errors.Is(err, fs.ErrNotExist) {
+				return filepath.SkipAll // a root the store will create
+			}
+			found = true // unreadable: fail closed
+			return filepath.SkipAll
+		}
+		if path != root && d.Type()&fs.ModeSymlink != 0 {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // state: the cleaned root, whether the key is present at all, and why a present
@@ -63,10 +69,8 @@ func state() (string, bool, error) {
 		return "", true, ErrRelativeRoot
 	}
 	root := filepath.Clean(value)
-	for _, name := range linkable {
-		if info, err := os.Lstat(filepath.Join(root, name)); err == nil && info.Mode()&os.ModeSymlink != 0 {
-			return "", true, ErrLinkedStore
-		}
+	if linked(root) {
+		return "", true, ErrLinkedStore
 	}
 	return root, true, nil
 }

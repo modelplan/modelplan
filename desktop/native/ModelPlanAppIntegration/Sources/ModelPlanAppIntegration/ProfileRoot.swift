@@ -27,7 +27,7 @@ public struct ProfileRoot: Sendable, Equatable {
         public var description: String {
             switch self {
             case .notAbsolute: return "it is empty or not an absolute path"
-            case .linkedStore: return "a store folder or file inside it is a symbolic link"
+            case .linkedStore: return "something inside it is a symbolic link"
             case .notADirectory: return "it is not an existing folder"
             case .overlapsRealProfile: return "it overlaps the real profile"
             }
@@ -110,27 +110,25 @@ public struct ProfileRoot: Sendable, Equatable {
         if realStores.contains(where: { Self.contains(root, $0) || ($0 != home && Self.contains($0, root)) }) {
             throw Failure.overlapsRealProfile
         }
-        // A store folder or fixed file that is a symbolic link could lead back into the real profile.
-        if linkable.contains(where: { (try? fileManager.destinationOfSymbolicLink(atPath: root.appendingPathComponent($0).path)) != nil }) {
-            throw Failure.linkedStore
-        }
+        // Nothing under the root may be a symbolic link: neither the app nor the engine creates one there, and a
+        // planted link could lead any store back into the real profile. The whole tree is walked without following
+        // links, so every store path built under the root, including ones added later, is covered.
+        if containsLink(root, fileManager: fileManager) { throw Failure.linkedStore }
         return ProfileRoot(root: root,
                            applicationSupport: root.appendingPathComponent("app/Application Support", isDirectory: true),
                            caches: root.appendingPathComponent("app/Caches", isDirectory: true))
     }
 
-    /// The store folders and fixed files the app or engine opens under a root (cli/internal/profile checks
-    /// the engine half the same way). Contents below them are written only by the app or engine.
-    static let linkable = [
-        "app", "app/Application Support", "app/Application Support/ModelPlan", "app/Caches",
-        "app/Application Support/ModelPlan/settings.json", "app/Application Support/ModelPlan/reset-notifications.json",
-        "app/Application Support/ModelPlan/forecast-notifications.json", "app/Application Support/ModelPlan/cockpit-scope.json",
-        "app/Application Support/ModelPlan/cockpit-cautions.json", "app/Application Support/ModelPlan/Native",
-        "app/Application Support/ModelPlan/DockSelfTest", "app/Caches/URLCache",
-        "engine", "engine/config", "engine/cache", "engine/cache/state.json", "engine/cache/objects",
-        "engine/config/consent.json", "engine/config/connections.json", "engine/config/local.json",
-        "engine/config/codexbar.json", "engine/config/local-usage.json", "engine/config/project-labels.json",
-    ]
+    static func containsLink(_ root: URL, fileManager: FileManager) -> Bool {
+        var unreadable = false
+        guard let walker = fileManager.enumerator(at: root, includingPropertiesForKeys: [.isSymbolicLinkKey], options: [],
+                                                  errorHandler: { _, _ in unreadable = true; return false }) else { return true }
+        for case let url as URL in walker {
+            guard let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey]) else { return true }
+            if values.isSymbolicLink == true { return true }
+        }
+        return unreadable
+    }
 
     /// Resolved once per launch. An unusable root stops the app before anything is written.
     public static let current: ProfileRoot = {

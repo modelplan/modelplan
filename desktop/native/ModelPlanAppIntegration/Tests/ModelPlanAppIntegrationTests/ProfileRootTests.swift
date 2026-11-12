@@ -73,7 +73,10 @@ import ModelPlanSettings
         let target = try freshRoot()  // stands in for a real store
         for link in ["app", "app/Application Support", "app/Application Support/ModelPlan", "app/Caches",
                      "app/Application Support/ModelPlan/settings.json", "engine", "engine/config", "engine/cache",
-                     "engine/config/consent.json"] {
+                     "engine/config/consent.json",
+                     // round 2: stores below the cache folder, and a link nested deeper than any list would name
+                     "engine/cache/observed", "engine/cache/observed/codex-account.json",
+                     "engine/cache/observed/nested/deeper/store", "app/Caches/org.modelplan.synthetic/nested"] {
             let root = try freshRoot()
             let url = root.appendingPathComponent(link)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

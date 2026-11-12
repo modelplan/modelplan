@@ -157,7 +157,10 @@ func TestLinkedStoreInsideTheRootIsRefused(t *testing.T) {
 	if err := os.MkdirAll(realConfig, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, link := range []string{"engine", filepath.Join("engine", "config"), filepath.Join("engine", "cache"), filepath.Join("engine", "config", "consent.json")} {
+	for _, link := range []string{"engine", filepath.Join("engine", "config"), filepath.Join("engine", "cache"), filepath.Join("engine", "config", "consent.json"),
+		// round 2: stores below the cache folder, and a link nested deeper than any list would name
+		filepath.Join("engine", "cache", "observed"), filepath.Join("engine", "cache", "observed", "codex-account.json"),
+		filepath.Join("engine", "cache", "observed", "nested", "deeper", "store")} {
 		root := t.TempDir()
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, link)), 0o700); err != nil {
 			t.Fatal(err)
