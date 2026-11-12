@@ -11,7 +11,7 @@ import {build13Profile,SESSION_REF} from '../build13-fixture.mjs';
 const speedTiers=JSON.parse(readFileSync(new URL('../unit/client-speed-tiers.fixture.json',import.meta.url),'utf8')).data.speedTiers.map(({reviewedAt,...tier})=>tier);
 
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
-async function open(page,locale='en',tiers=false){
+async function open(page,locale='en',tiers=false,edit=null){
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
@@ -26,6 +26,7 @@ async function open(page,locale='en',tiers=false){
   // A second running session, on Terra, so its comparison has a current effort to measure the trial against.
   data.details.sessions.push({...data.details.sessions[0],sessionRef:'00000000000000c2',model:ids['gpt-6.1-terra'],effort:'medium'});
  }
+ edit?.(data);
  expect(await receive(send('display',{data}))).toBe(true);
 }
 const sol=page=>page.locator('.fd-ch:not(.empty)').first();
@@ -153,4 +154,23 @@ test('CKP-FAD-11 fast key: Chinese key reads 关｜开',async({page})=>{
  await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  const key=page.locator('.mfd-vk button.vk-fast');
  await expect(key).toContainText('关');await expect(key).toContainText('开');
+});
+
+// CKP-FAD-11 / CKP-MFD-19 (audit B finding 2): the producer's observed Fast mode (details.sessions[].fast) reaches the
+// comparison through the ordinary bridge, so a Fast session's current column is measured as Fast, not standard.
+test('CKP-FAD-11 CKP-MFD-19: a session the engine recorded as Fast compares as Fast; an unreported mode stays standard',async({page})=>{
+ await open(page,'en',true,data=>{data.details.sessions[0].fast=true;});
+ const solFader=page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first();
+ await expect(solFader.locator('.fd-indicator')).toHaveAttribute('data-fast','true');
+ await solFader.locator('.fd-strip').click();
+ await expect(page.locator('.mfd-page.pg-compare')).toBeVisible();
+ const key=page.locator('.mfd-vk button.vk-fast');
+ await expect(key).toHaveAttribute('aria-pressed','true');
+});
+test('CKP-FAD-11 CKP-MFD-19: without the observed mode the same session stays standard',async({page})=>{
+ await open(page,'en',true);
+ const solFader=page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first();
+ await expect(solFader.locator('.fd-indicator')).toHaveAttribute('data-fast','false');
+ await solFader.locator('.fd-strip').click();
+ await expect(page.locator('.mfd-vk button.vk-fast')).toHaveAttribute('aria-pressed','false');
 });

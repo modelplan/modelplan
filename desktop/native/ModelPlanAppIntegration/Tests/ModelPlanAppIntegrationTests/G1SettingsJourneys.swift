@@ -212,17 +212,31 @@ private actor G1SettingsEngine: EngineClient {
         again?.close(); await reopened.stopLifecycle()
     }
 
+    /// SET-9-08 as amended by owner decision D87 item 1 (G3-68, #788): the Quota Widget pane keeps
+    /// Display / Numbers / Position; the shared subscription Order group heads Settings > Subscriptions.
     func testG1_SET_9_08_DockSectionHeadings() async throws {
-        for (locale, expected) in [
-            ("en-US", ["Display", "Numbers", "Position", "Order"]),
-            ("zh-CN", ["显示", "数字", "位置", "顺序"])
+        for (locale, expected, order) in [
+            ("en-US", ["Display", "Numbers", "Position"], "Order"),
+            ("zh-CN", ["显示", "数字", "位置"], "顺序")
         ] {
+            func isHeading(_ label: String, _ heading: String) -> Bool { label == heading || label.hasSuffix(" · " + heading) }
             let app = try await entry(locale: locale)
             let window = try await settings(app, pane: "dock")
             let labels = flatten(try XCTUnwrap(window.contentView)).compactMap { ($0 as? NSTextField)?.stringValue }
             for heading in expected {
-                XCTAssertTrue(labels.contains { $0 == heading || $0.hasSuffix(" · " + heading) }, "Missing Dock section \(heading)")
+                XCTAssertTrue(labels.contains { isHeading($0, heading) }, "Missing Dock section \(heading)")
             }
+            let shown = flatten(try XCTUnwrap(window.contentView)).compactMap { field -> String? in
+                guard let field = field as? NSTextField, !field.isHiddenOrHasHiddenAncestor else { return nil }
+                return field.stringValue
+            }
+            XCTAssertFalse(shown.contains { isHeading($0, order) }, "D87: the Order section is no longer in the Quota Widget pane (\(locale))")
+            try XCTUnwrap(window.windowController as? SettingsWindowController).selectPane("subscriptions")
+            let subscriptionLabels = flatten(try XCTUnwrap(window.contentView)).compactMap { field -> String? in
+                guard let field = field as? NSTextField, !field.isHiddenOrHasHiddenAncestor else { return nil }
+                return field.stringValue
+            }
+            XCTAssertTrue(subscriptionLabels.contains { isHeading($0, order) }, "D87: Settings > Subscriptions has the Order section (\(locale))")
         }
     }
 
@@ -380,7 +394,8 @@ private actor G1SettingsEngine: EngineClient {
 
     func testG1_SET_9_13_SubscriptionOrderChangesAndReset() async throws {
         let app = try await entry(locale: "en-US", discoveredMembers: 3)
-        let window = try await settings(app, pane: "dock")
+        // D87 item 1 (G3-68, #788): the order control lives in Settings > Subscriptions.
+        let window = try await settings(app, pane: "subscriptions")
         try assertControls(["settings.order.list"], in: window)
         throw XCTSkip("Three-member drag, arrow actions, engine-column order and relaunch are not yet exercised")
     }

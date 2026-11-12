@@ -76,14 +76,16 @@ final class T2SkinValueTests: XCTestCase {
         }
     }
 
-    func testClockDotsAreWhiteAtSixtyPercentOnTheDarkBackRing() throws {
+    /// D167 / DOCK-3.8-22: the dots are white 80 % (was 60 %), the cockpit's --time-dot-on; the backing stays 55 %.
+    func testClockDotsAreWhiteAtEightyPercentOnTheDarkBackRing() throws {
         for diameter in [CGFloat(36), 44, 52] {
             let (station, value) = try skin(diameter)
             XCTAssertEqual(station.clock.dotRadius, 0.65 * diameter / 52, accuracy: 1e-6)
             XCTAssertEqual(station.clock.backWidth, 1.5 * diameter / 52, accuracy: 1e-6)
             XCTAssertGreaterThanOrEqual(station.clock.positions, 24)
             let dot = try XCTUnwrap(value.palette["clock"]), back = try XCTUnwrap(value.palette["clockBack"])
-            XCTAssertEqual([dot.r, dot.g, dot.b], [1, 1, 1]); XCTAssertEqual(dot.a, 0.6, accuracy: 1e-9)
+            XCTAssertEqual([dot.r, dot.g, dot.b], [1, 1, 1]); XCTAssertEqual(dot.a, 0.8, accuracy: 1e-9)
+            XCTAssertEqual(station.clock.pixelSnap, true, "1x dots snap to device pixels")
             XCTAssertEqual(back.r * 255, 5, accuracy: 1e-6); XCTAssertEqual(back.a, 0.55, accuracy: 1e-9)
         }
     }

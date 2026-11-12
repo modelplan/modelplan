@@ -345,4 +345,9 @@ type HistoryImportStatus struct {
 	ImportedRows  int                     `json:"importedRows" schema:"minimum=0"`
 	Coverage      []HistoryImportCoverage `json:"coverage"`
 	Sources       []HistoryImportSource   `json:"sources"`
+	// Revision changes exactly when an import operation that can change imported history ends: a run
+	// settling (done, cancelled or failed) or a removal. It counts from 0 per engine process. A client
+	// that refreshes imported-history views on a new revision never misses a fast run whose start
+	// reply is already done. Older engines omit it.
+	Revision *int `json:"revision,omitempty" null:"coalesced" schema:"minimum=0"`
 }
