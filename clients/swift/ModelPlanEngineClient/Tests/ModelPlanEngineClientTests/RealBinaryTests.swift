@@ -9,7 +9,7 @@ import Darwin
 import Glibc
 #endif
 
-enum TestFailure: Error { case timeout, childFailed }
+enum TestFailure: Error { case timeout, childFailed, childExited(arguments: [String], status: Int32, stdout: String, stderr: String) }
 
 actor EventProbe: EngineClientEventConsumer {
     var events: [EngineClientEvent] = []
@@ -106,7 +106,9 @@ final class RealBinaryTests: XCTestCase {
         let bytes = output.fileHandleForReading.readDataToEndOfFile()
         let errorBytes = errors.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        guard process.terminationStatus == 0, errorBytes.isEmpty else { throw TestFailure.childFailed }
+        guard process.terminationStatus == 0, errorBytes.isEmpty else {
+            throw TestFailure.childExited(arguments: arguments, status: process.terminationStatus, stdout: String(decoding: bytes.prefix(2000), as: UTF8.self), stderr: String(decoding: errorBytes.prefix(2000), as: UTF8.self))
+        }
         return bytes
     }
     func configuration(_ binary: URL, home: URL) -> EngineClientConfiguration {
