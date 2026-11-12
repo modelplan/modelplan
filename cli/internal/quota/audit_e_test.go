@@ -2,10 +2,14 @@ package quota
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/rows"
 )
@@ -63,5 +67,73 @@ func TestAuditEKiroSignedOutIsNotSignedIn(t *testing.T) {
 	mapped, _ := rows.MapSignal(rows.SignalError, e.ErrorCode)
 	if mapped.Code != rows.CodeNotSignedIn || mapped.Text.EN != "Not signed in" || mapped.Action != rows.ActionNone {
 		t.Errorf("row = %+v", mapped)
+	}
+}
+
+type auditERoundTrip struct {
+	base   http.RoundTripper
+	before func(*http.Request)
+}
+
+func (a auditERoundTrip) RoundTrip(r *http.Request) (*http.Response, error) {
+	a.before(r)
+	return a.base.RoundTrip(r)
+}
+func (auditERoundTrip) ReaderSingleAttempt() {}
+
+// Audit E finding 1: an unrelated Cursor state write while the usage request is in flight changes
+// the store fingerprint but not the saved sign-in, so the reading is kept. A real sign-in change
+// during the request still discards it.
+func TestAuditECursorUnrelatedStateWriteKeepsTheReading(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(db *sql.DB) error
+		ok   bool
+	}{
+		{"unrelated", func(db *sql.DB) error {
+			_, err := db.Exec(`INSERT OR REPLACE INTO ItemTable VALUES ('workbench.panel.width', ?)`, strings.Repeat("x", 8192))
+			return err
+		}, true},
+		{"credential", func(db *sql.DB) error {
+			_, err := db.Exec(`INSERT OR REPLACE INTO ItemTable VALUES ('cursorAuth/accessToken', ?)`, syntheticCursorToken("synthetic-other-account", cursorNow.Add(72*time.Hour)))
+			return err
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, token := cursorAdmittedPaths(t)
+			mode, paths := "ok", []string{}
+			cursorPeriodServer(t, token, &mode, &paths)
+			home, _ := os.UserHomeDir()
+			c := *nativeClient
+			c.Transport = auditERoundTrip{base: nativeClient.Transport, before: func(r *http.Request) {
+				if !strings.HasSuffix(r.URL.Path, "GetCurrentPeriodUsage") {
+					return
+				}
+				db, err := sql.Open("sqlite", CursorReadPath(home))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer db.Close()
+				if err := tc.edit(db); err != nil {
+					t.Fatal(err)
+				}
+			}}
+			nativeClient = &c
+			if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "cursor", Backend: BackendNative, Enabled: true}); err != nil {
+				t.Fatal(err)
+			}
+			err := RefreshNative(context.Background(), p, cursorNow)
+			if len(paths) != 2 {
+				t.Fatal(paths, err)
+			}
+			s, _ := loadReaderState(p.Cache, "cursor")
+			if len(s.Entries) != 1 {
+				t.Fatalf("entries = %+v", s.Entries)
+			}
+			got := s.Entries[0].Status == "ok" && s.Entries[0].Account != nil
+			if got != tc.ok {
+				t.Fatalf("status %q account %v, want ok=%v", s.Entries[0].Status, s.Entries[0].Account != nil, tc.ok)
+			}
+		})
 	}
 }
