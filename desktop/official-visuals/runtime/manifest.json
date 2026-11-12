@@ -13231,16 +13231,16 @@
     {
       "file": "field-scene/README.md",
       "kind": "notice",
-      "sha256": "d1aa6e0377f9a1196734e3d5023d33b007ba08373a0669a7dfc20d7871354f58",
-      "bytes": 2257,
+      "sha256": "a6faf1fdec5f9a941511f2d107e4073314f01b02d0c66775b13269593173e653",
+      "bytes": 2920,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },
     {
       "file": "field-scene/cockpit-scene.bundle.js",
       "kind": "field-scene",
-      "sha256": "448777122850dc44b4af3ee8066404250c1ad86730121ca91af21ce89eeca4bc",
-      "bytes": 760751,
+      "sha256": "40293d72c0f77108a0809eae108428dba7b5d4dafa933c2c4c02c86b3de50222",
+      "bytes": 769562,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },

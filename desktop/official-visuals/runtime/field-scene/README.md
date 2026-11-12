@@ -24,6 +24,14 @@ from the shared maker livery table (D131) and the vendor marks the official cock
 ships under `assets/brands/` (third-party trademarks, nominative use). The official cockpit
 build serves the atlases at `assets/art/rockets/`, the scene's base URL.
 
+Rocket paint is exactly the website's (owner, 2026-11-12): the scene hands its factory the
+website's own maker colours compiled into the bundle, never the cockpit's UI accents. Name chips
+and orbit names follow the website's layout and style (owner, 2026-11-12): chips price spots
+against every rocket hull and fold to a tighter chip or the rank badge when crowded, and orbit
+names sit by their planet or ride the far end of their own line. Cockpit differences: an orbit
+name keeps its index on one line and also avoids names already placed, because the porthole's
+camera stacks the lines closer; chips keep the cockpit's tap target, labels and keyboard access.
+
 Build: esbuild 0.28.1, `--bundle --format=esm --minify --legal-comments=eof`, three
 0.186.1; the four-line licence header is prepended. Export: `mountWorkbenchField`.
 
