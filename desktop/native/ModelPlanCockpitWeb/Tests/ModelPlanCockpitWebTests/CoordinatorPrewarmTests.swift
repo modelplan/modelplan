@@ -45,6 +45,8 @@ private actor CountingClient: EngineClient {
   var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?, onShown: (() -> Void)?
   var queryTicket: CockpitQueryTicket? { state.queryTicket }
   private(set) var prewarmed = false, opened = 0, discarded = false
+  /// CKP-SHELL-33: the rack-first open shows the page only after the rack's visible part is out; the test confirms it.
+  var holdShown = false
   private(set) var displays = 0, displayedWhileHidden = 0
   private var sequence = 0
   init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
@@ -71,7 +73,7 @@ private actor CountingClient: EngineClient {
   func open() {
     opened += 1
     load()
-    if opened == 1 { onShown?() }
+    if opened == 1, !holdShown { onShown?() }
   }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {
     guard ticket == queryTicket else { return }
@@ -219,6 +221,46 @@ final class CoordinatorPrewarmTests: XCTestCase {
     coordinator.requestClose()
     await settle { pages.count == 6 }
     XCTAssertEqual(pages.count, 6, "after an open, prewarming resumes")
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// CKP-SHELL-33 (owner, D186): the click asks for fresh data at once, while the rack still extends and before the page
+  /// is confirmed visible; the page then shows the last reply without waiting, and no second query is started.
+  @MainActor func testTheClickAsksForFreshDataBeforeThePageIsShown() async throws {
+    var pages: [WarmProbe] = [], steps: [String] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    #if MODELPLAN_TEST_ONLY_SPI
+    coordinator.verificationTrace = { steps.append($0) }
+    #endif
+    coordinator.prewarmDelay = .zero
+    coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { pages.count == 1 }
+    await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+
+    coordinator.open()
+    XCTAssertEqual(warm.opened, 1)
+    await settle { await client.requests == 2 }
+    var requests = await client.requests
+    XCTAssertEqual(requests, 2, "the fresh query starts at the click")
+    XCTAssertEqual(warm.displays, 0, "the page is not shown yet (the rack is still extending)")
+    #if MODELPLAN_TEST_ONLY_SPI
+    XCTAssertTrue(steps.contains("open.refresh"), "\(steps)")
+    XCTAssertFalse(steps.contains("page.shown"), "the query did not wait for the page to be shown: \(steps)")
+    #endif
+
+    warm.onShown?() // the rack's visible part is out and the page is confirmed visible
+    XCTAssertEqual(warm.displays, 1, "the last reply shows at once, without waiting for the fresh one")
+    requests = await client.requests
+    XCTAssertEqual(requests, 2, "the query asked at the click is not asked again")
+    await coordinator.consume(try reply(session))
+    XCTAssertEqual(warm.displays, 2, "the fresh reply replaces it when it lands")
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
     await coordinator.shutdown(); await client.complete()
   }
 

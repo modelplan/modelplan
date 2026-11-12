@@ -227,6 +227,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         page.updateScope(selectedScope)
       }
       page.open()
+      // CKP-SHELL-33 (owner, D186): ask for fresh data at the click, not when the page is first confirmed visible, so the
+      // reply can land while the rack extends; the page shows the last reply meanwhile and never waits for this one.
+      if self.page === page, request == nil { trace("open.refresh"); refresh() }
       if self.page === page { onOpened?() }
       return
     }

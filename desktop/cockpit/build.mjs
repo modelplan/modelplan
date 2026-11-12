@@ -108,6 +108,16 @@ if (official) {
   }
   await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
   css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
+  // CKP-SHELL-33 (owner D160/D172/D187): the menu-bar launch rack art. The page never draws it; the native rack panel reads
+  // it from the verified bundle, each file checked against the reserved-visuals registry.
+  const rack=resolve(assets,'cockpit/rack');
+  await mkdir(resolve(output,'assets/rack'),{recursive:true});
+  for(const name of ['mast-day.png','mast-night.png']){
+    const bytes=await readFile(resolve(rack,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/rack/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved launch rack resource: '+name);
+    await writeFile(resolve(output,'assets/rack',name),bytes);
+  }
+  await cp(resolve(rack,'SOURCES.md'),resolve(output,'assets/rack/SOURCES.md'));
   // Strip logo (owner build 13): the study's rocket mark (shell6/logo.svg) is the repository logo, the same drawing.
   const logo=await readFile(resolve(assets,'logo.svg'));
   if(createHash('sha256').update(logo).digest('hex')!==policy.reservedVisuals.historicalMit['desktop/official-visuals/logo.svg'])throw Error('Unapproved logo');

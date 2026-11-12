@@ -221,3 +221,14 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .ck-eng .ek .ek-identity .lamp[src$="openai-white.svg"]{--fit:1.75}
 .ck-eng .ek .ek-identity .lamp[src$="claude-rounded.svg"],.ck-eng .ek .ek-identity .lamp[src$="cursor.svg"],.ck-eng .ek .ek-identity .lamp[src$="copilot.svg"],.ck-eng .ek .ek-identity .lamp[src$="opencode.svg"]{--fit:.875}
 .ck-eng .ek .ek-identity .lamp[src$="kimi-white.svg"]{--fit:.91}
+/* CKP-SHELL-33 (owner D178/D186/D188): rack put-back and key-detach ignition. The host's `ignition` message lights every
+   base bell, working or empty, with the cockpit's own mouth-glow geometry (bells.css, CKP-ENG-17) in the demo v8 amber
+   (#ffa02e), fading in over 120 ms and out over 220 ms; a working bell's quota-colour glow steps aside meanwhile. */
+.ck-base :is(.bz,.bz-empty)::after{content:"";position:absolute;left:50%;transform:translateX(-50%);pointer-events:none;z-index:3;opacity:0;transition:opacity .22s linear;
+  --ig-w:var(--bell-w,var(--w,calc(var(--cw,40px) - 8px)));--ig-h:var(--bell-h,calc(var(--ig-w) * 10 / 81));
+  top:calc(var(--ig-w) * .05574);width:calc(var(--ig-w) * .9033 * 1.08);height:calc(var(--ig-h) - var(--ig-w) * .05574 + 5px);
+  border-radius:50% 50% 0 0/calc(var(--ig-w) * .0226) calc(var(--ig-w) * .0226) 0 0;
+  background:linear-gradient(180deg,rgba(255,181,92,.95),rgba(255,160,46,.78) 22%,rgba(255,160,46,.4) 65%,rgba(0,0,0,0));
+  -webkit-mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%);mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%)}
+#cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{opacity:.6;transition-duration:.12s}
+#cockpit[data-ignite="true"] .ck-base .bz .bz-sheet{opacity:0}

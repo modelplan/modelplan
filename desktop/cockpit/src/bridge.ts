@@ -17,6 +17,7 @@ export type HostMessage = Header & (
   {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly ackedCautions?:unknown} |
   ({readonly type:'appearance'; readonly redBelow?:unknown; readonly showUsedPercent?:boolean} & LiveAppearance) |
   ({readonly type:'shell'} & ShellState) |
+  {readonly type:'ignition'; readonly on:boolean} |
   {readonly type:'display'; readonly data:WireCockpitData} |
   {readonly type:'visibility'; readonly visible:boolean; readonly occluded:boolean; readonly key:boolean} |
   {readonly type:'tick'; readonly nowUnixMs:string; readonly reason:'deadline'|'show'|'wake'|'unlock'|'clockChange'} |
@@ -28,6 +29,8 @@ export interface CockpitView {
   configure(appearance:Appearance,redBelow:RedBelow,showUsedPercent?:boolean):void;
   updateAppearance(appearance:LiveAppearance,now:number,redBelow:RedBelow,showUsedPercent?:boolean):void;
   shell(state:ShellState):void;
+  /** CKP-SHELL-33 (D178/D186): the host lights every base bell with the amber nozzle glow during a rack put-back or key detach. */
+  ignite?(on:boolean):void;
   render(data:WireCockpitData,now:number):void;
   clear():void;
   nextDeadline():number|null;
@@ -73,6 +76,7 @@ function message(raw:string):HostMessage|null {
     case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','ackedCautions'])||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))) return no('load.keys'); break;
     case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent'])||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
     case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return no('shell.fields'); break;
+    case 'ignition': if(!keys(['on'])||typeof m.on!=='boolean') return no('ignition.fields'); break;
     case 'display': if(!keys(['data']))return no('display.keys');if(!validData(m.data))return null; break;
     case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return no('visibility.fields'); break;
     case 'tick': if(!keys(['nowUnixMs','reason'])||!timestamp(m.nowUnixMs)||!['deadline','show','wake','unlock','clockChange'].includes(m.reason as string)) return no('tick.fields'); break;
@@ -184,6 +188,9 @@ export class CockpitBridge {
       case 'shell':
         try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return this.no('shell.view');}
         this.shellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope};this.sequence=BigInt(m.sequence);return true;
+      case 'ignition':
+        try {this.view.ignite?.(m.on);} catch {this.unload();return this.no('ignition.view');}
+        this.sequence=BigInt(m.sequence);return true;
       case 'display':
         if(!this.domReady) return this.no('display.notReady');
         // Render is synchronous, with no queued/private snapshot cache to revive.

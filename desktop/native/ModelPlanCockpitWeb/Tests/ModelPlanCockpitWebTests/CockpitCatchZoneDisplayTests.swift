@@ -5,10 +5,11 @@ import Foundation
 import XCTest
 @testable import ModelPlanCockpitWeb
 
-/// Post-merge sample 11-11 (#845 finding 3): after a drop on another display the snap guide showed that display's
-/// attached place, but a release there put the cockpit back under the icon on the first display. The real controller
-/// through the strip's drag entry, two displays through the `screens` seam. Window server: GUI leg.
-@MainActor final class CockpitSnapGuideDisplayTests: XCTestCase {
+/// Post-merge sample 11-11 (#845 finding 3): after a drop on another display, the put back must still mean the icon's
+/// display. CKP-SHELL-33 (D178/D187) removed the grey snap guide: the catch zone around home (40 pt) is the only cue, by
+/// the rack reaching down, and it acts on the release. The real controller through the strip's drag entry, two displays
+/// through the `screens` seam. Window server: GUI leg.
+@MainActor final class CockpitCatchZoneDisplayTests: XCTestCase {
   private func bundle() throws -> VerifiedCockpitBundle {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-snap-guide-" + UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -23,7 +24,7 @@ import XCTest
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
 
-  func testTheSnapGuideAndThePutBackUseTheSameDisplayAfterACrossDisplayDrop() throws {
+  func testTheCatchZoneAndThePutBackUseTheSameDisplayAfterACrossDisplayDrop() throws {
     _ = NSApplication.shared
     let short = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1280, height: 720), visibleFrame: CGRect(x: 0, y: 0, width: 1280, height: 695))
     let tall = CockpitScreen(frame: CGRect(x: 1280, y: 0, width: 2560, height: 1440), visibleFrame: CGRect(x: 1280, y: 0, width: 2560, height: 1415))
@@ -57,11 +58,11 @@ import XCTest
     page.titleDrag(.began, point: grab)
     page.titleDrag(.moved, point: target)
     XCTAssertEqual(window.frame.origin, away.frame.origin, "the drag reached the tall display's attached place")
-    let guide = try XCTUnwrap(page.verificationSnapGuide)
-    XCTAssertEqual(guide.frame, home.frame, "the guide shows where Put back goes: under the icon")
-    XCTAssertFalse(guide.ready, "the tall display's attached place is not home")
+    XCTAssertFalse(page.inCatchZone(window.frame), "the tall display's attached place is not home")
+    XCTAssertEqual(page.verificationRack.target, 0, "so the rack does not reach for it")
+    XCTAssertFalse(page.verificationRack.ignited)
     page.titleDrag(.ended, point: target)
-    XCTAssertFalse(page.isAttached, "a release away from the guide keeps the cockpit detached where it was dropped")
+    XCTAssertFalse(page.isAttached, "a release outside the catch zone keeps the cockpit detached where it was dropped")
     XCTAssertTrue(tall.visibleFrame.contains(window.frame), "it stays on the tall display")
   }
 }

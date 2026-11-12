@@ -309,6 +309,12 @@ public final class CockpitBridgeState {
     guard CockpitMemberScopes.isValidKey(shell.scope), scopeMembers.isEmpty || scopeMembers.contains(shell.scope) else { throw CockpitBridgeError.invalidMessage }
     return try envelope("shell", extra: shell.fields)
   }
+  /// CKP-SHELL-33 (D178/D186/D188): lights (or puts out) every base bell with the amber nozzle glow during a rack
+  /// put-back or a key detach. No receipt: the page only paints it.
+  public func setIgnition(_ on: Bool) throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    return try envelope("ignition", extra: ["on": on])
+  }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) throws -> String {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
     // A newer display retires all prior unacknowledged display receipts.
