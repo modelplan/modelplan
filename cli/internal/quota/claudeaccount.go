@@ -111,6 +111,7 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		return fail("unavailable", "This Claude Code login type is not supported yet", code)
 	}
 	b, status := readBounded(filepath.Join(r.Profile.Root, ".credentials.json"), 64<<10)
+	fromFile := status == ""
 	if status == "missing" {
 		profiles := claudeProfiles()
 		if len(profiles) != 1 || profiles[0].Root != r.Profile.Root || os.Getenv("CLAUDE_CONFIG_DIR") != "" {
@@ -220,12 +221,31 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		out.Invalidate = changed
 		return out
 	}
+	// The saved login may be replaced or removed while the requests run. A reading made with a
+	// login that is no longer the saved one belongs to the old account: discard it.
+	if fromFile && claudeFileCredentialKey(r.Profile.Root, r.Paths.Cache) != credentialKey {
+		out := claudeFailure("unavailable", "Claude Code sign-in changed during the read; refresh required")
+		out.Invalidate = true
+		return out
+	}
 	a := &Account{Source: "claude-code", Plan: meta.Plan, Via: "native", ObservedAt: r.Now.UTC(), Windows: windows, Subscription: binding}
 	entry := readerEntry{Status: "ok", Account: a, Metadata: meta}
 	if len(windows) == 0 {
 		entry.Notice = "This plan does not publish quota windows"
 	}
 	return readerOutcome{Entry: entry, RetryAfter: retry}
+}
+
+// claudeFileCredentialKey: the keyed binding of the saved-login file's access token now, or "".
+func claudeFileCredentialKey(root, cache string) string {
+	b, status := readBounded(filepath.Join(root, ".credentials.json"), 64<<10)
+	defer clear(b)
+	var credential claudeCredential
+	if status != "" || json.Unmarshal(b, &credential) != nil || credential.OAuth == nil || credential.OAuth.AccessToken == "" {
+		return ""
+	}
+	defer func() { credential.OAuth.AccessToken = "" }()
+	return readerHash(cache, "claude:credential", credential.OAuth.AccessToken)
 }
 
 type claudeOAuthProfile struct {
