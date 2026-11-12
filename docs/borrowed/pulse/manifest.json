@@ -111,7 +111,7 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PulseLoginItem.swift",
-      "sha256": "2384a29423e372631ea5266cd3b76f1aacd2e5f04ebdef6cf88a210229822b83",
+      "sha256": "fbd7704e306da35df3961acff6e7533b73a33b36e5993bef236fb682d67fabf8",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamPath": "Sources/Pulse/App/LoginItem.swift",
       "upstreamBlob": "80e291a5adfb554ac0d379b327f8935481ce82e9",
@@ -120,32 +120,33 @@
       "adaptations": [
         "modern SMAppService app-bundle route only; no LaunchAgent fallback/adoption/path repair",
         "remove UserDefaults first-run auto-registration; retain ModelPlan saved default-on preference separately",
-        "inject service and explicit request origin; report approval, unsupported and failure as observed"
+        "inject service and explicit request origin; report approval, unsupported and failure as observed",
+        "expose an observed not-found status (G3-69) so the app can explain a login item the system cannot find"
       ]
     },
     {
       "path": "desktop/native/ModelPlanDock/Logic/PulseRestingPlacement.swift",
-      "sha256": "090c634ad7ceec3887a43a44f05d20d5f3de893f162824c546ec82fe14ac9963",
+      "sha256": "60af39471045d27481b03fc20e500a9e12b81ceeb22572f276ee2524caef2054",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
       "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
       "implementationModified": true,
       "adaptations": [
-        "Choose saved display with main fallback and keep the saved edge",
+        "Choose saved display with main fallback and keep the saved edge, including the top edge below the menu bar (G3-27)",
         "Clamp the registered rail anchor inside the available rectangle and corner clearances",
         "Reapply placement to the frame granted on first order-in"
       ]
     },
     {
       "path": "desktop/native/ModelPlanDock/Logic/PulsePanelDrag.swift",
-      "sha256": "2a6840b4a5061eccd2d356411ead2ab021a7f72fac3e6a030218277afe37d251",
+      "sha256": "b4e766f6442598f2bb8e6d70efd43a44ea40e0b6a2e33550706b8bfb4ed9504f",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
       "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
       "implementationModified": true,
       "adaptations": [
         "Two internal carry modes, including Pulse pull-off hold with separate snap and break distances",
-        "Use destination display visible frame and three allowed edges",
+        "Use destination display visible frame and four allowed edges (top added, G3-27)",
         "Preserve grab offset in follow mode; commit only at successful release",
         "Omit liquid neck, spring, short handle and floating rest"
       ]
