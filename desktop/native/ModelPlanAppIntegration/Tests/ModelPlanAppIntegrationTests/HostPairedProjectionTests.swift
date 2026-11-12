@@ -1443,6 +1443,36 @@ actor EntrySyntheticClient: EngineClient {
         assertStatus("")
     }
 
+    /// G3-93 / MENU-05: a fresh profile shows the tightest number beside the icon without anyone choosing it
+    /// (the other entry tests commit the choice first), and a profile that saved "icon" keeps it.
+    func testG3_93FreshProfileShowsTheTightestNumberAndAnExistingChoiceStays() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g393-default-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let fixture = try Self.rows(weekly: 15)
+        func launch() async throws -> (EngineDockMenuApplication, NSButton) {
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+                dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+                makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+            await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+            let button = NSButton()
+            EngineDockMenuApplication.configureStatusButton(button, image: NSImage(size: .init(width: 16, height: 16)), barThickness: 22)
+            app.applyStatusContent(to: button, detail: "")
+            return (app, button)
+        }
+        let (fresh, freshButton) = try await launch()
+        XCTAssertEqual(freshButton.title, "15%", "a fresh profile shows the tightest number by default")
+        XCTAssertEqual(freshButton.imagePosition, .imageLeading)
+        _ = try await fresh.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.icon))
+        await fresh.composition.stop()
+        let (kept, keptButton) = try await launch()
+        XCTAssertEqual(keptButton.title, "", "an existing profile keeps its icon-only choice")
+        XCTAssertEqual(keptButton.imagePosition, .imageOnly)
+        await kept.composition.stop()
+    }
+
     /// Build 13 owner review (ledger: none): with the pointer on the menu-bar item the "0%" kept turning into "0".
     /// Every refresh re-set the title, image and position, and the reset dot was then placed from the button's
     /// previous bounds, so it landed on the "%" and moved back on the next refresh. A refresh that changes nothing
