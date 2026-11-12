@@ -13,6 +13,10 @@ the conservative default is the slow leg, never the unsafe one.
 Because `plan` derives both legs from the same listed suite (headless = listed & manifest,
 gui = listed - headless) and `verify` requires each leg to execute exactly its own set, a green
 pair of legs proves the union is the whole suite and nothing ran twice or not at all.
+
+D169: `--only` narrows a leg to the classes gui_test_selection.py picked for a branch dispatch. The
+leg still verifies that it ran exactly that narrowed share; trusted-mac.yml passes it only on a branch
+dispatch, so the merge queue and the nightly main run always run and verify the whole share.
 """
 from __future__ import annotations
 
@@ -136,7 +140,42 @@ def class_regex(module: str, names: list[str]) -> str:
     return "^" + re.escape(module) + r"\.(" + "|".join(map(re.escape, names)) + ")/"
 
 
-def plan(pkg: dict, listed: list[str], leg: str) -> tuple[list[str], list[str], dict]:
+ONLY_RE = re.compile(r"none|[A-Za-z_]\w*(?:,[A-Za-z_]\w*)*")
+
+
+def parse_only(value: str | None) -> list[str] | None:
+    """--only: None/"full" = the leg's whole share; "none" = no class; else a comma-separated class list (D169)."""
+    if value is None or value == "full":
+        return None
+    if not ONLY_RE.fullmatch(value):
+        raise PartitionError(f"--only must be full, none or comma-separated class names, got {value[:80]!r}")
+    return [] if value == "none" else sorted(set(value.split(",")))
+
+
+def narrow(pkg: dict, args: list[str], expected: list[str], summary: dict, only: list[str]) -> tuple[list[str], list[str], dict]:
+    """Keep the leg's own share of the selected classes (D169). Tests of other modules in the leg stay.
+
+    The share is never widened: a selected class of the other leg, or one absent from the listed suite
+    (conditionally compiled out), is ignored. An empty result writes no arguments: the caller runs nothing.
+    """
+    module = pkg["testModule"]
+    keep = [i for i in expected if not i.startswith(module + ".") or i.split("/")[0][len(module) + 1:] in only]
+    names = sorted({i.split("/")[0][len(module) + 1:] for i in keep if i.startswith(module + ".")})
+    others = sorted({i.split(".")[0] for i in keep if not i.startswith(module + ".")})
+    summary = {**summary, "selected": len(keep), "selectedClasses": len(names)}
+    if not keep:
+        return [], [], summary
+    narrowed = [a for s in pkg.get("preexistingSkip", []) for a in ("--skip", s)]
+    if names:
+        narrowed += ["--filter", class_regex(module, names)]
+    for other in others:
+        narrowed += ["--filter", "^" + re.escape(other) + r"\."]
+    return narrowed, keep, summary
+
+
+def plan(pkg: dict, listed: list[str], leg: str, only: list[str] | None = None) -> tuple[list[str], list[str], dict]:
+    if only is not None:
+        return narrow(pkg, *plan(pkg, listed, leg), only)
     if leg not in LEGS:
         raise PartitionError(f"unknown leg {leg!r}")
     module, headless = pkg["testModule"], pkg["headless"]
@@ -211,6 +250,7 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--args", required=True, type=Path, help="write swift test arguments, one per line")
         else:
             p.add_argument("--log", required=True, type=Path, help="the leg's swift test output")
+        p.add_argument("--only", help="D169: full (default), none, or comma-separated classes of the test module")
     ns = parser.parse_args(argv)
     try:
         manifest = load_manifest()
@@ -225,7 +265,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         pkg = package(manifest, ns.package)
         listed = listed_ids(ns.list.read_text(), pkg["testModule"])
-        args, expected, summary = plan(pkg, listed, ns.leg)
+        args, expected, summary = plan(pkg, listed, ns.leg, parse_only(ns.only))
         if ns.command == "plan":
             ns.args.write_text("".join(a + "\n" for a in args))
             print(json.dumps({"leg": ns.leg, **summary}))
