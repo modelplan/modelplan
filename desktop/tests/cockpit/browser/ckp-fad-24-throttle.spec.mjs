@@ -167,6 +167,8 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
    expect(Math.abs(await grip(ch)-rows[from]),'lever grip on its own detent row').toBeLessThanOrEqual(.6);
    for(const [name,x] of [['ghost',ghost.x],['rod',rod.x],['slot',slot.x]])expect(Math.abs(x-lever.x),name+' axis vs lever').toBeLessThanOrEqual(.5);
    // the rod is faint but visible; in the day theme it is the dark blue
+   // the ghost rod is as wide as the real lever's rod (5 u)
+   expect(Math.abs(rod.width-5*(tier==='tall'?1:80/97)),'ghost rod width').toBeLessThanOrEqual(.5);
    const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
    if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
    if(theme==='day')expect(bg).toMatch(/0\.55\)$/);

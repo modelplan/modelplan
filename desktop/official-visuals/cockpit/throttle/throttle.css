@@ -17,10 +17,10 @@
   background:url('./assets/throttle/lever-night.png') 0 calc(var(--fd-frame,16) * -134 * var(--u))/calc(64 * var(--u)) calc(33 * 134 * var(--u)) no-repeat}
 .dk-fad .fd-cap::after{content:none}
 .dk-fad .fd-cap.parked{filter:brightness(.55) saturate(0)}
-.dk-fad .fd-tline{--rod:var(--trial);display:block;position:absolute;z-index:2;left:50%;width:2px;margin-left:-1px;border-radius:1px;background:color-mix(in srgb,var(--rod) 25%,transparent);box-shadow:0 0 3px color-mix(in srgb,var(--rod) 15%,transparent);pointer-events:none;
+.dk-fad .fd-tline{--rod:var(--trial);display:block;position:absolute;z-index:2;left:50%;width:calc(5 * var(--u));margin-left:calc(-2.5 * var(--u));border-radius:1px;background:color-mix(in srgb,var(--rod) 25%,transparent);box-shadow:0 0 3px color-mix(in srgb,var(--rod) 15%,transparent);pointer-events:none;
   top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * min(var(--k0,0),var(--k1,0)));height:calc((100% - 2 * var(--fd-pad)) * max(var(--k0,0) - var(--k1,0),var(--k1,0) - var(--k0,0)))}
 .dk-fad .fd-tline[hidden]{display:none}
-/* G3-92 (owner 11-12): the lever pivots about the slot centre (k .5), so the ghost's rod runs from that pivot to the ghost grip, like the real lever's own stick; drawn over the baked stick. */
+/* G3-92 (owner 11-12): the ghost rod is as wide as the real lever's rod (5 u = 10 px of the baked arm) and only more transparent. The lever pivots about the slot centre (k .5), so the ghost's rod runs from that pivot to the ghost grip, like the real lever's own stick; drawn over the baked stick. */
 .dk-fad .fd-ghost{left:50%;width:calc(26 * var(--u));height:calc(10.5 * var(--u));margin:calc(-5.25 * var(--u)) 0 0 calc(-13 * var(--u));border:0;border-radius:0;box-shadow:none;
   background:url('./assets/throttle/ghost-night.png') 0 0/100% 100% no-repeat;filter:drop-shadow(0 0 1px var(--trial)) drop-shadow(0 0 4px color-mix(in srgb,var(--trial) 55%,transparent))}
 .dk-fad .fd-ghost::after{content:none}

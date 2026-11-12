@@ -41,6 +41,17 @@ for(const theme of ['night','day']){
    assert.ok(Math.abs(y-pivot)<=3,`frame ${i}: stick (within 1.5 css px of the pivot) ends at row ${y}, pivot row ${pivot}`);
   }
  });
+ // G3-92: the real rod (the baked arm) is 5 u wide (10 art px at 2 px per u) in every frame; the ghost rod is drawn at the same width
+ // (asserted against 5 u in the webkit spec ckp-fad-24-throttle).
+ test(`G3-92 ${theme} real lever rod is 5 u wide in every frame`,()=>{
+  const sheet=rgba(`lever-${theme}.png`),frame=268;
+  for(let i=0;i<33;i++){
+   const grip=Math.round(2*(16.5+97*(1-i/32)));if(Math.abs(grip-130)<34)continue;   // far enough from the grip body to read the plain arm
+   const y=i*frame+(grip<130?130-14:130+14);let lo=Infinity,hi=-1;
+   for(let x=40;x<90;x++)if(sheet.alpha(x,y)>200){lo=Math.min(lo,x);hi=x;}
+   assert.ok(Math.abs((hi-lo+1)/2-5)<=.5,`frame ${i}: rod ${(hi-lo+1)/2} u`);
+  }
+ });
  test(`CKP-FAD-24 ${theme} plate is centred and has transparent surroundings`,()=>{
   const plate=rgba(`plate-${theme}.png`);
   assert.deepEqual([plate.width,plate.height],[76,268]);
