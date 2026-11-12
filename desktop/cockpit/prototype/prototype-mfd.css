@@ -286,6 +286,7 @@ dl.ss{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 6px;margin:2
 
 .mfd-ok.mfd-vk{grid-template-columns:1fr 1fr}
 /* fast on: the Standard lines stay faint, a band joins each pair; the ★ column has a very faint gold wash */
-.dk-mfd .cmp-chart .pc-band-rec{fill:var(--gold-lcd);opacity:.07}
+.dk-mfd .cmp-chart .pc-band-rec{fill:#f0b83c;opacity:.14}
 .dk-mfd .pc-fastband{stroke:none;opacity:.13}.dk-mfd .pc-fastband.pc-cost{fill:var(--pc-violet)}.dk-mfd .pc-fastband.pc-time{fill:var(--lcd-muted)}
 .dk-mfd .pc-line.pc-std{opacity:.4}
+.dk-mfd .cmp-chart .pc-up{fill:var(--pc-violet)}.dk-mfd .cmp-chart .pc-up-l{font:8px var(--f-lcd);fill:var(--pc-violet)}

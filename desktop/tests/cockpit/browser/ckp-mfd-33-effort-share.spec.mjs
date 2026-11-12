@@ -9,6 +9,7 @@
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
 import {build13Profile} from '../build13-fixture.mjs';
+import {firstPixel} from '../png-pixel.mjs';
 
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 async function open(page,{locale='en',tier='tall',height=890,theme='night'}={}){
@@ -77,7 +78,11 @@ test('CKP-MFD-33 idle: the full 0-100 % track and its end bar are always drawn; 
  await expect(chart.locator('.pc-line.pc-abl .pc-star')).toHaveCount(1);
  // the ★ column carries a very faint gold wash (under the blue trial / hover boxes)
  await expect(chart.locator('.pc-band-rec')).toHaveAttribute('data-effort','Med');
- expect(await chart.locator('.pc-band-rec').evaluate(e=>parseFloat(getComputedStyle(e).opacity))).toBeLessThanOrEqual(.08);
+ expect(await chart.locator('.pc-band-rec').evaluate(e=>parseFloat(getComputedStyle(e).opacity))).toBeLessThanOrEqual(.15);
+ // rendered pixel: a clearly warm pale yellow (hue 35-55 degrees), not grey
+ const bb=await chart.locator('.pc-band-rec').boundingBox(),px=firstPixel(await page.screenshot({clip:{x:bb.x+bb.width/2-3,y:bb.y+bb.height-8,width:1,height:1}}));
+ const [pr,pg,pb]=px,mx=Math.max(pr,pg,pb),mn=Math.min(pr,pg,pb),hue=mx===mn?0:mx===pr?60*((pg-pb)/(mx-mn)):mx===pg?60*(2+(pb-pr)/(mx-mn)):60*(4+(pr-pg)/(mx-mn));
+ expect(hue,`pixel ${px}`).toBeGreaterThan(35);expect(hue,`pixel ${px}`).toBeLessThan(55);expect(pr-pb,`pixel ${px}`).toBeGreaterThanOrEqual(10);
  await expect(chart.locator('.pc-legend')).toContainText('Time');
  await expect(screen.locator('.cmp-lad .lad')).toHaveText(['Low','★Med','High','XHigh','Max']);
 });

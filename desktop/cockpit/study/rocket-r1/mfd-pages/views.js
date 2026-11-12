@@ -158,13 +158,14 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
   const all = [...rows, ...standard, ...Object.values(at).filter(Boolean)].flatMap(r => [r.abl, r.cost, r.time]).filter(numeric);
   const aria = t('mfd.pctChartAria', {m: m.short, efforts: efforts.join(' → ')});
   if (!all.length) return `<svg class="cmp-chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(aria)}"></svg>`;
-  const span = Math.max(1, ...all), X = i => L + (i + .5) * bw, Y = v => T0 + (1 - v / span) * (H - T0 - B0);
+  // Fast on: a fixed 0-150 % domain (the whole lines rise); a point past it is pinned to the top edge with a small ▲ and its exact value.
+  const span = fastOn ? 1.5 : Math.max(1, ...all), X = i => L + (i + .5) * bw, Y = v => T0 + (1 - Math.min(v, span) / span) * (H - T0 - B0);
   const band = (i, cls) => box(X(i) - bw / 2 + 3, 1, bw - 6, H - 2, cls, ` rx="2" data-effort="${esc(efforts[i])}"`);
   // the recommended effort's column: a very faint gold wash under everything, so it never fights the blue trial / hover boxes
   let g = (ri >= 0 ? band(ri, 'pc-band pc-band-rec') : '') + (ci >= 0 ? band(ci, 'pc-band pc-band-current') : '') + (ti >= 0 ? band(ti, 'pc-band pc-band-trial' + (ti === ci ? ' pc-band-same' : '')) : '');
   // hover preview: a dashed blue box on the column of the effort under the pointer (any other effort than the trial)
   g += efforts.map((l, i) => l === s.trial ? '' : band(i, 'pc-band pc-band-hover')).join('');
-  for (const v of [1, .5, 0]) { const y = Y(v); g += `<line class="pc-grid${v === 1 ? ' unit' : ''}" x1="${L}" x2="${n1(E)}" y1="${n1(y)}" y2="${n1(y)}"/>` + label(L - 5, Math.max(8, Math.min(H - 1, y + 3)), v ? pctText(v) : '0', 'pc-tick-l', 'end'); }
+  for (const v of span > 1 ? [span, 1, .5, 0] : [1, .5, 0]) { const y = Y(v); g += `<line class="pc-grid${v === 1 ? ' unit' : ''}" x1="${L}" x2="${n1(E)}" y1="${n1(y)}" y2="${n1(y)}"/>` + label(L - 5, Math.max(8, Math.min(H - 1, y + 3)), v ? pctText(v) : '0', 'pc-tick-l', 'end'); }
   const dot = (cls, x, y, r, extra = '') => `<circle class="${cls}" cx="${n1(x)}" cy="${n1(y)}" r="${r}"${extra}/>`;
   const path = (vs, runs) => runs.filter(r => r.length > 1).map(r => `<polyline points="${r.map(i => n1(X(i)) + ',' + n1(Y(vs[i]))).join(' ')}"/>`).join('');
   const runsOf = vs => { const runs = []; vs.forEach((v, i) => { if (!numeric(v)) return; if (!runs.length || !numeric(vs[i - 1])) runs.push([]); runs.at(-1).push(i); }); return runs; };
@@ -184,6 +185,8 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
     if (k !== 'time') vs.forEach((v, i) => {
       const own = at[i]?.[k], y = numeric(own) ? Y(own) : numeric(v) ? Y(v) : null;
       if (y == null) return;
+      const val = numeric(own) ? own : v;
+      if (val > span + 1e-9) p += `<path class="pc-up" d="M${n1(X(i) - 2.6)} ${n1(T0 + 1.6)}l2.6-4.2 2.6 4.2Z"/>` + label(X(i) + 5, T0 + 1.2, pctText(val), 'pc-up-l');
       if (k === 'abl' && i === ri) { if (i === ti) p += dot('pc-ring pc-ring-rec', X(i), y, 5.6, ' data-role="trial"'); p += star(X(i), y, 4, ' data-role="rec"'); }
       else if (i === ti) p += dot('pc-ring', X(i), y, 2.6, ' data-role="trial"');
       else if (i === ci) p += dot('pc-dot pc-dot-current', X(i), y, 2.5, ' data-role="current"');

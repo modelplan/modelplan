@@ -269,7 +269,7 @@ test('CKP-MFD-33 fast lines: a real fast session draws the fast lines too',async
 
 // Owner 11-12: column strength is trial blue > current white > recommended gold; and when the trial effort equals the current
 // effort (a fast-only trial) both show: the white current fill with the blue trial fill and a solid blue outline on top.
-test('CKP-MFD-33 chart columns: trial blue > current white > ★ gold; trial = current keeps both',async({page})=>{
+test('CKP-MFD-33 chart columns: trial blue > current white, a warm ★ gold; trial = current keeps both',async({page})=>{
  await open(page,'en',true);
  await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
  const chart=page.locator('.mfd-page svg.cmp-chart');
@@ -280,7 +280,7 @@ test('CKP-MFD-33 chart columns: trial blue > current white > ★ gold; trial = c
  expect(await cur.getAttribute('data-effort')).toBe(await tri.getAttribute('data-effort'));
  const a={cur:await alpha('.pc-band-current'),trial:await alpha('.pc-band-trial'),rec:await alpha('.pc-band-rec')};
  expect(a.cur).toBeGreaterThanOrEqual(.1);expect(a.cur).toBeLessThanOrEqual(.15);
- expect(a.trial).toBeGreaterThan(a.cur);expect(a.cur).toBeGreaterThan(a.rec);
+ expect(a.trial).toBeGreaterThan(a.cur);expect(a.rec).toBeGreaterThanOrEqual(.1);expect(a.rec).toBeLessThanOrEqual(.15);
  // equal: the blue outline stands on top of the white fill
  await expect(tri).toHaveClass(/pc-band-same/);
  expect(await tri.evaluate(e=>parseFloat(getComputedStyle(e).strokeOpacity))).toBeGreaterThanOrEqual(.6);
@@ -315,4 +315,19 @@ test('CKP-MFD-33 chart column layers: every overlap of current, trial and ★ sh
   if(c.name==='all three equal')expect(efforts.size).toBe(1);
   if(c.name==='current = ★')expect(efforts.size).toBe(1);
  }
+});
+
+// Owner 11-12: fast on keeps the chart readable: a fixed 0-150 % domain, points past it pinned to the top edge with a ▲ and the exact value.
+test('CKP-MFD-33 fast chart domain: capped at 150 %, overflow pinned with a ▲ and its exact value, 0/50/100 % stay',async({page})=>{
+ await open(page,'en',true);
+ await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
+ await page.locator('.mfd-vk button.vk-fast').click();
+ await page.locator('.cmp-lad [data-mfd="try:Max"]').click();
+ const chart=page.locator('.mfd-page svg.cmp-chart');
+ await expect(chart.locator('.pc-tick-l')).toHaveText(['150%','100%','50%','0']);
+ const ys=await chart.locator('.pc-grid').evaluateAll(l=>l.map(e=>Number(e.getAttribute('y1'))));
+ expect(ys[0]).toBeLessThan(ys[1]);expect(ys[1]-ys[0]).toBeCloseTo((ys[3]-ys[0])/3,0); // 150/100/50/0 evenly spaced
+ await expect(chart.locator('.pc-up')).not.toHaveCount(0);
+ await expect(chart.locator('.pc-up-l').first()).toHaveText(/^2\d\d%$/); // Max at fast = 250 %
+ for(const y of await chart.locator('polyline').evaluateAll(l=>l.flatMap(e=>e.getAttribute('points').split(' ').map(q=>Number(q.split(',')[1])))))expect(y).toBeGreaterThanOrEqual(ys[0]-.1);
 });
