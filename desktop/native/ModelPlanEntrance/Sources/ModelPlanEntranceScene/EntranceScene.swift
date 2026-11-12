@@ -452,10 +452,14 @@ enum ModelRocket {
         var finish = HullFinish(theme)
         if !flat {
             let detail = look.brushedDetail.flatMap(LookImage.load)
-            if let maps = HullPanels.maps(detail: detail) {
+            // CKP-ENT-13: the hull kit (base metal + decals) replaces the detail tile and the code-drawn detail.
+            let kit = look.hullKit.flatMap { HullKit.load($0, theme: theme, roughness: finish.roughness) }
+            if let maps = HullPanels.maps(detail: detail, kit: kit) {
                 finish.panels = maps
-                albedo = "panels " + [HullPanels.capsule, HullPanels.body].map { "\($0.name) \($0.width)x\($0.height)" }
-                    .joined(separator: ", ") + (detail != nil ? ", detail image" : ", detail code")
+                let layer = kit.map { ", kit \($0.theme.rawValue) \($0.decals.count) kinds \(HullDecals.placements.count) decals" }
+                    ?? (detail != nil ? ", detail image" : ", detail code")
+                albedo = "panels " + HullPanels.bands.map { "\($0.name) \($0.width)x\($0.height)" }
+                    .joined(separator: ", ") + layer
             } else {
                 albedo = "file"
             }
@@ -761,7 +765,13 @@ struct HullFinish {
                         pbr.normal.texture = nil
                     }
                     pbr.metallic = 1.0
-                    pbr.roughness = .init(floatLiteral: roughness)
+                    // CKP-ENT-13: with the hull kit the roughness is a map (base metal and decals, theme roughness
+                    // already applied); otherwise one value.
+                    if let rough = maps?.roughness {
+                        pbr.roughness = PhysicallyBasedMaterial.Roughness(scale: 1, texture: HullPanels.texture(rough))
+                    } else {
+                        pbr.roughness = .init(floatLiteral: roughness)
+                    }
                     pbr.clearcoat = .init(floatLiteral: clearcoat)
                     pbr.clearcoatRoughness = .init(floatLiteral: Self.clearcoatRoughness)
                     pbr.faceCulling = .none
@@ -1582,9 +1592,13 @@ enum CockpitCeiling {
 ///   lighter scratches (multiplied by the theme tint, so one map serves both finishes);
 /// - normal: the same grooves, lips and scratches as a height field, plus the brushed grain, so the studio strips
 ///   break along the seams and shimmer along the grain.
-/// Two bands: the capsule (y 11.8-14.2, 4096 x 2048, about 7 px per cm, for the window close-up and the end pose)
-/// and the body (y 0.24-11.8, 2048 x 2048, seen whole). The section joints stay geometry (`JointLine`); the maps
-/// add the rings between them.
+/// Three bands: the capsule (y 11.8-14.2, 4096 x 2048, about 7 px per cm, for the window close-up and the end pose),
+/// the body (y 5.2-11.8, 2048 x 2048) and, since CKP-ENT-13, the lower body (y 0.24-5.2, 4096 x 2048). The section
+/// joints stay geometry (`JointLine`); the maps add the rings between them.
+/// CKP-ENT-13 (owner D174/D176/D179): with the official hull kit (`HullKit`) the maps are three layers: the kit's
+/// tileable base metal (albedo and roughness, no normal), the code-drawn panel layout, seams and joint bands, and
+/// the kit's decals stamped at `HullDecals.placements`. The code grain, scratches, grime, rivets, slots, hatches and
+/// doors are then not drawn.
 @available(macOS 15.0, *)
 @MainActor
 enum HullPanels {
@@ -1597,14 +1611,23 @@ enum HullPanels {
     struct Maps {
         let albedo: TextureResource
         let normal: TextureResource
+        /// CKP-ENT-13: the roughness map (absolute roughness), with the hull kit only.
+        var roughness: TextureResource?
     }
 
     static let capsule = Band(name: "capsule", bottom: 11.8, top: 14.2, width: 4096, height: 2048)
-    static let body = Band(name: "body", bottom: 0.24, top: 11.8, width: 2048, height: 2048)
+    /// CKP-ENT-13: the body is split at the 5.2 m joint. The lower body (skirt and lower stage), where the opening
+    /// shot comes close and the tier-A decals sit, gets its own 4096 x 2048 band (about 5.5 x 4.1 px per cm; the
+    /// single 0.24-11.8 m band had 2.7 x 1.8); the taper and upper body keep 2048 x 2048 (3.6 x 3.1 px per cm).
+    static let lower = Band(name: "lower", bottom: 0.24, top: 5.2, width: 4096, height: 2048)
+    static let body = Band(name: "body", bottom: 5.2, top: 11.8, width: 2048, height: 2048)
+    static let bands = [capsule, body, lower]
     static let capsuleParts: Set<String> = ["capsule_lower", "capsule_aperture_shell", "capsule_nose"]
+    static let lowerParts: Set<String> = ["aft_skirt", "lower_stage"]
 
     static func band(for name: String) -> Band? {
         if capsuleParts.contains(name) { return capsule }
+        if lowerParts.contains(name) { return lower }
         return HullFinish.hullParts.contains(name) ? body : nil
     }
 
@@ -1645,7 +1668,7 @@ enum HullPanels {
         let grooveDark: Float, lipLight: Float, aoStrength: Float, grooveSlope: Float, panelTone: Float
     }
     static func weights(_ band: Band) -> Weights {
-        band.name == "body"
+        band.name != "capsule"
             ? Weights(grooveDark: 0.55, lipLight: 0.25, aoStrength: 0.1, grooveSlope: 0.08, panelTone: 0.2)
             : Weights(grooveDark: grooveDark, lipLight: lipLight, aoStrength: aoStrength, grooveSlope: grooveSlope, panelTone: panelTone)
     }
@@ -1659,7 +1682,7 @@ enum HullPanels {
     static let grainHeight: Float = 0
     static let scratchHeight: Float = 0
     /// Micro-scratches per band.
-    static let scratches: [String: Int] = ["capsule": 9000, "body": 7000]
+    static let scratches: [String: Int] = ["capsule": 9000, "body": 4000, "lower": 3000]
 
     // MARK: Layout (metres, degrees; azimuth 0 faces the window, +x is positive)
 
@@ -1844,6 +1867,26 @@ enum HullPanels {
             values = raw.map { min(3, max(-3, ($0 - mean) / deviation)) }
         }
 
+        /// CKP-ENT-13: a tile kept as its own values over their mean (1 = the tile's average; clamped to 0...3),
+        /// for the hull kit's base metal and roughness, which enter as they are, not as a faint added detail.
+        init?(ratio image: CGImage) {
+            let n = 1024
+            var grey = [UInt8](repeating: 0, count: n * n)
+            let drawn = grey.withUnsafeMutableBytes { buffer -> Bool in
+                guard let c = CGContext(data: buffer.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n,
+                                        space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+                else { return false }
+                c.interpolationQuality = .high
+                c.draw(image, in: CGRect(x: 0, y: 0, width: n, height: n))
+                return true
+            }
+            guard drawn else { return nil }
+            let raw = grey.map { Float($0) / 255 }
+            let mean = max(0.01, raw.reduce(0, +) / Float(raw.count))
+            size = n
+            values = raw.map { min(3, $0 / mean) }
+        }
+
         /// The tile averaged over boxes of 2^lx x 2^ly texels: (size >> lx) x (size >> ly) values.
         func box(_ lx: Int, _ ly: Int) -> [Float] {
             let n = size, fx = 1 << lx, fy = 1 << ly, wx = n >> lx, wy = n >> ly
@@ -1869,17 +1912,21 @@ enum HullPanels {
     }
 
     /// Both bands' maps (made once per process and detail source), or nil if a texture could not be made.
-    static func maps(detail image: CGImage? = nil) -> [String: Maps]? {
+    static func maps(detail image: CGImage? = nil, kit: HullKit? = nil) -> [String: Maps]? {
         var result: [String: Maps] = [:]
-        let detail = image.flatMap(Detail.init)
-        for band in [capsule, body] {
-            let key = band.name + (detail != nil ? "+detail" : "")
+        let detail = kit == nil ? image.flatMap(Detail.init(_:)) : nil
+        for band in bands {
+            let key = band.name + (kit.map { "+kit-\($0.theme.rawValue)" } ?? (detail != nil ? "+detail" : ""))
             if let hit = cache[key] { result[band.name] = hit; continue }
-            guard let drawn = try? images(band, detail: detail),
+            guard let drawn = try? images(band, detail: detail, kit: kit),
                   let albedo = try? TextureResource.generate(from: drawn.albedo, options: .init(semantic: .color)),
                   let normal = try? TextureResource.generate(from: drawn.normal, options: .init(semantic: .normal))
             else { return nil }
-            let maps = Maps(albedo: albedo, normal: normal)
+            var maps = Maps(albedo: albedo, normal: normal)
+            if let rough = drawn.roughness {
+                guard let texture = try? TextureResource.generate(from: rough, options: .init(semantic: .raw)) else { return nil }
+                maps.roughness = texture
+            }
             cache[key] = maps
             result[band.name] = maps
         }
@@ -1899,7 +1946,8 @@ enum HullPanels {
     }
 
     /// The albedo and normal images of one band.
-    static func images(_ band: Band, detail: Detail? = nil) throws -> (albedo: CGImage, normal: CGImage) {
+    static func images(_ band: Band, detail: Detail? = nil, kit: HullKit? = nil) throws
+        -> (albedo: CGImage, normal: CGImage, roughness: CGImage?) {
         let w = band.width, h = band.height
         // Masks, drawn additively with CoreGraphics: red = grooves, green = lips, blue = scratches. Drawing y is
         // texture v (CoreGraphics' origin is bottom left; the image's top row is v = 1).
@@ -1941,7 +1989,7 @@ enum HullPanels {
         tone.fill(CGRect(x: 0, y: 0, width: w, height: h))
         func panel(_ a0: Float, _ a1: Float, _ y0: Float, _ y1: Float) {
             // Round 11: every body panel is brushed along the hull (pass 5's fine vertical brushing).
-            let along = band.name == "body" || random.next() < 0.35
+            let along = band.name != "capsule" || random.next() < 0.35
             let level = (along ? 150 : 20) + 80 * random.next()
             tone.setFillColor(gray: CGFloat(level / 255), alpha: 1)
             let lo = yv(max(y0, band.bottom)), hi = yv(min(y1, band.top))
@@ -1969,7 +2017,8 @@ enum HullPanels {
             }
             // Access hatches: about two panels in five get a small rounded hatch near a corner, some body panels a
             // larger one in the middle. Not in the window row between its side seams.
-            guard azimuths.count >= 2, y1 - y0 > 0.14 else { continue }
+            // CKP-ENT-13: with the hull kit the decals are the only hatches.
+            guard kit == nil, azimuths.count >= 2, y1 - y0 > 0.14 else { continue }
             for (i, a0) in azimuths.enumerated() {
                 let a1 = i + 1 < azimuths.count ? azimuths[i + 1] : azimuths[0] + 360
                 if y0 >= sillRing - 0.01 && y1 <= aboveRing + 0.01 && a0 < 0 && a1 > 0 { continue }
@@ -1983,7 +2032,7 @@ enum HullPanels {
                 } else if roll < 0.4 {
                     size = (0.035, 0.05)
                     centre = (a1 - (0.055 / r) * 180 / .pi, y0 + 0.06)
-                } else if roll < 0.5, band.name == "body", y1 - y0 > 0.6, arc > 0.5 {
+                } else if roll < 0.5, band.name != "capsule", y1 - y0 > 0.6, arc > 0.5 {
                     size = (0.14, 0.22)
                     centre = ((a0 + a1) / 2, (y0 + y1) / 2)
                 }
@@ -2019,7 +2068,7 @@ enum HullPanels {
         lights.setFillColor(gray: 0, alpha: 1)
         lights.fill(CGRect(x: 0, y: 0, width: w, height: h))
         lights.setBlendMode(.plusLighter)
-        if band.name == "body" {
+        if band.name != "capsule" {
             // Round 11 (owner on r10: "block by block"; pass 5's middle and lower body have many fine seams, ring
             // bands with small slots at the section joints, rivet rows, rectangular access panels, a tall door and
             // grime streaks running down from the seams). Its own random stream, so the capsule maps stay as they were.
@@ -2111,15 +2160,21 @@ enum HullPanels {
                 c.setFillColor(lip)
                 c.fill(CGRect(x: 0, y: cy + hpx / 2, width: CGFloat(w), height: lipV))
             }
-            for y in joints where y > band.bottom + 0.05 && y < band.top - 0.05 {
+            // CKP-ENT-13: the 5.2 m joint lies on the lower/body band boundary, so each joint band is drawn in every
+            // band it touches, its slots from a per-joint stream (both halves match).
+            for y in joints where y > 0.29 && y < 11.75 && y > band.bottom - 0.06 && y < band.top + 0.06 {
                 strongLine(y - 0.028, 0.009, 0.6)
                 strongLine(y + 0.028, 0.009, 0.6)
+                var slots = Random(state: 0x5EED_10C7 &+ UInt64(y * 100))
                 for i in 0..<36 {
-                    guard r.next() < 0.6 else { continue }
+                    guard slots.next() < 0.6 else { continue }
                     outline(10 * Float(i) + 5, y, 0.045, 0.022, corner: 0.15, fill: 0.6)
                 }
             }
             for y: Float in [3.05, 5.02, 6.95] { strongLine(y, 0.008, 0.5) }
+            // CKP-ENT-13: with the hull kit, the grime, rivets, slots, hatches and doors below come from the base
+            // metal and the decals; only the panel layout, seams and joint bands above stay code-drawn.
+            if kit == nil {
             // Panel-scale grime (pass 5's panels are mottled and darker along their edges, not one clean sheet):
             // a dark wash fading down from the top edge of most panels, a darker strip down one side of some, and
             // soft blotches.
@@ -2230,9 +2285,10 @@ enum HullPanels {
                     target.fillEllipse(in: $0)
                 }
             }
+            }
         }
         // Micro-scratches: short thin strokes at random angles, mostly faint.
-        for _ in 0..<(detail == nil ? scratches[band.name] ?? 0 : 0) {
+        for _ in 0..<(detail == nil && kit == nil ? scratches[band.name] ?? 0 : 0) {
             let az = random.signed() * 180, y = band.bottom + random.next() * span
             let length = 0.008 + 0.05 * random.next() * random.next(), angle = random.next() * .pi
             let perU = pxPerMetreU(y)
@@ -2303,6 +2359,19 @@ enum HullPanels {
             return made
         }
         let metresPerRow = span / Float(h)
+        // CKP-ENT-13: the hull kit's base metal (albedo ratio) and roughness tiles, filtered the same way, and the
+        // plain value of every texel (metal and panel tone, before seams) that the decals multiply.
+        let kitScale = Float(kit?.metal.size ?? 1) / HullKit.metalTile
+        var kitRips: [Int: [Float]] = [:]
+        func kitRip(_ tile: Detail, _ key: Int, _ lx: Int, _ ly: Int) -> [Float] {
+            if let hit = kitRips[key * 256 + lx * 16 + ly] { return hit }
+            let made = tile.box(lx, ly)
+            kitRips[key * 256 + lx * 16 + ly] = made
+            return made
+        }
+        let hasKit = kit != nil, kitRoughness = kit?.roughness ?? 0
+        var plain = [Float](repeating: 0, count: kit == nil ? 0 : w * h)
+        var rough = [UInt8](repeating: 255, count: kit == nil ? 0 : w * h * 4)
         height.withUnsafeMutableBufferPointer { hb in
             albedo.withUnsafeMutableBufferPointer { ab in
                 for row in 0..<h {
@@ -2310,13 +2379,26 @@ enum HullPanels {
                     // Footprint levels: tile x runs around the hull on "around" panels and along it on "along" ones.
                     let lu = Detail.level(metresPerCol * tileScale), lv = Detail.level(metresPerRow * tileScale)
                     let around = detail == nil ? [] : ripMap(lu, lv), alongMap = detail == nil ? [] : ripMap(lv, lu)
+                    // The kit's tiles: x around the hull, y down it (the drips run down), counted from 20 m so the
+                    // bands meet without a jump.
+                    let ku = Detail.level(metresPerCol * kitScale), kv = Detail.level(metresPerRow * kitScale)
+                    let metalRow = kit.map { kitRip($0.metal, 0, ku, kv) } ?? [], roughRow = kit.map { kitRip($0.metalRoughness, 1, ku, kv) } ?? []
+                    let kitWX = (kit?.metal.size ?? 1) >> ku, kitWY = (kit?.metal.size ?? 1) >> kv
+                    let kitTY = Int((20 - band.bottom - metresV) * kitScale) >> kv
                     for col in 0..<w {
                         let i = row * w + col
                         let g = Float(masks[4 * i]) / 255, l = Float(masks[4 * i + 1]) / 255, s = Float(masks[4 * i + 2]) / 255
                         let t = Int(tones[i]), along = t >= 128
                         let variation = (Float(along ? t - 150 : t - 20) / 80) * 2 - 1, dark = Float(darks[i]) / 255
                         var streak: Float = 0, grain: Float = 0
-                        if let detail {
+                        var metal: Float = 1
+                        if hasKit {
+                            let k = (kitTY % kitWY) * kitWX + (Int(Float(col) * metresPerCol * kitScale) >> ku) % kitWX
+                            metal = metalRow[k]
+                            let r = min(1, max(0.02, kitRoughness * roughRow[k]))
+                            let byte = UInt8((r * 255).rounded())
+                            rough[4 * i] = byte; rough[4 * i + 1] = byte; rough[4 * i + 2] = byte
+                        } else if let detail {
                             let mu = Float(col) * metresPerCol
                             let lx = along ? lv : lu, ly = along ? lu : lv
                             let wx = detail.size >> lx, wy = detail.size >> ly
@@ -2327,7 +2409,8 @@ enum HullPanels {
                                 : rowNoise[row] * (0.5 + 0.5 * runNoise[(col / 48 + row * 7) & 4095])
                         }
                         let shade = min(1, ao[i] * aoGain)
-                        var v = base * (1 + brush * streak + detailAlbedo * grain) * (1 + wt.panelTone * variation)
+                        var v = base * metal * (1 + brush * streak + detailAlbedo * grain) * (1 + wt.panelTone * variation)
+                        if hasKit { plain[i] = v }
                         v *= 1 - min(0.85, dark)
                         v += (1 - v) * 0.6 * min(1, Float(brights[i]) / 255)
                         v *= 1 - wt.aoStrength * shade
@@ -2359,6 +2442,36 @@ enum HullPanels {
                 }
             }
         }
+        // CKP-ENT-13: the decals, over everything drawn so far: albedo multiplies the plain metal (128 = 1), so the
+        // seams and joint marks under a decal give way to it; normal and roughness blend by the decal's alpha.
+        if let kit {
+            for placement in HullDecals.placements {
+                guard let decal = kit.decals[placement.kind],
+                      let stamp = HullKit.stamp(placement, decal: decal, band: band, width: w, height: h, night: kit.theme == .night)
+                else { continue }
+                for j in 0..<stamp.height {
+                    let row = stamp.row0 + j
+                    guard row >= 0, row < h else { continue }
+                    for k in 0..<stamp.width {
+                        let s = j * stamp.width + k, a = stamp.alpha[s]
+                        guard a > 0.002 else { continue }
+                        let i = row * w + ((stamp.col0 + k) % w + w) % w
+                        let current = Float(albedo[4 * i]) / 255
+                        let byte = srgb(current * (1 - a) + min(1, plain[i] * stamp.factor[s]) * a)
+                        albedo[4 * i] = byte; albedo[4 * i + 1] = byte; albedo[4 * i + 2] = byte
+                        let encoded = SIMD3<Float>(Float(normal[4 * i]), Float(normal[4 * i + 1]), Float(normal[4 * i + 2]))
+                        let under: SIMD3<Float> = encoded / 127.5 - 1
+                        let n = simd_normalize(under * (1 - a) + stamp.normal[s] * a)
+                        normal[4 * i] = UInt8(((n.x * 0.5 + 0.5) * 255).rounded())
+                        normal[4 * i + 1] = UInt8(((n.y * 0.5 + 0.5) * 255).rounded())
+                        normal[4 * i + 2] = UInt8(((n.z * 0.5 + 0.5) * 255).rounded())
+                        let r = min(1, max(0.02, Float(rough[4 * i]) / 255 * (1 - a + a * stamp.roughness[s])))
+                        let rb = UInt8((r * 255).rounded())
+                        rough[4 * i] = rb; rough[4 * i + 1] = rb; rough[4 * i + 2] = rb
+                    }
+                }
+            }
+        }
         func image(_ bytes: [UInt8], space: CGColorSpace) throws -> CGImage {
             guard let provider = CGDataProvider(data: Data(bytes) as CFData),
                   let image = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: space,
@@ -2368,7 +2481,223 @@ enum HullPanels {
             return image
         }
         return (try image(albedo, space: CGColorSpace(name: CGColorSpace.sRGB)!),
-                try image(normal, space: CGColorSpace(name: CGColorSpace.linearSRGB)!))
+                try image(normal, space: CGColorSpace(name: CGColorSpace.linearSRGB)!),
+                kit == nil ? nil : try image(rough, space: CGColorSpace(name: CGColorSpace.linearSRGB)!))
+    }
+}
+
+/// CKP-ENT-13 (owner D174/D176/D179): the official hull kit, decoded for one theme. The base metal (night graphite,
+/// or the same texture lightened for day) and its roughness tile enter the panel maps as they are, tiled every
+/// `metalTile` metres with no normal map; the decals are stamped into the maps at `HullDecals.placements` with
+/// their own normal and roughness. The seams and ring bands stay code-drawn (`HullPanels`).
+@available(macOS 15.0, *)
+@MainActor
+struct HullKit {
+    /// The base metal tile covers about 1 m x 1 m of hull (its generation brief).
+    static let metalTile: Float = 1.0
+    /// A decal's roughness map is relative to this value (the kit's plain plate, about 0.45): the decal makes the
+    /// hull rougher or smoother by its ratio, around the theme's hull roughness.
+    static let decalPlainRoughness: Float = 115
+    /// Night stencil ink (CKP-ENT-13 note: the dark stencil reads as a hole on the night metal): inside
+    /// `HullDecals.stencilInk`, texels darker than `inkThreshold` x the plate become light paint.
+    static let inkThreshold: Float = 0.75
+    static let inkLift: Float = 0.8
+
+    /// 8-bit pixels as stored in the file (no colour conversion), straight alpha.
+    struct Pixels {
+        let width: Int, height: Int
+        /// 1 grey, 2 grey + alpha, 3 RGB, 4 RGBA.
+        let channels: Int
+        let bytes: [UInt8]
+
+        init?(_ image: CGImage) {
+            width = image.width
+            height = image.height
+            let model = image.colorSpace?.model ?? .unknown
+            let colour = model == .monochrome ? 1 : model == .rgb ? 3 : 0
+            let info = image.alphaInfo, stride = image.bitsPerPixel / 8
+            var alphaAt: Int?, colourAt = 0, extra = 0
+            switch info {
+            case .none: break
+            case .noneSkipLast: extra = 1
+            case .noneSkipFirst: extra = 1; colourAt = 1
+            case .last, .premultipliedLast: extra = 1; alphaAt = colour
+            case .first, .premultipliedFirst: extra = 1; alphaAt = 0; colourAt = 1
+            default: break
+            }
+            let premultiplied = info == .premultipliedLast || info == .premultipliedFirst
+            let direct = colour > 0 && image.bitsPerComponent == 8 && stride == colour + extra
+                && (image.byteOrderInfo == .orderDefault || stride == 1)
+                && Self.supported.contains(info)
+            if direct, let data = image.dataProvider?.data, let base = CFDataGetBytePtr(data),
+               CFDataGetLength(data) >= image.bytesPerRow * (height - 1) + width * stride {
+                channels = colour + (alphaAt == nil ? 0 : 1)
+                var out = [UInt8](repeating: 0, count: width * height * channels)
+                for y in 0..<height {
+                    for x in 0..<width {
+                        let src = y * image.bytesPerRow + x * stride, dst = (y * width + x) * channels
+                        let a = alphaAt.map { base[src + $0] } ?? 255
+                        for c in 0..<colour {
+                            var v = base[src + colourAt + c]
+                            if premultiplied, a > 0, a < 255 { v = UInt8(min(255, (Int(v) * 255 + Int(a) / 2) / Int(a))) }
+                            out[dst + c] = v
+                        }
+                        if alphaAt != nil { out[dst + colour] = a }
+                    }
+                }
+                bytes = out
+                return
+            }
+            // Anything else: drawn into straight sRGB RGBA (CoreGraphics converts).
+            guard let c = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                  width > 0, height > 0
+            else { return nil }
+            c.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            guard let data = c.data else { return nil }
+            let p = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+            var out = [UInt8](repeating: 0, count: width * height * 4)
+            for i in 0..<(width * height) {
+                let a = p[4 * i + 3]
+                for k in 0..<3 {
+                    let v = p[4 * i + k]
+                    out[4 * i + k] = a > 0 && a < 255 ? UInt8(min(255, (Int(v) * 255 + Int(a) / 2) / Int(a))) : v
+                }
+                out[4 * i + 3] = a
+            }
+            channels = 4
+            bytes = out
+        }
+
+        static let supported: [CGImageAlphaInfo] = [.none, .noneSkipLast, .noneSkipFirst, .last, .premultipliedLast, .first,
+                                                      .premultipliedFirst]
+
+        var hasAlpha: Bool { channels == 2 || channels == 4 }
+        /// The colour channels' mean, 0...255.
+        func grey(_ x: Int, _ y: Int) -> Float {
+            let i = (y * width + x) * channels
+            return channels >= 3 ? (Float(bytes[i]) + Float(bytes[i + 1]) + Float(bytes[i + 2])) / 3 : Float(bytes[i])
+        }
+        func alpha(_ x: Int, _ y: Int) -> Float {
+            hasAlpha ? Float(bytes[(y * width + x) * channels + channels - 1]) / 255 : 1
+        }
+        /// Channel `c` of an RGB(A) pixel (grey images repeat the grey).
+        func channel(_ x: Int, _ y: Int, _ c: Int) -> Float {
+            let i = (y * width + x) * channels
+            return Float(channels >= 3 ? bytes[i + c] : bytes[i])
+        }
+    }
+
+    struct Decal {
+        let albedo: Pixels, normal: Pixels, roughness: Pixels
+        /// The opaque part of the albedo (alpha above 8/255): x0, y0 inclusive, x1, y1 exclusive, top left origin.
+        let box: (x0: Int, y0: Int, x1: Int, y1: Int)
+
+        init?(albedo: CGImage, normal: CGImage, roughness: CGImage) {
+            guard let a = Pixels(albedo), let n = Pixels(normal), let r = Pixels(roughness), a.hasAlpha,
+                  n.width == a.width, n.height == a.height, r.width == a.width, r.height == a.height
+            else { return nil }
+            var x0 = a.width, y0 = a.height, x1 = 0, y1 = 0
+            for y in 0..<a.height {
+                for x in 0..<a.width where a.alpha(x, y) > 8 / 255 {
+                    x0 = min(x0, x); y0 = min(y0, y); x1 = max(x1, x + 1); y1 = max(y1, y + 1)
+                }
+            }
+            guard x1 > x0, y1 > y0 else { return nil }
+            self.albedo = a
+            self.normal = n
+            self.roughness = r
+            box = (x0, y0, x1, y1)
+        }
+    }
+
+    let theme: EntranceTheme
+    /// The theme's hull roughness (`HullFinish.roughness`), which the roughness tile modulates.
+    let roughness: Float
+    let metal: HullPanels.Detail
+    let metalRoughness: HullPanels.Detail
+    let decals: [HullDecalKind: Decal]
+
+    /// The kit for `theme`, or nil if any file cannot be read (the entrance then draws the code hull).
+    static func load(_ files: RocketHullKit, theme: EntranceTheme, roughness: Float) -> HullKit? {
+        guard let metalImage = LookImage.load(files.metal(for: theme)), let metal = HullPanels.Detail(ratio: metalImage),
+              let roughImage = LookImage.load(files.metalRoughness), let metalRoughness = HullPanels.Detail(ratio: roughImage)
+        else { return nil }
+        var decals: [HullDecalKind: Decal] = [:]
+        for kind in HullDecalKind.allCases {
+            guard let urls = files.decals[kind], let a = LookImage.load(urls.albedo), let n = LookImage.load(urls.normal),
+                  let r = LookImage.load(urls.roughness), let decal = Decal(albedo: a, normal: n, roughness: r)
+            else { return nil }
+            decals[kind] = decal
+        }
+        return HullKit(theme: theme, roughness: roughness, metal: metal, metalRoughness: metalRoughness, decals: decals)
+    }
+
+    /// One placed decal resampled to a band's texel grid (area-averaged, alpha-weighted).
+    struct Stamp {
+        /// Top-left texel in the band map (row 0 = the band's top; columns wrap round the hull).
+        let col0: Int, row0: Int, width: Int, height: Int
+        let alpha: [Float]
+        /// Albedo multiplier (decal grey / 128).
+        let factor: [Float]
+        /// Tangent-space normal (+x along u, +y up the hull).
+        let normal: [SIMD3<Float>]
+        /// Roughness relative to the plain plate (1 = no change).
+        let roughness: [Float]
+    }
+
+    static func stamp(_ p: HullDecalPlacement, decal: Decal, band: HullPanels.Band, width w: Int, height h: Int, night: Bool) -> Stamp? {
+        let span = band.top - band.bottom
+        let top = Float(p.height + p.tall / 2), bottom = Float(p.height - p.tall / 2)
+        guard top > band.bottom, bottom < band.top else { return nil }
+        let pw = max(1, Int((Float(2 * HullDecals.halfSpanDegrees(p)) / 360 * Float(w)).rounded()))
+        let ph = max(1, Int((Float(p.tall) / span * Float(h)).rounded()))
+        let cx = (Float(p.azimuth) / 360 + 0.5) * Float(w), cy = (1 - (Float(p.height) - band.bottom) / span) * Float(h)
+        let col0 = Int((cx - Float(pw) / 2).rounded()), row0 = Int((cy - Float(ph) / 2).rounded())
+        let box = decal.box, bw = Float(box.x1 - box.x0), bh = Float(box.y1 - box.y0)
+        let ink = HullDecals.stencilInk
+        var alpha = [Float](repeating: 0, count: pw * ph), factor = [Float](repeating: 1, count: pw * ph)
+        var normal = [SIMD3<Float>](repeating: SIMD3<Float>(0, 0, 1), count: pw * ph), roughness = [Float](repeating: 1, count: pw * ph)
+        for j in 0..<ph {
+            let sy0 = box.y0 + Int(Float(j) / Float(ph) * bh)
+            let sy1 = max(sy0 + 1, min(box.y1, box.y0 + Int((Float(j + 1) / Float(ph) * bh).rounded(.up))))
+            for k in 0..<pw {
+                // Mirrored: the texel at k samples the source column from the other side.
+                let m = p.mirrored ? pw - 1 - k : k
+                let sx0 = box.x0 + Int(Float(m) / Float(pw) * bw)
+                let sx1 = max(sx0 + 1, min(box.x1, box.x0 + Int((Float(m + 1) / Float(pw) * bw).rounded(.up))))
+                var sumA: Float = 0, sumG: Float = 0, sumR: Float = 0, sumN = SIMD3<Float>(0, 0, 0), count: Float = 0
+                for y in sy0..<sy1 {
+                    for x in sx0..<sx1 {
+                        let a = decal.albedo.alpha(x, y)
+                        count += 1
+                        sumA += a
+                        sumG += a * decal.albedo.grey(x, y)
+                        sumR += a * decal.roughness.grey(x, y)
+                        let encoded = SIMD3<Float>(decal.normal.channel(x, y, 0), decal.normal.channel(x, y, 1), decal.normal.channel(x, y, 2))
+                        let decoded: SIMD3<Float> = encoded / 127.5 - 1
+                        sumN += a * decoded
+                    }
+                }
+                let s = j * pw + k
+                guard count > 0, sumA > 0 else { continue }
+                alpha[s] = sumA / count
+                var f = sumG / sumA / 128
+                if night, p.kind == .panel {
+                    let u = (Double(k) + 0.5) / Double(pw), v = (Double(j) + 0.5) / Double(ph)
+                    let inside = u >= ink.x && u <= ink.x + ink.width && v >= ink.y && v <= ink.y + ink.height
+                    if f < inkThreshold, inside {
+                        f = 1 + (1 - f) * inkLift
+                    }
+                }
+                factor[s] = f
+                roughness[s] = sumR / sumA / decalPlainRoughness
+                var n = sumN / sumA
+                if p.mirrored { n.x = -n.x }
+                normal[s] = simd_length(n) > 1e-4 ? simd_normalize(n) : SIMD3<Float>(0, 0, 1)
+            }
+        }
+        return Stamp(col0: col0, row0: row0, width: pw, height: ph, alpha: alpha, factor: factor, normal: normal, roughness: roughness)
     }
 }
 

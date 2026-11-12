@@ -337,6 +337,34 @@ public enum EntranceChecks {
             let official = RocketModelSource.official(night: night, day: day, geometry: g)
             try run.expect(official.modelURL(for: .night) == night && official.modelURL(for: .day) == day, "one file per finish")
         }
+
+        run.group("CKP-ENT-13 hull decals: 7 lower-body items, upper door U1 + handle U2, nothing on the back half (D176, D179)") {
+            let all = HullDecals.placements
+            try run.expect(all.map(\.id) == ["6", "11", "12", "16", "17", "18", "19", "U1", "U2"], "placement ids: \(all.map(\.id))")
+            let lower = all.filter { $0.height < 5.2 }
+            try run.expect(lower.count == 7, "lower body has 7 decals: \(lower.count)")
+            try run.expect(all.allSatisfy { $0.height + $0.tall / 2 < 11.8 }, "no capsule tags (D179)")
+            try run.expect(Set(all.map(\.kind)) == Set(HullDecalKind.allCases), "every shipped kind is placed")
+            try run.expect(all.filter(\.mirrored).map(\.id) == ["12"], "only the L hatch 12 is mirrored")
+            for p in all {
+                let edge = abs(p.azimuth) + HullDecals.halfSpanDegrees(p)
+                try run.expect(edge < HullDecals.frontHalfLimit, "\(p.id) reaches \(edge) degrees: nothing on the back half")
+                try run.expect(p.width > 0 && p.tall > 0, "\(p.id) has a size")
+            }
+            try run.near(all.first { $0.id == "6" }?.azimuth ?? 0, 30, 0, "slot strip 6 at +30 degrees")
+            try run.near(all.first { $0.id == "19" }?.azimuth ?? 0, -40, 0, "stencil side panel 19 at -40 degrees")
+            // Lower-body decals do not overlap (U2 sits on U1 by design).
+            for (i, a) in lower.enumerated() {
+                for b in lower[(i + 1)...] {
+                    let apart = abs(a.azimuth - b.azimuth) >= HullDecals.halfSpanDegrees(a) + HullDecals.halfSpanDegrees(b)
+                        || abs(a.height - b.height) >= (a.tall + b.tall) / 2
+                    try run.expect(apart, "\(a.id) overlaps \(b.id)")
+                }
+            }
+            let names = RocketHullKit.fileNames
+            try run.expect(names.count == 3 + 3 * HullDecalKind.allCases.count && Set(names).count == names.count, "kit file names: \(names.count)")
+            try run.expect(RocketLookImages.none.hullKit == nil, "no kit without the official pack")
+        }
         return run
     }
 

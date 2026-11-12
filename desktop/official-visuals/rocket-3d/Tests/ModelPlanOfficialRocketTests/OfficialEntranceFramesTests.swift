@@ -139,6 +139,17 @@ final class OfficialEntranceFramesTests: XCTestCase {
             print("OFFICIAL-FRAME \(theme.rawValue) lower-body-matched coverage \(String(format: "%.3f", coverage(matchedImage)))")
             XCTAssertGreaterThan(coverage(matchedImage), 0.2, "\(theme) matched lower-body frame misses the hull")
             try save(matchedImage, "official-lower-body-matched-\(theme.rawValue)")
+            // CKP-ENT-13: the decals close up, from the front: the skirt and lower stage (plate 18, vents 16/17,
+            // stencil panel 19, door 11, L hatch 12) and the upper door U1 with its handle box U2.
+            for (name, eye, target) in [("decals-lower", EntranceVector(0.5, 1.7, 4.6), EntranceVector(-0.15, 1.9, 0)),
+                                        ("decals-upper", EntranceVector(0.3, 8.4, 3.4), EntranceVector(0, 8.5, 0))] {
+                let camera = EntranceCamera(position: eye, orientation: .lookAt(eye: eye, target: target), fovDegrees: 30,
+                                            viewport: .init(width: 1000, height: 1000))
+                let image = try await scene.render(camera: camera, rise: 0)
+                print("OFFICIAL-FRAME \(theme.rawValue) \(name) coverage \(String(format: "%.3f", coverage(image)))")
+                XCTAssertGreaterThan(coverage(image), 0.3, "\(theme) \(name) misses the hull")
+                try save(image, "official-\(name)-\(theme.rawValue)")
+            }
         }
     }
 
@@ -169,8 +180,15 @@ final class OfficialEntranceFramesTests: XCTestCase {
                     let pbr = try XCTUnwrap(material as? PhysicallyBasedMaterial, "the hull must be a PBR metal")
                     XCTAssertEqual(pbr.metallic.scale, 1, accuracy: 0.001, "\(theme) hull metallic")
                     XCTAssertNil(pbr.metallic.texture, "\(theme) hull metallic texture")
-                    XCTAssertLessThanOrEqual(pbr.roughness.scale, 0.4, "\(theme) hull roughness")
-                    XCTAssertNil(pbr.roughness.texture, "\(theme) hull roughness texture")
+                    if look.hullKit != nil {
+                        // CKP-ENT-13: the base metal's roughness tile (and the decals') is a map with the theme's
+                        // roughness already in it.
+                        XCTAssertNotNil(pbr.roughness.texture, "\(theme) hull roughness map")
+                        XCTAssertEqual(pbr.roughness.scale, 1, accuracy: 0.001, "\(theme) hull roughness map scale")
+                    } else {
+                        XCTAssertLessThanOrEqual(pbr.roughness.scale, 0.4, "\(theme) hull roughness")
+                        XCTAssertNil(pbr.roughness.texture, "\(theme) hull roughness texture")
+                    }
                     XCTAssertNotNil(pbr.normal.texture, "\(theme) hull has no panel normal map")
                     XCTAssertNotNil(pbr.baseColor.texture, "\(theme) hull has no panel albedo")
                 }
@@ -298,6 +316,10 @@ final class OfficialEntranceFramesTests: XCTestCase {
             // Round 5: the hull albedo and normal map are the code-drawn panel maps.
             print("OFFICIAL-ALBEDO \(theme.rawValue) \(scene.hullAlbedo)")
             XCTAssertTrue(scene.hullAlbedo.hasPrefix("panels"), "\(theme) hull albedo: \(scene.hullAlbedo)")
+            // CKP-ENT-13: the official pack ships the hull kit; the lower body has its own band.
+            XCTAssertNotNil(look.hullKit, "the official pack has no hull kit")
+            XCTAssertTrue(scene.hullAlbedo.contains("lower 4096x2048"), "\(theme) hull albedo: \(scene.hullAlbedo)")
+            XCTAssertTrue(scene.hullAlbedo.contains("kit \(theme.rawValue) 6 kinds 9 decals"), "\(theme) hull albedo: \(scene.hullAlbedo)")
             XCTAssertEqual(scene.entity(named: "axial_panel_seam_0_66")?.isEnabled, false, "\(theme) file seam strips still drawn")
             // The cockpit lining around the screen, with the side screens: an unlit textured surface.
             let ceiling = try XCTUnwrap(scene.entity(named: "cockpit-ceiling")?.components[ModelComponent.self], "\(theme) no cockpit lining")

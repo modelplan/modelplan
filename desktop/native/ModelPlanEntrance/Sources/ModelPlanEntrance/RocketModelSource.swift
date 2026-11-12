@@ -51,11 +51,16 @@ public struct RocketLookImages: Equatable, Sendable {
     /// The dim cockpit interior shown behind the front window, per theme (day falls back to night).
     public var cockpitInteriorNight: URL?
     public var cockpitInteriorDay: URL?
+    /// CKP-ENT-13 (D179): the hull kit (base metal + decals). When present it replaces `brushedDetail` and the
+    /// code-drawn hull detail; the seams and ring bands stay code-drawn.
+    public var hullKit: RocketHullKit?
 
-    public init(brushedDetail: URL? = nil, cockpitInteriorNight: URL? = nil, cockpitInteriorDay: URL? = nil) {
+    public init(brushedDetail: URL? = nil, cockpitInteriorNight: URL? = nil, cockpitInteriorDay: URL? = nil,
+                hullKit: RocketHullKit? = nil) {
         self.brushedDetail = brushedDetail
         self.cockpitInteriorNight = cockpitInteriorNight
         self.cockpitInteriorDay = cockpitInteriorDay
+        self.hullKit = hullKit
     }
 
     /// No images: every look element is code-drawn.
