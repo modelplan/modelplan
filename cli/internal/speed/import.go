@@ -51,6 +51,21 @@ type Span struct {
 	// Epoch: the grant the span was imported under. After a revoke and a new grant the span no
 	// longer counts and the source is read again.
 	Epoch *GrantEpoch `json:"epoch,omitempty"`
+	// Retry: logs inside the span that could not be read. The span still counts as covered, but
+	// each of these files is read again, alone, on the next import (HIST-IMP-12).
+	Retry []RetryFile `json:"retry,omitempty"`
+}
+
+// RetryFile is one log whose read failed and the turn spans it still owes.
+type RetryFile struct {
+	Path  string `json:"path"`
+	Spans []Span `json:"spans"`
+}
+
+// importItem is one log to read and the spans whose turns it may contribute.
+type importItem struct {
+	path   string
+	ranges []span
 }
 
 // ImportLedger is imported.json's content.
@@ -152,6 +167,8 @@ type importJob struct {
 	parser string
 	ranges []span
 	list   []string
+	pend   []RetryFile // unreadable logs of an earlier run, read again alone
+	failed []RetryFile // logs of this run that could not be read
 	rows   []PerfRow
 	turns  int
 	status string
@@ -218,6 +235,7 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			c = Span{}
 		}
 		j.ranges = missing(c, from, cutoff)
+		j.pend = c.Retry
 		j.epoch, j.live = currentEpoch(adm, j.source), live
 		active = append(active, j)
 	}
@@ -228,10 +246,11 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			j.list = j.files(j.earliest())
 			prog.total += len(j.list)
 		}
+		prog.total += len(j.pend)
 	}
 	prog.report()
 	for _, j := range active {
-		if len(j.ranges) == 0 {
+		if len(j.ranges) == 0 && len(j.pend) == 0 {
 			j.status = StatusImported
 			continue
 		}
@@ -350,13 +369,29 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 		}
 		return nil
 	}
+	var work []importItem
 	withdraw := func(i int) error {
 		j.withdrawn, j.status, j.rows, j.turns = true, StatusNoConsent, nil, 0
-		prog.done += len(j.list) - i - 1 // the logs left unread
+		prog.done += len(work) - i - 1 // the logs left unread
 		prog.report()
 		return nil
 	}
-	for i, p := range j.list {
+	for _, p := range j.list {
+		work = append(work, importItem{path: p, ranges: j.ranges})
+	}
+	for _, r := range j.pend {
+		if _, err := os.Lstat(r.Path); errors.Is(err, os.ErrNotExist) {
+			prog.done++ // gone for good: nothing left to retry
+			continue
+		}
+		it := importItem{path: r.Path}
+		for _, sp := range r.Spans {
+			it.ranges = append(it.ranges, span{sp.From, sp.Through})
+		}
+		work = append(work, it)
+	}
+	for i, it := range work {
+		p := it.path
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -385,7 +420,13 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			if errors.Is(err, errGrantWithdrawn) {
 				return withdraw(i)
 			}
-			continue // unreadable file: skipped
+			// Unreadable: its span stays covered but the file is retried on the next import.
+			rf := RetryFile{Path: p}
+			for _, r := range it.ranges {
+				rf.Spans = append(rf.Spans, Span{From: r.lo, Through: r.hi})
+			}
+			j.failed = append(j.failed, rf)
+			continue
 		}
 		if cp != nil {
 			for id := range cp.mine {
@@ -393,7 +434,7 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			}
 		}
 		for _, t := range turns {
-			if t.at.IsZero() || !j.inRange(t.at) {
+			if t.at.IsZero() || !inRange(it.ranges, t.at) {
 				continue
 			}
 			tmp.addTurn(j.source, j.parser, t, false)
@@ -407,8 +448,8 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 	return nil
 }
 
-func (j *importJob) inRange(t time.Time) bool {
-	for _, r := range j.ranges {
+func inRange(ranges []span, t time.Time) bool {
+	for _, r := range ranges {
 		if r.has(t) {
 			return true
 		}
@@ -532,6 +573,31 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		}
 	}
 	c.Epoch = epoch
+	// Every pending log was tried this run: the ones that read are done, the ones that failed
+	// again (and new failures) are in j.failed.
+	tried := map[string]bool{}
+	for _, r := range j.pend {
+		tried[r.Path] = true
+	}
+	var retry []RetryFile
+	for _, r := range c.Retry {
+		if !tried[r.Path] {
+			retry = append(retry, r)
+		}
+	}
+	for _, f := range j.failed {
+		merged := false
+		for i := range retry {
+			if retry[i].Path == f.Path {
+				retry[i].Spans = append(retry[i].Spans, f.Spans...)
+				merged = true
+			}
+		}
+		if !merged {
+			retry = append(retry, f)
+		}
+	}
+	c.Retry = retry
 	led.Coverage[j.source] = c
 	if auto && led.AutoRan == nil {
 		t := now.UTC().Truncate(time.Second)

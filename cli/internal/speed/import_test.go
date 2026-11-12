@@ -475,3 +475,43 @@ func TestImportStopsReadingASourceWhoseGrantIsRevokedMidRun(t *testing.T) {
 		t.Fatalf("claude import lost: %d", r)
 	}
 }
+
+// HIST-IMP-12: a log that cannot be read is never marked covered; it is retried alone.
+func TestImportRetriesAnUnreadableLogWithoutRecountingTheRest(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	b := f.claudeLog("b.jsonl", -2)
+	if err := os.Chmod(b, 0); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 1 {
+		t.Fatalf("first run: %d", r)
+	}
+	if c := l.Coverage["claude-code"]; len(c.Retry) != 1 || c.Retry[0].Path != b {
+		t.Fatalf("unreadable log not queued for retry: %+v", c)
+	}
+	// still unreadable: stays queued, nothing double counted
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 1 || len(l.Coverage["claude-code"].Retry) != 1 {
+		t.Fatalf("second run: %d %+v", r, l.Coverage)
+	}
+	if err := os.Chmod(b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 2 {
+		t.Fatalf("after restore: %d", r)
+	}
+	if len(l.Coverage["claude-code"].Retry) != 0 {
+		t.Fatalf("retry not cleared: %+v", l.Coverage)
+	}
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 2 {
+		t.Fatalf("recounted: %d", r)
+	}
+}
