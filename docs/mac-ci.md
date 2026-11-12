@@ -126,10 +126,45 @@ and `transport-fuzz` workflows to pass there (`QUEUE_WORKFLOWS` in `scripts/merg
 `merge_group` has no paths filter, and skips the jobs when the group changes none
 of those paths or its tree equals the PR head. Otherwise `app`, `shell`,
 `native-partition`, `app-smoke` and `native-headless` run on the group commit. The
-pinned `trusted-mac.yml` has no `merge_group` route to the self-hosted group, so
-`native-headless` falls through to a hosted Mac there. Routing it to the dedicated
-group needs a new pin and a runner-group update together, as above. The GUI leg does not run
-in the queue; the five Linux workflows have their own `queue-scope` job and no Mac job.
+pinned `trusted-mac.yml` routes only the GUI tasks of a `merge_group` run to the self-hosted
+group, so `native-headless` falls through to a hosted Mac there. The full GUI leg runs in the
+queue whenever the group changes a desktop path, even when its tree equals the PR head (D169,
+below); the five Linux workflows have their own `queue-scope` job and no Mac job.
+
+## Affected GUI tests on PRs, full suite in the queue and nightly (D169)
+
+Owner decision D169 (2026-11-11). `pull_request` events never start a GUI leg; a ready PR head gets
+`native-headless`, `app-smoke` and the Linux jobs. The coordinator's dispatcher starts the GUI leg
+with a `desktop` dispatch (`gui=true`), one at a time. On an ordinary branch that dispatch runs
+only the app-integration GUI classes related to the branch's changes against its merge base with
+`main`: `desktop/native/tools/ci/gui_test_selection.py` (tests: `test_gui_test_selection.py`)
+selects the classes declared in or extended by a changed test file, the classes whose test files
+name a top-level declaration of a changed Swift file, and the classes whose test files spell a
+changed repository path. Anything it cannot place selects the full share: workflow files, any
+`Package.swift`/`Package.resolved`, the partition and the selector, test fixtures, deleted Swift
+files, non-Swift files in the Swift package graph, a Swift file no GUI test names, a selection that
+covers 60% or more of the GUI classes, an empty diff, or any selector error. `gui_full=true` on the
+dispatch forces the full share. The other GUI-job steps (native package tests, settings tests, Dock,
+window and shell checks) always run whole.
+
+The narrowed list reaches `trusted-mac.yml` as the `gui_classes` input. The reusable workflow
+accepts it only on a `workflow_dispatch` of a branch other than `main` or `release*`, checks it
+against `full`, `none` or a comma-separated list of identifiers, and passes it to
+`native_test_partition.py --only`, which keeps the leg's own share of the list (it never widens the
+leg) and verifies that exactly that narrowed share ran. Every other run (merge queue, nightly,
+push, `main`/release dispatch) runs and verifies the whole share whatever the caller passes.
+
+A selection is a speed-up for the PR round, not the merge gate. The merge queue runs the full GUI
+leg on the group commit, and `desktop` must pass there before anything reaches `main`; the
+coordinator's gate still requires a successful GUI leg at the PR head. A `schedule` run at 09:23
+UTC runs the full GUI leg on `main` (and nothing else); it is skipped when a nightly already passed
+at the same `main` commit. `trusted-mac.yml` admits `merge_group` (queue branches of `main`) and
+`schedule` (`main`) runs to the owner's Macs for the GUI tasks only, under the same owner gate.
+
+Non-UI Swift tests are not skipped on the strength of a Mac compile lane's earlier pass at the same
+head (D169 item 3 was dropped): those lanes run on agent-operated machines, and nothing they report
+(a comment, a file, or a signature made with a key on that machine) can be verified as untampered
+by CI. Only GitHub-produced results count.
 
 ## Migration
 

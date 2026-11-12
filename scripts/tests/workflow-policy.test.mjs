@@ -315,3 +315,108 @@ test("desktop.yml pr=<N> dispatch builds refs/pull/<N>/merge in every job it own
   // trusted-mac.yml is SHA-pinned and takes no ref: its callers stay unchanged and test the dispatched commit.
   for (const name of ["native", "native-hosted", "native-owner-gui", "native-headless"]) assert.doesNotMatch(job(name), /pr-ref|inputs\.pr/, name);
 });
+
+// D169 (owner 2026-11-11): a branch dispatch runs only the GUI classes related to its change; the merge queue and the
+// nightly main run always run the whole GUI share, and pull_request events never start a GUI leg.
+const stepScript = (block, name) => {
+  const at = block.indexOf(`- name: ${name}`);
+  assert.ok(at >= 0, name);
+  const m = /\n(\s+)run: \|\n((?:\1  .*\n|\n)+)/.exec(block.slice(at));
+  return m[2].replace(new RegExp(`^${m[1]}  `, "gm"), "");
+};
+
+test("D169: trusted-mac.yml narrows the GUI share only on an ordinary branch dispatch, with a validated class list", () => {
+  const reusable = fs.readFileSync(new URL("../../.github/workflows/trusted-mac.yml", import.meta.url), "utf8");
+  assert.match(reusable, /\n      gui_classes:\n(?:        #.*\n)*        required: false\n        type: string\n        default: full\n/);
+  const job = reusable.split("\n  native:\n")[1].split("\n  native-headless:\n")[0];
+  const sh = stepScript(job, "GUI test selection (D169; full except on a branch dispatch)");
+  assert.match(job, /GUI_CLASSES_INPUT: \$\{\{ inputs\.gui_classes \}\}/, "the input reaches the shell only through env");
+  assert.doesNotMatch(sh, /\$\{\{/, "no expression is interpolated into the script");
+  const dir = fs.mkdtempSync("/tmp/d169-select-");
+  const run = (event, ref, input) => {
+    const env = `${dir}/env`; fs.writeFileSync(env, "");
+    const r = spawnSync("bash", ["-c", sh], { env: { PATH: process.env.PATH, GITHUB_EVENT_NAME: event, GITHUB_REF: ref,
+      GITHUB_ENV: env, GITHUB_STEP_SUMMARY: `${dir}/summary`, ...(input === undefined ? {} : { GUI_CLASSES_INPUT: input }) } });
+    return r.status === 0 ? fs.readFileSync(env, "utf8").trim() : `exit ${r.status}`;
+  };
+  try {
+    assert.equal(run("workflow_dispatch", "refs/heads/claude/x", "WidgetTests,DockTests"), "GUI_ONLY=WidgetTests,DockTests");
+    assert.equal(run("workflow_dispatch", "refs/heads/claude/x", "none"), "GUI_ONLY=none");
+    assert.equal(run("workflow_dispatch", "refs/heads/claude/x", ""), "GUI_ONLY=full");
+    assert.equal(run("workflow_dispatch", "refs/heads/claude/x", undefined), "GUI_ONLY=full");
+    // Whatever the caller passes, every other run gets the whole share.
+    for (const [event, ref] of [["merge_group", "refs/heads/gh-readonly-queue/main/pr-1-abc"], ["schedule", "refs/heads/main"],
+      ["push", "refs/heads/main"], ["pull_request", "refs/pull/1/merge"], ["workflow_dispatch", "refs/heads/main"],
+      ["workflow_dispatch", "refs/heads/release/v1"], ["workflow_dispatch", "refs/tags/v1.0.0"]])
+      assert.equal(run(event, ref, "WidgetTests"), "GUI_ONLY=full", `${event} ${ref}`);
+    for (const bad of ["A;touch /tmp/d169-x", "A\nGUI_ONLY=none", "A,", "^Mod\\.", "A|B", "$(id)", "A B"])
+      assert.equal(run("workflow_dispatch", "refs/heads/claude/x", bad), "exit 1", JSON.stringify(bad));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  // The narrowed share is planned and verified with the same selection; an empty plan is legal only when narrowed.
+  const tests = stepScript(job, "App integration tests, GUI leg (window-server classes; the rest run in native-headless)");
+  assert.match(tests, /plan --package app-integration --leg "\$LEG" --only "\$GUI_ONLY" /);
+  assert.match(tests, /verify --package app-integration --leg "\$LEG" --only "\$GUI_ONLY" /);
+  assert.match(tests, /\[ "\$GUI_ONLY" != full \] \|\| \{ echo "::error::the full GUI share planned no tests"; exit 1; \}/);
+});
+
+test("D169: the owner Mac admits the merge queue and the nightly schedule for the GUI tasks only", () => {
+  const extra = "((inputs.task == 'native' || inputs.task == 'native-owner-gui') && ((github.event_name == 'merge_group' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) || (github.event_name == 'schedule' && github.ref == 'refs/heads/main')))";
+  assert.equal(TRUSTED_MAC_ROUTE.split(extra).length, 2, "exactly one merge_group/schedule clause, GUI tasks only");
+  assert.equal(TRUSTED_MAC_ROUTE.split("merge_group").length, 2);
+  assert.equal(TRUSTED_MAC_ROUTE.split("'schedule'").length, 2);
+  // It sits inside the owner identity gate, next to the push/dispatch clause.
+  const owner = "(github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request'";
+  const second = TRUSTED_MAC_ROUTE.lastIndexOf(owner);
+  assert.ok(second > 0 && TRUSTED_MAC_ROUTE.indexOf(extra) > second);
+});
+
+test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and on the nightly, and passes the selection", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
+  assert.match(text, /^  schedule:\n    - cron: "[0-9]+ [0-9]+ \* \* \*"\n/m, "a nightly schedule");
+  assert.doesNotMatch(text, /gui-ci/, "no label starts a GUI leg on pull_request");
+  const scope = job("gui-scope");
+  assert.match(scope, /if: \$\{\{ !cancelled\(\) && !inputs\.mac_ci_probe && \(\(github\.event_name == 'workflow_dispatch' && inputs\.gui\) \|\| \(github\.event_name == 'merge_group' && needs\.queue-scope\.outputs\.gui == 'true'\) \|\| github\.event_name == 'schedule'\) \}\}/);
+  for (const name of ["native", "native-hosted", "native-owner-gui"]) {
+    const body = job(name);
+    assert.match(body, /needs: gui-scope\n/, name);
+    assert.match(body, /if: \$\{\{ !cancelled\(\) && github\.event_name != 'pull_request' && .*needs\.gui-scope\.result == 'success' && needs\.gui-scope\.outputs\.run == 'true'/, name);
+    assert.match(body, /\n      gui_classes: \$\{\{ needs\.gui-scope\.outputs\.classes \}\}\n/, name);
+  }
+  // The queue's GUI flag is computed before, and independently of, the tree-reuse shortcut.
+  const queue = job("queue-scope");
+  assert.ok(queue.indexOf('echo "gui=true"') > 0 && queue.indexOf('echo "gui=true"') < queue.indexOf("rev-list --parents"));
+  assert.match(queue, /gui: \$\{\{ steps\.scope\.outputs\.gui \}\}/);
+  // The nightly runs only the GUI legs: every other job skips the schedule.
+  for (const name of ["app", "shell", "native-partition", "cockpit-pins", "app-smoke", "native-headless"])
+    assert.match(job(name), /github\.event_name != 'schedule'/, name);
+
+  // Execute the selection step against stubs.
+  const sh = /run: \|\n((?:          .*\n|\n)+)/.exec(scope)[1].replace(/^          /gm, "");
+  const dir = fs.mkdtempSync("/tmp/d169-scope-");
+  fs.mkdirSync(`${dir}/desktop/native/tools/ci`, { recursive: true });
+  fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\n[ -n "${GH_FAIL:-}" ] && exit 1\necho "${PASSED:-0}"\n', { mode: 0o755 });
+  fs.writeFileSync(`${dir}/git`, '#!/bin/bash\ncase "$1" in fetch) [ -z "${NO_BASE:-}" ];; merge-base) echo base;; diff) echo desktop/native/x.swift;; esac\n', { mode: 0o755 });
+  fs.writeFileSync(`${dir}/python3`, '#!/bin/bash\n[ -n "${SEL_FAIL:-}" ] && exit 1\nprintf "%s\\n" "${SELECTED:-WidgetTests}"\n', { mode: 0o755 });
+  const go = (env) => {
+    const out = `${dir}/out`; fs.writeFileSync(out, "");
+    const r = spawnSync("bash", ["-c", sh], { cwd: dir, env: { PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir, GITHUB_OUTPUT: out,
+      GITHUB_STEP_SUMMARY: `${dir}/summary`, GITHUB_SHA: "a".repeat(40), REPO: "o/r", GH_TOKEN: "x", GUI_FULL: "false", ...env } });
+    assert.equal(r.status, 0, r.stderr.toString());
+    return fs.readFileSync(out, "utf8").trim().split("\n").join(" ");
+  };
+  const branch = { EVENT: "workflow_dispatch", REF: "refs/heads/claude/x" };
+  try {
+    assert.equal(go(branch), "run=true classes=WidgetTests");
+    assert.equal(go({ ...branch, SELECTED: "none" }), "run=true classes=none");
+    assert.equal(go({ ...branch, SEL_FAIL: "1" }), "run=true classes=full", "selector failure -> full");
+    assert.equal(go({ ...branch, SELECTED: "A;B" }), "run=true classes=full", "malformed output -> full");
+    assert.equal(go({ ...branch, NO_BASE: "1" }), "run=true classes=full", "no merge base -> full");
+    assert.equal(go({ ...branch, GUI_FULL: "true" }), "run=true classes=full");
+    for (const REF of ["refs/heads/main", "refs/heads/release/v1", "refs/tags/v1"]) assert.equal(go({ ...branch, REF }), "run=true classes=full", REF);
+    assert.equal(go({ EVENT: "merge_group", REF: "refs/heads/gh-readonly-queue/main/pr-1-a" }), "run=true classes=full");
+    assert.equal(go({ EVENT: "schedule", REF: "refs/heads/main" }), "run=true classes=full");
+    assert.equal(go({ EVENT: "schedule", REF: "refs/heads/main", PASSED: "1" }), "run=false classes=full", "same main head already passed");
+    assert.equal(go({ EVENT: "schedule", REF: "refs/heads/main", GH_FAIL: "1" }), "run=true classes=full", "unreadable -> run");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
