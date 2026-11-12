@@ -20,16 +20,18 @@ on:
       - '.github/workflows/u11-native.yml'
 permissions:
   contents: read
+# A branch dispatch dedupes per branch (a newer dispatch cancels the older one); main, release and tag runs
+# keep a run_id group and are never cancelled.
 concurrency:
-  group: u11-native-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: u11-native-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || (github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release') && format('dispatch-{0}', github.ref)) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release')) }}
 
 jobs:
   native:
     # Runs in the pinned trusted-mac.yml (docs/mac-ci.md): the ordinary owner Macs with MAC_CI_NONGUI=enabled,
     # hosted macos-15 otherwise.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@0c86af351dd4417399682fdd5cc213189b91987d
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@01340deab2a433e748ac1d1c13bde553bde7065c
     with:
       task: u11-native
       os: macos-15

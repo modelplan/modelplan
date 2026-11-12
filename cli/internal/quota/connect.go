@@ -451,7 +451,7 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 	}
 	names := []string{"native.json", "codexbar.json"}
 	if history || identity {
-		names = append(names, "cycles.json", "pace.json", "speed.json", "perf.json", "daily-long.json")
+		names = append(names, "cycles.json", "pace.json", "speed.json", "perf.json", "daily-long.json", "imported.json")
 	}
 	for _, name := range names {
 		if scopeClass == consent.Bridge && name == "native.json" || scopeClass == consent.Credential && (name == "native.json" || name == "codexbar.json") {
@@ -490,7 +490,7 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 	if name == "cycles.json" || name == "pace.json" {
 		keys = []string{"cycles"}
 	}
-	if name == "speed.json" || name == "daily-long.json" {
+	if name == "speed.json" || name == "daily-long.json" || name == "imported.json" {
 		keys = []string{"rows"}
 	}
 	if name == "perf.json" {
@@ -530,6 +530,19 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 			}
 		}
 		doc[key], _ = json.Marshal(kept)
+	}
+	// The importer's per-source coverage (dates and grant) goes with that source's imported rows.
+	if name == "imported.json" && history && doc["coverage"] != nil && string(doc["coverage"]) != "null" {
+		var coverage map[string]json.RawMessage
+		if json.Unmarshal(doc["coverage"], &coverage) != nil {
+			return errors.New("cached coverage invalid")
+		}
+		for source := range coverage {
+			if source == tool || source == "claude-code" && tool == "claude" {
+				delete(coverage, source)
+			}
+		}
+		doc["coverage"], _ = json.Marshal(coverage)
 	}
 	b, _ = json.Marshal(doc)
 	if err := replace(path, append(b, '\n')); err != nil {

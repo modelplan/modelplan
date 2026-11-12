@@ -2,6 +2,7 @@
 package rows
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -129,20 +130,12 @@ func Validate(in Input, out Projection) error {
 			}
 		}
 	}
-	summaries := map[SummaryState]Code{SummaryStateOK: CodeOK, SummaryStateReadersOff: CodeReadersOff, SummaryStateNoConsent: CodeNoConsent, SummaryStateEmpty: CodeNoDockRows, SummaryStatePending: CodeConsentChanged}
-	code, ok := summaries[out.RowsSummary.State]
-	if !ok || code != out.RowsSummary.Reason.Code || out.RowsSummary.Text != out.RowsSummary.Reason.Text {
-		return fail("summary state/reason")
-	}
-	if out.RowsSummary.Text != summaryTexts[code] {
-		return fail("summary message table")
-	}
-	var next *NextStep
-	if out.RowsSummary.State != SummaryStateOK && out.RowsSummary.State != SummaryStatePending {
-		next = &NextStep{Action: ActionOpenSettingsConsent, Text: actionTexts[ActionOpenSettingsConsent]}
-	}
-	if !reflect.DeepEqual(next, out.RowsSummary.NextStep) {
-		return fail("summary next step")
+	if err := validateDockSummary(out); err == errNotDockSummary {
+		if err := validateSummaryTable(out); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
 	}
 	if in.ConsentChanged {
 		for _, row := range out.Rows {
@@ -442,6 +435,50 @@ func ValidateCapture(in Input, out Projection) error {
 		if !intentional {
 			return fmt.Errorf("capture contains non-intentional other for %s", row.ID)
 		}
+	}
+	return nil
+}
+
+var errNotDockSummary = errors.New("not a dock summary")
+
+// validateDockSummary checks the two summaries that name tools (G3-38): "Reading ..." for allowed
+// tools waiting for their first read, and the user action for allowed tools that need one. It
+// returns errNotDockSummary for every other summary.
+func validateDockSummary(out Projection) error {
+	s := out.RowsSummary
+	switch {
+	case s.State == SummaryStatePending && s.Reason.Code == CodeNotReadYet:
+		names := summaryReadingNames(out.Rows)
+		if len(names) == 0 || !reflect.DeepEqual(s, readingSummary(names)) {
+			return fmt.Errorf("invalid rows field: reading summary")
+		}
+		return nil
+	case s.State == SummaryStateEmpty && s.Reason.Code != CodeNoDockRows:
+		step, names := summaryActionNeeded(out.Rows)
+		if step == nil || !reflect.DeepEqual(s, actionSummary(out.Rows, step, names)) {
+			return fmt.Errorf("invalid rows field: action summary")
+		}
+		return nil
+	}
+	return errNotDockSummary
+}
+
+func validateSummaryTable(out Projection) error {
+	fail := func(what string) error { return fmt.Errorf("invalid rows field: %s", what) }
+	summaries := map[SummaryState]Code{SummaryStateOK: CodeOK, SummaryStateReadersOff: CodeReadersOff, SummaryStateNoConsent: CodeNoConsent, SummaryStateEmpty: CodeNoDockRows, SummaryStatePending: CodeConsentChanged}
+	code, ok := summaries[out.RowsSummary.State]
+	if !ok || code != out.RowsSummary.Reason.Code || out.RowsSummary.Text != out.RowsSummary.Reason.Text {
+		return fail("summary state/reason")
+	}
+	if out.RowsSummary.Text != summaryTexts[code] {
+		return fail("summary message table")
+	}
+	var next *NextStep
+	if out.RowsSummary.State != SummaryStateOK && out.RowsSummary.State != SummaryStatePending {
+		next = &NextStep{Action: ActionOpenSettingsConsent, Text: actionTexts[ActionOpenSettingsConsent]}
+	}
+	if !reflect.DeepEqual(next, out.RowsSummary.NextStep) {
+		return fail("summary next step")
 	}
 	return nil
 }

@@ -100,6 +100,13 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	for method, h := range appserver.ReaderKeyHandlers(appserver.ReaderKeyConfig{Dir: st.Dir, ReadOnly: options.ReadOnly, Offline: options.Offline}) {
 		handlers[method] = h
 	}
+	var importer *appserver.ImportController
+	if !options.ReadOnly {
+		importer = appserver.NewImportController(importEngine{st: st})
+		for method, h := range appserver.HistoryImportHandlers(importer) {
+			handlers[method] = h
+		}
+	}
 	closeBackend := func() {}
 	var scheduler *appserver.RefreshScheduler
 	var server *appserver.Server
@@ -130,6 +137,13 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		shared.CredentialSink = broker
 		broker.Changed = shared.Notify
 		closeBackend = scheduler.Close
+	}
+	if importer != nil {
+		closeBase := closeBackend
+		closeBackend = func() {
+			importer.Close()
+			closeBase()
+		}
 	}
 	var fetcher *appPublication
 	if !options.Offline && !options.ReadOnly {

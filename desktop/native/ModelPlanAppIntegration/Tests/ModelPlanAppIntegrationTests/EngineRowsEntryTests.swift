@@ -94,6 +94,7 @@ private actor RowsEntryClient: EngineClient {
         await app.composition.store.consume(.connection(.ready(context)))
         await app.composition.store.consume(.context(context))
         await app.composition.store.consume(.consentChanged(reply))
+        app.scopeConsentEntry.controller.choose(facts.scopes[0].scope, selected: true) // Settings no longer pre-selects (G3-67)
         let request = try XCTUnwrap(app.scopeConsentEntry.controller.requestAllow())
         await app.scopeConsentEntry.controller.confirm(request.id)
         if case .waitingForFacts = app.scopeConsentEntry.controller.phase {} else { XCTFail("Completion cannot prove consent") }

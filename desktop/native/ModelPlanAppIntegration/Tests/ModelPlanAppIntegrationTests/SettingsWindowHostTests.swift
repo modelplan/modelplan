@@ -245,7 +245,8 @@ import ModelPlanEngineClient
         let host = SettingsWindowHost(application: app, canPresent: { true }, environment: { .init() },
             activate: { events.append("activate") }, makeSurface: { _ in surface })
         await host.present(origin: .userInitiated)
-        XCTAssertEqual(events, ["prepare", "activate", "show"])
+        // A second activation follows the show: Settings has by then made the app regular.
+        XCTAssertEqual(events, ["prepare", "activate", "show", "activate"])
         events = []; await host.present(origin: .restoration)
         XCTAssertEqual(events, ["prepare", "show"])
         events = []; await host.present()

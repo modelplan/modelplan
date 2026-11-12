@@ -301,6 +301,10 @@ import ModelPlanSettings
                                             "errorCode": "runtime_missing"]])
         let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
         defer { host.close() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("d87-codex-host-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        await app.reload() // same host wiring as the Grok host-card test beside it
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         host.updateDockConsent(try consent(["codex"])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
         let row = try XCTUnwrap(model(value, consent: try consent(["codex"])).inputs.first)
