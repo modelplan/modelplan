@@ -4,7 +4,7 @@ import ModelPlanWire
 import WebKit
 import QuartzCore
 
-public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, deadlineReceiptTimeout, visibilityReceiptTimeout, appearanceWaitTimeout, deadlineConvergence, localEncoding }
+public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, deadlineReceiptTimeout, visibilityReceiptTimeout, appearanceWaitTimeout, deadlineConvergence, localEncoding, deliveryBacklog }
 
 // WebKit's module CORS fetch requires NSHTTPURLResponse header fields, even
 // for a custom scheme. Only public, hash-pinned static files use this response;
@@ -244,8 +244,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       receiptWatchdog.wait(for: id)
       send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentDeadlineTrigger(id) == true },
            onAccepted: { [weak self] in self?.tickRetries = 0 },
-           onRejected: { [weak self] in self?.retryRejectedTick(reason) ?? false })
-    } catch { fail() }
+           onRejected: { [weak self] in self?.retryRejectedTick(reason) ?? false },
+           dropped: { [weak self] in
+        guard let self else { return }
+        if self.receiptWatchdog.currentID == id { self.receiptWatchdog.cancel() }
+        self.backlog.tick = reason
+      })
+    } catch { fail(error: error) }
   }
   private var lastVisibility: CockpitVisibility?
   private var openedAt: TimeInterval?
@@ -290,6 +295,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     var verificationNoWindowClock: (() -> UInt64)?
     var verificationNoWindowArm: CockpitDeadlineDriver.Arm?
     var verificationNoWindowShell: CockpitShellState?
+    /// G3-86: the next this many submissions are refused as a full delivery queue refuses them.
+    var verificationRefuseSubmissions = 0
     /// Actions are admitted only from the key window (`CockpitVisibility.active`), so a window that is shown for
     /// an action test must be key; pass `key: false` for a shown-but-inactive window.
     func verificationConfirmVisible(key: Bool = true) throws {
@@ -317,6 +324,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRootHeight: CGFloat? { layout?.rootHeight }
     public var verificationLayout: CockpitShellLayout? { layout }
     public var verificationDragRegion: NSView? { dragRegion }
+    /// The drag's snap guide as last shown: its frame and whether it showed ready (solid line).
+    public var verificationSnapGuide: (frame: CGRect, ready: Bool)? {
+      guard let guide = snapGuide, let shape = guide.contentView?.layer as? CAShapeLayer else { return nil }
+      return (guide.frame, shape.lineDashPattern == nil)
+    }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
@@ -504,17 +516,25 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // Keep its timer until a validated newer report actually replaces it.
     do {
       let raw = try bridge.display(data, ticket: ticket)
+      let dropped = bridge.lastNonFinitePaths
+      for path in dropped.prefix(8) { CockpitFailureLog.record("display-non-finite path=\(path) count=\(dropped.count)") }
       guard let id = bridge.currentDisplayRequest else { throw CockpitBridgeError.unavailable }
       if bridge.awaitsDisplayReceipt(id) { renderWatchdog.wait(for: id) }
-      send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentDisplay(id) == true })
-    } catch { fail() }
+      send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentDisplay(id) == true }, dropped: { [weak self] in
+        guard let self else { return }
+        if self.renderWatchdog.currentID == id { self.renderWatchdog.cancel() }
+        if self.receiptWatchdog.currentID == id { self.receiptWatchdog.cancel() }
+        self.bridge.abandonDisplay(id)
+        self.backlog.display = true
+      })
+    } catch { fail(error: error) }
   }
   /// Hide synchronously before yielding; acknowledge only after clear receipt
   /// or complete view disposal. An unknown floor remains blocked after receipt.
   public func clearPrivateViews(adopting context: CockpitEngineContext? = nil) async {
     freshnessDriver.hide(); freshnessDriver.invalidate(); bridge.cancelDeadlineReports(); visibilityFence.invalidate()
     orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); appearanceWatchdog.cancel()
-    receiptWatchdog.cancel(); renderWatchdog.cancel()
+    receiptWatchdog.cancel(); renderWatchdog.cancel(); backlog = BacklogResync()
     visibilityTimeout?.cancel(); visibilityTimeout = nil
     freshnessHasRendered = false; pendingFreshnessReason = nil
     web?.isHidden = true
@@ -533,11 +553,20 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         }
         send(message, clear: true)
       }
-    } catch { fail() }
+    } catch { fail(error: error) }
   }
-  private func send(_ raw: String, clear: Bool = false, bootstrap: Bool = false,
+  /// G3-86: what a skipped update needs once the queue moves again. The page keeps showing its last state.
+  private struct BacklogResync { var display = false, visibility = false, appearance = false; var tick: CockpitDeadlineReason? }
+  private var backlog = BacklogResync()
+  /// Consecutive messages the ordered queue refused, reset by any accepted delivery.
+  private var deliveryRefusals = 0
+  static let maximumDeliveryRefusals = 8
+  /// `onRejected` runs when the page refused a delivered message; returning true means the caller recovers
+  /// (a retry), false ends the page as `messageRejected`. `dropped` runs when the ordered queue refuses the
+  /// message before delivery: the caller undoes its wait and marks what to resend.
+  private func send(_ raw: String, clear: Bool = false, bootstrap: Bool = false, coalesce: String? = nil,
                     isCurrent: (() -> Bool)? = nil, onAccepted: (() -> Void)? = nil,
-                    onRejected: (() -> Bool)? = nil) {
+                    onRejected: (() -> Bool)? = nil, dropped: (() -> Void)? = nil) {
     let web = self.web
     #if MODELPLAN_TEST_ONLY_SPI
     let noWindowTest = web == nil && verificationNoWindowDelivery != nil
@@ -551,7 +580,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       ? "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.clear(raw)===true?'accepted':'rejected:'+String((typeof window.modelPlanCockpit.reject==='function'?window.modelPlanCockpit.reject():null)||'none')"
       : "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.receive(raw)===true?'accepted':'rejected:'+String((typeof window.modelPlanCockpit.reject==='function'?window.modelPlanCockpit.reject():null)||'none')"
     let code = (bootstrap ? "await import('modelplan-cockpit://bundle/src/main.js');" : "") + body
-    let submitted = orderedDelivery.submit(OutboundMessage(code: code, raw: raw), isCurrent: { [weak self, weak web] in
+    #if MODELPLAN_TEST_ONLY_SPI
+    let refused = verificationRefuseSubmissions > 0
+    if refused { verificationRefuseSubmissions -= 1 }
+    #else
+    let refused = false
+    #endif
+    var submitted = false
+    if !refused { submitted = orderedDelivery.submit(OutboundMessage(code: code, raw: raw), coalesce: coalesce, isCurrent: { [weak self, weak web] in
       guard let self else { return false }
       #if MODELPLAN_TEST_ONLY_SPI
       let targetMatches = noWindowTest ? (self.web == nil && self.verificationNoWindowDelivery != nil) : (web != nil && self.web === web)
@@ -563,15 +599,45 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }, completed: { [weak self] result in
       guard let self else { return }
       switch result {
-      case .accepted: onAccepted?()
+      case .accepted: self.deliveryRefusals = 0; onAccepted?(); self.resyncAfterBacklog()
       case .missing: self.fail(.pageAPIUnavailable)
       case .rejected:
         CockpitFailureLog.record("page-reject code=\(self.lastRejectCode)")
         if onRejected?() != true { self.fail(.messageRejected) }
       case .failed: self.fail(.javascriptFailed)
       }
-    })
-    if !submitted { fail(.localEncoding) }
+    }) }
+    guard !submitted else { return }
+    // G3-86 (14c C-01): a full queue used to end the cockpit as `localEncoding` after about a minute open.
+    // One refused update is skipped and resent when the queue moves; only a queue that stays stuck ends the page.
+    deliveryRefusals += 1
+    CockpitFailureLog.record("delivery-skipped type=\(Self.messageType(raw)) outstanding=\(orderedDelivery.outstanding) "
+      + "consecutive=\(deliveryRefusals)")
+    guard deliveryRefusals < Self.maximumDeliveryRefusals else { fail(.deliveryBacklog); return }
+    dropped?()
+  }
+  private static func errorDetail(_ error: Error) -> String {
+    let name = CockpitFailureLog.errorName(error)
+    guard let encoding = error as? EncodingError, case .invalidValue(_, let context) = encoding else { return name }
+    return name + ".path=" + context.codingPath.map(\.stringValue).joined(separator: ".")
+  }
+  private static func messageType(_ raw: String) -> String {
+    guard let object = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+      let type = object["type"] as? String, type.utf8.count <= 32, type.allSatisfy({ $0.isLetter }) else { return "unknown" }
+    return type
+  }
+  /// Resends what a refused update left stale, once the queue has room again.
+  private func resyncAfterBacklog() {
+    guard !ending, orderedDelivery.outstanding < 8 else { return }
+    let pending = backlog
+    guard pending.display || pending.visibility || pending.appearance || pending.tick != nil else { return }
+    backlog = BacklogResync()
+    CockpitFailureLog.record("delivery-resync display=\(pending.display) visibility=\(pending.visibility) "
+      + "appearance=\(pending.appearance) tick=\(pending.tick?.rawValue ?? "none")")
+    if pending.visibility { lastVisibility = nil; visibilityChanged() }
+    if pending.appearance, !ending { publishAppearance() }
+    if let reason = pending.tick, !ending { sendFreshnessTick(reason) }
+    if pending.display, !ending { onReady?() }
   }
   fileprivate func receive(_ message: WKScriptMessage) {
     guard message.webView === web, message.frameInfo.isMainFrame,
@@ -681,7 +747,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     catch { recordRejectedBridgeMessage(); return nil }
   }
   private func suspendForHiddenPage() {
-    refreshAfterHiddenDisplay = refreshAfterHiddenDisplay || bridge.hasPendingDisplay
+    refreshAfterHiddenDisplay = refreshAfterHiddenDisplay || bridge.hasPendingDisplay || backlog.display
+    backlog = BacklogResync()
     appearanceGate.deferUntilVisible(); appearanceWatchdog.cancel(); orderedDelivery.invalidate()
     freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
@@ -731,8 +798,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           } else if self.refreshAfterHiddenDisplay { self.refreshAfterHiddenDisplay = false; self.onReady?() }
           self.awaitingShown = false
         }
+      }, dropped: { [weak self] in
+        guard let self else { return }
+        self.visibilityTimeout?.cancel(); self.visibilityTimeout = nil
+        self.backlog.visibility = true
       })
-    } catch { fail() }
+    } catch { fail(error: error) }
   }
   public func webView(
     _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
@@ -754,7 +825,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       return
     }
     guard let shell = currentShell else { fail(); return }
-    do { send(try bridge.load(appearance, shell: shell), bootstrap: true) } catch { fail() }
+    do { send(try bridge.load(appearance, shell: shell), bootstrap: true) } catch { fail(error: error) }
   }
   public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { fail(.contentTerminated) }
   public func webView(
@@ -833,17 +904,22 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           if let buffered = self.bridge.takeBufferedDeadline() {
             self.receiptWatchdog.cancel(); self.freshnessDriver.accept(deadline: buffered.value)
           } else if self.receiptWatchdog.currentID != id { self.receiptWatchdog.wait(for: id) }
+        }, dropped: { [weak self] in
+          guard let self else { return }
+          if self.receiptWatchdog.currentID == id { self.receiptWatchdog.cancel() }
+          self.backlog.appearance = true
         })
       } else {
-        send(raw, onAccepted: { [weak self] in
+        // A newer untriggered appearance or shell carries the whole state, so it replaces a queued older one.
+        send(raw, coalesce: "appearance", onAccepted: { [weak self] in
           guard let self else { return }
           if self.appearanceGate.acknowledge(appearanceVersion) { self.appearanceWatchdog.cancel() }
-        })
+        }, dropped: { [weak self] in self?.backlog.appearance = true })
       }
       guard let shell = currentShell else { fail(); return }
-      send(try bridge.setShell(shell))
+      send(try bridge.setShell(shell), coalesce: "shell", dropped: { [weak self] in self?.backlog.appearance = true })
       visibilityChanged()
-    } catch { fail() }
+    } catch { fail(error: error) }
   }
   var arrangement: String {
     screens().map { NSStringFromRect($0.frame) }.sorted().joined(separator: ";")
@@ -871,6 +947,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let screen = remembered ?? CockpitScreenSelection.openScreen(point: openPoint(), anchor: requested, screens: displays) else { return nil }
     let icon = requested.flatMap { screen.frame.intersects($0) ? $0 : nil } ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
+  }
+  /// Where Put back takes the cockpit: the attached fit on the display an attached open uses. The drag's snap guide,
+  /// its snap distance and the put back all use this one frame; a detached layout's own frame can be another display's
+  /// (post-merge sample 11-11: after a drop on another display the guide promised that display, the snap went home).
+  func attachedHome() -> CGRect? {
+    let detached = shellSession.detached
+    shellSession.detached = false; defer { shellSession.detached = detached }
+    guard let (usable, icon) = environment() else { return nil }
+    return CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable))?.frame
   }
   /// D66: Auto judges the full width of the screen the cockpit opens on, whatever the Dock takes.
   private func screenWidth(_ usable: CGRect) -> CGFloat {
@@ -996,7 +1081,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       if newlyDetached { updateAppearance(appearance) }
       // Build 14c (G3-79): the window stays inside the display under the pointer, so it can go to any display.
       window.setFrame(dragFrame(start: start.frame, from: start.point, to: point), display: true)
-      if let home = layout?.frame {
+      if let home = attachedHome() {
         let ready = hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40
         showSnapGuide(home, ready: ready)
       }
@@ -1005,7 +1090,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       restorePageFocus()
       guard dragStart != nil else { return }; dragStart = nil
       guard shellSession.detached else { return }
-      if let (_, _) = environment(), let home = layout?.frame,
+      if let home = attachedHome(),
          hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40 {
         setAttached(true)
       } else {
@@ -1127,11 +1212,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       self?.discard()
     }
   }
-  private func fail(_ failure: CockpitWindowFailure = .localEncoding, at site: StaticString = #function, line: UInt = #line) {
+  /// `error` names what a local step threw (its case and, for encoding, the field path), never its text.
+  private func fail(_ failure: CockpitWindowFailure = .localEncoding, error: Error? = nil,
+                    at site: StaticString = #function, line: UInt = #line) {
     guard !ending else { return }
     let age = openedAt.map { Int((ProcessInfo.processInfo.systemUptime - $0) * 1_000) }
+    let detail: String = error.map { "error=\(Self.errorDetail($0)) " } ?? ""
     CockpitFailureLog.record("page-failure failure=\(failure.rawValue) at=\(site):\(line) ageMs=\(age.map(String.init) ?? "none") "
-      + "ready=\(bridge.ready) visible=\(visibilityFence.isConfirmedVisible) rendered=\(freshnessHasRendered) "
+      + detail + "ready=\(bridge.ready) visible=\(visibilityFence.isConfirmedVisible) rendered=\(freshnessHasRendered) "
       + "displayPending=\(bridge.hasPendingDisplay) occluded=\(lastVisibility?.occluded.description ?? "unknown") reject=\(lastRejectCode)")
     onFailure?(failure)
     discard()

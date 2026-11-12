@@ -14,6 +14,9 @@ public enum ScopePluginPhase: Sendable {
     case idle, confirmation(id: UUID, tool: WirePluginTool), sending, unverified, result(WirePluginInstallStatus)
 }
 public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedAwaitingFacts, requestFailed, checking, waitingForFacts, cleanupPending }
+/// What one confirmed grant attempt did, whatever the UI shows afterwards (a privacy clear can reset
+/// the notice while the request is in flight). `sent` covers committed and unknown outcomes.
+public enum ScopeConsentAttempt: Sendable, Equatable { case notSent, rejected, sent }
 /// Why a detected tool cannot be read, from the engine's accepted rows (G3-38, D52).
 public enum ScopeToolBlock: Sendable, Equatable { case notSignedIn, unsupportedLogin }
 /// G3-45: one detected tool on the first-run page. Built from accepted facts only.
@@ -56,6 +59,8 @@ public struct FirstRunTool: Sendable, Equatable {
     private var firstRunExplicitSelection=false
     /// G3-45: the user's own first-run changes; untouched tools follow their default.
     private var firstRunToolChoices: [String: Bool] = [:]
+    /// HIST-IMP-03: the request ID of the first-run Done grant, until its receipt arrives.
+    private var firstRunGrantRequestID: String?
     private var rowCodes: [String: RowsCode] = [:]
     private var rowStates: [String: RowsState] = [:]
     private var observers: [UUID: @MainActor () -> Void] = [:]
@@ -290,9 +295,9 @@ public struct FirstRunTool: Sendable, Equatable {
         let value = ScopeConsentConfirmation(id: UUID(), intent: .init(mutation: .allow(scopes: eligible, keychain: [])))
         phase = .confirmation(value); changed(); return value
     }
-    public func confirm(_ id: UUID) async {
-        guard case .confirmation(let value) = phase, value.id == id else { return }
-        guard !Task.isCancelled, commands.canMutate else { return }
+    @discardableResult public func confirm(_ id: UUID) async -> ScopeConsentAttempt {
+        guard case .confirmation(let value) = phase, value.id == id else { return .notSent }
+        guard !Task.isCancelled, commands.canMutate else { return .notSent }
         let basis = visibleDraftBasisToken
         let token = UUID(); activeRequestToken = token; lastIntentRequestID = value.intent.requestID
         phase = .sending; changed()
@@ -301,17 +306,21 @@ public struct FirstRunTool: Sendable, Equatable {
             if activeRequestToken == token {
                 activeRequestToken = nil; lastIntentRequestID = nil; phase = .idle; changed()
             }
-            return
+            return .notSent
         }
         let factsAtDispatch = acceptedFactsCallbackToken
         do {
             _ = try await commands.grant(value.intent, userAction: .init(id: UUID()))
-            guard activeRequestToken == token else { return }
+            guard activeRequestToken == token else { return .sent }
             activeRequestToken = nil
             // Only accepted facts update permission state. Completion carries no such value.
             phase = acceptedFactsCallbackToken == factsAtDispatch ? .waitingForFacts : .idle; changed()
+            return .sent
         } catch {
-            guard activeRequestToken == token else { return }
+            // Decided before the token check: a privacy clear during the request resets the UI, not
+            // what the engine did with it.
+            let attempt = Self.attempt(after: error)
+            guard activeRequestToken == token else { return attempt }
             activeRequestToken = nil
             // A transport failure after dispatch may have committed. Never replay it automatically.
             if let error = error as? EngineClientError {
@@ -321,6 +330,8 @@ public struct FirstRunTool: Sendable, Equatable {
                 case .notReady, .localBusy, .invalidConfiguration, .unsupportedCapability,
                      .deadlineExceeded(.notSent), .interrupted(.notSent):
                     phase = .idle; notice = .requestFailed
+                // The engine answers consent/grant with an error only when nothing was committed.
+                case .rpc: phase = .idle; notice = .requestFailed
                 default: phase = .waitingForFacts; notice = .outcomeUnknown
                 }
             } else if error is ScopeConsentCommandFailure || error is EngineConsentGrantError {
@@ -329,7 +340,19 @@ public struct FirstRunTool: Sendable, Equatable {
                 phase = .waitingForFacts; notice = .outcomeUnknown
             }
             changed()
+            return attempt
         }
+    }
+    /// Not committed: refused before dispatch, not sent, or answered by the engine with an error.
+    private static func attempt(after error: Error) -> ScopeConsentAttempt {
+        if let error = error as? EngineClientError {
+            switch error {
+            case .notReady, .localBusy, .invalidConfiguration, .unsupportedCapability,
+                 .deadlineExceeded(.notSent), .interrupted(.notSent), .rpc: return .rejected
+            default: return .sent
+            }
+        }
+        return error is ScopeConsentCommandFailure || error is EngineConsentGrantError ? .rejected : .sent
     }
     /// G3-38 / G3-45: why a detected tool cannot be read, when the engine's rows say so.
     public func block(forTool tool: String) -> ScopeToolBlock? {
@@ -424,18 +447,24 @@ public struct FirstRunTool: Sendable, Equatable {
         guard !allow.isEmpty || !deny.isEmpty else { return nil }
         return .init(mutation: .choose(allow: allow, deny: deny, keychain: keychain))
     }
-    /// Done's one consent request (owner 10-27: one first-run consent). Returns false only when the
-    /// request could not be sent, so the page stays open with the user's choices.
+    /// Done's one consent request (owner 10-27: one first-run consent). Returns false when the request
+    /// was not sent or the engine rejected it, so the page stays open with the user's choices.
     public func commitFirstRunChoices() async -> Bool {
         guard facts != nil else { return true }
         guard firstRunChoiceSatisfied else { return false }
         guard let intent = firstRunChoiceIntent() else { return true }
         guard canMutate else { return false }
         let value = ScopeConsentConfirmation(id: UUID(), intent: intent)
+        firstRunGrantRequestID = intent.requestID
         phase = .confirmation(value); changed()
-        await confirm(value.id)
-        if case .requestFailed = notice { return false }
-        return true
+        return await confirm(value.id) == .sent
+    }
+    /// HIST-IMP-03: true once, for the committed receipt of the first-run Done grant. Ordinary
+    /// Settings allow, revoke and forget receipts never start the first-run import.
+    public func takeCommittedFirstRunGrant(_ value: EngineGrantResult) -> Bool {
+        guard let id = firstRunGrantRequestID, value.receipt.requestId == id else { return false }
+        firstRunGrantRequestID = nil
+        return value.committedAt != nil && !value.supersededByLaterConsent && value.receipt.code == .ok
     }
     /// A user-triggered read only. Its completion cannot replace accepted permission facts.
     public func inspectConsent() async {

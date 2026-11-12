@@ -8,7 +8,7 @@ enum CockpitDeliveryResult { case accepted, missing, rejected, failed }
 @MainActor final class CockpitOrderedDelivery<Message> {
   typealias Completion = (CockpitDeliveryResult) -> Void
   private struct Job {
-    let message: Message, isCurrent: () -> Bool, completed: Completion
+    let message: Message, coalesce: String?, isCurrent: () -> Bool, completed: Completion
   }
   private let capacity: Int, deliver: (Message, @escaping Completion) -> Void
   private var queued: [Job] = [], active: Job?
@@ -16,12 +16,21 @@ enum CockpitDeliveryResult { case accepted, missing, rejected, failed }
   init(capacity: Int = 32, deliver: @escaping (Message, @escaping Completion) -> Void) {
     self.capacity = capacity; self.deliver = deliver
   }
-  @discardableResult func submit(_ message: Message, isCurrent: @escaping () -> Bool,
+  /// G3-86: `coalesce` names a whole-state message (shell, untriggered appearance): a newer one
+  /// replaces a queued older one, at the back, so host sequence order is kept. A full queue first drops
+  /// queued work that is no longer current; only then is the message refused.
+  @discardableResult func submit(_ message: Message, coalesce: String? = nil, isCurrent: @escaping () -> Bool,
                                   completed: @escaping Completion) -> Bool {
-    guard capacity > 0, queued.count + (active == nil ? 0 : 1) < capacity else { return false }
-    queued.append(Job(message: message, isCurrent: isCurrent, completed: completed))
+    guard capacity > 0 else { return false }
+    if let coalesce { queued.removeAll { $0.coalesce == coalesce } }
+    if !hasRoom { queued.removeAll { !$0.isCurrent() } }
+    guard hasRoom else { return false }
+    queued.append(Job(message: message, coalesce: coalesce, isCurrent: isCurrent, completed: completed))
     pump(); return true
   }
+  private var hasRoom: Bool { queued.count + (active == nil ? 0 : 1) < capacity }
+  /// Calls admitted and not yet completed, the active one included.
+  var outstanding: Int { queued.count + (active == nil ? 0 : 1) }
   func invalidate() {
     generation &+= 1; queued.removeAll()
   }

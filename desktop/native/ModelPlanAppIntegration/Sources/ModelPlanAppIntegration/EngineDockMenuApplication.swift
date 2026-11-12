@@ -387,6 +387,7 @@ struct StatusNoticePresentation {
         notificationConsumer.observeAuthorization(observedAuthorization)
         var context = settings.editor.context
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
+        settings.editor.observeLogin = { [weak self] in self?.loginServiceAdapter?.observedState ?? .unavailable }
         context.capabilities.loginNotInApplications = loginServiceAdapter?.observedNotInApplications ?? false
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)

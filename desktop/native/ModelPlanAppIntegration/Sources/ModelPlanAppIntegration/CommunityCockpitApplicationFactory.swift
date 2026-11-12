@@ -267,7 +267,17 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
 enum CockpitRecoveryAction: Equatable { case settings, dockReadings, cancel }
 struct CockpitUnavailableNotice {
     let history: Bool
+    /// G3-95: only a bundle that cannot be admitted or read is a reinstall problem. Every other cause is a state
+    /// that can pass (engine, page, query), so the copy asks for a retry and the settings check instead.
+    let bundleProblem: Bool
     let actions: [CockpitRecoveryAction] = [.settings, .dockReadings, .cancel]
+    init(history: Bool, bundleProblem: Bool = false) { self.history = history; self.bundleProblem = bundleProblem }
+    private static let bundleErrors: Set<String> = ["unavailable", "invalidManifest", "unsafePath", "unsafeRoot", "unsafeInventory", "unsafeOpen", "unsafeRegular", "integrity", "limit"]
+    /// True when a page could not be created because the bundle or its pins failed (the path ends in the error's case name).
+    static func isBundleProblem(path: String) -> Bool {
+        guard path.hasPrefix("open.pageCreation.") else { return false }
+        return bundleErrors.contains(String(path.dropFirst("open.pageCreation.".count)))
+    }
 }
 
 @MainActor final class SharedEngineCockpitConsole: EngineRowsConsoleSurface {
@@ -297,6 +307,11 @@ struct CockpitUnavailableNotice {
     private var failureClosesPage = false
     private var rebuilding = false
     private var rebuilds = 0
+    /// G3-95: the path that started the current grace period (named in the notice's log line) and whether the one
+    /// silent retry of a non-page failure has been spent.
+    private var noticePath = ""
+    private var retriedOpen = false
+    static let openRetryDelay: Duration = .milliseconds(700)
     static let maxRebuilds = 2
     init(owner:CockpitConsoleOwner,composition:EngineDockMenuComposition,
          isForeground: @escaping @MainActor () -> Bool = { NSApp.isActive },
@@ -354,7 +369,7 @@ struct CockpitUnavailableNotice {
     /// Public model data only: the launch field never receives personal readings. The official page is
     /// the only one that asks; a community bundle has no field page, so the panel is not offered.
     private struct FieldPayload:Encodable {
-        let language:String,reduceMotion:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
+        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
     }
     private var fieldPanel:CockpitFieldPanel?
     /// G3-80 seams: where the pointer is, the cockpit's frame and the displays the field is placed on.
@@ -365,11 +380,12 @@ struct CockpitUnavailableNotice {
     var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
     /// `focusName`: the published display name of a rocket clicked in the porthole still (D63); an unknown name
     /// focuses nothing. Only the matching public model ID crosses.
-    func fieldPayload(focusName:String?=nil) -> String? {
+    /// `lowPower` is the Low Power Mode state at open (D63): the scene mounts quiet and on demand when it is on.
+    func fieldPayload(focusName:String?=nil,lowPower:Bool=ProcessInfo.processInfo.isLowPowerModeEnabled) -> String? {
         guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
         let mine=details.publication?.models.map(\.id) ?? []
         let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:focus)
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -388,8 +404,9 @@ struct CockpitUnavailableNotice {
         }
     }
     private func openField(focusName:String?=nil) {
-        guard let bundle=owner.verifiedBundle,let payload=fieldPayload(focusName:focusName) else { return }
+        guard let bundle=owner.verifiedBundle else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
+        guard let payload=fieldPayload(focusName:focusName,lowPower:panel.isLowPower) else { return }
         if let fieldScreens { panel.screens=fieldScreens }
         // Build 14c (G3-80): on the cockpit's display. The intent does not say whether a click or a key opened it, so
         // the pointer counts only while it is over the cockpit (macrev2-845-2).
@@ -409,7 +426,7 @@ struct CockpitUnavailableNotice {
         // D88: only the menu bar icon grows the cockpit out of itself; the ignition keeps its own entrance.
         entrance = fromStatusItem ? .growFromIcon : .fade
         wantsVisible=true
-        noticeTask?.cancel(); noticeTask=nil; rebuilding=false; rebuilds=0; failureClosesPage=false // a new click starts its own grace period
+        noticeTask?.cancel(); noticeTask=nil; rebuilding=false; rebuilds=0; retriedOpen=false; noticePath=""; failureClosesPage=false // a new click starts its own grace period
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
         CockpitTimingLog.markClick()
@@ -459,13 +476,24 @@ struct CockpitUnavailableNotice {
         // undo a recovery already seen. Decided before any state changes, so it cannot race the open event.
         // The coordinator closes the page right after a feature failure; that close is the failure's, not the user's.
         if wantsVisible, path == CockpitUnavailableReason.featureFailure.path { failureClosesPage = true }
-        if noticeTask != nil, !history, !path.hasPrefix("page.") { return }
+        if noticeTask != nil, !history, !path.hasPrefix("page.") {
+            // macrevc-887-2: a failure that follows a pending open (open.noDelivery, then the bundle error when the first
+            // context delivers it) is the more meaningful cause. It is named in the log and in the notice, without
+            // restarting the grace period. A bundle problem is never replaced by a milder cause.
+            if wantsVisible, path != noticePath, !CockpitUnavailableNotice.isBundleProblem(path: noticePath) {
+                CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(isForeground()) pageOpened=\(pageOpened) "
+                    + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] rebuilds=\(rebuilds) during-grace=true")
+                noticePath = path
+            }
+            return
+        }
         lastEventWasOpen = false
         let initiatedInForeground=isForeground()
         // A failure in the background or after a close shows nothing, so the log is all there is.
         CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened) "
             + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] rebuilds=\(rebuilds)")
         guard wantsVisible else { return }
+        if !history { noticePath=path } // the cause that starts the grace period; a later non-page cause replaces it above
         if history { presentNotice(history:true,initiatedInForeground:initiatedInForeground); return }
         if path.hasPrefix("page.") {
             rebuilds += 1
@@ -473,6 +501,7 @@ struct CockpitUnavailableNotice {
             rebuilding=true // the coordinator's close that follows must not retire the presentation
         }
         guard noticeTask == nil else { return }
+        scheduleOpenRetry(path:path)
         let epoch=openCount
         noticeTask=Task { @MainActor [weak self] in
             guard let self else { return }
@@ -483,8 +512,24 @@ struct CockpitUnavailableNotice {
             self.presentNotice(history:false,initiatedInForeground:initiatedInForeground)
         }
     }
+    /// G3-95: a failed open that nothing else retries (no client yet, a context the bridge could not use, a page that
+    /// could not be made) gets one more open after a short wait, inside the grace period. A bundle problem will not
+    /// change in 700 ms, and a no-context open is already completed by the first context.
+    private func scheduleOpenRetry(path:String) {
+        guard !retriedOpen,path.hasPrefix("open.") || path.hasPrefix("adopt."),path != CockpitUnavailableReason.noDelivery.path,
+              !CockpitUnavailableNotice.isBundleProblem(path:path) else { return }
+        retriedOpen=true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for:Self.openRetryDelay)
+            guard let self,self.wantsVisible,self.noticeTask != nil,!self.pageOpened else { return }
+            CockpitFailureLog.record("open-retry after=\(path)")
+            self.owner.coordinator?.open()
+        }
+    }
     private func presentNotice(history:Bool,initiatedInForeground:Bool) {
-        let notice=CockpitUnavailableNotice(history:history)
+        let bundleProblem=CockpitUnavailableNotice.isBundleProblem(path:noticePath)
+        CockpitFailureLog.record("notice-shown cause=\(history ? "history" : noticePath.isEmpty ? "unknown" : noticePath) bundleProblem=\(bundleProblem) foreground=\(initiatedInForeground) rebuilds=\(rebuilds) retriedOpen=\(retriedOpen)")
+        let notice=CockpitUnavailableNotice(history:history,bundleProblem:bundleProblem)
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }
             if let requestNotice { requestNotice(notice); return }
@@ -492,11 +537,13 @@ struct CockpitUnavailableNotice {
             let alert=NSAlert();alert.messageText=english ? "Cockpit unavailable" : "驾驶舱暂不可用"
             alert.informativeText=history
                 ? (english ? "History is unavailable in this candidate. Open Settings to check connected tools." : "当前候选版尚无历史窗口，请打开设置查看已连接工具。")
-                : (english ? "Check tool access in Settings, or reinstall this candidate if bundled content is missing." : "请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。")
+                : notice.bundleProblem
+                ? (english ? "Check tool access in Settings, or reinstall this candidate if bundled content is missing." : "请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。")
+                : (english ? "The cockpit could not open just now. Try again in a moment, or check tool access in Settings." : "驾驶舱刚才没能打开。请稍后再试，或在设置中检查工具授权。")
             for action in notice.actions {
                 switch action {
                 case .settings:alert.addButton(withTitle:english ? "Open Settings" : "打开设置")
-                case .dockReadings:alert.addButton(withTitle:english ? "Cockpit" : "驾驶舱")
+                case .dockReadings:alert.addButton(withTitle:english ? "Readings" : "读数")
                 case .cancel:alert.addButton(withTitle:english ? "Cancel" : "取消")
                 }
             }
