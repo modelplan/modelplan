@@ -31,8 +31,9 @@ const pr = (over = {}) => ({
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
-const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, p = pr() } = {}) =>
+const evalPrBase = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, p = pr() } = {}) =>
   R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, conf });
+const evalPr = evalPrBase;
 const v = (verdict, sha = H, lane = "macrev") => `Review\n\nVERDICT: ${verdict} @ ${sha}${lane ? ` (${lane})` : ""}`;
 
 test("trust needs the login and the numeric id; deleted authors and drafts never count", () => {
@@ -96,6 +97,25 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs macrev2/macrevb, macrev
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
 });
 
+test("R13: a PR with a Ledger: G3-nn line is at least tier 2, so Terra alone cannot land it", () => {
+  const body = "Ledger: G3-65\nScenarios: V-01";
+  const ledger = pr({ body });
+  assert.ok(R.ledgerPr(ledger));
+  assert.ok(R.ledgerPr(pr({ body: "Summary\n\n- Ledger: G3-26, G3-27 (fix)\nScenarios: none" })));
+  assert.ok(!R.ledgerPr(pr({ body: "Scenarios: none" })));
+  assert.ok(!R.ledgerPr(pr({ body: "Ledger: none\nSee G3-65 elsewhere" })), "only the Ledger line counts");
+  const glm = comment(`GLMREV: OK @ ${H}`);
+  const av = comment(`AUTO-VERIFIED: V-01 @ ${H} gates=ci,gui,review`);
+  const e = (comments, p) => evalPr({ p, files: [file("scripts/tool.mjs")], comments: [...comments, glm, av] });
+  assert.equal(R.pathTier(["scripts/tool.mjs"]), 1, "the files alone are tier 1");
+  assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).state, R.PENDING, "Terra alone is not enough");
+  assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).tier, 2);
+  assert.equal(e([comment(v("merge", H, "macrev2"))], ledger).state, R.SUCCESS, "Sol lands it");
+  assert.equal(e([comment(v("merge", H, "macrevb"))], ledger).state, R.SUCCESS);
+  assert.equal(e([comment("REVIEW-TIER: 0"), comment(v("merge", H, "macrevc"))], ledger).state, R.PENDING, "an override cannot lower it below 2");
+  assert.equal(e([comment(v("merge", H, "macrevc"))], pr({ body: "Scenarios: none" })).state, R.SUCCESS, "a non-ledger PR stays tier 1");
+});
+
 test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothing looser does", () => {
   const ledger = pr({ title: "G3-20 fix", body: "Scenarios: D-01" });
   const later = `EVIDENCE-DEFERRED: D-01 @ ${H} issue=470`;
@@ -108,6 +128,8 @@ test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothin
 
 test("D97 AUTO-VERIFIED: trusted first line at the exact head clears the listed scenarios, ledger and G3 rows included", () => {
   const docs = [file("docs/evidence.md")];
+  // R13: a ledger PR is tier 2, so every case below also carries the Sol verdict and the GLM review it now needs.
+  const evalPr = (o) => evalPrBase({ ...o, comments: [...(o.comments ?? []), comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)] });
   const ledger = (body) => pr({ title: "Fix G3-07", body: `Ledger: G3-07\n${body}` });
   const av = (ids, sha = H, gates = "ci,gui,review") => `AUTO-VERIFIED: ${ids} @ ${sha} gates=${gates}`;
   assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(`${av("V-01, V-02")}\n\nchecked`)] }).state, R.SUCCESS);
