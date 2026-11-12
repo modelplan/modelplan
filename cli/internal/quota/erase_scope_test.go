@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 func TestAccountScopeCleanupKeepsIndependentKeyValuesAndBudget(t *testing.T) {
@@ -190,5 +191,32 @@ func TestHistoryLedgerRewriteFailureLeavesOriginal(t *testing.T) {
 	after, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(after, before) {
 		t.Fatalf("failed rewrite changed original: %s, %v", after, err)
+	}
+}
+
+// Audit D finding 4: revoking or forgetting one tool's history also drops that tool's imported
+// coverage (dates and grant), so the import status no longer reports it; the other tool's stays.
+func TestHistoryScopeCleanupErasesItsImportedCoverage(t *testing.T) {
+	for _, forget := range []bool{false, true} {
+		t.Run(map[bool]string{false: "revoke", true: "forget"}[forget], func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			cache := t.TempDir()
+			dir := filepath.Join(cache, "observed")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			span := `{"from":"2026-10-01T00:00:00Z","through":"2026-10-31T00:00:00Z","epoch":{"storeEpoch":"e","revokedGeneration":0}}`
+			b := []byte(`{"schemaVersion":1,"coverage":{"codex":` + span + `,"claude-code":` + span + `},"rows":[{"source":"codex","day":"2026-10-02"},{"source":"claude-code","day":"2026-10-02"}]}`)
+			if err := os.WriteFile(filepath.Join(dir, "imported.json"), b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := EraseScope(Paths{Cache: cache}, consent.ScopeCodexLocalHistory, forget); err != nil {
+				t.Fatal(err)
+			}
+			st := speed.ImportStatus(cache)
+			if st.Rows != 1 || len(st.Coverage) != 1 || st.Coverage[0].Source != "claude-code" {
+				t.Fatalf("codex import left behind: %+v", st)
+			}
+		})
 	}
 }

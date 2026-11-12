@@ -41,7 +41,8 @@ import ModelPlanWire
     private func changed() { for body in Array(observers.values) { body() } }
 
     public var isRunning: Bool { status?.phase == .running }
-    public var hasImported: Bool { (status?.importedRows ?? 0) > 0 }
+    /// Rows or a recorded coverage span: either is imported history that Remove can delete.
+    public var hasImported: Bool { (status?.importedRows ?? 0) > 0 || status?.coverage.isEmpty == false }
     public var canStart: Bool { commands.ready && !isRunning }
     public var canRemove: Bool { commands.ready && !isRunning && hasImported }
     /// 0...1 while running; nil until the engine has counted the files.
