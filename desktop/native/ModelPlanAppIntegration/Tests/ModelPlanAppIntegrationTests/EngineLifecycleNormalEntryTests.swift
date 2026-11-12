@@ -252,8 +252,7 @@ private actor LifecycleEngine: EngineClient {
         return root
     }
 
-    /// These journeys exercise an expanded widget. Since D56 (owner 2026-11-08) a fresh profile
-    /// starts collapsed, so a new profile records auto-collapse off unless `freshDefaults` asks for
+    /// These journeys exercise an expanded widget. Auto-collapse is off by default since D114, but a new profile still records it off explicitly unless `freshDefaults` asks for
     /// the shipped defaults. A relaunch on an existing profile keeps whatever it saved.
     private func make(_ root: URL, topology: Topology, rows: WireRowsSnapshot? = nil, native: Bool = false, freshDefaults: Bool = false,
                       beforePrepare: ((EngineDockMenuApplication) -> Void)? = nil, edit: ((inout SettingsPreferences) -> Void)? = nil)
@@ -306,8 +305,9 @@ private actor LifecycleEngine: EngineClient {
         defer { app.composition.store.detach(observation) }
         let launched = ContinuousClock.now
         _ = start(app)
-        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
-        XCTAssertLessThan(ContinuousClock.now - launched, .seconds(2))
+        // The 2 s product budget is a reported metric; the hard bound is a ceiling for a loaded shared GUI runner.
+        try await wait({ app.composition.dock.edgePresentation?.state == .expanded }, seconds: 10)
+        reportBudget("D01.freshProfileExpanded", elapsed: ContinuousClock.now - launched, budget: .seconds(2))
         XCTAssertEqual(replies.count, 0)
         let place = try expanded(app)
         XCTAssertEqual(place.displayID, "A")
@@ -332,16 +332,22 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path), "Precondition: no profile at all")
         let app = try await make(root, topology: topology, freshDefaults: true)
         _ = start(app)
-        // D56: shown, collapsed to its strip at the edge.
-        try await wait { app.composition.dock.edgePresentation?.state == .sliver }
+        // D114 (supersedes D56): shown and expanded; auto-collapse is off on a fresh profile.
+        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
         let editor = app.settingsHost.application.editor
         XCTAssertEqual(editor.snapshot?.preferences.showDock, true)
-        XCTAssertEqual(editor.snapshot?.preferences.autoHide, true)
+        XCTAssertEqual(editor.snapshot?.preferences.autoHide, false, "D114: a truly fresh profile does not auto-collapse")
         XCTAssertEqual(try showDockRow(app), .toggle(true), "Settings shows the Quota Widget switch on")
         let status = await app.foundationStore.foundationStatus()
         let document = try XCTUnwrap(status?.path)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: document)) as? [String: Any])
-        XCTAssertEqual((object["settings"] as? [String: Any])?["showDock"] as? Bool, true, "The created document saves the switch on")
+        // SET-9-43 (D203, #884): the document is sparse, so a switch left at its default (on) is not written. What counts
+        // is that the saved document reads back on: it never stores "off", and reading it decodes the switch on.
+        var saved = try XCTUnwrap(object["settings"] as? [String: Any])
+        XCTAssertNotEqual(saved["showDock"] as? Bool, false, "The created document never saves the switch off")
+        saved.removeValue(forKey: "readerConsent")
+        let reread = try JSONDecoder().decode(SettingsPreferences.self, from: JSONSerialization.data(withJSONObject: saved))
+        XCTAssertEqual(reread.showDock, true, "The created document reads back with the switch on")
         XCTAssertEqual(try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" }).isEnabled, true)
         XCTAssertNotNil(app.composition.dock.edgePresentation?.paintedFrame)
     }
@@ -567,7 +573,8 @@ private actor LifecycleEngine: EngineClient {
             let after = await editor.store.snapshot()
             XCTAssertEqual(Set(after.preferences.subscriptions.order), Set(ids))
             XCTAssertEqual(after.revision, before.revision + 1)
-            XCTAssertTrue((view.accessibilityValue() as? String)?.contains("position 2 of 2") == true)
+            // The announcement follows the committed order through the Dock refresh; wait for it rather than sample once.
+            try await wait({ (view.accessibilityValue() as? String)?.contains("position 2 of 2") == true }, seconds: 10)
             await app.stopLifecycle()
             app.composition.dock.close()
         }

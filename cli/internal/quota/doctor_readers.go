@@ -7,6 +7,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -26,6 +27,28 @@ type ReaderDiagnostic struct {
 	Windows  int    `json:"windows"`
 	Last     string `json:"last"`
 	Beta     bool   `json:"beta"`
+	// Cause: the fixed failure code behind a failed state (reader_error:<code> or runtime_missing).
+	Cause string `json:"cause,omitempty"`
+	// Failures: Codex's recent failures, oldest first (fixed codes and times only).
+	Failures []DiagnosticFailure `json:"failures,omitempty"`
+}
+
+// DiagnosticFailure is one entry of the Codex failure ring.
+type DiagnosticFailure struct {
+	Code          string `json:"code"`
+	At            string `json:"at"`
+	StreakSeconds int64  `json:"streakSeconds"`
+}
+
+// diagnosticCause names the fixed code behind a failed diagnostic state, or "".
+func diagnosticCause(state string) string {
+	if state == "unavailable:"+toolcli.RuntimeMissing {
+		return "runtime_missing"
+	}
+	if code, ok := strings.CutPrefix(state, "unavailable:reader_error:"); ok {
+		return ReaderErrorCode(code)
+	}
+	return ""
 }
 
 func yesNo(v bool) string {
@@ -118,6 +141,21 @@ func codexFailureState(s *accountSnap) string {
 	return diagnosticState(toolcli.RuntimeMissing)
 }
 
+// codexAccountState is the diagnostic state of the newest Codex snapshot alone. Older failures
+// live in the failure ring and never decide it: a newer ok snapshot is ok, and a failure too old
+// to describe anything current is stale, not reader_error.
+func codexAccountState(s *accountSnap, now time.Time) string {
+	switch {
+	case s.Status != "ok" && (now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now)):
+		return "stale"
+	case s.Status != "ok":
+		return codexFailureState(s)
+	case now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now):
+		return "stale"
+	}
+	return "ok"
+}
+
 // codexDiagnostic: Codex is not a native reader, so it reports its runtime route from the
 // cached account snapshot alone. Session logs stay the fallback and are never opened here.
 func codexDiagnostic(p Paths, policy consent.State, detected bool, now time.Time) ReaderDiagnostic {
@@ -141,14 +179,10 @@ func codexDiagnostic(p Paths, policy consent.State, detected bool, now time.Time
 		}
 		row.Last = diagnosticAge(reading.ObservedAt, now)
 		row.Windows = diagnosticWindows(reading.Windows, now)
-		switch {
-		case s.Status != "ok":
-			row.State = codexFailureState(s)
-		case now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now):
-			row.State = "stale"
-		default:
-			row.State = "ok"
+		for _, f := range s.Failures {
+			row.Failures = append(row.Failures, DiagnosticFailure{Code: ReaderErrorCode(f.Code), At: f.At.UTC().Format(time.RFC3339), StreakSeconds: f.StreakSeconds})
 		}
+		row.State = codexAccountState(s, now)
 	}
 	return row
 }
@@ -317,6 +351,9 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 		}
 	}
 	rows = append(rows, row)
+	for i := range rows {
+		rows[i].Cause = diagnosticCause(rows[i].State)
+	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Provider < rows[j].Provider })
 	return rows
 }

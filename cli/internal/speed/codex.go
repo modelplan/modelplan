@@ -26,6 +26,7 @@ type cxTurn struct {
 	start time.Time // the current request's
 	first int64     // its first token, unix ms; 0 unknown
 	used  bool      // its usage was counted
+	base  *cxUsage  // the cumulative usage when the turn started
 }
 
 type codexParser struct {
@@ -56,7 +57,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 	t := p.cur
 	switch {
 	case event == "task_started" || event == "turn_started":
-		p.cur = &cxTurn{off: off, at: ts, start: ts, cwd: p.cwd}
+		p.cur = &cxTurn{off: off, at: ts, start: ts, cwd: p.cwd, base: p.total}
 	case kind == "session_meta":
 		var c struct {
 			Payload struct {
@@ -191,6 +192,17 @@ func (p *codexParser) finish() ([]turn, int64) {
 		return p.done, p.cur.off // read the unfinished turn again next time
 	}
 	return p.done, -1
+}
+
+// resume and carry keep the cumulative usage baseline across runs: a cumulative-only usage record
+// appended after a read is measured from the total at the cursor, not dropped.
+func (p *codexParser) resume(c Cursor) { p.total = c.Total }
+
+func (p *codexParser) carry(next *Cursor, commit int64) {
+	next.Total = p.total
+	if p.cur != nil && commit == p.cur.off {
+		next.Total = p.cur.base // the unfinished turn is read again from its start
+	}
 }
 
 func clip(s string) string {

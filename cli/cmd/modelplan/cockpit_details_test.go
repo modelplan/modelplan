@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -191,7 +192,7 @@ func TestCockpitDetailsProjectsOnlyAdmittedStampedLiveSessions(t *testing.T) {
 	epoch := &speed.GrantEpoch{StoreEpoch: state.StoreEpoch, RevokedGeneration: 0}
 	cache := t.TempDir()
 	ledger := speed.PerfLedger{SchemaVersion: 1, Since: now.Add(-time.Hour), Rows: []speed.PerfRow{}, Live: []speed.LiveRecord{
-		{Ref: "1111111111111111", Source: "codex", Model: "synthetic-alias", Effort: "high", ProjectRef: "p1", LastAt: now.Add(-time.Second), GrantEpoch: epoch, Running: true},
+		{Ref: "1111111111111111", Source: "codex", Model: "synthetic-alias", Effort: "high", Speed: "fast", ProjectRef: "p1", LastAt: now.Add(-time.Second), GrantEpoch: epoch, Running: true},
 		{Ref: "2222222222222222", Source: "codex", Model: "unknown-secret", Effort: "unknown-secret", SubscriptionRef: "aaaaaaaaaaaaaaaa", LastAt: now.Add(-2 * time.Second), GrantEpoch: epoch},
 		{Ref: "3333333333333333", Source: "claude-code", Model: "synthetic-alias", LastAt: now.Add(-time.Second), GrantEpoch: epoch},
 		{Ref: "4444444444444444", Source: "codex", Model: "synthetic-alias", LastAt: now.Add(-time.Second)},
@@ -221,6 +222,13 @@ func TestCockpitDetailsProjectsOnlyAdmittedStampedLiveSessions(t *testing.T) {
 	}
 	if got.Sessions[1].SubscriptionRef != nil {
 		t.Fatalf("a reference outside the cockpit's subscriptions stays unbound: %q", *got.Sessions[1].SubscriptionRef)
+	}
+	// CKP-FAD-11 / CKP-MFD-19: a recorded Fast session crosses the wire as Fast; an unreported mode stays absent.
+	if got.Sessions[0].Fast == nil || !*got.Sessions[0].Fast || got.Sessions[1].Fast != nil {
+		t.Fatalf("observed speed mode: %#v / %#v", got.Sessions[0].Fast, got.Sessions[1].Fast)
+	}
+	if encoded, err := json.Marshal(got.Sessions); err != nil || !strings.Contains(string(encoded), `"fast":true`) || strings.Count(string(encoded), `"fast"`) != 1 {
+		t.Fatalf("fast on the wire: %s, %v", encoded, err)
 	}
 	labelFile := speed.ProjectLabelsFile(home)
 	if err := os.MkdirAll(filepath.Dir(labelFile), 0700); err != nil {

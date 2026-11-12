@@ -13,7 +13,7 @@ final class V2BridgeContractTests: XCTestCase {
     }
     func receipt(_ load: String, version: Int? = 2, capabilities: [String]? = ["appearanceUpdates", "shellState", "shellActions"]) throws -> [String: Any] {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
-        object["shell"] = nil; object["appearance"] = nil; object["redBelow"] = nil; object["type"] = "ready"; object["sequence"] = "1"
+        object["shell"] = nil; object["appearance"] = nil; object["redBelow"] = nil; object["showUsedPercent"] = nil; object["type"] = "ready"; object["sequence"] = "1"
         object["appearanceVersion"] = version; object["capabilities"] = capabilities
         return object
     }
@@ -30,6 +30,21 @@ final class V2BridgeContractTests: XCTestCase {
         XCTAssertEqual(shell["tier"] as? String, "compact")
         XCTAssertEqual(shell["forcedClosed"] as? Bool, true)
         XCTAssertEqual(shell["attached"] as? Bool, false)
+    }
+    /// CKP-ENG-23 / SET-9-10: the Settings remaining/used choice is a top-level boolean on load and on every appearance update.
+    func testUsedPercentChoiceIsEncodedOnLoadAndEachAppearanceUpdate() throws {
+        for used in [false, true] {
+            let value = try state()
+            let load = try value.load(.init(theme: .night, locale: .en, profile: .full, showUsedPercent: used), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
+            XCTAssertEqual(body["showUsedPercent"] as? Bool, used)
+            XCTAssertNil((body["appearance"] as? [String: Any])?["showUsedPercent"], "The flag is not part of the strict appearance object")
+            _ = try value.accept(encode(receipt(load)), source: source)
+            let update = try value.setAppearance(.init(theme: .night, locale: .en, profile: .full, showUsedPercent: !used))
+            let message = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(update.utf8)) as? [String: Any])
+            XCTAssertEqual(message["showUsedPercent"] as? Bool, !used)
+        }
+        XCTAssertFalse(CockpitAppearance(theme: .night, locale: .en, profile: .full).showUsedPercent, "Default is remaining")
     }
     func testCommittedThresholdIsEncodedOnLoadAndEachAppearanceUpdate() throws {
         for threshold in [10, 15, 20, 25, 30, 40] {
@@ -91,7 +106,7 @@ final class V2BridgeContractTests: XCTestCase {
         let header: Set<String> = ["version","pageId","requestId","sessionId","storeEpoch","generation","viewRevision","sequence","type"]
         let appearanceRaw = try value.setAppearance(.init(theme: .night, locale: .zhCN, profile: .compact, reduceMotion: true, reduceTransparency: true, showProjectNames: false))
         let appearance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(appearanceRaw.utf8)) as? [String: Any])
-        XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency","showProjectNames","redBelow"]))
+        XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency","showProjectNames","redBelow","showUsedPercent"]))
         XCTAssertEqual(appearance["type"] as? String, "appearance")
         XCTAssertEqual(appearance["reduceTransparency"] as? Bool, true)
         XCTAssertEqual(appearance["showProjectNames"] as? Bool, false)
@@ -123,6 +138,18 @@ final class V2BridgeContractTests: XCTestCase {
             var object = try receipt(load, version: nil, capabilities: nil)
             object["type"] = "action"; object["action"] = action; object["sequence"] = "2"; object["requestId"] = UUID().uuidString
             XCTAssertThrowsError(try value.accept(encode(object), source: source))
+        }
+    }
+    /// D63: a click on a still rocket opens the field focused on it, named by its published display name (1–64 characters).
+    func testOpenFieldMayNameTheClickedRocket() throws {
+        for (key, expected) in [("Synthetic 5.5", CockpitIntent.openFieldAt("Synthetic 5.5")), ("", nil), ("   ", nil), (String(repeating: "x", count: 65), nil)] as [(String, CockpitIntent?)] {
+            let value = try state(), load = try value.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+            _ = try value.accept(encode(receipt(load)), source: source)
+            _ = try value.setVisibility(.init(visible: true, occluded: false, key: true))
+            var object = try receipt(load, version: nil, capabilities: nil)
+            object["type"] = "action"; object["action"] = "openField"; object["key"] = key; object["sequence"] = "2"; object["requestId"] = UUID().uuidString
+            if let expected { XCTAssertEqual(try value.accept(encode(object), source: source), .action(expected)) }
+            else { XCTAssertThrowsError(try value.accept(encode(object), source: source), key) }
         }
     }
 

@@ -95,8 +95,13 @@ Not in rows v1: reset `cards` (local.json reset reminders). They stay on `accoun
 rowsSummary
   state         ok | readers_off | no_consent | empty | pending
                 pending = the publication check failed closed; declared rows still show
-  reason        {code, text {en, zh}} (codes: ok, readers_off, no_consent, no_dock_rows, consent_changed)
-                empty = something is allowed or declared, but no row has a Dock surface with a value or a next step (for example every allowed tool is unsupported); text says so and nextStep opens Settings
+  reason        {code, text {en, zh}} (codes: ok, readers_off, no_consent, no_dock_rows, consent_changed, not_read_yet, and the reason code of a tool that needs an action)
+                A tool with no value has no Dock surface (G3-38), so the Dock summary speaks for those tools:
+                pending + not_read_yet  = allowed tools still waiting for their first read; text is
+                  "Reading {tool names}…" / "正在读取 {tool names}…", nextStep is null (never consent settings)
+                empty + the row's reason code = allowed tools need a user action (sign in, allow Keychain, install);
+                  text names the tools and the action, nextStep is that action (open_tool, open_settings_keychain, install_runtime)
+                empty + no_dock_rows = nothing is detected or allowed to read, and no tool is waiting or needs an action; nextStep opens Settings
   text          {en, zh}
   nextStep      as above
 ```
@@ -133,7 +138,7 @@ Candidates are the union of four sets:
 Then the rules apply in order:
 
 1. **Readers off globally:** no tool rows. `rowsSummary.state = readers_off`, with its next step. Declared rows still show: they are the user's own data and read nothing.
-2. **Consent allowed or implicit:** the tool always gets a dock/menu/settings row, whether or not it is still detected or in the catalogue. When it is not detected, `state = needs_action`, code `tool_not_found`. When it is retired, `consent = retired`, code `catalogue_retired`. **This is the invariant the respins kept breaking.**
+2. **Consent allowed or implicit:** the tool always gets a menu/settings row, and a dock row too unless it holds no reading and nothing is being read (G3-38, owner decision D76: a detected subscription that cannot be read, for any reason, has no ring; a pending first read has no ring until a reading arrives), whether or not it is still detected or in the catalogue. When it is not detected, `state = needs_action`, code `tool_not_found`. When it is retired, `consent = retired`, code `catalogue_retired`. **This is the invariant the respins kept breaking.**
 3. **Denied, or Forget cleanup pending:** a settings row only. Its accounts are never exported (`accounts = []`) and never shown, so a revoked tool's readings cannot reappear. `cleanup_pending` is the code.
 4. **Detected but unset:** a settings row only.
 5. **Declared plans:** dock/menu/settings rows with `consent = not_required`. They skip the tool predicates (detection, reader, consent, Keychain): only rows 1 (privacy veto), 8–10 below apply. A declared plan without a manual reading is `pending`, code `no_manual_reading`, action `none`.
@@ -154,8 +159,8 @@ Then the rules apply in order:
 | 2 | consent: unset (and not implicit), denied, outdated, or changed mid-read | needs_consent / pending | consent_required, consent_denied, consent_outdated, consent_changed |
 | 3 | tool missing from the machine, or retired | needs_action | tool_not_found, catalogue_retired |
 | 4 | no reader exists for the tool | unsupported | no_reader |
-| 5 | the credential read is **actually blocked** by the credential store (Keychain unset/denied/canceled/not found/unavailable/confirmation needed, and no readable credentials file), and C is empty | needs_keychain | keychain_unset, keychain_denied, keychain_canceled, keychain_not_found, keychain_unavailable, keychain_confirmation_needed |
-| 6 | C and R both empty, and the latest attempt failed | failed / needs_action | reader error codes; login_expired, runtime_missing and http_401 give needs_action |
+| 5 | the credential read is **actually blocked** by the credential store (Keychain unset/denied/canceled/not found/unavailable/confirmation needed, and no readable credentials file), and C is empty | needs_keychain / needs_action | keychain_unset, keychain_denied, keychain_canceled, keychain_not_found, keychain_unavailable, keychain_confirmation_needed; not_signed_in when the Keychain has no login item (G3-38) |
+| 6 | C and R both empty, and the latest attempt failed | failed / needs_action | reader error codes (D87 cause codes: not_found, runtime_missing, timeout, rpc_error, closed, key_missing for no_key, region_refused); login_expired, runtime_missing, not_found, region_refused and http_401 give needs_action |
 | 7 | C and R both empty, and the latest attempt succeeded with no windows | empty | no_usage_windows |
 | 8 | C and R both empty, and there was no attempt yet, or the reader is busy or cooling down | pending | not_read_yet, reader_busy, no_manual_reading |
 | 9 | R is not empty | stale | stale_reading or observation_time_unknown (the original error stays only in that account's `lastFailure`) |
@@ -185,14 +190,16 @@ The closed set of codes, with the state and next-step action each one gives:
 | consent_required, consent_denied, consent_outdated | needs_consent | open_settings_consent |
 | keychain_unset, keychain_denied, keychain_canceled, keychain_not_found, keychain_unavailable, keychain_confirmation_needed | needs_keychain | open_settings_keychain |
 | login_expired | needs_action | open_tool |
+| not_signed_in | needs_action (no Dock surface; Settings and the menu say "Not signed in", G3-38) | none |
 | runtime_missing | needs_action | install_runtime |
 | update_required | needs_action | update_cli |
-| key_missing, tool_not_found, catalogue_retired, http_401, unsupported_login | needs_action | open_settings_consent |
+| key_missing, tool_not_found, not_found, catalogue_retired, http_401, unsupported_login | needs_action | open_settings_consent |
+| region_refused | needs_action (the configured address is a third-party relay; nothing to retry) | none |
 | privacy_blocked, catalogue_off, not_admitted, codexbar_not_audited, codexbar_not_read, codexbar_access_unknown, browser_session_consent_required | off | open_settings_consent |
 | policy_pending | off | open_settings_consent |
 | no_reader | unsupported | none |
 | cleanup_pending | off (Settings surface only) | open_settings_consent |
-| file_missing, file_unreadable, parse_error, schema_changed, http_403, http_429, http_5xx, network, timeout | failed (row 6, when there is no value; with a retained value the row is stale and the code lives in `lastFailure`) | refresh |
+| file_missing, file_unreadable, parse_error, schema_changed, http_403, http_429, http_5xx, network, timeout, rpc_error, closed | failed (row 6, when there is no value; with a retained value the row is stale and the code lives in `lastFailure`) | refresh |
 | other | failed | refresh |
 
 `policy_pending` intentionally disables an unapproved read path independently of saved user consent. It vetoes retained values, offers no retry or refresh, and Settings explains that the scope is awaiting approval. It is not a reader failure.
@@ -274,7 +281,7 @@ A single Go table maps every status, reason, errorCode and blocked value to `(st
   - the classifier's table tests, including the overlapping conditions
   - the mapping tests: exhaustive known values, plus the separate unknown fallback
   - the exactly-once publication check (revoke between ReadPermitted and output)
-  - the membership invariant: every allowed tool has exactly one Dock row in every state
+  - the membership invariant: every allowed tool has a menu/settings row in every state, and exactly one Dock row unless it is unreadable (G3-38, D76)
   - the privacy validators and canaries
   - `quota --json` stays byte-identical across the change (plugin and Skill gate)
 - **Swift tests** render the Dock, the menu bar and Settings from every capture:

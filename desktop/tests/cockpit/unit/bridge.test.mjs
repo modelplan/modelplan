@@ -81,6 +81,12 @@ test('openWebsite carries a typed page and value, never a URL (CKP-MFD-24)',()=>
   assert.equal(f.bridge.action('openWebsite','methodology/effort-ladder'),true);
   const last=f.events.at(-1);assert.equal(last.action,'openWebsite');assert.equal(last.page,'methodology');assert.equal(last.value,'effort-ladder');assert.equal(last.url,undefined);
 });
+test('D63 openField may name the clicked rocket by its published display name, nothing else',()=>{
+  const f=fixture();
+  assert.equal(f.bridge.action('openField'),true);let last=f.events.at(-1);assert.equal(last.action,'openField');assert.equal(last.key,undefined);
+  for(const bad of ['',' ','x'.repeat(65),42])assert.equal(f.bridge.action('openField',bad),false,String(bad));
+  assert.equal(f.bridge.action('openField','Synthetic 5.5'),true);last=f.events.at(-1);assert.equal(last.action,'openField');assert.equal(last.key,'Synthetic 5.5');
+});
 test('only fixed actions are emitted, history is limited to currently displayed rows',()=>{
   const f=fixture();assert.equal(f.bridge.action('openURL'),false);assert.equal(f.bridge.action('chooseSetup','x'),false);
   assert.equal(f.bridge.action('openHistory','unknown'),false);assert.equal(f.bridge.action('openSettings'),true);
@@ -277,4 +283,42 @@ test('redBelow is optional, validated and logged on load and appearance without 
   }
   assert.ok(logs.every(args=>args.length===1&&args[0]==='Cockpit redBelow missing or invalid; using default 25.'));
  }finally{console.warn=original;}
+});
+test('G3-66: a show tick before the page document event is accepted once the host says visible',()=>{
+  const f=fixture(),tick={nowUnixMs:'1793620800000',reason:'show'};
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  // A prewarmed page: its own visibilitychange has not fired yet, so the document still reports hidden.
+  f.bridge.documentHidden(true);
+  assert.equal(f.bridge.receive(f.send('visibility',{visible:true,occluded:false,key:true}),source),true);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),true);
+});
+test('G3-66: a tick refused while the document is hidden names its code, and the next tick is accepted',()=>{
+  const f=fixture(),tick={nowUnixMs:'1793620800000',reason:'show'};
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  f.bridge.documentHidden(true);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),false);
+  assert.equal(f.bridge.lastReject,'tick.documentHidden');
+  f.bridge.documentHidden(false);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),true);
+  assert.equal(f.bridge.lastReject,'none');
+});
+test('G3-66: reject codes are fixed code paths and never carry message data',()=>{
+  const f=fixture(),base=JSON.parse(f.send('display',{data:capture()}));
+  const secret='synthetic-secret-value';
+  const cases=[[{...base,data:{...base.data,accessToken:secret}},'data.schema'],[{...base,extra:secret},'display.keys'],[{...base,requestId:secret},'msg.header'],[{...base,type:secret},'msg.type']];
+  for(const [msg,code] of cases){assert.equal(f.bridge.receive(JSON.stringify(msg),source),false);assert.equal(f.bridge.lastReject,code);assert.ok(!f.bridge.lastReject.includes(secret));assert.match(f.bridge.lastReject,/^[a-z]+\.[A-Za-z]+$/);}
+  assert.equal(f.bridge.receive(' '.repeat(MAX_MESSAGE_BYTES+1),source),false);assert.equal(f.bridge.lastReject,'msg.size');
+});
+test('G3-96: reset events as CLI v0.5.59 emits them (kind, confirmedAt, confirmedAtBasis) are displayed, not rejected as data.schema',()=>{
+  // Build 14d: the CLI sets kind on every reset event and a confirmation time on a confirmed one. Their schema nodes
+  // carried an enum without a type, which the page's bounded validator refuses, so every display with a published
+  // reset event (the live Codex reset credit) failed with data.schema and the cockpit never opened.
+  // The events come from the real projector (resetevents.CaptureEvents via swiftwire), unedited: announced direct reset,
+  // announced reset credit and a confirmed credit. A field the producer adds shows up here without anyone transcribing it.
+  const f=fixture(),data=capture();
+  assert.deepEqual(data.details.resetEvents.map(e=>[e.kind,e.status,e.confirmedAtBasis??null]),[['reset_credit','confirmed','firstSeen'],['reset_credit','announced',null],['direct_reset','announced',null]]);
+  const accepted=f.bridge.receive(f.send('display',{data}),source);
+  assert.equal(f.bridge.lastReject,'none');
+  assert.equal(accepted,true);
+  assert.deepEqual(f.retained().details.resetEvents,data.details.resetEvents);
 });

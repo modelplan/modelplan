@@ -2,6 +2,7 @@
 import CoreGraphics
 import XCTest
 @testable import ModelPlanOfficialDock
+import ModelPlanDock
 
 /// COL-2.1-01/02/03, 12 and 17: the skin the production Dock draws from carries the registry's
 /// status inks, and no ink in it is close to the brand reds (the ignition is approved bitmap art).
@@ -46,5 +47,27 @@ final class T2StatusPaletteTests: XCTestCase {
         let inks = try palette()
         XCTAssertTrue(Self.statusInks.isSubset(of: Set(inks.keys)), "every listed status ink exists in the skin")
         XCTAssertEqual(nearBrandRed(inks, allowing: Self.statusInks), [], "an ink is too close to the brand reds")
+    }
+
+    /// COL-2.1-08 / COL-2.1-09: white means a real reading, blue #9FD2FF means announced (not yet in effect).
+    /// A real reading is never inked with the notice blue, and the notice blue is the registry value.
+    func testPaletteWhiteMeansRealAndBlueMeansAnnounced() throws {
+        let geometry = try T2Geometry.make(subscriptions: [.init(id: "member-a")], input: .init(coordinates: .init(edge: .right, width: 1470, height: 956, menuBarExclusion: 26), diameter: 44))
+        let skin = try T2DockSkin.make(geometry: geometry, rows: [], showsPercentages: true)
+        let inks = try palette()
+        XCTAssertEqual(skin.readoutPalette?["normal"], "lcdWhite", "a real reading above the amber band is white")
+        let white = try XCTUnwrap(inks["lcdWhite"]), text = try XCTUnwrap(inks["text"])
+        XCTAssertEqual(white.r, 233, accuracy: 0.001); XCTAssertEqual(white.g, 237, accuracy: 0.001); XCTAssertEqual(white.b, 240, accuracy: 0.001)
+        XCTAssertEqual(text.r, 255, accuracy: 0.001); XCTAssertEqual(text.g, 255, accuracy: 0.001); XCTAssertEqual(text.b, 255, accuracy: 0.001)
+        for key in (skin.readoutPalette ?? [:]).values {
+            XCTAssertFalse(key.hasPrefix("notice"), "no real-reading ink may be a notice ink: \(key)")
+        }
+        let blue = try XCTUnwrap(inks["noticeBlue"])
+        XCTAssertEqual(blue.r, 159, accuracy: 0.001, "#9FD2FF"); XCTAssertEqual(blue.g, 210, accuracy: 0.001); XCTAssertEqual(blue.b, 255, accuracy: 0.001)
+        XCTAssertNotEqual(blue.b, white.b, "announced blue is not the real-reading white")
+        for status in ["normal", "warning", "critical", "unknown"] {
+            let ink = try XCTUnwrap(inks[status])
+            XCTAssertGreaterThan(max(abs(ink.r - blue.r), abs(ink.g - blue.g), abs(ink.b - blue.b)), 20, "\(status) must not read as the announced blue")
+        }
     }
 }

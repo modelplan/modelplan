@@ -155,7 +155,7 @@ class Script(unittest.TestCase):
     def test_covers_the_build_12_checklist(self):
         ids = {s["id"] for s in self.STEPS}
         self.assertTrue({"first-run-window", "widget-collapse", "widget-reveal", "card-third-ring", "card-pointer-away",
-                         "card-empty-quota", "cockpit-toggle-close", "cockpit-reopen", "shutter-closed", "cockpit-detach",
+                         "card-empty-quota", "cockpit-toggle-close", "cockpit-reopen", "shutter-closed", "cockpit-detach", "cockpit-put-back",
                          "cockpit-drag-title", "help-map", "air-1440x900", "air-1470x956"} <= ids)
 
     def test_the_seed_has_a_ring_at_zero(self):
@@ -306,6 +306,33 @@ class NewChecks(unittest.TestCase):
         walk = walker(FakeHost({}), self.out, [])
         walk.remembered = [0, 0, 90, 300]
         walk.check({"collapsed": "window-of:ax:g"}, self.out, {})
+
+    def test_toggle_open_clicks_the_icon_when_a_prewarmed_page_only_passes_by(self):
+        # Build 6a084a0e, air-1470x956: a page caught mid-prewarm passed for an open cockpit, so the icon was never
+        # clicked and the check found nothing. "Already open" must hold a moment later, as the cockpit window.
+        cockpit = {"windows": [{"role": "AXWindow", "frame": [700, 30, 541, 775], "children": [
+                       {"role": "AXWebArea", "label": "ModelPlan Cockpit", "frame": [700, 30, 541, 775]}]}],
+                   "extras": {"children": [{"role": "AXMenuBarItem", "frame": [700, 0, 60, 24]}]}}
+        empty = {"windows": [], "extras": cockpit["extras"]}
+
+        class Passing(FakeHost):
+            def __init__(self):
+                super().__init__(cockpit)
+                self.trees = [cockpit, empty, empty]
+
+            def helper(self, *arguments):
+                if arguments[0] == "tree":
+                    self.calls.append(arguments)
+                    current = self.trees.pop(0) if self.trees else cockpit
+                    return json.loads(json.dumps(current))
+                return super().helper(*arguments)
+        host = Passing()
+        walker(host, self.out, []).op_toggleCockpit({"want": "open"})
+        self.assertIn(("click", 730.0, 12.0), host.calls)
+        # A cockpit that stays open is left alone.
+        steady = FakeHost(cockpit)
+        walker(steady, self.out, []).op_toggleCockpit({"want": "open"})
+        self.assertFalse([c for c in steady.calls if c[0] == "click"])
 
     def test_fits_uses_the_visible_area_below_the_menu_bar_and_above_the_dock(self):
         facts = {"screens": [{"frame": [0, 0, 1440, 900], "visible": [0, 70, 1440, 805]}]}

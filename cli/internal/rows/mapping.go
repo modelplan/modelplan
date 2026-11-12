@@ -9,6 +9,9 @@ type Outcome struct {
 	Text   Text
 }
 
+// G3-38 (owner D52): CodeNotSignedIn is a tool that is installed but signed out (for Claude
+// Code, no credentials file and no Keychain login item). Nothing to read and nothing to fix in
+// ModelPlan; the row stays in Settings and the menu and leaves the Dock.
 var outcomes = map[Code]Outcome{
 	CodeOK:                            {State: StateFresh, Code: CodeOK, Action: ActionNone, Text: Text{EN: "Reading available", ZH: "已读到用量"}},
 	CodeEstimated:                     {State: StateFresh, Code: CodeEstimated, Action: ActionNone, Text: Text{EN: "Estimated reading", ZH: "估算读数"}},
@@ -30,6 +33,7 @@ var outcomes = map[Code]Outcome{
 	CodeCatalogueRetired:              {State: StateNeedsAction, Code: CodeCatalogueRetired, Action: ActionOpenSettingsConsent, Text: Text{EN: "The allowed tool was retired from the catalogue", ZH: "已授权工具已从目录移除"}},
 	CodeHTTP401:                       {State: StateNeedsAction, Code: CodeHTTP401, Action: ActionOpenSettingsConsent, Text: Text{EN: "The provider rejected the saved sign-in", ZH: "服务商拒绝了已保存的登录"}},
 	CodeUnsupportedLogin:              {State: StateNeedsAction, Code: CodeUnsupportedLogin, Action: ActionOpenSettingsConsent, Text: Text{EN: "This saved sign-in is not supported", ZH: "不支持此已保存的登录"}},
+	CodeNotSignedIn:                   {State: StateNeedsAction, Code: CodeNotSignedIn, Action: ActionNone, Text: Text{EN: "Not signed in", ZH: "未登录"}},
 	CodePrivacyBlocked:                {State: StateOff, Code: CodePrivacyBlocked, Action: ActionOpenSettingsConsent, Text: Text{EN: "Privacy settings block this reader", ZH: "隐私设置阻止此读取器"}},
 	CodeCatalogueOff:                  {State: StateOff, Code: CodeCatalogueOff, Action: ActionOpenSettingsConsent, Text: Text{EN: "This reader route is disabled", ZH: "此读取路由已停用"}},
 	CodePolicyPending:                 {State: StateOff, Code: CodePolicyPending, Action: ActionOpenSettingsConsent, Text: Text{EN: "This scope is awaiting approval", ZH: "此读取范围正在等待批准"}},
@@ -56,6 +60,10 @@ var outcomes = map[Code]Outcome{
 	CodeHTTP5xx:                       {State: StateFailed, Code: CodeHTTP5xx, Action: ActionRefresh, Text: Text{EN: "The provider is temporarily unavailable", ZH: "服务商暂时不可用"}},
 	CodeNetwork:                       {State: StateFailed, Code: CodeNetwork, Action: ActionRefresh, Text: Text{EN: "The reader could not reach the provider", ZH: "读取器无法连接服务商"}},
 	CodeTimeout:                       {State: StateFailed, Code: CodeTimeout, Action: ActionRefresh, Text: Text{EN: "The reader timed out", ZH: "读取器超时"}},
+	CodeNotFound:                      {State: StateNeedsAction, Code: CodeNotFound, Action: ActionOpenSettingsConsent, Text: Text{EN: "The tool command was not found", ZH: "找不到工具命令"}},
+	CodeRPCError:                      {State: StateFailed, Code: CodeRPCError, Action: ActionRefresh, Text: Text{EN: "The tool background service returned an error", ZH: "工具后台服务返回错误"}},
+	CodeClosed:                        {State: StateFailed, Code: CodeClosed, Action: ActionRefresh, Text: Text{EN: "The tool background service closed unexpectedly", ZH: "工具后台服务意外退出"}},
+	CodeRegionRefused:                 {State: StateNeedsAction, Code: CodeRegionRefused, Action: ActionNone, Text: Text{EN: "This address is a third-party relay; its quota cannot be read", ZH: "这个地址是第三方转发服务，查不到额度"}},
 }
 
 // Describe returns only compiled messages. Unknown codes never carry caller text.
@@ -95,6 +103,7 @@ var signalCodes = map[signalKey]Code{
 	{SignalError, "runtime_missing"}:                    CodeRuntimeMissing,
 	{SignalError, "http_401"}:                           CodeHTTP401,
 	{SignalError, "unsupported_login"}:                  CodeUnsupportedLogin,
+	{SignalError, "not_signed_in"}:                      CodeNotSignedIn,
 	{SignalError, "other"}:                              CodeOther,
 	{SignalError, "file_missing"}:                       CodeFileMissing,
 	{SignalError, "file_unreadable"}:                    CodeFileUnreadable,
@@ -105,6 +114,11 @@ var signalCodes = map[signalKey]Code{
 	{SignalError, "http_5xx"}:                           CodeHTTP5xx,
 	{SignalError, "network"}:                            CodeNetwork,
 	{SignalError, "timeout"}:                            CodeTimeout,
+	{SignalError, "not_found"}:                          CodeNotFound,
+	{SignalError, "rpc_error"}:                          CodeRPCError,
+	{SignalError, "closed"}:                             CodeClosed,
+	{SignalError, "no_key"}:                             CodeKeyMissing,
+	{SignalError, "region_refused"}:                     CodeRegionRefused,
 	{SignalBlocked, "native-off"}:                       CodePrivacyBlocked,
 	{SignalBlocked, "codexbar-off"}:                     CodePrivacyBlocked,
 	{SignalBlocked, "off"}:                              CodePrivacyBlocked,
@@ -143,7 +157,7 @@ var signalCodes = map[signalKey]Code{
 	{SignalKeychain, "denied"}:                          CodeKeychainDenied,
 	{SignalKeychain, "keychain_denied"}:                 CodeKeychainDenied,
 	{SignalKeychain, "canceled"}:                        CodeKeychainCanceled,
-	{SignalKeychain, "not-found"}:                       CodeKeychainNotFound,
+	{SignalKeychain, "not-found"}:                       CodeNotSignedIn,
 	{SignalKeychain, "unavailable"}:                     CodeKeychainUnavailable,
 	{SignalKeychain, "keychain-confirmation-needed"}:    CodeKeychainConfirmationNeeded,
 	{SignalKeychain, "confirmation-needed"}:             CodeKeychainConfirmationNeeded,

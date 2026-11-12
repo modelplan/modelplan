@@ -30,8 +30,8 @@ func TestCockpitBucketsSumModelsAndKeepAdmittedSourcesOnly(t *testing.T) {
 			{Day: day, Source: "zcode", Model: "c", ObservedOutputTokens: 40},
 			{Day: older, Source: "codex", Model: "a", ObservedOutputTokens: 80},
 		}}}
-	from, days, hours := cockpitBuckets(perf, map[string]bool{"codex": true}, now)
-	if len(days) != 1 || days[0].At != day || days[0].Source != "codex" || days[0].ObservedOutputTokens != 30 {
+	from, days, hours := cockpitBuckets(perf, nil, map[string]bool{"codex": true}, now)
+	if len(days) != 1 || days[0].At != day || days[0].Source != "codex" || days[0].ObservedOutputTokens != 30 || days[0].Origin != "live" {
 		t.Fatalf("days = %+v", days)
 	}
 	if from == nil || *from != now.AddDate(0, 0, -181).Format("2006-01-02") {

@@ -21,7 +21,8 @@ export const widthClass = n => n <= 2 ? 'wide' : n <= 4 ? 'medium' : 'narrow';
 export const levelOf = (r, redAt = 25) => r == null ? 'none' : r <= redAt ? 'low' : r <= 50 ? 'mid' : 'ok';
 // Lit segments of the 10-segment bar: tens, rounded, but a window with anything left keeps one segment lit, so only a
 // used-up window shows an empty bar.
-export const litSegments = r => r == null || r <= 0 ? 0 : clamp(Math.round(r / 10), 1, 10);
+// In used mode (Settings "used", D130) the bar fills with what is used, 100 - r, by the same rule; colours stay keyed to r.
+export const litSegments = (r, used = false) => { const v = r == null ? null : used ? 100 - r : r; return v == null || v <= 0 ? 0 : clamp(Math.round(v / 10), 1, 10); };
 export const pageCount = n => Math.max(1, Math.ceil(n / PER));
 // An extra quota's period as the study's window kinds name it (the snapshot says weekly / monthly).
 const PERIODS = {'5h': '5h', day: 'day', daily: 'day', week: 'week', weekly: 'week', month: 'month', monthly: 'month'};
@@ -43,7 +44,7 @@ export const runOutWindow = a => a.forecast ? a.windows.find(w => w.trend != nul
 // added by the view and positional().
 function cellOf(a, w, ui, runOutW, grey) {
   const r = a.state === 'loading' || a.state === 'error' ? null : w.remaining ?? null, level = levelOf(r, ui.redAt);
-  return {focusIdentity: w.focusIdentity ?? null, kind: w.kind, period: PERIODS[w.kind] || w.kind, remaining: r, value: r == null ? null : ui.pctMode === 'used' ? 100 - r : r, level, lit: litSegments(r),
+  return {focusIdentity: w.focusIdentity ?? null, kind: w.kind, period: PERIODS[w.kind] || w.kind, remaining: r, value: r == null ? null : ui.pctMode === 'used' ? 100 - r : r, level, lit: litSegments(r, ui.pctMode === 'used'),
     drawing: r === 0 && !grey && !!a.credits?.drawing, noData: r == null && a.state === 'ok',
     runOutMin: w === runOutW && r != null && !grey ? a.forecast.runOutMin : null,
     timeLeft: grey || a.state === 'loading' || a.state === 'error' ? null : timeLeft(w),
