@@ -147,12 +147,11 @@ import ModelPlanWire
 
     // MARK: copy
 
-    func testHistoryImportLineNamesProjectFolderNamesAndThisMacOnly() {
-        // HIST-IMP-10 (coverage.md: the #881 copy was missing this).
-        XCTAssertTrue(FirstRunCopy.smallPrint.english.contains("project folder names"))
-        XCTAssertTrue(FirstRunCopy.smallPrint.english.contains("kept on this Mac"))
-        XCTAssertTrue(FirstRunCopy.smallPrint.chinese.contains("项目文件夹名"))
-        XCTAssertTrue(FirstRunCopy.smallPrint.chinese.contains("只存在本机"))
+    func testHistoryImportLineDoesNotPromiseProjectFolderNames() {
+        // HIST-IMP-10 moved to v1.1 (owner 11-12): v1 imports counts, models and times only.
+        XCTAssertFalse(FirstRunCopy.smallPrint.english.contains("project folder"))
+        XCTAssertFalse(FirstRunCopy.smallPrint.chinese.contains("项目文件夹"))
+        XCTAssertTrue(FirstRunCopy.smallPrint.english.contains("counts, models and times only"))
     }
 }
 
