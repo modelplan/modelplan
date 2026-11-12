@@ -454,6 +454,7 @@ enum ModelRocket {
             let detail = look.brushedDetail.flatMap(LookImage.load)
             // CKP-ENT-13: the hull kit (base metal + decals) replaces the detail tile and the code-drawn detail.
             let kit = look.hullKit.flatMap { HullKit.load($0, theme: theme, roughness: finish.roughness) }
+            finish.kitDay = kit != nil && theme == .day
             if let maps = HullPanels.maps(detail: detail, kit: kit) {
                 finish.panels = maps
                 let layer = kit.map { ", kit \($0.theme.rawValue) \($0.decals.count) kinds \(HullDecals.placements.count) decals" }
@@ -622,7 +623,11 @@ struct HullFinish {
     /// Multiplies the panel maps (`HullPanels.base` 0.74 on a plain panel). Night is dark gunmetal: a panel ~0.31
     /// sRGB (r4 ~0.35 read mid-grey; r5 ~0.25 read black, so the dark grooves had nothing to cut into); day satin
     /// aluminium (~0.72).
+    /// CKP-ENT-13: the day hull uses the kit's day metal (lighter satin steel); its brightness is in the maps
+    /// (`HullKit.brightness`), so the tint is neutral.
+    var kitDay = false
     var tint: NSColor {
+        if kitDay, theme == .day { return NSColor(srgbRed: 1, green: 1, blue: 0.995, alpha: 1) }
         // Round 11c: night 0.42 -> 0.62, day 0.98 -> 0.88. A metal's colour is its reflectance: at 0.42 the night
         // hull reflected about 4 % of the studio, so the strips barely beat the room and it all read as one grey;
         // real steel reflects far more, and pass 5's darkness comes from a dark room, not a dull metal (the studio
@@ -1847,6 +1852,8 @@ enum HullPanels {
     struct Detail {
         let size: Int
         let values: [Float]
+        /// The tile's mean grey (0-1) before normalising (`init(ratio:)` only).
+        var mean: Float = 0
 
         init?(_ image: CGImage) {
             let n = 1024
@@ -1885,6 +1892,7 @@ enum HullPanels {
             let mean = max(0.01, raw.reduce(0, +) / Float(raw.count))
             size = n
             values = raw.map { min(3, $0 / mean) }
+            self.mean = mean
         }
 
         /// The tile averaged over boxes of 2^lx x 2^ly texels: (size >> lx) x (size >> ly) values.
@@ -2369,7 +2377,7 @@ enum HullPanels {
             kitRips[key * 256 + lx * 16 + ly] = made
             return made
         }
-        let hasKit = kit != nil, kitRoughness = kit?.roughness ?? 0
+        let hasKit = kit != nil, kitRoughness = kit?.roughness ?? 0, kitBrightness = kit?.brightness ?? 1
         var plain = [Float](repeating: 0, count: kit == nil ? 0 : w * h)
         var rough = [UInt8](repeating: 255, count: kit == nil ? 0 : w * h * 4)
         height.withUnsafeMutableBufferPointer { hb in
@@ -2394,7 +2402,7 @@ enum HullPanels {
                         var metal: Float = 1
                         if hasKit {
                             let k = (kitTY % kitWY) * kitWX + (Int(Float(col) * metresPerCol * kitScale) >> ku) % kitWX
-                            metal = metalRow[k]
+                            metal = metalRow[k] * kitBrightness
                             let r = min(1, max(0.02, kitRoughness * roughRow[k]))
                             let byte = UInt8((r * 255).rounded())
                             rough[4 * i] = byte; rough[4 * i + 1] = byte; rough[4 * i + 2] = byte
@@ -2409,7 +2417,9 @@ enum HullPanels {
                                 : rowNoise[row] * (0.5 + 0.5 * runNoise[(col / 48 + row * 7) & 4095])
                         }
                         let shade = min(1, ao[i] * aoGain)
-                        var v = base * metal * (1 + brush * streak + detailAlbedo * grain) * (1 + wt.panelTone * variation)
+                        // CKP-ENT-13 (round 2): with the kit every panel is the same base metal; panels part only by
+                        // their seams (no per-panel tone, the rejected "block by block" look).
+                        var v = base * metal * (1 + brush * streak + detailAlbedo * grain) * (1 + (hasKit ? 0 : wt.panelTone) * variation)
                         if hasKit { plain[i] = v }
                         v *= 1 - min(0.85, dark)
                         v += (1 - v) * 0.6 * min(1, Float(brights[i]) / 255)
@@ -2501,6 +2511,9 @@ struct HullKit {
     /// Night stencil ink (CKP-ENT-13 note: the dark stencil reads as a hole on the night metal): inside
     /// `HullDecals.stencilInk`, texels darker than `inkThreshold` x the plate become light paint.
     static let inkThreshold: Float = 0.75
+    /// Decal normal slopes below the floor are dropped, above the full value kept (smoothstep between).
+    static let normalSlopeFloor: Float = 0.07
+    static let normalSlopeFull: Float = 0.16
     static let inkLift: Float = 0.8
 
     /// 8-bit pixels as stored in the file (no colour conversion), straight alpha.
@@ -2614,6 +2627,12 @@ struct HullKit {
     let theme: EntranceTheme
     /// The theme's hull roughness (`HullFinish.roughness`), which the roughness tile modulates.
     let roughness: Float
+    /// Multiplies the base metal ratio. Night 1 (round 11c's reflectance, tint 0.62 x `HullPanels.base`). Day: the
+    /// approved day tile is `dayMean / nightMean` (about 2x) brighter than the night tile, so the day hull reflects
+    /// that much more than the night one (capped at `dayCap`), with a neutral tint (`HullFinish.kitDay`).
+    let brightness: Float
+    static let nightReflectance: Float = 0.62 * 0.74
+    static let dayCap: Float = 0.9
     let metal: HullPanels.Detail
     let metalRoughness: HullPanels.Detail
     let decals: [HullDecalKind: Decal]
@@ -2621,8 +2640,12 @@ struct HullKit {
     /// The kit for `theme`, or nil if any file cannot be read (the entrance then draws the code hull).
     static func load(_ files: RocketHullKit, theme: EntranceTheme, roughness: Float) -> HullKit? {
         guard let metalImage = LookImage.load(files.metal(for: theme)), let metal = HullPanels.Detail(ratio: metalImage),
-              let roughImage = LookImage.load(files.metalRoughness), let metalRoughness = HullPanels.Detail(ratio: roughImage)
+              let roughImage = LookImage.load(files.metalRoughness), let metalRoughness = HullPanels.Detail(ratio: roughImage),
+              let nightImage = LookImage.load(files.metalNight), let night = HullPanels.Detail(ratio: nightImage)
         else { return nil }
+        let brightness = theme == .day
+            ? min(dayCap, metal.mean / night.mean * nightReflectance) / HullPanels.base
+            : 1
         var decals: [HullDecalKind: Decal] = [:]
         for kind in HullDecalKind.allCases {
             guard let urls = files.decals[kind], let a = LookImage.load(urls.albedo), let n = LookImage.load(urls.normal),
@@ -2630,7 +2653,8 @@ struct HullKit {
             else { return nil }
             decals[kind] = decal
         }
-        return HullKit(theme: theme, roughness: roughness, metal: metal, metalRoughness: metalRoughness, decals: decals)
+        return HullKit(theme: theme, roughness: roughness, brightness: brightness, metal: metal, metalRoughness: metalRoughness,
+                       decals: decals)
     }
 
     /// One placed decal resampled to a band's texel grid (area-averaged, alpha-weighted).
@@ -2694,6 +2718,12 @@ struct HullKit {
                 roughness[s] = sumR / sumA / decalPlainRoughness
                 var n = sumN / sumA
                 if p.mirrored { n.x = -n.x }
+                // Round 2 (coordinator: door and hatch interiors read hammered): the generated normals carry the
+                // plate's brushing as slopes of about 0.02-0.04; only the bevels, louvres and handle (0.15-0.6) are
+                // kept, so flat interiors are as smooth as the base metal.
+                let slope = simd_length(SIMD2<Float>(n.x, n.y)) / max(1e-4, abs(n.z))
+                let keep = simd_smoothstep(normalSlopeFloor, normalSlopeFull, slope)
+                n = SIMD3<Float>(n.x * keep, n.y * keep, n.z)
                 normal[s] = simd_length(n) > 1e-4 ? simd_normalize(n) : SIMD3<Float>(0, 0, 1)
             }
         }
