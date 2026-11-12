@@ -1,0 +1,1 @@
+When the cockpit cannot open for a reason that can pass (engine or page not ready, a closed page process), the open is retried once quietly, and the notice no longer asks you to reinstall; that wording stays only for a damaged or missing bundled cockpit. The notice's third button is now called "Readings" (it opens the readings list). The app log names the cause of every notice.

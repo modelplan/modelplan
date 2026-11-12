@@ -45,7 +45,14 @@ func doctorReaders(stdout, stderr io.Writer, c common, refresh bool) int {
 		}{rows, message, storeCode})
 	}
 	for _, r := range rows {
-		fmt.Fprintf(stdout, "%s  detected=%s  consent=%s  admitted=%s  state=%s  windows=%d  last=%s  beta=%t\n", r.Provider, r.Detected, r.Consent, r.Admitted, r.State, r.Windows, r.Last, r.Beta)
+		cause := ""
+		if r.Cause != "" {
+			cause = "  cause=" + r.Cause
+		}
+		fmt.Fprintf(stdout, "%s  detected=%s  consent=%s  admitted=%s  state=%s%s  windows=%d  last=%s  beta=%t\n", r.Provider, r.Detected, r.Consent, r.Admitted, r.State, cause, r.Windows, r.Last, r.Beta)
+		for _, f := range r.Failures {
+			fmt.Fprintf(stdout, "  %s failure  code=%s  at=%s  streak=%ds\n", r.Provider, f.Code, f.At, f.StreakSeconds)
+		}
 	}
 	fmt.Fprintln(stdout, message)
 	return 0

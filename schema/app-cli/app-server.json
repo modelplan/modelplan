@@ -520,6 +520,13 @@
           "maxItems": 128,
           "type": "array"
         },
+        "peaks": {
+          "items": {
+            "$ref": "#/$defs/CockpitPeak"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
         "publication": {
           "anyOf": [
             {
@@ -535,6 +542,13 @@
             "$ref": "#/$defs/CockpitPublicationModel"
           },
           "maxItems": 256,
+          "type": "array"
+        },
+        "recentSessions": {
+          "items": {
+            "$ref": "#/$defs/CockpitRecentSession"
+          },
+          "maxItems": 200,
           "type": "array"
         },
         "resetEvents": {
@@ -861,6 +875,41 @@
       ],
       "type": "object"
     },
+    "CockpitPeak": {
+      "additionalProperties": false,
+      "properties": {
+        "endsAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "startsAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rowId",
+        "startsAt",
+        "endsAt",
+        "status"
+      ],
+      "type": "object"
+    },
     "CockpitProjectRanking": {
       "additionalProperties": false,
       "properties": {
@@ -1139,6 +1188,68 @@
       ],
       "type": "object"
     },
+    "CockpitRecentSession": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastObservedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "projectLabel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$"
+        }
+      },
+      "required": [
+        "sessionRef",
+        "source",
+        "subscriptionRef",
+        "model",
+        "effort",
+        "projectLabel",
+        "lastObservedAt"
+      ],
+      "type": "object"
+    },
     "CockpitResetCount": {
       "additionalProperties": false,
       "properties": {
@@ -1181,6 +1292,16 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fast": {
+          "anyOf": [
+            {
+              "type": "boolean"
             },
             {
               "type": "null"
@@ -1261,6 +1382,9 @@
         "observedOutputTokens": {
           "type": "integer"
         },
+        "origin": {
+          "type": "string"
+        },
         "source": {
           "type": "string"
         }
@@ -1268,6 +1392,7 @@
       "required": [
         "at",
         "source",
+        "origin",
         "observedOutputTokens"
       ],
       "type": "object"
@@ -2202,6 +2327,7 @@
             "catalogue_retired",
             "http_401",
             "unsupported_login",
+            "not_signed_in",
             "privacy_blocked",
             "catalogue_off",
             "not_admitted",
@@ -2221,6 +2347,10 @@
             "http_5xx",
             "network",
             "timeout",
+            "not_found",
+            "rpc_error",
+            "closed",
+            "region_refused",
             "other",
             "readers_off",
             "no_consent",
@@ -2395,6 +2525,17 @@
             "failed"
           ],
           "type": "string"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
         },
         "schemaVersion": {
           "maximum": 1,
@@ -3498,6 +3639,7 @@
             "catalogue_retired",
             "http_401",
             "unsupported_login",
+            "not_signed_in",
             "privacy_blocked",
             "catalogue_off",
             "not_admitted",
@@ -3517,6 +3659,10 @@
             "http_5xx",
             "network",
             "timeout",
+            "not_found",
+            "rpc_error",
+            "closed",
+            "region_refused",
             "other",
             "readers_off",
             "no_consent",
@@ -4241,6 +4387,19 @@
     "ResetEvent": {
       "additionalProperties": false,
       "properties": {
+        "confirmedAt": {
+          "description": "Confirmed events only: the publication's confirmation time, or when the CLI first read the confirmation (see confirmedAtBasis).",
+          "format": "date-time",
+          "type": "string"
+        },
+        "confirmedAtBasis": {
+          "enum": [
+            "published",
+            "observed",
+            "firstSeen"
+          ],
+          "type": "string"
+        },
         "confirms": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
           "type": "string"
@@ -4251,6 +4410,14 @@
         },
         "id": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "type": "string"
+        },
+        "kind": {
+          "description": "reset_credit: extra resets were issued (news, not a window restart); direct_reset: usage limits reset. Absent from older producers, read as direct_reset.",
+          "enum": [
+            "reset_credit",
+            "direct_reset"
+          ],
           "type": "string"
         },
         "planIds": {
@@ -4772,6 +4939,7 @@
             "catalogue_retired",
             "http_401",
             "unsupported_login",
+            "not_signed_in",
             "privacy_blocked",
             "catalogue_off",
             "not_admitted",
@@ -4791,6 +4959,10 @@
             "http_5xx",
             "network",
             "timeout",
+            "not_found",
+            "rpc_error",
+            "closed",
+            "region_refused",
             "other",
             "readers_off",
             "no_consent",

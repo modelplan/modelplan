@@ -35,11 +35,12 @@ enum SettingsWords {
         case "en": pair = ("English", "英语")
         case "hold": pair = ("Hold to ignite", "按住点火")
         case "quick": pair = ("Always quick", "始终快速打开")
+        case "automatic": pair = ("Auto", "自动")
         default: pair = (raw, raw)
         }
         if key == .dockDisplay && raw == "primary" { return text("Primary display", "主显示器", language) }
         if key == .dockPosition, let fraction = Double(raw) { return String(format: "%.1f %%", fraction * 100) }
-        if key == .redBelow { return raw + " %" }
+        if key == .redBelow || (key == .cockpitSize && raw != "automatic") { return raw + " %" }
         if key == .reveal || key == .countdown { return raw + " ms" }
         return text(pair.0, pair.1, language)
     }
@@ -140,8 +141,22 @@ enum SettingsWords {
     private var pendingSaveTask: Task<Void, Never>?
     private enum ErrorSource { case aliasDraft, persistence, clipboard, hostAction }
     private var errorSource: ErrorSource?
-    private enum Feedback { case copied, requested }
+    enum Feedback { case copied, requested }
     private var feedback: Feedback?
+    private var feedbackGeneration = 0
+    /// How long a one-line confirmation ("Request sent to the app") stays before it clears itself.
+    static var feedbackDuration: Duration = .seconds(3)
+    /// Shows a confirmation under the heading and clears it once it has been read; a newer one restarts the wait.
+    func showFeedback(_ value: Feedback) {
+        feedback = value; feedbackGeneration += 1
+        let generation = feedbackGeneration
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.feedbackDuration)
+            guard let self, self.feedbackGeneration == generation, self.feedback != nil else { return }
+            self.feedback = nil; self.refresh(); NSAccessibility.post(element: self.status, notification: .valueChanged)
+        }
+        refresh(); NSAccessibility.post(element: status, notification: .valueChanged)
+    }
     private let clipboard: SettingsDiagnosticClipboard
     let firstRunPreviewButton = NSButton()
 
@@ -452,7 +467,7 @@ enum SettingsWords {
         switch action {
         case .copyDiagnostics:
             if SettingsDiagnosticCopy.copy(editor.context.about, to: clipboard) {
-                feedback = .copied
+                showFeedback(.copied)
                 if errorSource == .clipboard { errorMessage = nil; errorSource = nil }
             } else {
                 errorSource = .clipboard; errorMessage = SettingsWords.text("Could not copy diagnostics.", "无法复制诊断信息。", language)
@@ -463,7 +478,7 @@ enum SettingsWords {
     }
     private func requestHost(_ action: SettingsB22Action) {
         do {
-            try editor.request(action); feedback = .requested
+            try editor.request(action); showFeedback(.requested)
             if errorSource == .hostAction { errorMessage = nil; errorSource = nil }
         } catch {
             errorSource = .hostAction; errorMessage = SettingsWords.text("This action is unavailable in this build.", "此版本暂不支持该操作。", language)

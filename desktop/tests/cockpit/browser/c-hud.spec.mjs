@@ -91,7 +91,7 @@ test('CKP-PORT-08 a different current effort is a white dot linked to its ★',a
 test('CKP-PORT-05 the compact profile is one strip of three',async({page})=>{
  await open(page,{tier:'compact'});
  await expect(page.locator('.hud.hud-strip .hp')).toHaveCount(3);
- expect(await local(page)).toEqual([58,9,216,30]);
+ expect(await local(page)).toEqual([62,25,216,30]);
 });
 // G3-48: long published names overlapped their neighbours in three columns. The study's compact strip is an
 // 86x30 chart beside three stacked 10 px rows; each name stays inside its own row, before its ★ effort.
@@ -128,8 +128,8 @@ test('CKP-PORT-06 a HUD click opens 档位 only; the port beside it still opens 
  await page.locator('.hud .hp').first().click();await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
  await page.keyboard.press('Escape');await page.locator('.hud-dot').first().click();await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
 });
-for(const key of ['Enter','Space'])test(`CKP-PORT-06 ${key} on a HUD row opens 档位 only; on the port it opens the field`,async({page})=>{
- await open(page);await page.locator('.ck-port').focus();await page.keyboard.press(key);await expect.poll(()=>fieldOpens(page)).toBe(1);
+for(const key of ['Enter','Space'])test(`CKP-PORT-06 ${key} on a HUD row opens 档位 only; on the port's ⤢ key it opens the field`,async({page})=>{
+ await open(page);await page.locator('.port-big[data-bigfield]').focus();await page.keyboard.press(key);await expect.poll(()=>fieldOpens(page)).toBe(1);
  await page.locator('.hud .hp').first().focus();await page.keyboard.press(key);await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
 });
 test('clearing the data leaves no HUD box and no Back button',async({page})=>{

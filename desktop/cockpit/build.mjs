@@ -50,7 +50,7 @@ if (official) {
   // D43: the field scene draws vendor marks on its plates and asks for them by these names under ./assets/brands/;
   // the engine keys use the same folder (G3-47 review: the key marks pointed at a folder that never shipped).
   const marks=resolve(repo,'desktop/third-party/dock-resources/Resources/Marks'),brands=resolve(output,'assets/brands');await mkdir(brands,{recursive:true});
-  for(const [name,source] of Object.entries({'openai-white.svg':'openai.svg','claude-rounded.svg':'claude.svg','zhipu.svg':'zhipu.svg','x-white.svg':'x.svg','qwen.svg':'qwen.svg','deepseek.svg':'deepseek.svg','kimi-white.svg':'kimi.svg','minimax.svg':'minimax.svg','gemini.svg':'gemini.svg','xiaomi.svg':'xiaomi.svg','cursor.svg':'cursor.svg','copilot.svg':'copilot.svg','opencode.svg':'opencode.svg','zai-white.svg':'zai-white.svg','SOURCES.md':'SOURCES.md'}))await cp(resolve(marks,source),resolve(brands,name));
+  for(const [name,source] of Object.entries({'openai-white.svg':'openai.svg','claude-rounded.svg':'claude.svg','claude.svg':'claude.svg','zhipu.svg':'zhipu.svg','x-white.svg':'x.svg','qwen.svg':'qwen.svg','deepseek.svg':'deepseek.svg','kimi-white.svg':'kimi.svg','minimax.svg':'minimax.svg','gemini.svg':'gemini.svg','xiaomi.svg':'xiaomi.svg','cursor.svg':'cursor.svg','copilot.svg':'copilot.svg','opencode.svg':'opencode.svg','zai-white.svg':'zai-white.svg','SOURCES.md':'SOURCES.md'}))await cp(resolve(marks,source),resolve(brands,name));
   // The CSP forbids fetch, so the porthole still's placement table ships as a module carrying the
   // default public fleet's four projections (src/porthole-still.ts). Derived from the reserved pack,
   // it carries the pack's licence; the community edition gets null below.
@@ -97,6 +97,9 @@ if (official) {
   for(const part of ['crown','upper','lower','cone','aft','engine-gutter','console-gutter','record-gutter'])for(const h of [890,640])for(const d of ['1x','2x'])hullFiles.push(`${part}-${h}-${d}.png`);
   hullFiles.push('lower-skin-890-1x.png','lower-skin-890-2x.png'); // side walls: the study's canopy-h1 lower skin
   hullFiles.push('aft-closed-1x.png','aft-closed-2x.png','cap-slab.svg'); // closed shell (D72): aft plate and cap slab
+  // Hull shape (owner build 13): the study's alpha masks for the narrow upper wall, the taper and the wide lower wall.
+  for(const v of [890,640,'closed'])for(const d of ['1x','2x'])hullFiles.push(`upper-walls-${v}-${d}.png`,`upper-skin-${v}-${d}.png`);
+  for(const d of ['1x','2x'])hullFiles.push(`taper-890-${d}.png`,`lower-stage-890-${d}.png`,`lower-stage-640-${d}.png`);
   await mkdir(resolve(output,'assets/hull'),{recursive:true});
   for(const name of hullFiles){
     const bytes=await readFile(resolve(hull,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/hull/assets/'+name];
@@ -105,6 +108,10 @@ if (official) {
   }
   await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
   css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
+  // Strip logo (owner build 13): the study's rocket mark (shell6/logo.svg) is the repository logo, the same drawing.
+  const logo=await readFile(resolve(assets,'logo.svg'));
+  if(createHash('sha256').update(logo).digest('hex')!==policy.reservedVisuals.historicalMit['desktop/official-visuals/logo.svg'])throw Error('Unapproved logo');
+  await writeFile(resolve(output,'assets/logo.svg'),logo);
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});
@@ -113,7 +120,7 @@ if (official) {
 } else {
   notices.push('Community edition excludes reserved artwork.');
   // The launch field is official only; its page has no place in this edition.
-  await rm(resolve(output,'src/field-page.js'),{force:true});
+  await rm(resolve(output,'src/field-page.js'),{force:true});await rm(resolve(output,'src/field-shape.js'),{force:true});
   await writeFile(resolve(output,'src/porthole-stills-data.js'),'// SPDX-License-Identifier: MIT\nexport default null;\n');
 }
 await writeFile(resolve(output,'cockpit.css'),css);

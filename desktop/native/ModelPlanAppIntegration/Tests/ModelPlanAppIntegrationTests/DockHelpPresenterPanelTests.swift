@@ -21,6 +21,8 @@ import ModelPlanSettings
         var hints = FirstUseHints()
         var context = HintContext(dockReveal: surface.revealID)
         context.v1MinimalHints = true
+        // D114: the find-widget hint is for a collapsed widget with a status-icon anchor.
+        context.widgetConcealed = true; context.statusAnchorAvailable = true
         try hints.updateContext(context, at: 1)
         let offer = try XCTUnwrap(hints.nextOffer(placeable: [.findWidget], at: 1))
         XCTAssertTrue(presenter.showAndVerify(offer, trial: nil))

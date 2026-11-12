@@ -101,6 +101,44 @@ type accountSnap struct {
 	// itself keeps the status, time and back-off; the retained windows keep the row (and its ring)
 	// alive as a stale reading instead of being thrown away.
 	Good *accountSnap `json:"good,omitempty"`
+	// Failures: the last accountFailureRing failed reads, oldest first, kept across later good
+	// reads so a cause is not lost once a read succeeds again. Fixed codes and times only.
+	Failures []accountFailure `json:"failures,omitempty"`
+}
+
+// accountFailureRing is how many recent failures the snapshot keeps.
+const accountFailureRing = 10
+
+// accountFailure is one failed read: its fixed cause code, when it happened, and how long the
+// failing streak had lasted by then (0 for the first failure of a streak). No text or data.
+type accountFailure struct {
+	Code          string    `json:"code"`
+	At            time.Time `json:"at"`
+	StreakSeconds int64     `json:"streakSeconds"`
+}
+
+// nextFailures carries the previous ring forward and, for a failed read, appends this failure.
+func nextFailures(previous *accountSnap, s *accountSnap, now time.Time) []accountFailure {
+	var ring []accountFailure
+	streakStart := now
+	if previous != nil {
+		ring = append(ring, previous.Failures...)
+		if previous.Status != "ok" && len(previous.Failures) > 0 {
+			last := previous.Failures[len(previous.Failures)-1]
+			streakStart = last.At.Add(-time.Duration(last.StreakSeconds) * time.Second)
+		}
+	}
+	if s.Status != "ok" {
+		secs := int64(now.Sub(streakStart) / time.Second)
+		if secs < 0 {
+			secs = 0
+		}
+		ring = append(ring, accountFailure{Code: s.failureCode(), At: now.UTC(), StreakSeconds: secs})
+	}
+	if len(ring) > accountFailureRing {
+		ring = ring[len(ring)-accountFailureRing:]
+	}
+	return ring
 }
 
 // retainGood is the last good reading a new failure carries forward: the previous snapshot if it
@@ -118,14 +156,17 @@ func retainGood(previous *accountSnap, now time.Time) *accountSnap {
 	}
 	kept := *good
 	kept.Good = nil
+	kept.Failures = nil
 	return &kept
 }
 
 // failureCode is the public reason word of a failed snapshot.
 func (s *accountSnap) failureCode() string {
 	switch {
-	case s.Status == toolcli.RuntimeMissing || s.ErrorCode == "runtime_missing" || s.Error == "codex not found":
+	case s.Status == toolcli.RuntimeMissing || s.ErrorCode == "runtime_missing":
 		return "runtime_missing"
+	case s.ErrorCode == "" && s.Error == "codex not found": // snapshots written before the code existed
+		return "not_found"
 	case s.ErrorCode != "":
 		return ReaderErrorCode(s.ErrorCode)
 	}
@@ -304,6 +345,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	previous := (*accountSnap)(nil)
 	commit := func(s *accountSnap) error {
 		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
+		s.Failures = nextFailures(previous, s, now)
 		wait := AccountEvery
 		if s.Status != "ok" {
 			if awaitingFirstRead(previous) {
@@ -351,7 +393,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		return err
 	}
 	if codex == "" {
-		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found", ErrorCode: "runtime_missing"})
+		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found", ErrorCode: "not_found"})
 	}
 	if !consent.CurrentFence(state.Fence()) {
 		return errors.New("consent changed; refresh stopped")
@@ -454,6 +496,8 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 		return nil, err
 	}
 	cmd.Stderr = io.Discard
+	ownProcessGroup(cmd)
+	cmd.WaitDelay = time.Second
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -465,7 +509,20 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	// A descendant that inherited stdout can keep the pipe open after the launcher dies: on the
+	// deadline, stop the whole group and close the read end so the scan below returns.
+	fired := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() { defer close(fired); killProcessGroup(cmd); _ = out.Close() })
+	defer func() {
+		// The deadline kill finishes before Wait reaps the launcher, so it never signals a
+		// recycled process group.
+		if !stop() {
+			<-fired
+		}
+		_ = in.Close()
+		killProcessGroup(cmd)
+		_ = cmd.Wait()
+	}()
 	send := func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
@@ -482,25 +539,27 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 				continue
 			}
 			if m.Error != nil {
-				return nil, codeError("other", "other")
+				return nil, codeError("rpc_error", "rpc_error")
 			}
 			return m.Result, nil
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, errors.New("codex app-server closed")
+		return nil, codeError("closed", "closed")
 	}
 	if err := send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{
 		"clientInfo": map[string]any{"name": "modelplan", "title": "modelplan quota", "version": "1"}, "capabilities": map[string]any{"experimentalApi": true}}}); err != nil {
-		return nil, err
+		// The runtime exited before it read the request: its pipe is closed, the same cause as a
+		// closed stream while waiting.
+		return nil, codeError("closed", "closed")
 	}
 	if _, err := wait(1); err != nil {
 		return nil, err
 	}
 	_ = send(map[string]any{"jsonrpc": "2.0", "method": "initialized"})
 	if err := send(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": map[string]any{}}); err != nil {
-		return nil, err
+		return nil, codeError("closed", "closed")
 	}
 	raw, err := wait(2)
 	if err != nil {
@@ -689,6 +748,13 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 			reason += "; the session-log reading is shown"
 		}
 		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: "stale", ErrorCode: failed.failureCode(), Reason: reason})
+	}
+	// A recent failure with no usable retained reading (a first read that failed, or a retained
+	// reading past accountKeep) still names its cause; runtime_missing is reported above.
+	if failed == nil && s != nil && s.Status != "ok" && s.Status != toolcli.RuntimeMissing &&
+		now.Sub(s.ObservedAt) <= accountKeep && !s.ObservedAt.After(now.Add(5*time.Minute)) {
+		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: "error", ErrorCode: s.failureCode(),
+			Reason: "last refresh failed at " + s.ObservedAt.UTC().Format(time.RFC3339)})
 	}
 	if s == nil || s.Status != "ok" || now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now.Add(5*time.Minute)) {
 		return

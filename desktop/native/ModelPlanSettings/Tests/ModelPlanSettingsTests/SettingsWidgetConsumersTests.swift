@@ -10,7 +10,10 @@ final class SettingsWidgetConsumersTests: XCTestCase {
         func availability(_ key: SettingKey) throws -> SettingAvailability {
             try XCTUnwrap(try SettingsCatalogue.rows(preferences: .init(), context: v1).first { $0.key == key }).availability
         }
-        for key in SettingsPageContext.widgetConsumedKeys { XCTAssertEqual(try availability(key), .serviceUnavailable, "\(key)") }
+        // The widget already applies the percentage switch and the red threshold (#476), so those two
+        // are usable from the start; the dock-only keys stay disabled until the widget reports them.
+        for key in [SettingKey.showPercentages, .redBelow] { XCTAssertEqual(try availability(key), .available, "\(key)") }
+        for key in [SettingKey.magnification, .sliverAlert, .fullscreen] { XCTAssertEqual(try availability(key), .serviceUnavailable, "\(key)") }
         v1.observeWidgetConsumers([.redBelow, .showPercentages, .size])
         XCTAssertEqual(try availability(.redBelow), .available)
         XCTAssertEqual(try availability(.showPercentages), .available)

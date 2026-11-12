@@ -13,7 +13,7 @@ import ModelPlanWire
   private let source = CockpitMessageSource(mainFrame: true, origin: "modelplan-cockpit://bundle")
   private func reply(_ raw: String, type: String, sequence: Int, extra: [String: Any] = [:]) throws -> String {
     var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
-    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "ackedCautions", "nowUnixMs", "reason"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "ackedCautions", "nowUnixMs", "reason"] { value[key] = nil }
     value["type"] = type; value["sequence"] = String(sequence)
     if type == "ready" { value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"] }
     for (key, field) in extra { value[key] = field }
@@ -53,7 +53,7 @@ import ModelPlanWire
       page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
       XCTAssertEqual(sent.count, 1); let display = sent[0].0
       sent[0].1(.accepted) // WebKit completion arrives; rendered receipt is delayed.
-      page.updateAppearance(.init(theme: .night, locale: .zhCN, profile: .full, redBelow: 15))
+      page.updateAppearance(.init(theme: .night, locale: .zhCN, profile: .full, redBelow: 15, showUsedPercent: true))
       XCTAssertEqual(sent.count, 1, "Appearance and shell must wait for current rendered receipt")
       if reportBeforeRendered {
         page.verificationReceive(try reply(display, type: "nextDeadline", sequence: 3, extra: ["deadlineUnixMs": "1500"]), source: source)
@@ -69,6 +69,7 @@ import ModelPlanWire
       let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(appearance.utf8)) as? [String: Any])
       XCTAssertEqual(object["type"] as? String, "appearance")
       XCTAssertEqual(object["redBelow"] as? Int, 15, "The controller must retain the committed threshold when it resends appearance")
+      XCTAssertEqual(object["showUsedPercent"] as? Bool, true, "The live Settings remaining/used choice reaches the page (CKP-ENG-23)")
       let report = try reply(appearance, type: "nextDeadline", sequence: 4, extra: ["deadlineUnixMs": "1500"])
       if reportBeforeRendered {
         page.verificationReceive(report, source: source); sent[2].1(.accepted)

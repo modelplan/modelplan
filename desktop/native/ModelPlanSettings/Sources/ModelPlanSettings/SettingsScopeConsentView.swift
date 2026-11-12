@@ -25,16 +25,31 @@ import ModelPlanWire
     /// G3-25: the first-run page shows only what FR-9 lists (paths, select all, allow);
     /// diagnostics, plugins and revoke/forget stay in Settings.
     public let firstRun: Bool
+    /// G3-45: the vendor mark for a tool id, supplied by the app (the same checked marks as the Dock).
+    private var markImage: (@MainActor (String) -> NSImage?)?
+    /// Settings (owner build 13): one row per tool, like the first-run list; the per-path rows (and their
+    /// revoke / forget buttons) are behind a disclosure instead of filling the page.
+    private let compactTools: Bool
+    private var pathDetailsExpanded = false
     private var observer: UUID?
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
     public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
-                buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false) {
+                buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false,
+                markImage: (@MainActor (String) -> NSImage?)? = nil, compactTools: Bool = false) {
         self.controller = controller; self.language = language;self.buildSigning=buildSigning; self.firstRun = firstRun
+        self.markImage = markImage; self.compactTools = compactTools
         super.init(frame: .zero)
         orientation = .vertical; alignment = .leading; spacing = 8
         setAccessibilityIdentifier("settings.scopeConsent")
         observer = controller.observe { [weak self] in self?.render() }; render()
+    }
+    /// The app supplies its checked marks after the view exists; draw them as soon as they arrive.
+    public func setMarkImage(_ value: (@MainActor (String) -> NSImage?)?) { markImage = value; render() }
+    /// Show or hide the per-path rows of the compact Settings page.
+    public func setPathDetailsExpanded(_ expanded: Bool) {
+        guard pathDetailsExpanded != expanded else { return }
+        pathDetailsExpanded = expanded; render()
     }
     /// Follow the shared Settings editor language without changing any draft.
     public func apply(language: SettingsLanguage) {
@@ -64,6 +79,18 @@ import ModelPlanWire
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     deinit {
         if let observer { let controller = controller; Task { @MainActor in controller.removeObserver(observer) } }
+    }
+    /// The status line follows the same reading state as the switch (G3-67): "On by default" is only said while the
+    /// engine is actually reading the path; a compiled default the engine does not admit says so and how to turn it on.
+    static func pathStatus(_ controller: ScopeConsentController, id: String, denied: Bool) -> SettingsText {
+        if controller.isAllowed(id) { return .init("On", "已开启") }
+        if controller.isOnByDefault(id) {
+            return controller.isReading(id)
+                ? .init("On by default. Turn it off to stop reading this path.", "默认开启；关闭后不再读取此路径。")
+                : .init("Not being read right now: the engine has no permission for this path. Allow this path to start reading it.", "目前未读取：引擎尚无此路径的权限。授权此读取路径后才会开始读取。")
+        }
+        if denied { return .init("Off. Turn it on to read this path.", "已关闭；打开后才会读取此路径。") }
+        return .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。")
     }
     private func label(_ text: SettingsText, secondary: Bool = false, heading: Bool = false) {
         let field = NSTextField(wrappingLabelWithString: text.value(language))
@@ -107,42 +134,181 @@ import ModelPlanWire
         }
         return .init(tool.english + " · " + route.english, tool.chinese + " · " + route.chinese)
     }
-    /// D27 / G3-19: first launch shows one line — what is read and where to turn it off — and no
-    /// per-reader choices. Sensitive (browser-session) readers ask when they are first needed.
+    /// Activity reading is separate from usage reading and is always disclosed (D27).
     private static let activityDisclosure = SettingsText("Local session files are read to show tool activity. Their contents are not uploaded.",
                                                          "读取本地会话文件以显示工具活动状态，文件内容不会上传。")
-    private func renderFirstRunNotice() {
-        label(.init("Reading usage", "读取用量"), heading: true)
-        var tools: [SettingsText] = []
-        for scope in controller.facts?.scopes ?? [] where scope.detected && controller.isReading(scope.scope) {
-            let name = toolName(scope.tool)
-            if !tools.contains(name) { tools.append(name) }
-        }
-        let names = tools.map(\.english), zh = tools.map(\.chinese)
-        let text: SettingsText = names.isEmpty
-            ? .init("ModelPlan reads usage from the coding tools it finds on this Mac. Turn any of them off in Settings › Data & Privacy.",
-                    "ModelPlan 会读取本机找到的编程工具的用量。可在 设置 › 数据与隐私 中关闭。")
-            : .init("ModelPlan reads usage from " + names.joined(separator: ", ") + " on this Mac. Turn any of them off in Settings › Data & Privacy.",
-                    "ModelPlan 会读取本机 " + zh.joined(separator: "、") + " 的用量。可在 设置 › 数据与隐私 中关闭。")
-        label(text, secondary: true)
+    /// G3-45 (owner 2026-11-08, Pulse reference): the first-run page lists each tool found on this
+    /// Mac with a checkbox, says what is read and whether macOS may ask for the Keychain, and shows
+    /// why a tool cannot be read. Done sends the choices as the one first-run consent.
+    private func renderFirstRunChooser() {
+        label(.init("Choose which tools ModelPlan reads", "选择要读取的工具"), heading: true)
+        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.heading")
+        label(.init("Your choice is saved when you press Done; you can change it later in Settings › Data & Privacy.",
+                    "点“完成”后保存选择，之后可在 设置 › 数据与隐私 中更改。"), secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.notice")
+        let tools = controller.firstRunTools
+        if controller.facts == nil {
+            label(.init("Looking for tools on this Mac…", "正在查找本机的工具…"), secondary: true)
+            arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.looking")
+        } else if tools.isEmpty {
+            label(.init("No supported tools were found on this Mac. You can finish now.", "本机没有找到支持的工具，可以直接完成。"), secondary: true)
+            arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.none")
+        }
+        for (index, tool) in tools.enumerated() {
+            if index > 0 { separator() }
+            toolRow(tool)
+        }
+        if !controller.firstRunChoiceSatisfied {
+            label(.init("Tick at least one tool to continue.", "请至少勾选一个工具。"))
+            arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.pickOne")
+        }
+        gap()
+        label(.init("Tools you install later are read by default. Turn any of them off in Settings › Data & Privacy.",
+                    "之后安装的工具默认会读取，可在 设置 › 数据与隐私 中关闭。"), secondary: true)
+        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.later")
         label(Self.activityDisclosure, secondary: true)
         label(HistoryImportText.firstRunLine, secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.import")
-        guard controller.asksForKeychainOnFirstRun else { return }
-        gap()
-        label(.init("Claude Code keeps its login in the Keychain. Reading its quota needs your permission once: macOS will ask, please choose \"Always Allow\".",
-                    "Claude Code 的登录保存在钥匙串里。读取额度需要你允许一次，macOS 会弹出询问，请选\u{201C}始终允许\u{201D}。"), secondary: true)
-        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.keychain")
-        line([keychainAllowButton(), synchronousButton(.init("Later", "以后再说"), id: "scope.keychain.later") { [weak self] in self?.controller.chooseKeychainLater() }])
+    }
+    private func separator() {
+        let line = NSBox(); line.boxType = .separator
+        addArrangedSubview(line)
+        line.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+    }
+    private static let markSize: CGFloat = 20, boxWidth: CGFloat = 18
+    /// One tool, as the first-run list shows it. In Settings (`settings`) the box is the tool's current reading
+    /// state, and changing it asks for the same confirmation a path change does; the row ids differ only by prefix.
+    private func toolRow(_ tool: FirstRunTool, settings: Bool = false) {
+        let id = tool.tool
+        let prefix = settings ? "scope.settings." : "scope.firstRun."
+        let isOn = settings ? controller.isToolReading(id) : controller.isFirstRunToolChosen(id)
+        let box = synchronousButton(.init("", ""), id: prefix + "tool." + id, enabled: controller.canMutate && tool.canRead) { [weak self] in
+            guard let self else { return }
+            if settings { self.controller.requestToolChoice(id, on: !self.controller.isToolReading(id)) }
+            else { self.controller.chooseFirstRunTool(id, chosen: !self.controller.isFirstRunToolChosen(id)) }
+        }
+        box.setButtonType(.switch); box.title = ""; box.state = isOn ? .on : .off
+        box.setAccessibilityLabel(Self.toolName(id).value(language))
+        box.translatesAutoresizingMaskIntoConstraints = false
+        box.widthAnchor.constraint(equalToConstant: Self.boxWidth).isActive = true
+        let mark = markView(id)
+        let name = NSTextField(labelWithString: Self.toolName(id).value(language))
+        name.font = .systemFont(ofSize: 14, weight: .semibold)
+        name.setAccessibilityIdentifier(prefix + "name." + id)
+        let tag = NSTextField(labelWithString: (tool.detected ? SettingsText("Detected on this Mac", "本机已检测到") : SettingsText("Not detected on this Mac", "本机未检测到")).value(language))
+        tag.font = .systemFont(ofSize: 11); tag.textColor = .secondaryLabelColor
+        let title = NSStackView(views: [name, tag]); title.orientation = .horizontal; title.alignment = .firstBaseline; title.spacing = 8
+        let column = NSStackView(views: [title]); column.orientation = .vertical; column.alignment = .leading; column.spacing = 3
+        func line(_ text: SettingsText, id lineID: String, color: NSColor = .secondaryLabelColor) {
+            let field = NSTextField(wrappingLabelWithString: text.value(language))
+            field.font = .systemFont(ofSize: 12); field.textColor = color
+            field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
+            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            field.setAccessibilityIdentifier(lineID)
+            column.addArrangedSubview(field); wrappingLabels.append(field)
+            field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+        }
+        // An unsupported login is not read at all, so its row says only why (D52). A supported tool
+        // that is merely signed out still says what will be read once the user signs in.
+        if tool.detected, tool.block != .unsupportedLogin, !tool.scopes.isEmpty { line(Self.readLine(tool), id: prefix + "reads." + id) }
+        if !tool.detected {
+            line(SettingsText("Not installed. ModelPlan reads it once it is installed on this Mac and you turn it on here.",
+                              "未安装。安装到这台 Mac 后，可在这里打开，ModelPlan 才会读取。"), id: prefix + "status." + id, color: .systemOrange)
+        }
+        if let block = tool.block {
+            line(Self.blockLine(block, tool: id), id: prefix + "status." + id, color: .systemOrange)
+        } else if tool.detected, !tool.canRead {
+            // Only browser-session or unrecognised paths: never describe a read that will not happen.
+            line(Self.unreadableLine, id: prefix + "status." + id)
+        }
+        let row = NSStackView(views: [box, mark, column]); row.orientation = .horizontal; row.alignment = .top; row.spacing = 10
+        row.setAccessibilityIdentifier(prefix + "row." + id)
+        addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        column.widthAnchor.constraint(equalTo: row.widthAnchor, constant: -(Self.boxWidth + Self.markSize + 2 * row.spacing)).isActive = true
+    }
+    /// The vendor's own mark, drawn in the label colour like the rest of the page; two letters
+    /// when no checked mark is available (as on the Quota Widget, G3-32).
+    private func markView(_ tool: String) -> NSView {
+        let view: NSView
+        if let image = markImage?(tool) {
+            // A template mark follows the label colour; a coloured one keeps its own colours.
+            let imageView = NSImageView(image: image); imageView.imageScaling = .scaleProportionallyUpOrDown
+            imageView.contentTintColor = image.isTemplate ? .labelColor : nil
+            view = imageView
+        } else {
+            let letters = NSTextField(labelWithString: String(Self.toolName(tool).english.prefix(2)))
+            letters.font = .systemFont(ofSize: 10, weight: .semibold); letters.alignment = .center
+            letters.textColor = .secondaryLabelColor
+            view = letters
+        }
+        view.setAccessibilityElement(false); view.setAccessibilityIdentifier("scope.mark." + tool)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.widthAnchor.constraint(equalToConstant: Self.markSize).isActive = true
+        view.heightAnchor.constraint(equalToConstant: Self.markSize).isActive = true
+        return view
+    }
+    /// Display names follow the engine's row titles.
+    static func toolName(_ tool: String) -> SettingsText {
+        let names = ["claude": "Claude Code", "codex": "Codex", "cursor": "Cursor", "copilot": "GitHub Copilot", "gemini": "Gemini CLI",
+                     "grok": "Grok Build", "kimi": "Kimi Code", "zai": "ZCode / GLM", "qwen": "Qwen", "opencodego": "OpenCode Go",
+                     "opencode": "OpenCode", "kiro": "Kiro", "amp": "Amp", "droid": "Droid", "antigravity": "Antigravity", "minimax": "MiniMax"]
+        return names[tool].map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
+    }
+    static let unreadableLine = SettingsText("ModelPlan can't read this tool's sign-in on this Mac yet.", "暂不支持读取这个工具在本机的登录。")
+    private static let noKeychain = SettingsText(" No Keychain prompt.", "不会弹出钥匙串授权。")
+    private static let mayAskKeychain = SettingsText(" macOS may ask once for Keychain access; choose \u{201C}Always Allow\u{201D}.",
+                                                     "macOS 可能会询问一次钥匙串权限，请选“始终允许”。")
+    /// One plain line per tool: what is read, then whether macOS may ask for the Keychain. The
+    /// Keychain part follows the paths' access class (D61), not the vendor.
+    static func readLine(_ tool: FirstRunTool) -> SettingsText {
+        let base: SettingsText
+        switch tool.tool {
+        case "claude":
+            base = .init("Reads the Claude Code sign-in saved in its credentials file or the Keychain, and its local history.",
+                         "读取 Claude Code 保存在凭据文件或钥匙串里的登录，以及本机历史记录。")
+        case "codex":
+            base = .init("Asks Codex's own app server for usage with the sign-in Codex saved, and reads its local history.",
+                         "通过 Codex 自带的后台服务，用它已保存的登录查询用量，并读取本机历史记录。")
+        case "cursor":
+            base = .init("Reads the sign-in Cursor saved in its local database, and its local history.",
+                         "读取 Cursor 本地数据库里保存的登录，以及本机历史记录。")
+        case "grok":
+            base = .init("Reads the sign-in Grok saved in ~/.grok, and its local history.",
+                         "读取 Grok 保存在本机的登录，以及本机历史记录。")
+        case "kiro":
+            base = .init("Asks the Kiro CLI for usage with the sign-in Kiro saved. ModelPlan does not read or keep Kiro's credentials.",
+                         "调用 Kiro 命令行工具查询用量，沿用它已保存的登录。ModelPlan 不读取也不保存 Kiro 的凭据。")
+        case "zai":
+            base = .init("Reads the GLM Coding Plan key you saved in ZCode, and its local history.",
+                         "读取你在 ZCode 里保存的 GLM 编程套餐密钥，以及本机历史记录。")
+        default:
+            var english: [String] = [], chinese: [String] = []
+            let routes = Set(tool.routes.map(\.rawValue))
+            if routes.contains("saved_login_api") { english.append("the sign-in it saved on this Mac"); chinese.append("它在本机保存的登录") }
+            if routes.contains("runtime_rpc") { english.append("usage from its own runtime"); chinese.append("它自带运行时提供的用量") }
+            if routes.contains("api_key_api") { english.append("the API key you configured for it"); chinese.append("你为它配置的接口密钥") }
+            if routes.contains("local_log") || routes.contains("local_sqlite") { english.append("its local history"); chinese.append("本机历史记录") }
+            base = english.isEmpty ? .init("Reads its usage on this Mac.", "读取它在本机的用量。")
+                : .init("Reads " + english.joined(separator: " and ") + ".", "读取" + chinese.joined(separator: "和") + "。")
+        }
+        let keychain = tool.promptsKeychain ? mayAskKeychain : noKeychain
+        return .init(base.english + keychain.english, base.chinese + keychain.chinese)
+    }
+    static func blockLine(_ block: ScopeToolBlock, tool: String) -> SettingsText {
+        let name = toolName(tool)
+        switch block {
+        case .notSignedIn:
+            // One sentence pair with the engine rows (rows.NotSignedInText): first run, Settings and the menu agree.
+            return .init("Not signed in to " + name.english + ". ModelPlan reads it after you sign in.",
+                         "未登录 " + name.chinese + "。登录后会自动读取。")
+        case .unsupportedLogin:
+            return .init("Signed in with an account ModelPlan cannot read yet, so nothing is read.",
+                         "这种账号登录方式暂不支持读取，因此不读取。")
+        }
     }
     private func keychainAllowButton() -> ScopeConsentButton {
         button(.init("Allow reading", "允许读取"), id: "scope.keychain.allow", enabled: controller.canMutate) { [weak self] in await self?.controller.allowKeychain() }
-    }
-    private func toolName(_ tool: String) -> SettingsText {
-        let name = ["gemini": "Gemini", "cursor": "Cursor", "codex": "Codex", "claude": "Claude Code",
-                    "zai": "Z.ai", "opencode": "OpenCode", "minimax": "MiniMax", "kimi": "Kimi"][tool]
-        return name.map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
     }
     private func render() {
         for button in buttons {
@@ -151,7 +317,7 @@ import ModelPlanWire
         buttons = []
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         wrappingLabels = []
-        if firstRun { renderFirstRunNotice(); return }
+        if firstRun { renderFirstRunChooser(); return }
         label(.init("Reading permissions", "读取权限"), heading: true)
         label(Self.activityDisclosure, secondary: true)
         if controller.needsKeychainAccess {
@@ -214,7 +380,18 @@ import ModelPlanWire
         if facts.scopes.isEmpty {
             label(.init("No saved or detected reading paths are available. Choose Check current permissions after connecting the engine.", "暂无已保存或已检测的读取路径，连接引擎后可点“检查当前权限”。"))
         }
-        for scope in facts.scopes {
+        if compactTools {
+            for (index, tool) in controller.settingsTools.enumerated() {
+                if index > 0 { separator() }
+                toolRow(tool, settings: true)
+            }
+            gap()
+            if !facts.scopes.isEmpty { line([synchronousButton(pathDetailsExpanded ? .init("Hide reading paths", "收起读取路径") : .init("Show reading paths and saved permissions", "展开读取路径与已保存权限"),
+                                    id: "scope.details.toggle") { [weak self] in
+                guard let self else { return }; self.setPathDetailsExpanded(!self.pathDetailsExpanded)
+            }]) }
+        }
+        for scope in facts.scopes where !compactTools || pathDetailsExpanded {
             let id = scope.scope
             let title = scopeTitle(scope)
             if let last = arrangedSubviews.last { setCustomSpacing(14, after: last) }
@@ -229,12 +406,13 @@ import ModelPlanWire
             } else if scope.disabledReason != nil {
                 label(.init("This path cannot be newly allowed under the engine's current policy. Existing permissions can still be revoked.", "引擎当前策略不允许新增授权；仍可撤销已有权限。"))
             }
+            // G3-38 (owner D52): say why a detected tool has no reading, e.g. Claude Code signed out.
+            if scope.detected, let block = controller.block(forTool: scope.tool) {
+                label(Self.blockLine(block, tool: scope.tool))
+                arrangedSubviews.last?.setAccessibilityIdentifier("scope.status." + id)
+            }
             // D27: a standard reader is on by default; its row says so and its switch is on.
-            let status: SettingsText
-            if controller.isAllowed(id) { status = .init("On", "已开启") }
-            else if controller.isOnByDefault(id) { status = .init("On by default. Turn it off to stop reading this path.", "默认开启；关闭后不再读取此路径。") }
-            else if scope.state == .denied { status = .init("Off. Turn it on to read this path.", "已关闭；打开后才会读取此路径。") }
-            else { status = .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。") }
+            let status = Self.pathStatus(controller, id: id, denied: scope.state == .denied)
             label(status, secondary: true)
             let box: ConnectionButton
             if controller.isReading(id) {
@@ -260,15 +438,24 @@ import ModelPlanWire
             }
         }
         gap()
-        line([synchronousButton(.init("Select all available paths", "全选可授权路径"), id: "scope.selectAll", enabled: controller.canMutate) { [weak self] in self?.controller.selectAll() },
-              synchronousButton(.init("Allow selected paths…", "授权所选路径…"), id: "scope.allowSelected", enabled: controller.canRequestAllow) { [weak self] in self?.controller.requestAllow() }])
+        if !compactTools || pathDetailsExpanded {
+            line([synchronousButton(.init("Select all available paths", "全选可授权路径"), id: "scope.selectAll", enabled: controller.canMutate) { [weak self] in self?.controller.selectAll() },
+                  synchronousButton(.init("Allow selected paths…", "授权所选路径…"), id: "scope.allowSelected", enabled: controller.canRequestAllow) { [weak self] in self?.controller.requestAllow() }])
+        }
         if case .confirmation(let confirmation) = controller.phase {
             let ids = Set(confirmation.intent.allowIDs + confirmation.intent.denyIDs + confirmation.intent.forgetIDs)
-            for scope in facts.scopes where ids.contains(scope.scope) { label(scopeTitle(scope)) }
+            if compactTools, case .choose = confirmation.intent.mutation {
+                // A tool choice names the tool once, not each of its reading paths.
+                var seen = Set<String>()
+                for scope in facts.scopes where ids.contains(scope.scope) && seen.insert(scope.tool).inserted { label(Self.toolName(scope.tool)) }
+            } else {
+                for scope in facts.scopes where ids.contains(scope.scope) { label(scopeTitle(scope)) }
+            }
             switch confirmation.intent.mutation {
             case .allow: label(.init("Confirm the selected reading paths?", "确认授权所选读取路径？"))
             case .revoke: label(.init("Revoke this specific reading permission?", "撤销这一项读取授权？"))
             case .forget: label(.init("Forget this saved decision and request cleanup?", "忘记这一项已保存的决定并请求清理？"))
+            case .choose: label(.init("Save these reading choices?", "保存这些读取选择？"))
             }
             line([button(.init("Confirm", "确认"), id: "scope.confirm") { [weak self] in await self?.controller.confirm(confirmation.id) },
                   synchronousButton(.init("Cancel", "取消"), id: "scope.cancel") { [weak self] in self?.controller.cancelConfirmation() }])

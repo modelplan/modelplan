@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/digest"
@@ -34,6 +35,131 @@ type record struct {
 	PlanIDs        *[]string  `json:"planIds"`
 	Scope          *string    `json:"scope"`
 	Confirms       string     `json:"confirms"`
+	ConfirmedAt    *time.Time `json:"confirmedAt"`
+}
+
+// Kinds on the wire. A reset credit ("extra resets issued") is news about
+// redeemable resets, never evidence that a quota window restarted.
+const (
+	KindResetCredit = "reset_credit"
+	KindDirectReset = "direct_reset"
+)
+
+// Bases for ConfirmedAt when the publication does not carry its own time.
+const (
+	BasisPublished = "published"
+	BasisObserved  = "observed"
+	BasisFirstSeen = "firstSeen"
+)
+
+// confirmedLifetime bounds a confirmed event on the wire; the client decides
+// how long its dot stays within it.
+const confirmedLifetime = 24 * time.Hour
+
+// awaitingLifetime keeps a scheduled forecast after its window ends, so the
+// client can show it awaiting confirmation; a confirmation replaces it sooner.
+const awaitingLifetime = 24 * time.Hour
+
+// absentRetention is how long a memo entry outlives its record's absence
+// from the projected publication. An entry is never dropped while the
+// publication still carries the record, however old it is, so a remembered
+// confirmation can never be re-dated or re-admitted (macrev2-862-1).
+const absentRetention = 7 * 24 * time.Hour
+
+func kindOf(eventType string) string {
+	if eventType == "reset_credit_issued" {
+		return KindResetCredit
+	}
+	return KindDirectReset
+}
+
+// Memo remembers, for this process only, when an event was first read as
+// announced and when as confirmed, so a confirmation that carries no time of
+// its own keeps one stable instant across refreshes. Once that confirmation's
+// lifetime is over its entry is a tombstone: the event stays expired. Entries
+// are kept while their record is in the publication. Nil disables it.
+type Memo struct {
+	mu        sync.Mutex
+	announced map[string]memoAnnouncement
+	confirmed map[string]memoConfirmation
+}
+
+type memoAnnouncement struct{ at, lastPresent time.Time }
+
+type memoConfirmation struct {
+	at, lastPresent time.Time
+	basis           string
+}
+
+func NewMemo() *Memo {
+	return &Memo{announced: map[string]memoAnnouncement{}, confirmed: map[string]memoConfirmation{}}
+}
+
+func (m *Memo) sawAnnounced(id string, now time.Time) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.announced[id]; !ok {
+		m.announced[id] = memoAnnouncement{at: now, lastPresent: now}
+	}
+}
+
+// remembered returns the confirmation instant already recorded for id.
+func (m *Memo) remembered(id string) (time.Time, string, bool) {
+	if m == nil {
+		return time.Time{}, "", false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.confirmed[id]
+	return c.at, c.basis, ok
+}
+
+// confirmation returns the first instant this process read id as confirmed.
+func (m *Memo) confirmation(id string, now time.Time) (time.Time, string) {
+	if m == nil {
+		return now, BasisFirstSeen
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if c, ok := m.confirmed[id]; ok {
+		return c.at, c.basis
+	}
+	c := memoConfirmation{at: now, lastPresent: now, basis: BasisFirstSeen}
+	if _, ok := m.announced[id]; ok {
+		c.basis = BasisObserved
+	}
+	m.confirmed[id] = c
+	return c.at, c.basis
+}
+
+// retain marks the ids the verified publication still carries as present and
+// drops only entries whose record has been absent for absentRetention. It is
+// never called without a verified publication, so an outage forgets nothing.
+func (m *Memo) retain(present map[string]bool, now time.Time) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, a := range m.announced {
+		if present[id] {
+			a.lastPresent = now
+			m.announced[id] = a
+		} else if now.Sub(a.lastPresent) > absentRetention {
+			delete(m.announced, id)
+		}
+	}
+	for id, c := range m.confirmed {
+		if present[id] {
+			c.lastPresent = now
+			m.confirmed[id] = c
+		} else if now.Sub(c.lastPresent) > absentRetention {
+			delete(m.confirmed, id)
+		}
+	}
 }
 
 var publicID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
@@ -155,6 +281,11 @@ func knownPlan(ids *[]string, row rows.Row) ([]string, bool) {
 // it does not include record IDs and is not sent to telemetry. The server
 // supplies an already verified publication and capability-gates the result.
 func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Event, int) {
+	return ProjectWithMemo(d, projection, now, nil)
+}
+
+// ProjectWithMemo is Project with a process memo for confirmation times.
+func ProjectWithMemo(d *digest.Digest, projection rows.Projection, now time.Time, memo *Memo) ([]Event, int) {
 	if d == nil || !publicationID.MatchString(d.PublicationID) {
 		return nil, 0
 	}
@@ -166,17 +297,37 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 	}
 	known := map[string]Event{}
 	blocked := map[string]bool{}
-	var confirmations []record
+	var confirmations, standalone []record
+	present := map[string]bool{}
+	defer func() { memo.retain(present, now) }()
 	for _, raw := range d.Resets {
 		var r record
-		if json.Unmarshal(raw, &r) != nil || r.Provider != "openai" || r.PublishedAt.IsZero() || r.PublishedAt.After(now) {
+		if json.Unmarshal(raw, &r) != nil || r.Provider != "openai" {
 			continue
 		}
-		if r.EventType == "direct_reset_reported_complete" && r.Status == "upstream-confirmed" {
-			confirmations = append(confirmations, r)
+		if id, ok := eventID(r); ok {
+			present[id] = true
+		}
+		if r.PublishedAt.IsZero() || r.PublishedAt.After(now) {
 			continue
 		}
-		if r.EventType != "direct_reset_announced" || r.Status != "upstream-announced" {
+		switch r.EventType {
+		case "reset_credit_issued", "direct_reset_announced", "direct_reset_reported_complete":
+		default:
+			continue
+		}
+		if r.Status == "upstream-confirmed" {
+			// A confirmation linked to a separate announcement replaces it; one
+			// without a link is the same record whose status moved (AIhot keeps
+			// its identity when it confirms a reset or a reset credit).
+			if r.EventType == "direct_reset_reported_complete" && r.Confirms != "" {
+				confirmations = append(confirmations, r)
+			} else {
+				standalone = append(standalone, r)
+			}
+			continue
+		}
+		if r.Status != "upstream-announced" || r.EventType == "direct_reset_reported_complete" {
 			continue
 		}
 		// V1 has no reviewed mapping for free-form scope. The coordinator's
@@ -204,7 +355,10 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 				(r.Schedule.Through.Equal(r.Schedule.From) && r.Schedule.Precision != "deadline") {
 				continue
 			}
-			expiry = r.Schedule.Through
+			if !r.Schedule.Through.After(r.PublishedAt) {
+				continue
+			}
+			expiry = r.Schedule.Through.Add(awaitingLifetime)
 		}
 		if !expiry.After(r.PublishedAt) {
 			continue
@@ -217,7 +371,8 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 			blocked[id] = true
 			continue
 		}
-		known[id] = Event{Version: 1, ID: id, Provider: r.Provider, RowID: row.ID, Status: "announced", PlanIDs: plans, PublishedAt: r.PublishedAt, Schedule: r.Schedule, ExpiresAt: expiry, Source: Source{Kind: "publication", PublicationID: d.PublicationID, Links: sourceLinks(r)}}
+		memo.sawAnnounced(id, now)
+		known[id] = Event{Version: 1, ID: id, Provider: r.Provider, RowID: row.ID, Status: "announced", Kind: kindOf(r.EventType), PlanIDs: plans, PublishedAt: r.PublishedAt, Schedule: r.Schedule, ExpiresAt: expiry, Source: Source{Kind: "publication", PublicationID: d.PublicationID, Links: sourceLinks(r)}}
 	}
 	dropped := 0
 	for _, r := range confirmations {
@@ -234,13 +389,20 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 		e.Confirms = e.ID
 		e.PublishedAt = r.PublishedAt
 		e.Schedule = nil
-		e.ExpiresAt = r.PublishedAt.Add(24 * time.Hour)
+		at := r.PublishedAt
+		e.ConfirmedAt, e.ConfirmedAtBasis = &at, BasisPublished
+		e.ExpiresAt = r.PublishedAt.Add(confirmedLifetime)
 		// A confirmation's own admitted links supersede the announcement's;
 		// a confirmation without links keeps the original citations.
 		if links := sourceLinks(r); len(links) > 0 {
 			e.Source.Links = links
 		}
 		known[e.ID] = e
+	}
+	for _, r := range standalone {
+		if e, ok := confirmedEvent(r, byTool, d.PublicationID, now, memo); ok {
+			known[e.ID] = e
+		}
 	}
 	out := make([]Event, 0, len(known))
 	for _, e := range known {
@@ -253,4 +415,47 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 		out = out[:64]
 	}
 	return out, dropped
+}
+
+// confirmedEvent admits a confirmed record that is its own event. Without a
+// published confirmation time it is admitted only while it is recent: within
+// confirmedLifetime of the later of its post and its announced window end.
+func confirmedEvent(r record, byTool map[string]rows.Row, publicationID string, now time.Time, memo *Memo) (Event, bool) {
+	row, ok := byTool["codex"]
+	if !ok {
+		return Event{}, false
+	}
+	plans, ok := knownPlan(r.PlanIDs, row)
+	if !ok {
+		return Event{}, false
+	}
+	id, ok := eventID(r)
+	if !ok {
+		return Event{}, false
+	}
+	var at time.Time
+	var basis string
+	if r.ConfirmedAt != nil && !r.ConfirmedAt.IsZero() && !r.ConfirmedAt.After(now) && !r.ConfirmedAt.Before(r.PublishedAt) {
+		at, basis = r.ConfirmedAt.UTC(), BasisPublished
+	} else if remembered, rememberedBasis, ok := memo.remembered(id); ok {
+		// Once remembered, the instant is fixed: the event lives exactly
+		// confirmedLifetime after it and is never re-dated or re-admitted.
+		at, basis = remembered, rememberedBasis
+	} else {
+		reference := r.PublishedAt
+		if r.Schedule != nil && r.Schedule.Through.After(reference) {
+			reference = r.Schedule.Through
+		}
+		if !now.Before(reference.Add(confirmedLifetime)) {
+			return Event{}, false
+		}
+		at, basis = memo.confirmation(id, now)
+	}
+	expiry := at.Add(confirmedLifetime)
+	if !expiry.After(r.PublishedAt) {
+		return Event{}, false
+	}
+	return Event{Version: 1, ID: id, Provider: r.Provider, RowID: row.ID, Status: "confirmed", Kind: kindOf(r.EventType),
+		ConfirmedAt: &at, ConfirmedAtBasis: basis, Confirms: id, PlanIDs: plans, PublishedAt: r.PublishedAt, ExpiresAt: expiry,
+		Source: Source{Kind: "publication", PublicationID: publicationID, Links: sourceLinks(r)}}, true
 }

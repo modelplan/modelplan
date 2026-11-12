@@ -18,7 +18,7 @@ import (
 )
 
 // The history importer reads the Claude Code and Codex logs written before the live observers
-// started, so a later slice can fill charts and the effort suggestion from day one (nothing reads the ledger back yet). It reads what the live
+// started, so a later slice can fill charts and the effort suggestion from day one (the cockpit's 7- and 30-day views read it back through speed.PerfView.ImportedRows). It reads what the live
 // parsers read (timestamps, token counts, model, effort, speed mode) and nothing else: never a
 // prompt, reply, tool input or output, path, project or id. Its ledger is <cache>/observed/
 // imported.json; every row in it carries origin "import" and a per-source coverage span. It is
@@ -113,6 +113,10 @@ type ImportOptions struct {
 	// Admission: the consent in force; nil reads the current one. A source without its history
 	// grant is skipped.
 	Admission *consent.Admission
+	// Live reads the consent in force now. A source whose history grant is no longer the one the run
+	// was admitted under stops before its next log is opened and writes nothing. Nil reads the
+	// current consent when Admission is nil too (production), and skips the live check otherwise.
+	Live func() consent.Admission
 	// Progress, when set, is called with the number of log files read so far and the total to read
 	// (counted before the first read), from the importing goroutine.
 	Progress func(done, total int)
@@ -151,7 +155,14 @@ type importJob struct {
 	rows   []PerfRow
 	turns  int
 	status string
+	// epoch: the grant the run was admitted under; live reads the grant in force now (nil: no
+	// live check). withdrawn: the grant changed mid-run, so nothing of this source is written.
+	epoch     *GrantEpoch
+	live      func() consent.Admission
+	withdrawn bool
 }
+
+var errGrantWithdrawn = errors.New("history grant withdrawn during the import")
 
 // Import reads the older logs of the sources the caller holds consent for and merges their turns
 // into imported.json. Cancelling ctx before the read finishes leaves the ledger untouched.
@@ -171,6 +182,10 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 	adm := consent.Capture()
 	if o.Admission != nil {
 		adm = *o.Admission
+	}
+	live := o.Live
+	if live == nil && o.Admission == nil {
+		live = consent.Capture
 	}
 	jobs := []*importJob{
 		{source: "claude-code", root: o.Claude, dir: "projects", newP: func() parser { return newClaude(now) }, parser: ParserClaude},
@@ -203,6 +218,7 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			c = Span{}
 		}
 		j.ranges = missing(c, from, cutoff)
+		j.epoch, j.live = currentEpoch(adm, j.source), live
 		active = append(active, j)
 	}
 	// One pass per source: files that may hold turns of a missing range.
@@ -245,6 +261,9 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 	committed := false
 	for _, j := range active {
 		j := j
+		if j.withdrawn {
+			continue
+		}
 		write := func() error {
 			if !committed && ctx.Err() != nil { // checked again under the fence, just before the write
 				res.Cancelled = true
@@ -320,12 +339,35 @@ func (j *importJob) earliest() time.Time {
 func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 	tmp := &PerfLedger{}
 	seen := map[string]bool{} // Claude request ids counted so far in this run
-	for _, p := range j.list {
+	// admitted: still running and still under the grant the run started with. Checked before each
+	// log is opened and while one is parsed, so a revoke stops the reads, not only the write.
+	admitted := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if j.live != nil && !sameEpoch(currentEpoch(j.live(), j.source), j.epoch) {
+			return errGrantWithdrawn
+		}
+		return nil
+	}
+	withdraw := func(i int) error {
+		j.withdrawn, j.status, j.rows, j.turns = true, StatusNoConsent, nil, 0
+		prog.done += len(j.list) - i - 1 // the logs left unread
+		prog.report()
+		return nil
+	}
+	for i, p := range j.list {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		prog.done++
 		prog.report()
+		if err := admitted(); err != nil {
+			if errors.Is(err, errGrantWithdrawn) {
+				return withdraw(i)
+			}
+			return err
+		}
 		if j.root.Background != nil && j.source == "codex" && j.root.Background(p) {
 			continue
 		}
@@ -335,10 +377,13 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			cp = c
 			c.prior, c.mine = seen, map[string]bool{}
 		}
-		turns, err := readWhole(ctx, p, parser)
+		turns, err := readWhole(admitted, p, parser)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
+			}
+			if errors.Is(err, errGrantWithdrawn) {
+				return withdraw(i)
 			}
 			continue // unreadable file: skipped
 		}
@@ -408,7 +453,7 @@ func (j *importJob) files(since time.Time) []string {
 
 // readWhole streams one log line by line through a parser and returns its finished turns. A line
 // that is too long or does not parse is skipped by the parser; an unfinished last turn is dropped.
-func readWhole(ctx context.Context, path string, p parser) ([]turn, error) {
+func readWhole(admitted func() error, path string, p parser) ([]turn, error) {
 	fh, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -421,7 +466,7 @@ func readWhole(ctx context.Context, path string, p parser) ([]turn, error) {
 	var off int64
 	for n := 0; ; n++ {
 		if n%importCancelEvery == 0 {
-			if err := ctx.Err(); err != nil {
+			if err := admitted(); err != nil {
 				return nil, err
 			}
 		}

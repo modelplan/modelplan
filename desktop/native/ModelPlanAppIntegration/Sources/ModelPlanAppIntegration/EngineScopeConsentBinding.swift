@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -20,6 +21,7 @@ import ModelPlanWire
             guard let snapshot = store?.snapshot, case .ready = snapshot.connection else { return false }
             return true
         }, makeGrant: { intent in try factory.make(intent) })
+        entry.markImage = { ScopeConsentMarks.image(for: $0) }
         // HIST-IMP-02/03: the local-history import, over the same engine client.
         let importer = HistoryImportModel(commands: EngineHistoryImportCommands(client: composition.client, ready: { [weak store] in
             guard let snapshot = store?.snapshot, case .ready = snapshot.connection else { return false }
@@ -41,9 +43,9 @@ import ModelPlanWire
             case .rows(let reply, _): entry.acceptedRows(reply.envelope.data)
             case .grant(let grant):
                 entry.controller.receiveAcceptedGrant(grant)
-                // The first-run import follows the committed consent with no further dialog; the engine
-                // runs it once and skips every tool that was not allowed.
-                if grant.committedAt != nil, !grant.supersededByLaterConsent, grant.receipt.code == .ok, let model = entry.historyImport {
+                // The first-run import follows the committed first-run consent with no further dialog; the
+                // engine runs it once and skips every tool that was not allowed. Other receipts never start it.
+                if entry.controller.takeCommittedFirstRunGrant(grant), let model = entry.historyImport {
                     Task { @MainActor in await model.runAfterFirstRunConsent() }
                 }
             case .historyImport(let reply): entry.acceptedHistoryImport(reply.envelope.data)
@@ -57,6 +59,8 @@ import ModelPlanWire
     func apply(_ snapshot: EngineStoreSnapshot) {
         // An unrelated snapshot fanout is not a new consent readback.
         entry.controller.refreshAvailability()
+        // A Privacy look before readiness asks for the import status once the engine is ready.
+        entry.historyImport?.readinessChanged()
     }
 }
 

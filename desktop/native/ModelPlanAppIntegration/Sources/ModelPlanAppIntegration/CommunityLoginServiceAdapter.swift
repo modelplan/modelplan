@@ -13,6 +13,8 @@ public enum CommunityLoginHandling: Equatable, Sendable {
     private var handledRevision: UInt64?
     public init(item: PulseLoginItem) { self.item = item }
     public var observedState: LoginServiceState { Self.map(item.state) }
+    /// G3-69: `.unavailable` because SMAppService reported `.notFound` (not in Applications).
+    public var observedNotInApplications: Bool { item.state == .unavailable && item.isNotFound }
     public func handle(_ request: SettingsHostRequest, current: SettingsSnapshot,
                        mayChangeLoginItem: Bool = false) -> CommunityLoginHandling {
         let enabled: Bool, origin: PulseLoginOrigin

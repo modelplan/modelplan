@@ -13,6 +13,8 @@ import ModelPlanWire
     /// The product entry attaches the local-history import here; Settings shows it when present.
     public var historyImport: HistoryImportModel?
     private weak var firstRunView:SettingsScopeConsentView?
+    /// G3-45: vendor marks for the first-run tool list; the app supplies its checked marks.
+    public var markImage: (@MainActor (String) -> NSImage?)? { didSet { view.setMarkImage(markImage) } }
     public enum PresentationError:Error { case mutationInProgress }
 
     public init(client: any EngineClient, ready: @escaping @MainActor () -> Bool,
@@ -22,14 +24,14 @@ import ModelPlanWire
         let controller = ScopeConsentController(commands: commands)
         self.controller = controller
         self.buildSigning=buildSigning
-        self.view = SettingsScopeConsentView(controller: controller, language: language,buildSigning:buildSigning)
+        self.view = SettingsScopeConsentView(controller: controller, language: language,buildSigning:buildSigning,compactTools:true)
     }
     /// A separate view, the same accepted facts/controller/client. Never steal the
     /// Settings view's parent, create another consent service, or pre-check scopes.
     public func makeFirstRunView(language:SettingsLanguage) throws -> SettingsScopeConsentView {
         if let firstRunView { firstRunView.apply(language:language);return firstRunView }
         guard controller.beginFirstRunDraft() else { throw PresentationError.mutationInProgress }
-        let view=SettingsScopeConsentView(controller:controller,language:language,buildSigning:buildSigning,firstRun:true)
+        let view=SettingsScopeConsentView(controller:controller,language:language,buildSigning:buildSigning,firstRun:true,markImage:markImage)
         firstRunView=view;return view
     }
     /// Close only that presentation. Current accepted permissions remain available
@@ -50,6 +52,6 @@ import ModelPlanWire
         controller.receiveAcceptedPluginResult(requestID: requestID, result: result)
     }
     /// Clear on the owner's delivery turn before it acknowledges invalidation.
-    public func clearPrivateViews() { controller.clearAcceptedPrivateState() }
+    public func clearPrivateViews() { controller.clearAcceptedPrivateState(); historyImport?.invalidate() }
     public func suspend() { endFirstRunPresentation();view.suspend() }
 }
