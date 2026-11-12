@@ -7,7 +7,8 @@ import ModelPlanEngineStore
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
-private actor S4RowsClient: EngineClient {
+/// Test-only synthetic rows client, shared with D166ResetCreditTests (internal to the test target).
+actor S4RowsClient: EngineClient {
     nonisolated func isCurrent(_ context:EngineDeliveryContext) -> Bool { true }
     let store:EngineStore, rows:WireRowsSnapshot
     let context=EngineDeliveryContext(sessionID:"s4-fixture",floor:.init(storeEpoch:"s4-fixture",generation:1),revision:1)
