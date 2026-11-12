@@ -25,7 +25,6 @@
 .dk-fad .fd-indicator:not(.fast)::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 4px currentColor}
 .dk-fad .fd-indicator.on{color:var(--lcd-ink)}
 .dk-fad .fd-indicator.try{color:var(--trial)}
-.dk-fad .fd-indicator svg{width:6px;height:9px;fill:currentColor;filter:drop-shadow(0 0 2px currentColor)}
 /* owner 11-12: fast mode = a symbol-only bolt beside the lamp (white real, solid blue trial on, blue outline trial off) */
 .dk-fad .fd-fast{position:absolute;left:calc(50% + 6px);top:50%;width:6px;height:9px;margin-top:-4.5px;overflow:visible;pointer-events:none}
 .dk-fad .fd-fast.on path{fill:var(--lcd-ink)}

@@ -45,3 +45,17 @@ test('configShare: shares of the top effort, for a standard or a fast configurat
  assert.equal(configShare(terra,{speed:1,cost:2.5,taskTimeUnknown:true},'High',true).time,null);
  assert.equal(configShare(terra,null,'Nope'),null);
 });
+
+// macrevc-885-1: the reference is the model's published top effort (the top of the ladder), whatever its ability; each
+// metric is measured against its own reference value and stays unknown when that value is missing.
+test('CKP-MFD-33: the top effort is the top of the published ladder; a missing reference metric gives that metric only as unknown',()=>{
+ const m={id:'synthetic',rec:'High',e:[['Low',40,1,1],['High',60,2,2],['Max',null,4,4]]};
+ assert.deepEqual(configShare(m,null,'High'),{abl:null,cost:.5,time:.5}); // Max has no ability: High's ability is not "100%"
+ assert.deepEqual(configShare(m,null,'Max'),{abl:null,cost:1,time:1});
+ const odd={id:'odd',rec:'High',e:[['Low',40,1,1],['High',60,2,2],['Max',50,4,4]]}; // Max is less able than High
+ assert.deepEqual(configShare(odd,null,'Max'),{abl:1,cost:1,time:1});
+ assert.equal(configShare(odd,null,'High').abl,1.2);
+ assert.equal(configShare(odd,null,'High').cost,.5);
+ const noCost={id:'nc',rec:'High',e:[['Low',40,1,1],['High',60,2,2],['Max',70,null,4]]};
+ assert.deepEqual(configShare(noCost,null,'High'),{abl:60/70,cost:null,time:.5});
+});

@@ -12,14 +12,15 @@ import {build13Profile} from '../build13-fixture.mjs';
 import {firstPixel} from '../png-pixel.mjs';
 
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
-async function open(page,{locale='en',tier='tall',height=890,theme='night'}={}){
+async function open(page,{locale='en',tier='tall',height=890,theme='night',edit=null}={}){
  await page.setViewportSize({width:636,height});
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,locale,theme},shell:{...shell,tier},redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
- expect(await receive(send('display',{data:build13Profile()}))).toBe(true);
+ const data=build13Profile();edit?.(data);
+ expect(await receive(send('display',{data}))).toBe(true);
 }
 // GPT-6.1 Sol in the build-13 profile: running at High, ★ Med, top effort Max (ability 47.5, cost 1.056, time 221).
 const SOL={High:{abl:42.8/47.5,cost:.375/1.056},XHigh:{abl:46/47.5,cost:.63/1.056},Med:{abl:39.8/47.5,cost:.248/1.056}};
@@ -225,4 +226,16 @@ test('CKP-MFD-33 chart link: a bar row sets its chart line apart; a bar segment 
  // every effort is a segment, together covering the track from 0 to the top effort
  const segs=(await bars(page)).abl.segs;expect(segs.map(s=>s.l)).toEqual(['Low','Med','High','XHigh','Max']);
  near(segs[0].x0,0,.01);near(segs.at(-1).x1,1,.02);
+});
+
+// macrevc-885-1: the reference is the published top effort even when its ability is missing: cost is still a share of that
+// effort's cost; ability stays unknown (no bar, no number) instead of reading 100 % against a lower effort.
+test('CKP-MFD-33 top effort without a published ability: cost keeps the top effort as its reference, ability is unknown',async({page})=>{
+ const dropMaxAbility=data=>{for(const list of [data.details.publishedModels,data.details.publication.models])for(const m of list)if(m.id==='gpt-6.1-sol')for(const e of m.efforts)if(e.effort==='max')e.ability=null;};
+ await open(page,{edit:dropMaxAbility});
+ const screen=await openSol(page);
+ const b=await bars(page);
+ near(b.cost.fill.w,SOL.High.cost);expect(b.cost.numbers.map(n=>n.text)).toEqual([pct(SOL.High.cost)]);
+ expect(b.abl.fill).toBeNull();expect(b.abl.numbers).toEqual([]);
+ await expect(screen.locator('svg.cmp-chart')).toBeVisible();
 });

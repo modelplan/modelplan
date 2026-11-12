@@ -36,9 +36,10 @@ const colOf = (m, tier, label, fast) => { const r = rowOf(m, label), f = !!(fast
   time: r[3] == null || (f && tier.taskTimeUnknown) ? null : r[3] / (f ? tier.speed : 1)}; };
 
 // v8 (CKP-MFD-33; D165, D177, D190, D201, demo v8): every number is a share of the model's own top effort, the
-// published effort with the highest ability (= 100 %, "Max"). Cost and time are shares of that effort's cost and
+// published top effort of the ladder (= 100 %, "Max"), whatever its ability. Cost and time are shares of that effort's cost and
 // time; a fast configuration multiplies its own cost and time, so a fast trial may go past 100 %.
-const topRow = m => m.e.filter(r => numeric(r[1])).reduce((a, b) => !a || b[1] > a[1] ? b : a, null);
+const ORDER = ['Low', 'Med', 'High', 'XHigh', 'Max'];
+const topRow = m => m.e.reduce((a, b) => !a || ORDER.indexOf(b[0]) >= ORDER.indexOf(a[0]) ? b : a, null);
 export function shareOfTop(m, c) {
   const top = topRow(m);
   return top ? {abl: ratio(c.r[1], top[1]), cost: ratio(c.cost, top[2]), time: ratio(c.time, top[3])} : {abl: null, cost: null, time: null};
@@ -219,7 +220,7 @@ export function comparison(d, ui, args) {
   const howFits = textW(title) * 1.2 + textW(words.compare + ' ↗') + textW(words.how + ' ↗') + 36 <= size.w;
   const links = `<span class="cmp-header-links">${secondaryLink(modelUrl(m.id), words.compare)}${howFits ? secondaryLink(methodologyUrl('cost-basis'), words.how) : ''}</span>`;
   const {L, E} = edges(ui, size.w), levels = m.e.map(r => r[0]);
-  const ladder = `<div class="cmp-lad" style="--cl:${L}px;--cr:${size.w - E}px">${levels.map(l => `<button class="lad ${l === base && cur ? 'cur' : ''} ${l === trial && s.trying ? 'try' : ''} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${l}" data-hover="${l}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${l}</button>`).join('')}</div>`;
+  const ladder = `<div class="cmp-lad" style="--cl:${L}px;--cr:${size.w - E}px">${levels.map(l => `<button class="lad ${l === base && cur ? 'cur' : ''} ${l === trial && s.trying ? 'try' : ''} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${esc(l)}" data-hover="${esc(l)}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${l}</button>`).join('')}</div>`;
   // polish A: on a short screen the chart is left out instead of being clipped (the bars and the keys still compare).
   const chart = size.h >= 34 && size.w >= 160 ? lineSvg(m, s, cols, size, ui) : '';
   return `<div class="cmp-h"><b class="mfd-title">${esc(title)}</b>${note ? `<span class="cmp-note">${note}</span>` : ''}${links}</div>

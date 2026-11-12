@@ -142,7 +142,7 @@ test('CKP-FAD-11 fast key: a published speed tier lights the LCD lamp and the Of
  await expect(page.locator('.mfd-vk span.vk-fast')).toHaveClass(/off/);
  await back();
  // Unstated ratio (Terra): the key shows; switching it on still prices the trial (the cost share grows by the
- // subscription ratio). Its unknown time is covered by the unit test of the share helper (speed-tiers.test.mjs).
+ // subscription ratio). Its unknown time is covered by the unit test of the share helper (compare-unknown-current.test.mjs (the configShare taskTimeUnknown assertion)).
  await trial('Terra');
  await expect(key).toHaveCount(1);await expect(key).toContainText(/off/i);
  const tBefore=(await cells(page))[1].find(([r])=>r==='trial')[1];
@@ -183,7 +183,7 @@ const barsRead=page=>page.locator('.mfd-page svg.cmp-bars').evaluate(svg=>{const
  out[k]={numbers:[...g.querySelectorAll('.pc-num')].map(e=>({role:e.dataset.role,text:e.textContent,equal:e.dataset.equal==='true'})),lane:lane?Number(lane.getAttribute('width'))/W:null,over:g.querySelector('.pc-over')?g.querySelector('.pc-over').classList.contains('trial'):null};}return out;});
 test('CKP-MFD-33 fast only: equal ability is one number with a blue "=", the cost shows both; nothing for fast on the big screen',async({page})=>{
  await open(page,'en',true);
- await sol(page).locator('.fd-strip').click();
+ await page.locator('.fd-ch:not(.empty)').filter({hasText:'Terra'}).first().locator('.fd-strip').click(); // Terra: ladder Low..XHigh, XHigh is the top effort
  const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
  await page.locator('.mfd-vk button.vk-fast').click();
  const b=await barsRead(page);
@@ -197,11 +197,11 @@ test('CKP-MFD-33 fast only: equal ability is one number with a blue "=", the cos
 });
 test('CKP-MFD-33 fast overflow: the bar pins to the end, › marks it, the number is exact',async({page})=>{
  await open(page,'en',true);
- await sol(page).locator('.fd-strip').click();
+ await page.locator('.fd-ch:not(.empty)').filter({hasText:'Terra'}).first().locator('.fd-strip').click(); // Terra: ladder Low..XHigh, XHigh is the top effort
  await page.locator('.mfd-vk button.vk-fast').click();
  await page.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
  const b=await barsRead(page);
- // The top effort at fast = the cost of the top effort x 2.5 = 250 %
+ // Terra's top effort (XHigh) at fast = its own cost x 2.5 = 250 % of the top effort's Standard cost
  expect(b.cost.numbers.map(n=>n.role)).toEqual(['current','trial']);expect(b.cost.numbers[1].text).toBe('250%');
  expect(b.cost.over).toBe(true);expect(b.cost.lane).toBeGreaterThan(.99);
  expect(b.abl.over).toBeNull();
@@ -335,13 +335,13 @@ test('CKP-MFD-33 fast chart: each pinned point has its own ▲ and exact value, 
  const w=await chart.evaluate(svg=>Number(svg.getAttribute('width')));for(const l of labels){expect(l.l).toBeGreaterThanOrEqual(0);expect(l.r).toBeLessThanOrEqual(w+.5);}
 });
 
-// Owner 11-12: a small label tops each highlighted column: Current / Trial, one "Current · Trial" label when they are the same effort.
+// Owner 11-12: a small label tops each highlighted column: Current / Try, one "Current · Try" label when they are the same effort.
 const colLabels=page=>page.locator('.mfd-page svg.cmp-chart').evaluate(svg=>[...svg.querySelectorAll('.pc-col-l')].map(e=>({role:e.dataset.role,text:e.textContent,effort:e.dataset.effort})));
 const collisions=page=>page.locator('.mfd-page svg.cmp-chart').evaluate(svg=>{const tx=[...svg.querySelectorAll('.pc-col-l,.pc-up-l,.pc-tick-l,.pc-legend-l')].map(e=>({t:e.textContent,b:e.getBBox()})),out=[];
  for(let i=0;i<tx.length;i++)for(let j=i+1;j<tx.length;j++){const a=tx[i].b,b=tx[j].b;if(a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height)out.push([tx[i].t,tx[j].t,[a.x,a.y,a.width,a.height].map(v=>v.toFixed(1)).join(),[b.x,b.y,b.width,b.height].map(v=>v.toFixed(1)).join()]);}
  const w=Number(svg.getAttribute('width'));for(const q of tx)if(q.b.x<-.5||q.b.x+q.b.width>w+.5)out.push([q.t,'edge']);return out;});
-for(const [locale,words] of [['en',{c:'Current',t:'Trial',b:'Current · Trial'}],['zh-CN',{c:'当前',t:'试',b:'当前·试'}]])
-test(`CKP-MFD-33 column labels (${locale}): Current on the current column, Trial on the trial column, one label when equal`,async({page})=>{
+for(const [locale,words] of [['en',{c:'Current',t:'Try',b:'Current · Try'}],['zh-CN',{c:'当前',t:'试',b:'当前·试'}]])
+test(`CKP-MFD-33 column labels (${locale}): Current on the current column, Try on the trial column, one label when equal`,async({page})=>{
  await open(page,locale,true);
  await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
  expect(await colLabels(page)).toEqual([{role:'current',text:words.c,effort:'High'}]);
@@ -366,7 +366,7 @@ test(`CKP-MFD-33 column labels do not collide with the gridline or ▲ value lab
 });
 
 // Owner 11-12: a labelled column that is also the recommended effort carries a gold " ★"; a recommended column that is neither current nor trial has no label and no background.
-for(const [locale,w] of [['en',{c:'Current',t:'Trial',b:'Current · Trial'}],['zh-CN',{c:'当前',t:'试',b:'当前·试'}]])
+for(const [locale,w] of [['en',{c:'Current',t:'Try',b:'Current · Try'}],['zh-CN',{c:'当前',t:'试',b:'当前·试'}]])
 for(const tier of ['tall','compact'])
 test(`CKP-MFD-33 column label ★ (${locale}, ${tier}): appended when the labelled column is the recommended effort`,async({page})=>{
  const sol=()=>page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
