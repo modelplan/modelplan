@@ -36,7 +36,7 @@ import ModelPlanSettings
         addTeardownBlock { try? FileManager.default.removeItem(at:dir) }
         let facts=SourceFacts();facts.publishedAt=now.addingTimeInterval(-1800)
         let provider=CommunityInstrumentSurfaceProvider { link in facts.opened.append(link);facts.onOpen?() }
-        let app=SettingsApplicationCoordinator(store:try SettingsStore(url:dir.appendingPathComponent("prefs.json"))) { provider.apply($0) }
+        let app=SettingsApplicationCoordinator(store:try chineseSettingsStore(url:dir.appendingPathComponent("prefs.json"))) { provider.apply($0) }
         let scheduler=SourceScheduler(),help=await InstrumentHelpComposition.restored(application:app,scheduler:scheduler,uptime:{0})
         provider.bindHelp(help)
         let surface=try XCTUnwrap(provider.makeOverview() as? CommunityInstrumentView)

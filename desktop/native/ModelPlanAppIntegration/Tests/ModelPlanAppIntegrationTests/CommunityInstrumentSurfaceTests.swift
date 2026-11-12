@@ -75,7 +75,7 @@ import ModelPlanSettings
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("community-instruments-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("prefs.json")), apply: apply)
+        return SettingsApplicationCoordinator(store: try chineseSettingsStore(url: directory.appendingPathComponent("prefs.json")), apply: apply)
     }
     func testActualProviderUsesExistingNativeViewAndPausesRasterWhileHidden() throws {
         let provider = CommunityInstrumentSurfaceProvider()
