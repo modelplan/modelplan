@@ -35,7 +35,7 @@ public enum ReaderKeyRegion: String, CaseIterable, Sendable {
 
 /// The engine's fixed outcome words (`readerkey/set|test|remove`).
 public enum ReaderKeyOutcome: Equatable, Sendable {
-    case saved, removed, ok, keyRefused, planLapsed, noKey, unreachable, failed, notAccepted
+    case saved, removed, ok, keyRefused, planLapsed, noKey, unreachable, failed, notAccepted, fileUnsafe
     public init(wire: String) {
         switch wire {
         case "saved": self = .saved
@@ -46,6 +46,7 @@ public enum ReaderKeyOutcome: Equatable, Sendable {
         case "no_key": self = .noKey
         case "unreachable": self = .unreachable
         case "not_accepted": self = .notAccepted
+        case "file_unsafe": self = .fileUnsafe
         default: self = .failed
         }
     }
@@ -60,6 +61,8 @@ public enum ReaderKeyOutcome: Equatable, Sendable {
         case .noKey: return .init("Enter a key first.", "请先输入密钥。")
         case .unreachable: return .init("Could not reach the provider. Check the network and try again.", "无法连接服务商，请检查网络后重试。")
         case .notAccepted: return .init("This text cannot be a key.", "这段文字不可能是密钥。")
+        case .fileUnsafe: return .init("The key file can't be read safely, so nothing was changed. Fix or remove reader-keys-v1.json in ModelPlan's support folder, then try again.",
+                                       "无法安全读取密钥文件，所以没有做任何更改。请修复或删除 ModelPlan 支持文件夹里的 reader-keys-v1.json 后重试。")
         case .failed: return .init("The check could not be completed.", "无法完成检查。")
         }
     }

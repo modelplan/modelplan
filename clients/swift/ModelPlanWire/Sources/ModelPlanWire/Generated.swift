@@ -5063,6 +5063,7 @@ public enum WireReaderKeyOutcome: Codable, Sendable, Equatable {
     case `unreachable`
     case `failed`
     case `notAccepted`
+    case `fileUnsafe`
     case unknown(String)
     public init(rawValue: String) {
         switch rawValue {
@@ -5075,6 +5076,7 @@ public enum WireReaderKeyOutcome: Codable, Sendable, Equatable {
         case "unreachable": self = .`unreachable`
         case "failed": self = .`failed`
         case "not_accepted": self = .`notAccepted`
+        case "file_unsafe": self = .`fileUnsafe`
         default: self = .unknown(rawValue)
         }
     }
@@ -5089,6 +5091,7 @@ public enum WireReaderKeyOutcome: Codable, Sendable, Equatable {
         case .`unreachable`: return "unreachable"
         case .`failed`: return "failed"
         case .`notAccepted`: return "not_accepted"
+        case .`fileUnsafe`: return "file_unsafe"
         case .unknown(let value): return value
         }
     }

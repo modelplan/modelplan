@@ -3651,7 +3651,8 @@
             "no_key",
             "unreachable",
             "failed",
-            "not_accepted"
+            "not_accepted",
+            "file_unsafe"
           ],
           "type": "string"
         },

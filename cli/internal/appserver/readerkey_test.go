@@ -105,3 +105,42 @@ func TestReaderKeyStatusReportsPresenceWithoutAKey(t *testing.T) {
 		t.Fatalf("status = %+v", r)
 	}
 }
+
+func TestReaderKeySetAndRemoveRefuseAnUnsafeKeyFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := quota.SetManualKey(dir, "opencodego", "fake-other-provider-key-1", ""); err != nil {
+		t.Fatal(err)
+	}
+	h := ReaderKeyHandlers(ReaderKeyConfig{Dir: dir})
+	path := quota.ManualKeyPath(dir)
+	for _, mode := range []string{"loose", "garbage"} {
+		if mode == "loose" {
+			if err := os.Chmod(path, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			if err := os.Chmod(path, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("not json"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		before, _ := os.ReadFile(path)
+		set, setJSON, err := callReaderKey(t, h, "readerkey/set", `{"provider":"zai","region":"global","key":"`+readerKeyFake+`"}`)
+		if err != nil || set.Outcome != wire.ReaderKeyFileUnsafe {
+			t.Fatalf("%s set = %v %v", mode, set.Outcome, err)
+		}
+		rem, _, err := callReaderKey(t, h, "readerkey/remove", `{"provider":"opencodego","region":"none","key":""}`)
+		if err != nil || rem.Outcome != wire.ReaderKeyFileUnsafe {
+			t.Fatalf("%s remove = %v %v", mode, rem.Outcome, err)
+		}
+		after, _ := os.ReadFile(path)
+		if !bytes.Equal(before, after) {
+			t.Fatalf("%s: the unsafe file was rewritten", mode)
+		}
+		if strings.Contains(setJSON, readerKeyFake) {
+			t.Fatal("key echoed")
+		}
+	}
+}

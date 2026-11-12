@@ -250,6 +250,7 @@ const (
 	ReaderKeyUnreachable ReaderKeyOutcome = "unreachable"
 	ReaderKeyFailed      ReaderKeyOutcome = "failed"
 	ReaderKeyNotAccepted ReaderKeyOutcome = "not_accepted"
+	ReaderKeyFileUnsafe  ReaderKeyOutcome = "file_unsafe"
 )
 
 // HistoryImportPhase is the importer's state as the app shows it.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -125,12 +126,22 @@ func TestManualKeyFileWithLooseModeIsNotTrusted(t *testing.T) {
 	if ManualKeyPresent(dir, "zai") {
 		t.Fatal("a group- or world-readable key file must not be used")
 	}
-	// A new save replaces it and restores 0600.
-	if err := SetManualKey(dir, "zai", fakeZaiKey, "global"); err != nil {
+	// A save or removal never replaces it: it may hold the other provider's key.
+	if err := SetManualKey(dir, "zai", fakeZaiKey, "global"); !errors.Is(err, ErrManualKeyFileUnsafe) {
+		t.Fatalf("set over a loose file = %v", err)
+	}
+	if err := RemoveManualKey(dir, "zai"); !errors.Is(err, ErrManualKeyFileUnsafe) {
+		t.Fatalf("remove over a loose file = %v", err)
+	}
+	if fi, _ := os.Stat(ManualKeyPath(dir)); fi.Mode().Perm() != 0o644 {
+		t.Fatal("the unsafe file must be left untouched")
+	}
+	// The user fixes the mode; then writes work again.
+	if err := os.Chmod(ManualKeyPath(dir), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if fi, _ := os.Stat(ManualKeyPath(dir)); fi.Mode().Perm() != 0o600 || !ManualKeyPresent(dir, "zai") {
-		t.Fatal("not restored")
+	if err := SetManualKey(dir, "zai", fakeZaiKey, "global"); err != nil || !ManualKeyPresent(dir, "zai") {
+		t.Fatal("not usable after the mode is fixed")
 	}
 }
 

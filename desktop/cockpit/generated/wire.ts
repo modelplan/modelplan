@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: d807e548eaea3cb175cf79b070735bf586dffc41b46e007c96a5e469bb626a33
+// Schema SHA-256: a85b2e8d13cbc397098e90dc23629188ed82ede9c0ca41e4ec61acb94d1f6e4c
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {

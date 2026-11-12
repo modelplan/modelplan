@@ -161,8 +161,9 @@ private let fakeKey = "fake-test-key-0001"
     func testWireOutcomeWordsMap() {
         XCTAssertEqual(ReaderKeyOutcome(wire: "key_refused"), .keyRefused)
         XCTAssertEqual(ReaderKeyOutcome(wire: "plan_lapsed"), .planLapsed)
+        XCTAssertEqual(ReaderKeyOutcome(wire: "file_unsafe"), .fileUnsafe)
         XCTAssertEqual(ReaderKeyOutcome(wire: "anything else"), .failed)
-        for outcome in [ReaderKeyOutcome.saved, .removed, .ok, .keyRefused, .planLapsed, .noKey, .unreachable, .failed, .notAccepted] {
+        for outcome in [ReaderKeyOutcome.saved, .removed, .ok, .keyRefused, .planLapsed, .noKey, .unreachable, .failed, .notAccepted, .fileUnsafe] {
             XCTAssertFalse(outcome.message.english.isEmpty); XCTAssertFalse(outcome.message.chinese.isEmpty)
             XCTAssertFalse(outcome.message.english.contains(fakeKey))
         }
