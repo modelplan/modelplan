@@ -96,15 +96,23 @@ test('CKP-FAD-18 the comparison carries one quiet trial note, only while a trial
  }
 });
 
-test('CKP-FAD-18 the trial note and the comparison both stay whole in the compact and the tall shell, in both languages',async({page})=>{
+test('CKP-FAD-18 tall keeps the full note; compact keeps the chart and collapses the note to an info mark with the full text',async({page})=>{
  for(const tier of ['compact','tall'])for(const [locale,text] of [['en','Trial only — your tool settings stay unchanged'],['zh-CN','试算，不会改工具设置']]){
   await open(page,locale,false,null,tier);
   await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
-  const note=page.locator('.mfd-page.pg-compare .cmp-trial-note');
-  await expect(note).toHaveCount(1);await expect(note).toHaveText(text);
-  // Visible and unclipped: the note and the comparison table sit inside the LCD page.
-  const fits=await page.evaluate(()=>{const p=document.querySelector('.mfd-page').getBoundingClientRect(),inside=sel=>{const r=document.querySelector(sel).getBoundingClientRect();return r.top>=p.top-.5&&r.bottom<=p.bottom+.5&&r.left>=p.left-.5&&r.right<=p.right+.5;};return {note:inside('.cmp-trial-note'),table:inside('table.cmp')};});
-  expect(fits,tier+' '+locale).toEqual({note:true,table:true});
+  const note=page.locator('.mfd-page.pg-compare .cmp-trial-note'),mark=page.locator('.mfd-page.pg-compare .cmp-trial-i');
+  await expect(note).toHaveText(text);await expect(mark).toHaveAttribute('aria-label',text);
+  expect(await page.locator('.mfd-page').evaluate(e=>e.scrollWidth<=e.clientWidth+.5),tier+' '+locale).toBe(true);
+  const inside=await page.evaluate(()=>{const p=document.querySelector('.mfd-page').getBoundingClientRect(),ok=sel=>{const r=document.querySelector(sel).getBoundingClientRect();return r.top>=p.top-.5&&r.bottom<=p.bottom+.5&&r.left>=p.left-.5&&r.right<=p.right+.5;};return {table:ok('table.cmp'),mark:ok('.cmp-trial-i')||getComputedStyle(document.querySelector('.cmp-trial-i')).display==='none'};});
+  expect(inside,tier+' '+locale).toEqual({table:true,mark:true});
+  if(tier==='tall'){await expect(note).toBeVisible();await expect(mark).toBeHidden();}
+  else{
+   await expect(note).toBeHidden();await expect(mark).toBeVisible();
+   // The chart survives, with the trial marker; the mark is keyboard-focusable and shows the full text as a tooltip.
+   await expect(page.locator('.mfd-page.pg-compare svg.cmp-chart .cfg-trial')).not.toHaveCount(0);
+   await mark.focus();await expect(mark).toBeFocused();
+   expect(await mark.evaluate(e=>getComputedStyle(e,'::after').content)).toBe('"'+text+'"');
+  }
  }
 });
 

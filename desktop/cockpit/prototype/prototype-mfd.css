@@ -270,3 +270,9 @@ dl.ss{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 6px;margin:2
 
 
 .mfd-ok.mfd-vk{grid-template-columns:1fr 1fr}
+/* CKP-FAD-18, owner 11-12 (A): the compact shell keeps the chart; the trial note collapses to an info mark in the ladder row. */
+.cmp-trial-i{display:none}
+html[data-profile="compact"] .cmp-trial-note{display:none}
+html[data-profile="compact"] .cmp-trial-i{display:block;position:absolute;right:var(--cr,0px);top:0;width:14px;height:16px;margin:0;padding:0;border:0;background:none;color:var(--lcd-muted);font:11px/16px var(--f-lcd);text-align:center;cursor:default}
+html[data-profile="compact"] .cmp-lad{position:relative}
+html[data-profile="compact"] .cmp-trial-i:hover::after,html[data-profile="compact"] .cmp-trial-i:focus-visible::after{content:attr(aria-label);position:absolute;right:0;bottom:100%;margin-bottom:2px;padding:2px 5px;white-space:nowrap;font:9px/10px var(--f-lcd);color:var(--lcd-ink);background:var(--lcd-bg,#000);border:1px solid var(--lcd-rule);border-radius:3px;z-index:3}
