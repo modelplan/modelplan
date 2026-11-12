@@ -128,7 +128,9 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 		if err != nil {
 			return false
 		}
-		if at == "" || (c.Anchor != "" && at != c.Anchor) {
+		// A cursor saved without an anchor (by an earlier build) cannot be matched to this
+		// database: migrate it once by reading from the first row, under the same deduplication.
+		if at == "" || c.Anchor == "" || at != c.Anchor {
 			c.RowID, c.Pending = 0, nil
 		}
 	}
