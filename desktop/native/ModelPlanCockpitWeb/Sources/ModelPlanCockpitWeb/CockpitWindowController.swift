@@ -975,7 +975,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     return (fit, replayed ?? fit.frame)
   }
   private func applyLayout(animated: Bool = false) {
-    guard let window, let (fit, frame) = placement() else { return }
+    // D88: a closing cockpit keeps its close animation. A relayout then (a screen-parameter change, a resize from
+    // Settings) set the frame back to the layout frame and cut the shrink into the icon; a re-open cancels the close
+    // first and lays out again.
+    guard closeTask == nil, let window, let (fit, frame) = placement() else { return }
     layout = fit
     appearance = .init(theme: CockpitDayPolicy.resolve(appearance.theme), locale: appearance.locale, profile: fit.profile,
       reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size)
