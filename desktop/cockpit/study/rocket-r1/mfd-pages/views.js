@@ -28,7 +28,9 @@ export function cmpState(d, ui, args) {
   const cur = rowOf(m, reported) ? reported : null, base = cur || m.rec;
   const tier = d.speedTiers[`${tool}|${m.id}`] || d.speedTiers[`${tool}|${m.pool}`] || null, curFast = !!tier && !!(args.currentFast ?? now?.fast ?? false);
   const trialFast = !!tier && !!(args.fast ?? curFast), trial = args.trial && rowOf(m, args.trial) ? args.trial : base;
-  return {m, cur, base, tier, curFast, trialFast, trial};
+  // G3-87: a trial only when the tried configuration differs from the real one (current, or ★ when unreported).
+  const trying = trial !== base || trialFast !== curFast;
+  return {m, cur, base, tier, curFast, trialFast, trial, trying};
 }
 const numeric = v => typeof v === 'number' && Number.isFinite(v);
 const ratio = (value, reference) => numeric(value) && numeric(reference) && reference > 0 ? value / reference : null;
@@ -52,8 +54,10 @@ export function comparison(d, ui, args) {
   const tc = !!cur && equal(T, C), tr = equal(T, R), cr = !!cur && equal(C, R);
   const columns = [
     {c: C, role: t('mfd.cCur'), id: 'current', cls: `now cmp-panel`, light: !cur ? 'dim' : cr ? 'gold' : 'white', known: !!cur, tag: cr ? '= ★' : ''},
-    {c: T, role: t('mfd.cTrial'), id: 'trial', cls: 'blue cmp-panel', light: tc ? 'off' : tr ? 'gold' : 'blue', known: true, unlit: tc,
-      tag: tc ? t('mfd.equalCurrent') : tr ? '= ★' : ''},
+    // G3-87: opened from the LCD with current unreported, nothing is tried yet: the trial slot stays dark (no "= ★").
+    s.trying || cur ? {c: T, role: t('mfd.cTrial'), id: 'trial', cls: 'blue cmp-panel', light: tc ? 'off' : tr ? 'gold' : 'blue', known: true, unlit: tc,
+      tag: tc ? t('mfd.equalCurrent') : tr ? '= ★' : ''}
+      : {c: T, role: t('mfd.cTrial'), id: 'trial', cls: 'blue cmp-panel', light: 'off', known: false, unlit: true, tag: ''},
     {c: R, role: t('mfd.cRec'), id: 'rec', cls: 'gold cmp-panel', light: 'gold', known: true, tag: ''},
   ];
   for (const col of columns) col.values = comparisonValues(col.c, cur ? C : null);
