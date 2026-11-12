@@ -32,7 +32,7 @@ function fixture(t) {
 }
 test('checks all 980 stills, both scales, runtime layers and default still through the official root checker', () => {
   assert.equal(verifyPortholePack(root).pngCount, 980);
-  assert.equal(verifyPortholePack(root).pngBytes, 3441609);
+  assert.equal(verifyPortholePack(root).pngBytes, 3425673);
   assert.equal(verifyVisualPack(root).pngCount, 1014);
 });
 test('rejects drifted PNG bytes and mismatched dimensions', t => {
@@ -88,7 +88,7 @@ test('rejects compressed PNG metadata even after all hash records are updated', 
 });
 test('requires the approved badge notice and complete model variants', t => {
   const f = fixture(t), notice = join(f.directory, 'BADGE-NOTICE.txt'), text = readFileSync(notice, 'utf8');
-  writeFileSync(notice, text.replace('no recognisable third-party logos', 'unspecified'));
+  writeFileSync(notice, text.replace('third-party trademarks of their owners', 'unspecified'));
   assert.throws(() => verifyPortholePack(f.dir), /badge notice/);
   writeFileSync(notice, text); f.manifest.sprites[0].modelId = f.manifest.sprites[1].modelId + '-extra'; f.save();
   assert.throws(() => verifyPortholePack(f.dir));

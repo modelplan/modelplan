@@ -9,6 +9,12 @@ body/flame layers at 1x and 2x, static backgrounds, and projected body/flame/hal
 layers. The PNG payload is below 4 MiB. The [reserved visuals licence](../../LICENSE.md)
 applies; the root MIT licence does not cover these images. See BADGE-NOTICE.txt.
 
+Night rockets (owner D207/D209, 2026-11-12): every night projection's body and flame-core layers
+were re-rendered from the website's fleet round-four 3D rockets, with their maker liveries and
+marks, through the enlarged field scene's own camera, so cameras, anchors and rectangles' origins
+are unchanged; the approved backgrounds and bloom halos stay. Day stills and the standalone
+sprites keep the earlier rockets (v1 is night only, D205). See BADGE-NOTICE.txt for the marks.
+
 manifest.json lists every PNG's hash, size and dimensions. SHA256SUMS provides the
 same PNG hashes for command-line verification. Sprite paths are relative to this
 directory. Standalone size, anchor and flameAnchor are in PNG pixels; logicalSize is in logical points.
