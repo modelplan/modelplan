@@ -114,6 +114,30 @@ actor SettingsJourneyClient: EngineClient {
         XCTAssertNil((again["settings"] as? [String: Any])?["menuDisplay"])
     }
 
+    /// macrevc-884-1 / -2: the first import of an old settings-v1.json goes through the same rule once. A marked (sparse)
+    /// legacy file keeps its explicit icon and its other values; an unmarked one loses only the auto-written icon.
+    /// The published file carries the marker so the rule does not run a second time on the next open.
+    func testSET_9_43LegacyImportKeepsAMarkedIconAndDropsAnUnmarkedOne() async throws {
+        for (marked, expected) in [(true, MenuDisplay.icon), (false, .tightest)] {
+            let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g393-import-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: profile) }
+            let location = try FoundationPreferenceLocation(applicationSupport: profile, product: .community)
+            let legacy = location.directory.appendingPathComponent("Native/settings-v1.json")
+            try FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
+            var envelope: [String: Any] = ["schemaVersion": 1, "preferences": ["menuDisplay": "icon", "theme": "night"]]
+            if marked { envelope["sparse"] = true }
+            try JSONSerialization.data(withJSONObject: envelope).write(to: legacy)
+            for _ in 0..<2 {
+                let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+                let preferences = await store.snapshot().preferences
+                XCTAssertEqual(preferences.menuDisplay, expected, "marked: \(marked)")
+                XCTAssertEqual(preferences.theme, .night, "other stored values survive the import")
+            }
+            let published = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: location.target)) as? [String: Any])
+            XCTAssertEqual(published["sparse"] as? Bool, true, "the imported file carries the marker")
+        }
+    }
+
     func testV17NormalEntryDefaultsToTightestAndRetainsExplicitMenuChoice() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("v17-settings-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
