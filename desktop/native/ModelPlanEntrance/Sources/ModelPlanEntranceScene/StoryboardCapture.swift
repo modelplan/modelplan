@@ -20,11 +20,12 @@ public enum StoryboardScenario {
                      apertureRect: .init(left: cockpitLeft - 8 + 17, top: cockpitTop, width: 601.5, height: 199))
     }
 
-    public static func plan(edge: String, keyframes: StoryboardKeyframes = .approved) -> EntrancePlan {
+    public static func plan(edge: String, keyframes: StoryboardKeyframes = .approved, theme: EntranceTheme = .night,
+                            geometry: RocketGeometry = .neutralStandIn) -> EntrancePlan {
         // Roll distances from the storyboard boards: right/bottom clamp to 0.35 s, left 0.673 s.
         let distance = edge == "left" ? 1077.1 : 494.2
-        return EntrancePlan(.init(dockIDs: ["claude", "codex", "zcode", "glm"], rollDistance: distance, liftOff: liftOff()),
-                            targetNoseY: keyframes.frame(edge: edge, shot: "shot3start")?.topY)
+        return EntrancePlan(.init(dockIDs: ["claude", "codex", "zcode", "glm"], rollDistance: distance, liftOff: liftOff(), theme: theme),
+                            geometry: geometry, targetNoseY: keyframes.frame(edge: edge, shot: "shot3start")?.topY)
     }
 
     /// Native stages rendered for the owner comparison, with their time inside the plan.
@@ -50,12 +51,12 @@ public enum StoryboardCapture {
     /// frame is the web cockpit (slice 6).
     public static let renderedShots = ["shot3start", "shot3mid", "shot3end"]
 
-    public static func run(edges: [String] = ["right", "bottom", "left"],
-                           keyframes: StoryboardKeyframes = .approved) async throws -> [StoryboardCaptureResult] {
+    public static func run(edges: [String] = ["right", "bottom", "left"], keyframes: StoryboardKeyframes = .approved,
+                           rocket: RocketModelSource = .communityDefault) async throws -> [StoryboardCaptureResult] {
         var results: [StoryboardCaptureResult] = []
         for edge in edges {
-            let plan = StoryboardScenario.plan(edge: edge, keyframes: keyframes)
-            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: true)
+            let plan = StoryboardScenario.plan(edge: edge, keyframes: keyframes, geometry: rocket.geometry)
+            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: true, rocket: rocket)
             for (shot, t) in StoryboardScenario.stages(plan) {
                 let frame = try await scene.render(at: t)
                 let measured = measure(frame.image, viewport: StoryboardScenario.viewport)
@@ -99,6 +100,21 @@ public enum StoryboardCapture {
         let rows = results.map { Row(edge: $0.edge, shot: $0.shot, native: $0.measurement, comparison: $0.comparison, passed: $0.comparison?.passed) }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(rows)
+    }
+}
+#endif
+
+#if canImport(RealityKit) && canImport(Metal)
+import ImageIO
+import UniformTypeIdentifiers
+
+/// Frame files for owner boards and CI artifacts.
+public enum EntranceFrameFile {
+    public static func writePNG(_ image: CGImage, to url: URL) throws {
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
+        else { throw CocoaError(.fileWriteUnknown) }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
     }
 }
 #endif

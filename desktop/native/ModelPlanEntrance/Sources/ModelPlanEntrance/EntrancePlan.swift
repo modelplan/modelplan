@@ -73,6 +73,8 @@ public struct EntrancePlan: Sendable {
     }
 
     func shot3(_ t: Double) -> LiftOffPose { storyboard?.pose(at: t) ?? rail.pose(at: t) }
+    /// The map stage camera: D132 dollies through the front window (storyboard camera); the prototype path holds.
+    func handover(_ t: Double) -> LiftOffPose { storyboard?.handoverPose(at: t) ?? rail.pose(at: 1) }
 
     public func facts(at t: Double) -> EntranceFrameFacts {
         let position = timeline.position(at: t)
@@ -82,11 +84,11 @@ public struct EntrancePlan: Sendable {
         case .countdown, .curl, .roll: pose = nil
         case .liftOff: pose = shot3(position.progress)
         case .map:
-            pose = shot3(1)
+            pose = handover(position.progress)
             rocketOpacity = 1 - position.progress
             landing = EntranceEasing.smootherstep((position.time - timeline.landingStart) / EntranceTimeline.landingDuration)
         case .shutter, .glide, .done:
-            pose = shot3(1); rocketOpacity = 0; landing = 1
+            pose = handover(1); rocketOpacity = 0; landing = 1
         }
         return EntranceFrameFacts(time: position.time, stage: position.stage, progress: position.progress,
                                   countdownDigit: timeline.countdownDigit(at: position.time), theme: scenario.theme,

@@ -263,7 +263,7 @@ public enum EntranceChecks {
             var small = frame.measurement; small.areaFraction *= 0.5
             try run.expect(!KeyframeComparison.compare(native: small, to: frame).passed, "half the area fails")
         }
-        run.group("STORYBOARD D111 camera: whole rocket upright at the opening, one body length of lift, one constant lens, window on the aperture") {
+        run.group("STORYBOARD D111/D132 camera: whole rocket upright at the opening, one body length of lift, one constant lens, front window, hand-over through it") {
             let input = LiftOffInput(viewport: .init(width: 1470, height: 956), handoffDiameter: 496, tailPoint: .init(1117, 900),
                                      apertureRect: .init(left: 816, top: 41, width: 601.5, height: 199))
             let rail = StoryboardRail(input: .init(liftOff: input, targetNoseY: 176))
@@ -286,8 +286,40 @@ public enum EntranceChecks {
             try run.near(rail.pose(at: 1).rise, 14.2, 1e-9, "lifts one body length")
             let endFacts = rail.facts(at: 1)
             try run.expect(abs(EntranceRect.bounds(endFacts.windowHull).centre.x - 1117) < 2, "window on the cockpit column")
-            print("D111 stand-in end IoU vs rect aperture: \(rail.endIoU), elevation \(rail.endElevationDegrees), opening angle \(rail.startAngleDegrees)")
-            try run.expect(rail.endIoU >= 0.55, "stand-in window broadly overlaps the aperture: \(rail.endIoU)")
+            print("D132 stand-in end: elevation \(rail.endElevationDegrees), IoU vs rect aperture \(rail.endIoU) (reported), hand-over coverage \(rail.handoverCoverage), opening angle \(rail.startAngleDegrees)")
+            // D132: a front window. The end camera sits below the window centre at the pass-5 window-shot angle,
+            // the whole window is on screen with the nose above it (not the top of the silhouette), and the
+            // hand-over dollies through the window until the glass covers the aperture.
+            let window = EntranceRect.bounds(endFacts.windowHull)
+            let g = rail.geometry.glassCentre, risenGlass = EntranceVector(g.x, g.y + 14.2, g.z), seen = rail.end.position - risenGlass
+            let elevation = atan2(-seen.y, (seen.x * seen.x + seen.z * seen.z).squareRoot()) * 180 / Double.pi
+            try run.near(elevation, StoryboardRail.frontElevation, 0.01, "end camera below the window centre at the front-window angle")
+            try run.near(rail.endElevationDegrees, StoryboardRail.frontElevation, 0, "end camera at the front-window angle")
+            try run.expect(window.top >= 26 + 12 && window.bottom <= 956, "whole window on screen: \(window.top)...\(window.bottom)")
+            try run.near(window.top, 240, 2, "window top on the aperture's bottom edge")
+            try run.near(window.width, StoryboardRail.frontWindowWidth * 601.5, 3, "window width")
+            try run.expect(endFacts.noseInFront && endFacts.noseY < window.top - 40, "nose above the window: nose \(endFacts.noseY), window top \(window.top)")
+            try run.expect(endFacts.noseY >= 26 + 12, "nose below the menu bar at the end pose: \(endFacts.noseY)")
+            let peak = rail.handoverPeakIoU()
+            print("D146 stand-in hand-over peak window/aperture IoU \(peak.iou) at t \(peak.t) (reported)")
+            try run.expect(peak.iou > 0.3, "the window overlaps the aperture during the hand-over: \(peak.iou)")
+            try run.near(endFacts.topY, endFacts.noseY, 0.5, "the nose, not the glass, is the top of the silhouette")
+            try run.expect(rail.handoverCoverage >= StoryboardRail.minHandoverCoverage, "glass covers the aperture at the hand-over: \(rail.handoverCoverage)")
+            var lastDistance = Double.infinity
+            for i in 0...20 {
+                let pose = rail.handoverPose(at: Double(i) / 20)
+                try run.near(pose.rise, 14.2, 1e-9, "rocket holds during the hand-over")
+                try run.near(pose.camera.fovDegrees, StoryboardRail.defaultFov, 0, "hand-over: no zoom")
+                try run.expect(pose.camera.shift == open.camera.shift, "hand-over: same lens shift")
+                try run.near(pose.camera.position.x, 0, 1e-9, "hand-over: no sideways slide")
+                let distance = (pose.camera.position - risenGlass).length
+                try run.expect(distance <= lastDistance + 1e-9, "hand-over moves toward the window"); lastDistance = distance
+            }
+            let mapPlan = EntrancePlan(.init(dockIDs: ["a", "b"], rollDistance: 800, liftOff: input))
+            let atMapEnd = try XCTUnwrapLike(mapPlan.facts(at: mapPlan.timeline.mapEnd - 1e-6).liftOff, "map pose")
+            try run.expect((atMapEnd.camera.position - mapPlan.storyboard!.handover.position).length < 1e-3, "map stage ends on the hand-over camera")
+            let atMapStart = try XCTUnwrapLike(mapPlan.facts(at: mapPlan.timeline.mapStart).liftOff, "map start pose")
+            try run.expect((atMapStart.camera.position - mapPlan.storyboard!.end.position).length < 1e-6, "map stage starts on the end pose")
             let plan = EntrancePlan(.init(dockIDs: ["a", "b"], rollDistance: 800, liftOff: input))
             try run.near(plan.facts(at: plan.timeline.liftOffStart + 0.3).flameStrength, 1, 0, "flames full through the rise")
             try run.near(plan.facts(at: plan.timeline.mapStart + 0.225).flameStrength, 0.5, 1e-9, "flames go out with the map")
@@ -304,6 +336,34 @@ public enum EntranceChecks {
             let night = URL(fileURLWithPath: "/n.usdz"), day = URL(fileURLWithPath: "/d.usdz")
             let official = RocketModelSource.official(night: night, day: day, geometry: g)
             try run.expect(official.modelURL(for: .night) == night && official.modelURL(for: .day) == day, "one file per finish")
+        }
+
+        run.group("CKP-ENT-13 hull decals: 7 lower-body items, upper door U1 + handle U2, nothing on the back half (D176, D179)") {
+            let all = HullDecals.placements
+            try run.expect(all.map(\.id) == ["6", "11", "12", "16", "17", "18", "19", "U1", "U2"], "placement ids: \(all.map(\.id))")
+            let lower = all.filter { $0.height < 5.2 }
+            try run.expect(lower.count == 7, "lower body has 7 decals: \(lower.count)")
+            try run.expect(all.allSatisfy { $0.height + $0.tall / 2 < 11.8 }, "no capsule tags (D179)")
+            try run.expect(Set(all.map(\.kind)) == Set(HullDecalKind.allCases), "every shipped kind is placed")
+            try run.expect(all.filter(\.mirrored).map(\.id) == ["12"], "only the L hatch 12 is mirrored")
+            for p in all {
+                let edge = abs(p.azimuth) + HullDecals.halfSpanDegrees(p)
+                try run.expect(edge < HullDecals.frontHalfLimit, "\(p.id) reaches \(edge) degrees: nothing on the back half")
+                try run.expect(p.width > 0 && p.tall > 0, "\(p.id) has a size")
+            }
+            try run.near(all.first { $0.id == "6" }?.azimuth ?? 0, 30, 0, "slot strip 6 at +30 degrees")
+            try run.near(all.first { $0.id == "19" }?.azimuth ?? 0, -40, 0, "stencil side panel 19 at -40 degrees")
+            // Lower-body decals do not overlap (U2 sits on U1 by design).
+            for (i, a) in lower.enumerated() {
+                for b in lower[(i + 1)...] {
+                    let apart = abs(a.azimuth - b.azimuth) >= HullDecals.halfSpanDegrees(a) + HullDecals.halfSpanDegrees(b)
+                        || abs(a.height - b.height) >= (a.tall + b.tall) / 2
+                    try run.expect(apart, "\(a.id) overlaps \(b.id)")
+                }
+            }
+            let names = RocketHullKit.fileNames
+            try run.expect(names.count == 3 + 3 * HullDecalKind.allCases.count && Set(names).count == names.count, "kit file names: \(names.count)")
+            try run.expect(RocketLookImages.none.hullKit == nil, "no kit without the official pack")
         }
         return run
     }

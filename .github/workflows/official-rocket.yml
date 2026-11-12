@@ -7,12 +7,14 @@ on:
     paths:
       - 'desktop/official-visuals/rocket-3d/**'
       - 'desktop/native/ModelPlanEntrance/Sources/ModelPlanEntrance/**'
+      - 'desktop/native/ModelPlanEntrance/Sources/ModelPlanEntranceScene/**'
       - '.github/workflows/official-rocket.yml'
   push:
     branches: [main]
     paths:
       - 'desktop/official-visuals/rocket-3d/**'
       - 'desktop/native/ModelPlanEntrance/Sources/ModelPlanEntrance/**'
+      - 'desktop/native/ModelPlanEntrance/Sources/ModelPlanEntranceScene/**'
       - '.github/workflows/official-rocket.yml'
 permissions:
   contents: read
@@ -27,5 +29,15 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - name: Pack tests (hashes, shared geometry, RealityKit load of both finishes)
+      - name: Pack tests (hashes, shared geometry, RealityKit load of both finishes, official entrance frames)
+        env:
+          MODELPLAN_ENTRANCE_FRAMES_DIR: ${{ runner.temp }}/entrance-frames
         run: swift test --package-path desktop/official-visuals/rocket-3d --jobs 2
+      - name: Upload the official entrance frames (owner boards)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-entrance-frames-${{ github.sha }}
+          path: ${{ runner.temp }}/entrance-frames/
+          if-no-files-found: ignore
+          retention-days: 14

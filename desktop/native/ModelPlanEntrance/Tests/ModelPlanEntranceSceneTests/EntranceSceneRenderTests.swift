@@ -104,12 +104,18 @@ final class EntranceSceneRenderTests: XCTestCase {
             let rendered = try XCTUnwrap(silhouette(frame.image), "glass not drawn at \(progress)")
             assertNear(rendered, clipped(pose.windowRect, pose.camera.viewport), tolerance: 2, "canopy at \(progress)")
         }
-        // D111 end pose: the window sits on the cockpit column (the constant lens shift) at 1.0-1.3x the aperture width.
+        // D132 end pose: the front window sits on the cockpit column (the constant lens shift), `frontWindowWidth`
+        // of the aperture wide, its top edge on the aperture's bottom edge (the nose shows above it).
         let end = try await scene.render(at: plan.timeline.mapStart)
         let rendered = try XCTUnwrap(silhouette(end.image))
         XCTAssertEqual(rendered.midX, 1100, accuracy: 3)
-        XCTAssertGreaterThanOrEqual(rendered.width, 0.95 * 420)
-        XCTAssertLessThanOrEqual(rendered.width, 1.35 * 420)
+        XCTAssertEqual(rendered.width, StoryboardRail.frontWindowWidth * 420, accuracy: 0.04 * 420)
+        XCTAssertEqual(rendered.minY, 230, accuracy: 4)
+        // D132 hand-over: at the end of the map the glass covers the aperture.
+        let handover = try await scene.render(at: plan.timeline.mapEnd - 0.001)
+        let glass = try XCTUnwrap(silhouette(handover.image))
+        XCTAssertLessThanOrEqual(glass.minX, 880 + 2); XCTAssertGreaterThanOrEqual(glass.maxX, 1300 - 2)
+        XCTAssertLessThanOrEqual(glass.minY, 70 + 2); XCTAssertGreaterThanOrEqual(glass.maxY, 230 - 2)
     }
 
     /// Slice 2: the native frame at each storyboard key-frame stage is measured and compared structurally with
