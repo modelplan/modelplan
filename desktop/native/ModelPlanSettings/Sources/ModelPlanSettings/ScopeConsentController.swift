@@ -33,6 +33,13 @@ public struct FirstRunTool: Sendable, Equatable {
     public var detected: Bool = true
     public var canRead: Bool { detected && block == nil && !scopes.isEmpty }
 }
+/// D61: one quota window of a tool as the first-run page reads it out.
+public enum FirstRunReadingKind: Sendable, Equatable { case fiveHour, weekly }
+public struct FirstRunReading: Sendable, Equatable {
+    public let kind: FirstRunReadingKind
+    /// Whole percent left, 0...100.
+    public let percent: Int
+}
 /// Transient UI choices over already-accepted facts. No persistence or protocol acceptance logic.
 @MainActor public final class ScopeConsentController {
     public private(set) var facts: WireConsentFacts?
@@ -63,6 +70,7 @@ public struct FirstRunTool: Sendable, Equatable {
     private var firstRunGrantRequestID: String?
     private var rowCodes: [String: RowsCode] = [:]
     private var rowStates: [String: RowsState] = [:]
+    private var rowReadings: [String: [FirstRunReading]] = [:]
     private var observers: [UUID: @MainActor () -> Void] = [:]
     public init(commands: any ScopeConsentCommands, copyReport: (@MainActor (String) throws -> Void)? = nil) {
         self.commands = commands; self.copyReport = copyReport
@@ -225,13 +233,33 @@ public struct FirstRunTool: Sendable, Equatable {
         rowConsent = consents
         rowCodes = Dictionary(value.projection.rows.map { ($0.id, $0.reason.code) }, uniquingKeysWith: { first, _ in first })
         rowStates = Dictionary(value.projection.rows.map { ($0.id, $0.state) }, uniquingKeysWith: { first, _ in first })
+        var readings: [String: [FirstRunReading]] = [:]
+        for row in value.projection.rows where row.kind == .tool {
+            // The plan-wide windows the engine currently reads; the tightest one per period.
+            var fiveHour: Double?, weekly: Double?
+            for account in row.accounts where account.valueState == .current {
+                for window in account.windows where window.current && window.modelScope == nil {
+                    guard let left = window.remainingPercent else { continue }
+                    switch window.role {
+                    case .session: fiveHour = min(fiveHour ?? left, left)
+                    case .weekly: weekly = min(weekly ?? left, left)
+                    default: break
+                    }
+                }
+            }
+            var list: [FirstRunReading] = []
+            if let fiveHour { list.append(.init(kind: .fiveHour, percent: Int(max(0, min(100, fiveHour)).rounded()))) }
+            if let weekly { list.append(.init(kind: .weekly, percent: Int(max(0, min(100, weekly)).rounded()))) }
+            if !list.isEmpty { readings[row.id] = list }
+        }
+        rowReadings = readings
         changed()
     }
     public func clearAcceptedPrivateState() {
         lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []
         activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil;diagnosticsPresentation=nil; notice = .none
         facts = nil; rowsSummary = nil; claudeRowState = nil; rowConsent = nil; keychainLater = false; selectedIDs = []; phase = .idle
-        firstRunToolChoices = [:]; rowCodes = [:]; rowStates = [:]; changed()
+        firstRunToolChoices = [:]; rowCodes = [:]; rowStates = [:]; rowReadings = [:]; changed()
     }
     /// D41: Claude Code's saved-login path, when it is here and usable.
     private var claudeSavedLogin: WireConsentScope? {
@@ -354,6 +382,10 @@ public struct FirstRunTool: Sendable, Equatable {
         }
         return error is ScopeConsentCommandFailure || error is EngineConsentGrantError ? .rejected : .sent
     }
+    /// D61: the 5h and weekly values the engine reads for this tool now; empty until a reading exists.
+    public func firstRunReadings(forTool tool: String) -> [FirstRunReading] { rowReadings[tool] ?? [] }
+    /// D41: the first-run page offers Allow and Later on the Claude Code row while the Keychain question is open.
+    public var firstRunKeychainChoiceOpen: Bool { asksForKeychainOnFirstRun && isFirstRunToolChosen("claude") }
     /// G3-38 / G3-45: why a detected tool cannot be read, when the engine's rows say so.
     public func block(forTool tool: String) -> ScopeToolBlock? {
         switch rowCodes[tool] {

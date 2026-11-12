@@ -11,7 +11,10 @@ import ModelPlanCommunityHost
 
 @MainActor private final class ConnectionFirstRunSurface: SettingsWindowSurface, FirstRunFrontRaising {
     private let controller: SettingsFirstRunController
-    init(editor: SettingsEditor, scopeConsentEntry: ScopeConsentEntry?) { controller = SettingsFirstRunController(editor: editor, scopeConsentEntry: scopeConsentEntry) }
+    init(editor: SettingsEditor, scopeConsentEntry: ScopeConsentEntry?, learnMore: (@MainActor () -> Void)? = nil) {
+        controller = SettingsFirstRunController(editor: editor, scopeConsentEntry: scopeConsentEntry)
+        controller.onLearnMore = learnMore
+    }
     func prepare() async { await controller.prepare() }
     func show(paneID: String?) { controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil) }
     func hide() { controller.suspend(); controller.window?.orderOut(nil) }
@@ -44,7 +47,9 @@ import ModelPlanCommunityHost
         self.makeFirstRun = { editor in
             if let scopeConsentEntry, let makeFirstRunWithConsent { return makeFirstRunWithConsent(editor, scopeConsentEntry) }
             if let makeFirstRun { return makeFirstRun(editor) }
-            return ConnectionFirstRunSurface(editor: editor, scopeConsentEntry: scopeConsentEntry)
+            // FR-9-11: "Learn more ›" opens Settings › Data & Privacy beside the first-run window.
+            return ConnectionFirstRunSurface(editor: editor, scopeConsentEntry: scopeConsentEntry,
+                                             learnMore: { Task { await showSettings("privacy") } })
         }
         let editor = application.editor
         navigation = editor.bindFirstRunPresentation({ [weak self] in Task { await self?.openFirstRun() } },

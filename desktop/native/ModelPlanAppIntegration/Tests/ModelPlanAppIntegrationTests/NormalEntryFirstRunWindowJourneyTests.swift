@@ -91,8 +91,8 @@ import ModelPlanWire
         XCTAssertEqual(Set(toolBoxes.map { $0.accessibilityIdentifier() }), ["scope.firstRun.tool.codex", "scope.firstRun.tool.cursor"],
                        "one checkbox per detected tool and nothing else")
         XCTAssertTrue(toolBoxes.allSatisfy { $0.state == .on }, "readable tools start checked")
-        let notice = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.firstRun.notice" } as? NSTextField)
-        XCTAssertTrue(notice.stringValue.contains("Settings › Data & Privacy"), notice.stringValue)
+        let smallPrint = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.firstRun.import" } as? NSTextField)
+        XCTAssertTrue(smallPrint.stringValue.contains("Settings › Data & Privacy"), smallPrint.stringValue)
         XCTAssertTrue(first.scopeConsentEntry.controller.isOnByDefault("codex.local_history"))
         XCTAssertFalse(first.scopeConsentEntry.controller.isOnByDefault("cursor.browser_session"), "browser sessions ask when first needed")
         // Settings lists the same reader as on, with an on switch; turning it off is a confirmed revoke.
