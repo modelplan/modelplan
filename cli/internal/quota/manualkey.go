@@ -186,6 +186,11 @@ func SetManualKey(dir, provider, key, region string) error {
 	if !ok {
 		return errors.New("manual key not accepted")
 	}
+	unlock, lerr := lockManualKeys(dir)
+	if lerr != nil {
+		return errors.New("manual key file not written")
+	}
+	defer unlock()
 	keys, err := loadManualKeys(dir)
 	if err != nil {
 		// An unreadable or unsafe file may hold the other provider's key: refuse, never replace it.
@@ -203,6 +208,11 @@ func RemoveManualKey(dir, provider string) error {
 	if !ManualKeyProvider(provider) {
 		return errors.New("manual key not accepted")
 	}
+	unlock, lerr := lockManualKeys(dir)
+	if lerr != nil {
+		return errors.New("manual key file not written")
+	}
+	defer unlock()
 	keys, err := loadManualKeys(dir)
 	if err != nil {
 		return ErrManualKeyFileUnsafe

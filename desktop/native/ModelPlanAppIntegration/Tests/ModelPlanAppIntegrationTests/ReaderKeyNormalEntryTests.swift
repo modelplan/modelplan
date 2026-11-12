@@ -139,7 +139,10 @@ private actor KeyEngine: EngineClient {
 
         let engineValue = try XCTUnwrap(engine)
         let calls = await engineValue.recordedKeyCalls()
-        XCTAssertEqual(calls.map(\.method), ["readerkey/status", "readerkey/test", "readerkey/set"], "Save reuses the passing Test")
+        // The section loads each entry's stored state when it is created (one status call per entry, however many the page
+        // builds); only the order of the key-carrying calls is the contract: Test, then Save reusing it.
+        XCTAssertTrue(calls.contains { $0.method == "readerkey/status" }, "the entry reads the stored state first")
+        XCTAssertEqual(calls.map(\.method).filter { $0 != "readerkey/status" }, ["readerkey/test", "readerkey/set"], "Save reuses the passing Test")
         XCTAssertEqual(calls.last, .init(method: "readerkey/set", provider: "zai", region: "global", key: fakeKey))
         let grants = await engineValue.recordedGrants()
         XCTAssertEqual(grants, [[zaiScope]], "saving turns on exactly that provider's reading scope")

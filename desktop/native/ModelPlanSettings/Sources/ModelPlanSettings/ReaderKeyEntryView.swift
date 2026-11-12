@@ -28,7 +28,7 @@ import AppKit
         setAccessibilityIdentifier(id)
         title.font = .systemFont(ofSize: 12, weight: .semibold)
         field.setAccessibilityIdentifier(id + ".field"); field.delegate = self
-        field.setAccessibilityLabel("API key")
+        field.setAccessibilityLabel(SettingsWords.text("API key", "API 密钥", language))
         field.widthAnchor.constraint(greaterThanOrEqualToConstant: 280).isActive = true
         picker.setAccessibilityIdentifier(id + ".region")
         for region in ReaderKeyRegion.allCases { picker.addItem(withTitle: ""); picker.lastItem?.representedObject = region.rawValue }
@@ -55,7 +55,7 @@ import AppKit
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 
-    func apply(language: SettingsLanguage) { self.language = language; refresh() }
+    func apply(language: SettingsLanguage) { self.language = language; field.setAccessibilityLabel(SettingsWords.text("API key", "API 密钥", language)); refresh() }
 
     func controlTextDidChange(_ notification: Notification) {
         guard notification.object as AnyObject? === field else { return }

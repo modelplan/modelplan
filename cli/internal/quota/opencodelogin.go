@@ -105,6 +105,11 @@ func opencodeDBKey(ctx context.Context, path string, now time.Time) (key string,
 	if _, err := os.Stat(path + "-shm"); err == nil {
 		shm = true
 	}
+	// A WAL without its shared-memory file cannot be read without SQLite creating that file in the tool's directory:
+	// fail closed rather than write there (D90: the other tool's files are read-only to us).
+	if wal && !shm {
+		return "", false, "unsupported_login"
+	}
 	query := "mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(250)"
 	if !wal && !shm {
 		query += "&immutable=1"

@@ -70,7 +70,7 @@ func ReaderKeyHandlers(c ReaderKeyConfig) map[string]Handler {
 	}
 	return map[string]Handler{
 		"readerkey/set": handler(func(_ context.Context, p wire.ReaderKeyParams, region string) wire.ReaderKeyOutcome {
-			if c.ReadOnly {
+			if c.ReadOnly || c.Offline {
 				return wire.ReaderKeyFailed
 			}
 			switch err := quota.SetManualKey(c.Dir, string(p.Provider), p.Key, region); {
@@ -86,7 +86,7 @@ func ReaderKeyHandlers(c ReaderKeyConfig) map[string]Handler {
 			return wire.ReaderKeyOK
 		}),
 		"readerkey/remove": handler(func(_ context.Context, p wire.ReaderKeyParams, _ string) wire.ReaderKeyOutcome {
-			if c.ReadOnly {
+			if c.ReadOnly || c.Offline {
 				return wire.ReaderKeyFailed
 			}
 			err := quota.RemoveManualKey(c.Dir, string(p.Provider))
@@ -99,7 +99,7 @@ func ReaderKeyHandlers(c ReaderKeyConfig) map[string]Handler {
 			return wire.ReaderKeyRemoved
 		}),
 		"readerkey/test": handler(func(ctx context.Context, p wire.ReaderKeyParams, region string) wire.ReaderKeyOutcome {
-			if c.Offline {
+			if c.Offline || c.ReadOnly {
 				return wire.ReaderKeyUnreachable
 			}
 			// With no key in the call, the stored key is tested.

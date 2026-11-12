@@ -410,3 +410,36 @@ func TestRelayBaseURLKeyIsNeverSent(t *testing.T) {
 		t.Fatalf("a relay key was sent: %v", got)
 	}
 }
+
+// A WAL without its shared-memory file would make SQLite create that file in OpenCode's directory: the reader
+// fails closed and leaves the directory as it found it (D90).
+func TestOpenCodeLoginWALWithoutSHMWritesNothing(t *testing.T) {
+	isolateHome(t)
+	dir := filepath.Join(t.TempDir(), "xdg")
+	if err := os.MkdirAll(filepath.Join(dir, "opencode"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_DATA_HOME", dir)
+	path := filepath.Join(dir, "opencode", "opencode.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{`CREATE TABLE credential (integration_id TEXT, value TEXT, active INTEGER)`, `INSERT INTO credential VALUES ('opencode-go', '{"type":"key","key":"` + fakeGoKey + `"}', 1)`} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	os.Remove(path + "-shm")
+	os.Remove(path + "-wal")
+	if err := os.WriteFile(path+"-wal", nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if k, code := opencodeLoginKey(context.Background(), time.Now()); k != "" || code != "unsupported_login" {
+		t.Fatalf("login = %q %q", k, code)
+	}
+	if _, err := os.Stat(path + "-shm"); err == nil {
+		t.Fatal("the reader created opencode.db-shm")
+	}
+}

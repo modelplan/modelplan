@@ -62,7 +62,7 @@ public enum ReaderKeyOutcome: Equatable, Sendable {
         case .unreachable: return .init("Could not reach the provider. Check the network and try again.", "无法连接服务商，请检查网络后重试。")
         case .notAccepted: return .init("This text cannot be a key.", "这段文字不可能是密钥。")
         case .fileUnsafe: return .init("The key file can't be read safely, so nothing was changed. Fix or remove reader-keys-v1.json in ModelPlan's support folder, then try again.",
-                                       "无法安全读取密钥文件，所以没有做任何更改。请修复或删除 ModelPlan 支持文件夹里的 reader-keys-v1.json 后重试。")
+                                       "无法安全读取密钥文件，所以没有做任何更改。请修复或删除 ModelPlan 支持文件夹里的密钥文件后重试。")
         case .failed: return .init("The check could not be completed.", "无法完成检查。")
         }
     }
