@@ -334,6 +334,7 @@ extension ProcessEngineClient {
         case "publication/get": feature = .publication
         case "plugin/install": feature = .pluginInstall
         case "readerkey/set", "readerkey/test", "readerkey/remove", "readerkey/status": feature = .readerKey
+        case "history/import_start", "history/import_status", "history/import_cancel", "history/import_remove": feature = .historyImport
         case "refresh/request": feature = .rows
         default: feature = .diagnostics
         }
@@ -383,6 +384,8 @@ extension ProcessEngineClient {
                 let decoded = try decodeEnvelope(envelope, as: WireReaderKeyResult.self).value
                 pending[key]?.receiptKnown = true
                 result = .readerKey(EngineReply(envelope: decoded, delivery: context))
+            case "history/import_start", "history/import_status", "history/import_cancel", "history/import_remove":
+                result = .historyImport(EngineReply(envelope: try decodeEnvelope(envelope, as: WireHistoryImportStatus.self).value, delivery: context))
             case "diagnostics/get": result = .diagnostics(EngineReply(envelope: try decodeEnvelope(envelope, as: WireDiagnostics.self).value, delivery: context))
             default: throw EngineClientError.protocolViolation
             }

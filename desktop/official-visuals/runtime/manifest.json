@@ -7,8 +7,8 @@
     {
       "file": "README.md",
       "kind": "notice",
-      "sha256": "61956152417af9a6ee0395e3d85522de20eb16896cc0d72ece9744dc904657c1",
-      "bytes": 2082,
+      "sha256": "8fdccca0ee3607847888b9e74c41ff06ba0c185adfc4001f89365edd606c6456",
+      "bytes": 2970,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },
@@ -198,11 +198,11 @@
     },
     {
       "file": "canopy-c01/canopy-640-1x.png",
-      "sha256": "6a68aa3c5ac30b961dba185e95c88705d931d486609de25c64fe3acd540624df",
-      "bytes": 13152,
+      "sha256": "49bbae5559bbd1ddc15d1a7106e086680f09268358c1d2b13fc7c0ba1e56c6ca",
+      "bytes": 18512,
       "size": {
         "width": 636,
-        "height": 48
+        "height": 56
       },
       "tier": 640,
       "scale": 1,
@@ -211,11 +211,11 @@
     },
     {
       "file": "canopy-c01/pane-640-1x.png",
-      "sha256": "76649bc1ea20a9aa8619138b97435d6635f9af901425e454044014eef72d312b",
-      "bytes": 12154,
+      "sha256": "1d8fbc23f62f497310591a6fcc516ceff4a1f837c154b6612abb640d88a1938f",
+      "bytes": 13115,
       "size": {
         "width": 636,
-        "height": 48
+        "height": 56
       },
       "tier": 640,
       "scale": 1,
@@ -224,11 +224,11 @@
     },
     {
       "file": "canopy-c01/window-640-1x.png",
-      "sha256": "6a7f330cbf423eb733536e6a43303ff761d77ad078e12eb2e545857f53a7bce4",
-      "bytes": 2738,
+      "sha256": "075adcfcfdd0b7a26e01541cd5886bc22d2d4cb4c134e3c13a2af29796cde6ac",
+      "bytes": 5145,
       "size": {
         "width": 636,
-        "height": 48
+        "height": 56
       },
       "tier": 640,
       "scale": 1,
@@ -237,11 +237,11 @@
     },
     {
       "file": "canopy-c01/aperture-640-1x.png",
-      "sha256": "c7264aeb23c90a45f21f7fee583182dd8a1f470f98214506f411d3dc4db664fa",
-      "bytes": 2685,
+      "sha256": "298d031ef027b10a77c04c3e623505d64f624149ab0e147ea52f28e3fc732a37",
+      "bytes": 5222,
       "size": {
         "width": 636,
-        "height": 48
+        "height": 56
       },
       "tier": 640,
       "scale": 1,
@@ -250,11 +250,11 @@
     },
     {
       "file": "canopy-c01/solid-outline-640-1x.png",
-      "sha256": "ad917b7c7898fb33488da9892c84646c45c005618fff9574d97827c163aa9878",
-      "bytes": 1299,
+      "sha256": "efc2c5c657432533e6aa0195339159345f93053e7bbbadcc1ac1962b967cdd76",
+      "bytes": 5076,
       "size": {
         "width": 636,
-        "height": 48
+        "height": 56
       },
       "tier": 640,
       "scale": 1,
@@ -263,11 +263,11 @@
     },
     {
       "file": "canopy-c01/canopy-640-2x.png",
-      "sha256": "1aab224994fe1b2ccd9127928206dace495e972fac5ee1fe672dc2eea19afd09",
-      "bytes": 38442,
+      "sha256": "e77e5cad1ab2d4d10fb9c7a030aeccf5b288c5d117a9ac51b150a16abc4948fa",
+      "bytes": 53902,
       "size": {
         "width": 1272,
-        "height": 96
+        "height": 112
       },
       "tier": 640,
       "scale": 2,
@@ -276,11 +276,11 @@
     },
     {
       "file": "canopy-c01/pane-640-2x.png",
-      "sha256": "454b4f45cdf27a240d0534aa1fea0693078a23cde03494e0d0b29f176fcd86da",
-      "bytes": 41693,
+      "sha256": "0e33fc76255d990c87868ffc734559de38292391837749dea32a2ac9f4a2d5ef",
+      "bytes": 45012,
       "size": {
         "width": 1272,
-        "height": 96
+        "height": 112
       },
       "tier": 640,
       "scale": 2,
@@ -289,11 +289,11 @@
     },
     {
       "file": "canopy-c01/window-640-2x.png",
-      "sha256": "3960df614b36070b3183e2d5f7f85470b42d234d30f2da9e54570caa3a1620b4",
-      "bytes": 5736,
+      "sha256": "02cffb392a1c0d0a9e8c1fc4e4b272b3cf546324a526334ac0b57959de728ab3",
+      "bytes": 12825,
       "size": {
         "width": 1272,
-        "height": 96
+        "height": 112
       },
       "tier": 640,
       "scale": 2,
@@ -302,11 +302,11 @@
     },
     {
       "file": "canopy-c01/aperture-640-2x.png",
-      "sha256": "af242184d8025d6365265a6d5b363cb2068327bfadbe4545f7c4139617bf746b",
-      "bytes": 5660,
+      "sha256": "e9c58fab2ef3bff42e6ffbc837f82fb63a46897d41950e802ce46e88ed809e83",
+      "bytes": 12992,
       "size": {
         "width": 1272,
-        "height": 96
+        "height": 112
       },
       "tier": 640,
       "scale": 2,
@@ -315,11 +315,11 @@
     },
     {
       "file": "canopy-c01/solid-outline-640-2x.png",
-      "sha256": "7b1b6380af939de926628a03d3f001574ab66a2d12482eaaf3b4ea81ef98f24f",
-      "bytes": 2794,
+      "sha256": "dfe7d18ae36c8ec5022db85ae17e09fe161c666ec7573f750360284aba632414",
+      "bytes": 13235,
       "size": {
         "width": 1272,
-        "height": 96
+        "height": 112
       },
       "tier": 640,
       "scale": 2,
@@ -328,11 +328,11 @@
     },
     {
       "file": "canopy-c01/canopy-890-1x.png",
-      "sha256": "4d4f867da65ccf90403993934abab77ee67956af3bef079f2f4e436f3ebbbd25",
-      "bytes": 46887,
+      "sha256": "538adca3e2602f6ac7b15fcc3a41bc449b3c3a52aa979bcece58d9c7a638bef6",
+      "bytes": 69942,
       "size": {
         "width": 636,
-        "height": 216
+        "height": 244
       },
       "tier": 890,
       "scale": 1,
@@ -341,11 +341,11 @@
     },
     {
       "file": "canopy-c01/pane-890-1x.png",
-      "sha256": "b5603e844822c8ee431ae5fcff82d6f79de5a7978a54187384936864155e13d3",
-      "bytes": 48833,
+      "sha256": "fcc3458f0ae800fd1d2c751a9d36dafaaf467d7febef3e40d52fa9dff2ed0a98",
+      "bytes": 58857,
       "size": {
         "width": 636,
-        "height": 216
+        "height": 244
       },
       "tier": 890,
       "scale": 1,
@@ -354,11 +354,11 @@
     },
     {
       "file": "canopy-c01/window-890-1x.png",
-      "sha256": "30f7ebf3062c905d202aa2cab9e40f7768a36e2012365d7e17f70871a0ad1460",
-      "bytes": 6642,
+      "sha256": "ff4e8e0746609ef94bfd767dc61f6b70e800b5a7dc45ccd69bfa3b2b8d9f2b12",
+      "bytes": 17754,
       "size": {
         "width": 636,
-        "height": 216
+        "height": 244
       },
       "tier": 890,
       "scale": 1,
@@ -367,11 +367,11 @@
     },
     {
       "file": "canopy-c01/aperture-890-1x.png",
-      "sha256": "5567dc667b46a4a7b4f860029942f9cdda97619c8bcb557d7b4e0f464c7c0da4",
-      "bytes": 6445,
+      "sha256": "2ac50c0b575ad7aa09ceec8b1eac722691bb9d6247ad140c2fb62ce16e6fb45c",
+      "bytes": 16558,
       "size": {
         "width": 636,
-        "height": 216
+        "height": 244
       },
       "tier": 890,
       "scale": 1,
@@ -380,11 +380,11 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-1x.png",
-      "sha256": "9a71ebc24489be5d0ec00785e34e419246c340686f8629fa2119833c30e96402",
-      "bytes": 3348,
+      "sha256": "65778adf19058eb80917bb80526b0219dcee948dbff79a7c3a7a27531552d979",
+      "bytes": 18035,
       "size": {
         "width": 636,
-        "height": 216
+        "height": 244
       },
       "tier": 890,
       "scale": 1,
@@ -393,11 +393,11 @@
     },
     {
       "file": "canopy-c01/canopy-890-2x.png",
-      "sha256": "89a57dc272bd1166080b61744bfac5dfab52575b7480327203fda8fee8999391",
-      "bytes": 158567,
+      "sha256": "0e4ad5db3183ed66d561e644fb89cbdbf39f315953a5043cd0a54b1f2b876779",
+      "bytes": 224191,
       "size": {
         "width": 1272,
-        "height": 432
+        "height": 488
       },
       "tier": 890,
       "scale": 2,
@@ -406,11 +406,11 @@
     },
     {
       "file": "canopy-c01/pane-890-2x.png",
-      "sha256": "19b37a5f559ae400541007721e05a9016e4ffa3b102a53f993ad636a63d7a199",
-      "bytes": 179749,
+      "sha256": "25b578c0b54870739b8e430282b6f4b16ffd59dcea9a27f5e13fdd2e9857f80b",
+      "bytes": 222720,
       "size": {
         "width": 1272,
-        "height": 432
+        "height": 488
       },
       "tier": 890,
       "scale": 2,
@@ -419,11 +419,11 @@
     },
     {
       "file": "canopy-c01/window-890-2x.png",
-      "sha256": "2ec9bd34fcac613b385db0f8ab9b6ce88d76905feb557a7a2ba66d48d2005264",
-      "bytes": 15698,
+      "sha256": "52bd727f8beea1cb054f1e635e8b8d05a23b0382344c0ce0362dbd9cc19c524c",
+      "bytes": 47091,
       "size": {
         "width": 1272,
-        "height": 432
+        "height": 488
       },
       "tier": 890,
       "scale": 2,
@@ -432,11 +432,11 @@
     },
     {
       "file": "canopy-c01/aperture-890-2x.png",
-      "sha256": "d9778c2a895c96f768333a0189b684a098d60b29187a9d21c3aefe03af18ffa8",
-      "bytes": 15404,
+      "sha256": "925ddcc6064e6edfc708f792be7a243673f9715cad27583b2cf271ebecc1d321",
+      "bytes": 43965,
       "size": {
         "width": 1272,
-        "height": 432
+        "height": 488
       },
       "tier": 890,
       "scale": 2,
@@ -445,11 +445,11 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-2x.png",
-      "sha256": "3da44669818854b371d709975b2fc529a1376c40d0abcd403a9baf90bfa610bb",
-      "bytes": 7980,
+      "sha256": "16560adb9f4f1e118e02ce88fc95c707d6f0e24706000b62ef3d8f1c04bb1324",
+      "bytes": 49706,
       "size": {
         "width": 1272,
-        "height": 432
+        "height": 488
       },
       "tier": 890,
       "scale": 2,

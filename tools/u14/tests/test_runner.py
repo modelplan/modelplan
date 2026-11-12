@@ -150,7 +150,7 @@ class RealBinaryTests(unittest.TestCase):
     def test_plain_app_server_smoke_uses_production_shared_constructor(self):
         report = plain_smoke(self.binary, self.home)
         self.assertEqual(report['outcome'], 'pass')
-        self.assertEqual(report['emptyState'], 'empty')
+        self.assertEqual(report['emptyState'], 'pending')  # G3-38: tools being read, not no readings
         self.assertTrue({'claude', 'codex', 'gemini'} <= set(report['rowIds']))
         self.assertTrue({'consent', 'history', 'refresh', 'publication'} <= set(report['capabilities']))
         verify_baseline(self.home, self.baseline, mutable=('.config/modelplan/consent.json',))

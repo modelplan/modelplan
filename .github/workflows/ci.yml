@@ -122,9 +122,9 @@ jobs:
       - name: "claude-code: plugin tests"
         if: ${{ !cancelled() }}
         run: node --test claude-code/tests/*.test.mjs
-      - name: "claude-code: native and cockpit strings follow the label rules"
+      - name: "claude-code: native and cockpit strings follow the label rules; the Swift handshake matches the server capabilities"
         if: ${{ !cancelled() }}
-        run: node --test scripts/tests/lbl-coverage.test.mjs
+        run: node --test scripts/tests/lbl-coverage.test.mjs scripts/tests/capability-handshake.test.mjs
       - name: "claude-code: the plugins pin a published CLI release, checksums matching"
         if: ${{ !cancelled() }}
         run: node scripts/pin-cli.mjs --check

@@ -70,31 +70,33 @@ func Generate(root string) ([]byte, error) {
 	// Named schema roots keep generated consumers independent of reflection's
 	// spelling of generic instantiations.
 	roots := map[string]reflect.Type{
-		"PluginInstallParams":  reflect.TypeFor[wire.PluginInstallParams](),
-		"ReaderKeyParams":      reflect.TypeFor[wire.ReaderKeyParams](),
-		"ReaderKeyResult":      reflect.TypeFor[wire.ReaderKeyResult](),
-		"PublicationResult":    reflect.TypeFor[wire.PublicationResult](),
-		"PluginInstallResult":  reflect.TypeFor[wire.PluginInstallResult](),
-		"InitializeParams":     reflect.TypeFor[wire.InitializeParams](),
-		"InitializeResult":     reflect.TypeFor[wire.InitializeResult](),
-		"RowsSnapshot":         reflect.TypeFor[wire.RowsSnapshot](),
-		"ConsentFacts":         reflect.TypeFor[wire.ConsentFacts](),
-		"ConsentGrantParams":   reflect.TypeFor[wire.ConsentGrantParams](),
-		"ConsentReceipt":       reflect.TypeFor[wire.ConsentReceipt](),
-		"CredentialRequest":    reflect.TypeFor[wire.CredentialRequest](),
-		"CredentialResult":     reflect.TypeFor[wire.CredentialResult](),
-		"Diagnostics":          reflect.TypeFor[wire.Diagnostics](),
-		"Health":               reflect.TypeFor[wire.Health](),
-		"HistoryQueryParams":   reflect.TypeFor[wire.HistoryQueryParams](),
-		"HistoryPage":          reflect.TypeFor[wire.HistoryPage](),
-		"CockpitData":          reflect.TypeFor[wire.CockpitData](),
-		"CockpitQueryParams":   reflect.TypeFor[wire.CockpitQueryParams](),
-		"RefreshMember":        reflect.TypeFor[wire.RefreshMember](),
-		"MemberRefreshResult":  reflect.TypeFor[wire.MemberRefreshResult](),
-		"RefreshRequestParams": reflect.TypeFor[wire.RefreshRequestParams](),
-		"RefreshScheduled":     reflect.TypeFor[wire.RefreshScheduled](),
-		"CancelParams":         reflect.TypeFor[wire.CancelParams](),
-		"Error":                reflect.TypeFor[wire.Failure](),
+		"PluginInstallParams":      reflect.TypeFor[wire.PluginInstallParams](),
+		"ReaderKeyParams":         reflect.TypeFor[wire.ReaderKeyParams](),
+		"ReaderKeyResult":         reflect.TypeFor[wire.ReaderKeyResult](),
+		"HistoryImportStartParams": reflect.TypeFor[wire.HistoryImportStartParams](),
+		"HistoryImportStatus":      reflect.TypeFor[wire.HistoryImportStatus](),
+		"PublicationResult":        reflect.TypeFor[wire.PublicationResult](),
+		"PluginInstallResult":      reflect.TypeFor[wire.PluginInstallResult](),
+		"InitializeParams":         reflect.TypeFor[wire.InitializeParams](),
+		"InitializeResult":         reflect.TypeFor[wire.InitializeResult](),
+		"RowsSnapshot":             reflect.TypeFor[wire.RowsSnapshot](),
+		"ConsentFacts":             reflect.TypeFor[wire.ConsentFacts](),
+		"ConsentGrantParams":       reflect.TypeFor[wire.ConsentGrantParams](),
+		"ConsentReceipt":           reflect.TypeFor[wire.ConsentReceipt](),
+		"CredentialRequest":        reflect.TypeFor[wire.CredentialRequest](),
+		"CredentialResult":         reflect.TypeFor[wire.CredentialResult](),
+		"Diagnostics":              reflect.TypeFor[wire.Diagnostics](),
+		"Health":                   reflect.TypeFor[wire.Health](),
+		"HistoryQueryParams":       reflect.TypeFor[wire.HistoryQueryParams](),
+		"HistoryPage":              reflect.TypeFor[wire.HistoryPage](),
+		"CockpitData":              reflect.TypeFor[wire.CockpitData](),
+		"CockpitQueryParams":       reflect.TypeFor[wire.CockpitQueryParams](),
+		"RefreshMember":            reflect.TypeFor[wire.RefreshMember](),
+		"MemberRefreshResult":      reflect.TypeFor[wire.MemberRefreshResult](),
+		"RefreshRequestParams":     reflect.TypeFor[wire.RefreshRequestParams](),
+		"RefreshScheduled":         reflect.TypeFor[wire.RefreshScheduled](),
+		"CancelParams":             reflect.TypeFor[wire.CancelParams](),
+		"Error":                    reflect.TypeFor[wire.Failure](),
 	}
 	for name, t := range roots {
 		b.defs[name] = b.schema(t, false)
@@ -116,6 +118,13 @@ func Generate(root string) ([]byte, error) {
 	delete(proposed, "allOf")
 	proposed["properties"].(map[string]any)["version"] = object{"type": "integer", "enum": []int{1}}
 	proposed["properties"].(map[string]any)["status"].(map[string]any)["type"] = "string"
+	// G3-96: the proposal leaves its later string enums untyped (kind, confirmedAtBasis). The cockpit page's bounded
+	// validator refuses a node without a type, so every display carrying a reset event was rejected as data.schema.
+	for _, property := range proposed["properties"].(map[string]any) {
+		if node, ok := property.(map[string]any); ok && node["enum"] != nil && node["type"] == nil {
+			node["type"] = "string"
+		}
+	}
 	schedule := overlay.Defs["ProposedResetSchedule"].(map[string]any)
 	schedule["properties"].(map[string]any)["precision"].(map[string]any)["type"] = "string"
 	source := overlay.Defs["ProposedResetSource"].(map[string]any)
@@ -162,7 +171,7 @@ func Generate(root string) ([]byte, error) {
 	errorProps["id"] = object{"anyOf": []any{object{"$ref": "#/$defs/RequestID"}, object{"type": "null"}}}
 
 	incoming := []any{}
-	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "CockpitQueryParams", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams", "readerkey/set": "ReaderKeyParams", "readerkey/test": "ReaderKeyParams", "readerkey/remove": "ReaderKeyParams", "readerkey/status": "ReaderKeyParams"}
+	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "CockpitQueryParams", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams", "readerkey/set": "ReaderKeyParams", "readerkey/test": "ReaderKeyParams", "readerkey/remove": "ReaderKeyParams", "readerkey/status": "ReaderKeyParams", "history/import_start": "HistoryImportStartParams", "history/import_status": "", "history/import_cancel": "", "history/import_remove": ""}
 	for _, method := range sortedKeys(requestMethods) {
 		param := requestMethods[method]
 		props := object{"jsonrpc": object{"const": wire.JSONRPC}, "method": object{"const": method}, "id": object{"$ref": "#/$defs/RequestID"}}
@@ -182,7 +191,7 @@ func Generate(root string) ([]byte, error) {
 	}
 	b.defs["Request"] = object{"oneOf": incoming}
 	envelopes := []any{}
-	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult", "PublicationResult", "MemberRefreshResult", "ReaderKeyResult"} {
+	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult", "PublicationResult", "MemberRefreshResult", "ReaderKeyResult", "HistoryImportStatus"} {
 		env := b.schema(reflect.TypeFor[wire.Envelope[wire.Empty]](), false).(object)
 		env["properties"].(object)["data"] = object{"$ref": "#/$defs/" + name}
 		b.defs[name+"Envelope"] = env

@@ -112,6 +112,18 @@ import ModelPlanWire
     deinit {
         if let observer { let controller = controller; Task { @MainActor in controller.removeObserver(observer) } }
     }
+    /// The status line follows the same reading state as the switch (G3-67): "On by default" is only said while the
+    /// engine is actually reading the path; a compiled default the engine does not admit says so and how to turn it on.
+    static func pathStatus(_ controller: ScopeConsentController, id: String, denied: Bool) -> SettingsText {
+        if controller.isAllowed(id) { return .init("On", "已开启") }
+        if controller.isOnByDefault(id) {
+            return controller.isReading(id)
+                ? .init("On by default. Turn it off to stop reading this path.", "默认开启；关闭后不再读取此路径。")
+                : .init("Not being read right now: the engine has no permission for this path. Allow this path to start reading it.", "目前未读取：引擎尚无此路径的权限。授权此读取路径后才会开始读取。")
+        }
+        if denied { return .init("Off. Turn it on to read this path.", "已关闭；打开后才会读取此路径。") }
+        return .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。")
+    }
     private func label(_ text: SettingsText, secondary: Bool = false, heading: Bool = false) {
         let field = NSTextField(wrappingLabelWithString: text.value(language))
         field.font = heading ? .systemFont(ofSize: 13, weight: .semibold) : .systemFont(ofSize: secondary ? 12 : 13)
@@ -161,9 +173,10 @@ import ModelPlanWire
     /// Mac with a checkbox, says what is read and whether macOS may ask for the Keychain, and shows
     /// why a tool cannot be read. Done sends the choices as the one first-run consent.
     private func renderFirstRunChooser() {
-        label(.init("Subscriptions", "订阅"), heading: true)
-        label(.init("Choose which tools ModelPlan reads. Your choice is saved when you press Done; you can change it later in Settings › Data & Privacy.",
-                    "选择 ModelPlan 要读取哪些工具。点“完成”后保存选择，之后可在 设置 › 数据与隐私 中更改。"), secondary: true)
+        label(.init("Choose which tools ModelPlan reads", "选择要读取的工具"), heading: true)
+        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.heading")
+        label(.init("Your choice is saved when you press Done; you can change it later in Settings › Data & Privacy.",
+                    "点“完成”后保存选择，之后可在 设置 › 数据与隐私 中更改。"), secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.notice")
         let tools = controller.firstRunTools
         if controller.facts == nil {
@@ -186,6 +199,8 @@ import ModelPlanWire
                     "之后安装的工具默认会读取，可在 设置 › 数据与隐私 中关闭。"), secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.later")
         label(Self.activityDisclosure, secondary: true)
+        label(HistoryImportText.firstRunLine, secondary: true)
+        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.import")
     }
     private func separator() {
         let line = NSBox(); line.boxType = .separator
@@ -225,14 +240,32 @@ import ModelPlanWire
             column.addArrangedSubview(field); wrappingLabels.append(field)
             field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
-        // An unsupported login is not read at all, so its row says only why (D52).
-        if tool.detected, tool.block != .unsupportedLogin { line(Self.readLine(tool), id: prefix + "reads." + id) }
+        // An unsupported login is not read at all, so its row says only why (D52). A supported tool
+        // that is merely signed out still says what will be read once the user signs in.
+        if tool.detected, tool.block != .unsupportedLogin, !tool.scopes.isEmpty { line(Self.readLine(tool), id: prefix + "reads." + id) }
         if !tool.detected {
             line(SettingsText("Not installed. ModelPlan reads it once it is installed on this Mac and you turn it on here.",
                               "未安装。安装到这台 Mac 后，可在这里打开，ModelPlan 才会读取。"), id: prefix + "status." + id, color: .systemOrange)
         }
         if let block = tool.block {
-            line(Self.blockLine(block, tool: id, firstRun: !settings), id: prefix + "status." + id, color: .systemOrange)
+            line(Self.blockLine(block, tool: id), id: prefix + "status." + id, color: .systemOrange)
+        } else if tool.detected, !tool.canRead {
+            // Only browser-session or unrecognised paths: never describe a read that will not happen.
+            line(Self.unreadableLine, id: prefix + "status." + id)
+        }
+        if let provider = ReaderKeyProvider(rawValue: id), tool.detected {
+            if settings, let backend = readerKeys {
+                // D90 / SET-9-41: a detected key-only tool that is not being read says so and offers the one
+                // optional key entry right here; auto-detected sign-ins are still used first.
+                if !controller.isToolReading(id) {
+                    line(Self.noKeyLine(provider), id: prefix + "nokey." + id, color: .systemOrange)
+                }
+                let section = keySection ?? ReaderKeySection(backend: backend, language: language)
+                keySection = section
+                column.addArrangedSubview(section.inlineEntry(for: provider))
+            } else if !settings {
+                line(Self.firstRunKeyLine, id: prefix + "keylater." + id)
+            }
         }
         // D87 slice 8: what the tool still needs, from the same table as the Subscriptions rows.
         if !settings, tool.detected, tool.block == nil {
@@ -274,6 +307,7 @@ import ModelPlanWire
                      "opencode": "OpenCode", "kiro": "Kiro", "amp": "Amp", "droid": "Droid", "antigravity": "Antigravity", "minimax": "MiniMax"]
         return names[tool].map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
     }
+    static let unreadableLine = SettingsText("ModelPlan can't read this tool's sign-in on this Mac yet.", "暂不支持读取这个工具在本机的登录。")
     private static let noKeychain = SettingsText(" No Keychain prompt.", "不会弹出钥匙串授权。")
     private static let mayAskKeychain = SettingsText(" macOS may ask once for Keychain access; choose \u{201C}Always Allow\u{201D}.",
                                                      "macOS 可能会询问一次钥匙串权限，请选“始终允许”。")
@@ -313,15 +347,24 @@ import ModelPlanWire
         let keychain = tool.promptsKeychain ? mayAskKeychain : noKeychain
         return .init(base.english + keychain.english, base.chinese + keychain.chinese)
     }
-    static func blockLine(_ block: ScopeToolBlock, tool: String, firstRun: Bool = true) -> SettingsText {
+    /// Honest status for a detected key-only tool that is not being read: no key was found.
+    static func noKeyLine(_ provider: ReaderKeyProvider) -> SettingsText {
+        switch provider {
+        case .zai: return .init("No GLM key found, so it is not read yet. Sign in to ZCode, or add a key below.",
+                                "没有找到 GLM 密钥，所以暂未读取。请在 ZCode 里登录，或在下面添加密钥。")
+        case .opencodego: return .init("No OpenCode Go key found, so it is not read yet. Sign in to OpenCode, or add a key below.",
+                                       "没有找到 OpenCode Go 密钥，所以暂未读取。请在 OpenCode 里登录，或在下面添加密钥。")
+        }
+    }
+    static let firstRunKeyLine = SettingsText("If no key is found on this Mac, you can add one later in Settings › Subscriptions.",
+                                              "如果本机上没有找到密钥，之后可在 设置 › 订阅 中添加。")
+    static func blockLine(_ block: ScopeToolBlock, tool: String) -> SettingsText {
         let name = toolName(tool)
         switch block {
-        case .notSignedIn where firstRun:
-            return .init("Not signed in. Sign in to " + name.english + ", then turn it on in Settings › Data & Privacy.",
-                         "未登录。登录 " + name.chinese + " 后，可在 设置 › 数据与隐私 中打开。")
         case .notSignedIn:
+            // One sentence pair with the engine rows (rows.NotSignedInText): first run, Settings and the menu agree.
             return .init("Not signed in to " + name.english + ". ModelPlan reads it after you sign in.",
-                         "未登录 " + name.chinese + "。登录后 ModelPlan 会读取。")
+                         "未登录 " + name.chinese + "。登录后会自动读取。")
         case .unsupportedLogin:
             return .init("Signed in with an account ModelPlan cannot read yet, so nothing is read.",
                          "这种账号登录方式暂不支持读取，因此不读取。")
@@ -388,7 +431,7 @@ import ModelPlanWire
                 }
             }
         }
-        if !firstRun, let backend = readerKeys {
+        if !firstRun, !compactTools, let backend = readerKeys {
             gap()
             let section = keySection ?? ReaderKeySection(backend: backend, language: language)
             keySection = section
@@ -440,15 +483,11 @@ import ModelPlanWire
             }
             // G3-38 (owner D52): say why a detected tool has no reading, e.g. Claude Code signed out.
             if scope.detected, let block = controller.block(forTool: scope.tool) {
-                label(Self.blockLine(block, tool: scope.tool, firstRun: false))
+                label(Self.blockLine(block, tool: scope.tool))
                 arrangedSubviews.last?.setAccessibilityIdentifier("scope.status." + id)
             }
             // D27: a standard reader is on by default; its row says so and its switch is on.
-            let status: SettingsText
-            if controller.isAllowed(id) { status = .init("On", "已开启") }
-            else if controller.isOnByDefault(id) { status = .init("On by default. Turn it off to stop reading this path.", "默认开启；关闭后不再读取此路径。") }
-            else if scope.state == .denied { status = .init("Off. Turn it on to read this path.", "已关闭；打开后才会读取此路径。") }
-            else { status = .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。") }
+            let status = Self.pathStatus(controller, id: id, denied: scope.state == .denied)
             label(status, secondary: true)
             let box: ConnectionButton
             if controller.isReading(id) {

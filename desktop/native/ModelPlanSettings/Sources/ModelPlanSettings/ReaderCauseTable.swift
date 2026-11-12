@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 
-/// Where a cause's one action leads. The card and the Settings row share this table (D87 slice 4);
-/// the card keeps its single "Settings" entry button until the Subscriptions rows wire the targets.
+/// What a cause's next step is. Only the card's existing "Settings" entry button is a real control today, so a
+/// step that points there is `.openSettings`; every other step is plain guidance text and renders no control
+/// (a dead "Retry now" or "Why?" button was the D87 slice 4 review finding).
 public enum ReaderCauseTarget: String, Sendable, Equatable {
-    case installNode, retry, allowKeychain, openTool, openSettings, explain
-    /// D87 slice 6: open the tool's install page (kiro-cli) or reveal the manual key entry (D90).
-    case installTool, addKey
+    case openSettings, guidance
+    /// Whether the card or row may draw a control for this step. Only the existing Settings entry is wired.
+    public var rendersControl: Bool { self == .openSettings }
 }
 
 /// One cause: a short reason and one action, in both languages.
@@ -36,75 +37,48 @@ public enum ReaderCauseTable {
 
     private static func isGLM(_ tool: String?) -> Bool { ["zai", "zcode", "glm"].contains((tool ?? "").lowercased()) }
 
-    private static func isKiro(_ tool: String?) -> Bool { (tool ?? "").lowercased() == "kiro" }
-    private static func isKeyProvider(_ tool: String?) -> Bool { isGLM(tool) || ["opencodego", "opencode"].contains((tool ?? "").lowercased()) }
-
-    /// `keyEntryAvailable`: the app can show the manual key entry (D90). A missing key then offers "Add key"
-    /// for the key-based providers, after auto-detect found nothing.
-    public static func entry(code rawCode: String, tool: String? = nil, toolName: String? = nil,
-                             keyEntryAvailable: Bool = false) -> ReaderCauseEntry? {
+    public static func entry(code rawCode: String, tool: String? = nil, toolName: String? = nil) -> ReaderCauseEntry? {
         let name = toolName.flatMap { $0.isEmpty ? nil : $0 }
-        let canon = canonical(rawCode)
-        if isKiro(tool) {
-            switch canon {
-            case "not_found", "runtime_missing":
-                return .init(reason: .init("kiro-cli was not found", "没有找到 Kiro 命令行工具"),
-                             action: .init("Install kiro-cli", "安装 Kiro 命令行工具"), target: .installTool)
-            case "not_signed_in", "login_expired", "unsupported_login":
-                return .init(reason: .init("Not signed in to kiro-cli", "尚未登录 Kiro 命令行工具"),
-                             action: .init("Sign in to kiro-cli", "登录 Kiro 命令行工具"), target: .explain)
-            default: break
-            }
-        }
-        if canon == "key_missing", keyEntryAvailable, isKeyProvider(tool) {
-            return .init(reason: isGLM(tool) ? .init("No GLM Coding Plan sign-in found in ZCode", "ZCode 里没有找到 GLM 编程套餐的登录")
-                                              : .init("No OpenCode Go key found", "没有找到 OpenCode Go 的密钥"),
-                         action: .init("Add key", "添加密钥"), target: .addKey)
-        }
-        switch canon {
+        switch canonical(rawCode) {
         case "not_found":
-            // No path setting exists in the engine, so the hint says what to do and links to the install page.
-            let codex = (tool ?? "").lowercased() == "codex"
-            let reason: SettingsText
-            if codex { reason = .init("Install the Codex CLI, or make sure Codex runs from a terminal", "安装 Codex CLI，或确认 Codex 在命令行里能运行") }
-            else if let name { reason = .init("Install \(name), or make sure it runs from a terminal", "安装 \(name)，或确认它在命令行里能运行") }
-            else { reason = .init("Install the tool, or make sure it runs from a terminal", "安装这个工具，或确认它在命令行里能运行") }
-            return .init(reason: reason, action: .init("Open install page", "打开安装页面"), target: .installTool)
+            return .init(reason: .init(name.map { "Can't find the \($0) command" } ?? "Can't find the tool command",
+                                       name.map { "找不到 \($0) 命令" } ?? "找不到工具命令"),
+                         action: .init("Check connected tools in Settings", "在设置检查已连接工具"), target: .openSettings)
         case "runtime_missing":
             return .init(reason: .init("Node.js is required", "需要 Node.js"),
-                         action: .init("Install Node.js", "安装 Node.js"), target: .installNode)
+                         action: .init("Install Node.js, then refresh", "安装 Node.js 后刷新"), target: .guidance)
         case "timeout":
             return .init(reason: .init("The reading timed out; it will retry on its own", "读取超时，稍后自动重试"),
-                         action: .init("Retry now", "立即重试"), target: .retry)
+                         action: .init("No action needed; it retries on its own", "无需操作，会自动重试"), target: .guidance)
         case "rpc_error":
             return .init(reason: .init(name.map { "\($0)'s background service returned an error" } ?? "The tool's background service returned an error",
                                        name.map { "\($0) 后台服务出错" } ?? "工具后台服务出错"),
-                         action: .init("Retry", "重试"), target: .retry)
+                         action: .init("It retries on its own; reopen the tool if it keeps failing", "会自动重试；若持续失败请重新打开该工具"), target: .guidance)
         case "closed":
             return .init(reason: .init("The tool's background service closed unexpectedly", "工具后台服务意外退出"),
-                         action: .init("Retry", "重试"), target: .retry)
+                         action: .init("It retries on its own; reopen the tool if it keeps failing", "会自动重试；若持续失败请重新打开该工具"), target: .guidance)
         case "not_signed_in":
             return .init(reason: .init("Not signed in", "未登录"),
-                         action: .init(name.map { "Open \($0)" } ?? "Open the tool", name.map { "打开 \($0)" } ?? "打开工具"), target: .openTool)
+                         action: .init(name.map { "Open \($0) and sign in" } ?? "Open the tool and sign in", name.map { "打开 \($0) 并登录" } ?? "打开工具并登录"), target: .guidance)
         case "login_expired":
             return .init(reason: .init("The sign-in has expired", "登录已过期"),
-                         action: .init(name.map { "Open \($0)" } ?? "Open the tool", name.map { "打开 \($0)" } ?? "打开工具"), target: .openTool)
+                         action: .init(name.map { "Open \($0) and sign in again" } ?? "Open the tool and sign in again", name.map { "打开 \($0) 并重新登录" } ?? "打开工具并重新登录"), target: .guidance)
         case "keychain_unset", "keychain_unavailable", "keychain_not_found":
             return .init(reason: .init("Keychain access needed", "需要允许读取钥匙串"),
-                         action: .init("Allow reading", "允许读取"), target: .allowKeychain)
+                         action: .init("Allow Keychain reading in Settings", "在设置允许读取钥匙串"), target: .openSettings)
         case "keychain_denied":
             return .init(reason: .init("Keychain access was denied", "钥匙串被拒绝"),
-                         action: .init("How to allow it", "查看允许方法"), target: .explain)
+                         action: .init("Allow it again in Settings", "在设置重新允许"), target: .openSettings)
         case "key_missing":
             if isGLM(tool) {
-                return .init(reason: .init("Sign in to the GLM Coding Plan in ZCode", "在 ZCode 里登录 GLM 编程套餐"),
-                             action: .init("Open ZCode", "打开 ZCode"), target: .openTool)
+                return .init(reason: .init("No GLM key found on this Mac", "本机没有找到 GLM 密钥"),
+                             action: .init("Sign in to ZCode, or add a key in Settings", "在 ZCode 里登录，或在设置里添加密钥"), target: .openSettings)
             }
             return .init(reason: .init("A key is needed", "需要配置密钥"),
                          action: .init("Open Settings", "在设置查看"), target: .openSettings)
         case "region_refused":
             return .init(reason: .init("This address is a third-party relay, so its quota can't be read", "这个地址是第三方转发服务，查不到额度"),
-                         action: .init("Why?", "了解原因"), target: .explain)
+                         action: .init("Use the official address to read its quota", "改用官方地址才能读取额度"), target: .guidance)
         case "consent_required":
             return .init(reason: .init("Reading permission needed", "需要读取授权"),
                          action: .init("Review permission in Settings", "在设置检查授权"), target: .openSettings)

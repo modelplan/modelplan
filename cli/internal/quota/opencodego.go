@@ -44,7 +44,7 @@ func fetchOpenCodeGo(ctx context.Context, c *http.Client, region, key string, no
 }
 
 var (
-	ocPercentKeys = []string{"usagePercent", "usedPercent", "percentUsed", "percent", "usage_percent", "used_percent", "utilization", "utilizationPercent", "utilization_percent", "usage"}
+	ocPercentKeys = []string{"usagePercent", "usedPercent", "percentUsed", "percent", "usage_percent", "used_percent", "utilization", "utilizationPercent", "utilization_percent"}
 	ocResetInKeys = []string{"resetInSec", "resetInSeconds", "resetSeconds", "reset_sec", "reset_in_sec", "resetsInSec", "resetsInSeconds", "resetIn", "resetSec"}
 	ocResetAtKeys = []string{"resetAt", "resetsAt", "reset_at", "resets_at", "nextReset", "next_reset", "renewAt", "renew_at"}
 	ocUsedKeys    = []string{"used", "usage", "consumed", "count", "usedTokens", "usedMicroCents"}
@@ -85,14 +85,20 @@ func parseOpenCodeGo(r map[string]any, now time.Time) codexbarEntry {
 }
 
 func ocWindow(m map[string]any, minutes int, now time.Time) (Window, bool) {
+	// Explicit percentage fields first, then a used/limit counter pair, and only then a bare
+	// "usage" as a percentage: "usage" is also a counter alias, so {usage:120, limit:1000} is 12%.
 	pct, ok := ocNumber(m, ocPercentKeys)
 	if !ok {
 		used, ok1 := ocNumber(m, ocUsedKeys)
 		limit, ok2 := ocNumber(m, ocLimitKeys)
-		if !ok1 || !ok2 || limit <= 0 {
-			return Window{}, false
+		switch {
+		case ok1 && ok2 && limit > 0:
+			pct = used / limit * 100
+		default:
+			if pct, ok = ocNumber(m, []string{"usage"}); !ok {
+				return Window{}, false
+			}
 		}
-		pct = used / limit * 100
 	}
 	pct = math.Max(0, math.Min(100, pct))
 	w := Window{Kind: kindOf(minutes), WindowMinutes: minutes, UsedPercent: &pct, ResetMode: "fixed", ObservedAt: now.UTC()}

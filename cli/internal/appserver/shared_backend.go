@@ -53,6 +53,7 @@ type SharedBackend struct {
 	reportBusy    atomic.Bool
 	reportedAt    time.Time
 	config        SharedConfig
+	resetMemo     *resetevents.Memo
 	changes       chan struct{}
 	once          sync.Once
 	// Bound by the constructor before Serve. Credentials remain in the
@@ -78,14 +79,14 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	if err != nil {
 		return nil, err
 	}
-	b := &SharedBackend{config: config, changes: make(chan struct{}, 1)}
+	b := &SharedBackend{config: config, resetMemo: resetevents.NewMemo(), changes: make(chan struct{}, 1)}
 	if !config.ReadOnly {
 		_ = consent.RetryCleanup(consent.Path(), config.Cleanup)
 	}
 	return b, nil
 }
 func (b *SharedBackend) Capabilities() []string {
-	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityWindowSources, CapabilityCockpitDetailsV1, CapabilityAccountTodayV1, CapabilityCockpitForecastV1, CapabilityForecastProducerV1, CapabilityCockpitHistoryV1, CapabilityCockpitModelsV1}
+	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityWindowSources, CapabilityCockpitDetailsV1, CapabilityAccountTodayV1, CapabilityCockpitForecastV1, CapabilityForecastProducerV1, CapabilityCockpitHistoryV1, CapabilityCockpitModelsV1, CapabilityCockpitSessionsV1, CapabilityCockpitPeaksV1}
 	if b.config.ResetPublication != nil {
 		caps = append(caps, CapabilityResetEvents, CapabilityResetEventLinksV1)
 	}
@@ -239,7 +240,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed && b.config.ResetPublication != nil {
 		if d, err := b.config.ResetPublication(); err == nil && d != nil {
 			publicModels = d.Models
-			events, dropped := resetevents.Project(d, projection, in.Now)
+			events, dropped := resetevents.ProjectWithMemo(d, projection, in.Now, b.resetMemo)
 			droppedResetConfirmations = dropped
 			resetEvents = &events
 		}

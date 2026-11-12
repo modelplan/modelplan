@@ -250,4 +250,26 @@ const (
 	ReaderKeyUnreachable ReaderKeyOutcome = "unreachable"
 	ReaderKeyFailed      ReaderKeyOutcome = "failed"
 	ReaderKeyNotAccepted ReaderKeyOutcome = "not_accepted"
+	ReaderKeyFileUnsafe  ReaderKeyOutcome = "file_unsafe"
+)
+
+// HistoryImportPhase is the importer's state as the app shows it.
+type HistoryImportPhase string
+
+const (
+	ImportIdle      HistoryImportPhase = "idle"
+	ImportRunning   HistoryImportPhase = "running"
+	ImportDone      HistoryImportPhase = "done"
+	ImportCancelled HistoryImportPhase = "cancelled"
+	ImportFailed    HistoryImportPhase = "failed"
+)
+
+// HistoryImportSourceStatus is one source's outcome in a finished import.
+type HistoryImportSourceStatus string
+
+const (
+	ImportSourceImported  HistoryImportSourceStatus = "imported"
+	ImportSourceNoConsent HistoryImportSourceStatus = "skipped_no_consent"
+	ImportSourceNothing   HistoryImportSourceStatus = "nothing_found"
+	ImportSourceOff       HistoryImportSourceStatus = "off"
 )

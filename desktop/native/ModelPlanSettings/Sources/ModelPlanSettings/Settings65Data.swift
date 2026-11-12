@@ -49,9 +49,10 @@ public enum Settings65Homes {
         .init(id: "numbers", title: .init("Numbers", "数字"), keys: [.showPercentages,.percentageMode,.percentagePin,.redBelow,.sliverAlert]),
         .init(id: "location", title: .init("Position", "位置"), keys: [.dockDisplay,.dockEdge,.dockPosition,.fullscreen,.captureHiding,.activeDisplay]),
     ]
-    public static let cockpit = SettingsGroupDefinition(id: "cockpit", keys: [.opening,.countdown])
+    public static let cockpit = SettingsGroupDefinition(id: "cockpit", keys: [.cockpitSize,.opening,.countdown])
     public static let appearance = SettingsGroupDefinition(id: "appearance", keys: [.theme,.motion,.transparency])
-    /// D87 / G3-68: the one shared order (widget, cockpit) is edited here, not in the Quota Widget pane.
+    /// D87 item 1 / G3-68: the one shared order (widget, cockpit) is edited here, not in the Quota Widget pane.
+    /// Requirement SET-9-13 (drag, up/down, reset) is unchanged; only the home moved to Settings > Subscriptions.
     public static let subscriptionOrder = SettingsGroupDefinition(id: "sequence", title: .init("Order", "顺序"), keys: [.order])
     public static let subscriptions = SettingsGroupDefinition(id: "subscriptions", keys: [.visible,.alias,.detectedReaders,.optionalReaders])
     public static let paneCountPending = false

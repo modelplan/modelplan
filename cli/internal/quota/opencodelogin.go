@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -97,16 +99,20 @@ func opencodeLoginKey(ctx context.Context, now time.Time) (string, string) {
 // opencodeDBKey: found is false when the database has no credential table or no active row, so the
 // caller may fall back to auth.json.
 func opencodeDBKey(ctx context.Context, path string, now time.Time) (key string, found bool, code string) {
-	// Never create WAL sidecars: immutable mode is safe only without a live WAL.
-	wal, shm := false, false
-	if _, err := os.Stat(path + "-wal"); err == nil {
-		wal = true
-	}
-	if _, err := os.Stat(path + "-shm"); err == nil {
-		shm = true
-	}
+	// Never write into the other tool's directory (D90): with a WAL or shared-memory file present SQLite would update
+	// them even in read-only mode, so the database and its sidecars are read from a private copy instead; without
+	// sidecars the original is opened immutable.
+	_, walErr := os.Stat(path + "-wal")
+	_, shmErr := os.Stat(path + "-shm")
 	query := "mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(250)"
-	if !wal && !shm {
+	if walErr == nil || shmErr == nil {
+		copied, cleanup, err := snapshotSQLite(path)
+		if err != nil {
+			return "", false, "unsupported_login"
+		}
+		defer cleanup()
+		path = copied
+	} else {
 		query += "&immutable=1"
 	}
 	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: query}
@@ -208,4 +214,40 @@ func opencodeAuthFileKey(path string) (string, string) {
 		return t, ""
 	}
 	return "", "unsupported_login"
+}
+
+// snapshotSQLite copies a database and its -wal and -shm files (when present) into a private temporary directory and
+// returns the copy's path. The originals are only read.
+func snapshotSQLite(path string) (string, func(), error) {
+	dir, err := os.MkdirTemp("", "modelplan-sqlite-")
+	if err != nil {
+		return "", func() {}, err
+	}
+	cleanup := func() { os.RemoveAll(dir) }
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		src, err := os.Open(path + suffix)
+		if err != nil {
+			if suffix != "" && errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			cleanup()
+			return "", func() {}, err
+		}
+		dst, err := os.OpenFile(filepath.Join(dir, "db"+suffix), os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+		if err != nil {
+			src.Close()
+			cleanup()
+			return "", func() {}, err
+		}
+		_, err = io.Copy(dst, io.LimitReader(src, 256<<20))
+		src.Close()
+		if cerr := dst.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			cleanup()
+			return "", func() {}, err
+		}
+	}
+	return filepath.Join(dir, "db"), cleanup, nil
 }
