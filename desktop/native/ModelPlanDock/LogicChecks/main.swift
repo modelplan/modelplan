@@ -189,9 +189,10 @@ do {
         s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(600))
         try expect(DockNoticeProjection.candidates(for:s,at:now).map(\.key.kind)==[.forecast,.resetAnnounced,.cardsExpiring,.credits],"priority order")
         s.forecast=nil;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"card expiry precedes announced reset")
-        let cards=s.cards;s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.shape == .hollow,"announced hollow blue")
+        let cards=s.cards;s.cards=[];let announced=DockNoticeProjection.selected(for:s,at:now)
+        try expect(announced?.shape == .hollow && announced?.tone == DockNotice.resetAnnouncedTone,"announced hollow, palette tone")
         s.reset=reset(confirmed:true);let confirmed=DockNoticeProjection.selected(for:s,at:now)
-        try expect(confirmed?.tone == .blue && confirmed?.shape == .solid,"confirmed solid blue, never credits white")
+        try expect(confirmed?.tone == DockNotice.resetConfirmedTone && confirmed?.shape == .solid && confirmed?.tone != .white,"confirmed solid, palette tone, never credits white")
         s.cards=cards;s.reset?.restartedReading=true;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"reading clears confirmed reset only")
         s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.tone == .white,"credits are white")
         s.creditsKnown=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"unknown credits not fabricated")
@@ -202,6 +203,9 @@ do {
         s.reset=DockResetSignal(id:"scheduled",status:.announced,scheduledThrough:now.addingTimeInterval(10))
         try expect(DockNoticeProjection.selected(for:s,at:now) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(10)) == nil,"scheduled end, not nominal 48h")
         s.reset=reset(confirmed:true);try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600))==nil,"confirmed 24h")
+        try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(3*3600-1)) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(3*3600))==nil,"D166: confirmed dot 3h")
+        s.reset?.confirmedDotUntil=now.addingTimeInterval(30*3600);try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600-1)) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600))==nil,"D166: a later dot bound is capped at 24h")
+        s.reset?.confirmedDotUntil=nil
         s.reset?.confirmedAt=now.addingTimeInterval(1);try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"future confirmation withheld")
         s.reset=nil;s.cards=[DockResetCardSignal(id:"expired",expiresAt:now),DockResetCardSignal(id:"boundary",expiresAt:now.addingTimeInterval(48*3600)),DockResetCardSignal(id:"late",expiresAt:now.addingTimeInterval(48*3600+1))]
         try expect(DockNoticeProjection.selected(for:s,at:now)?.key.sourceIDs == ["boundary"],"card 48h inclusive, zero excluded")
