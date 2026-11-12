@@ -202,7 +202,7 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
     g += `<g class="pc-legend"><line class="pc-legend-time" x1="${n1(lx)}" x2="${n1(lx + 9)}" y1="${n1(ly - 3)}" y2="${n1(ly - 3)}"/>${label(lx + 12, ly, word, 'pc-legend-l')}</g>`;
   }
   // a small label at the top of each highlighted column names it (the same effort carries one label for both); the plot starts below it
-  const colLabel = (i, role, key) => label(X(i), 8.6, t(key), `pc-col-l pc-col-${role}`, 'middle').replace('<text ', `<text data-role="${role}" data-effort="${esc(efforts[i])}" `);
+  const colLabel = (i, role, key) => `<text class="pc-col-l pc-col-${role}" data-role="${role}" data-effort="${esc(efforts[i])}" x="${n1(X(i))}" y="8.6" text-anchor="middle">${esc(t(key))}${i === ri ? '<tspan class="pc-col-star"> ★</tspan>' : ''}</text>`;
   if (ci >= 0 && ci === ti) g += colLabel(ci, 'both', 'mfd.colBoth');
   else { if (ci >= 0) g += colLabel(ci, 'current', 'mfd.colCurrent'); if (ti >= 0) g += colLabel(ti, 'trial', 'mfd.colTrial'); }
   g += efforts.map((l, i) => box(L + i * bw, 0, bw, H, 'pc-hit', ` data-mfd="try:${esc(l)}" data-hover="${esc(l)}"`)).join('');

@@ -364,3 +364,26 @@ test(`CKP-MFD-33 column labels do not collide with the gridline or ▲ value lab
  await expect(page.locator('.mfd-page svg.cmp-chart .pc-up-l')).not.toHaveCount(0);
  expect(await collisions(page)).toEqual([]);
 });
+
+// Owner 11-12: a labelled column that is also the recommended effort carries a gold " ★"; a recommended column that is neither current nor trial has no label and no background.
+for(const [locale,w] of [['en',{c:'Current',t:'Trial',b:'Current · Trial'}],['zh-CN',{c:'当前',t:'试',b:'当前·试'}]])
+for(const tier of ['tall','compact'])
+test(`CKP-MFD-33 column label ★ (${locale}, ${tier}): appended when the labelled column is the recommended effort`,async({page})=>{
+ const sol=()=>page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
+ const labels=()=>page.locator('.mfd-page svg.cmp-chart').evaluate(svg=>[...svg.querySelectorAll('.pc-col-l')].map(e=>({role:e.dataset.role,text:e.textContent,effort:e.dataset.effort,star:getComputedStyle(e.querySelector('.pc-col-star')||e).fill})));
+ const bands=()=>page.locator('.mfd-page svg.cmp-chart .pc-band:not(.pc-band-hover)').count();
+ // current High, ★ Med: nothing starred; the ★ column has no label and no background
+ await open(page,locale,true,null,tier);await sol();
+ expect((await labels()).map(l=>l.text)).toEqual([w.c]);expect(await bands()).toBe(1);
+ // trial = ★
+ await page.locator('.cmp-lad [data-mfd="try:Med"]').click();
+ let l=await labels();expect(l.map(x=>[x.role,x.text])).toEqual([['current',w.c],['trial',w.t+' ★']]);
+ expect(l[1].star).not.toBe(l[0].star);expect(await collisions(page)).toEqual([]);
+ // current = ★ (session at Med)
+ await open(page,locale,true,d=>{d.details.sessions[0].effort='medium';},tier);await sol();
+ expect((await labels()).map(x=>[x.role,x.text,x.effort])).toEqual([['current',w.c+' ★','Med']]);
+ // all three equal: one label carrying the ★
+ await page.locator('.mfd-vk button.vk-fast').click();
+ expect((await labels()).map(x=>[x.role,x.text])).toEqual([['both',w.b+' ★']]);
+ expect(await collisions(page)).toEqual([]);
+});

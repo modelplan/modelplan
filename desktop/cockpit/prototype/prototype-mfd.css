@@ -292,3 +292,4 @@ dl.ss{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 6px;margin:2
 .dk-mfd .cmp-bars.lane-3 .pc-t0{stop-color:#4aa3ff}.dk-mfd .cmp-bars.lane-3 .pc-t1{stop-color:#3a8df0;stop-opacity:.9}
 .dk-mfd .cmp-bars.lane-3 .pc-glow.trial rect{fill:#4aa3ff}
 .dk-mfd .cmp-chart .pc-col-l{font:7px var(--f-lcd);pointer-events:none}.dk-mfd .cmp-chart .pc-col-current{fill:var(--lcd-ink)}.dk-mfd .cmp-chart .pc-col-trial,.dk-mfd .cmp-chart .pc-col-both{fill:var(--trial)}
+.dk-mfd .cmp-chart .pc-col-star{fill:var(--gold-lcd);font-size:9px}
