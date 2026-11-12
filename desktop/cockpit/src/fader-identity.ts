@@ -16,9 +16,10 @@ export function positionalRemap(before:readonly string[],after:readonly string[]
 /** The open comparison against the latest fader input: current and Fast follow the session as reported now. A trial
  * argument that only repeated the old current effort (the comparison opened from the LCD, nothing tried) follows it too,
  * so a new reading never turns into a trial of the old effort (audit F 2, CKP-FAD-22). */
-export function refreshComparison<T extends {current:string|null;currentFast:boolean;trial?:string}>(compare:T,f:{current:string|null;currentFast:boolean}):T {
+export function refreshComparison<T extends {current:string|null;currentFast:boolean;trial?:string;fast?:boolean}>(compare:T,f:{current:string|null;currentFast:boolean}):T {
  const current=f.current??null,next={...compare,current,currentFast:!!f.currentFast};
- if(compare.current!==current&&compare.trial!==undefined&&compare.trial===compare.current)delete next.trial;
+ const fastChosen=compare.fast!==undefined&&compare.fast!==compare.currentFast; // a Fast-only trial is the user's own
+ if(compare.current!==current&&compare.trial!==undefined&&compare.trial===compare.current&&!fastChosen)delete next.trial;
  return next;
 }
 

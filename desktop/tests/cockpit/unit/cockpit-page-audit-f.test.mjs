@@ -48,6 +48,14 @@ test('audit F 2: the comparison measures against the session effort reported now
   {modelId:'model0',current:'High',currentFast:false});
  assert.deepEqual(refreshComparison({modelId:'model0',current:'Med',currentFast:false,trial:'Med'},{current:'Med',currentFast:false}),
   {modelId:'model0',current:'Med',currentFast:false,trial:'Med'});
+ // A Fast choice on the same effort is a real trial (a Fast-only trial, on or off): it survives a new reading; the same
+ // effort with Fast left as reported is still untouched and follows.
+ assert.deepEqual(refreshComparison({modelId:'model0',current:'Med',currentFast:false,trial:'Med',fast:true},{current:'High',currentFast:false}),
+  {modelId:'model0',current:'High',currentFast:false,trial:'Med',fast:true});
+ assert.deepEqual(refreshComparison({modelId:'model0',current:'Med',currentFast:true,trial:'Med',fast:false},{current:'High',currentFast:true}),
+  {modelId:'model0',current:'High',currentFast:true,trial:'Med',fast:false});
+ assert.deepEqual(refreshComparison({modelId:'model0',current:'Med',currentFast:false,trial:'Med',fast:false},{current:'High',currentFast:false}),
+  {modelId:'model0',current:'High',currentFast:false,fast:false});
 });
 
 test('audit F 3: of two points at the same cost only the more able one is on the frontier, in either order',()=>{
