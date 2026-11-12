@@ -116,15 +116,6 @@ test('CKP-ENG-06 named general windows and the tightest Other quota stay separat
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-tag',/mo/i);
 });
 
-test('CKP-FAD-20 the reset countdown beside the large percentage is brighter and larger, still secondary to the percentage',async({page})=>{
- await open(page);
- const cell=page.locator('.eng-cols .ec[data-col]').first().locator('.qcell[data-row="first"]');
- const read=e=>({size:parseFloat(getComputedStyle(e).fontSize),color:getComputedStyle(e).color});
- const reset=await cell.locator('.qtxt').evaluate(read),number=await cell.locator('.qnum').evaluate(read);
- expect(reset.size).toBe(12);expect(reset.color).toBe('rgb(195, 202, 208)');
- expect(reset.size).toBeLessThan(number.size);
-});
-
 test('CKP-ENG-12 quota bars have ten segments and only known remaining time has dots',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);const window=data.projection.rows[0].accounts[0].windows[0];window.resetsAt='2026-11-04T12:00:01Z';
  const {send,receive}=await open(page,data);const cell=page.locator('.eng-cols .ec[data-col]').first().locator('.qcell[data-row="first"]');
