@@ -82,6 +82,17 @@ final class BundleScheme: NSObject, WKURLSchemeHandler {
   ) { owner?.receive(message) }
 }
 
+/// D204: whether the user can see the cockpit window, from the window's own facts.
+public struct CockpitUserVisibility: Equatable, Sendable {
+  public var onScreen: Bool, miniaturized: Bool, onActiveSpace: Bool, occluded: Bool, appHidden: Bool
+  public init(onScreen: Bool, miniaturized: Bool, onActiveSpace: Bool, occluded: Bool, appHidden: Bool) {
+    self.onScreen = onScreen; self.miniaturized = miniaturized; self.onActiveSpace = onActiveSpace
+    self.occluded = occluded; self.appHidden = appHidden
+  }
+  /// Partly covered is visible; only a fully covered window (occlusion state without `.visible`) is not.
+  public var visible: Bool { onScreen && !miniaturized && onActiveSpace && !occluded && !appHidden }
+}
+
 /// CKP-SHELL-20: construction creates state only. prewarm() builds the sole web view and loads the page in
 /// a panel that is never ordered front, with no data, focus or outside-press monitor; open() shows it, or
 /// builds it first. Each close discards the page. Production contains no private WebKit selectors.
@@ -115,6 +126,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private let openPoint: () -> CGPoint?
   /// The displays placement and drags use; tests replace it with a fixed arrangement.
   var screens: @MainActor () -> [CockpitScreen] = { CockpitScreenSelection.system() }
+  /// D204: whether each display has its own Spaces (and so its own menu bar); tests replace it.
+  var separateSpaces: @MainActor () -> Bool = { NSScreen.screensHaveSeparateSpaces }
+  /// D204 (G3-94): the widget ignition's frame on screen. A press on it is the ignition's own toggle, decided on
+  /// mouse-up; its mouse-down is not an outside click that closes the attached cockpit first.
+  public var ignitionFrame: (@MainActor () -> CGRect?)?
+  /// D204: the occlusion state counts only once the window server has reported it since the last order-front;
+  /// until then a freshly ordered-in window is not mistaken for a covered one.
+  private var occlusionReported = false
   private var layout: CockpitShellLayout?
   private var scope = "all"
   private var outsideMonitor: Any?, localMonitor: Any?
@@ -357,6 +376,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     build()
   }
   public func open() {
+    let wasVisible = isVisibleToUser
     let wasClosing = closeTask != nil
     closeTask?.cancel(); closeTask = nil
     if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
@@ -371,6 +391,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let target = panel.frame
       let start = Self.entranceStart(entrance, reduceMotion: appearance.reduceMotion, detached: shellSession.detached, icon: anchor())
       grewFromIcon = start != nil
+      occlusionReported = false
       if let start {
         // D88: grow out of the icon. The content keeps its 636 pt bounds, so it scales with the frame.
         entering = true
@@ -416,9 +437,31 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       }
       applyLayout()
     }
+    // D204: an open brings the cockpit in front (a detached one where it is); an unseen attached one is laid out again.
+    if !wasVisible, !wasClosing, !shellSession.detached { applyLayout() }
     panel.alphaValue = 1
-    panel.makeKeyAndOrderFront(nil)
+    bringToFront(panel)
     lastVisibility = nil; visibilityChanged()
+  }
+  /// D204: whether the user can see the cockpit: shown and not closing, ordered in, not minimised, on the active Space
+  /// and not fully covered (a partly covered window is visible), with the app not hidden. An open of an attached
+  /// cockpit the user cannot see lays it out again under the icon of the display asked on before it comes in front.
+  public var isVisibleToUser: Bool {
+    guard shown, !ending, closeTask == nil, let window else { return false }
+    return CockpitUserVisibility(onScreen: window.isVisible, miniaturized: window.isMiniaturized, onActiveSpace: window.isOnActiveSpace,
+      occluded: occlusionReported && !window.occlusionState.contains(.visible), appHidden: NSApp.isHidden).visible
+  }
+  /// D204: off the Dock if minimised, and onto the current Space without switching the user to the window's own Space.
+  private func bringToFront(_ panel: NSWindow) {
+    if panel.isMiniaturized { panel.deminiaturize(nil) }
+    occlusionReported = false
+    let behavior = panel.collectionBehavior
+    if !panel.isOnActiveSpace, !behavior.contains(.canJoinAllSpaces) {
+      // Ordered in with this behaviour the window moves to the active Space; the old behaviour is restored after.
+      panel.collectionBehavior = behavior.union(.moveToActiveSpace)
+      panel.makeKeyAndOrderFront(nil)
+      panel.collectionBehavior = behavior
+    } else { panel.makeKeyAndOrderFront(nil) }
   }
   private func build() {
     if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
@@ -483,6 +526,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           [weak self] _ in Task { @MainActor in self?.visibilityChanged() }
         })
     }
+    observers.append(center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: panel, queue: .main) { [weak self] _ in
+      Task { @MainActor in self?.occlusionReported = true }
+    })
     let workspaceCenter = NSWorkspace.shared.notificationCenter
     for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
       let observer = workspaceCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -944,8 +990,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
        let replayed = CockpitScreenSelection.replayFrame(origin: origin, size: layout?.frame.size ?? CGSize(width: 1, height: 1), screens: displays) {
       remembered = CockpitScreenSelection.overlapping(replayed, in: displays)
     }
-    guard let screen = remembered ?? CockpitScreenSelection.openScreen(point: openPoint(), anchor: requested, screens: displays) else { return nil }
-    let icon = requested.flatMap { screen.frame.intersects($0) ? $0 : nil } ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
+    // D204: an attached open follows the menu bar the user can see (`attachedScreen`); a detached one, the click's display.
+    let asked = shellSession.detached
+      ? CockpitScreenSelection.openScreen(point: openPoint(), anchor: requested, screens: displays)
+      : CockpitScreenSelection.attachedScreen(point: openPoint(), anchor: requested, screens: displays, separateSpaces: separateSpaces())
+    guard let screen = remembered ?? asked else { return nil }
+    let onScreen = shellSession.detached
+      ? requested.flatMap { screen.frame.intersects($0) ? $0 : nil }
+      : CockpitScreenSelection.icon(requested, on: screen, screens: displays)
+    let icon = onScreen ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
   /// Where Put back takes the cockpit: the attached fit on the display an attached open uses. The drag's snap guide,
@@ -1169,7 +1222,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
     verificationOutsidePress?(eventType,isTray)
     #endif
-    if eventType == .leftMouseDown, isTray { return }
+    // D204 (G3-94): nor is the ignition's. It closed the cockpit here and its mouse-up action opened it again.
+    if eventType == .leftMouseDown, isTray || ignitionFrame?()?.contains(point) == true { return }
     #if MODELPLAN_TEST_ONLY_SPI
     verificationCloseOrigin?("outside")
     #endif

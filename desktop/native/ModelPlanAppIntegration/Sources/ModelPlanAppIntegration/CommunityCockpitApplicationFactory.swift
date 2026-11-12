@@ -94,6 +94,7 @@ import ModelPlanDock
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.openPoint = { [weak application] in application?.cockpitOpenPoint }
+        owner.ignitionFrame = { [weak application] in application?.composition.dock.ignitionScreenFrame }
         if application.cockpitEntryEnabled {
             owner.prepare()
             // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
@@ -144,6 +145,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var anchor: (() -> CGRect?)?
     /// Build 14c (G3-79): where the latest open was clicked; nil opens on the menu bar icon's display.
     var openPoint: (() -> CGPoint?)?
+    /// D204 (G3-94): the widget ignition's frame on screen; its press is not an outside click.
+    var ignitionFrame: (() -> CGRect?)?
     var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
@@ -213,6 +216,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() })
+        page.ignitionFrame = { [weak self] in self?.ignitionFrame?() }
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
         currentPage = page
         page.contextMenuProvider = { [weak self, weak page] in self?.makeContextMenu(page: page) }
