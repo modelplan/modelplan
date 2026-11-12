@@ -143,17 +143,20 @@ private actor ActivityJourneyEngine: EngineClient {
         await app.composition.start(); app.allowDockPresentation()
         let engine = try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
         let host = app.composition.dock
+        // Read the spin when effects are configured, like the other activity tests.
+        var rotations: [String: Double] = [:]
+        host.workingEffectsDidConfigureForChecks = { [weak host] in rotations = host?.workingEffectRotationPeriodsForChecks ?? [:] }
         try await engine.publish(fixture(phase: "tool", sequence: 2))
         try await wait { host.animatingWorkingEffectIDs == [self.first] }
         XCTAssertEqual(host.workingEffectCycleSeconds[first], 2, "on battery the flames step at half rate")
-        XCTAssertEqual(host.workingEffectRotationPeriodsForChecks[first], 2, "D171: the ring spin keeps one turn every 2 s on battery")
+        XCTAssertEqual(rotations[first], 2, "D171: the ring spin keeps one turn every 2 s on battery")
         try await engine.publish(fixture(phase: nil, sequence: 3))
         try await wait { host.activeWorkingEffectIDs.isEmpty }
         battery = false
         try await engine.publish(fixture(phase: "tool", sequence: 4))
         try await wait { host.animatingWorkingEffectIDs == [self.first] }
         XCTAssertEqual(host.workingEffectCycleSeconds[first], 1, "on AC the flames return to full rate")
-        XCTAssertEqual(host.workingEffectRotationPeriodsForChecks[first], 2, "D171: the spin period does not follow the flame clock")
+        XCTAssertEqual(rotations[first], 2, "D171: the spin period does not follow the flame clock")
         await app.composition.stop()
     }
     func testNormalEntryLifecycleSleepAndLockWithdrawWorkingEffects() async throws {
