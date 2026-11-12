@@ -76,6 +76,44 @@ actor SettingsJourneyClient: EngineClient {
 }
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
+    /// SET-9-43 / MENU-05 (G3-93): untouched settings follow the current default. A profile written by an older build stored
+    /// every key at once, including the then-default "icon"; that value is dropped once. A choice made after the change stays.
+    func testSET_9_43DefaultsFollowTheCurrentDefaultAndOnlyAChosenIconStays() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g393-sparse-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        func open() throws -> SettingsStore { try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]) }
+        // Fresh profile: the tightest number.
+        var store = try open()
+        var shown = await store.snapshot().preferences.menuDisplay
+        XCTAssertEqual(shown, .tightest, "a fresh profile shows the percentage")
+        try FileManager.default.removeItem(at: profile)
+        // An old profile: every key written, menuDisplay "icon" only because it was the default then.
+        var old = SettingsPreferences(); old.menuDisplay = .icon; old.theme = .night
+        let values = try JSONSerialization.jsonObject(with: JSONEncoder().encode(old))
+        let core = try JSONSerialization.jsonObject(with: JSONEncoder().encode(FoundationCorePreferences()))
+        let location = try FoundationPreferenceLocation(applicationSupport: profile, product: .community)
+        try FileManager.default.createDirectory(at: location.directory, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "settings": values, "core": core]).write(to: location.target)
+        store = try open()
+        shown = await store.snapshot().preferences.menuDisplay
+        XCTAssertEqual(shown, .tightest, "the auto-written icon is dropped by the one-time migration")
+        let theme = await store.snapshot().preferences.theme
+        XCTAssertEqual(theme, .night, "every other stored value is kept")
+        // The user chooses icon after the change: it is written and stays, and untouched keys are not written.
+        _ = try await store.update { $0.menuDisplay = .icon }
+        store = try open()
+        shown = await store.snapshot().preferences.menuDisplay
+        XCTAssertEqual(shown, .icon, "an explicit icon choice stays")
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: location.target)) as? [String: Any])
+        let settings = try XCTUnwrap(saved["settings"] as? [String: Any])
+        XCTAssertEqual(settings["menuDisplay"] as? String, "icon")
+        XCTAssertNil(settings["automaticUpdates"], "an untouched key is not written")
+        // Choosing the default again stops pinning it.
+        _ = try await store.update { $0.menuDisplay = .tightest }
+        let again = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: location.target)) as? [String: Any])
+        XCTAssertNil((again["settings"] as? [String: Any])?["menuDisplay"])
+    }
+
     func testV17NormalEntryDefaultsToTightestAndRetainsExplicitMenuChoice() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("v17-settings-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }

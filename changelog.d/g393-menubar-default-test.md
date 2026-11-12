@@ -1,1 +1,1 @@
-Added a normal-entry check that a fresh profile shows the tightest menu-bar number without a prior choice and that a saved icon-only choice stays (G3-93).
+Settings now save only the values you changed, so an untouched setting follows a later default change; settings files written by older builds had every key stored at once, so a stored menu-bar display of "icon" from before the default became the tightest percentage is dropped once and the percentage shows beside the menu-bar icon again (a choice made after this change stays).

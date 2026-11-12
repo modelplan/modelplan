@@ -128,6 +128,7 @@ public enum FoundationSettingsMigration {
         guard let data = try bytes(input, limit: SettingsStore.maximumBytes) else { return nil }
         let envelope = try legacyObject(data)
         guard var values = envelope["preferences"] as? [String: Any] else { throw Failure.invalidPreferences }
+        SettingsSparseFile.migrate(&values, isSparse: envelope[SettingsSparseFile.marker] as? Bool == true)
         let edgeDefaulted: Bool
         if let value = values["dockEdge"] {
             edgeDefaulted = (value as? String).flatMap(SettingsDockEdge.init(rawValue:)) == nil
