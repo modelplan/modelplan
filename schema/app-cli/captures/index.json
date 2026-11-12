@@ -1596,7 +1596,16 @@
     {
       "file": "WireHistoryImportStatus.json",
       "type": "WireHistoryImportStatus",
-      "optional": [],
+      "optional": [
+        {
+          "field": "revision",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        }
+      ],
       "required": [
         "schemaVersion",
         "phase",

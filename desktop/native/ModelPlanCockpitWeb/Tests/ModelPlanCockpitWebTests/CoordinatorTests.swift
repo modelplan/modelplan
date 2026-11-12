@@ -258,9 +258,9 @@ final class CoordinatorTests: XCTestCase {
       XCTFail("expected \(n) cockpit queries, saw \(seen)")
     }
     func settle() async { for _ in 0..<50 { await Task.yield() } }
-    func status(_ phase: String, rows: Int) throws -> EngineClientEvent {
+    func status(_ phase: String, rows: Int, revision: Int) throws -> EngineClientEvent {
       let coverage = rows > 0 ? #"[{"source":"codex","from":"2026-10-10","through":"2026-11-08","rows":\#(rows)}]"# : "[]"
-      let json = #"{"schemaVersion":1,"phase":"\#(phase)","days":30,"filesDone":0,"filesTotal":0,"firstRunDone":true,"importedRows":\#(rows),"coverage":\#(coverage),"sources":[]}"#
+      let json = #"{"schemaVersion":1,"phase":"\#(phase)","days":30,"filesDone":0,"filesTotal":0,"firstRunDone":true,"importedRows":\#(rows),"coverage":\#(coverage),"sources":[],"revision":\#(revision)}"#
       let data = try WireDecoder.decode(WireHistoryImportStatus.self, from: Data(json.utf8))
       let envelope = try WireEnvelope(
         sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
@@ -269,22 +269,62 @@ final class CoordinatorTests: XCTestCase {
     }
     try await requests(1)
     await client.complete(); await settle()
-    await coordinator.consume(try status("running", rows: 0)); await settle()
+    await coordinator.consume(try status("running", rows: 0, revision: 0)); await settle()
     try await requests(1)
-    await coordinator.consume(try status("done", rows: 12))
+    await coordinator.consume(try status("done", rows: 12, revision: 1))
     try await requests(2)
     await client.complete(); await settle()
-    await coordinator.consume(try status("done", rows: 12)); await settle()
+    await coordinator.consume(try status("done", rows: 12, revision: 1)); await settle()
     try await requests(2)
-    await coordinator.consume(try status("idle", rows: 0))
+    await coordinator.consume(try status("idle", rows: 0, revision: 2))
     try await requests(3)
     await client.complete(); await settle()
     await coordinator.shutdown(); await client.stop()
   }
 
-  /// macrev2-856-1 (HIST-IMP-05, C-13): a repeat import can change imported values without changing the
-  /// summary (rows, coverage), so done(S) -> running -> done(S) still asks an open cockpit again.
-  @MainActor func testRepeatImportWithUnchangedSummaryRequeriesAnOpenCockpit() async throws {
+  /// macrev2-856-1 (HIST-IMP-07, C-13): a fast import's start reply can already be done, so running is never seen,
+  /// and a repeat import can change values under the same rows and coverage. The engine's revision identifies each
+  /// completion: done(S, r1) -> done(S, r1) asks once; done(S, r2) with no running between asks again.
+  @MainActor func testEachImportRevisionRequeriesOnceWithoutObservedRunning() async throws {
+    let (coordinator, client, status) = try await importHarness()
+    func requests(_ n: Int) async throws { try await waitRequests(client, n) }
+    func settle() async { for _ in 0..<50 { await Task.yield() } }
+    try await requests(1)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("done", 1))
+    try await requests(2)
+    await client.complete(); await settle()
+    // A repeated poll of the same completion does not ask again.
+    await coordinator.consume(try status("done", 1)); await settle()
+    try await requests(2)
+    // The next fast import: same summary, no running status between, new revision.
+    await coordinator.consume(try status("done", 2))
+    try await requests(3)
+    await client.complete(); await settle()
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  /// An older engine sends no revision; every settled status may then be a new completion and asks again.
+  @MainActor func testImportStatusWithoutRevisionRequeriesOnEverySettledStatus() async throws {
+    let (coordinator, client, status) = try await importHarness()
+    func requests(_ n: Int) async throws { try await waitRequests(client, n) }
+    func settle() async { for _ in 0..<50 { await Task.yield() } }
+    try await requests(1)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("done", nil))
+    try await requests(2)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("done", nil))
+    try await requests(3)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("running", nil)); await settle()
+    try await requests(3)
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  /// An open cockpit bound to a held client, and a builder of one fixed import summary (same rows and coverage)
+  /// with the given phase and optional revision.
+  @MainActor private func importHarness() async throws -> (EngineCockpitCoordinator, HeldClient, (String, Int?) throws -> EngineClientEvent) {
     let coordinator = EngineCockpitCoordinator { PageProbe($0) }
     let client = HeldClient()
     coordinator.bind(client: client)
@@ -293,38 +333,26 @@ final class CoordinatorTests: XCTestCase {
       floor: .init(storeEpoch: "synthetic", generation: 3), revision: 2)
     await coordinator.consume(.context(delivery))
     coordinator.open()
-    func requests(_ n: Int) async throws {
-      for _ in 0..<200 {
-        if await client.requests == n { return }
-        try await Task.sleep(for: .milliseconds(5))
-      }
-      let seen = await client.requests
-      XCTFail("expected \(n) cockpit queries, saw \(seen)")
-    }
-    func settle() async { for _ in 0..<50 { await Task.yield() } }
-    func status(_ phase: String) throws -> EngineClientEvent {
+    let status: (String, Int?) throws -> EngineClientEvent = { phase, revision in
       let coverage = #"[{"source":"codex","from":"2026-11-08","through":"2026-11-08","rows":1}]"#
-      let json = #"{"schemaVersion":1,"phase":"\#(phase)","days":30,"filesDone":0,"filesTotal":0,"firstRunDone":true,"importedRows":1,"coverage":\#(coverage),"sources":[]}"#
+      let rev = revision.map { #","revision":\#($0)"# } ?? ""
+      let json = #"{"schemaVersion":1,"phase":"\#(phase)","days":30,"filesDone":0,"filesTotal":0,"firstRunDone":true,"importedRows":1,"coverage":\#(coverage),"sources":[]\#(rev)}"#
       let data = try WireDecoder.decode(WireHistoryImportStatus.self, from: Data(json.utf8))
       let envelope = try WireEnvelope(
         sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
         consentGeneration: delivery.floor.generation, data: data)
       return .response(requestID: .string("import"), .historyImport(.init(envelope: envelope, delivery: delivery)))
     }
-    try await requests(1)
-    await client.complete(); await settle()
-    await coordinator.consume(try status("done"))
-    try await requests(2)
-    await client.complete(); await settle()
-    // A repeated settled poll with no run between is still deduplicated.
-    await coordinator.consume(try status("done")); await settle()
-    try await requests(2)
-    await coordinator.consume(try status("running")); await settle()
-    try await requests(2)
-    await coordinator.consume(try status("done"))
-    try await requests(3)
-    await client.complete(); await settle()
-    await coordinator.shutdown(); await client.stop()
+    return (coordinator, client, status)
+  }
+
+  private func waitRequests(_ client: HeldClient, _ n: Int) async throws {
+    for _ in 0..<200 {
+      if await client.requests == n { return }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let seen = await client.requests
+    XCTFail("expected \(n) cockpit queries, saw \(seen)")
   }
 }
 

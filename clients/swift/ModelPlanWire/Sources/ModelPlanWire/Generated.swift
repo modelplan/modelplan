@@ -4227,6 +4227,7 @@ public struct WireHistoryImportStatus: Codable, Sendable {
     public let `importedRows`: Int
     public let `coverage`: [WireHistoryImportCoverage]
     public let `sources`: [WireHistoryImportSource]
+    public let `revision`: Int?
     private enum CodingKeys: String, CodingKey {
         case `schemaVersion`
         case `phase`
@@ -4237,8 +4238,9 @@ public struct WireHistoryImportStatus: Codable, Sendable {
         case `importedRows`
         case `coverage`
         case `sources`
+        case `revision`
     }
-    public init(`schemaVersion`: Int, `phase`: WireHistoryImportPhase, `days`: Int, `filesDone`: Int, `filesTotal`: Int, `firstRunDone`: Bool, `importedRows`: Int, `coverage`: [WireHistoryImportCoverage], `sources`: [WireHistoryImportSource]) throws {
+    public init(`schemaVersion`: Int, `phase`: WireHistoryImportPhase, `days`: Int, `filesDone`: Int, `filesTotal`: Int, `firstRunDone`: Bool, `importedRows`: Int, `coverage`: [WireHistoryImportCoverage], `sources`: [WireHistoryImportSource], `revision`: Int? = nil) throws {
         self.`schemaVersion` = `schemaVersion`
         self.`phase` = `phase`
         self.`days` = `days`
@@ -4248,6 +4250,7 @@ public struct WireHistoryImportStatus: Codable, Sendable {
         self.`importedRows` = `importedRows`
         self.`coverage` = `coverage`
         self.`sources` = `sources`
+        self.`revision` = `revision`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -4261,6 +4264,7 @@ public struct WireHistoryImportStatus: Codable, Sendable {
         self.`importedRows` = try c.decode(Int.self, forKey: .`importedRows`)
         self.`coverage` = try c.decode([WireHistoryImportCoverage].self, forKey: .`coverage`)
         self.`sources` = try c.decode([WireHistoryImportSource].self, forKey: .`sources`)
+        self.`revision` = try? c.decodeIfPresent(Int.self, forKey: .`revision`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -4275,6 +4279,7 @@ public struct WireHistoryImportStatus: Codable, Sendable {
         try c.encode(`importedRows`, forKey: .`importedRows`)
         try c.encode(`coverage`, forKey: .`coverage`)
         try c.encode(`sources`, forKey: .`sources`)
+        try c.encodeIfPresent(`revision`, forKey: .`revision`)
     }
     private func validate() throws {
         guard `schemaVersion` >= 1 else { throw WireDecodeError.invalidBound }

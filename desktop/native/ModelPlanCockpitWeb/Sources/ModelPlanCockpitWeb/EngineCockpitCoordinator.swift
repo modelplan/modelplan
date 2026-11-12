@@ -500,14 +500,19 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       guard let delivery, reply.delivery == delivery else { break }
       let status = reply.envelope.data
       // Progress while running changes nothing the cockpit draws; a finished, cancelled or removed import may.
-      // The status summary is not a revision of the imported values (a repeat import can change same-day sums
-      // with the same rows and coverage), so a running import forgets the last settled summary and its
-      // completion always asks again. Only repeated settled polls with no run between them are deduplicated.
-      guard status.phase != .running else { importState = nil; break }
-      let state = "\(status.phase)|\(status.importedRows)|" + status.coverage.map { "\($0.source),\($0.from),\($0.through),\($0.rows)" }.joined(separator: ";")
-      guard state != importState else { break }
-      importState = state
-      // The first settled status after a running import is its completion, so it asks too. The kept reply may still hold the removed or superseded history; a hidden page refills too.
+      guard status.phase != .running else { break }
+      // HIST-IMP-07: one re-query per import operation. The engine's revision changes exactly when a run settles
+      // or imported history is removed; a fast run's start reply can already be done, so neither the summary nor
+      // an observed running status identifies an operation. Repeated polls of one revision do not ask again.
+      // An older engine sends no revision: then every settled status may be a new completion and asks again.
+      if let revision = status.revision {
+        let state = String(revision)
+        guard state != importState else { break }
+        importState = state
+      } else {
+        importState = nil
+      }
+      // The kept reply may still hold the removed or superseded history; a hidden page refills too.
       lastReply = nil
       trace("import.changed")
       refresh()

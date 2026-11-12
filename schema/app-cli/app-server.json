@@ -2526,6 +2526,17 @@
           ],
           "type": "string"
         },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
+        },
         "schemaVersion": {
           "maximum": 1,
           "minimum": 1,
