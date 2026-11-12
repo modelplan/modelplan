@@ -58,8 +58,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // The trial ghost and the thin blue slot line from the real lever to it (D122); k is continuous while dragging.
  function placeGhost(ch:HTMLElement,leverK:number,k:number|null,dragging:boolean){
   const ghost=ch.querySelector<HTMLElement>('.fd-ghost')!,line=ch.querySelector<HTMLElement>('.fd-tline')!;
-  ghost.hidden=k==null;line.hidden=k==null||Math.abs(k-leverK)<.001;ghost.classList.toggle('drag',dragging);
-  if(k==null)return;ghost.style.setProperty('--k',String(k));line.style.setProperty('--k0',String(leverK));line.style.setProperty('--k1',String(k));line.classList.toggle('down',k>leverK);
+  ghost.hidden=k==null;line.hidden=k==null||Math.abs(k-.5)<.001;ghost.classList.toggle('drag',dragging);
+  if(k==null)return;ghost.style.setProperty('--k',String(k));line.style.setProperty('--k0','.5');line.style.setProperty('--k1',String(k));
  }
  // The travel position under the pointer: 0 = Max .. 1 = Low, on the same rows as the level labels (pad at both ends).
  function travelK(travel:HTMLElement,clientY:number){

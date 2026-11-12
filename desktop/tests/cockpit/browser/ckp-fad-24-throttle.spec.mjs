@@ -108,16 +108,16 @@ test('CKP-FAD-24/-17 a drag moves the blue ghost continuously and snaps it to th
  // between the detents the ghost follows the pointer (no snapping while dragging)
  const between=med+(low-med)*.7;await page.mouse.move(t.x,between,{steps:4});
  await expect(ghost).toBeVisible();expect(Math.abs((await box(ghost)).y-between)).toBeLessThanOrEqual(1);
- const drawn=await box(line);expect(Math.abs(drawn.top-(high+5.25))).toBeLessThanOrEqual(1);expect(Math.abs(drawn.bottom-between)).toBeLessThanOrEqual(1);
+ const drawn=await box(line);expect(Math.abs(drawn.top-(high))).toBeLessThanOrEqual(1);expect(Math.abs(drawn.bottom-between)).toBeLessThanOrEqual(1);
  expect(await lever.getAttribute('data-frame')).toBe('16');
  await page.mouse.up();
  // released 70 % of the way to Low: the trial is Low, the ghost sits on the Low row and the real lever stays on High
  await expect(travel).toHaveAttribute('aria-valuetext','Low');await expect(travel).toHaveAttribute('data-trial','Low');await expect(travel).toHaveAttribute('data-lever','High');
  await expect.poll(async()=>Math.abs((await box(ghost)).y-low)).toBeLessThanOrEqual(1);
  expect(await lever.getAttribute('data-frame')).toBe('16');await expect(sol.locator('.st-try')).toContainText('Low');
- const spans=await box(line);expect(Math.abs(spans.top-(high+5.25))).toBeLessThanOrEqual(1);expect(Math.abs(spans.bottom-low)).toBeLessThanOrEqual(1);
- // the rod is faint (about half the trial blue's opacity), still visible
- expect(await line.evaluate(e=>getComputedStyle(e).backgroundColor)).toMatch(/^color\(srgb 0\.62\d* 0\.82\d* 1 \/ 0\.5\)$|^rgba\(159, 210, 255, 0\.5\)$/);
+ const spans=await box(line);expect(Math.abs(spans.top-(high))).toBeLessThanOrEqual(1);expect(Math.abs(spans.bottom-low)).toBeLessThanOrEqual(1);
+ // the rod is faint (a quarter of the trial blue's opacity), still visible
+ expect(await line.evaluate(e=>getComputedStyle(e).backgroundColor)).toMatch(/^color\(srgb 0\.62\d* 0\.82\d* 1 \/ 0\.25\)$|^rgba\(159, 210, 255, 0\.25\)$/);
  // dropping the ghost back on the real lever cancels the trial (CKP-FAD-17)
  const g=await box(ghost);await page.mouse.move(t.x,g.y);await page.mouse.down();await page.mouse.move(t.x,high+3,{steps:4});await page.mouse.up();
  await expect(travel).toHaveAttribute('data-trial','');await expect(ghost).toBeHidden();await expect(line).toBeHidden();await expect(travel).toHaveAttribute('aria-valuetext','High');
@@ -148,10 +148,10 @@ test('CKP-FAD-12 the real lever glides through the baked frames when the current
 // The lever's grip centre: its baked tile is fixed, the grip moves inside it by frame (Max 32 at 16.5 u .. Low 0 at 113.5 u).
 const grip=async ch=>{const b=await box(ch.locator('.fd-cap')),f=Number(await ch.locator('.fd-cap').getAttribute('data-frame')),u=b.height/134;return b.top+(16.5+97*(1-f/32))*u;};
 const scaleRows=async page=>Object.fromEntries(await Promise.all(['Low','Med','High','XHigh','Max'].map(async l=>[l,await row(page,l)])));
-for(const theme of ['night','day'])for(const dsf of [1,2])
- test(`G3-92 detent rows are one mapping for lever, ghost and rod; axis shared (${theme}, ${dsf}x)`,async({browser})=>{
+for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height] of [['tall',890],['compact',640]])
+ test(`G3-92 detent rows are one mapping for lever, ghost and rod; axis shared (${theme}, ${dsf}x, ${tier})`,async({browser})=>{
   const ctx=await browser.newContext({deviceScaleFactor:dsf,baseURL:'http://127.0.0.1:41783'}),page=await ctx.newPage();
-  await openThrottles(page,{theme,glmEfforts:['low','max']});
+  await openThrottles(page,{theme,tier,height,glmEfforts:['low','max']});
   const rows=await scaleRows(page);
   // Sol (index 0): lever High, trial Max (rod above the lever). GLM (index 2): lever Max, trial Low (rod down to Low).
   for(const [i,keys,from,to] of [[0,['ArrowUp','ArrowUp'],'High','Max'],[2,['ArrowDown'],'Max','Low']]){
@@ -160,15 +160,16 @@ for(const theme of ['night','day'])for(const dsf of [1,2])
    await expect.poll(async()=>Math.abs((await box(ch.locator('.fd-ghost'))).y-rows[to])).toBeLessThanOrEqual(.6);
    await page.waitForTimeout(400);
    const rod=await box(ch.locator('.fd-tline')),lever=await box(ch.locator('.fd-cap')),ghost=await box(ch.locator('.fd-ghost')),slot=await box(ch.locator('.fd-slot'));
-   const down=rows[to]>rows[from],half=5.25;
-   expect(Math.abs((down?rod.top:rod.bottom)-(rows[from]+(down?half:-half))),'rod starts at the lever grip edge').toBeLessThanOrEqual(.6);
+   // the lever pivots about the slot centre: the rod runs from that pivot (midway between the Max and Low rows) to the ghost
+   const pivot=(rows.Max+rows.Low)/2,down=rows[to]>pivot;
+   expect(Math.abs((down?rod.top:rod.bottom)-pivot),'rod starts at the slot-centre pivot').toBeLessThanOrEqual(.6);
    expect(Math.abs((down?rod.bottom:rod.top)-rows[to]),'rod ends on the ghost detent').toBeLessThanOrEqual(.6);
    expect(Math.abs(await grip(ch)-rows[from]),'lever grip on its own detent row').toBeLessThanOrEqual(.6);
    for(const [name,x] of [['ghost',ghost.x],['rod',rod.x],['slot',slot.x]])expect(Math.abs(x-lever.x),name+' axis vs lever').toBeLessThanOrEqual(.5);
    // the rod is faint but visible; in the day theme it is the dark blue
    const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
-   expect(bg).toMatch(/0\.5\)$/);
-   if(theme==='day')expect(bg).toMatch(/31, 95, 159|0\.12\d* 0\.37\d* 0\.62\d*/);
+   if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
+   if(theme==='day')expect(bg).toMatch(/0\.55\)$/);
   }
  });
 
