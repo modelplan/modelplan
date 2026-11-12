@@ -81,7 +81,9 @@ private actor G345Engine: EngineClient {
         }
         return try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: object))
     }
-    private func rows() throws -> WireRowsSnapshot {
+    /// `codexReads`: the engine also has a Codex row it reads (consent implicit). G3-67: Settings ticks a
+    /// default-on tool only when the engine's own row says it reads it.
+    private func rows(codexReads: Bool = false) throws -> WireRowsSnapshot {
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures().appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = try XCTUnwrap(json["projection"] as? [String: Any])
         let template = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
@@ -95,6 +97,7 @@ private actor G345Engine: EngineClient {
         }
         projection["rows"] = [row("claude", "Claude Code", state: "needs_action", code: "not_signed_in", surfaces: ["menu", "settings"]),
                               row("zai", "ZCode / GLM", state: "needs_action", code: "unsupported_login", surfaces: ["menu", "settings"])]
+            + (codexReads ? [row("codex", "Codex", state: "fresh", code: "ok", surfaces: ["menu", "settings"])] : [])
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
@@ -115,12 +118,12 @@ private actor G345Engine: EngineClient {
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
-    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"], deniedAtFirstRun: Set<String> = [], dock: Bool = false, detectedOnly: Set<String>? = nil, browserOnlyTool: Bool = false, loadFacts: Bool = true) async throws -> (EngineDockMenuApplication, G345Engine) {
+    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"], deniedAtFirstRun: Set<String> = [], dock: Bool = false, detectedOnly: Set<String>? = nil, browserOnlyTool: Bool = false, loadFacts: Bool = true, codexReads: Bool = false) async throws -> (EngineDockMenuApplication, G345Engine) {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g345-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
         let consent: WireConsentFacts? = try loadFacts ? facts(keychain: keychain, denied: deniedAtFirstRun, detectedOnly: detectedOnly, browserOnlyTool: browserOnlyTool) : nil
-        let snapshot = dock ? try dockRows(cursor: false) : try rows()
+        let snapshot = dock ? try dockRows(cursor: false) : try rows(codexReads: codexReads)
         let after = dock ? try dockRows(cursor: true) : nil
         final class Holder: @unchecked Sendable { var engine: G345Engine? }
         let holder = Holder()
@@ -184,7 +187,7 @@ private actor G345Engine: EngineClient {
     /// twice, each with three buttons and a leftover status line. It follows the first-run list instead: one row per
     /// tool with its mark, what is read and why a tool is not read; paths and saved permissions are behind a disclosure.
     func testSettingsListsOneRowPerToolLikeTheFirstRunList() async throws {
-        let (app, _) = try await launch(locale: "en-US")
+        let (app, _) = try await launch(locale: "en-US", codexReads: true)
         let settings = app.scopeConsentEntry.view
         settings.apply(language: .english) // Settings applies the editor language when it is presented; this view is driven directly
         let controller = app.scopeConsentEntry.controller
@@ -196,7 +199,7 @@ private actor G345Engine: EngineClient {
             XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "scope.mark." + tool }, "\(tool) has its mark")
         }
         let box = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.codex" } as? NSButton)
-        XCTAssertEqual(box.state, .on, "a default-on tool shows on")
+        XCTAssertEqual(box.state, .on, "a default-on tool the engine reads shows on")
         XCTAssertTrue(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.status.zai" } as? NSTextField).stringValue.contains("nothing is read"))
         // G3-59: a supported tool that is not installed is listed with the reason and cannot be switched on.
         let gemini = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.gemini" } as? NSButton)
