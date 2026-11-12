@@ -68,11 +68,12 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  function openCompare(c:Channel,trial?:string,fast?:boolean){
   for(const id of Object.keys(previews))if(id!==c.id)delete previews[id];
   compare={modelId:c.id,current:c.current??null,...(trial?{trial}:{}),...(fast!==undefined?{fast}:{}),currentFast:!!c.currentFast};
-  if(trial&&trial!==c.current)previews[c.id]=trial;else delete previews[c.id];
+  if(trial&&trial!==c.base)previews[c.id]=trial;else delete previews[c.id];
   selectedModel=c.id;alertsView=null;paint();
  }
  function closeCompare(){if(!compare)return false;delete previews[compare.modelId];compare=null;paint();return true;}
- // faders.js tryEffort / pressLevel / pressStrip.
+ // faders.js tryEffort / pressLevel / pressStrip. G3-87: the ghost (a trial) is kept only off the real cap (current, or ★
+ // when current is unreported); pressing the LCD opens the comparison for the model without one.
  function tryEffort(c:Channel,level:string){openCompare(c,level,compare?.modelId===c.id?compare.fast:undefined);}
  function pressLevel(c:Channel,level:string){if(compare?.modelId===c.id&&level===(previews[c.id]??c.base))closeCompare();else tryEffort(c,level);}
  function pressStrip(c:Channel){if(compare?.modelId===c.id)closeCompare();else openCompare(c,previews[c.id]??c.current??undefined);}
