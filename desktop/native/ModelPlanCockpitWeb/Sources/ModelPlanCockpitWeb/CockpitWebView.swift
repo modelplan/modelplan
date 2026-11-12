@@ -11,6 +11,9 @@ final class CockpitWebView: WKWebView {
   var menuProvider: (() -> NSMenu?)?
   /// The menu this view popped up itself; WebKit-made menus are anything else and are emptied.
   private weak var ownMenu: NSMenu?
+  /// CKP-SHELL-25: the page's transparent body shows the clear panel behind it. A public `isOpaque` of false is how
+  /// the view says it paints no backing of its own (replacing a private `drawsBackground` key-value write).
+  override var isOpaque: Bool { false }
   override func menu(for event: NSEvent) -> NSMenu? { nil }
   override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
     if menu !== ownMenu { menu.removeAllItems() }
