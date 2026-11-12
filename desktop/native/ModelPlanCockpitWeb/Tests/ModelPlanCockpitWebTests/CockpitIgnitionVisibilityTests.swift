@@ -27,12 +27,12 @@ import XCTest
     try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
-  private func page(session: CockpitShellSession = CockpitShellSession(), click: CGPoint?, separateSpaces: Bool) throws -> CockpitWindowController {
+  private func page(session: CockpitShellSession? = nil, click: CGPoint?, separateSpaces: Bool) throws -> CockpitWindowController {
     _ = NSApplication.shared
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let icon = self.icon
     let page = CockpitWindowController(bundle: try bundle(), context: context, appearance: .init(theme: .night, locale: .en, profile: .full),
-                                       shellSession: session, anchor: { icon }, openPoint: { click })
+                                       shellSession: session ?? CockpitShellSession(), anchor: { icon }, openPoint: { click })
     let displays = [a, b]
     page.screens = { displays }
     page.separateSpaces = { separateSpaces }
