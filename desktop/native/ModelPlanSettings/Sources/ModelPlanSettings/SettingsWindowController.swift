@@ -353,6 +353,8 @@ enum SettingsWords {
         iconNoticeBox.isHidden = !showIconNotice
         iconNoticeLabel.stringValue = showIconNotice ? iconNotice ?? "" : ""
         iconNoticeShortcut.title = SettingsWords.text("Set Shortcut…", "设置快捷键…", language)
+        // The recorder is disabled while the build cannot open the cockpit; a button that records nothing is not shown.
+        iconNoticeShortcut.isHidden = !(rows[.openShortcut]?.shortcut?.isEnabled ?? false)
         iconNoticeClose.setAccessibilityLabel(SettingsWords.text("Dismiss", "关闭提示", language))
         status.stringValue = errorMessage ?? deliveryWarning ?? feedbackText ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : "")
         status.textColor = errorMessage != nil ? .systemRed : (deliveryWarning == nil ? .secondaryLabelColor : .systemOrange)
