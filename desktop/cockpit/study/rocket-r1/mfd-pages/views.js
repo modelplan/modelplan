@@ -149,7 +149,7 @@ function barsSvg(m, s, cols, W, ui) {
 // The line chart under the bars: ability (white), cost (violet) and time (grey dotted) across the published efforts,
 // each as a share of the top effort. Current column tinted white, trial column blue; ★ on the ability line.
 function lineSvg(m, s, cols, {w: W, h: H}, ui) {
-  const {L, E} = edges(ui, W), T0 = 6, B0 = 4, efforts = m.e.map(r => r[0]), bw = (E - L) / efforts.length;
+  const {L, E} = edges(ui, W), T0 = 13, B0 = 4, efforts = m.e.map(r => r[0]), bw = (E - L) / efforts.length;
   const standard = efforts.map(l => shareOfTop(m, colOf(m, s.tier, l, false)));
   // Fast on (the real mode, or the trial's): every effort's cost and time are drawn with the tier applied, the Standard
   // lines stay faint behind them and a band between each pair shows every effort's move (the website's effort page).
@@ -164,7 +164,7 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
   const span = fastOn ? 1.5 : Math.max(1, ...all), X = i => L + (i + .5) * bw, Y = v => T0 + (1 - Math.min(v, span) / span) * (H - T0 - B0);
   const band = (i, cls) => box(X(i) - bw / 2 + 3, 1, bw - 6, H - 2, cls, ` rx="2" data-effort="${esc(efforts[i])}"`);
   // column backgrounds, bottom to top: a pale white haze on the current effort, a pale blue haze with its border on the trial
-  let g = (ci >= 0 ? band(ci, 'pc-band pc-band-current') : '') + (ti >= 0 ? band(ti, 'pc-band pc-band-trial' + (ti === ci ? ' pc-band-same' : '')) : '');
+  let g = (ci >= 0 ? band(ci, 'pc-band pc-band-current') : '') + (ti >= 0 ? band(ti, 'pc-band pc-band-trial') : '');
   // hover preview: a dashed blue box on the column of the effort under the pointer (any other effort than the trial)
   g += efforts.map((l, i) => l === s.trial ? '' : band(i, 'pc-band pc-band-hover')).join('');
   for (const v of span > 1 ? [span, 1, .5, 0] : [1, .5, 0]) { const y = Y(v); g += `<line class="pc-grid${v === 1 ? ' unit' : ''}" x1="${L}" x2="${n1(E)}" y1="${n1(y)}" y2="${n1(y)}"/>` + label(L - 5, Math.max(8, Math.min(H - 1, y + 3)), v ? pctText(v) : '0', 'pc-tick-l', 'end'); }
@@ -188,7 +188,7 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
       const own = at[i]?.[k], y = numeric(own) ? Y(own) : numeric(v) ? Y(v) : null;
       if (y == null) return;
       const val = numeric(own) ? own : v;
-      if (val > span + 1e-9) p += `<path class="pc-up" d="M${n1(X(i) - 2.6)} ${n1(T0 + 1.6)}l2.6-4.2 2.6 4.2Z"/>` + (X(i) + 5 + 24 > W ? label(X(i) - 5, T0 + 1.2, pctText(val), 'pc-up-l', 'end') : label(X(i) + 5, T0 + 1.2, pctText(val), 'pc-up-l'));
+      if (val > span + 1e-9) p += `<path class="pc-up" d="M${n1(X(i) - 2.6)} ${n1(T0 + 5.6)}l2.6-4.2 2.6 4.2Z"/>` + (X(i) + 5 + 24 > W ? label(X(i) - 5, T0 + 6.5, pctText(val), 'pc-up-l', 'end') : label(X(i) + 5, T0 + 6.5, pctText(val), 'pc-up-l'));
       if (k === 'abl' && i === ri) { if (i === ti) p += dot('pc-ring pc-ring-rec', X(i), y, 5.6, ' data-role="trial"'); p += star(X(i), y, 4, ' data-role="rec"'); }
       else if (i === ti) p += dot('pc-ring', X(i), y, 2.6, ' data-role="trial"');
       else if (i === ci) p += dot('pc-dot pc-dot-current', X(i), y, 2.5, ' data-role="current"');
@@ -201,6 +201,10 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
     const word = t('mfd.pctTime'), lw = [...word].reduce((w, ch) => w + (/[　-鿿]/.test(ch) ? 8.5 : 4.8), 0) + 14, lx = E - lw, ly = H - B0 - 4;
     g += `<g class="pc-legend"><line class="pc-legend-time" x1="${n1(lx)}" x2="${n1(lx + 9)}" y1="${n1(ly - 3)}" y2="${n1(ly - 3)}"/>${label(lx + 12, ly, word, 'pc-legend-l')}</g>`;
   }
+  // a small label at the top of each highlighted column names it (the same effort carries one label for both); the plot starts below it
+  const colLabel = (i, role, key) => label(X(i), 8.6, t(key), `pc-col-l pc-col-${role}`, 'middle').replace('<text ', `<text data-role="${role}" data-effort="${esc(efforts[i])}" `);
+  if (ci >= 0 && ci === ti) g += colLabel(ci, 'both', 'mfd.colBoth');
+  else { if (ci >= 0) g += colLabel(ci, 'current', 'mfd.colCurrent'); if (ti >= 0) g += colLabel(ti, 'trial', 'mfd.colTrial'); }
   g += efforts.map((l, i) => box(L + i * bw, 0, bw, H, 'pc-hit', ` data-mfd="try:${esc(l)}" data-hover="${esc(l)}"`)).join('');
   return `<svg class="cmp-chart" data-scale="share" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(aria)}">${g}</svg>`;
 }

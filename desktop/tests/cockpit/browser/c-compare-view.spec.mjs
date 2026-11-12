@@ -11,11 +11,12 @@ import {build13Profile,SESSION_REF} from '../build13-fixture.mjs';
 const speedTiers=JSON.parse(readFileSync(new URL('../unit/client-speed-tiers.fixture.json',import.meta.url),'utf8')).data.speedTiers.map(({reviewedAt,...tier})=>tier);
 
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
-async function open(page,locale='en',tiers=false,edit=null){
+async function open(page,locale='en',tiers=false,edit=null,tier='tall'){
+ await page.setViewportSize({width:636,height:tier==='tall'?890:640});
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,tier},redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  const data=build13Profile();
  if(tiers){ // Published ids as /v1/client carries them (the tiers match a model by its published id), plus the tiers.
@@ -267,9 +268,9 @@ test('CKP-MFD-33 fast lines: a real fast session draws the fast lines too',async
  await expect(page.locator('.mfd-page svg.cmp-chart .pc-fastband')).toHaveCount(2);
 });
 
-// Owner 11-12: the chart columns are two layers only, a pale white haze (current) and a pale blue haze with a border (trial); no ★ wash.
+// Owner 11-12: the chart columns are two layers only, a pale white haze (current) and a pale blue haze (trial), no border; no ★ wash.
 // When the trial equals the current effort the blue tint and border sit over the white.
-test('CKP-MFD-33 chart columns: trial = current keeps both layers, no gold ★ band',async({page})=>{
+test('CKP-MFD-33 chart columns: trial = current keeps both layers, no gold ★ band, no border',async({page})=>{
  await open(page,'en',true);
  await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
  const chart=page.locator('.mfd-page svg.cmp-chart');
@@ -279,10 +280,8 @@ test('CKP-MFD-33 chart columns: trial = current keeps both layers, no gold ★ b
  await expect(cur).toHaveCount(1);await expect(tri).toHaveCount(1);await expect(chart.locator('.pc-band-rec')).toHaveCount(0);
  expect(await cur.getAttribute('data-effort')).toBe(await tri.getAttribute('data-effort'));
  expect(await alpha('.pc-band-trial')).toBeGreaterThan(await alpha('.pc-band-current'));
- await expect(tri).toHaveClass(/pc-band-same/);
- expect(await tri.evaluate(e=>parseFloat(getComputedStyle(e).strokeOpacity))).toBeGreaterThanOrEqual(.6);
- await page.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
- await expect(chart.locator('.pc-band-trial')).not.toHaveClass(/pc-band-same/);
+ // the trial column has no border any more (the labels tell the layers apart)
+ expect(await tri.evaluate(e=>getComputedStyle(e).stroke)).toBe('none');
 });
 
 // Owner 11-12: the chart column layers, bottom to top: current white haze, trial blue haze + 1 px border. Every overlap keeps its layers.
@@ -334,4 +333,34 @@ test('CKP-MFD-33 fast chart: each pinned point has its own ▲ and exact value, 
  expect(labels.map(l=>l.t)).toEqual(['154%','250%']);
  expect(labels[0].r).toBeLessThanOrEqual(labels[1].l);
  const w=await chart.evaluate(svg=>Number(svg.getAttribute('width')));for(const l of labels){expect(l.l).toBeGreaterThanOrEqual(0);expect(l.r).toBeLessThanOrEqual(w+.5);}
+});
+
+// Owner 11-12: a small label tops each highlighted column: Current / Trial, one "Current · Trial" label when they are the same effort.
+const colLabels=page=>page.locator('.mfd-page svg.cmp-chart').evaluate(svg=>[...svg.querySelectorAll('.pc-col-l')].map(e=>({role:e.dataset.role,text:e.textContent,effort:e.dataset.effort})));
+const collisions=page=>page.locator('.mfd-page svg.cmp-chart').evaluate(svg=>{const tx=[...svg.querySelectorAll('.pc-col-l,.pc-up-l,.pc-tick-l,.pc-legend-l')].map(e=>({t:e.textContent,b:e.getBBox()})),out=[];
+ for(let i=0;i<tx.length;i++)for(let j=i+1;j<tx.length;j++){const a=tx[i].b,b=tx[j].b;if(a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height)out.push([tx[i].t,tx[j].t,[a.x,a.y,a.width,a.height].map(v=>v.toFixed(1)).join(),[b.x,b.y,b.width,b.height].map(v=>v.toFixed(1)).join()]);}
+ const w=Number(svg.getAttribute('width'));for(const q of tx)if(q.b.x<-.5||q.b.x+q.b.width>w+.5)out.push([q.t,'edge']);return out;});
+for(const [locale,words] of [['en',{c:'Current',t:'Trial',b:'Current · Trial'}],['zh-CN',{c:'当前',t:'试',b:'当前·试'}]])
+test(`CKP-MFD-33 column labels (${locale}): Current on the current column, Trial on the trial column, one label when equal`,async({page})=>{
+ await open(page,locale,true);
+ await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
+ expect(await colLabels(page)).toEqual([{role:'current',text:words.c,effort:'High'}]);
+ await page.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
+ expect(await colLabels(page)).toEqual([{role:'current',text:words.c,effort:'High'},{role:'trial',text:words.t,effort:'XHigh'}]);
+ expect(await collisions(page)).toEqual([]);
+ await page.locator('.cmp-lad [data-mfd="try:High"]').click(); // back to the current effort: the trial ends
+ await page.locator('.mfd-vk button.vk-fast').click(); // fast-only trial: the same effort
+ expect(await colLabels(page)).toEqual([{role:'both',text:words.b,effort:'High'}]);
+ expect(await collisions(page)).toEqual([]);
+});
+for(const tier of ['tall','compact'])
+test(`CKP-MFD-33 column labels do not collide with the gridline or ▲ value labels (${tier}, fast overflow)`,async({page})=>{
+ await open(page,'en',true,null,tier);
+ await page.locator('[data-bank="1"]').click();
+ await page.locator('.fd-ch:not(.empty)').filter({hasText:'Luna'}).first().locator('.fd-strip').click();
+ await page.locator('.mfd-vk button.vk-fast').click();
+ await page.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
+ expect((await colLabels(page)).length).toBeGreaterThan(0);
+ await expect(page.locator('.mfd-page svg.cmp-chart .pc-up-l')).not.toHaveCount(0);
+ expect(await collisions(page)).toEqual([]);
 });

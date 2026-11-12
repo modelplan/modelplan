@@ -217,8 +217,7 @@ img.mg{object-fit:contain;background:none}
 .pg-compare[data-hk="abl"] .pc-bar.pc-abl .pc-label,.pg-compare[data-hk="cost"] .pc-bar.pc-cost .pc-label{fill:var(--lcd-ink)}
 .dk-mfd .cmp-chart .pc-band-current{fill:#e9edf042}
 /* column layers, bottom to top: ★ gold wash, current white fill, trial blue fill with its own 1 px border (always on top, always visible) */
-.dk-mfd .cmp-chart .pc-band-trial{fill:#7cc4ff4d;stroke:var(--trial);stroke-opacity:.6;stroke-width:1}
-.dk-mfd .cmp-chart .pc-band-trial.pc-band-same{stroke-opacity:.8;stroke-width:1.2}
+.dk-mfd .cmp-chart .pc-band-trial{fill:#7cc4ff4d;stroke:none}
 .dk-mfd .cmp-chart .pc-grid{stroke:#ffffff12;stroke-dasharray:2 3}.dk-mfd .cmp-chart .pc-grid.unit{stroke:#ffffff1f}
 .dk-mfd .cmp-chart .pc-tick-l{font:8px var(--f-lcd);fill:var(--pc-dim)}
 .dk-mfd .pc-line polyline{fill:none;stroke-linejoin:round;stroke-width:1.5}
@@ -292,3 +291,4 @@ dl.ss{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 6px;margin:2
 .dk-mfd .pc-gap{fill:var(--pc-glass)}.dk-mfd .pc-shade{fill:var(--pc-glass);opacity:.55}
 .dk-mfd .cmp-bars.lane-3 .pc-t0{stop-color:#4aa3ff}.dk-mfd .cmp-bars.lane-3 .pc-t1{stop-color:#3a8df0;stop-opacity:.9}
 .dk-mfd .cmp-bars.lane-3 .pc-glow.trial rect{fill:#4aa3ff}
+.dk-mfd .cmp-chart .pc-col-l{font:7px var(--f-lcd);pointer-events:none}.dk-mfd .cmp-chart .pc-col-current{fill:var(--lcd-ink)}.dk-mfd .cmp-chart .pc-col-trial,.dk-mfd .cmp-chart .pc-col-both{fill:var(--trial)}
