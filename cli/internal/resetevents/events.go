@@ -60,10 +60,11 @@ const confirmedLifetime = 24 * time.Hour
 // client can show it awaiting confirmation; a confirmation replaces it sooner.
 const awaitingLifetime = 24 * time.Hour
 
-// memoRetention outlasts the publication's 14-day reset horizon, so a
-// remembered confirmation is never forgotten while its record is still
-// published and can never be re-dated as a fresh one.
-const memoRetention = 15 * 24 * time.Hour
+// absentRetention is how long a memo entry outlives its record's absence
+// from the projected publication. An entry is never dropped while the
+// publication still carries the record, however old it is, so a remembered
+// confirmation can never be re-dated or re-admitted (macrev2-862-1).
+const absentRetention = 7 * 24 * time.Hour
 
 func kindOf(eventType string) string {
 	if eventType == "reset_credit_issued" {
@@ -74,20 +75,24 @@ func kindOf(eventType string) string {
 
 // Memo remembers, for this process only, when an event was first read as
 // announced and when as confirmed, so a confirmation that carries no time of
-// its own keeps one stable instant across refreshes. Nil disables it.
+// its own keeps one stable instant across refreshes. Once that confirmation's
+// lifetime is over its entry is a tombstone: the event stays expired. Entries
+// are kept while their record is in the publication. Nil disables it.
 type Memo struct {
 	mu        sync.Mutex
-	announced map[string]time.Time
+	announced map[string]memoAnnouncement
 	confirmed map[string]memoConfirmation
 }
 
+type memoAnnouncement struct{ at, lastPresent time.Time }
+
 type memoConfirmation struct {
-	at    time.Time
-	basis string
+	at, lastPresent time.Time
+	basis           string
 }
 
 func NewMemo() *Memo {
-	return &Memo{announced: map[string]time.Time{}, confirmed: map[string]memoConfirmation{}}
+	return &Memo{announced: map[string]memoAnnouncement{}, confirmed: map[string]memoConfirmation{}}
 }
 
 func (m *Memo) sawAnnounced(id string, now time.Time) {
@@ -97,7 +102,7 @@ func (m *Memo) sawAnnounced(id string, now time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.announced[id]; !ok {
-		m.announced[id] = now
+		m.announced[id] = memoAnnouncement{at: now, lastPresent: now}
 	}
 }
 
@@ -122,7 +127,7 @@ func (m *Memo) confirmation(id string, now time.Time) (time.Time, string) {
 	if c, ok := m.confirmed[id]; ok {
 		return c.at, c.basis
 	}
-	c := memoConfirmation{at: now, basis: BasisFirstSeen}
+	c := memoConfirmation{at: now, lastPresent: now, basis: BasisFirstSeen}
 	if _, ok := m.announced[id]; ok {
 		c.basis = BasisObserved
 	}
@@ -130,20 +135,28 @@ func (m *Memo) confirmation(id string, now time.Time) (time.Time, string) {
 	return c.at, c.basis
 }
 
-// prune drops entries older than any event lifetime; the maps stay small.
-func (m *Memo) prune(now time.Time) {
+// retain marks the ids the verified publication still carries as present and
+// drops only entries whose record has been absent for absentRetention. It is
+// never called without a verified publication, so an outage forgets nothing.
+func (m *Memo) retain(present map[string]bool, now time.Time) {
 	if m == nil {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for id, at := range m.announced {
-		if now.Sub(at) > memoRetention {
+	for id, a := range m.announced {
+		if present[id] {
+			a.lastPresent = now
+			m.announced[id] = a
+		} else if now.Sub(a.lastPresent) > absentRetention {
 			delete(m.announced, id)
 		}
 	}
 	for id, c := range m.confirmed {
-		if now.Sub(c.at) > memoRetention {
+		if present[id] {
+			c.lastPresent = now
+			m.confirmed[id] = c
+		} else if now.Sub(c.lastPresent) > absentRetention {
 			delete(m.confirmed, id)
 		}
 	}
@@ -273,7 +286,6 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 
 // ProjectWithMemo is Project with a process memo for confirmation times.
 func ProjectWithMemo(d *digest.Digest, projection rows.Projection, now time.Time, memo *Memo) ([]Event, int) {
-	memo.prune(now)
 	if d == nil || !publicationID.MatchString(d.PublicationID) {
 		return nil, 0
 	}
@@ -286,9 +298,17 @@ func ProjectWithMemo(d *digest.Digest, projection rows.Projection, now time.Time
 	known := map[string]Event{}
 	blocked := map[string]bool{}
 	var confirmations, standalone []record
+	present := map[string]bool{}
+	defer func() { memo.retain(present, now) }()
 	for _, raw := range d.Resets {
 		var r record
-		if json.Unmarshal(raw, &r) != nil || r.Provider != "openai" || r.PublishedAt.IsZero() || r.PublishedAt.After(now) {
+		if json.Unmarshal(raw, &r) != nil || r.Provider != "openai" {
+			continue
+		}
+		if id, ok := eventID(r); ok {
+			present[id] = true
+		}
+		if r.PublishedAt.IsZero() || r.PublishedAt.After(now) {
 			continue
 		}
 		switch r.EventType {

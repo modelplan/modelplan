@@ -220,3 +220,41 @@ func TestRememberedConfirmationIsStableAndNeverResurrects(t *testing.T) {
 		}
 	})
 }
+
+// macrev2-862-1, round 2: the memo outlives any record's own admission window.
+// A cached publication with a 20-day window keeps the expired confirmation
+// expired on every later replay; only a record gone from the publication for
+// a week lets its entry go.
+func TestConfirmationTombstoneLastsWhileTheRecordIsPublished(t *testing.T) {
+	projection := rows.Projection{Rows: []rows.Row{{ID: "codex", Kind: rows.KindTool}}}
+	posted := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	long := record{ID: "long", Provider: "openai", EventType: "reset_credit_issued", Status: "upstream-confirmed", PublishedAt: posted,
+		Schedule: &Schedule{Precision: "window", From: posted, Through: posted.Add(20 * 24 * time.Hour)}}
+	d := publication(t, long)
+	memo := NewMemo()
+	if events, _ := ProjectWithMemo(d, projection, posted.Add(time.Hour), memo); len(events) != 1 {
+		t.Fatalf("initial: %+v", events)
+	}
+	for _, later := range []time.Duration{25 * time.Hour, 8 * 24 * time.Hour, 16 * 24 * time.Hour, 19 * 24 * time.Hour, 21 * 24 * time.Hour, 40 * 24 * time.Hour} {
+		if events, _ := ProjectWithMemo(d, projection, posted.Add(later), memo); len(events) != 0 {
+			t.Fatalf("at +%s an expired confirmation came back: %+v", later, events)
+		}
+	}
+	// A publication outage (no verified digest) forgets nothing.
+	ProjectWithMemo(nil, projection, posted.Add(100*24*time.Hour), memo)
+	if _, _, ok := memo.remembered("long"); !ok {
+		t.Fatal("an unavailable publication dropped the tombstone")
+	}
+	// Once the record leaves the publication, the entry goes only after a week of absence.
+	empty := publication(t)
+	lastPresent := posted.Add(40 * 24 * time.Hour)
+	ProjectWithMemo(empty, projection, lastPresent.Add(24*time.Hour), memo)
+	ProjectWithMemo(empty, projection, lastPresent.Add(7*24*time.Hour), memo)
+	if _, _, ok := memo.remembered("long"); !ok {
+		t.Fatal("dropped within a week of absence")
+	}
+	ProjectWithMemo(empty, projection, lastPresent.Add(7*24*time.Hour+time.Hour), memo)
+	if _, _, ok := memo.remembered("long"); ok {
+		t.Fatal("kept after a week of absence")
+	}
+}
