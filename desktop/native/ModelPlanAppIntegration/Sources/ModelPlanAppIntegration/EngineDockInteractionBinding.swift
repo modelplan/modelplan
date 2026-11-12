@@ -49,6 +49,7 @@ import ModelPlanSettings
         host?.uninstallInteraction(controller)
     }
 
+    // SET-9-42: Settings also lists accountless failed readers, which have no Dock card; only the Dock's own ids must match.
     private func submit(_ request: DockOrderRequest) {
         let token = generation
         Task { [weak self] in
@@ -56,14 +57,14 @@ import ModelPlanSettings
             let editor = self.application.editor
             guard let snapshot = editor.snapshot,
                   snapshot.preferences.subscriptions == request.expected,
-                  editor.context.subscriptions.map(\.id) == request.catalogue,
+                  editor.context.subscriptions.map(\.id).filter(request.catalogue.contains) == request.catalogue,
                   let expectedOrder = try? request.expected.orderedIDs(in: request.catalogue) else {
                 self.controller.orderRejected(request.id); return
             }
             do {
                 let committed = try await editor.commit(.moveSubscription(request.movedID, to: request.position, expectedOrder: expectedOrder))
                 guard self.active, self.generation == token else { return }
-                guard editor.context.subscriptions.map(\.id) == request.catalogue,
+                guard editor.context.subscriptions.map(\.id).filter(request.catalogue.contains) == request.catalogue,
                       committed.preferences.subscriptions == request.proposed else {
                     self.controller.orderRejected(request.id); return
                 }

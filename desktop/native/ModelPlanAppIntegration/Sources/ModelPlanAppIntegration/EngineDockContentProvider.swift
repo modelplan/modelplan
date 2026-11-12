@@ -316,7 +316,16 @@ public enum EngineDeadlineFacts {
                 source: sourceState(member, now: context.now), isUnstable: !member.isStable,
                 causeCode: causeCode)
         }
-        let content = DockContent(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
+        // SET-9-42: a reader that failed before any account or reading exists has no Dock member, yet its tool
+        // still owns a Settings row carrying the cause. Build those rows from the Settings surface, not the Dock.
+        let memberRows = Set(members.map(\.rowID))
+        let accountless: [SettingsSubscription] = value.settingsRows.compactMap { row in
+            guard row.accounts.isEmpty, !memberRows.contains(row.id), row.state == .failed || row.state == .needsAction else { return nil }
+            let authorized = row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired
+            return SettingsSubscription(id: row.id, name: .init(row.name.en, row.name.zh), vendor: row.vendorKey ?? row.id,
+                source: authorized ? .unavailable : .denied, isUnstable: true, causeCode: message(row, now: context.now).0.code.rawValue)
+        }
+        let content = DockContent(snapshot: .init(inputs: inputs, subscriptions: subscriptions + accountless,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
         verifiedWindows = passWindows; recomputeDeadline = passDeadline
         memberInstability = passInstability; signals = passSignals
