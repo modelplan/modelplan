@@ -507,7 +507,9 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	}
 	s.decisions.add(started, job.scope, outcome, reason)
 	wait := 5 * time.Minute
-	if err != nil {
+	// A reader can cache its failure and return nil (Codex not found): the persisted outcome
+	// counts as a failure too, so it follows the failure schedule.
+	if err != nil || outcome == refreshFailed {
 		wait = 10 * time.Minute
 		if job.scope == consent.ScopeCodexRuntimeUsage {
 			wait = quota.CodexFailureWait(paths.Cache)

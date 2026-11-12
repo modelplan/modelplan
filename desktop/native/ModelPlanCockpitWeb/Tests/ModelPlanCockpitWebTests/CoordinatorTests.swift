@@ -112,6 +112,44 @@ final class CoordinatorTests: XCTestCase {
     await coordinator.shutdown(); await client.stop()
   }
 
+  /// G3-66, startup order: a click before the engine has its first context is not lost. The first context opens the
+  /// page at once (well inside 300 ms), the content follows its reply, and nothing further is reported unavailable.
+  @MainActor func testClickDuringEngineStartOpensWhenTheFirstContextArrives() async {
+    var pages: [PageProbe] = [], unavailable: [CockpitUnavailableReason] = [], opened = 0
+    let coordinator = EngineCockpitCoordinator { let page = PageProbe($0); pages.append(page); return page }
+    let client = HeldClient(); coordinator.bind(client: client)
+    coordinator.onUnavailable = { unavailable.append($0) }
+    coordinator.onOpened = { opened += 1 }
+    coordinator.open()
+    XCTAssertEqual(pages.count, 0); XCTAssertFalse(coordinator.presented)
+    XCTAssertTrue(coordinator.diagnosticState.contains("delivery=false"))
+    XCTAssertTrue(coordinator.diagnosticState.contains("pendingOpen=true"))
+    let start = ContinuousClock.now
+    await coordinator.consume(.context(EngineDeliveryContext(
+      sessionID: "s-" + UUID().uuidString.lowercased(),
+      floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)))
+    XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(300))
+    XCTAssertEqual(pages.count, 1, "The pending open builds the page as soon as the context exists")
+    XCTAssertTrue(coordinator.presented)
+    XCTAssertEqual(opened, 1)
+    XCTAssertEqual(unavailable, [.noDelivery], "Only the open before the engine was ready; no second failure")
+    XCTAssertTrue(coordinator.diagnosticState.contains("pendingOpen=false"))
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  @MainActor func testClosingBeforeTheEngineIsReadyCancelsThePendingOpen() async {
+    var pages = 0
+    let coordinator = EngineCockpitCoordinator { pages += 1; return PageProbe($0) }
+    let client = HeldClient(); coordinator.bind(client: client)
+    coordinator.open(); coordinator.close()
+    await coordinator.consume(.context(EngineDeliveryContext(
+      sessionID: "s-" + UUID().uuidString.lowercased(),
+      floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)))
+    XCTAssertFalse(coordinator.presented)
+    XCTAssertTrue(pages <= 1, "At most a prewarmed page, never a presented one")
+    await coordinator.shutdown(); await client.stop()
+  }
+
   @MainActor func testUnavailableNamesThePathThatFailed() async {
     var unavailable: [CockpitUnavailableReason] = []
     let coordinator = EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
@@ -199,6 +237,123 @@ final class CoordinatorTests: XCTestCase {
     XCTAssertEqual(p.displays, 1, "Old query response cannot regain private DOM after clear")
     await coordinator.shutdown(); await client.stop()
   }
+
+  /// Audit B finding 4 (HIST-IMP-05): an import finishing or being removed in Settings asks an open cockpit
+  /// again, although the engine's rows did not change; running progress and repeated statuses do not.
+  @MainActor func testHistoryImportCompletionAndRemovalRequeryAnOpenCockpit() async throws {
+    let coordinator = EngineCockpitCoordinator { PageProbe($0) }
+    let client = HeldClient()
+    coordinator.bind(client: client)
+    let delivery = EngineDeliveryContext(
+      sessionID: "s-" + UUID().uuidString.lowercased(),
+      floor: .init(storeEpoch: "synthetic", generation: 3), revision: 2)
+    await coordinator.consume(.context(delivery))
+    coordinator.open()
+    func requests(_ n: Int) async throws {
+      for _ in 0..<200 {
+        if await client.requests == n { return }
+        try await Task.sleep(for: .milliseconds(5))
+      }
+      let seen = await client.requests
+      XCTFail("expected \(n) cockpit queries, saw \(seen)")
+    }
+    func settle() async { for _ in 0..<50 { await Task.yield() } }
+    func status(_ phase: String, rows: Int, revision: Int) throws -> EngineClientEvent {
+      let coverage = rows > 0 ? #"[{"source":"codex","from":"2026-10-10","through":"2026-11-08","rows":\#(rows)}]"# : "[]"
+      let json = #"{"schemaVersion":1,"phase":"\#(phase)","days":30,"filesDone":0,"filesTotal":0,"firstRunDone":true,"importedRows":\#(rows),"coverage":\#(coverage),"sources":[],"revision":\#(revision)}"#
+      let data = try WireDecoder.decode(WireHistoryImportStatus.self, from: Data(json.utf8))
+      let envelope = try WireEnvelope(
+        sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+        consentGeneration: delivery.floor.generation, data: data)
+      return .response(requestID: .string("import"), .historyImport(.init(envelope: envelope, delivery: delivery)))
+    }
+    try await requests(1)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("running", rows: 0, revision: 0)); await settle()
+    try await requests(1)
+    await coordinator.consume(try status("done", rows: 12, revision: 1))
+    try await requests(2)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("done", rows: 12, revision: 1)); await settle()
+    try await requests(2)
+    await coordinator.consume(try status("idle", rows: 0, revision: 2))
+    try await requests(3)
+    await client.complete(); await settle()
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  /// macrev2-856-1 (HIST-IMP-07, C-13): a fast import's start reply can already be done, so running is never seen,
+  /// and a repeat import can change values under the same rows and coverage. The engine's revision identifies each
+  /// completion: done(S, r1) -> done(S, r1) asks once; done(S, r2) with no running between asks again.
+  @MainActor func testEachImportRevisionRequeriesOnceWithoutObservedRunning() async throws {
+    let (coordinator, client, status) = try await importHarness()
+    func requests(_ n: Int) async throws { try await waitRequests(client, n) }
+    func settle() async { for _ in 0..<50 { await Task.yield() } }
+    try await requests(1)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("done", 1))
+    try await requests(2)
+    await client.complete(); await settle()
+    // A repeated poll of the same completion does not ask again.
+    await coordinator.consume(try status("done", 1)); await settle()
+    try await requests(2)
+    // The next fast import: same summary, no running status between, new revision.
+    await coordinator.consume(try status("done", 2))
+    try await requests(3)
+    await client.complete(); await settle()
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  /// An older engine sends no revision; every settled status may then be a new completion and asks again.
+  @MainActor func testImportStatusWithoutRevisionRequeriesOnEverySettledStatus() async throws {
+    let (coordinator, client, status) = try await importHarness()
+    func requests(_ n: Int) async throws { try await waitRequests(client, n) }
+    func settle() async { for _ in 0..<50 { await Task.yield() } }
+    try await requests(1)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("done", nil))
+    try await requests(2)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("done", nil))
+    try await requests(3)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("running", nil)); await settle()
+    try await requests(3)
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  /// An open cockpit bound to a held client, and a builder of one fixed import summary (same rows and coverage)
+  /// with the given phase and optional revision.
+  @MainActor private func importHarness() async throws -> (EngineCockpitCoordinator, HeldClient, (String, Int?) throws -> EngineClientEvent) {
+    let coordinator = EngineCockpitCoordinator { PageProbe($0) }
+    let client = HeldClient()
+    coordinator.bind(client: client)
+    let delivery = EngineDeliveryContext(
+      sessionID: "s-" + UUID().uuidString.lowercased(),
+      floor: .init(storeEpoch: "synthetic", generation: 3), revision: 2)
+    await coordinator.consume(.context(delivery))
+    coordinator.open()
+    let status: (String, Int?) throws -> EngineClientEvent = { phase, revision in
+      let coverage = #"[{"source":"codex","from":"2026-11-08","through":"2026-11-08","rows":1}]"#
+      let rev = revision.map { #","revision":\#($0)"# } ?? ""
+      let json = #"{"schemaVersion":1,"phase":"\#(phase)","days":30,"filesDone":0,"filesTotal":0,"firstRunDone":true,"importedRows":1,"coverage":\#(coverage),"sources":[]\#(rev)}"#
+      let data = try WireDecoder.decode(WireHistoryImportStatus.self, from: Data(json.utf8))
+      let envelope = try WireEnvelope(
+        sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+        consentGeneration: delivery.floor.generation, data: data)
+      return .response(requestID: .string("import"), .historyImport(.init(envelope: envelope, delivery: delivery)))
+    }
+    return (coordinator, client, status)
+  }
+
+  private func waitRequests(_ client: HeldClient, _ n: Int) async throws {
+    for _ in 0..<200 {
+      if await client.requests == n { return }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let seen = await client.requests
+    XCTFail("expected \(n) cockpit queries, saw \(seen)")
+  }
 }
 
 @MainActor private final class ShellLifecyclePage: CockpitPageSurface {
@@ -278,6 +433,27 @@ extension CoordinatorTests {
     XCTAssertEqual(pages.last?.scopeUpdates.first?.0,"all")
     for _ in 0..<100 { if await client.requests==3 { break };await Task.yield() }
     await client.complete();await coordinator.joinCurrentQueryForVerification()
+    await coordinator.shutdown();await client.stop()
+  }
+  /// Audit A-5: a reply handed to the presented page reports that the cockpit is showing data again (the console drops a
+  /// query failure's pending notice on it); a page that is not presented reports nothing.
+  @MainActor func testAReplyShownOnThePresentedPageReportsTheDisplay() async throws {
+    var pages:[PageProbe]=[]
+    let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
+    var displayed=0
+    coordinator.onDisplayed={ displayed+=1 }
+    let client=HeldClient();coordinator.bind(client:client)
+    let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+    await coordinator.consume(.context(delivery));coordinator.open()
+    for _ in 0..<100 { if await client.requests==1 { break };await Task.yield() }
+    let data=try JSONDecoder().decode(WireCockpitData.self,from:Data(contentsOf:XCTUnwrap(Bundle.module.url(forResource:"cockpit",withExtension:"json",subdirectory:"Fixtures"))))
+    await coordinator.consume(.response(requestID:.string("audit-a5"),.cockpit(.init(envelope:try .init(sessionId:delivery.sessionID,storeEpoch:delivery.floor.storeEpoch,consentGeneration:1,data:data),delivery:delivery))))
+    XCTAssertEqual(pages.last?.displays,1)
+    XCTAssertEqual(displayed,1,"the presented page's display is reported once")
+    await client.complete();await coordinator.joinCurrentQueryForVerification()
+    coordinator.close()
+    await coordinator.consume(.response(requestID:.string("audit-a5-closed"),.cockpit(.init(envelope:try .init(sessionId:delivery.sessionID,storeEpoch:delivery.floor.storeEpoch,consentGeneration:1,data:data),delivery:delivery))))
+    XCTAssertEqual(displayed,1,"nothing is reported without a presented page")
     await coordinator.shutdown();await client.stop()
   }
   /// G3-56: the caution identities the page reports are kept by the app's memory and handed to the next page, including

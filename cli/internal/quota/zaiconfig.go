@@ -93,6 +93,14 @@ func zaiConfiguredKey(source ZaiConfigSource) (region, key, state string) {
 	region, key, state, _ = zaiConfiguredKeyCode(source)
 	return
 }
+// relayCode: a base URL that is set but is not one of the official Coding Plan hosts is a relay
+// or another vendor's address; its quota cannot be read and its key is never sent anywhere.
+func relayCode(base string) string {
+	if strings.TrimSpace(base) != "" {
+		return "region_refused"
+	}
+	return "unsupported_login"
+}
 func zaiConfiguredKeyCode(source ZaiConfigSource) (region, key, state, code string) {
 	b, err := zaiConfigFile(source.SettingsPath)
 	if err != nil {
@@ -112,7 +120,7 @@ func zaiConfiguredKeyCode(source ZaiConfigSource) (region, key, state, code stri
 		}
 		region = ZaiConfigRegion(cfg.Env.Base)
 		if region == "" {
-			return "", "", "not_supported_yet", "unsupported_login"
+			return "", "", "not_supported_yet", relayCode(cfg.Env.Base)
 		}
 		key = cfg.Env.Token
 		if key == "" {
@@ -138,7 +146,7 @@ func zaiConfiguredKeyCode(source ZaiConfigSource) (region, key, state, code stri
 		}
 		region = ZaiConfigRegion(provider.Options.Base)
 		if region == "" {
-			return "", "", "not_supported_yet", "unsupported_login"
+			return "", "", "not_supported_yet", relayCode(provider.Options.Base)
 		}
 		key = provider.Options.Key
 		if strings.HasPrefix(key, "{env:") && strings.HasSuffix(key, "}") {
@@ -174,7 +182,7 @@ func zaiConfiguredKeyCode(source ZaiConfigSource) (region, key, state, code stri
 	}
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return "", "", "expired_login", "unsupported_login"
+		return "", "", "expired_login", "no_key"
 	}
 	if len(key) > 4096 || strings.ContainsAny(key, "\r\n\x00") {
 		return "", "", "not_supported_yet", "unsupported_login"
@@ -268,7 +276,10 @@ func zcodeProviderKey(b []byte) (region, key, state, code string) {
 		return "", "", "not_supported_yet", "parse_error"
 	}
 	selected := cfg.Config.DefaultModelSelection
-	if selected == nil || selected.ProviderID == "" || strings.HasPrefix(selected.ProviderID, "account:") {
+	if selected != nil && strings.HasPrefix(selected.ProviderID, "account:") {
+		return "", "", "not_supported_yet", "no_key" // signed in with an account, not a key
+	}
+	if selected == nil || selected.ProviderID == "" {
 		return "", "", "not_supported_yet", "unsupported_login"
 	}
 	found := 0
@@ -294,7 +305,7 @@ func zcodeProviderKey(b []byte) (region, key, state, code string) {
 			region = ZaiConfigRegion(base)
 		}
 		if region == "" {
-			return "", "", "not_supported_yet", "unsupported_login"
+			return "", "", "not_supported_yet", relayCode(base)
 		}
 		key = *rule.Config.Access.APIKey
 	}

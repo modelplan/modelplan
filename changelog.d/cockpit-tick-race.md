@@ -1,0 +1,1 @@
+The cockpit no longer shows "unavailable" when a prewarmed page is opened before its own visibility event has fired: the page now treats a window the app reports as visible as visible, and a refused freshness tick is retried briefly instead of discarding the page. A refused host message now logs the page code path that refused it (a fixed code, never data).

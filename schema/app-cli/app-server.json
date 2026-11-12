@@ -1298,6 +1298,16 @@
             }
           ]
         },
+        "fast": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "lastObservedAt": {
           "format": "date-time",
           "type": "string"
@@ -2337,6 +2347,10 @@
             "http_5xx",
             "network",
             "timeout",
+            "not_found",
+            "rpc_error",
+            "closed",
+            "region_refused",
             "other",
             "readers_off",
             "no_consent",
@@ -2511,6 +2525,17 @@
             "failed"
           ],
           "type": "string"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
         },
         "schemaVersion": {
           "maximum": 1,
@@ -3634,6 +3659,10 @@
             "http_5xx",
             "network",
             "timeout",
+            "not_found",
+            "rpc_error",
+            "closed",
+            "region_refused",
             "other",
             "readers_off",
             "no_consent",
@@ -4909,6 +4938,10 @@
             "http_5xx",
             "network",
             "timeout",
+            "not_found",
+            "rpc_error",
+            "closed",
+            "region_refused",
             "other",
             "readers_off",
             "no_consent",

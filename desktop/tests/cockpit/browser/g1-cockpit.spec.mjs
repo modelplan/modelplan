@@ -214,6 +214,15 @@ test('CKP-SHELL-22 missing bridge data stays empty and the page makes no externa
  const origin=new URL(page.url()).origin;expect(requests.every(url=>new URL(url).origin===origin)).toBe(true);
 });
 
+test('Cockpit members (14c): sessions stay on the tape while no subscription has a widget reading yet',async({page})=>{
+ // Post-merge sample 11-11 (#847 finding 1): every tool row is menu/settings only (no quota reading yet) while the
+ // producer already delivers running sessions; the engine is empty, the sessions are not.
+ const data=visualFixture().data;for(const row of data.projection.rows)row.surfaces=['menu','settings'];
+ await open(page,data);
+ await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(0);await expect(page.locator('.ck-eng .ec-empty')).toHaveCount(1);
+ await expect(page.locator('.ck-tape .t-observed')).toHaveCount(data.details.sessions.length);
+});
+
 test('CKP-ENG-10 quota numerals and bars use the LCD font and status inks',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,3);for(const [i,row] of data.projection.rows.entries())row.accounts[0].windows[0].remainingPercent=[75,40,20][i];await open(page,data);
  const cells=page.locator('.eng-cols .ec[data-col] .qcell[data-row="first"]');await expect(cells).toHaveCount(3);const ink=[];
