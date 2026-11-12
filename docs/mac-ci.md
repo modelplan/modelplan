@@ -36,10 +36,17 @@ label, so GUI jobs serialize without cancelling pending checks. Other jobs can
 use both ordinary `modelplan-mac` instances. This label is a routing capability,
 not permission to approve system prompts or access real user data.
 
-Since D62 (2026-11-08) every non-GUI task (`native-headless`, `transport`, `sequences`, `probe`, `u11-native`)
+Since D62 (2026-11-08) every non-GUI task (`transport`, `sequences`, `probe`, `u11-native`)
 asks for `modelplan-mac-nongui` instead of the plain `modelplan-mac`, and refuses to start on a runner whose
 name contains `gui`. The GUI Mac also carries `modelplan-mac`, so the plain label used to send headless jobs
 there while GUI jobs waited. Only the non-GUI Macs carry `modelplan-mac-nongui`.
+
+D198 (2026-11-12): `native-headless` is the exception. It runs on a GitHub-hosted Mac (`macos-latest`, from
+the caller's `os` input) for pull_request, push, workflow_dispatch and merge_group alike, because the
+self-hosted non-GUI pool was too slow to carry the PR-time leg. The shared `runs-on` expression excludes
+the task from the owner-Mac branch (`inputs.task != 'native-headless'`). The D94 "Refuse the GUI Mac" step
+stays; it is harmless on a hosted runner. Only the GUI legs (`native`, `native-owner-gui`, `gui-probe`) use
+the GUI Mac.
 
 ### Lending gui-2 to non-GUI jobs (D94)
 
@@ -64,7 +71,7 @@ until the PR has merged, and merge it with a merge commit so the pinned commit s
 
 The native suite runs as two parallel legs. `task: native` keeps the GUI
 label and runs everything that may need a window server. `task: native-headless`
-uses the ordinary label and runs the app-integration XCTest classes listed in
+runs on a hosted Mac (D198) and runs the app-integration XCTest classes listed in
 `desktop/native/tools/ci/native-test-partition.json`, plus the pure contract,
 logic and packaging-binary checks. The list is opt-in: a new class runs on the
 GUI leg until it is added. `native_test_partition.py check` (Linux and both Mac
@@ -127,7 +134,7 @@ and `transport-fuzz` workflows to pass there (`QUEUE_WORKFLOWS` in `scripts/merg
 of those paths or its tree equals the PR head. Otherwise `app`, `shell`,
 `native-partition`, `app-smoke` and `native-headless` run on the group commit. The
 pinned `trusted-mac.yml` routes only the GUI tasks of a `merge_group` run to the self-hosted
-group, so `native-headless` falls through to a hosted Mac there. The full GUI leg runs in the
+group; `native-headless` is hosted everywhere (D198). The full GUI leg runs in the
 queue whenever the group changes a desktop path, even when its tree equals the PR head (D169,
 below); the five Linux workflows have their own `queue-scope` job and no Mac job.
 
