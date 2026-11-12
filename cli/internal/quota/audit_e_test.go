@@ -137,3 +137,57 @@ func TestAuditECursorUnrelatedStateWriteKeepsTheReading(t *testing.T) {
 		})
 	}
 }
+
+// Audit E finding 2: Claude credentials replaced or removed while the usage request is in flight
+// must not publish the old account's reading as current. Rewriting the same login keeps it.
+func TestAuditEClaudeCredentialChangeDuringRequestDiscardsTheReading(t *testing.T) {
+	for _, mode := range []string{"same", "replaced", "removed"} {
+		t.Run(mode, func(t *testing.T) {
+			p := claudeTestPaths(t)
+			status, paths := 200, []string{}
+			claudeTestServer(t, &status, &paths)
+			if err := RefreshNative(context.Background(), p, claudeTestNow); err != nil {
+				t.Fatal(err)
+			}
+			root := p.ReaderAccess.Grants["claude"].Profiles[0].Root
+			armed := true
+			c := *nativeClient
+			c.Transport = auditERoundTrip{base: nativeClient.Transport, before: func(r *http.Request) {
+				if !armed || r.URL.Path != "/api/oauth/usage" {
+					return
+				}
+				armed = false
+				switch mode {
+				case "same":
+					writeClaudeCredential(t, root, "synthetic-access-token", claudeTestNow.Add(48*time.Hour))
+				case "replaced":
+					writeClaudeCredential(t, root, "synthetic-B-access", claudeTestNow.Add(48*time.Hour))
+				case "removed":
+					if err := os.Remove(root + "/.credentials.json"); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}}
+			nativeClient = &c
+			if err := RefreshNative(context.Background(), p, claudeTestNow.Add(5*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			if armed {
+				t.Fatal("usage request not made", paths)
+			}
+			s, _ := loadReaderState(p.Cache, "claude")
+			r := Report{}
+			applyManaged(&r, p, "claude", claudeTestNow.Add(6*time.Minute))
+			fresh := s.Entries[0].Status == "ok" && s.Entries[0].Account != nil && s.Entries[0].Account.ObservedAt.Equal(claudeTestNow.Add(5*time.Minute))
+			if mode == "same" {
+				if !fresh || len(r.Accounts) != 1 {
+					t.Fatalf("same login lost its reading: %+v", s.Entries[0])
+				}
+				return
+			}
+			if fresh || s.Entries[0].Account != nil || s.Entries[0].Metadata.CredentialKey != "" || len(r.Accounts) != 0 {
+				t.Fatalf("old account's reading published after the login changed: %+v", s.Entries[0])
+			}
+		})
+	}
+}
