@@ -51,6 +51,14 @@ class FakeHost:
         self.calls.append(("capture_window", window_id))
         Path(path).write_bytes(b"png")
 
+    consent = {"storeEpoch": "e", "generation": 1, "consentTextVersion": "v"}
+    help_text = ""
+
+    def run(self, command, env, stdin=None, timeout=120):
+        self.calls.append(("run", tuple(command), dict(env)))
+        out = self.help_text if "--help" in command else json.dumps(self.consent)
+        return mock.Mock(returncode=0, stdout=out)
+
     def sleep(self, seconds):
         self.clock += seconds
 
@@ -130,6 +138,36 @@ class Seed(unittest.TestCase):
         env = w.child_environment(Path("profile"))
         self.assertEqual(set(env), {"HOME", "CFFIXED_USER_HOME", "TMPDIR", "PATH", "LANG"})
         self.assertEqual(env["HOME"], env["CFFIXED_USER_HOME"])
+
+    def test_profile_root_mode_keeps_home_and_points_the_app_at_the_root(self):
+        root = Path("/tmp/prof2-root")
+        env = w.child_environment(Path("unused"), root)
+        self.assertEqual(env["MODELPLAN_PROFILE_ROOT"], str(root))
+        self.assertNotIn("CFFIXED_USER_HOME", env)
+        self.assertEqual(env["HOME"], os.environ.get("HOME") or str(Path.home()))
+        self.assertEqual(w.profile_dirs(Path("unused"), root), (root / "engine/config", root / "engine/cache"))
+        self.assertEqual(w.profile_dirs(Path("h")), (Path("h/.config/modelplan"), Path("h/Library/Caches/modelplan")))
+
+    def test_profile_root_seeding_writes_only_under_the_root(self):
+        with tempfile.TemporaryDirectory(prefix="prof2-") as tmp:
+            root, real = Path(tmp) / "root", Path(tmp) / "realhome"
+            root.mkdir(); real.mkdir()
+            host = FakeHost()
+            with mock.patch.dict(os.environ, {"HOME": str(real)}):
+                env = w.seed_profile(host, Path("cli"), Path("unused"), Seed.SEED, Seed.NOW, root)
+            self.assertEqual(env["MODELPLAN_PROFILE_ROOT"], str(root))
+            self.assertTrue((root / "engine/config/local.json").is_file())
+            self.assertTrue((root / "engine/cache/observed/codex-account.json").is_file())
+            self.assertEqual(list(real.iterdir()), [])  # the runner's own HOME is untouched
+            self.assertEqual(w.publication_state(Path("unused"), root), {})
+
+    def test_an_engine_without_profile_root_support_is_refused(self):
+        host = FakeHost()
+        host.help_text = "usage"
+        with self.assertRaises(SystemExit):
+            w.require_root_support(host, Path("cli"))
+        host.help_text = "env MODELPLAN_PROFILE_ROOT=<dir>"
+        w.require_root_support(host, Path("cli"))
 
 
 class Script(unittest.TestCase):

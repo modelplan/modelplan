@@ -1,0 +1,1 @@
+Owner test packages now ship `ModelPlan First Run.command` beside the app: it quits ModelPlan, runs a true first run on a temporary profile folder (real tool data is still read only after consent) and deletes that folder when ModelPlan quits. Production builds do not contain it. The packaged walkthrough can run with `--profile-root` instead of redirecting `HOME`.

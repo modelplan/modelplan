@@ -32,7 +32,7 @@ def info(**changes):
 
 
 def inner_zip(plist=None, exe=None, bundles=preflight.RESOURCE_BUNDLES, marks=0, helper=b'helper',
-              pin=None, extra=(), symlink=None, top=(APP,)):
+              pin=None, extra=(), symlink=None, top=(APP,), launcher=None):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w') as archive:
         for app in top:
@@ -52,6 +52,8 @@ def inner_zip(plist=None, exe=None, bundles=preflight.RESOURCE_BUNDLES, marks=0,
                 link = zipfile.ZipInfo(contents + 'Resources/link')
                 link.external_attr = (stat.S_IFLNK | 0o777) << 16
                 archive.writestr(link, symlink)
+        if launcher:
+            archive.writestr(launcher, '#!/bin/bash\n')
     return buffer.getvalue()
 
 

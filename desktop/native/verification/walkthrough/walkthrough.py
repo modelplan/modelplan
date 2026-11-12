@@ -644,9 +644,31 @@ def codex_reading(seed, now, consent):
                          "resetMode": "rolling", "limit": "main"} for w in codex["windows"]]}
 
 
-def child_environment(home):
+PROFILE_ROOT_KEY = "MODELPLAN_PROFILE_ROOT"
+
+
+def child_environment(home, root=None):
+    """HOME redirect (default), or profile-root mode (D164, PROF-03): HOME stays the runner's own and
+    MODELPLAN_PROFILE_ROOT points the app and its engine at `root`, as the test build's First Run launcher does."""
+    if root is not None:
+        return {PROFILE_ROOT_KEY: str(root), "HOME": os.environ.get("HOME") or str(Path.home()),
+                "TMPDIR": str(root / "tmp") + "/", "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8"}
     return {"HOME": str(home), "CFFIXED_USER_HOME": str(home), "TMPDIR": str(home / "tmp") + "/",
             "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8"}
+
+
+def profile_dirs(home, root=None):
+    """(engine config folder, engine cache folder) for either mode; mirrors cli/internal/profile."""
+    if root is not None:
+        return root / "engine/config", root / "engine/cache"
+    return home / ".config/modelplan", home / "Library/Caches/modelplan"
+
+
+def require_root_support(host, cli):
+    """Never let an engine that ignores the key write into the runner's real HOME."""
+    result = host.run([str(cli), "--help"], {"PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8"})
+    if PROFILE_ROOT_KEY + "=" not in (result.stdout or ""):
+        raise SystemExit("the bundled engine does not support " + PROFILE_ROOT_KEY)
 
 
 def consent_call(host, cli, env, arguments, body=None):
@@ -656,11 +678,13 @@ def consent_call(host, cli, env, arguments, body=None):
     return json.loads(result.stdout)
 
 
-def seed_profile(host, cli, home, seed, now):
+def seed_profile(host, cli, home, seed, now, root=None):
     """Write invented readings through the same files the bundled CLI reads."""
-    (home / "tmp").mkdir(parents=True, exist_ok=True)
-    (home / ".codex").mkdir(exist_ok=True)
-    env = child_environment(home)
+    base = root if root is not None else home
+    (base / "tmp").mkdir(parents=True, exist_ok=True)
+    if root is None:
+        (home / ".codex").mkdir(exist_ok=True)
+    env = child_environment(home, root)
     consent_call(host, cli, env, ["init"])
     before = consent_call(host, cli, env, [])
     consent_call(host, cli, env, ["grant"], {
@@ -668,10 +692,10 @@ def seed_profile(host, cli, home, seed, now):
         "expectGeneration": before["generation"], "consentTextVersion": before["consentTextVersion"],
         "allow": ["codex.runtime_usage"], "deny": []})
     after = consent_call(host, cli, env, [])
-    config = home / ".config/modelplan"
+    config, cache = profile_dirs(home, root)
     config.mkdir(parents=True, exist_ok=True)
     (config / "local.json").write_text(json.dumps(declared_quota(seed, now)), encoding="utf-8")
-    observed = home / "Library/Caches/modelplan/observed"
+    observed = cache / "observed"
     observed.mkdir(parents=True, exist_ok=True)
     (observed / "codex-account.json").write_text(json.dumps(codex_reading(seed, now, after)), encoding="utf-8")
     return env
@@ -802,17 +826,17 @@ def restart_checks(host, walkthrough, exe, env, log, before):
     return checks
 
 
-def publication_state(home):
+def publication_state(home, root=None):
     try:
-        state = json.loads((home / "Library/Caches/modelplan/state.json").read_text(encoding="utf-8"))
+        state = json.loads((profile_dirs(home, root)[1] / "state.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return state
 
 
-def fresh_profile_probe(host, walkthrough, exe, cli, home, seed, out):
+def fresh_profile_probe(host, walkthrough, exe, cli, home, seed, out, root=None):
     """Does the app alone fetch public data? Run a second profile that nothing syncs."""
-    env = seed_profile(host, cli, home, seed, datetime.datetime.now(datetime.timezone.utc))
+    env = seed_profile(host, cli, home, seed, datetime.datetime.now(datetime.timezone.utc), root)
     with (out / "fresh-app.log").open("w", encoding="utf-8") as log:
         process, _, reading = launch_app(host, walkthrough, exe, env, log)
         try:
@@ -825,13 +849,13 @@ def fresh_profile_probe(host, walkthrough, exe, cli, home, seed, out):
         started = host.now()
         fetched_after = None
         while host.now() - started < FRESH_SECONDS and fetched_after is None:
-            if publication_state(home).get("componentHash"):
+            if publication_state(home, root).get("componentHash"):
                 fetched_after = round(host.now() - started, 1)
             host.sleep(2)
         host.capture(out / "fresh-profile-cockpit.png")
         tree = walkthrough.tree()
         detail = {"waitedSeconds": FRESH_SECONDS, "fetchedAfterSeconds": fetched_after, "firstReadingSeconds": reading,
-                  "stateKeys": sorted(publication_state(home)), "hud": resolve(tree, "label:Published models") is not None,
+                  "stateKeys": sorted(publication_state(home, root)), "hud": resolve(tree, "label:Published models") is not None,
                   "cockpit": resolve(tree, "label:ModelPlan Cockpit") is not None,
                   "unavailableAlert": resolve(tree, "value:Cockpit unavailable") is not None}
         (out / "fresh-profile.tree.json").write_text(json.dumps(tree, indent=1, sort_keys=True), encoding="utf-8")
@@ -947,10 +971,20 @@ def reader_rows(report):
 def run(args, host):
     if os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted":
         raise SystemExit("refusing to post input here: this tool is for GitHub-hosted runners only")
-    out, home = Path(args.out), Path(args.home)
+    out = Path(args.out)
+    profile_root = getattr(args, "profile_root", None)
+    if profile_root:
+        # Profile-root mode (PROF-03): HOME is not redirected; the root is the profile, `<root>-fresh` the probe's.
+        home = main_root = Path(profile_root)
+        if not main_root.is_absolute():
+            raise SystemExit("--profile-root must be an absolute path")
+        fresh_home = fresh_root = Path(str(main_root) + "-fresh")
+    else:
+        home, main_root, fresh_root = Path(args.home), None, None
+        fresh_home = Path(str(home) + "-fresh")
     out.mkdir(parents=True, exist_ok=True)
     home.mkdir(parents=True, exist_ok=False)
-    Path(str(home) + "-fresh").mkdir(parents=True, exist_ok=False)
+    fresh_home.mkdir(parents=True, exist_ok=False)
     app = Path(args.app)
     info = read_bundle(app)
     problems = check_bundle(info, args.source_sha)
@@ -963,9 +997,11 @@ def run(args, host):
     cli, exe = app / "Contents/Helpers/modelplan", app / "Contents/MacOS" / APP_EXECUTABLE
     walkthrough = Walkthrough(host, app, out, steps, seed, (frame[2], frame[3]))
     walkthrough.facts = facts
-    fresh = fresh_profile_probe(host, walkthrough, exe, cli, Path(str(home) + "-fresh"), seed, out)
+    if main_root is not None:
+        require_root_support(host, cli)
+    fresh = fresh_profile_probe(host, walkthrough, exe, cli, fresh_home, seed, out, fresh_root)
     # Public data only. Without it the cockpit has no faders, no HUD and no enlarged view.
-    env = seed_profile(host, cli, home, seed, datetime.datetime.now(datetime.timezone.utc))
+    env = seed_profile(host, cli, home, seed, datetime.datetime.now(datetime.timezone.utc), main_root)
     synced = host.run([str(cli), "sync"], env, timeout=130)
     checks = [fresh, outcome("publication-sync", synced.returncode == 0, {"exit": synced.returncode})]
     try:
@@ -982,7 +1018,7 @@ def run(args, host):
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True), encoding="utf-8")
     (out / "SUMMARY.md").write_text(summary(manifest), encoding="utf-8")
     shutil.rmtree(home, ignore_errors=True)
-    shutil.rmtree(str(home) + "-fresh", ignore_errors=True)
+    shutil.rmtree(fresh_home, ignore_errors=True)
     failed = failures(manifest)
     print("not passed: " + (", ".join(failed) or "none"), flush=True)
     return 1 if failed else 0
@@ -1030,11 +1066,15 @@ def summary(manifest):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for flag in ("app", "out", "home", "helper", "steps", "seed"):
+    for flag in ("app", "out", "helper", "steps", "seed"):
         parser.add_argument("--" + flag, required=True)
+    parser.add_argument("--home", help="fresh HOME the app runs in (default mode)")
+    parser.add_argument("--profile-root", help="absolute folder used as MODELPLAN_PROFILE_ROOT instead of redirecting HOME")
     parser.add_argument("--source-sha")
     parser.add_argument("--artifact")
     args = parser.parse_args()
+    if bool(args.home) == bool(args.profile_root):
+        parser.error("give exactly one of --home and --profile-root")
     sys.exit(run(args, Host(args.helper)))
 
 

@@ -40,6 +40,8 @@ LEGACY_TAURI = 'Model-Plan-Community-macOS-arm64-unsigned'
 WORKFLOWS = {'.github/workflows/desktop.yml': 'app-smoke', '.github/workflows/v1-test-build.yml': None,
              '.github/workflows/verify-batch.yml': None}
 INNER = 'ModelPlan-Community-native.zip'
+# D164: the owner test zip carries exactly this one sanctioned sibling next to the .app; no other flavour may.
+FIRST_RUN_LAUNCHER = 'ModelPlan First Run.command'
 EXECUTABLE = 'ModelPlanCommunity'
 BUNDLE_ID = 'org.modelplan.community.swift.scaffold'
 RESOURCE_BUNDLES = ('ModelPlanAppIntegration_ModelPlanAppIntegration.bundle',
@@ -218,12 +220,18 @@ def macho_archs(data):
     return None
 
 
-def app_shape(archive):
-    """PF-05 on the zip itself: exactly one top-level .app and no symlink leaving it."""
+def app_shape(archive, allow_launcher=False):
+    """PF-05 on the zip itself: exactly one top-level .app and no symlink leaving it. With `allow_launcher`
+    (the owner test flavour) the one sanctioned sibling, a regular file named FIRST_RUN_LAUNCHER, may sit beside it."""
     names = [i for i in archive.infolist() if not i.filename.startswith('__MACOSX/')]
-    tops = {PurePosixPath(i.filename).parts[0] for i in names if i.filename.strip('/')}
     if any(i.filename.startswith('/') or '..' in PurePosixPath(i.filename).parts for i in names):
         raise ValueError('archive path escapes')
+    if allow_launcher:
+        for i in names:
+            if i.filename == FIRST_RUN_LAUNCHER and (i.is_dir() or stat.S_ISLNK(i.external_attr >> 16)):
+                raise ValueError('first-run launcher must be a regular file')
+        names = [i for i in names if i.filename != FIRST_RUN_LAUNCHER]
+    tops = {PurePosixPath(i.filename).parts[0] for i in names if i.filename.strip('/')}
     if len(tops) != 1 or not next(iter(tops)).endswith('.app'):
         raise ValueError('archive must contain exactly one top-level .app')
     app = next(iter(tops))
@@ -377,7 +385,7 @@ def candidate_checks(results, host, flavour, entry, expected_sha, artifacts_dir,
           + ('' if built in (None, source) else ': the bundle was built from a different tree than its label'), **tag)
     try:
         inner = zipfile.ZipFile(io.BytesIO(inner_bytes))
-        app = app_shape(inner)
+        app = app_shape(inner, allow_launcher=flavour == 'test')
         check(results, 'PF-05', True, 'one top-level ' + app, **tag)
     except (ValueError, zipfile.BadZipFile) as error:
         check(results, 'PF-05', False, str(error), **tag)

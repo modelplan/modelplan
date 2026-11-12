@@ -198,6 +198,7 @@ jobs:
           ref: ${{ inputs.pr && needs.pr-ref.outputs.sha || '' }}
       - run: python3 -m unittest discover -s desktop/native/tools/ci -p 'test_*.py' -v
       - run: python3 desktop/native/tools/ci/native_test_partition.py check
+      - run: python3 -m unittest discover -s desktop/native/tools/test-build -p 'test_*.py' -v
 
   cockpit-pins:
     needs: [queue-scope, pr-ref]
@@ -303,7 +304,18 @@ jobs:
             echo "built source $built / checkout $head differs from label $SOURCE_SHA; no artifact" >&2; exit 1
           fi
           mkdir -p "$RUNNER_TEMP/native-app"
-          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/native-app/ModelPlan-Community-native.zip"
+          if [ "${{ inputs.owner_test && 'owner-test' || 'other' }}" = owner-test ]; then
+            # D164: only the owner test zip carries the First Run launcher, beside the .app. Production
+            # and unverified zips keep the single top-level .app (preflight PF-05).
+            stage="$RUNNER_TEMP/native-app-stage"
+            rm -rf "$stage"; mkdir -p "$stage"
+            ditto "$app" "$stage/ModelPlan Community.app"
+            cp "desktop/native/tools/test-build/ModelPlan First Run.command" "$stage/"
+            chmod 755 "$stage/ModelPlan First Run.command"
+            ditto -c -k "$stage" "$RUNNER_TEMP/native-app/ModelPlan-Community-native.zip"
+          else
+            ditto -c -k --keepParent "$app" "$RUNNER_TEMP/native-app/ModelPlan-Community-native.zip"
+          fi
           # The helper is the released CLI named by codex/cli-pin.json, not built from SOURCE_SHA's cli/.
           cli_pin=$(python3 -c 'import json; print(json.load(open("codex/cli-pin.json"))["version"])')
           printf '%s\n' "sourceSHA=$SOURCE_SHA" "runID=$GITHUB_RUN_ID" "runAttempt=$GITHUB_RUN_ATTEMPT" \
