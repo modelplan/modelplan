@@ -1,0 +1,1 @@
+The quota ring's time marks are easier to see: the dots are brighter (white 80 %, the same as the cockpit's time dots), and on standard-resolution (1x) displays each dot sits on a whole screen pixel instead of being blurred across several.
