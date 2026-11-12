@@ -109,7 +109,13 @@ test('CKP-FAD-18 tall keeps the full note; compact keeps the chart and collapses
   else{
    await expect(note).toBeHidden();await expect(mark).toBeVisible();
    // The chart survives, with the trial marker; the mark is keyboard-focusable and shows the full text as a tooltip.
-   await expect(page.locator('.mfd-page.pg-compare svg.cmp-chart')).not.toHaveCount(0);
+   const chart=page.locator('.mfd-page.pg-compare svg.cmp-chart');
+   await expect(chart).toHaveCount(1);
+   // The trial is marked by its column: the pale-blue haze with its border and the top label (Try, or Current · Try when equal).
+   await expect(chart.locator('.pc-band-trial')).toHaveCount(1);
+   const label=chart.locator('.pc-col-l[data-role="trial"], .pc-col-l[data-role="both"]');
+   await expect(label).toHaveCount(1);
+   await expect(label).toHaveText(locale==='en'?/^(Try|Current · Try)/:/^(试|当前·试)/);
    await mark.focus();await expect(mark).toBeFocused();
    expect(await mark.evaluate(e=>getComputedStyle(e,'::after').content)).toBe('"'+text+'"');
   }
