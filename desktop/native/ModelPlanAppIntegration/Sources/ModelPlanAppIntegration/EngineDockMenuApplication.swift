@@ -318,7 +318,7 @@ struct StatusNoticePresentation {
         try await foundationStore.updateCore(value, expectedRevision: expectedRevision)
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
-    public func presentSettings() async { await settingsHost.present() }
+    public func presentSettings(paneID: String? = nil) async { await settingsHost.present(paneID: paneID) }
     /// G3-46: a menu bar full enough to hide the icon (G3-22) leaves no icon to open under. Then there is
     /// no anchor, and the cockpit opens at the top-right of the screen below the menu bar.
     var cockpitAnchor: CGRect? {
