@@ -8,7 +8,6 @@ import { prototypeFrame } from './prototype-frame.js';
 import { cockpitLayout } from './prototype-layout.js';
 import { renderPrototypeEngine } from './prototype-engine.js';
 import { mountPrototypeDeck } from './prototype-deck.js';
-import { watchTwoTone } from './livery-trim.js';
 import { paintHud,wireHud } from './prototype-hud.js';
 import { mountPrototypeTape } from './prototype-tape.js';
 import { cockpitMembers } from './members.js';
@@ -25,7 +24,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  let lastRenderedAt=0;const retiredUnstableScopes=new Set<string>();
  let hudSelected:string|null=null;const hudOptions=()=>({scope:nativeShell?.scope??'all',now:lastRenderedAt,selected:hudSelected,closed:nativeShell?.profile==='closed'});
  let selectedRedBelow=effectiveRedBelow(undefined);const redBelow=()=>selectedRedBelow;let showUsedPercent=false;const showUsed=()=>showUsedPercent;
- watchTwoTone(root);const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active,()=>nativeShell?.attached??true);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow);const tape=mountPrototypeTape(root,{knows:ref=>deck.knowsSession(ref),hover(session){deck.highlightSession(session?.sessionRef??null);const key=session?.subscriptionRef??null;for(const el of root.querySelectorAll<HTMLElement>('[data-col]'))el.classList.toggle('xhl',!!key&&el.dataset.col===key);},select(session){if(!active)return;const key=session.subscriptionRef;if(key&&[...root.querySelectorAll<HTMLElement>('.ek[data-sub]')].some(el=>el.dataset.sub===key)){retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);deck.scope(key);}deck.selectSession(session.sessionRef);}});
+ const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active,()=>nativeShell?.attached??true);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow);const tape=mountPrototypeTape(root,{knows:ref=>deck.knowsSession(ref),hover(session){deck.highlightSession(session?.sessionRef??null);const key=session?.subscriptionRef??null;for(const el of root.querySelectorAll<HTMLElement>('[data-col]'))el.classList.toggle('xhl',!!key&&el.dataset.col===key);},select(session){if(!active)return;const key=session.subscriptionRef;if(key&&[...root.querySelectorAll<HTMLElement>('.ek[data-sub]')].some(el=>el.dataset.sub===key)){retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);deck.scope(key);}deck.selectSession(session.sessionRef);}});
  // G3-47: base bells under the engine columns; repainted from the drawn engine table.
  const base=mountPrototypeBase(root,()=>lastData,z=>{
   const member=lastData?cockpitMembers(lastData).find(m=>m.key===z.key):undefined,name=member?(locale==='en'?member.row.name.en:member.row.name.zh):'';

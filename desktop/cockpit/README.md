@@ -151,3 +151,20 @@ attribution, memory returning after native close or repeated-window growth. The
 verification skill/test-Mac lane must remeasure those on the actual package before
 this draft becomes ready. No hidden prewarm, old-path deletion or U13/L3 acceptance
 is claimed here.
+
+## Maker livery colours (D131, Set 1)
+
+Owner decision 2026-11-12 ("Set 1, no mixing"); evidence table `livery-d131/options/part-1.png`. The shared table is the private
+site's `src/shell/brandLivery.ts`; `src/livery-shared.json` is its vendored copy (the private table must carry the same values).
+
+| Maker | Colour | Basis |
+| --- | --- | --- |
+| OpenAI / Codex | `#10a37f` | Real brand accent: the ChatGPT green of openai.com/brand (long-standing hex, not re-measured from a file). |
+| Zhipu / Z.ai / GLM | `#3859ff` | Real brand accent: the Zhipu (智谱) logo colour, Lobe Icons `zhipu-color.svg`. Z.ai's own logo is near-black with no accent. |
+| xAI / Grok | `#f5e642` | Assigned identity colour (unofficial): xAI and X are black and white, so this is the free hue farthest from the other makers and the reserved UI colours. |
+| Cursor | `#f79dcb` | Assigned identity colour (unofficial): Cursor's brand is black and white (cursor.com/brand); light rose is the largest free gap in the palette. |
+| Claude | `#d97757` | Real brand accent (unchanged). |
+
+Same-screen collision fallbacks (CIEDE2000 under 15): GLM next to Kimi takes `#8dabfd` (12.7), xAI next to OpenCode takes `#978c0d` (13.4).
+Day theme: marks are drawn at 40% of the colour toward black: Codex `#064133` (6.1:1 on the day metal), GLM `#162466` (7.4), xAI `#625c1a` (3.6),
+Cursor `#633f51` (4.7), GLM fallback `#384465` (5.0), xAI fallback `#3c3805` (6.2). Night uses the colours as is (all at least 3.25:1 on the night metal).

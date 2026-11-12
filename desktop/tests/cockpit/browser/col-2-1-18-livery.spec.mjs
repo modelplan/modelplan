@@ -17,40 +17,25 @@ async function open(page,vendorKeys,theme='night'){
 }
 const keys=page=>page.locator('.eng-keys .ek').evaluateAll(list=>list.map(k=>({text:k.innerText.trim().replace(/\s+/g,' '),v:getComputedStyle(k.querySelector('.bl')).getPropertyValue('--v').trim()})));
 
-test('COL-2.1-18 Claude, GLM and Kimi keys carry the shared brand colours; GLM is not purple or green',async({page})=>{
+test('COL-2.1-18 Set 1: Codex, GLM and Cursor keys carry their owner-chosen identity colours; Claude keeps its orange',async({page})=>{
+ // xAI/Grok has no cockpit engine key yet (no vendor row, no logo); its colour is pinned in the unit test.
+ await open(page,['openai','glm','cursor','claude']);
+ expect((await keys(page)).slice(0,4).map(k=>k.v)).toEqual(['#10a37f','#3859ff','#f79dcb','#d97757']);
+});
+
+test('COL-2.1-18 Claude, GLM and Kimi keys: GLM next to Kimi collides (12.7) so the later one takes its fallback #8dabfd',async({page})=>{
+ await open(page,['claude','kimi','glm']);
+ const list=await keys(page);
+ expect(list.slice(0,3).map(k=>k.v)).toEqual(['#d97757','#007cff','#8dabfd']);
+ for(const k of list.slice(0,3))expect(k.text.length).toBeGreaterThan(0); // colour is never alone
  await open(page,['claude','glm','kimi']);
- const list=await keys(page);
- expect(list.slice(0,3).map(k=>k.v)).toEqual(['#d97757','#b9c2cc','#007cff']);
- // Colour is never alone: every key keeps its name (and mark).
- for(const k of list.slice(0,3))expect(k.text.length).toBeGreaterThan(0);
+ const first=await keys(page);expect(first[1].v).toBe('#3859ff');expect(first[2].v).not.toBe('#007cff'); // the later of the two takes its alternate
 });
 
-test('COL-2.1-18 GLM next to Codex: both are black-and-white, told apart by their two-tone trim, not by hue',async({page})=>{
- await open(page,['openai','claude','glm']);
- expect((await keys(page)).slice(0,3).map(k=>k.v)).toEqual(['#ececec','#d97757','#b9c2cc']);
- expect(await page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.slice(0,3).map(e=>e.dataset.tt??null))).toEqual(['light',null,'dark']);
- // Colour-only marks of OpenAI (white, black trim) and Z.ai (dark, white trim) differ from each other and from plain UI white.
- const [a,b]=await page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.slice(0,3).filter((e,i)=>i!==1).map(e=>getComputedStyle(e).backgroundImage));
- expect(await page.locator('.eng-keys .ek .bl').nth(1).evaluate(e=>getComputedStyle(e).backgroundImage)).toBe('none');
- expect(a).toContain('linear-gradient');expect(b).toContain('linear-gradient');expect(a).not.toBe(b);
-});
-
-test('COL-2.1-18 a maker too close to one already shown takes its alternate shade, in order',async({page})=>{
- // Cursor's light grey (#eef2f6) is within a few units of OpenAI's (#ececec): the later one (Cursor) takes its alternate.
- await open(page,['openai','claude','cursor']);
- const list=await keys(page);
- expect(list[0].v).toBe('#ececec');
- expect(list[2].v).not.toBe('#eef2f6');expect(list[2].v).toMatch(/^#[0-9a-f]{6}$/);
- await open(page,['cursor','claude','openai']);
- const swapped=await keys(page);
- expect(swapped[0].v).toBe('#eef2f6');expect(swapped[2].v).not.toBe('#ececec');
-});
-
-test('COL-2.1-18 contrast: on day the plain identity marks are drawn darker than the maker colour; two-tone marks keep their trim',async({page})=>{
- await open(page,['openai','kimi','glm'],'day');
- const bg=()=>page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.slice(0,3).map(e=>getComputedStyle(e).backgroundColor));
- expect(Number((await bg())[1].match(/\d+/)[0])).toBeLessThan(120);
- expect(await page.locator('.eng-keys .ek .bl').first().evaluate(e=>e.dataset.tt)).toBe('light');
- await open(page,['openai','kimi','glm'],'night');
- expect((await bg())[1]).toBe('rgb(0, 124, 255)');
+test('COL-2.1-18 contrast: on day the identity marks are drawn at 40% of the maker colour (Codex #064133); on night they are the colour',async({page})=>{
+ await open(page,['openai','glm','cursor','claude'],'day');
+ const fills=()=>page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.map(e=>{const c=getComputedStyle(e).backgroundColor;const m=/^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)\)/.exec(c);return m?'rgb('+m.slice(1).map(x=>Math.round(x*255)).join(', ')+')':c;}));
+ expect((await fills()).slice(0,4)).toEqual(['rgb(6, 65, 51)','rgb(22, 36, 102)','rgb(99, 63, 81)','rgb(87, 48, 35)']);
+ await open(page,['openai','glm','cursor','claude'],'night');
+ expect((await fills()).slice(0,4)).toEqual(['rgb(16, 163, 127)','rgb(56, 89, 255)','rgb(247, 157, 203)','rgb(217, 119, 87)']);
 });

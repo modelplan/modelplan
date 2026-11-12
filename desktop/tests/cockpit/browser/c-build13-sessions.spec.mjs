@@ -23,7 +23,7 @@ test('B13 the model in use leads the faders with its short name, its brand strip
  await open(page,build13Profile());
  const list=await channels(page);
  expect(list.map(c=>c.name)).toEqual(['Sol 6.1','Astra','Terra 6.1']);
- for(const c of list){expect(c.clipped).toBe(false);expect(c.strip).toEqual(['#ececec']);}
+ for(const c of list){expect(c.clipped).toBe(false);expect(c.strip).toEqual(['#10a37f']);}
  expect(list[0].current).toBe('High');
 });
 
@@ -32,7 +32,7 @@ test('B13 the record strip lists the running Codex session in its subscription c
  const rows=page.locator('.ck-tape .t-observed');
  await expect(rows).toHaveCount(1);
  await expect(rows.first().locator('.t-model')).toHaveText('Sol 6.1');
- expect(await rows.first().locator('.chip').evaluate(e=>getComputedStyle(e).getPropertyValue('--v').trim())).toBe('#ececec');
+ expect(await rows.first().locator('.chip').evaluate(e=>getComputedStyle(e).getPropertyValue('--v').trim())).toBe('#10a37f');
 });
 
 test('B13 two subscriptions of the same tool leave an unbound session neutral',async({page})=>{
@@ -41,7 +41,7 @@ test('B13 two subscriptions of the same tool leave an unbound session neutral',a
  data.subscriptions.push({subscriptionRef:'fedcba9876543210',accounts:[{tool:'codex',account:structuredClone(row.accounts[1])}]});
  await open(page,data);
  expect(await page.locator('.ck-tape .t-observed .chip').evaluate(e=>getComputedStyle(e).getPropertyValue('--v').trim())).toBe('#c6ccd4');
- const list=await channels(page);expect(list[0].name).toBe('Sol 6.1');expect(list[0].strip).toEqual(['#ececec','#ececec']);
+ const list=await channels(page);expect(list[0].name).toBe('Sol 6.1');expect(list[0].strip).toEqual(['#10a37f','#10a37f']);
 });
 
 test('B13 the HUD and the Effort page use short names',async({page})=>{
