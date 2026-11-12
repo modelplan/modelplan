@@ -220,14 +220,14 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const f=faderInput().faders.find(x=>x.id===compare!.modelId);if(!f){compare=null;return false;}
   const fast=compareSpeedTiers(f,f.tier),model={id:f.id,name:f.name,short:f.short||f.name,rec:f.rec,e:f.e,pool:fast.pool},view={models:[model],speedTiers:fast.speedTiers,sessionRanking:[],accounts:[],now:d.now};
   const args:CompareArgs={modelId:f.id,current:compare!.current,...(compare!.trial?{trial:compare!.trial}:{}),...(compare!.fast!==undefined?{fast:compare!.fast}:{}),currentFast:compare!.currentFast};
-  const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=comparison(view,{...ui,scope:null,fill:cmpFill?{cmp:cmpFill}:{}},args);};
+  const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=comparison(view,{...ui,scope:null,trialNote:true,fill:cmpFill?{cmp:cmpFill}:{}},args);};
   bar.classList.add('dark');for(const {b} of buttons){b.classList.remove('on');b.setAttribute('aria-pressed','false');}
   // CSP (style-src 'self') drops the ladder's inline geometry; apply it through CSSOM after every draw.
   const ladder=()=>{for(const e of page.querySelectorAll<HTMLElement>('.cmp-lad[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}};
   page.className='mfd-page pg-compare is-view own-title';draw();
   // The chart is drawn at its measured size (mfd.js renderMfd), again once if that size changed.
   const measure=()=>{const area=page.querySelector<HTMLElement>('[data-fill="cmp"]');return area?{w:Math.floor(area.clientWidth),h:Math.floor(area.clientHeight)}:null;};
-  const size=measure();
+  let size=measure();
   if(size&&size.w>0&&size.h>0&&(cmpFill?.w!==size.w||cmpFill?.h!==size.h)){cmpFill=size;draw();}
   ladder();
   // Build 14c: a fill measured at zero (the screen not laid out yet, e.g. the first paint after a fader trial) left the
