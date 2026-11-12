@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: a85b2e8d13cbc397098e90dc23629188ed82ede9c0ca41e4ec61acb94d1f6e4c
+// Schema SHA-256: bc2ef0c387c379f808e630269769a5b145ad35c2c71e2453ae5fba1aeeab352f
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -2661,7 +2661,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "published",
           "observed",
           "firstSeen"
-        ]
+        ],
+        "type": "string"
       },
       "confirms": {
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
@@ -2680,7 +2681,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "enum": [
           "reset_credit",
           "direct_reset"
-        ]
+        ],
+        "type": "string"
       },
       "planIds": {
         "items": {

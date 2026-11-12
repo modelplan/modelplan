@@ -118,6 +118,13 @@ func Generate(root string) ([]byte, error) {
 	delete(proposed, "allOf")
 	proposed["properties"].(map[string]any)["version"] = object{"type": "integer", "enum": []int{1}}
 	proposed["properties"].(map[string]any)["status"].(map[string]any)["type"] = "string"
+	// G3-96: the proposal leaves its later string enums untyped (kind, confirmedAtBasis). The cockpit page's bounded
+	// validator refuses a node without a type, so every display carrying a reset event was rejected as data.schema.
+	for _, property := range proposed["properties"].(map[string]any) {
+		if node, ok := property.(map[string]any); ok && node["enum"] != nil && node["type"] == nil {
+			node["type"] = "string"
+		}
+	}
 	schedule := overlay.Defs["ProposedResetSchedule"].(map[string]any)
 	schedule["properties"].(map[string]any)["precision"].(map[string]any)["type"] = "string"
 	source := overlay.Defs["ProposedResetSource"].(map[string]any)

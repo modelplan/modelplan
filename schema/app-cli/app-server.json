@@ -4605,7 +4605,8 @@
             "published",
             "observed",
             "firstSeen"
-          ]
+          ],
+          "type": "string"
         },
         "confirms": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
@@ -4624,7 +4625,8 @@
           "enum": [
             "reset_credit",
             "direct_reset"
-          ]
+          ],
+          "type": "string"
         },
         "planIds": {
           "items": {
