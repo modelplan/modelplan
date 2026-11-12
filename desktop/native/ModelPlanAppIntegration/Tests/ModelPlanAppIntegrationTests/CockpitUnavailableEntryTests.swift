@@ -153,6 +153,76 @@ extension CommunityCockpitEntryTests {
         XCTAssertTrue(lines.contains { $0.hasPrefix("notice-shown cause=open.pageCreation.integrity bundleProblem=true") },lines.joined(separator:"\n"))
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
+    /// Post-merge 887, P2: an open that first reports "no delivery yet" starts the grace period without a retry. A retryable
+    /// failure that follows it (here the open step's own "no client") must still get the one quiet retry.
+    @MainActor func testG395RetryableFailureAfterAPendingOpenStillGetsTheQuietRetry() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("g395-pending-retry-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in RouteClient()})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        let coordinator=EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        owner.coordinator=coordinator
+        var notices:[CockpitUnavailableNotice]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(2500))
+        surface.show()
+        coordinator.onUnavailable?(.noDelivery)   // the open waits for the first context: the grace period starts, no retry spent
+        for _ in 0..<250 where !lines.contains(where:{ $0.hasPrefix("open-retry") }) { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertTrue(lines.contains { $0.hasPrefix("open-retry after=open.noClient") },"the later retryable failure is retried once: "+lines.joined(separator:"\n"))
+        XCTAssertEqual(lines.filter { $0.hasPrefix("open-retry") }.count,1)
+        XCTAssertTrue(notices.isEmpty,"nothing is announced inside the grace period")
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+    /// Post-merge 887, P3: a retry scheduled for one click does not run in the next one. Hide and open again before it is
+    /// due: the second click is retried once, not twice.
+    @MainActor func testG395QuietRetryDoesNotSurviveHideAndReopen() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("g395-retry-reopen-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in RouteClient()})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        let coordinator=EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        owner.coordinator=coordinator
+        var notices:[CockpitUnavailableNotice]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(3000))
+        func failures() -> Int { lines.filter { $0.hasPrefix("unavailable path=open.noClient") }.count }
+        surface.show()
+        for _ in 0..<500 where failures() < 1 { try await Task.sleep(for:.milliseconds(10)) } // first click: failed, retry scheduled
+        surface.hide()
+        surface.show()
+        for _ in 0..<500 where failures() < 2 { try await Task.sleep(for:.milliseconds(10)) } // second click: failed, its own retry scheduled
+        try await Task.sleep(for:.milliseconds(1300)) // past both due times
+        XCTAssertEqual(lines.filter { $0.hasPrefix("open-retry") }.count,1,"only the second click's retry runs: "+lines.joined(separator:"\n"))
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+    /// Post-merge 887, P2: a bundle that was admitted and then could not serve a file reports a bundle cause, so the
+    /// notice asks for a reinstall; the navigation failure that follows does not replace it.
+    @MainActor func testG395BundleDamagedAfterAdmissionAsksForReinstall() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("g395-bundle-resource-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in RouteClient()})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        let coordinator=EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        owner.coordinator=coordinator
+        var notices:[CockpitUnavailableNotice]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(300))
+        surface.show()
+        try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
+        owner.pageFailure?(.bundleResource)
+        owner.pageFailure?(.provisionalNavigationFailed)
+        try await Task.sleep(for:.milliseconds(900))
+        XCTAssertEqual(notices.count,1)
+        XCTAssertTrue(notices.first?.bundleProblem ?? false,"a bundled file that cannot be served is a reinstall problem")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("notice-shown cause=page.bundleResource bundleProblem=true") },lines.joined(separator:"\n"))
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
     /// G3-95, slow load: a page that failed to load in time and a query that timed out are not bundle problems; only a
     /// bundle error at page creation asks for a reinstall, and it is not retried.
     @MainActor func testG395OnlyABundleErrorAtPageCreationAsksForReinstall() async throws {
