@@ -4,6 +4,8 @@ package speed
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -58,8 +60,17 @@ type Span struct {
 
 // RetryFile is one log whose read failed and the turn spans it still owes.
 type RetryFile struct {
-	Path  string `json:"path"`
+	// Key identifies the log by a hash of its path; the ledger never holds a path (it can carry a project name). The
+	// path itself lives only in memory and is found again by hash on the next import.
+	Key   string `json:"key"`
+	Path  string `json:"-"`
 	Spans []Span `json:"spans"`
+}
+
+// RetryKey is the ledger's identity of an unreadable log.
+func RetryKey(path string) string {
+	h := sha256.Sum256([]byte(path))
+	return hex.EncodeToString(h[:16])
 }
 
 // importItem is one log to read and the spans whose turns it may contribute.
@@ -246,6 +257,15 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			j.list = j.files(j.earliest())
 			prog.total += len(j.list)
 		}
+		if len(j.pend) > 0 { // find the unreadable logs again by their hash (no path is stored)
+			byKey := map[string]string{}
+			for _, f := range j.files(time.Time{}) {
+				byKey[RetryKey(f)] = f
+			}
+			for i := range j.pend {
+				j.pend[i].Path = byKey[j.pend[i].Key]
+			}
+		}
 		prog.total += len(j.pend)
 	}
 	prog.report()
@@ -380,6 +400,10 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 		work = append(work, importItem{path: p, ranges: j.ranges})
 	}
 	for _, r := range j.pend {
+		if r.Path == "" {
+			prog.done++ // gone for good: nothing left to retry
+			continue
+		}
 		if _, err := os.Lstat(r.Path); errors.Is(err, os.ErrNotExist) {
 			prog.done++ // gone for good: nothing left to retry
 			continue
@@ -421,7 +445,7 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 				return withdraw(i)
 			}
 			// Unreadable: its span stays covered but the file is retried on the next import.
-			rf := RetryFile{Path: p}
+			rf := RetryFile{Key: RetryKey(p), Path: p}
 			for _, r := range it.ranges {
 				rf.Spans = append(rf.Spans, Span{From: r.lo, Through: r.hi})
 			}
@@ -577,18 +601,18 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 	// again (and new failures) are in j.failed.
 	tried := map[string]bool{}
 	for _, r := range j.pend {
-		tried[r.Path] = true
+		tried[r.Key] = true
 	}
 	var retry []RetryFile
 	for _, r := range c.Retry {
-		if !tried[r.Path] {
+		if !tried[r.Key] {
 			retry = append(retry, r)
 		}
 	}
 	for _, f := range j.failed {
 		merged := false
 		for i := range retry {
-			if retry[i].Path == f.Path {
+			if retry[i].Key == f.Key {
 				retry[i].Spans = append(retry[i].Spans, f.Spans...)
 				merged = true
 			}

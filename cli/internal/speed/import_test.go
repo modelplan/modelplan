@@ -489,8 +489,12 @@ func TestImportRetriesAnUnreadableLogWithoutRecountingTheRest(t *testing.T) {
 	if r, _ := total(l, "claude-code"); r != 1 {
 		t.Fatalf("first run: %d", r)
 	}
-	if c := l.Coverage["claude-code"]; len(c.Retry) != 1 || c.Retry[0].Path != b {
+	if c := l.Coverage["claude-code"]; len(c.Retry) != 1 || c.Retry[0].Key != RetryKey(b) {
 		t.Fatalf("unreadable log not queued for retry: %+v", c)
+	}
+	// The retry queue names the log by hash: no path (it can carry a project name) reaches the ledger file.
+	if raw, err := os.ReadFile(ImportPath(f.cache)); err != nil || strings.Contains(string(raw), b) || strings.Contains(string(raw), `"path"`) {
+		t.Fatalf("ledger holds a path: %s %v", raw, err)
 	}
 	// still unreadable: stays queued, nothing double counted
 	f.run(30, both())
