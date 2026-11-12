@@ -98,7 +98,7 @@ private actor InstrumentSettingsTransport: CLITransport {
         var assembly = SelectionAssembly()
         surface.render(publication: publication)
         surface.render(selection: assembly.evaluate(feeds: .init(publication: publication, personal: nil, personalUsable: false),
-            scope: .all, now: now), publishedAt: now, now: now)
+            scope: .all, language: .english, now: now), publishedAt: now, now: now)
     }
     func testNormalEntryMountsCockpitAndPickerRatherThanLeavingOptInNil() async throws {
         let provider = CommunityApplicationFactory.makeSurfaces()
