@@ -590,7 +590,7 @@
     "Tests/T2FlameFrameProviderTests.swift": "a52e805c9fa76fd699645eeead4bb280e9d365e16094bfca3ffe384371889c2d",
     "Tests/T2GeometryTests.swift": "0be73a1b8f39f726268bb2224919f61688fd7a4441fef1c05637995eb779fb66",
     "Tests/T2OracleTests.swift": "5223cccb73db0e6ac0335f6cb09a22fe5d071d31646e5ddf29dec1e3312f5735",
-    "Tests/T2ResetEventDotTests.swift": "29c94af8711efbe60e328c4fd8557f1c84e79213c47b706009e30d8e107efc7d",
+    "Tests/T2ResetEventDotTests.swift": "7cdb0d3443c66fd50d27a704192b9752ff0cee879ab3a99d582b5969dbfebb47",
     "Tests/T2ResourceTests.swift": "8f45bdfe136500487da32c6dd221f964d9c0946df7d916e79fc35b99909e2037",
     "Tests/geometry-oracle.json": "746709f8d11eab84e94896537696f35531e644e7be8d35a7eda055f15a4268bb"
   }

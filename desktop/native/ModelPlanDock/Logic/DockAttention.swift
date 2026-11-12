@@ -77,6 +77,14 @@ public struct DockNotice: Equatable, Sendable {
         }
     }
 }
+/// D166: the reset dot colours await the owner's choice. Flip `DockNotice.resetPalette` to switch every
+/// surface (Dock face, strip, menu indicator); shapes stay hollow = announced, solid = confirmed.
+public enum DockResetPalette: Sendable { case blue, amberGreen }
+extension DockNotice {
+    public static let resetPalette: DockResetPalette = .blue
+    public static var resetAnnouncedTone: Tone { resetPalette == .blue ? .blue : .amber }
+    public static var resetConfirmedTone: Tone { resetPalette == .blue ? .blue : .green }
+}
 public enum DockNoticeProjection {
     public static func candidates(for signal: DockSubscriptionSignal, at now: Date) -> [DockNotice] {
         guard !signal.id.isEmpty, now.timeIntervalSinceReferenceDate.isFinite else { return [] }
@@ -93,11 +101,10 @@ public enum DockNoticeProjection {
             case .announced:
                 let until = reset.scheduledThrough ?? reset.announcedAt?.addingTimeInterval(48*3600)
                 let observed = reset.announcedAt.map { $0 <= now } ?? (reset.scheduledThrough != nil)
-                // D166: a forecast is an amber ring; a confirmation a solid green dot.
-                if observed, let until, until > now { append(.resetAnnounced, [reset.id], .amber, .hollow) }
+                if observed, let until, until > now { append(.resetAnnounced, [reset.id], DockNotice.resetAnnouncedTone, .hollow) }
             case .confirmed:
                 if !reset.restartedReading, let at = reset.confirmedAt, at <= now, let end = reset.confirmedDotEnd, now < end {
-                    append(.resetConfirmed, [reset.id], .green)
+                    append(.resetConfirmed, [reset.id], DockNotice.resetConfirmedTone)
                 }
             }
         }

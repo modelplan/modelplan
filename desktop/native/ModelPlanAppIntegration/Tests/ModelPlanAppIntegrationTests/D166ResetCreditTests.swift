@@ -5,8 +5,9 @@ import ModelPlanDock
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
-/// D166: public Codex reset credits and direct resets reach the widget. A forecast is an amber ring with its
-/// expected window, a confirmation a green dot with its time for three hours; the balance is the local reading.
+/// D166: public Codex reset credits and direct resets reach the widget. A forecast is a hollow ring with its
+/// expected window, a confirmation a solid dot with its time for three hours (colours per `DockNotice.resetPalette`);
+/// the balance is the local reading.
 final class D166ResetCreditTests: XCTestCase {
     private let shanghai: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
@@ -63,7 +64,7 @@ final class D166ResetCreditTests: XCTestCase {
                                     scheduledThrough: event.expiresAt, expiresAt: event.expiresAt)
         reset.kind = .resetCredit; signal.reset = reset
         let notice = try XCTUnwrap(DockNoticeProjection.selected(for: signal, at: before))
-        XCTAssertEqual(notice.tone, .amber); XCTAssertEqual(notice.shape, .hollow)
+        XCTAssertEqual(notice.tone, DockNotice.resetAnnouncedTone); XCTAssertEqual(notice.shape, .hollow)
         XCTAssertNil(DockNoticeProjection.selected(for: signal, at: event.expiresAt))
     }
 
@@ -98,14 +99,14 @@ final class D166ResetCreditTests: XCTestCase {
         XCTAssertEqual(zh.title(old, now: at("2026-11-12T11:00:00Z")), "已确认 · 11月11日 14:57")
     }
 
-    /// The confirmed dot is green for three hours after the confirmation, inside a 24-hour hard cap.
+    /// The confirmed dot shows for three hours after the confirmation, inside a 24-hour hard cap.
     func testConfirmedDotLifetime() throws {
         let confirmed = at("2026-11-12T10:20:00Z")
         var signal = DockSubscriptionSignal(id: "member"); signal.dataState = .fresh
         var reset = DockResetSignal(id: "event", status: .confirmed, confirmedAt: confirmed, expiresAt: confirmed.addingTimeInterval(24 * 3600))
         reset.kind = .resetCredit; signal.reset = reset
         let notice = try XCTUnwrap(DockNoticeProjection.selected(for: signal, at: confirmed.addingTimeInterval(60)))
-        XCTAssertEqual(notice.tone, .green); XCTAssertEqual(notice.shape, .solid)
+        XCTAssertEqual(notice.tone, DockNotice.resetConfirmedTone); XCTAssertEqual(notice.shape, .solid)
         XCTAssertNotNil(DockNoticeProjection.selected(for: signal, at: confirmed.addingTimeInterval(3 * 3600 - 1)))
         XCTAssertNil(DockNoticeProjection.selected(for: signal, at: confirmed.addingTimeInterval(3 * 3600)))
         signal.reset?.confirmedDotUntil = confirmed.addingTimeInterval(40 * 3600)

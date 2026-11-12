@@ -485,7 +485,9 @@ private actor S4RowsClient: EngineClient {
         intervening["id"] = "synthetic-intervening-reset"
         intervening["publishedAt"] = formatter.string(from: clock.addingTimeInterval(-10))
         intervening["expiresAt"] = formatter.string(from: clock.addingTimeInterval(3600))
-        intervening["schedule"] = ["precision":"window","from":formatter.string(from:clock),"through":formatter.string(from:clock.addingTimeInterval(3600))]
+        // D166: only a confirmation notifies, so the intervening event is a confirmed one.
+        intervening["status"] = "confirmed"; intervening["confirms"] = "synthetic-intervening-reset"
+        intervening.removeValue(forKey: "schedule")
         projection["resetEvents"] = [intervening]; data["projection"] = projection
         try await synthetic.replaceRows(WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data)))
         for _ in 0..<100 where deliveries.count < 2 { try await Task.sleep(for: .milliseconds(10)) }

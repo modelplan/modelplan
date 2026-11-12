@@ -362,9 +362,8 @@ private struct S1FlameManifest: Decodable {
             html += "<tr><td>\(capture.file)</td><td><img width=\"260\" src=\"\(refName)\"></td><td>\(nativeCell)</td><td>\(status)<br>RGB similarity: \(metricText)</td></tr>"
         }
         // Additional synthetic reset states have no prototype golden; never assign a pixel score.
-        // D166: an announced reset is an amber ring, a confirmed one a solid green dot.
-        for (label, noticeCase, showPercentages) in [("amber-hollow", S1SyntheticProvider.NoticeCase.announced, true),
-                                                     ("green-solid", .confirmed, true), ("amber-rim", .announced, false)] {
+        for (label, noticeCase, showPercentages) in [("reset-hollow", S1SyntheticProvider.NoticeCase.announced, true),
+                                                     ("reset-solid", .confirmed, true), ("reset-rim", .announced, false)] {
             let store = try SettingsStore(url: temp.appendingPathComponent("settings-" + label + ".json"))
             try await store.update { $0.dockEdge = .right; $0.size = .medium; $0.dockDisplayID = "s1-synthetic"; $0.dockAlongFraction = 0.5; $0.language = .chinese; $0.showPercentages = showPercentages }
             let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
@@ -382,7 +381,7 @@ private struct S1FlameManifest: Decodable {
                 let expectedShape: DockNotice.Shape = noticeCase == .confirmed ? .solid : .hollow
                 let expectedX = showPercentages ? station.readout.midX + 22 * 44 / 52 : station.centre.x + 44 * 0.25
                 let expectedY = showPercentages ? station.readout.midY : station.centre.y - 44 * 0.433013
-                let expectedTone: DockNotice.Tone = noticeCase == .confirmed ? .green : .amber
+                let expectedTone: DockNotice.Tone = noticeCase == .confirmed ? DockNotice.resetConfirmedTone : DockNotice.resetAnnouncedTone
                 let pass = notice.tone == expectedTone && notice.shape == expectedShape && abs(station.eventRect.midX - expectedX) < 0.001 && abs(station.eventRect.midY - expectedY) < 0.001
                 let file = "synthetic-" + label + ".png"
                 try png.write(to: output.appendingPathComponent(file), options: .withoutOverwriting)
