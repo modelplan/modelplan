@@ -37,6 +37,27 @@ import ModelPlanWire
         XCTAssertEqual(sent.first?.deny.contains(ScopeConsentFixtures.cursor), true)
     }
 
+    /// macrev2-858-1: another writer advances the consent generation while Done's grant is in flight.
+    /// The client clears private state for the newer floor in the error before the grant finishes
+    /// with the rejection; first run must still stay open, with nothing replayed or restored.
+    func testRejectionAfterAPrivacyClearStillKeepsFirstRunOpen() async throws {
+        let engine = ScopeConsentTestClient()
+        await engine.holdGrant()
+        await engine.failGrant(.rpc(code: -32020, context: try WireErrorContext(sessionId: "synthetic", storeEpoch: "synthetic", consentGeneration: 2)))
+        let controller = controller(engine)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.chooseFirstRunTool("cursor", chosen: false)
+        let done = Task { await controller.commitFirstRunChoices() }
+        await engine.waitForGrantStart()
+        controller.clearAcceptedPrivateState() // the privacy barrier for the error's newer floor
+        await engine.finishGrant()
+        let committed = await done.value
+        XCTAssertFalse(committed, "a rejected grant is not a finished first run, even after a privacy clear")
+        let sent = await engine.recordedGrants()
+        XCTAssertEqual(sent.count, 1, "the grant is never replayed on its own")
+        XCTAssertNil(controller.facts, "cleared facts are not restored")
+    }
+
     /// Finding 1: the same rejection from Settings is a failed request too, so the user can retry.
     func testEngineRejectedSettingsGrantIsAFailedRequest() async throws {
         let engine = ScopeConsentTestClient()
