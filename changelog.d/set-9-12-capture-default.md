@@ -1,0 +1,1 @@
+The Quota Widget is shared with screen capture by default (owner decision C19) and v1 ships no switch for hiding it; tests now pin the shared dock window and the Settings row's not-supported reason so the default cannot drift (SET-9-12).
