@@ -27,7 +27,7 @@ public struct EngineResetEventWording: Sendable {
                                        : (english ? "Public reset announced" : "已公告公开重置")
         }
         if now >= through { return english ? "Awaiting confirmation" : "等待确认" }
-        switch event.schedulePrecision {
+        switch event.schedulePrecision ?? "" {
         case "deadline" where from == through:
             let at = clock(through)
             if event.isResetCredit { return english ? "Expected by " + at : "预计 " + at + " 前" }
