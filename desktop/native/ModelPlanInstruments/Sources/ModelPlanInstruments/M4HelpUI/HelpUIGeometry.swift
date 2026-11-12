@@ -80,6 +80,15 @@ public enum HelpUIGeometry {
             return (path[i-1].x==p.x && p.x==path[i+1].x)||(path[i-1].y==p.y && p.y==path[i+1].y) ? nil:p
         }
     }
+    /// A straight (any direction) segment that enters a rectangle's interior (Liang-Barsky, strict).
+    public static func segmentCrosses(_ a:CGPoint,_ b:CGPoint,rect r:CGRect)->Bool {
+        var t0:CGFloat=0,t1:CGFloat=1;let dx=b.x-a.x,dy=b.y-a.y
+        for (p,q) in [(-dx,a.x-r.minX),(dx,r.maxX-a.x),(-dy,a.y-r.minY),(dy,r.maxY-a.y)] {
+            if p==0 { if q<=0 { return false } }
+            else { let t=q/p;if p<0 { if t>t1 { return false };t0=max(t0,t) } else { if t<t0 { return false };t1=min(t1,t) } }
+        }
+        return t1-t0>1e-6 && t0<1 && t1>0
+    }
     public static func segmentIsClear(_ a:CGPoint,_ b:CGPoint,blocks:[CGRect])->Bool {
         guard a.x==b.x || a.y==b.y else { return false }
         return !blocks.contains { r in

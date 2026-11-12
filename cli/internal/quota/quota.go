@@ -185,6 +185,8 @@ type Account struct {
 	Generation string           `json:"generation,omitempty"` // user: the plan's metering generation, as declared
 	ObservedAt time.Time        `json:"observedAt"`
 	Stale      bool             `json:"stale"`
+	// retained: the newest reading is one kept after a failed refresh; stale until a refresh succeeds.
+	retained   bool
 	Harness    *Harness         `json:"harness,omitempty"`
 	Windows    []Window         `json:"windows"`
 	Cards      []Card           `json:"cards,omitempty"`
@@ -337,7 +339,7 @@ func Read(p Paths, now time.Time) Report {
 
 // Evaluate fills the derived fields and the account's headroom.
 func Evaluate(a *Account, now time.Time) {
-	a.Stale = !a.ObservedAt.IsZero() && now.Sub(a.ObservedAt) > staleAfter
+	a.Stale = a.retained || !a.ObservedAt.IsZero() && now.Sub(a.ObservedAt) > staleAfter
 	for i := range a.Windows {
 		a.Windows[i].evalRequests(now)
 		evalWindow(&a.Windows[i], now)

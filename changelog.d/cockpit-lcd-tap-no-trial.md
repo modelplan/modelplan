@@ -1,0 +1,1 @@
+Pressing a fader's display in the cockpit now only opens the effort comparison for that model; it no longer starts a trial ("Try = ★"). A trial exists only while the fader sits on another effort than the real one (the current effort, or ★ when the current effort is not reported), and moving it back ends the trial.

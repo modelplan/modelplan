@@ -21,7 +21,14 @@ export const SELF_WORKFLOWS = Object.freeze([".github/workflows/merge-gates.yml"
 export const ANCHOR_WORKFLOW = ".github/workflows/ci.yml";
 // Workflows that must pass on the merge-group commit itself (they have a merge_group trigger). desktop.yml
 // carries the Mac build and native-headless checks; its queue-scope job skips them for a group outside its paths.
-export const QUEUE_WORKFLOWS = Object.freeze([".github/workflows/ci.yml", ".github/workflows/desktop.yml"]);
+// The Linux-only path-filtered workflows (D112, 11-09: #801 + #764 each passed alone and broke main's U11 cockpit
+// web together) run in the queue too; each has a queue-scope job with its pull_request path list, so it always
+// produces a run (skipped jobs count as green) and no group can finish before it has started.
+export const QUEUE_WORKFLOWS = Object.freeze([
+  ".github/workflows/ci.yml", ".github/workflows/desktop.yml",
+  ".github/workflows/u11-cockpit.yml", ".github/workflows/official-visuals.yml", ".github/workflows/u11a-aggregate.yml",
+  ".github/workflows/u14-harness.yml", ".github/workflows/transport-fuzz.yml",
+]);
 const SHA = /^[0-9a-f]{40}$/;
 
 export const PENDING = "pending";
@@ -156,6 +163,9 @@ export function carryChain(edges, head, verified = () => false) {
 }
 
 // ---- Verdicts ----
+// GPT reviewer lanes (owner D149): Sol = tier 2 (and tier 1), Terra = tier 1 only.
+export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)"]);
+export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)"]);
 // "VERDICT: merge|block @ <40 hex> (<lane>)" on its own line, case-insensitive, in trusted comments and
 // reviews. Counts for the head or a carried head; per lane the latest wins.
 export function verdicts(items, head, carried) {
@@ -171,18 +181,50 @@ export function verdicts(items, head, carried) {
   return lanes;
 }
 
+// ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
+// While the GLM quota is out, a Claude Sonnet reviewer stands in for GLM under its own label:
+// "DESIGN (sonnet): pass|fail @ <sha>" and "GLMREV (sonnet): OK|ISSUES @ <sha>". A (sonnet) pass/OK counts only
+// inside a time-boxed window (the repository variable GLM_FALLBACK_UNTIL, the GLM reset time) and only when it was
+// posted before the window closed; a (sonnet) fail/ISSUES always counts. Outside the window, only GLM markers count.
+export const GLM_FALLBACK_MAX_MS = 8 * 24 * 3600 * 1000;
+// parseFallbackUntil("2026-11-14T12:17:50Z", now) -> epoch ms, or null when unset, malformed or too far ahead.
+export function parseFallbackUntil(value, now) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value)) return null;
+  const t = Date.parse(value);
+  if (!Number.isFinite(t) || t > now + GLM_FALLBACK_MAX_MS) return null;
+  return t;
+}
+// fb: {until: epoch ms | null, now: epoch ms, used: [] (markers that counted are pushed here)}.
+const fallbackCounts = (fb, x) => !!fb && fb.until != null && fb.now < fb.until && Date.parse(x.at) < fb.until;
+
+// Mixing rules (review of #813): a (sonnet) pass/OK counts only at the EXACT head (never over a carry edge), only
+// inside the window, and never over a fail/ISSUES from either reviewer seen earlier at that head. A (sonnet)
+// fail/ISSUES always counts and stays blocking against a later GLM pass/OK; only GLMREV-ACCEPTED (the coordinator's
+// explicit lift) clears an ISSUES. GLM-only sequences keep "latest wins".
+
 // "DESIGN: pass|fail @ <40 hex>" counts only in a trusted comment or review whose body starts with
 // "Design-conformance review"; latest wins; carries over the same verified edges as verdicts.
-export function designVerdict(items, head, carried) {
+// "DESIGN (sonnet): ..." is the GLM-out fallback form (see above).
+export function designVerdict(items, head, carried, fb = null) {
   const at = new Set([head, ...carried]);
-  let r = null;
+  let r = null, src = null, failSeen = false, sonnetFail = false;
+  const lift = new RegExp(`^DESIGN-ACCEPTED @ ${head}(\\s|$)`);
   for (const x of items) {
+    // Coordinator lift (owner decision 2026-11-09): a trusted comment that starts with "DESIGN-ACCEPTED @ <head>"
+    // clears every earlier GLM or (sonnet) fail at that exact head (never carried); a later fail wins again.
+    if (x.kind === "comment" && lift.test(x.body)) { r = "pass"; src = "accepted"; failSeen = sonnetFail = false; continue; }
     if (!x.body.startsWith("Design-conformance review")) continue;
     for (const l of lines(x.body)) {
-      const m = /^DESIGN: (pass|fail) @ ([0-9a-f]{40})\b/.exec(l);
-      if (m && at.has(m[2])) r = m[1];
+      const m = /^DESIGN( \(sonnet\))?: (pass|fail) @ ([0-9a-f]{40})\b/.exec(l);
+      if (!m || !at.has(m[3])) continue;
+      const sonnet = !!m[1];
+      if (m[2] === "fail") { r = "fail"; src = sonnet ? "sonnet" : "glm"; failSeen = true; sonnetFail ||= sonnet; continue; }
+      if (sonnet ? m[3] !== head || failSeen || !fallbackCounts(fb, x) : sonnetFail) continue;
+      r = "pass"; src = sonnet ? "sonnet" : "glm";
     }
   }
+  if (r === "pass" && src === "sonnet") fb?.used?.push("DESIGN (sonnet)");
+  if (r === "pass" && src === "accepted") fb?.used?.push("DESIGN-ACCEPTED");
   return r;
 }
 
@@ -191,13 +233,20 @@ export function designVerdict(items, head, carried) {
 const GLM_SCOPE_RE = /^(desktop\/native\/|cli\/|clients\/swift\/|schema\/app-cli\/)/;
 export const glmInScope = (paths) => paths.some((p) => GLM_SCOPE_RE.test(p));
 
-export function glmVerdict(items, head) {
-  let r = null;
-  const re = new RegExp(`^(GLMREV: (OK|ISSUES)|GLMREV-ACCEPTED) @ ${head}(\\s|$)`);
+// "GLMREV (sonnet): OK|ISSUES @ <head>" is the GLM-out fallback form (see the mixing rules above).
+export function glmVerdict(items, head, fb = null) {
+  let r = null, src = null, issuesSeen = false, sonnetIssues = false;
+  const re = new RegExp(`^(GLMREV( \\(sonnet\\))?: (OK|ISSUES)|GLMREV-ACCEPTED) @ ${head}(\\s|$)`);
   for (const x of items) if (x.kind === "comment") {
     const m = re.exec(x.body);
-    if (m) r = m[2] === "ISSUES" ? "issues" : "ok";
+    if (!m) continue;
+    const sonnet = !!m[2];
+    if (m[3] === "ISSUES") { r = "issues"; src = sonnet ? "sonnet" : "glm"; issuesSeen = true; sonnetIssues ||= sonnet; continue; }
+    if (!m[3]) { r = "ok"; src = "glm"; issuesSeen = sonnetIssues = false; continue; }   // GLMREV-ACCEPTED lifts
+    if (sonnet ? issuesSeen || !fallbackCounts(fb, x) : sonnetIssues) continue;
+    r = "ok"; src = sonnet ? "sonnet" : "glm";
   }
+  if (r === "ok" && src === "sonnet") fb?.used?.push("GLMREV (sonnet)");
   return r;
 }
 
@@ -243,12 +292,30 @@ export function tiersFrom(read) {
   try { return parseTiers(read()); } catch { return new Map(); }
 }
 
+// D97 (owner 2026-11-09, changes R13): a ledger PR may land on its automated gates. The coordinator checks them
+// (auto-verify.sh) and posts a trusted comment whose FIRST line is
+//   AUTO-VERIFIED: <scenario IDs, comma or space separated> @ <40-hex head sha> gates=<gates that applied>
+// The gate list is in canonical order and always starts ci,gui,review; design follows when the PR is design-touching
+// (required then, as in evidence-gate.sh), visual when it is visual-touching. The older form with walkthrough still
+// parses. It satisfies exactly the listed IDs (G3 rows and real-Mac tiers included) at that exact head; never carried.
+const AUTO_VERIFIED = /^AUTO-VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}(?:[, ]+[A-Z][A-Z0-9]{0,3}-[0-9]{2})*) @ ([0-9a-f]{40}) gates=([a-z,]+)$/;
+export const AUTO_VERIFIED_GATES = Object.freeze(["ci,gui,review", "ci,gui,review,design", "ci,gui,review,visual",
+  "ci,gui,review,design,visual", "ci,gui,review,design,visual,walkthrough"]);
+
+// The IDs one comment body's first line auto-verifies at `head`, or [] when it is not a valid AUTO-VERIFIED line.
+export function autoVerified(body, head, { designTouching = false } = {}) {
+  const m = AUTO_VERIFIED.exec(lines(body ?? "")[0] ?? "");
+  if (!m || m[2] !== head || !AUTO_VERIFIED_GATES.includes(m[3])) return [];
+  if (designTouching && !m[3].split(",").includes("design")) return [];
+  return m[1].split(/[, ]+/).filter(Boolean);
+}
+
 // Only trusted issue comments count. Evidence is tied to the actual head and is never carried across a merge
 // or other commit. As in evidence-gate.sh (D21): a PR naming a ledger row needs a line for every scenario; any other
 // PR needs one for each scenario that is not on a CI tier, so real-Mac tiers, G3 rows and IDs missing from `tiers`
 // all do. A CI-tier scenario needs no line because evaluatePr requires green CI at the head anyway. #661 landed with
 // C-10 (T3) unaccounted for when only ledger PRs were read here.
-export function evidenceState(pr, items, head, tiers = new Map()) {
+export function evidenceState(pr, items, head, tiers = new Map(), { designTouching = false } = {}) {
   const body = pr.body ?? "";
   const ledger = /g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n"));
   const { ids: scenarios, malformed } = parseScenarios(body);
@@ -257,6 +324,7 @@ export function evidenceState(pr, items, head, tiers = new Map()) {
     : { state: SUCCESS, why: "not an evidence-tier-1 PR" };
   const verified = new Set();
   for (const item of items) if (item.kind === "comment") {
+    for (const id of autoVerified(item.body, head, { designTouching })) verified.add(id);
     for (const line of lines(item.body)) {
       const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
       if (match && match[2] === head) verified.add(match[1]);
@@ -321,6 +389,9 @@ export function latestRuns(runs, scope = () => true) {
   const by = new Map();
   for (const r of runs) {
     if (SELF_WORKFLOWS.includes(r.path) || !scope(r)) continue;
+    // action_required: GitHub holds the run for approval (a bot-opened or fork PR) and never executes it, so it
+    // proves nothing and must not displace a real run; with no executed run the workflow stays "waiting to start".
+    if (r.status === "completed" && r.conclusion === "action_required") continue;
     const prev = by.get(r.workflow_id);
     if (!prev || r.id > prev.id) by.set(r.workflow_id, r);
   }
@@ -367,20 +438,75 @@ export function cancelledRunSuperseded(run, prHead) {
   return run.conclusion === "cancelled" && run.head_sha !== prHead;
 }
 
+// ---- Data-sync admission ----
+// .github/workflows/data-sync.yml opens a PR as the github-actions bot. That PR is admitted, instead of failing
+// the trusted-same-repository rule, only when every check below holds; the verdict and CI rules still apply.
+// pr.user is the PR author. `sync` is read by evaluate.mjs: {run: the workflow run named by the branch, commit:
+// the head commit}. A PR that does not pass stays "not a trusted same-repository PR" as before.
+export const DATA_SYNC = Object.freeze({
+  bot: { login: "github-actions[bot]", id: 41898282 },
+  workflow: ".github/workflows/data-sync.yml",
+  repoChecks: ".github/workflows/repo-checks.yml",
+  branch: /^data\/sync-[0-9A-Za-z._+-]+-([0-9]+)$/,
+  runEvents: ["schedule", "workflow_dispatch"],
+});
+const isBot = (u) => !!u && u.login === DATA_SYNC.bot.login && u.id === DATA_SYNC.bot.id;
+
+// The run id the branch name claims, or null when the PR does not look like a data-sync PR at all.
+export function dataSyncRunId(pr) {
+  if (!isBot(pr.user)) return null;
+  const m = DATA_SYNC.branch.exec(pr.head?.ref ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+// Returns null when the PR is an admitted data-sync PR, else the first reason it is not.
+export function dataSyncProblem({ pr, files, items, sync }) {
+  const repo = pr.base?.repo?.full_name;
+  if (!isBot(pr.user)) return "author is not the github-actions bot";
+  if (repo !== REPO || pr.head?.repo?.full_name !== REPO) return `head and base must both be ${REPO}`;
+  if (pr.base.ref !== "main") return "base is not main";
+  const runId = dataSyncRunId(pr);
+  if (!runId) return "branch is not data/sync-<version>-<run id>";
+  const paths = prPaths(files);
+  if (files.length >= FILE_LIST_LIMIT) return "file list may be truncated (API cap)";
+  if (!files.length || paths.some((f) => !f.startsWith("data/") || f.split("/").includes(".."))) return "a changed file is outside data/";
+  const { run, commit } = sync ?? {};
+  if (!run) return "the data-sync run could not be read";
+  if (run.id !== runId || String(run.path ?? "").split("@")[0] !== DATA_SYNC.workflow) return "branch run is not a data-sync.yml run";
+  if (run.repository?.full_name !== REPO || run.head_repository?.full_name !== REPO) return "data-sync run is not from this repository";
+  if (!DATA_SYNC.runEvents.includes(run.event) || run.head_branch !== "main") return "data-sync run was not a scheduled or manual run on main";
+  if (!run.head_sha || !run.created_at || !run.updated_at || !pr.created_at || pr.created_at < run.created_at || pr.created_at > run.updated_at)
+    return "PR was not opened while the data-sync run was running";
+  if (!commit || commit.sha !== pr.head.sha) return "head commit could not be read";
+  if (!isBot(commit.author) || (commit.parents ?? []).length !== 1) return "head commit is not a single commit authored by github-actions";
+  // The commit sits directly on the main commit the run checked out (this also rules out a tag or branch that merely
+  // shares the name "main").
+  if (commit.parents[0].sha !== run.head_sha) return "head commit is not on the commit the data-sync run checked out";
+  if (![...verdicts(items, pr.head.sha, []).values()].includes("merge")) return "needs a trusted VERDICT: merge @ the exact head";
+  return null;
+}
+
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
 // verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
-// tiers: parseTiers().
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map() }) {
+// tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
+// glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
   if (pr.state !== "open") return res(FAILURE, `PR is ${pr.state}`);
   if (pr.base.ref !== "main") return res(FAILURE, `base is ${pr.base.ref}, not main; coordinator decides`);
   // Only the trusted account's own same-repository PRs land; a stranger's or a fork PR waits for the coordinator.
-  if (!isTrusted(pr.user) || pr.head.repo?.full_name !== pr.base.repo.full_name)
-    return res(FAILURE, "not a trusted same-repository PR; coordinator decides");
-  const evidence = evidenceState(pr, items, head, tiers);
+  // Narrow exception: a data-sync PR from the github-actions bot (dataSyncProblem); the gates below still apply.
+  let dataSync = false;
+  if (!isTrusted(pr.user) || pr.head.repo?.full_name !== pr.base.repo.full_name) {
+    const problem = dataSyncRunId(pr) ? dataSyncProblem({ pr, files, items, sync }) : "not data-sync";
+    if (problem) return res(FAILURE, dataSyncRunId(pr) ? `data-sync PR not admitted: ${problem}` : "not a trusted same-repository PR; coordinator decides");
+    dataSync = true;
+  }
+  const design = designTouch(files, conf);
+  const evidence = evidenceState(pr, items, head, tiers, { designTouching: design.touching });
   if (evidence.state === FAILURE) return res(FAILURE, evidence.why);
   const gap = trainScenarioGap(pr, members);
   if (gap) return res(FAILURE, gap);
@@ -389,9 +515,9 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   const paths = prPaths(files);
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
-  const design = designTouch(files, conf);
   const carried = carryChain(carryEdges(items), head, verifiedEdge);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried };
+  const fb = { until: glmFallbackUntil, now, used: [] };
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, glmFallback: fb.used };
 
   let lanes = verdicts(items, head, carried);
   // Owner 2026-11-04 tier split: on tier 2 a macrev (Terra) verdict is advice, not a gate.
@@ -402,24 +528,30 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 
   const missing = [];
   if (evidence.state === PENDING) missing.push(evidence.why);
-  // Owner 2026-11-07: while Codex quota is out, a Sonnet reviewer stands in for macrev2 under its own label.
-  if (tier === 2 && lanes.get("(macrev2)") !== "merge" && lanes.get("(sonnet)") !== "merge") missing.push("VERDICT (macrev2) or (sonnet) merge");
-  if (tier === 1 && ![...lanes.values()].includes("merge")) missing.push("a VERDICT merge");
+  // Owner D149 (2026-11-11): GPT review is back. Tier 2 needs a Sol verdict (macrev2 or macrevb); tier 1 needs a
+  // Terra verdict (macrevc, legacy name macrev) or a Sol one; GLM-only, unnamed or (sonnet) verdicts do not land.
+  // A Sonnet fallback needs its own owner-approved change; the public gate stays strict.
+  const merged = (names) => names.some((n) => lanes.get(n) === "merge");
+  if (tier === 2 && !merged(SOL_LANES)) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge`);
+  if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES])) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge`);
   if (design.touching) {
-    const d = designVerdict(items, head, carried);
+    const d = designVerdict(items, head, carried, fb);
     if (d === "fail") return res(FAILURE, `DESIGN fail (${design.surfaces.join(",")})`, extra);
     if (d !== "pass") missing.push("DESIGN pass");
   }
   if (tier !== 0 && glmInScope(paths)) {
-    const g = glmVerdict(items, head);
+    const g = glmVerdict(items, head, fb);
     if (g === "issues") return res(FAILURE, "GLMREV ISSUES at head", extra);
     if (g !== "ok") missing.push("GLMREV OK or ACCEPTED");
   }
-  const ci = ciState(runs, statuses, { scope: prRunScope(pr) });
+  // A PR opened with the workflow token starts no pull_request run, so data-sync.yml dispatches ci.yml and
+  // repo-checks.yml on the branch; prRunScope accepts those same-repository runs on the PR's branch. Both are
+  // required before an admitted PR can pass.
+  const ci = ciState(runs, statuses, { scope: prRunScope(pr), ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
   if (ci.state === FAILURE) return res(FAILURE, ci.why, extra);
   if (missing.length) return res(PENDING, `tier ${tier}: needs ${missing.join(", ")}`, extra);
   if (ci.state === PENDING) return res(PENDING, ci.why, extra);
-  return res(SUCCESS, `tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`, extra);
+  return res(SUCCESS, `tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}${fb.used.length ? ` (via ${fb.used.join(", ")})` : ""}`, extra);
 }
 
 // ---- One merge-group commit ----

@@ -91,6 +91,51 @@ class BundlePinGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'reserved source'):
             guard.write(self.root)
 
+    def reserve(self, origin, data, registered=True):
+        source = self.root / 'desktop/reserved' / origin
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(data)
+        if registered:
+            self.register['desktop/reserved/' + origin] = hashlib.sha256(data).hexdigest()
+            self.write_policy()
+
+    def test_bell_hull_and_logo_outputs_map_to_their_reserved_sources(self):
+        outputs = {
+            'assets/bells/bell-night-2x.png': ('cockpit/bells/assets/bell-night-2x.png', PNG + b'bell'),
+            'assets/hull/taper-890-1x.png': ('cockpit/hull/assets/taper-890-1x.png', PNG + b'hull'),
+            'assets/hull/lower-stage-640-2x.png': ('cockpit/hull/assets/lower-stage-640-2x.png', PNG + b'stage'),
+            'assets/bells/SOURCES.md': ('cockpit/bells/SOURCES.md', b'bell sources'),
+            'assets/hull/SOURCES.md': ('cockpit/hull/SOURCES.md', b'hull sources'),
+            'assets/logo.svg': ('logo.svg', b'<svg>logo</svg>'),
+        }
+        for origin, data in outputs.values():
+            self.reserve(origin, data, registered=not guard.is_text(data))
+        build(self.root, 'official', {name: data for name, (_, data) in outputs.items()})
+        guard.write(self.root)
+        for name, (origin, data) in outputs.items():
+            self.reserve(origin, data + b'edited', registered=False)
+            with self.assertRaisesRegex(ValueError, 'reserved source: ' + name):
+                guard.write(self.root)
+            self.reserve(origin, data, registered=False)
+
+    def test_new_mappings_still_require_register_entries(self):
+        self.reserve('cockpit/hull/assets/taper-890-1x.png', PNG, registered=False)
+        build(self.root, 'official', {'assets/hull/taper-890-1x.png': PNG})
+        with self.assertRaisesRegex(ValueError, 'not in the register: desktop/reserved/cockpit/hull/assets/taper-890-1x.png'):
+            guard.write(self.root)
+
+    def test_a_later_non_matching_source_does_not_override_an_earlier_match(self):
+        # 'assets/' also matches the bell output, but its strip source holds other bytes: the first match must settle it.
+        self.reserve('cockpit/bells/assets/bell-night-2x.png', PNG)
+        self.reserve('cockpit/strip/assets/bells/bell-night-2x.png', PNG + b'other', registered=False)
+        build(self.root, 'official', {'assets/bells/bell-night-2x.png': PNG})
+        guard.write(self.root)
+
+    def test_plain_assets_still_map_to_the_strip_sources(self):
+        self.reserve('cockpit/strip/assets/rocket.png', PNG)
+        build(self.root, 'official', {'assets/rocket.png': PNG})
+        guard.write(self.root)
+
     def test_third_party_marks_are_outside_the_register(self):
         build(self.root, 'official', {'assets/brands/openai-white.svg': b'<svg/>', 'assets/SOURCES.md': b'sources'})
         guard.write(self.root)

@@ -175,6 +175,9 @@ def zero_rows(binary, home, mode):
     fixture_input(home, mode)
     with EngineProcess(binary, home, 'u14-model-' + mode) as engine:
         fixture_hello(engine)
+        # The Codex reader's first background read is independent of history: once it ends, its outcome (a failed
+        # first read names its cause) changes the codex row. Settle it first so the comparison isolates history.
+        _await_row_settled(engine, 'codex', 'codex-first-read-did-not-finish')
         before = row_projection(engine.request('rows/subscribe'))
         ids = [r['id'] for r in before['rows']]
         require('codex' in ids and 'claude' in ids and len(ids) == len(set(ids)), 'missing-production-rows')
@@ -224,7 +227,14 @@ def empty_states(binary, home, fault_binary):
             projection = fresh_rows(engine, patience)
             if empty == 'pending':
                 projection = await_pending(engine, projection, patience)
-            require(projection['rowsSummary']['state'] == empty, 'wrong-empty-summary-' + empty)
+            # G3-38: on the plain synthetic home the detected, allowed tools are waiting for their
+            # first read, so the Dock summary is "Reading ..." (pending), never "no readings".
+            # A true empty / no_dock_rows is covered by the rows unit tests (an allowed tool with
+            # no reader).
+            expected = 'pending' if empty == 'empty' else empty
+            require(projection['rowsSummary']['state'] == expected, 'wrong-empty-summary-' + empty)
+            if empty == 'empty':
+                require(projection['rowsSummary']['text']['en'].startswith('Reading ') and not projection['rowsSummary'].get('nextStep'), 'wrong-reading-summary')
             require(bool(projection['rowsSummary']['text']['en']) and bool(projection['rowsSummary']['text']['zh']), 'empty-summary-without-text')
             if empty in ('readers_off', 'pending'):
                 require(all(not row['accounts'] for row in projection['rows']), 'private-values-in-off-or-pending-state')
@@ -439,6 +449,18 @@ def _seed_post_logins(home):
     cursor.chmod(0o600)
     return {'gemini': {'path': gemini, 'sha256': digest(regular_bytes(gemini))},
             'cursor': {'path': cursor, 'sha256': digest(regular_bytes(cursor))}}, (canary, token)
+
+
+def _await_row_settled(engine, row_id, error_code, seconds=45):
+    """Poll rows until one row has left "pending" (its first read ended); the deadline bounds a read that never ends."""
+    import time
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        projection = row_projection(engine.request('rows/subscribe'))
+        if any(row['id'] == row_id and row['state'] != 'pending' for row in projection['rows']):
+            return
+        time.sleep(.1)
+    require(False, error_code)
 
 
 def _wait_scheduler_capture(engine, home, scope, path, capture_ready, error_code):

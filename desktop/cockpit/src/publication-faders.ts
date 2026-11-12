@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Map published model verdicts to the study's fader inputs. This does not fill
 // missing values. Models in use lead, then the publication's own recommended order.
-type Fader = {id:string;name:string;short:string;rec:string;e:[string,number|null,number|null,number|null][];accounts:string[];sessions:{ref:string;sub:string|null}[]};
+import {speedTierFor,type FastTier} from './speed-tiers.js';
+type Fader = {id:string;name:string;short:string;rec:string;e:[string,number|null,number|null,number|null][];accounts:string[];sessions:{ref:string;sub:string|null}[];tier?:FastTier};
 const object=(value:unknown):Record<string,unknown>|null=>value!==null&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:null;
 const text=(value:unknown):string|null=>typeof value==='string'&&value.length>0&&value.length<=200?value:null;
 const number=(value:unknown):number|null=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1e12?value:null;
@@ -37,7 +38,8 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
   rows.sort((a,b)=>['Low','Med','High','XHigh','Max'].indexOf(a[0])-['Low','Med','High','XHigh','Max'].indexOf(b[0]));
   if(!recommendedStarred)continue;
   const sessions=(Array.isArray(live)?live:[]).flatMap(value=>{const session=object(value),ref=text(session?.sessionRef);return ref&&session?.model===id?[{ref,sub:text(session.subscriptionRef)}]:[];});
-  taken.add(id);faders.push({id,name,short:name,rec:recommended,e:rows,accounts:developer?subscriptions.filter(s=>s.developer===developer).map(s=>s.key):[],sessions});
+  taken.add(id);const tier=speedTierFor(root.speedTiers,id);
+  faders.push({id,name,short:name,rec:recommended,e:rows,accounts:developer?subscriptions.filter(s=>s.developer===developer).map(s=>s.key):[],sessions,...(tier?{tier}:{})});
  }
  return {accounts,faders:[...faders.filter(f=>f.sessions.length),...faders.filter(f=>!f.sessions.length)]};
 }

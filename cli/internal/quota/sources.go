@@ -510,7 +510,9 @@ func codexLimit(id, name string) string {
 
 var rolloutName = regexp.MustCompile(`^rollout-.*\.jsonl$`)
 
-// newestRollouts walks sessions/YYYY/MM/DD from the newest day and returns up to n files by mtime.
+// newestRollouts lists sessions/YYYY/MM/DD and returns up to n files by mtime. Every day is
+// listed (names and stats only, no reads): a resumed session keeps appending to the file in
+// its start day's directory, so a busier newer day must not hide it.
 func newestRollouts(root string, n int) []string {
 	type f struct {
 		path string
@@ -529,13 +531,9 @@ func newestRollouts(root string, n int) []string {
 						}
 					}
 				}
-				if len(out) >= n*2 {
-					goto done
-				}
 			}
 		}
 	}
-done:
 	sort.Slice(out, func(i, j int) bool { return out[i].mod.After(out[j].mod) })
 	var paths []string
 	for i := 0; i < len(out) && i < n; i++ {

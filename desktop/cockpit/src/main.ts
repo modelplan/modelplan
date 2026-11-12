@@ -3,14 +3,14 @@ import { CockpitBridge,type BridgeSource } from './bridge.js';
 import { mountCockpit } from './view.js';
 import { mountPortholeStill } from './porthole-still.js';
 import portholeStills from './porthole-stills-data.js';
-declare global {interface Window {modelPlanCockpit?:{receive(raw:string):boolean;clear(raw:string):boolean;state():string};webkit?:{messageHandlers?:{cockpit?:{postMessage(message:string):void}}}}}
+declare global {interface Window {modelPlanCockpit?:{receive(raw:string):boolean;clear(raw:string):boolean;state():string;reject():string};webkit?:{messageHandlers?:{cockpit?:{postMessage(message:string):void}}}}}
 const url=new URL(location.href),pageId=url.searchParams.get('pageId');
 const origin=url.protocol==='modelplan-cockpit:'&&url.hostname==='bundle'?'modelplan-cockpit://bundle':url.protocol==='http:'&&url.hostname==='127.0.0.1'?url.origin:null;
 const root=document.getElementById('cockpit');
 if(pageId&&origin&&root&&window.top===window) {
   let bridge:CockpitBridge;
-  const view=mountCockpit(root,(action,tool)=>bridge.action(action,tool));
-  const field=root.querySelector<HTMLElement>('.ck-field');const still=field?mountPortholeStill(field,root,portholeStills,()=>bridge.action('openField')):null;
+  const view=mountCockpit(root,(action,tool)=>bridge.action(action,tool),ids=>bridge.acknowledgeCautions(ids));
+  const field=root.querySelector<HTMLElement>('.ck-field');const still=field?mountPortholeStill(field,root,portholeStills,focus=>bridge.action('openField',focus)):null;
   const post=(message:string)=>window.webkit?.messageHandlers?.cockpit?.postMessage(message);
   bridge=new CockpitBridge(pageId,origin,post,view,()=>crypto.randomUUID());
   const source:BridgeSource=Object.freeze({origin,isMainFrame:true});
@@ -20,6 +20,7 @@ if(pageId&&origin&&root&&window.top===window) {
     receive(raw:string){try{return bridge.receive(raw,source);}finally{if(bridge.disposed)dispose();}},
     clear(raw:string){try{return bridge.clear(raw,source);}finally{if(bridge.disposed)dispose();}},
     state(){return bridge.state;},
+    reject(){return bridge.lastReject;},
   });
   document.addEventListener('visibilitychange',()=>bridge.documentHidden(document.hidden),{signal:listeners.signal});
   window.addEventListener('pagehide',dispose,{signal:listeners.signal});

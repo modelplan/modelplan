@@ -17,8 +17,17 @@ EDITIONS = ('community', 'official')
 FACTORY = 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift'
 GENERATED = 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift'
 COMMITTED_PIN = re.compile(r'"(community|official)"\s*:\s*"[a-f0-9]{64}"')
-# Official bundle prefixes copied from the reserved visuals, and their source directories under the register's prefix.
-RESERVED_SOURCES = (('runtime/', 'runtime/'), ('assets/', 'cockpit/strip/assets/'))
+# Official bundle prefixes copied from the reserved visuals, and their source paths under the register's prefix.
+# The first matching entry wins, so a specific entry must come before the general 'assets/' fallback.
+RESERVED_SOURCES = (
+    ('runtime/', 'runtime/'),
+    ('assets/bells/SOURCES.md', 'cockpit/bells/SOURCES.md'),
+    ('assets/hull/SOURCES.md', 'cockpit/hull/SOURCES.md'),
+    ('assets/bells/', 'cockpit/bells/assets/'),
+    ('assets/hull/', 'cockpit/hull/assets/'),
+    ('assets/logo.svg', 'logo.svg'),
+    ('assets/', 'cockpit/strip/assets/'),
+)
 THIRD_PARTY = ('assets/brands/', 'assets/SOURCES.md')
 
 
@@ -91,6 +100,7 @@ def check_register(repo, edition, files, reserved_prefix, listed):
                 raise ValueError('Official output differs from its reserved source: ' + relative)
             if not is_text(data) and listed.get(origin) != sha256(data):
                 raise ValueError('Reserved binary is not in the register: ' + origin)
+            break
 
 
 def validate(repo):

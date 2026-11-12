@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -32,7 +34,13 @@ type DBCursor struct {
 	Seen    map[string]int64 `json:"seen,omitempty"`    // hashed ids counted near Mark → start ms
 	Day     string           `json:"day"`               // local date of the last read
 	Checked time.Time        `json:"checked"`
-	More    bool             `json:"more,omitempty"` // the last read stopped at dbBatch rows
+	More    bool             `json:"more,omitempty"`   // the last read stopped at dbBatch rows
+	Anchor  string           `json:"anchor,omitempty"` // hash of the row at RowID: the same database
+	// After a reset, rows up to ResetRow that started no later than ResetMark (the newest request
+	// counted before it) are never counted again, except the requests still running then.
+	ResetRow     int64   `json:"resetRow,omitempty"`
+	ResetMark    int64   `json:"resetMark,omitempty"`
+	ResetPending []int64 `json:"resetPending,omitempty"`
 }
 
 const (
@@ -82,14 +90,27 @@ func dbSig(path string) string {
 	return s
 }
 
+// anchorOf: the hashed identity of the row with this rowid, "" when there is none.
+func anchorOf(db *sql.DB, query string, rowid int64) (string, error) {
+	var id string
+	switch err := db.QueryRow(query, rowid).Scan(&id); {
+	case errors.Is(err, sql.ErrNoRows):
+		return "", nil
+	case err != nil:
+		return "", err
+	}
+	return hashID("anchor:" + id), nil
+}
+
 func hashID(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:8])
 }
 
 // scanDB reads what is new in one database with read (rows past a rowid, plus listed rowids) and
-// adds the finished requests to the ledger under source.
-func (l *PerfLedger) scanDB(path, source, parser string, now time.Time, read func(db *sql.DB, after int64, pending []int64) ([]dbRow, error)) bool {
+// adds the finished requests to the ledger under source. anchor selects a stable identity of the
+// row with the given rowid (its own id and start), so a replaced database is recognised.
+func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, read func(db *sql.DB, after int64, pending []int64) ([]dbRow, error)) bool {
 	if l.Stores == nil {
 		l.Stores = map[string]DBCursor{}
 	}
@@ -104,6 +125,27 @@ func (l *PerfLedger) scanDB(path, source, parser string, now time.Time, read fun
 		return false
 	}
 	defer db.Close()
+	if c.RowID > 0 {
+		// A database recreated (or emptied, or renumbered) at the same path numbers its rows from 1
+		// again: past the old watermark its first rows would never be read. When the row at the
+		// watermark is gone or is another request, start over. A cursor saved without an anchor
+		// (by an earlier build) cannot be matched to this database and is read again once too.
+		at, err := anchorOf(db, anchor, c.RowID)
+		if err != nil {
+			return false
+		}
+		if at == "" || c.Anchor == "" || at != c.Anchor {
+			// Every request counted so far started no later than Mark, so the re-read counts only
+			// rows that started after it (or were still running): nothing counts twice, however
+			// many ids Seen has dropped.
+			c.ResetRow, c.ResetMark = max(c.ResetRow, c.RowID), max(c.ResetMark, c.Mark)
+			c.ResetPending = append(c.ResetPending, c.Pending...)
+			if len(c.ResetPending) > maxPending {
+				c.ResetPending = c.ResetPending[len(c.ResetPending)-maxPending:]
+			}
+			c.RowID, c.Pending = 0, nil
+		}
+	}
 	rows, err := read(db, c.RowID, c.Pending)
 	if err != nil {
 		return false
@@ -122,6 +164,9 @@ func (l *PerfLedger) scanDB(path, source, parser string, now time.Time, read fun
 		}
 		if r.start <= 0 {
 			continue
+		}
+		if r.rowid <= c.ResetRow && r.start <= c.ResetMark && !slices.Contains(c.ResetPending, r.rowid) {
+			continue // counted, or skipped, before the reset
 		}
 		if c.Mark > 0 && r.start < c.Mark-look {
 			continue // history copied into a new row
@@ -157,6 +202,15 @@ func (l *PerfLedger) scanDB(path, source, parser string, now time.Time, read fun
 	for id, at := range c.Seen {
 		if at < c.Mark-look || len(c.Seen) > maxSeenRows {
 			delete(c.Seen, id)
+		}
+	}
+	if c.RowID >= c.ResetRow && len(rows) < dbBatch {
+		c.ResetRow, c.ResetMark, c.ResetPending = 0, 0, nil // the re-read is complete
+	}
+	c.Anchor = ""
+	if c.RowID > 0 {
+		if at, err := anchorOf(db, anchor, c.RowID); err == nil {
+			c.Anchor = at
 		}
 	}
 	c.Pending, c.Sig, c.Day, c.Checked, c.More = pending, sig, day(now), now.UTC().Truncate(time.Second), len(rows) >= dbBatch
