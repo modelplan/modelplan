@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -35,6 +36,11 @@ type DBCursor struct {
 	Checked time.Time        `json:"checked"`
 	More    bool             `json:"more,omitempty"`   // the last read stopped at dbBatch rows
 	Anchor  string           `json:"anchor,omitempty"` // hash of the row at RowID: the same database
+	// After a reset, rows up to ResetRow that started no later than ResetMark (the newest request
+	// counted before it) are never counted again, except the requests still running then.
+	ResetRow     int64   `json:"resetRow,omitempty"`
+	ResetMark    int64   `json:"resetMark,omitempty"`
+	ResetPending []int64 `json:"resetPending,omitempty"`
 }
 
 const (
@@ -122,15 +128,21 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 	if c.RowID > 0 {
 		// A database recreated (or emptied, or renumbered) at the same path numbers its rows from 1
 		// again: past the old watermark its first rows would never be read. When the row at the
-		// watermark is gone or is another request, start over; Seen and Mark still keep any
-		// request already counted from counting twice.
+		// watermark is gone or is another request, start over. A cursor saved without an anchor
+		// (by an earlier build) cannot be matched to this database and is read again once too.
 		at, err := anchorOf(db, anchor, c.RowID)
 		if err != nil {
 			return false
 		}
-		// A cursor saved without an anchor (by an earlier build) cannot be matched to this
-		// database: migrate it once by reading from the first row, under the same deduplication.
 		if at == "" || c.Anchor == "" || at != c.Anchor {
+			// Every request counted so far started no later than Mark, so the re-read counts only
+			// rows that started after it (or were still running): nothing counts twice, however
+			// many ids Seen has dropped.
+			c.ResetRow, c.ResetMark = max(c.ResetRow, c.RowID), max(c.ResetMark, c.Mark)
+			c.ResetPending = append(c.ResetPending, c.Pending...)
+			if len(c.ResetPending) > maxPending {
+				c.ResetPending = c.ResetPending[len(c.ResetPending)-maxPending:]
+			}
 			c.RowID, c.Pending = 0, nil
 		}
 	}
@@ -152,6 +164,9 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 		}
 		if r.start <= 0 {
 			continue
+		}
+		if r.rowid <= c.ResetRow && r.start <= c.ResetMark && !slices.Contains(c.ResetPending, r.rowid) {
+			continue // counted, or skipped, before the reset
 		}
 		if c.Mark > 0 && r.start < c.Mark-look {
 			continue // history copied into a new row
@@ -188,6 +203,9 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 		if at < c.Mark-look || len(c.Seen) > maxSeenRows {
 			delete(c.Seen, id)
 		}
+	}
+	if c.RowID >= c.ResetRow && len(rows) < dbBatch {
+		c.ResetRow, c.ResetMark, c.ResetPending = 0, 0, nil // the re-read is complete
 	}
 	c.Anchor = ""
 	if c.RowID > 0 {

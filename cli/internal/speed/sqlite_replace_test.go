@@ -182,3 +182,108 @@ func TestZCodeLegacyCursorRecreated(t *testing.T) {
 		})
 	}
 }
+
+// Migrating a legacy cursor never counts a recorded request again, even when more requests
+// than Seen can hold started within the lookback window (macrevb-857-2).
+func TestZCodeLegacyCursorPastSeenLimit(t *testing.T) {
+	utc(t)
+	cache, home := t.TempDir(), t.TempDir()
+	seedPerf(t, cache, t0.Add(-time.Minute))
+	db := sqliteDB(t, ZCodeDB(home), `CREATE TABLE model_usage (id TEXT PRIMARY KEY, session_id TEXT, turn_id TEXT, model_id TEXT, started_at INTEGER,
+		completed_at INTEGER, duration_ms INTEGER, input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER,
+		cache_read_input_tokens INTEGER, cache_creation_input_tokens INTEGER, agent TEXT, mode TEXT);`)
+	insert := func(stmt interface {
+		Exec(...any) (sql.Result, error)
+	}, id string, start time.Time) {
+		if _, err := stmt.Exec(id, ms(start), ms(start.Add(time.Second))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const q = `INSERT INTO model_usage (id, session_id, model_id, started_at, completed_at, output_tokens) VALUES (?, 's', 'GLM-5.2', ?, ?, 1)`
+	n := maxSeenRows + dbBatch/2
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt, err := tx.Prepare(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		insert(stmt, fmt.Sprintf("r-%d", i), t0.Add(time.Duration(i)*300*time.Millisecond)) // ~1h45m
+	}
+	stmt.Close()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	now := t0.Add(2 * time.Hour)
+	observe := func() {
+		t.Helper()
+		for i := 0; i < n/dbBatch+3; i++ {
+			now = now.Add(time.Minute)
+			if err := ObserveZCode(cache, home, Ingest{}, now); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	requests := func() int {
+		total := 0
+		for _, d := range view(t, cache, now).Daily() {
+			total += d.ObservedRequests
+		}
+		return total
+	}
+	observe()
+	if got := requests(); got != n {
+		t.Fatalf("first ingestion: %d requests, want %d", got, n)
+	}
+	l, _ := LoadPerf(cache)
+	for _, c := range l.Stores {
+		if len(c.Seen) < maxSeenRows {
+			t.Fatalf("fixture: Seen holds %d ids, want it full", len(c.Seen))
+		}
+	}
+	stripAnchors(t, cache)
+	single, err := db.Prepare(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer single.Close()
+	insert(single, "after-upgrade", now.Add(-10*time.Second))
+	observe()
+	if got := requests(); got != n+1 {
+		t.Fatalf("after migration: %d requests, want %d", got, n+1)
+	}
+	insert(single, "later", now.Add(-5*time.Second))
+	observe()
+	if got := requests(); got != n+2 {
+		t.Fatalf("after a later request: %d requests, want %d", got, n+2)
+	}
+}
+
+// A request still running when a legacy cursor is migrated, though it started before the newest
+// counted one, counts once when it finishes.
+func TestZCodeLegacyCursorKeepsRunningRequest(t *testing.T) {
+	utc(t)
+	cache, home := t.TempDir(), t.TempDir()
+	seedPerf(t, cache, t0.Add(-time.Minute))
+	db := sqliteDB(t, ZCodeDB(home), `CREATE TABLE model_usage (id TEXT PRIMARY KEY, session_id TEXT, turn_id TEXT, model_id TEXT, started_at INTEGER,
+		completed_at INTEGER, duration_ms INTEGER, input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER,
+		cache_read_input_tokens INTEGER, cache_creation_input_tokens INTEGER, agent TEXT, mode TEXT);`)
+	exec(t, db, `INSERT INTO model_usage (id, session_id, model_id, started_at, output_tokens) VALUES ('long', 's', 'GLM-5.2', ?, 0)`, ms(t0))
+	exec(t, db, `INSERT INTO model_usage (id, session_id, model_id, started_at, completed_at, output_tokens) VALUES ('short', 's', 'GLM-5.2', ?, ?, 100)`, ms(t0.Add(time.Second)), ms(t0.Add(2*time.Second)))
+	if err := ObserveZCode(cache, home, Ingest{}, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	stripAnchors(t, cache)
+	exec(t, db, `UPDATE model_usage SET completed_at = ?, output_tokens = 100 WHERE id = 'long'`, ms(t0.Add(90*time.Second)))
+	for _, at := range []time.Duration{2 * time.Minute, 3 * time.Minute} {
+		now := t0.Add(at)
+		if err := ObserveZCode(cache, home, Ingest{}, now); err != nil {
+			t.Fatal(err)
+		}
+		if d := view(t, cache, now).Daily(); len(d) != 1 || d[0].ObservedRequests != 2 {
+			t.Fatalf("at +%v: daily = %+v, want 2 requests", at, d)
+		}
+	}
+}
