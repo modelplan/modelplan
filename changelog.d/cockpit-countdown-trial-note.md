@@ -1,0 +1,1 @@
+The reset countdown beside the large quota percentage is brighter and a point larger, and the effort comparison now carries one quiet line while a trial is shown: "Trial only — your tool settings stay unchanged".

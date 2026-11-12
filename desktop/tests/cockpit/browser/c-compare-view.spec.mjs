@@ -78,6 +78,22 @@ test('CKP-MFD compare: the effort keys move the trial, one trial at a time, and 
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);
 });
 
+test('CKP-FAD-18 the comparison carries one quiet trial note, only while a trial detent is shown, in both languages',async({page})=>{
+ for(const [locale,text] of [['en','Trial only — your tool settings stay unchanged'],['zh-CN','试算，不会改工具设置']]){
+  await open(page,locale);
+  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
+  const note=page.locator('.mfd-page.pg-compare .cmp-trial-note');
+  await expect(note).toHaveCount(1);await expect(note).toHaveText(text);
+  // Small, muted and at the bottom right, below the effort keys and clear of the comparison.
+  const box=await note.boundingBox(),lad=await page.locator('.cmp-lad').boundingBox(),page_=await page.locator('.mfd-page').boundingBox();
+  expect(box.y).toBeGreaterThanOrEqual(lad.y+lad.height-1);expect(box.x+box.width).toBeGreaterThan(page_.x+page_.width-20);
+  expect(await note.evaluate(e=>parseFloat(getComputedStyle(e).fontSize))).toBeLessThanOrEqual(10);
+  // The trial returns to the real setting: no trial detent, no note.
+  await page.locator('.cmp-lad .lad.cur').click();
+  await expect(page.locator('.cmp-trial-note')).toHaveCount(0);
+ }
+});
+
 test('CKP-MFD compare: Chinese labels match the study',async({page})=>{
  await open(page,'zh-CN');
  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');

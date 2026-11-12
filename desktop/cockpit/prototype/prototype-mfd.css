@@ -185,6 +185,7 @@ table.cmp{width:100%;table-layout:fixed;border-collapse:collapse;font:11px/1 var
 .cmp-note em{white-space:nowrap}
 .cmp-lad{display:flex;padding:0 var(--cr,0px) 0 var(--cl,0px)}
 .lad{flex:1;min-width:0;margin:0 2px;font:10px/16px var(--f-lcd);color:var(--muted);white-space:nowrap;border-radius:3px;box-shadow:inset 0 0 0 1px var(--lcd-rule)}
+.cmp-trial-note{flex:none;margin:0;align-self:flex-end;font:9px/10px var(--f-lcd);color:var(--lcd-muted);opacity:.8;white-space:nowrap}
 .lad:hover{color:var(--text)}
 .lad.rec{color:var(--gold)}
 .lad.cur{color:var(--text);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcd-ink) 60%,transparent)}

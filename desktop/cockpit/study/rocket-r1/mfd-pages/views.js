@@ -79,8 +79,10 @@ export function comparison(d, ui, args) {
   const links=`<span class="cmp-header-links">${secondaryLink(modelUrl(m.id),words.compare)}${howFits?secondaryLink(methodologyUrl('cost-basis'),words.how):''}</span>`;
   const g = ladderGeom(ui), levels = m.e.map(r => r[0]);
   const ladder = `<div class="cmp-lad" style="--cl:${g.L}px;--cr:${g.R}px">${levels.map(l => `<button class="lad ${l === base && cur ? 'cur' : ''} ${l === trial && (trial !== base || T.fast !== C.fast) ? 'try' : ''} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${l}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${l}</button>`).join('')}</div>`;
+  // CKP-FAD-18 (D151): one quiet line, bottom right, while a trial detent is shown.
+  const trialNote = s.trying ? `<p class="cmp-trial-note">${esc(t('mfd.cmpTrialNote'))}</p>` : '';
   return `<div class="cmp-h"><b class="mfd-title">${esc(title)}</b>${note ? `<span class="cmp-note">${note}</span>` : ''}${links}</div>
-    ${table}<div class="mfd-fill" data-fill="cmp">${chartIfRoom(m, columns, tier, s.trialFast, size, reference, !cur)}</div>${ladder}`;
+    ${table}<div class="mfd-fill" data-fill="cmp">${chartIfRoom(m, columns, tier, s.trialFast, size, reference, !cur)}</div>${ladder}${trialNote}`;
 }
 // The bottom key row while the comparison is shown (round D1): back to the page underneath, fast mode in the trial
 // (both states printed, only for a tool with a fast mode; otherwise a dark key) only. The two keys share the footer width.

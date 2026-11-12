@@ -43,10 +43,11 @@
 .ck-eng .ec.grey{background:none}
 .ck-eng .ec.dimmed{opacity:.5}
 .ck-eng .qcell{--qf:var(--st-ok);position:relative;min-width:0;min-height:0;display:grid;align-content:center;row-gap:4px;padding:0 4px;color:var(--lcd-ink)}
+.ck-eng{--lcd-reset:#c3cad0}
 .ck-eng .qline{display:flex;align-items:baseline;justify-content:space-between;gap:3px;min-width:0}
 .ck-eng .qnum{display:inline-flex;align-items:baseline;flex:none;font:600 20px/22px var(--f-lcd);font-variant-numeric:tabular-nums;color:var(--qn,var(--lcd-ink));white-space:nowrap}
 .ck-eng .qnum small{font:400 10px/1 var(--f-lcd);opacity:.55;margin-left:1px}
-.ck-eng .qtxt{display:block;min-width:0;max-width:100%;font:400 11px/13px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;text-align:right}
+.ck-eng .qtxt{display:block;min-width:0;max-width:100%;font:400 12px/13px var(--f-lcd);color:var(--lcd-reset);white-space:nowrap;text-align:right}
 .ck-eng .qtxt.warn{color:var(--st-mid)}.ck-eng .qtxt.crit{color:var(--st-low)}.ck-eng .qtxt.qev{color:var(--trial)}
 .ck-eng .qmeter{display:grid;row-gap:3px;min-width:0}
 .ck-eng .qbar{display:flex;gap:1.5px;height:5px;min-width:0}
