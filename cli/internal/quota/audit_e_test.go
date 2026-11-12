@@ -19,9 +19,9 @@ import (
 func TestAuditEOpenCodeGoUsageCounterIsNotAPercentage(t *testing.T) {
 	isolateHome(t)
 	for body, want := range map[string]float64{
-		`{"usage":{"rolling":{"usage":120,"limit":1000}}}`:                   12,
-		`{"usage":{"rolling":{"usage":30,"limit":120}}}`:                     25,
-		`{"usage":{"rolling":{"usage":42}}}`:                                 42, // bare usage stays a percentage
+		`{"usage":{"rolling":{"usage":120,"limit":1000}}}`:                  12,
+		`{"usage":{"rolling":{"usage":30,"limit":120}}}`:                    25,
+		`{"usage":{"rolling":{"usage":42}}}`:                                42, // bare usage stays a percentage
 		`{"usage":{"rolling":{"usagePercent":7,"usage":120,"limit":1000}}}`: 7,  // explicit percentage wins
 	} {
 		var r map[string]any
