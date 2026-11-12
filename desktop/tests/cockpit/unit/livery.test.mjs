@@ -6,7 +6,7 @@ import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {MAKERS,TOOLS} from '../../../cockpit/.tmp/compiled/src/livery-table.js';
-import {brandColour,resolveColours,deltaE,COLLISION_DELTA_E,NEUTRAL} from '../../../cockpit/.tmp/compiled/src/livery.js';
+import {brandColour,resolveColours,deltaE,trimOf,trimForColour,RESERVED_UI,COLLISION_DELTA_E,NEUTRAL} from '../../../cockpit/.tmp/compiled/src/livery.js';
 const cockpit=fileURLToPath(new URL('../../../cockpit/',import.meta.url));
 const lum=hex=>{const [r,g,b]=[1,3,5].map(i=>{const c=parseInt(hex.slice(i,i+2),16)/255;return c<=0.03928?c/12.92:((c+0.055)/1.055)**2.4;});return 0.2126*r+0.7152*g+0.0722*b;};
 const ratio=(a,b)=>{const [x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+0.05)/(y+0.05);};
@@ -36,8 +36,9 @@ test('COL-2.1-18 collision rule: only close makers in the same view; the later o
  assert.ok(deltaE('#d97757','#007cff')>COLLISION_DELTA_E);
  assert.deepEqual(resolveColours(['claude','kimi']),['#d97757','#007cff']);
  assert.deepEqual(resolveColours(['glm']),['#b9c2cc']);
- const [a,b]=resolveColours(['openai','glm']);assert.equal(a,'#ececec');assert.equal(b,MAKERS.zhipuai.alt);
- const [c,d]=resolveColours(['glm','openai']);assert.equal(c,'#b9c2cc');assert.equal(d,MAKERS.openai.alt);
+ // OpenAI and Z.ai are two-tone of different tones: they keep their brand colours (told apart by trim); Cursor is the same tone as OpenAI.
+ assert.deepEqual(resolveColours(['openai','glm']),['#ececec','#b9c2cc']);assert.deepEqual(resolveColours(['glm','openai']),['#b9c2cc','#ececec']);
+ assert.deepEqual(resolveColours(['openai','cursor']),['#ececec',TOOLS.cursor.alt]);assert.deepEqual(resolveColours(['cursor','openai']),['#eef2f6',MAKERS.openai.alt]);
  assert.deepEqual(resolveColours(['openai','glm']),resolveColours(['openai','glm']));
  // The same vendor twice (two accounts) shares one colour; unknown vendors stay neutral and do not collide.
  assert.deepEqual(resolveColours(['claude','claude',null,'claude']),['#d97757','#d97757',NEUTRAL,'#d97757']);
@@ -48,4 +49,14 @@ test('COL-2.1-18 contrast: every colour reads on the night metal (3:1); on the d
   assert.ok(ratio(s.colour,night)>=3,key+' brand colour on night: '+ratio(s.colour,night).toFixed(2));
   assert.ok(ratio(s.alt,night)>=2.5||ratio(s.alt,day)>=1.8,key+' alternate readable on one theme');
  }
+});
+test('COL-2.1-18 two-tone marks: black-and-white makers and makers near a reserved UI colour; coloured brands stay single-colour',()=>{
+ assert.deepEqual(trimOf('openai'),{kind:'light',ink:'#111214',base:'#f3f3f1'});
+ assert.deepEqual(trimOf('glm'),{kind:'dark',ink:'#ffffff',base:'#1a1d21'});
+ assert.equal(trimOf('kimi'),null);assert.equal(trimOf('google'),null);assert.equal(trimOf('claude').kind,'light');// orange within 11 of the alert red
+ assert.equal(trimOf('openai','#939393'),null);
+ assert.equal(trimForColour('#ececec').kind,'light');assert.equal(trimForColour('#b9c2cc').kind,'dark');assert.equal(trimForColour('#007cff'),null);
+ // Every reserved UI colour is a plain six-digit colour; a maker within the collision distance of one gets a trim.
+ for(const c of RESERVED_UI)assert.match(c,/^#[0-9a-f]{6}$/);
+ for(const [key,s] of Object.entries({...MAKERS,...TOOLS}))if(RESERVED_UI.some(r=>deltaE(s.colour,r)<COLLISION_DELTA_E))assert.ok(trimOf(key),key+' is close to a UI colour and needs a trim');
 });

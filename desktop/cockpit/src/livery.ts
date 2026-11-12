@@ -39,17 +39,43 @@ export function deltaE(a:string,b:string):number {
  return Math.sqrt((dL/Sl)**2+(dC/Sc)**2+(dH/Sh)**2+Rt*(dC/Sc)*(dH/Sh));
 }
 
+/** Colours the cockpit itself uses for state (UI white ink, trial blue, alert red, caution amber, OK teal, star gold): a maker
+ * mark must not read as one of them. */
+export const RESERVED_UI=['#f0f2f4','#e9edf0','#9fd2ff','#ef4444','#eac17b','#5ad9ba','#d4b994'] as const;
+export type Trim={readonly kind:'light'|'dark';readonly ink:string;readonly base:string};
+const chroma=(hex:string)=>Math.hypot(lab(hex)[1],lab(hex)[2]);
+const luma=(hex:string)=>lab(hex)[0];
+/** The two-tone treatment of a maker mark drawn in its brand colour, the way the website's rockets draw it (shared table
+ * base/ink/trim, not a different hue): black-and-white makers (OpenAI "white with black trim", Z.ai "dark with white trim")
+ * and makers whose colour is within COLLISION_DELTA_E of a reserved UI colour. Coloured makers stay single-colour. */
+export function trimOf(vendorKey:string|null|undefined,shown?:string):Trim|null {
+ const shade=shadeOf(vendorKey);if(!shade||(shown!==undefined&&shown!==shade.colour))return null;
+ const neutral=chroma(shade.colour)<12,reserved=RESERVED_UI.some(r=>deltaE(shade.colour,r)<COLLISION_DELTA_E);
+ if(!neutral&&!reserved)return null;
+ const base=shade.base??shade.colour,ink=shade.trim??shade.ink??(luma(shade.colour)>50?'#111214':'#ffffff');
+ return {kind:luma(base)>50?'light':'dark',ink,base};
+}
+
 /** Colours for the makers of one view, in view order. The first of two close makers keeps its brand colour; a later one
  * that sits within COLLISION_DELTA_E of a colour already shown takes its alternate shade (or, if that collides too, the
- * candidate that is farthest from the others). Two entries of the same vendor share one colour. Deterministic. */
+ * candidate that is farthest from the others). Two-tone marks (trimOf) are told apart by their trim, so they only compete
+ * with marks of the same tone (OpenAI with Cursor, not OpenAI with Z.ai). Two entries of the same vendor share one colour. Deterministic. */
 export function resolveColours(vendorKeys:readonly (string|null|undefined)[]):string[] {
- const taken:string[]=[],byVendor=new Map<string,string>();
+ const taken=new Map<string,string[]>(),byVendor=new Map<string,string>();
  return vendorKeys.map(key=>{
   const shade=shadeOf(key);if(!shade)return NEUTRAL;
   const id=key as string,known=byVendor.get(id);if(known)return known;
-  const gap=(c:string)=>taken.reduce((m,t)=>Math.min(m,deltaE(c,t)),Infinity);
+  const group=trimOf(key)?.kind??'plain',list=taken.get(group)??[];taken.set(group,list);
+  const gap=(c:string)=>list.reduce((m,t)=>Math.min(m,deltaE(c,t)),Infinity);
   let pick=shade.colour;
   if(gap(pick)<COLLISION_DELTA_E)pick=gap(shade.alt)>=gap(pick)?shade.alt:pick;
-  byVendor.set(id,pick);taken.push(pick);return pick;
+  byVendor.set(id,pick);list.push(pick);return pick;
  });
+}
+
+/** The two-tone treatment for a colour as drawn on a mark (its brand colour), or null. */
+export function trimForColour(colour:string):Trim|null {
+ const hex=colour.toLowerCase();
+ for(const table of [MAKERS,TOOLS])for(const [key,shade] of Object.entries(table))if(shade.colour===hex){const t=trimOf(key,hex);if(t)return t;}
+ return null;
 }

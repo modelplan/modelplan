@@ -2,37 +2,70 @@
  "sourceSha256": "dc32e093693369d9157c5e6dac611238d2d5619ff10b1c00185ce490fecc03e7",
  "makers": {
   "openai": {
-   "colour": "#ececec"
+   "colour": "#ececec",
+   "base": "#f3f3f1",
+   "ink": "#111214",
+   "trim": "#111214"
   },
   "anthropic": {
-   "colour": "#d97757"
+   "colour": "#d97757",
+   "base": "#f0eee6",
+   "ink": "#d97757",
+   "trim": "#191919"
   },
   "alibaba": {
-   "colour": "#ff6a00"
+   "colour": "#ff6a00",
+   "base": "#ff6a00",
+   "ink": "#ffffff",
+   "trim": "#6950ef"
   },
   "xiaomi": {
-   "colour": "#ff6900"
+   "colour": "#ff6900",
+   "base": "#ffffff",
+   "ink": "#ff6900",
+   "trim": "#ff6900"
   },
   "google": {
-   "colour": "#4285f4"
+   "colour": "#4285f4",
+   "base": "#ffffff",
+   "ink": "#4285f4",
+   "trim": "#4285f4"
   },
   "kimi": {
-   "colour": "#007cff"
+   "colour": "#007cff",
+   "base": "#007cff",
+   "ink": "#ffffff",
+   "trim": "#121212"
   },
   "minimax": {
-   "colour": "#e73562"
+   "colour": "#e73562",
+   "base": "#e73562",
+   "ink": "#ffffff",
+   "trim": "#ffffff"
   },
   "zhipuai": {
-   "colour": "#b9c2cc"
+   "colour": "#b9c2cc",
+   "base": "#1a1d21",
+   "ink": "#ffffff",
+   "trim": "#ffffff"
   },
   "xai": {
-   "colour": "#8f96a0"
+   "colour": "#8f96a0",
+   "base": "#0b0b0c",
+   "ink": "#f2f2f2",
+   "trim": "#f2f2f2"
   },
   "meta": {
-   "colour": "#0467df"
+   "colour": "#0467df",
+   "base": "#ffffff",
+   "ink": "#0467df",
+   "trim": "#0467df"
   },
   "deepseek": {
-   "colour": "#4d6bfe"
+   "colour": "#4d6bfe",
+   "base": "#4d6bfe",
+   "ink": "#ffffff",
+   "trim": "#ffffff"
   }
  }
 }

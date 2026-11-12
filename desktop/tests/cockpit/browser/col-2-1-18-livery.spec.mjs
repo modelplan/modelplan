@@ -25,9 +25,14 @@ test('COL-2.1-18 Claude, GLM and Kimi keys carry the shared brand colours; GLM i
  for(const k of list.slice(0,3))expect(k.text.length).toBeGreaterThan(0);
 });
 
-test('COL-2.1-18 GLM next to Codex: the two light greys collide, so the later one (GLM) takes its alternate shade',async({page})=>{
+test('COL-2.1-18 GLM next to Codex: both are black-and-white, told apart by their two-tone trim, not by hue',async({page})=>{
  await open(page,['openai','claude','glm']);
- expect((await keys(page)).slice(0,3).map(k=>k.v)).toEqual(['#ececec','#d97757','#656d76']);
+ expect((await keys(page)).slice(0,3).map(k=>k.v)).toEqual(['#ececec','#d97757','#b9c2cc']);
+ expect(await page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.slice(0,3).map(e=>e.dataset.tt??null))).toEqual(['light','light','dark']);
+ // Colour-only marks of OpenAI (white, black trim) and Z.ai (dark, white trim) differ from each other and from plain UI white.
+ const [a,b]=await page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.slice(0,3).filter((e,i)=>i!==1).map(e=>getComputedStyle(e).backgroundImage));
+ // Claude's orange is within a few units of the alert red, so it is drawn with its ink trim too.
+ expect(a).toContain('linear-gradient');expect(b).toContain('linear-gradient');expect(a).not.toBe(b);
 });
 
 test('COL-2.1-18 a maker too close to one already shown takes its alternate shade, in order',async({page})=>{
@@ -41,10 +46,11 @@ test('COL-2.1-18 a maker too close to one already shown takes its alternate shad
  expect(swapped[0].v).toBe('#eef2f6');expect(swapped[2].v).not.toBe('#ececec');
 });
 
-test('COL-2.1-18 contrast: on day the identity marks are drawn darker than the maker colour; on night they are the colour',async({page})=>{
- await open(page,['openai','claude','glm'],'day');
- const day=await page.locator('.eng-keys .ek .bl').first().evaluate(e=>getComputedStyle(e).backgroundColor);
- expect(day).not.toBe('rgb(236, 236, 236)');expect(Number(day.match(/\d+/)[0])).toBeLessThan(120);
- await open(page,['openai','claude','glm'],'night');
- expect(await page.locator('.eng-keys .ek .bl').first().evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(236, 236, 236)');
+test('COL-2.1-18 contrast: on day the plain identity marks are drawn darker than the maker colour; two-tone marks keep their trim',async({page})=>{
+ await open(page,['openai','kimi','glm'],'day');
+ const bg=()=>page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.slice(0,3).map(e=>getComputedStyle(e).backgroundColor));
+ expect(Number((await bg())[1].match(/\d+/)[0])).toBeLessThan(120);
+ expect(await page.locator('.eng-keys .ek .bl').first().evaluate(e=>e.dataset.tt)).toBe('light');
+ await open(page,['openai','kimi','glm'],'night');
+ expect((await bg())[1]).toBe('rgb(0, 124, 255)');
 });

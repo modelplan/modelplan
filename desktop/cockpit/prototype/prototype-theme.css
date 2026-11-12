@@ -91,3 +91,13 @@
 :root[data-theme="day"] .dk-fad .st-vend b,
 :root[data-theme="day"] .chip,
 :root[data-theme="day"] .mg:not(.orig){background:color-mix(in srgb,var(--v) 40%,#000)}
+/* Two-tone marks (livery-trim.ts; the 2px tab underline keeps the geometry of the All key, so its trim runs along it): black-and-white makers and makers close to a UI colour are drawn like the website's
+   rocket trim, on night and day alike: "light" is the brand colour with an ink centre line (OpenAI: white with black trim),
+   "dark" is the maker's dark base with an ink edge (Z.ai: dark with white trim). */
+:root[data-theme] .ck-eng .ek .bl[data-tt]{opacity:.85}
+:root[data-theme] .ck-eng .ek .bl[data-tt="light"]{background:repeating-linear-gradient(90deg,var(--v) 0 7px,var(--vi) 7px 9px)}
+:root[data-theme] .ck-eng .ek .bl[data-tt="dark"]{background:repeating-linear-gradient(90deg,var(--vi) 0 5px,var(--vb) 5px 8px)}
+:root[data-theme] .dk-fad .st-vend b[data-tt="light"]{background:linear-gradient(var(--v) 0 34%,var(--vi) 34% 67%,var(--v) 67%)}
+:root[data-theme] .dk-fad .st-vend b[data-tt="dark"]{background:linear-gradient(var(--vi) 0 34%,var(--vb) 34%)}
+:root[data-theme] .chip[data-tt="light"]{background:var(--v);box-shadow:inset 0 0 0 1px var(--vi)}
+:root[data-theme] .chip[data-tt="dark"]{background:var(--vb);box-shadow:inset 0 0 0 1px var(--vi)}
