@@ -335,6 +335,7 @@ struct CockpitUnavailableNotice {
             // A successful open after a failure is the recovery: the grace period and the rebuild state end here, so a
             // later user close (page button, outside click) is an ordinary close, not another failure to rebuild from.
             self?.noticeTask?.cancel(); self?.noticeTask=nil; self?.retryTask?.cancel(); self?.retryTask=nil; self?.rebuilding=false
+            self?.noticePath="" // the episode is over: a later failure names its own cause
             onOpened?()
         }
         // Audit A-5: fresh data on the presented page is a recovery too. A query that failed and then succeeded on the
@@ -343,7 +344,7 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.onDisplayed = { [weak self] in
             if let self, self.noticeTask != nil, !self.rebuilding {
                 self.lastEventWasOpen = true
-                self.noticeTask?.cancel(); self.noticeTask=nil
+                self.noticeTask?.cancel(); self.noticeTask=nil; self.retryTask?.cancel(); self.retryTask=nil; self.noticePath=""
             }
             onDisplayed?()
         }
@@ -516,7 +517,7 @@ struct CockpitUnavailableNotice {
             guard let self else { return }
             try? await Task.sleep(for:self.noticeGrace)
             guard !Task.isCancelled else { return }
-            self.noticeTask=nil; self.rebuilding=false
+            self.noticeTask=nil; self.retryTask?.cancel(); self.retryTask=nil; self.rebuilding=false
             guard !(self.openCount != epoch && self.lastEventWasOpen) else { return } // a page opened and nothing failed after it: recovered
             self.presentNotice(history:false,initiatedInForeground:initiatedInForeground)
         }

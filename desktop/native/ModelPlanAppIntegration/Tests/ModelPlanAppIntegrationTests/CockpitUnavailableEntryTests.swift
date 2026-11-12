@@ -223,6 +223,31 @@ extension CommunityCockpitEntryTests {
         XCTAssertTrue(lines.contains { $0.hasPrefix("notice-shown cause=page.bundleResource bundleProblem=true") },lines.joined(separator:"\n"))
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
+    /// macrev-900-1: a bundle cause belongs to its own failure episode. After a rebuild opens (recovery), a later query
+    /// failure names itself and does not send the user to reinstall.
+    @MainActor func testG395RecoveredBundleFailureDoesNotPoisonALaterQueryNotice() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("g395-bundle-recovered-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in RouteClient()})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        let coordinator=EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        owner.coordinator=coordinator
+        var notices:[CockpitUnavailableNotice]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(300))
+        surface.show()
+        try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
+        owner.pageFailure?(.bundleResource)
+        coordinator.onOpened?()                          // the rebuild opened: recovered
+        coordinator.onUnavailable?(.query("timeout"))    // an independent later failure
+        try await Task.sleep(for:.milliseconds(900))
+        XCTAssertEqual(notices.count,1)
+        XCTAssertFalse(notices.first?.bundleProblem ?? true,"the working bundle is not a reinstall problem")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("notice-shown cause=query.timeout bundleProblem=false") },lines.joined(separator:"\n"))
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
     /// G3-95, slow load: a page that failed to load in time and a query that timed out are not bundle problems; only a
     /// bundle error at page creation asks for a reinstall, and it is not retried.
     @MainActor func testG395OnlyABundleErrorAtPageCreationAsksForReinstall() async throws {
