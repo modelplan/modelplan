@@ -69,6 +69,7 @@ func TestDefaultsWithoutARoot(t *testing.T) {
 	testenv.IsolateHome(t)
 	home, _ := os.UserHomeDir()
 	t.Setenv(profile.RootEnv, "")
+	os.Unsetenv(profile.RootEnv) // unset, not empty: t.Setenv restores it afterwards
 	if got, want := consent.Path(), filepath.Join(home, ".config", "modelplan", "consent.json"); got != want {
 		t.Fatalf("consent path %s, want %s", got, want)
 	}
@@ -128,5 +129,48 @@ func TestNoStoreBypassesTheResolver(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// macrevc-861-1: a key that is present but empty is refused, never read as "unset".
+func TestEmptyPresentRootIsRefused(t *testing.T) {
+	testenv.IsolateHome(t)
+	home, _ := os.UserHomeDir()
+	t.Setenv(profile.RootEnv, "")
+	if profile.Check() == nil {
+		t.Fatal("empty root admitted")
+	}
+	if _, err := store.Locate(); err == nil {
+		t.Fatal("store located under an empty root")
+	}
+	if strings.HasPrefix(consent.Path(), filepath.Join(home, ".config")) {
+		t.Fatalf("empty root fell back to the real config: %s", consent.Path())
+	}
+}
+
+// macrevc-861-2: a store folder or file inside the root that is a symlink could lead back
+// into the real profile; such a root is refused.
+func TestLinkedStoreInsideTheRootIsRefused(t *testing.T) {
+	testenv.IsolateHome(t)
+	home, _ := os.UserHomeDir()
+	realConfig := filepath.Join(home, ".config", "modelplan")
+	if err := os.MkdirAll(realConfig, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, link := range []string{"engine", filepath.Join("engine", "config"), filepath.Join("engine", "cache"), filepath.Join("engine", "config", "consent.json")} {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, link)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(realConfig, filepath.Join(root, link)); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(profile.RootEnv, root)
+		if profile.Check() == nil {
+			t.Errorf("root with linked %s admitted", link)
+		}
+		if _, err := store.Locate(); err == nil {
+			t.Errorf("store located in a root with linked %s", link)
+		}
 	}
 }

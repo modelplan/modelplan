@@ -23,10 +23,11 @@ public struct ProfileRoot: Sendable, Equatable {
     public static let statusItemAutosaveName = "ModelPlanCommunity.StatusItem"
 
     public enum Failure: Error, Equatable, CustomStringConvertible {
-        case notAbsolute, notADirectory, overlapsRealProfile
+        case notAbsolute, notADirectory, overlapsRealProfile, linkedStore
         public var description: String {
             switch self {
-            case .notAbsolute: return "it is not an absolute path"
+            case .notAbsolute: return "it is empty or not an absolute path"
+            case .linkedStore: return "a store folder or file inside it is a symbolic link"
             case .notADirectory: return "it is not an existing folder"
             case .overlapsRealProfile: return "it overlaps the real profile"
             }
@@ -89,12 +90,13 @@ public struct ProfileRoot: Sendable, Equatable {
         return ProfileRoot(root: nil, applicationSupport: support, caches: caches)
     }
 
-    /// No key: the real profile. A key that is not an absolute, existing folder, or that overlaps the real
-    /// profile, is refused; it never falls back to the real profile.
+    /// No key: the real profile. A present key that is empty, not an absolute existing folder, overlaps the real
+    /// profile or holds a linked store is refused; it never falls back to the real profile.
     public static func resolve(environment: [String: String], fileManager: FileManager = .default) throws -> ProfileRoot {
         let real = real(fileManager: fileManager)
-        guard let raw = environment[environmentKey], !raw.isEmpty else { return real }
-        guard raw.hasPrefix("/") else { throw Failure.notAbsolute }
+        // Only an absent key means the real profile; an empty value is a failed selection, not "unset".
+        guard let raw = environment[environmentKey] else { return real }
+        guard !raw.isEmpty, raw.hasPrefix("/") else { throw Failure.notAbsolute }
         let root = URL(fileURLWithPath: raw, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: root.path, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -108,10 +110,27 @@ public struct ProfileRoot: Sendable, Equatable {
         if realStores.contains(where: { Self.contains(root, $0) || ($0 != home && Self.contains($0, root)) }) {
             throw Failure.overlapsRealProfile
         }
+        // A store folder or fixed file that is a symbolic link could lead back into the real profile.
+        if linkable.contains(where: { (try? fileManager.destinationOfSymbolicLink(atPath: root.appendingPathComponent($0).path)) != nil }) {
+            throw Failure.linkedStore
+        }
         return ProfileRoot(root: root,
                            applicationSupport: root.appendingPathComponent("app/Application Support", isDirectory: true),
                            caches: root.appendingPathComponent("app/Caches", isDirectory: true))
     }
+
+    /// The store folders and fixed files the app or engine opens under a root (cli/internal/profile checks
+    /// the engine half the same way). Contents below them are written only by the app or engine.
+    static let linkable = [
+        "app", "app/Application Support", "app/Application Support/ModelPlan", "app/Caches",
+        "app/Application Support/ModelPlan/settings.json", "app/Application Support/ModelPlan/reset-notifications.json",
+        "app/Application Support/ModelPlan/forecast-notifications.json", "app/Application Support/ModelPlan/cockpit-scope.json",
+        "app/Application Support/ModelPlan/cockpit-cautions.json", "app/Application Support/ModelPlan/Native",
+        "app/Application Support/ModelPlan/DockSelfTest", "app/Caches/URLCache",
+        "engine", "engine/config", "engine/cache", "engine/cache/state.json", "engine/cache/objects",
+        "engine/config/consent.json", "engine/config/connections.json", "engine/config/local.json",
+        "engine/config/codexbar.json", "engine/config/local-usage.json", "engine/config/project-labels.json",
+    ]
 
     /// Resolved once per launch. An unusable root stops the app before anything is written.
     public static let current: ProfileRoot = {

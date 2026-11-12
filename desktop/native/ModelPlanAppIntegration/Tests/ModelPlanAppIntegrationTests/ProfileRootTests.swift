@@ -60,6 +60,30 @@ import ModelPlanSettings
         }
     }
 
+    /// macrevc-861-1: a key that is present but empty is refused, never read as "unset".
+    func testAnEmptyPresentRootIsRefused() {
+        XCTAssertThrowsError(try ProfileRoot.resolve(environment: [ProfileRoot.environmentKey: ""])) {
+            XCTAssertEqual($0 as? ProfileRoot.Failure, .notAbsolute)
+        }
+    }
+
+    /// macrevc-861-2: a store folder or file inside the root that is a symbolic link could lead back into
+    /// the real profile; such a root is refused before anything is written.
+    func testALinkedStoreInsideTheRootIsRefused() throws {
+        let target = try freshRoot()  // stands in for a real store
+        for link in ["app", "app/Application Support", "app/Application Support/ModelPlan", "app/Caches",
+                     "app/Application Support/ModelPlan/settings.json", "engine", "engine/config", "engine/cache",
+                     "engine/config/consent.json"] {
+            let root = try freshRoot()
+            let url = root.appendingPathComponent(link)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+            XCTAssertThrowsError(try ProfileRoot.resolve(environment: [ProfileRoot.environmentKey: root.path]), link) {
+                XCTAssertEqual($0 as? ProfileRoot.Failure, .linkedStore, link)
+            }
+        }
+    }
+
     func testFreshLoginItemIsUnavailableAndNeverChanges() {
         let adapter = CommunityLoginServiceAdapter(item: ProfileRoot.unavailableLoginItem())
         XCTAssertEqual(adapter.observedState, .unavailable)
