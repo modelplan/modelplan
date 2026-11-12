@@ -129,6 +129,16 @@ final class OfficialEntranceFramesTests: XCTestCase {
             print("OFFICIAL-FRAME \(theme.rawValue) lower-body coverage \(String(format: "%.3f", coverage(bodyImage)))")
             XCTAssertGreaterThan(coverage(bodyImage), 0.3, "\(theme) lower-body close-up misses the hull")
             try save(bodyImage, "official-lower-body-\(theme.rawValue)")
+            // Round 11: the middle and lower body framed like the prototype crop on the owner board (pass-5 three-quarter
+            // still: about 6.1 m of hull from y 1.0 to 7.1, the lower stage about 46 % of the width, 5:6), so the panel
+            // language is compared at the same scale.
+            let matchedTarget = EntranceVector(0, 4.05, 0), matchedEye = EntranceVector(3.9, 3.6, 10.7)
+            let matched = EntranceCamera(position: matchedEye, orientation: .lookAt(eye: matchedEye, target: matchedTarget), fovDegrees: 30,
+                                         viewport: .init(width: 1000, height: 1200))
+            let matchedImage = try await scene.render(camera: matched, rise: 0)
+            print("OFFICIAL-FRAME \(theme.rawValue) lower-body-matched coverage \(String(format: "%.3f", coverage(matchedImage)))")
+            XCTAssertGreaterThan(coverage(matchedImage), 0.2, "\(theme) matched lower-body frame misses the hull")
+            try save(matchedImage, "official-lower-body-matched-\(theme.rawValue)")
         }
     }
 

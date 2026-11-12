@@ -242,12 +242,33 @@ public final class EntranceScene {
         return out
     }
 
+    /// Round 11 (the thin white rim round the whole rocket in every frame): the sRGB render target holds
+    /// encode(colour x alpha), premultiplied in linear light, but Core Graphics reads premultiplied sRGB as
+    /// encode(colour) x alpha. Along the antialiased silhouette, where alpha is small, the encoded value is far above
+    /// alpha (encode(0.01) is about 0.1), so un-premultiplying (PNG export, any compositing) clipped those pixels to
+    /// near white. Each partly covered pixel is converted here.
+    static func repremultiplied(_ bytes: inout [UInt8]) {
+        func decode(_ v: Float) -> Float { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        func encode(_ v: Float) -> Float { v <= 0.0031308 ? 12.92 * v : 1.055 * pow(v, 1 / 2.4) - 0.055 }
+        let table = (0..<256).map { decode(Float($0) / 255) }
+        for i in stride(from: 0, to: bytes.count, by: 4) {
+            let a = bytes[i + 3]
+            guard a > 0, a < 255 else { continue }
+            let alpha = Float(a) / 255
+            for k in 0..<3 {
+                let straight = min(1, table[Int(bytes[i + k])] / alpha)
+                bytes[i + k] = UInt8(min(Float(a), (encode(straight) * alpha * 255).rounded()))
+            }
+        }
+    }
+
     private static func image(from texture: MTLTexture, width: Int, height: Int) throws -> CGImage {
         let rowBytes = width * 4
         var bytes = [UInt8](repeating: 0, count: rowBytes * height)
         bytes.withUnsafeMutableBytes { buffer in
             texture.getBytes(buffer.baseAddress!, bytesPerRow: rowBytes, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
         }
+        repremultiplied(&bytes)
         let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
         guard let provider = CGDataProvider(data: Data(bytes) as CFData),
               let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: rowBytes,
@@ -572,16 +593,22 @@ struct HullFinish {
     }
 
     /// Roughness of the hull metal: satin, low enough to carry the studio strips as soft highlight bands.
-    var roughness: Float { theme == .night ? 0.30 : 0.34 }
+    /// Round 11 (owner: pass 5 has a soft, long highlight down the hull; r10 had one hot spot): night 0.30 -> 0.34,
+    /// day 0.34 -> 0.36.
+    var roughness: Float { theme == .night ? 0.34 : 0.36 }
     /// A thin glossy layer over the metal: a crisp copy of the strips on top of the soft band. The clearcoat has no
     /// normal map, so it stays smooth over the brushed grain. Round 10 (owner: the hull read as ceramic tile or
     /// plaster up close; pass 5 is smooth painted/anodised metal under a gentle gloss): night 0.35 -> 0.5, day
     /// 0.2 -> 0.3, with `clearcoatRoughness` 0.08.
-    var clearcoat: Float { theme == .night ? 0.5 : 0.3 }
-    static let clearcoatRoughness: Float = 0.08
+    /// Round 11: night 0.5 -> 0.15, day 0.3 -> 0.1, `clearcoatRoughness` 0.08 -> 0.22. The crisp coat mirrored the
+    /// sun as a blown-out spot on the lower body and, at grazing angles (where any coat reflects nearly all light),
+    /// the studio's rim strips as a thin white line round the whole silhouette, which pass 5 does not have.
+    var clearcoat: Float { theme == .night ? 0.15 : 0.1 }
+    static let clearcoatRoughness: Float = 0.22
     /// Brushed metal: how far the highlights stretch across the grain (0 = round highlights). The grain runs around
     /// the hull, like a turned part, so the studio strips stretch along the axis.
-    static let anisotropy: Float = 0.3
+    /// Round 11: 0.3 -> 0.55, so the key strip and the sun draw long soft vertical highlights, as on pass 5.
+    static let anisotropy: Float = 0.55
     /// Multiplies the panel maps (`HullPanels.base` 0.74 on a plain panel). Night is dark gunmetal: a panel ~0.31
     /// sRGB (r4 ~0.35 read mid-grey; r5 ~0.25 read black, so the dark grooves had nothing to cut into); day satin
     /// aluminium (~0.72).
@@ -1598,6 +1625,20 @@ enum HullPanels {
     /// Round 8: 0.05 -> 0.07, so neighbouring panels separate a little more (pass 5's grid reads partly by tone).
     static let panelTone: Float = 0.07
     static let scratchLight: Float = 0.3
+
+    /// Round 11 (owner on r10: the lower body still reads "block by block" next to the pass-5 prototype, whose
+    /// seams are hairlines, slightly darker than the metal): the body band gets lighter seams than the capsule
+    /// (whose window close-up keeps the round-10 values): a groove that only darkens, almost no lip, a faint
+    /// shadow beside it, and more tone difference between panels (pass 5's panels separate by tone, not by
+    /// trenches).
+    struct Weights {
+        let grooveDark: Float, lipLight: Float, aoStrength: Float, grooveSlope: Float, panelTone: Float
+    }
+    static func weights(_ band: Band) -> Weights {
+        band.name == "body"
+            ? Weights(grooveDark: 0.55, lipLight: 0.25, aoStrength: 0.1, grooveSlope: 0.08, panelTone: 0.11)
+            : Weights(grooveDark: grooveDark, lipLight: lipLight, aoStrength: aoStrength, grooveSlope: grooveSlope, panelTone: panelTone)
+    }
     /// Round 10 (owner on r9: up close, at the end of the approach, at the hand-over and on the lower body at night,
     /// the hull read as ceramic tile or rough plaster): the normal map now carries ONLY the seams (groove, lip and a
     /// shallow slope into the groove) at a lower strength (1.5 -> 1.0). Grain, scratches and the detail tile no
@@ -1617,7 +1658,10 @@ enum HullPanels {
     /// Rings drawn in the maps. On the capsule as on the pass-5 window still: a narrow sill band under the window
     /// (12.06, 12.29), a ring just above it (13.35), two rings on the nose and the tip cap (14.12).
     /// Round 9 (D146): the sill ring and the ring above the window follow the new window (`sillRing`, `aboveRing`).
-    static let rings: [Float] = [0.55, 1.25, 2.7, 3.55, 4.4, 5.9, 8.65, 9.65, 11.25, 12.06, sillRing, aboveRing, 13.78, 13.98, 14.12]
+    /// Round 11 (pass 5's middle and lower body): one ring across the lower stage (3.05), a narrow ring band under
+    /// the taper (5.02-5.2) and above it (6.57-6.95), one ring round the taper's middle (5.9) and two on the upper
+    /// body (9.15, 11.25), so the panels are tall and narrow (r10: rings every 0.85 m made wide plates).
+    static let rings: [Float] = [3.05, 5.02, 5.9, 6.95, 9.15, 11.25, 12.06, sillRing, aboveRing, 13.78, 13.98, 14.12]
     /// Just under the window's surround, and a little above it, like the pass-5 window still.
     static var sillRing: Float { WindowShape.bottom - WindowShape.bandsWidth - 0.012 }
     static var aboveRing: Float { WindowShape.top + WindowShape.bandsWidth + 0.03 }
@@ -1631,9 +1675,20 @@ enum HullPanels {
         func both(_ a: [Float]) -> [Float] { a.flatMap { $0 >= 180 ? [180] : [-$0, $0] } }
         switch y {
         case ..<11.79:
-            let offset: Float = k % 2 == 0 ? 12.5 : 35
-            return (0..<8).map { i in
-                let a = offset + 45 * Float(i)
+            // Round 11: tall narrow panels whose seams line up from row to row, as on pass 5 (r10: eight seams per
+            // row, staggered like brickwork, read as tiles). The lower stage and skirt have 12 (0.61 m wide), the
+            // taper and upper body 16 (0.35-0.45 m), the narrow ring bands 24.
+            let count: Int
+            switch y {
+            case ..<5.01: count = 12
+            case ..<5.19: count = 24
+            case ..<6.56: count = 16
+            case ..<6.94: count = 24
+            default: count = 16
+            }
+            let step = 360 / Float(count)
+            return (0..<count).map { i in
+                let a = step / 2 + step * Float(i)
                 return a > 180 ? a - 360 : a
             }
         case ..<(sillRing - 0.01): return both([52, 100, 145, 180])
@@ -1875,7 +1930,8 @@ enum HullPanels {
         tone.setFillColor(gray: 60 / 255, alpha: 1)
         tone.fill(CGRect(x: 0, y: 0, width: w, height: h))
         func panel(_ a0: Float, _ a1: Float, _ y0: Float, _ y1: Float) {
-            let along = random.next() < 0.35
+            // Round 11: every body panel is brushed along the hull (pass 5's fine vertical brushing).
+            let along = band.name == "body" || random.next() < 0.35
             let level = (along ? 150 : 20) + 80 * random.next()
             tone.setFillColor(gray: CGFloat(level / 255), alpha: 1)
             let lo = yv(max(y0, band.bottom)), hi = yv(min(y1, band.top))
@@ -1938,6 +1994,153 @@ enum HullPanels {
                 c.strokePath()
             }
         }
+        // Round 11: dark marks multiplied into the albedo (rivet heads, slot recesses, grime streaks), one grey byte
+        // per texel, added up.
+        guard let marks = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                    space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { throw MapError.context }
+        marks.setFillColor(gray: 0, alpha: 1)
+        marks.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        marks.setBlendMode(.plusLighter)
+        if band.name == "body" {
+            // Round 11 (owner on r10: "block by block"; pass 5's middle and lower body have many fine seams, ring
+            // bands with small slots at the section joints, rivet rows, rectangular access panels, a tall door and
+            // grime streaks running down from the seams). Its own random stream, so the capsule maps stay as they were.
+            var r = Random(state: 0x5EED_B0D5)
+            func wrapped(_ rect: CGRect, _ draw: (CGRect) -> Void) {
+                for dx in [0, -CGFloat(w), CGFloat(w)] { draw(rect.offsetBy(dx: dx, dy: 0)) }
+            }
+            func px(_ az: Float) -> CGFloat { x(az >= 180 ? az - 360 : (az < -180 ? az + 360 : az)) }
+            /// A seam down part of a panel (groove plus its lip on the left), stepped so it follows the radius.
+            func cutDown(_ az: Float, _ y0: Float, _ y1: Float) {
+                let steps = 8
+                for s in 0..<steps {
+                    let ya = y0 + (y1 - y0) * Float(s) / Float(steps), yb = y0 + (y1 - y0) * Float(s + 1) / Float(steps)
+                    let perU = pxPerMetreU((ya + yb) / 2)
+                    let g = min(8, max(1, CGFloat(grooveWidth) * perU)), l = min(4, max(0.8, CGFloat(lipWidth) * perU))
+                    let cx = px(az)
+                    c.setFillColor(groove)
+                    wrapped(CGRect(x: cx - g / 2, y: yv(ya), width: g, height: yv(yb) - yv(ya))) { c.fill($0) }
+                    c.setFillColor(lip)
+                    wrapped(CGRect(x: cx - g / 2 - l, y: yv(ya), width: l, height: yv(yb) - yv(ya))) { c.fill($0) }
+                }
+            }
+            /// A seam across one panel, the lip above it.
+            func cutAcross(_ a0: Float, _ a1: Float, _ y: Float) {
+                let x0 = px(a0), width = CGFloat((a1 - a0) / 360) * CGFloat(w), cy = yv(y)
+                c.setFillColor(groove)
+                wrapped(CGRect(x: x0, y: cy - grooveV / 2, width: width, height: grooveV)) { c.fill($0) }
+                c.setFillColor(lip)
+                wrapped(CGRect(x: x0, y: cy + grooveV / 2, width: width, height: lipV)) { c.fill($0) }
+            }
+            /// A rounded rectangle cut into the skin (access panel, door, slot), `fill` darkening its inside.
+            func outline(_ az: Float, _ y: Float, _ mw: Float, _ mh: Float, corner k: CGFloat = 0.18, fill: CGFloat = 0) {
+                let perU = pxPerMetreU(y)
+                let rect = CGRect(x: px(az) - CGFloat(mw) * perU / 2, y: yv(y) - CGFloat(mh) * pxPerMetreV / 2,
+                                  width: CGFloat(mw) * perU, height: CGFloat(mh) * pxPerMetreV)
+                let corner = min(rect.width, rect.height) * k
+                wrapped(rect) { box in
+                    if fill > 0 {
+                        marks.setFillColor(gray: fill, alpha: 1)
+                        marks.addPath(CGPath(roundedRect: box, cornerWidth: corner, cornerHeight: corner, transform: nil))
+                        marks.fillPath()
+                    }
+                    c.setLineWidth(max(1, grooveV * 0.8))
+                    c.setStrokeColor(groove)
+                    c.addPath(CGPath(roundedRect: box, cornerWidth: corner, cornerHeight: corner, transform: nil))
+                    c.strokePath()
+                    c.setLineWidth(lipV)
+                    c.setStrokeColor(lip)
+                    c.addPath(CGPath(roundedRect: box.offsetBy(dx: -grooveV * 0.8, dy: grooveV * 0.8), cornerWidth: corner,
+                                     cornerHeight: corner, transform: nil))
+                    c.strokePath()
+                }
+            }
+            func dot(_ az: Float, _ y: Float, _ level: CGFloat) {
+                let d = max(1.2, 0.006 * pxPerMetreU(y))
+                marks.setFillColor(gray: level, alpha: 1)
+                wrapped(CGRect(x: px(az) - d / 2, y: yv(y) - d / 2, width: d, height: d)) { marks.fill($0) }
+            }
+            // Second sheets: about a third of the tall panels are split by a seam down part of them (the part to
+            // the right a different tone), a fifth by a seam across.
+            for (k, (y0, y1)) in zip(heights, heights.dropFirst()).enumerated() where y1 > band.bottom && y0 < band.top {
+                guard y1 - y0 > 0.5 else { continue }
+                let azimuths = seamAzimuths(row: y0, index: k).sorted()
+                for (i, a0) in azimuths.enumerated() {
+                    let a1 = i + 1 < azimuths.count ? azimuths[i + 1] : azimuths[0] + 360
+                    let roll = r.next()
+                    if roll < 0.32 {
+                        let mid = a0 + (a1 - a0) * (0.4 + 0.2 * r.next())
+                        let top = r.next() < 0.5 ? y1 : y0 + (y1 - y0) * (0.45 + 0.4 * r.next())
+                        panel(mid, a1, y0, top)
+                        cutDown(mid, y0, top)
+                        if top < y1 { cutAcross(mid, a1, top) }
+                    } else if roll < 0.52 {
+                        let y = y0 + (y1 - y0) * (0.25 + 0.5 * r.next())
+                        panel(a0, a1, y0, y)
+                        cutAcross(a0, a1, y)
+                    }
+                }
+            }
+            // Rivet rows beside every ring and joint, in runs (pass 5's seams are dotted here and there).
+            for y in Set(rings + joints) where y > band.bottom + 0.05 && y < band.top - 0.05 {
+                for side: Float in [-0.022, 0.022] {
+                    let n = Int(2 * .pi * radius(y + side) / 0.07)
+                    var on = true
+                    for j in 0..<n {
+                        if j % 6 == 0 { on = r.next() < 0.55 }
+                        if on { dot(-180 + 360 * Float(j) / Float(n), y + side, 0.32) }
+                    }
+                }
+            }
+            // Rivet columns beside some lower-stage seams.
+            for az in seamAzimuths(row: 1.88, index: 0) {
+                guard r.next() < 0.4 else { continue }
+                let offset = 0.022 / radius(3) * 180 / .pi
+                var y: Float = 1.95
+                while y < 5.0 { dot(az + offset, y, 0.28); y += 0.08 }
+            }
+            // The ring bands under and above the taper: a small dark slot in about half their panels.
+            for top: Float in [5.2, 6.95] {
+                for i in 0..<24 {
+                    guard r.next() < 0.5 else { continue }
+                    outline(15 * Float(i), top - 0.065, 0.05, 0.045, corner: 0.1, fill: 0.55)
+                }
+            }
+            // Skirt: tall slots and small access panels.
+            for i in 0..<12 {
+                let roll = r.next()
+                if roll < 0.45 {
+                    outline(30 * Float(i) + 8 * r.signed(), 0.95 + 0.25 * r.signed(), 0.06, 0.16, corner: 0.15, fill: 0.6)
+                } else if roll < 0.7 {
+                    outline(30 * Float(i) + 6 * r.signed(), 1.4, 0.13, 0.08, corner: 0.1, fill: 0.15)
+                }
+            }
+            // On the side the camera sees: the tall door and an L-shaped hatch on the lower stage, a pair of conduit
+            // lines beside them, a small hatch and a conduit on the upper body.
+            outline(6, 2.55, 0.2, 0.95, corner: 0.05, fill: 0.06)
+            outline(-4, 2.3, 0.11, 0.42, corner: 0.15)
+            outline(-4, 2.42, 0.05, 0.1, corner: 0.2, fill: 0.4)
+            cutDown(11, 2.1, 3.05); cutDown(12, 2.1, 3.05)
+            outline(2, 9.45, 0.07, 0.1, corner: 0.2, fill: 0.35)
+            cutDown(4.5, 7.75, 9.1); cutDown(5.8, 7.75, 9.1)
+            // Grime: thin streaks running down from the seams or anywhere, fading out.
+            let seamHeights = Array(Set(rings + joints)).filter { $0 > band.bottom && $0 < band.top }.sorted()
+            for _ in 0..<1400 {
+                let az = r.signed() * 180
+                let fromSeam = r.next() < 0.5, pick = r.next()
+                let seam = seamHeights[min(seamHeights.count - 1, Int(pick * Float(seamHeights.count)))]
+                let start: Float = fromSeam ? seam - 0.01 : band.bottom + pick * span
+                let length = 0.12 + 0.9 * r.next() * r.next(), strength = 0.03 + 0.1 * r.next() * r.next()
+                let width = max(1, CGFloat(0.003 + 0.008 * r.next()) * pxPerMetreU(start))
+                let cx = px(az), steps = 10
+                for s in 0..<steps {
+                    let ya = start - length * Float(s) / Float(steps), yb = start - length * Float(s + 1) / Float(steps)
+                    marks.setFillColor(gray: CGFloat(strength * (1 - Float(s) / Float(steps))), alpha: 1)
+                    wrapped(CGRect(x: cx - width / 2, y: yv(yb), width: width, height: yv(ya) - yv(yb))) { marks.fill($0) }
+                }
+            }
+        }
         // Micro-scratches: short thin strokes at random angles, mostly faint.
         for _ in 0..<(detail == nil ? scratches[band.name] ?? 0 : 0) {
             let az = random.signed() * 180, y = band.bottom + random.next() * span
@@ -1956,6 +2159,9 @@ enum HullPanels {
 
         guard let toneData = tone.data else { throw MapError.context }
         let tones = toneData.bindMemory(to: UInt8.self, capacity: w * h)
+        guard let marksData = marks.data else { throw MapError.context }
+        let darks = marksData.bindMemory(to: UInt8.self, capacity: w * h)
+        let wt = weights(band)
 
         // Soft groove shadow: the groove mask box-blurred over `aoWidth` each side.
         let radiusAO = max(2, Int(aoWidth * Float(h) / span))
@@ -2016,7 +2222,7 @@ enum HullPanels {
                         let i = row * w + col
                         let g = Float(masks[4 * i]) / 255, l = Float(masks[4 * i + 1]) / 255, s = Float(masks[4 * i + 2]) / 255
                         let t = Int(tones[i]), along = t >= 128
-                        let variation = (Float(along ? t - 150 : t - 20) / 80) * 2 - 1
+                        let variation = (Float(along ? t - 150 : t - 20) / 80) * 2 - 1, dark = Float(darks[i]) / 255
                         var streak: Float = 0, grain: Float = 0
                         if let detail {
                             let mu = Float(col) * metresPerCol
@@ -2029,14 +2235,15 @@ enum HullPanels {
                                 : rowNoise[row] * (0.5 + 0.5 * runNoise[(col / 48 + row * 7) & 4095])
                         }
                         let shade = min(1, ao[i] * aoGain)
-                        var v = base * (1 + brush * streak + detailAlbedo * grain) * (1 + panelTone * variation)
-                        v *= 1 - aoStrength * shade
-                        v *= 1 - grooveDark * g
-                        v += (1 - v) * lipLight * l
+                        var v = base * (1 + brush * streak + detailAlbedo * grain) * (1 + wt.panelTone * variation)
+                        v *= 1 - min(0.85, dark)
+                        v *= 1 - wt.aoStrength * shade
+                        v *= 1 - wt.grooveDark * g
+                        v += (1 - v) * wt.lipLight * l
                         v += (1 - v) * scratchLight * s
                         let byte = srgb(v)
                         ab[4 * i] = byte; ab[4 * i + 1] = byte; ab[4 * i + 2] = byte
-                        hb[i] = -g - grooveSlope * shade + 0.5 * l - scratchHeight * s + grainHeight * streak + detailHeight * grain
+                        hb[i] = -g - wt.grooveSlope * shade + 0.5 * l - scratchHeight * s + grainHeight * streak + detailHeight * grain
                     }
                 }
             }
@@ -2741,16 +2948,21 @@ public enum EntranceLook {
     public static func studio(_ theme: EntranceTheme = .night) -> CGImage? {
         let day = theme == .day
         let floor = day ? 0.16 : 0.012, wall = day ? 0.30 : 0.04, ceiling = day ? 0.5 : 0.13, horizon = day ? 0.1 : 0.04
-        let rim = day ? 0.8 : 1.0
+        // Round 11 (owner: a thin white rim round the whole rocket, not in pass 5): the rim strips lit only the last
+        // few pixels of the silhouette, at grazing angles where the metal reflects almost everything, so they drew
+        // a hard white outline. They are now dim and broad (night 1.0 -> 0.2, day 0.8 -> 0.15; 4 -> 10 degrees
+        // wide, softer edges), and the narrow strip at +125 is dimmed too (0.85 -> 0.35): the edges keep a faint
+        // soft sheen, like pass 5, instead of a line.
+        let rim = day ? 0.15 : 0.2
         return equirect { az, e in
             let s = sin(max(0, e) * Double.pi / 180)
             var v = e >= 0 ? wall + (ceiling - wall) * s * s : floor + (wall - floor) * max(0, 1 + e / 25)
             v += horizon * exp(-(e / 8) * (e / 8))
             v = max(v, strip(az, e, centre: -50, half: 10, low: -25, high: 80))
             v = max(v, 0.3 * strip(az, e, centre: 30, half: 5, low: -10, high: 70))
-            v = max(v, 0.85 * strip(az, e, centre: 125, half: 4, low: -15, high: 75))
-            v = max(v, rim * strip(az, e, centre: -rimAzimuth, half: 4, low: -15, high: 75, soft: 8))
-            v = max(v, rim * 0.9 * strip(az, e, centre: rimAzimuth, half: 4, low: -15, high: 75, soft: 8))
+            v = max(v, 0.35 * strip(az, e, centre: 125, half: 4, low: -15, high: 75))
+            v = max(v, rim * strip(az, e, centre: -rimAzimuth, half: 10, low: -15, high: 75, soft: 20))
+            v = max(v, rim * 0.9 * strip(az, e, centre: rimAzimuth, half: 10, low: -15, high: 75, soft: 20))
             return v
         }
     }
