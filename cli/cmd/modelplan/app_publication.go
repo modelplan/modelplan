@@ -54,6 +54,32 @@ func (a *appPublication) every() time.Duration {
 	return backgroundEvery
 }
 
+// untilDue is the time to the earliest moment a check becomes due (the six-hour rule, or the reset-notice interval for
+// a subscriber), never past the regular wake-up so a changed subscription is noticed.
+func (a *appPublication) untilDue(s store.State, now time.Time) time.Duration {
+	wake := a.every()
+	if s.CheckedAt.IsZero() {
+		return wake
+	}
+	gap := s.LastAttemptAt.Add(a.every())
+	consider := func(t time.Time) {
+		if t.Before(gap) {
+			t = gap
+		}
+		if w := t.Sub(now) + time.Second; w < wake {
+			wake = w
+		}
+	}
+	consider(s.CheckedAt.Add(staleAfter))
+	if a.subscribed != nil && a.subscribed() {
+		if a.resetAfter <= 0 {
+			a.resetAfter = a.drawResetAfter()
+		}
+		consider(s.CheckedAt.Add(a.resetAfter))
+	}
+	return max(wake, time.Second)
+}
+
 func (a *appPublication) drawResetAfter() time.Duration {
 	if a.testCadence > 0 {
 		return a.testCadence // test builds only, see app_publication_testcadence.go
@@ -165,8 +191,9 @@ func (a *appPublication) run(ctx context.Context) {
 func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration {
 	d, s, _ := publication.Load(a.st)
 	if d != nil && !publicationSyncDue(d, s, a.now()) && !a.resetNoticeDue(s, a.now()) {
-		*failures = 0
-		return a.every()
+		// Not due: sleep to the real deadline (not a fixed ten minutes, which would stretch 15-30 min to 39). A failed
+		// check's backoff count is kept until a check succeeds.
+		return a.untilDue(s, a.now())
 	}
 	a.resetAfter = 0 // redraw after every check
 	_, err := a.sync(ctx)
@@ -184,6 +211,11 @@ func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration 
 			return delay
 		}
 		*failures = 0
+		if err == nil {
+			if _, after, _ := publication.Load(a.st); true {
+				return a.untilDue(after, a.now())
+			}
+		}
 		return a.every()
 	}
 	delay := min(appPublicationRetry<<min(*failures, 5), backgroundEvery)

@@ -212,3 +212,32 @@ func TestAppPublicationResetNoticeBacksOffOnFailure(t *testing.T) {
 		t.Fatalf("backoff %v, want %v", got, want)
 	}
 }
+
+// macrevc-895-1: a not-due pass sleeps to the real deadline (15-30 min, not a ten-minute grid that stretches it to
+// 39), and a failed check's backoff count survives a pass that finds nothing due.
+func TestAppPublicationSleepsToTheRealDeadlineAndKeepsFailureCount(t *testing.T) {
+	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	st := &store.Store{Dir: t.TempDir()}
+	f := newPublicationFixture(t, nil)
+	saveFixture(t, st, f, store.State{CheckedAt: now.Add(-14 * time.Minute), LastAttemptAt: now.Add(-14 * time.Minute)})
+	a, _, syncs := scriptedAppPublication(st, now, []func() error{func() error { return nil }})
+	a.subscribed = func() bool { return true }
+	a.jitter = func() time.Duration { return 0 }
+	failures := 2
+	got := a.pass(context.Background(), &failures)
+	if *syncs != 0 || got != time.Minute+time.Second || failures != 2 {
+		t.Fatalf("not due at 14 min: syncs=%d delay=%v failures=%d, want 0, 1m1s, 2", *syncs, got, failures)
+	}
+	// Far from any deadline the wake-up stays at the regular ten minutes.
+	saveFixture(t, st, f, store.State{CheckedAt: now.Add(-time.Minute), LastAttemptAt: now.Add(-time.Minute)})
+	a.resetAfter = 0
+	if got := a.pass(context.Background(), &failures); got != backgroundEvery {
+		t.Fatalf("far from due: delay %v", got)
+	}
+	// Without a subscription only the six-hour rule counts.
+	a.subscribed = func() bool { return false }
+	saveFixture(t, st, f, store.State{CheckedAt: now.Add(-staleAfter + 3*time.Minute), LastAttemptAt: now.Add(-staleAfter + 3*time.Minute)})
+	if got := a.pass(context.Background(), &failures); got != 3*time.Minute+time.Second {
+		t.Fatalf("six-hour deadline: delay %v", got)
+	}
+}
