@@ -2,6 +2,7 @@
 // The porthole HUD from public published data: on the tall profile a mini frontier above the first six chart models,
 // on the compact profile one strip: a small frontier beside three stacked rows. It reads no scores of its own and shows nothing personal except which
 // effort a running session last reported. Prototype: rocket-r1/porthole.js:49-76 for behaviour; the code is written here.
+import {ht} from './host-text.js';
 import type {WireCockpitData} from '../generated/wire.js';
 import {FIELD_LIMIT,fieldModel,type FieldModel} from './field-model.js';
 import {cockpitMembers} from './members.js';
@@ -79,9 +80,9 @@ export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,r
 export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,compact:boolean,locale:string,options:HudOptions={}) {
  const fleet=publishedFleet(data,options.scope,options.now),rows=fleet.slice(0,compact?COMPACT_ROWS:TALL_ROWS);
  host.replaceChildren();host.hidden=!!options.closed||!rows.length;host.classList.toggle('hud-b',!compact);host.classList.toggle('hud-strip',compact);if(host.hidden)return;
- host.setAttribute('role','group');host.setAttribute('aria-label',locale==='en'?'Published models':'已发布模型');
+ host.setAttribute('role','group');host.setAttribute('aria-label',ht(locale,'host.hudAria'));
  // G3-48: the compact strip follows the study at 640 (86x30 chart, then three 10 px rows), not three columns.
- const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),compact?86:162,compact?30:77,locale==='en'?'Ability against cost at each recommended effort':'各推荐档位的能力与成本',locale==='en'?{ability:'Ability',cost:'Cost'}:{ability:'能力',cost:'成本'}));host.append(chart);
+ const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),compact?86:162,compact?30:77,ht(locale,'host.hudChartLabel'),{ability:ht(locale,'host.hudAbility'),cost:ht(locale,'host.hudCost')}));host.append(chart);
  const list=document.createElement('div');list.className='hud-list';
  for(const [i,m] of rows.entries()){
   const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(!compact&&m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;

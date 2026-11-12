@@ -2,6 +2,7 @@
 // Maps cockpitHistoryV1 into the study pages' shapes. Sources are this device's tools, joined to a subscription only
 // through the producer's current binding (owner D-D: shown as local records). A day or hour without an observation
 // stays null, never zero, and the page says nothing about days before the recording began.
+import {ht} from './host-text.js';
 import type {WireCockpitData} from '../generated/wire.js';
 
 const HOUR=36e5,DAYS=182;
@@ -41,7 +42,7 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
   for(const b of h.hourly){const index=Math.floor((Date.parse(b.at)-instants[0]!)/HOUR);if(sources.has(b.source)&&index>=0&&index<values.length)values[index]=(values[index]??0)+b.observedOutputTokens;}
   hourly.push({accountId,instants,values});
  }
- const projects=(rows:typeof h.projects.recent7d)=>rows.map((p,i)=>({project:p.label??(locale==='en'?`Project ${i+1}`:`项目 ${i+1}`),tokens:p.observedOutputTokens,tokenScope:'combined',share:p.share,configs:[{model:p.model??'',effort:p.effort,recommendedEffort:null}]}));
+ const projects=(rows:typeof h.projects.recent7d)=>rows.map((p,i)=>({project:p.label??ht(locale,'host.projectN',{n:i+1}),tokens:p.observedOutputTokens,tokenScope:'combined',share:p.share,configs:[{model:p.model??'',effort:p.effort,recommendedEffort:null}]}));
  const paceHistory:Record<string,Record<string,unknown[]>>={};
  for(const group of h.cycles){
   const accountId=ids.get(group.subscriptionRef),kind=kinds[group.kind];if(!accountId||!kind)continue;

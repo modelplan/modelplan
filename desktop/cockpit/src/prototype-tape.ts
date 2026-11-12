@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // The record strip shows producer-reported running and last-seen (CLI state "idle") sessions.
 // Last-seen evidence does not establish an end time or a complete history.
+import {ht} from './host-text.js';
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
 import {sessionMember,memberColour,NEUTRAL} from './session-binding.js';
@@ -15,8 +16,8 @@ export function mountPrototypeTape(root:HTMLElement,link?:TapeLink){
  function paint(){
   const detail=data?.details,coverage=detail?.sessionCoverage??'unavailable';
   host.dataset.sessionsAvailable=String(!!detail&&coverage==='local-last-seen');
-  const title=locale==='en'?'Last-seen sessions':'最近读数的会话';
-  const unavailable=coverage==='recording-off'?(locale==='en'?'Session recording off':'会话记录已关闭'):(locale==='en'?'Session data unavailable':'暂无会话数据');
+  const title=ht(locale,'host.lastSeenSessions');
+  const unavailable=coverage==='recording-off'?(ht(locale,'host.sessionRecordingOff')):(ht(locale,'host.sessionDataUnavailable'));
   host.setAttribute('aria-label',coverage==='local-last-seen'?title:unavailable);
   const sessions=coverage==='local-last-seen'?(detail?.sessions??[]).filter(s=>s.state==='running'||s.state==='idle').slice().sort((a,b)=>Number(b.state==='running')-Number(a.state==='running')):[];
   const shown=sessions.length>count?sessions.slice(0,count-1):sessions.slice(0,count),members=data?cockpitMembers(data):[];
@@ -26,13 +27,13 @@ export function mountPrototypeTape(root:HTMLElement,link?:TapeLink){
   const colours=shown.map(s=>{const m=sessionMember(members,s);return m?memberColour(m):NEUTRAL;});
   const rows=shown.map(s=>{
    const rate=s.state==='running'&&s.rate!==null&&Number.isFinite(s.rate)&&s.rate>=0?s.rate:null;
-   const running=s.state==='running'?(locale==='en'?'Running':'运行中'):(locale==='en'?'Last seen':'最近读数'),rateLabel=rate===null?'':(locale==='en'?'Session rate ':'会话速率 ')+rate+' t/s';
+   const running=s.state==='running'?(ht(locale,'host.running')):(ht(locale,'host.lastSeen')),rateLabel=rate===null?'':(ht(locale,'host.sessionRate'))+rate+' t/s';
    const linked=!!link&&(!!s.subscriptionRef||link.knows(s.sessionRef));
    return `<button class="tl t-observed" type="button"${linked?'':' aria-disabled="true" tabindex="-1"'} data-session="${esc(s.sessionRef)}" aria-label="${esc([s.source,s.model,s.effort??'--',s.projectLabel??'--',running,rateLabel].filter(Boolean).join(' · '))}">
    <i class="chip"></i><span class="t-tool">${esc(s.source)}</span><span class="t-model" title="${esc(s.model)}">${esc(modelName(s.model))}</span><span class="t-eff">${esc(s.effort??'--')}</span>
    <span class="t-proj">${esc(s.projectLabel??'--')}</span><span class="t-live" aria-label="${esc(rateLabel)}">${rate===null?'--':`${esc(Math.round(rate))}<em class="t-unit"> t/s</em>`}</span><span class="t-time">${esc(running)}${s.state==='running'?'<i class="t-cur" aria-hidden="true"></i>':''}</span></button>`;
   });
-  if(sessions.length>shown.length){const hidden=sessions.slice(shown.length),n=hidden.length,running=hidden.every(s=>s.state==='running');rows.push(`<span class="tl t-overflow">${locale==='en'?(running?`${n} more running`:`${n} more sessions`):(running?`另有 ${n} 个会话运行中`:`另有 ${n} 个会话`)}</span>`);}
+  if(sessions.length>shown.length){const hidden=sessions.slice(shown.length),n=hidden.length,running=hidden.every(s=>s.state==='running');rows.push(`<span class="tl t-overflow">${ht(locale,running?'host.moreRunning':'host.moreSessions',{n})}</span>`);}
   while(rows.length<count)rows.push('<span class="tl t-blank" aria-hidden="true"></span>');
   host.innerHTML=`<div class="t-lines">${rows.join('')}</div>`;
   for(const [i,chip] of [...host.querySelectorAll<HTMLElement>('.t-observed .chip')].entries())chip.style.setProperty('--v',colours[i]??NEUTRAL);

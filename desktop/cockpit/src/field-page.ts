@@ -7,6 +7,7 @@
 // A click on bare desktop, including the feathered rim, closes the field.
 // Prototype: rocket-r1/porthole.js:152-225 (enlarge, syncField) and study website-updates/style.css round 5 for
 // behaviour; the code is written here.
+import {ht} from './host-text.js';
 import {featherShape,type FieldShape} from './field-shape.js';
 import {layoutFieldAxes} from './field-axes.js';
 import {FIELD_LIMIT,fieldFleet,fieldModel,type FieldModel,type PublishedModel} from './field-model.js';
@@ -16,8 +17,6 @@ interface Show {readonly language:'en'|'zh';readonly reduceMotion:boolean;readon
 interface Scene {update(models:readonly FieldModel[],focus:string|null,path?:boolean):void;renderFor?(ms:number):void;dispose():void}
 declare global {interface Window {modelPlanField?:{show(raw:string):boolean;dispose():void}}}
 
-const words={en:{close:'Close',mine:'Mine',all:'All',search:'Search models',noGl:'The 3D view needs WebGL, which is not available here.',empty:'No published models yet.'},
- zh:{close:'关闭',mine:'我的',all:'全部',search:'搜索模型',noGl:'3D 视图需要 WebGL，当前不可用。',empty:'暂无已发布模型。'}} as const;
 const post=(message:Record<string,unknown>)=>(window.webkit?.messageHandlers as Record<string,{postMessage(m:string):void}>|undefined)?.field?.postMessage(JSON.stringify(message));
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,className?:string,text?:string)=>{const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;};
 // CKP-PORT-11G: the probe's context is released at once, so the scene's is the only live WebGL context while the field is open.
@@ -64,7 +63,7 @@ function mount(root:HTMLElement) {
  window.addEventListener('keydown',e=>{if(e.key==='Escape')post({type:'close'});});
  return {
   async show(value:Show) {
-   language=value.language;const w=words[language];document.documentElement.lang=language==='en'?'en':'zh-CN';
+   language=value.language;const loc=language==='en'?'en':'zh-CN',w={close:ht(loc,'host.fieldClose'),mine:ht(loc,'host.fieldMine'),all:ht(loc,'host.fieldAll'),search:ht(loc,'host.fieldSearch'),noGl:ht(loc,'host.fieldNoWebGL'),empty:ht(loc,'host.fieldEmpty')};document.documentElement.lang=language==='en'?'en':'zh-CN';
    close.textContent='×';close.setAttribute('aria-label',w.close);mineKey.textContent=w.mine;allKey.textContent=w.all;search.placeholder=w.search;search.setAttribute('aria-label',w.search);
    models=value.models.flatMap(m=>{const f=fieldModel(m,shortLabel);return f?[f]:[];});mine=value.mine.filter(id=>models.some(m=>m.id===id));focus=value.focus;
    chosen=new Set((mine.length?mine:models.map(m=>m.id)).slice(0,FIELD_LIMIT));
