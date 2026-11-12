@@ -597,7 +597,9 @@ struct HullFinish {
     /// day 0.34 -> 0.36.
     /// Round 11b (r11a at 0.34 / 0.36 lost the metal's contrast: the studio averaged into flat grey): night 0.28,
     /// day 0.32; the hot spot is handled by a softer sun and coat instead.
-    var roughness: Float { theme == .night ? 0.28 : 0.32 }
+    /// Round 11c (r11b still read as flat grey / paper next to pass 5's bright bands and dark flanks): night 0.22,
+    /// day 0.25, with a brighter metal (`tint`) in a darker studio, so the strips are what the hull shows.
+    var roughness: Float { theme == .night ? 0.22 : 0.25 }
     /// A thin glossy layer over the metal: a crisp copy of the strips on top of the soft band. The clearcoat has no
     /// normal map, so it stays smooth over the brushed grain. Round 10 (owner: the hull read as ceramic tile or
     /// plaster up close; pass 5 is smooth painted/anodised metal under a gentle gloss): night 0.35 -> 0.5, day
@@ -617,8 +619,12 @@ struct HullFinish {
     /// sRGB (r4 ~0.35 read mid-grey; r5 ~0.25 read black, so the dark grooves had nothing to cut into); day satin
     /// aluminium (~0.72).
     var tint: NSColor {
-        theme == .night ? NSColor(srgbRed: 0.42, green: 0.425, blue: 0.44, alpha: 1)
-            : NSColor(srgbRed: 0.98, green: 0.98, blue: 0.97, alpha: 1)
+        // Round 11c: night 0.42 -> 0.62, day 0.98 -> 0.88. A metal's colour is its reflectance: at 0.42 the night
+        // hull reflected about 4 % of the studio, so the strips barely beat the room and it all read as one grey;
+        // real steel reflects far more, and pass 5's darkness comes from a dark room, not a dull metal (the studio
+        // is darker to match, `EntranceLook.studio`). Day is mid steel, not white.
+        theme == .night ? NSColor(srgbRed: 0.62, green: 0.625, blue: 0.64, alpha: 1)
+            : NSColor(srgbRed: 0.88, green: 0.88, blue: 0.875, alpha: 1)
     }
     /// The finish as a flat colour, the tone of a plain panel (bells, the window surround, and the hull if its
     /// material is not a PBR).
@@ -1640,7 +1646,7 @@ enum HullPanels {
     }
     static func weights(_ band: Band) -> Weights {
         band.name == "body"
-            ? Weights(grooveDark: 0.55, lipLight: 0.25, aoStrength: 0.1, grooveSlope: 0.08, panelTone: 0.11)
+            ? Weights(grooveDark: 0.55, lipLight: 0.25, aoStrength: 0.1, grooveSlope: 0.08, panelTone: 0.2)
             : Weights(grooveDark: grooveDark, lipLight: lipLight, aoStrength: aoStrength, grooveSlope: grooveSlope, panelTone: panelTone)
     }
     /// Round 10 (owner on r9: up close, at the end of the approach, at the hand-over and on the lower body at night,
@@ -2091,6 +2097,66 @@ enum HullPanels {
                         panel(a0, a1, y0, y)
                         cutAcross(a0, a1, y)
                     }
+                }
+            }
+            // Round 11c (pass 5: each section joint is a dark recessed band, two parallel dark grooves with small
+            // rectangular slots between them; the lower ring and the ring bands' edges are strong dark lines too).
+            // Drawn as wide grooves (normal map) plus dark marks, so they stay dark although body seams are light.
+            func strongLine(_ y: Float, _ metres: Float, _ level: CGFloat) {
+                let hpx = max(1.5, CGFloat(metres) * pxPerMetreV), cy = yv(y)
+                c.setFillColor(groove)
+                c.fill(CGRect(x: 0, y: cy - hpx / 2, width: CGFloat(w), height: hpx))
+                marks.setFillColor(gray: level, alpha: 1)
+                marks.fill(CGRect(x: 0, y: cy - hpx / 2 - 1, width: CGFloat(w), height: hpx + 2))
+                c.setFillColor(lip)
+                c.fill(CGRect(x: 0, y: cy + hpx / 2, width: CGFloat(w), height: lipV))
+            }
+            for y in joints where y > band.bottom + 0.05 && y < band.top - 0.05 {
+                strongLine(y - 0.028, 0.009, 0.6)
+                strongLine(y + 0.028, 0.009, 0.6)
+                for i in 0..<36 {
+                    guard r.next() < 0.6 else { continue }
+                    outline(10 * Float(i) + 5, y, 0.045, 0.022, corner: 0.15, fill: 0.6)
+                }
+            }
+            for y: Float in [3.05, 5.02, 6.95] { strongLine(y, 0.008, 0.5) }
+            // Panel-scale grime (pass 5's panels are mottled and darker along their edges, not one clean sheet):
+            // a dark wash fading down from the top edge of most panels, a darker strip down one side of some, and
+            // soft blotches.
+            for (k, (y0, y1)) in zip(heights, heights.dropFirst()).enumerated() where y1 > band.bottom && y0 < band.top {
+                let azimuths = seamAzimuths(row: y0, index: k).sorted()
+                for (i, a0) in azimuths.enumerated() {
+                    let a1 = i + 1 < azimuths.count ? azimuths[i + 1] : azimuths[0] + 360
+                    let x0 = px(a0), width = CGFloat((a1 - a0) / 360) * CGFloat(w)
+                    if r.next() < 0.75 {
+                        let depth = min(y1 - y0, 0.06 + 0.25 * r.next()), strength = 0.06 + 0.16 * r.next()
+                        for s in 0..<8 {
+                            let ya = y1 - depth * Float(s) / 8, yb = y1 - depth * Float(s + 1) / 8
+                            marks.setFillColor(gray: CGFloat(strength * (1 - Float(s) / 8)), alpha: 1)
+                            wrapped(CGRect(x: x0, y: yv(yb), width: width, height: yv(ya) - yv(yb))) { marks.fill($0) }
+                        }
+                    }
+                    if r.next() < 0.4 {
+                        let side = CGFloat(0.02 + 0.06 * r.next()) * pxPerMetreU((y0 + y1) / 2)
+                        let left = r.next() < 0.5, strength = CGFloat(0.05 + 0.1 * r.next())
+                        for s in 0..<6 {
+                            marks.setFillColor(gray: strength * CGFloat(6 - s) / 6, alpha: 1)
+                            let sx = left ? x0 + side * CGFloat(s) / 6 : x0 + width - side * CGFloat(s + 1) / 6
+                            wrapped(CGRect(x: sx, y: yv(y0), width: side / 6, height: yv(y1) - yv(y0))) { marks.fill($0) }
+                        }
+                    }
+                }
+            }
+            for _ in 0..<700 {
+                let az = r.signed() * 180, y = band.bottom + r.next() * span
+                let size = 0.08 + 0.35 * r.next(), strength = 0.015 + 0.03 * r.next()
+                let target = r.next() < 0.35 ? lights : marks
+                let perU = pxPerMetreU(y)
+                for ring in 1...5 {
+                    let f = CGFloat(ring) / 5
+                    let rw = CGFloat(size) * perU * f, rh = CGFloat(size * (1 + r.next())) * pxPerMetreV * f
+                    target.setFillColor(gray: CGFloat(strength), alpha: 1)
+                    wrapped(CGRect(x: px(az) - rw / 2, y: yv(y) - rh / 2, width: rw, height: rh)) { target.fillEllipse(in: $0) }
                 }
             }
             // Rivet rows beside every ring and joint, in runs (pass 5's seams are dotted here and there).
@@ -2852,7 +2918,8 @@ public enum EntranceLook {
     /// earlier 12000 lux day sun blew the lit side out to white).
     /// Round 11 (owner: pass 5 has a soft long highlight; r10 a blown-out spot on the lower body): night 1500 -> 700,
     /// day 3000 -> 1500; the studio key strip carries the highlight.
-    public static func sunIntensity(_ theme: EntranceTheme) -> Float { theme == .day ? 1500 : 700 }
+    /// Round 11c: night 400, day 800 (the smoother, brighter metal would turn the sun back into a spot).
+    public static func sunIntensity(_ theme: EntranceTheme) -> Float { theme == .day ? 800 : 400 }
 
     /// Image-based light exponent for `EntranceScene.setEnvironment(_:intensityExponent:)`. The studio's brightest
     /// strip is 1.0, so the strips reach 2^exponent: about 5.7 at night (dark gunmetal, albedo ~0.1, needs bright
@@ -2976,7 +3043,10 @@ public enum EntranceLook {
     public static let rimAzimuth = 160.0
     public static func studio(_ theme: EntranceTheme = .night) -> CGImage? {
         let day = theme == .day
-        let floor = day ? 0.16 : 0.012, wall = day ? 0.30 : 0.04, ceiling = day ? 0.5 : 0.13, horizon = day ? 0.1 : 0.04
+        // Round 11c: a darker room (night wall 0.04 -> 0.015, ceiling 0.13 -> 0.04; day wall 0.3 -> 0.1, ceiling
+        // 0.5 -> 0.2, floor 0.16 -> 0.06), so the reflecting hull shows bright strips with dark flanks as on pass 5
+        // instead of an evenly lit grey (r11b day read as paper). The fill strip 0.3 -> 0.45.
+        let floor = day ? 0.06 : 0.012, wall = day ? 0.1 : 0.015, ceiling = day ? 0.2 : 0.04, horizon = day ? 0.04 : 0.02
         // Round 11 (owner: a thin white rim round the whole rocket, not in pass 5): the rim strips lit only the last
         // few pixels of the silhouette, at grazing angles where the metal reflects almost everything, so they drew
         // a hard white outline. They are now dim and broad (night 1.0 -> 0.2, day 0.8 -> 0.15; 4 -> 10 degrees
@@ -2988,7 +3058,7 @@ public enum EntranceLook {
             var v = e >= 0 ? wall + (ceiling - wall) * s * s : floor + (wall - floor) * max(0, 1 + e / 25)
             v += horizon * exp(-(e / 8) * (e / 8))
             v = max(v, strip(az, e, centre: -50, half: 10, low: -25, high: 80))
-            v = max(v, 0.3 * strip(az, e, centre: 30, half: 5, low: -10, high: 70))
+            v = max(v, 0.45 * strip(az, e, centre: 30, half: 5, low: -10, high: 70))
             v = max(v, 0.35 * strip(az, e, centre: 125, half: 4, low: -15, high: 75))
             v = max(v, rim * strip(az, e, centre: -rimAzimuth, half: 10, low: -15, high: 75, soft: 20))
             v = max(v, rim * 0.9 * strip(az, e, centre: rimAzimuth, half: 10, low: -15, high: 75, soft: 20))
