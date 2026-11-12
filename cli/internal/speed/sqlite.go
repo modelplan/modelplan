@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -32,7 +33,8 @@ type DBCursor struct {
 	Seen    map[string]int64 `json:"seen,omitempty"`    // hashed ids counted near Mark → start ms
 	Day     string           `json:"day"`               // local date of the last read
 	Checked time.Time        `json:"checked"`
-	More    bool             `json:"more,omitempty"` // the last read stopped at dbBatch rows
+	More    bool             `json:"more,omitempty"`   // the last read stopped at dbBatch rows
+	Anchor  string           `json:"anchor,omitempty"` // hash of the row at RowID: the same database
 }
 
 const (
@@ -82,14 +84,27 @@ func dbSig(path string) string {
 	return s
 }
 
+// anchorOf: the hashed identity of the row with this rowid, "" when there is none.
+func anchorOf(db *sql.DB, query string, rowid int64) (string, error) {
+	var id string
+	switch err := db.QueryRow(query, rowid).Scan(&id); {
+	case errors.Is(err, sql.ErrNoRows):
+		return "", nil
+	case err != nil:
+		return "", err
+	}
+	return hashID("anchor:" + id), nil
+}
+
 func hashID(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:8])
 }
 
 // scanDB reads what is new in one database with read (rows past a rowid, plus listed rowids) and
-// adds the finished requests to the ledger under source. table is the one read rows come from.
-func (l *PerfLedger) scanDB(path, source, parser, table string, now time.Time, read func(db *sql.DB, after int64, pending []int64) ([]dbRow, error)) bool {
+// adds the finished requests to the ledger under source. anchor selects a stable identity of the
+// row with the given rowid (its own id and start), so a replaced database is recognised.
+func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, read func(db *sql.DB, after int64, pending []int64) ([]dbRow, error)) bool {
 	if l.Stores == nil {
 		l.Stores = map[string]DBCursor{}
 	}
@@ -105,14 +120,15 @@ func (l *PerfLedger) scanDB(path, source, parser, table string, now time.Time, r
 	}
 	defer db.Close()
 	if c.RowID > 0 {
-		// A database recreated (or emptied) at the same path numbers its rows from 1 again: past
-		// the old watermark nothing would ever be read. Start over; Seen and Mark still keep any
+		// A database recreated (or emptied, or renumbered) at the same path numbers its rows from 1
+		// again: past the old watermark its first rows would never be read. When the row at the
+		// watermark is gone or is another request, start over; Seen and Mark still keep any
 		// request already counted from counting twice.
-		var last sql.NullInt64
-		if err := db.QueryRow(`SELECT max(rowid) FROM "` + table + `"`).Scan(&last); err != nil {
+		at, err := anchorOf(db, anchor, c.RowID)
+		if err != nil {
 			return false
 		}
-		if last.Int64 < c.RowID {
+		if at == "" || (c.Anchor != "" && at != c.Anchor) {
 			c.RowID, c.Pending = 0, nil
 		}
 	}
@@ -169,6 +185,12 @@ func (l *PerfLedger) scanDB(path, source, parser, table string, now time.Time, r
 	for id, at := range c.Seen {
 		if at < c.Mark-look || len(c.Seen) > maxSeenRows {
 			delete(c.Seen, id)
+		}
+	}
+	c.Anchor = ""
+	if c.RowID > 0 {
+		if at, err := anchorOf(db, anchor, c.RowID); err == nil {
+			c.Anchor = at
 		}
 	}
 	c.Pending, c.Sig, c.Day, c.Checked, c.More = pending, sig, day(now), now.UTC().Truncate(time.Second), len(rows) >= dbBatch
