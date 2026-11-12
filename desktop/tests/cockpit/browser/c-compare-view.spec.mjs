@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Owner build 13 (CKP-MFD, study views.js round D1): trying an effort on a fader shows "Compare · <model>" on the
-// MFD: current / try / ★ columns, ability / cost / time rows, the chart, the effort keys, the website links,
+// MFD: the ability / cost share bars and the share chart (CKP-MFD-33, v8), the effort keys, the website links,
 // "‹ back" and the fast key. The built page through its normal bridge; synthetic profile only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
@@ -30,26 +30,25 @@ async function open(page,locale='en',tiers=false,edit=null){
  expect(await receive(send('display',{data}))).toBe(true);
 }
 const sol=page=>page.locator('.fd-ch:not(.empty)').first();
-const cells=page=>page.locator('.mfd-page table.cmp').evaluate(t=>[...t.rows].map(r=>[...r.cells].map(c=>c.innerText.trim().replace(/\s+/g,' '))));
+// The numbers under the two bars, per bar: [[role, text], ...] (v8: shares of the top effort).
+const cells=page=>page.locator('.mfd-page svg.cmp-bars').evaluate(svg=>[...svg.querySelectorAll('.pc-bar')].map(g=>[...g.querySelectorAll('.pc-num')].map(n=>[n.dataset.role,n.textContent])));
 
-test('CKP-MFD compare: a fader trial opens the comparison with three columns, three rows, chart and keys',async({page})=>{
+test('CKP-MFD compare: a fader trial opens the comparison with the two share bars, the chart and keys',async({page})=>{
  await open(page);
  await expect(page.locator('.mfd-page')).not.toHaveClass(/pg-compare/);
  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
  await expect(screen.locator('.mfd-title')).toHaveText('Compare · Sol 6.1');
- const table=await cells(page);
- expect(table[0]).toEqual(['','Current High','Try XHigh','★ Rec Med']);
- expect(table.slice(1).map(r=>r[0])).toEqual(['Ability','Cost','Time']);
- expect(table[1].slice(1)).toEqual(['±0','+3.2','−3.0']);
- expect(table[2].slice(1)).toEqual(['×1.00','×1.68','×0.66']);
- await expect(screen.locator('svg.cmp-chart .cl')).toHaveCount(3);
+ // Sol: current High, trial XHigh, top effort Max (ability 47.5, cost 1.056).
+ expect(await cells(page)).toEqual([[['current','90%'],['trial','97%']],[['current','36%'],['trial','60%']]]);
+ await expect(screen.locator('svg.cmp-bars .pc-label')).toHaveText(['Ability','Cost']);
+ await expect(screen.locator('svg.cmp-chart .pc-line')).toHaveCount(3);
  await expect(screen.locator('.cmp-lad .lad')).toHaveText(['Low','★Med','High','XHigh','Max']);
  await expect(screen.locator('.cmp-lad .lad.try')).toHaveText('XHigh');
- expect(await screen.locator('.cmp-lad').evaluate(e=>getComputedStyle(e).paddingLeft)).toBe('36px');
+ // The keys sit under the chart's columns: the shared left edge after the English bar labels (demo v8: 50 px).
+ expect(await screen.locator('.cmp-lad').evaluate(e=>getComputedStyle(e).paddingLeft)).toBe('50px');
  // The study drops "How it's worked out" when the English header has no room for it; the compare link always shows.
  await expect(screen.locator('.cmp-header-links a').first()).toHaveText('Compare on the website ↗');
- await expect(screen.locator('.cmp-panel[data-light="blue"]')).toHaveCount(4);
  await expect(page.locator('.mfd-ok.mfd-vk .vk-back')).toHaveText('‹ Overview');
  await expect(page.locator('.mfd-ok.mfd-vk .vk-fast')).toHaveCount(1);
  await expect(page.locator('.mfd-pk')).toHaveClass(/dark/);await expect(page.locator('.mfd-pk .pk.on')).toHaveCount(0);
@@ -62,7 +61,7 @@ test('CKP-MFD compare: the effort keys move the trial, one trial at a time, and 
  await open(page);
  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  await page.locator('.cmp-lad [data-mfd="try:Max"]').click();
- expect((await cells(page))[0][2]).toBe('Try Max');
+ expect((await cells(page))[0][1]).toEqual(['trial','100%']);
  // Trying another fader replaces this trial.
  const second=page.locator('.fd-ch:not(.empty)').nth(1);
  await second.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
@@ -130,10 +129,10 @@ test('CKP-FAD-11 fast key: a published speed tier lights the LCD lamp and the Of
  const sol=await trial('Sol');
  await expect(key).toHaveCount(1);await expect(key).toContainText(/off/i);await expect(key).toContainText(/on/i);
  await expect(key).toHaveAttribute('aria-pressed','false');
- const before=(await cells(page))[3];
+ const before=(await cells(page))[1];
  await key.click();await expect(key).toHaveAttribute('aria-pressed','true');
  await expect(sol.locator('.fd-indicator')).toHaveAttribute('data-fast-mode','try');
- const after=(await cells(page))[3];expect(after).not.toEqual(before);
+ const after=(await cells(page))[1];expect(after).not.toEqual(before);
  await key.click();await expect(key).toHaveAttribute('aria-pressed','false');
  await back();
  // A model the published tiers do not list (Astra here carries an id they do not name) keeps the key dark.
@@ -141,12 +140,14 @@ test('CKP-FAD-11 fast key: a published speed tier lights the LCD lamp and the Of
  await expect(page.locator('.mfd-vk button.vk-fast')).toHaveCount(0);
  await expect(page.locator('.mfd-vk span.vk-fast')).toHaveClass(/off/);
  await back();
- // Unstated ratio (Terra): the key shows, switching it on leaves the time unknown instead of a made-up number.
+ // Unstated ratio (Terra): the key shows; switching it on still prices the trial (the cost share grows by the
+ // subscription ratio). Its unknown time is covered by the unit test of the share helper (speed-tiers.test.mjs).
  await trial('Terra');
  await expect(key).toHaveCount(1);await expect(key).toContainText(/off/i);
- const tBefore=await cells(page);expect(tBefore[3][2]).toBe('×1.50');expect(tBefore[2][2]).toBe('×1.60');
+ const tBefore=(await cells(page))[1].find(([r])=>r==='trial')[1];
  await key.click();await expect(key).toHaveAttribute('aria-pressed','true');
- const tAfter=await cells(page);expect(tAfter[3][2]).toBe('—');expect(tAfter[2][2]).toBe('×4.00'); // time unknown, cost still the subscription ratio
+ const tAfter=(await cells(page))[1].find(([r])=>r==='trial')[1];
+ expect(parseInt(tAfter)/parseInt(tBefore)).toBeCloseTo(2.5,0);
 });
 
 test('CKP-FAD-11 fast key: Chinese key reads 关｜开',async({page})=>{

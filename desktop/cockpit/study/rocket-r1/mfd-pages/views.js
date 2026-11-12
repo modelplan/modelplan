@@ -1,22 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Ported from the opus-r7 study (rocket-r1/mfd-pages/views.js, round D1): the comparison view a fader trial opens
 // (spec 6.4). Only the comparison is ported; the alert list and the session view live in prototype-deck.ts.
-// Pure view: current / try / ★ columns, ability / cost / time rows, the ratio chart and the effort ladder; its own
-// bottom keys (‹ back, ⚡ fast). Nothing is applied to a session.
+// Pure view (v8, CKP-MFD-33): ability and cost bars as shares of the top effort, the share line chart and the effort
+// ladder; its own bottom keys (‹ back, ⚡ fast). Nothing is applied to a session.
 import {websiteWords,modelUrl,methodologyUrl,secondaryLink} from './public-helpers.js';
 import {t} from '../i18n.js';
 import '../strings/review49.js';
-import {esc, sign, times, fill, bolt} from './fmt.js';
+import {esc, fill, bolt} from './fmt.js';
 import {modelOf, rowOf, currentOf} from './scope.js';
 
 const POOL_TOOL = {codex: 'Codex', claude: 'Claude Code'};
 
 /* ---------- comparison view (spec 6.4; round D1, owner 2026-10-23) ---------- */
-// args {modelId, current, trial, fast, currentFast}. Fixed current / trial / ★
-// slots; static backlights and equality tags identify matching configurations. Rows compare
-// against current; unreported current never falls back to ★ in the table (CKP-MFD-19). Chart ratios use the same
-// current configuration; build 14c (owner): with current unreported the chart is still drawn, relative to ★ = 1, and
-// the note says so. Effort keys set the trial.
+// args {modelId, current, trial, fast, currentFast}. White = current, blue = trial, gold ★ = recommended. An
+// unreported current is never stood in for by ★ (CKP-MFD-19): no white tick, number or column, and the note says
+// "current unknown"; the chart is still drawn (build 14c). Effort keys and chart columns set the trial.
 // The bottom key row is the view's own (compareKeys): ‹ 返回 <page>, ⚡ 快速 关 | 开.
 
 // One reading of the comparison for the card, its keys and its clicks, so the three always agree.
@@ -37,50 +35,116 @@ const ratio = (value, reference) => numeric(value) && numeric(reference) && refe
 const colOf = (m, tier, label, fast) => { const r = rowOf(m, label), f = !!(fast && tier); return {label, r, fast: f, cost: numeric(r[2]) && (!f || numeric(tier.cost)) ? r[2] * (f ? tier.cost : 1) : null,
   time: r[3] == null || (f && tier.taskTimeUnknown) ? null : r[3] / (f ? tier.speed : 1)}; };
 
-// A10: one current reference for the table and chart, including fast cost/time.
-// The table keeps ability Δ; the chart uses 1 + Δ/current on its ratio axis.
-function comparisonValues(c, current) {
-  return {abilityDelta: current && numeric(c.r[1]) && numeric(current.r[1]) ? c.r[1] - current.r[1] : null,
-    ratios: [c.r[1], c.cost, c.time].map((v, i) => current ? ratio(v, [current.r[1], current.cost, current.time][i]) : null)};
+// v8 (CKP-MFD-33; D165, D177, D190, D201, demo v8): every number is a share of the model's own top effort, the
+// published effort with the highest ability (= 100 %, "Max"). Cost and time are shares of that effort's cost and
+// time; a fast configuration multiplies its own cost and time, so a fast trial may go past 100 %.
+const topRow = m => m.e.filter(r => numeric(r[1])).reduce((a, b) => !a || b[1] > a[1] ? b : a, null);
+export function shareOfTop(m, c) {
+  const top = topRow(m);
+  return top ? {abl: ratio(c.r[1], top[1]), cost: ratio(c.cost, top[2]), time: ratio(c.time, top[3])} : {abl: null, cost: null, time: null};
+}
+// One configuration (effort + fast mode) as shares of the top effort: the helper the bars, the chart and a later
+// fast-mode view read. Fast multiplies cost by the tier's cost ratio and divides time by its speed (unknown when the
+// tier does not state it).
+export const configShare = (m, tier, label, fast = false) => rowOf(m, label) ? shareOfTop(m, colOf(m, tier, label, fast)) : null;
+const n1 = v => (+v).toFixed(1);
+const pctText = v => v == null ? '--' : Math.round(v * 100) + '%';
+// The bars and the chart share one left edge (after the bar labels) and one right edge; the effort keys sit under the
+// chart's columns.
+const edges = (ui, W) => ({L: /^en/.test(ui.lang || '') ? 50 : 36, E: W - 8});
+const box = (x, y, w, h, cls, extra = '') => `<rect class="${cls}" x="${n1(x)}" y="${n1(y)}" width="${n1(Math.max(0, w))}" height="${h}"${extra}/>`;
+const label = (x, y, s, cls, anchor = 'start') => `<text class="${cls}" x="${n1(x)}" y="${n1(y)}" text-anchor="${anchor}">${esc(s)}</text>`;
+// A number with a small %; x is its centre. Never next to a ★: the ★ sits above the bar, numbers below it.
+const pctNum = (x, y, v, role) => { const n = String(Math.round(v * 100)), w = n.length * 6 + 4.5;
+  return `<text class="pc-num pc-${role}" data-role="${role}" x="${n1(x - w / 2)}" y="${y}">${n}<tspan class="pc-unit" dx=".5">%</tspan></text>`; };
+const star = (x, y, r, extra = '') => { let d = ''; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * .45 : r; d += (i ? 'L' : 'M') + (x + rr * Math.cos(a)).toFixed(2) + ' ' + (y + rr * Math.sin(a)).toFixed(2); }
+  return `<path class="pc-star" d="${d}Z"${extra}/>`; };
+const BAR_H = 58;
+
+// Two bars, ability (white) and cost (violet); full length = top effort. The bar is filled to the current effort (white
+// tick, number below); a trial adds a blue tick, a blue number and a blue segment between the two; ★ is a thin gold
+// line with a small ★ above the bar.
+function barsSvg(m, s, cols, W, ui) {
+  const {L, E} = edges(ui, W), X = v => L + (E - L) * Math.min(1, Math.max(0, v));
+  const cur = s.cur ? shareOfTop(m, cols.C) : null, trial = s.trying ? shareOfTop(m, cols.T) : null, rec = shareOfTop(m, cols.R);
+  let g = '';
+  [['abl', 'mfd.pctAbility'], ['cost', 'mfd.pctCost']].forEach(([k, name], i) => {
+    const top = i * 29, by = top + 12, vc = cur?.[k] ?? null, vt = trial?.[k] ?? null, vr = rec[k];
+    let b = box(0, by - 2.5, 5, 5, 'pc-chip', ' rx="1"') + label(8, by + 3.2, t(name), 'pc-label');
+    b += box(L, by - 1.5, E - L, 3, 'pc-track', ' rx="1.5"');
+    if (vc != null) b += box(L, by - 1.5, X(vc) - L, 3, 'pc-fill', ` rx="1.5" data-v="${vc}"`);
+    if (vt != null) { const a = vc != null ? X(vc) : L, z = X(vt); b += box(Math.min(a, z), by - 1.5, Math.abs(z - a), 3, 'pc-seg'); }
+    if (vr == null || E - X(vr) > 24) b += label(E, top + 6.5, t('mfd.pctMax'), 'pc-max', 'end');
+    if (vr != null) { const xr = X(vr); b += box(xr - 1.5, by - 5, 3, 10, 'pc-halo') + box(xr - .5, by - 4.5, 1, 9, 'pc-rec', ` data-role="rec" data-v="${vr}"`) + star(xr, top + 4.2, 3.6, ' data-role="rec"'); }
+    const nums = [];
+    if (vc != null) { b += box(X(vc) - 1, by - 5, 2, 10, 'pc-tick pc-current', ` data-role="current" data-v="${vc}"`); nums.push({x: X(vc), v: vc, role: 'current'}); }
+    if (vt != null) { b += box(X(vt) - 1, by - 5, 2, 10, 'pc-tick pc-trial', ` data-role="trial" data-v="${vt}"`); nums.push({x: X(vt), v: vt, role: 'trial'}); }
+    // Two numbers are kept 24 px apart, each pushed away from the other by half the overlap.
+    if (nums.length === 2) { const [p, q] = nums, dx = q.x - p.x, need = 24; if (Math.abs(dx) < need) { const sh = (need - Math.abs(dx)) / 2, sg = dx >= 0 ? 1 : -1; q.x += sg * sh; p.x -= sg * sh; } }
+    for (const o of nums) b += pctNum(Math.max(L + 9, Math.min(E - 9, o.x)), top + 25, o.v, o.role);
+    g += `<g class="pc-bar pc-${k}" data-series="${k}">${b}</g>`;
+  });
+  const shown = cur ? [s.cur, cur] : trial ? [s.trial, trial] : [m.rec, rec];
+  const aria = t('mfd.pctBarsAria', {m: m.short, e: shown[0], a: pctText(shown[1].abl), c: pctText(shown[1].cost)});
+  return `<svg class="cmp-bars" viewBox="0 0 ${W} ${BAR_H}" width="${W}" height="${BAR_H}" role="img" aria-label="${esc(aria)}">${g}</svg>`;
+}
+
+// The line chart under the bars: ability (white), cost (violet) and time (grey dotted) across the published efforts,
+// each as a share of the top effort. Current column tinted white, trial column blue; ★ on the ability line.
+function lineSvg(m, s, cols, {w: W, h: H}, ui) {
+  const {L, E} = edges(ui, W), T0 = 6, B0 = 4, efforts = m.e.map(r => r[0]), bw = (E - L) / efforts.length;
+  const rows = efforts.map(l => shareOfTop(m, colOf(m, s.tier, l, false)));
+  const ci = s.cur ? efforts.indexOf(s.cur) : -1, ti = s.trying ? efforts.indexOf(s.trial) : -1, ri = efforts.indexOf(m.rec);
+  const at = {[ci]: s.cur ? shareOfTop(m, cols.C) : null, [ti]: s.trying ? shareOfTop(m, cols.T) : null};
+  const all = [...rows, ...Object.values(at).filter(Boolean)].flatMap(r => [r.abl, r.cost, r.time]).filter(numeric);
+  const aria = t('mfd.pctChartAria', {m: m.short, efforts: efforts.join(' → ')});
+  if (!all.length) return `<svg class="cmp-chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(aria)}"></svg>`;
+  const span = Math.max(1, ...all), X = i => L + (i + .5) * bw, Y = v => T0 + (1 - v / span) * (H - T0 - B0);
+  const band = (i, cls) => box(X(i) - bw / 2 + 3, 1, bw - 6, H - 2, cls, ` rx="2" data-effort="${esc(efforts[i])}"`);
+  let g = (ci >= 0 ? band(ci, 'pc-band pc-band-current') : '') + (ti >= 0 ? band(ti, 'pc-band pc-band-trial') : '');
+  for (const v of [1, .5, 0]) { const y = Y(v); g += `<line class="pc-grid${v === 1 ? ' unit' : ''}" x1="${L}" x2="${n1(E)}" y1="${n1(y)}" y2="${n1(y)}"/>` + label(L - 5, Math.max(8, Math.min(H - 1, y + 3)), v ? pctText(v) : '0', 'pc-tick-l', 'end'); }
+  const dot = (cls, x, y, r, extra = '') => `<circle class="${cls}" cx="${n1(x)}" cy="${n1(y)}" r="${r}"${extra}/>`;
+  for (const k of ['time', 'cost', 'abl']) {
+    const vs = rows.map(r => r[k]);
+    if (!vs.some(numeric)) continue;
+    const runs = [];
+    vs.forEach((v, i) => { if (!numeric(v)) return; if (!runs.length || !numeric(vs[i - 1])) runs.push([]); runs.at(-1).push(i); });
+    let p = runs.filter(r => r.length > 1).map(r => `<polyline points="${r.map(i => n1(X(i)) + ',' + n1(Y(vs[i]))).join(' ')}"/>`).join('');
+    if (k !== 'time') vs.forEach((v, i) => {
+      const own = at[i]?.[k], y = numeric(own) ? Y(own) : numeric(v) ? Y(v) : null;
+      if (y == null) return;
+      if (k === 'abl' && i === ri) { if (i === ti) p += dot('pc-ring pc-ring-rec', X(i), y, 5.6, ' data-role="trial"'); p += star(X(i), y, 4, ' data-role="rec"'); }
+      else if (i === ti) p += dot('pc-ring', X(i), y, 2.6, ' data-role="trial"');
+      else if (i === ci) p += dot('pc-dot pc-dot-current', X(i), y, 2.5, ' data-role="current"');
+      else p += dot('pc-dot', X(i), y, 1.3);
+    });
+    g += `<g class="pc-line pc-${k}" data-series="${k}">${p}</g>`;
+  }
+  // Time is the one series the bars do not name: its legend sits bottom right inside the plot.
+  if (rows.some(r => numeric(r.time))) {
+    const word = t('mfd.pctTime'), lw = [...word].reduce((w, ch) => w + (/[　-鿿]/.test(ch) ? 8.5 : 4.8), 0) + 14, lx = E - lw, ly = H - B0 - 4;
+    g += `<g class="pc-legend"><line class="pc-legend-time" x1="${n1(lx)}" x2="${n1(lx + 9)}" y1="${n1(ly - 3)}" y2="${n1(ly - 3)}"/>${label(lx + 12, ly, word, 'pc-legend-l')}</g>`;
+  }
+  g += efforts.map((l, i) => box(L + i * bw, 0, bw, H, 'pc-hit', ` data-mfd="try:${esc(l)}"`)).join('');
+  return `<svg class="cmp-chart" data-scale="share" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(aria)}">${g}</svg>`;
 }
 
 export function comparison(d, ui, args) {
   const s = cmpState(d, ui, args);
   if (!s) return `<p class="mp-empty">${t('mfd.noModels')}</p>`;
   const {m, cur, base, tier, trial} = s;
-  const C = colOf(m, tier, base, s.curFast), T = colOf(m, tier, trial, s.trialFast), R = colOf(m, tier, m.rec, false);
-  // Equality includes fast mode. Roles always retain their own fixed slot.
-  const equal = (a, b) => a.label === b.label && a.fast === b.fast;
-  const tc = !!cur && equal(T, C), tr = equal(T, R), cr = !!cur && equal(C, R);
-  const columns = [
-    {c: C, role: t('mfd.cCur'), id: 'current', cls: `now cmp-panel`, light: !cur ? 'dim' : cr ? 'gold' : 'white', known: !!cur, tag: cr ? '= ★' : ''},
-    // G3-87: opened from the LCD with current unreported, nothing is tried yet: the trial slot stays dark (no "= ★").
-    s.trying || cur ? {c: T, role: t('mfd.cTrial'), id: 'trial', cls: 'blue cmp-panel', light: tc ? 'off' : tr ? 'gold' : 'blue', known: true, unlit: tc,
-      tag: tc ? t('mfd.equalCurrent') : tr ? '= ★' : ''}
-      : {c: T, role: t('mfd.cTrial'), id: 'trial', cls: 'blue cmp-panel', light: 'off', known: false, unlit: true, tag: ''},
-    {c: R, role: t('mfd.cRec'), id: 'rec', cls: 'gold cmp-panel', light: 'gold', known: true, tag: ''},
-  ];
-  for (const col of columns) col.values = comparisonValues(col.c, cur ? C : null);
-  // The chart's ×1: the reported current configuration, or ★ (standard speed) when current is unreported (build 14c).
-  const reference = cur ? C : R;
-  const cells = f => columns.map(({values, id, cls, light, known, unlit}) => `<td data-role="${id}" data-light="${light}" class="${cls}"><span class="cmp-value"${unlit ? ' aria-hidden="true"' : ''}>${known ? f(values) : '--'}</span></td>`).join('');
-  const rows = [
-    [t('mfd.rAbility'), v => v.abilityDelta == null ? '—' : sign(v.abilityDelta)],
-    [t('mfd.rCost'), v => times(v.ratios[1])],
-    [t('mfd.rTime'), v => times(v.ratios[2])],
-  ];
-  // Fixed role slots; the chart uses these same configurations and CURRENT reference.
-  const head = `<tr><th></th>${columns.map(({c, role, id, cls, light, known, tag, unlit}) => `<th scope="col" data-role="${id}" data-light="${light}" class="${cls}"><span class="cmp-role">${esc(role)}</span>${tag ? `<small class="cmp-equal">${esc(tag).replaceAll('★','<span class="cmp-equal-star">★</span>')}</small>` : ''}<b${unlit ? ' aria-hidden="true"' : ''}>${known ? esc(c.label) : '--'}${known && c.fast ? ` ${bolt(t('mfd.fastRow'))}` : ''}</b></th>`).join('')}</tr>`;
-  const table = `<table class="cmp" aria-label="${esc(t('mfd.cmpAria', {m: m.short}))}"><colgroup><col class="cmp-label"><col span="3"></colgroup><thead>${head}</thead><tbody>${rows.map(([l, f]) => `<tr><td>${l}</td>${cells(f)}</tr>`).join('')}</tbody></table>`;
-  const fastShown = !!tier && (C.fast || T.fast);
-  const note = [!cur ? `<em>${t('mfd.currentUnknownVsRec')}</em>` : '', fastShown ? `<em role="img" aria-label="${esc(t('mfd.fastLine', {s: tier.speed, c: tier.cost}))}">${bolt()}</em>` : ''].filter(Boolean).join('');
-  const words=websiteWords(ui.lang),size=fill(ui,'cmp',{w:300,h:60}),title=t('mfd.cmpTitle',{m:m.short});
-  const howFits=textW(title)*1.2+textW(words.compare+' ↗')+textW(words.how+' ↗')+36<=size.w;
-  const links=`<span class="cmp-header-links">${secondaryLink(modelUrl(m.id),words.compare)}${howFits?secondaryLink(methodologyUrl('cost-basis'),words.how):''}</span>`;
-  const g = ladderGeom(ui), levels = m.e.map(r => r[0]);
-  const ladder = `<div class="cmp-lad" style="--cl:${g.L}px;--cr:${g.R}px">${levels.map(l => `<button class="lad ${l === base && cur ? 'cur' : ''} ${l === trial && (trial !== base || T.fast !== C.fast) ? 'try' : ''} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${l}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${l}</button>`).join('')}</div>`;
+  const cols = {C: colOf(m, tier, base, s.curFast), T: colOf(m, tier, trial, s.trialFast), R: colOf(m, tier, m.rec, false)};
+  const fastShown = !!tier && ((cur && cols.C.fast) || (s.trying && cols.T.fast));
+  const note = [!cur ? `<em>${t('mfd.currentUnknown')}</em>` : '', fastShown ? `<em role="img" aria-label="${esc(t('mfd.fastLine', {s: tier.speed, c: tier.cost}))}">${bolt()}</em>` : ''].filter(Boolean).join('');
+  const words = websiteWords(ui.lang), size = fill(ui, 'cmp', {w: 300, h: 60}), title = t('mfd.cmpTitle', {m: m.short});
+  const howFits = textW(title) * 1.2 + textW(words.compare + ' ↗') + textW(words.how + ' ↗') + 36 <= size.w;
+  const links = `<span class="cmp-header-links">${secondaryLink(modelUrl(m.id), words.compare)}${howFits ? secondaryLink(methodologyUrl('cost-basis'), words.how) : ''}</span>`;
+  const {L, E} = edges(ui, size.w), levels = m.e.map(r => r[0]);
+  const ladder = `<div class="cmp-lad" style="--cl:${L}px;--cr:${size.w - E}px">${levels.map(l => `<button class="lad ${l === base && cur ? 'cur' : ''} ${l === trial && s.trying ? 'try' : ''} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${l}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${l}</button>`).join('')}</div>`;
+  // polish A: on a short screen the chart is left out instead of being clipped (the bars and the keys still compare).
+  const chart = size.h >= 34 && size.w >= 160 ? lineSvg(m, s, cols, size, ui) : '';
   return `<div class="cmp-h"><b class="mfd-title">${esc(title)}</b>${note ? `<span class="cmp-note">${note}</span>` : ''}${links}</div>
-    ${table}<div class="mfd-fill" data-fill="cmp">${chartIfRoom(m, columns, tier, s.trialFast, size, reference, !cur)}</div>${ladder}`;
+    <div class="cmp-bars-row" data-trying="${s.trying}">${barsSvg(m, s, cols, size.w, ui)}</div><div class="mfd-fill" data-fill="cmp">${chart}</div>${ladder}`;
 }
 // The bottom key row while the comparison is shown (round D1): back to the page underneath, fast mode in the trial
 // (both states printed, only for a tool with a fast mode; otherwise a dark key) only. The two keys share the footer width.
@@ -97,83 +161,6 @@ const cmpClick = (act, val, ui, d, args) => {
   return null;
 };
 
-// Retain the existing effort-key row's geometry as the comparison content changes.
 const textW = s => [...s].reduce((w, ch) => w + (/[　-鿿＀-￯]/.test(ch) ? 10 : 5.6), 0);
-const LINES = [['abl', 'mfd.rAbility'], ['cost', 'mfd.rCost'], ['time', 'mfd.rTime']];
-const ladderGeom = () => ({L: 36, R: Math.ceil(Math.max(...LINES.map(([, k]) => textW(t(k))))) + 10});
-// Task 85 review: symmetric ratio spacing around ×1, fixed across both speed ladders.
-const plottable = v => Number.isFinite(v) && v > 0;
-function ratioDomain(values) {
-  const powers = [0, ...values.filter(plottable).map(Math.log2)];
-  let min = Math.floor(Math.min(...powers)), max = Math.ceil(Math.max(...powers));
-  if (min === max) { min--; max++; }
-  return {min, max, ticks: Array.from({length:max-min+1}, (_,i) => 2 ** (min+i))};
-}
-const ratioText = v => '×' + (v >= .25 ? String(v) : '1/' + (1/v));
-// Three metric names remain readable in the 34 px minimum slot. Short leaders keep
-// each name attached to its actual endpoint when neighbouring ratios coincide.
-function endLabelPositions(ends, height) {
-  const sorted = ends.filter(Boolean).sort((a,b) => a.y-b.y || a.metric-b.metric);
-  const gap = height < 44 ? 11 : 13, low = 6, high = height-6;
-  sorted.forEach((p,i) => {p.labelY=Math.max(low,p.y,i ? sorted[i-1].labelY+gap : low);});
-  for(let i=sorted.length-1;i>=0;i--)sorted[i].labelY=Math.min(sorted[i].labelY,i===sorted.length-1 ? high : sorted[i+1].labelY-gap);
-  return ends;
-}
-// polish A: on a short screen the chart's area can be too small to read; it is left out then instead of being clipped
-// (the table and the ladder carry the comparison).
-const chartIfRoom = (m, cols, tier, fast, size, reference, versusRec) => size.h >= 34 && size.w >= 160 ? configurationChart(m, cols, tier, fast, size, reference, versusRec) : '';
-// Task 85: one metric trace across ALL published efforts, relative to CURRENT (A10).
-// Standard traces always stay in place. The fixed domain also includes every Fast effort.
-// Fast cost/time overlays appear when either actual/trial configuration is Fast (A10).
-// `reference` is the ×1 configuration: the reported current one, or ★ when current is unreported (build 14c).
-function configurationChart(m, columns, tier, fast, {w: W, h: H}, reference, versusRec = false) {
-  const {L, R} = ladderGeom(), top = 6, bottom = 8, end = W - R;
-  const efforts = m.e.map(r => r[0]), current = reference || null;
-  const rows = efforts.map(l => comparisonValues(colOf(m, tier, l, false), current).ratios);
-  const fastRows = tier ? efforts.map(l => comparisonValues(colOf(m, tier, l, true), current).ratios) : [];
-  const showFast=!!tier&&(fast||current?.fast);
-  const configs = [];
-  for (const {c, id, known, unlit, values} of columns) {
-    // Markers use the chart's own reference (the table may show dashes when current is unreported).
-    const ratios = current ? comparisonValues(c, current).ratios : values.ratios;
-    if (!known || unlit || ratios.every(v => v == null)) continue;
-    const same = configs.find(x => x.c.label === c.label && x.c.fast === c.fast);
-    if (same) same.roles.push(id);
-    else configs.push({c, roles: [id], values: ratios});
-  }
-  const available = [...rows,...fastRows].some(r => r.some(plottable));
-  const description = t(!current ? 'mfd.cmpChartUnknownAria' : !available ? 'mfd.cmpChartUnavailableAria' : versusRec ? 'mfd.cmpChartRecAria' : 'mfd.cmpChartAria', {m: m.short, efforts: efforts.join(' → ')});
-  if (!available) return `<svg class="cmp-chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(description)}"></svg>`;
-  // Current/★ points can be off the Fast trace. Their values are fixed, never trial-dependent.
-  const dom = ratioDomain([...rows.flat(),...fastRows.flat(), ...columns.filter(c => c.id !== 'trial' && c.known).flatMap(c => current ? comparisonValues(c.c, current).ratios : c.values.ratios)]), plotH = H - top - bottom;
-  const X = i => L + (i + .5) * (end - L) / efforts.length, Y = v => top + (dom.max - Math.log2(v)) / (dom.max - dom.min) * plotH;
-  const tickLabels = [1];
-  for(const v of [dom.ticks[0],dom.ticks.at(-1),...dom.ticks]) {
-    if (!tickLabels.includes(v) && textW(ratioText(v)) <= L-4 && tickLabels.every(u => Math.abs(Y(v)-Y(u)) >= 11)) tickLabels.push(v);
-  }
-  const grid = dom.ticks.map(v => `<line class="cl-grid ${v === 1 ? 'unit' : ''}" data-v="${v}" x1="${L}" x2="${end}" y1="${Y(v)}" y2="${Y(v)}"/>${tickLabels.includes(v) ? `<text class="cl-tick" x="${L-4}" y="${Math.max(10,Math.min(H-3,Y(v)+3.5))}" text-anchor="end">${ratioText(v)}</text>` : ''}`).join('');
-  const ends=endLabelPositions(LINES.map(([,name],metric)=>{
-    const index=rows.findLastIndex(r=>plottable(r[metric]));
-    return index<0 ? null : {metric,name,index,y:Y(rows[index][metric])};
-  }),H);
-  const trace=(key,name,metric,values,isFast=false)=>{
-    const segments = [];
-    values.forEach((v, i) => {if (!plottable(v)) return; if (!segments.length || !plottable(values[i-1])) segments.push([]); segments.at(-1).push(i);});
-    const paths = segments.filter(s => s.length > 1).map(s => `<polyline points="${s.map(i=>`${X(i)},${Y(values[i])}`).join(' ')}"/>`).join('');
-    const points = values.map((v, i) => !plottable(v) ? '' : `<circle class="cl-point" data-effort="${esc(efforts[i])}" data-v="${v}" cx="${X(i)}" cy="${Y(v)}" r="1.2"/>`).join('');
-    const label=ends[metric], labelY=label?.labelY;
-    const glyph=showFast&&metric>0?`<g class="cl-fast-legend" transform="translate(${end+2} ${labelY-5})" role="img" aria-label="${esc(t('mfd.fastRow'))}"><path fill="currentColor" d="M3.9 0 .3 5.1h2.4L2 9l3.7-5.4H3.3z"/></g>`:'';
-    const legend = !isFast && label ? `<path class="cl-end-leader" d="M${X(label.index)+2} ${label.y}H${end-2}L${end+8} ${labelY}"/>${glyph}<text class="cl-name" data-endpoint="${esc(efforts[label.index])}" x="${end+12}" y="${labelY+3}">${esc(t(name))}</text>` : '';
-    return `<g class="cl cl-${key}${isFast?' cl-fast':''}" data-series="${key}" data-mode="${isFast?'fast':'standard'}">${paths}${points}${legend}</g>`;
-  };
-  const traces=LINES.map(([key,name],metric)=>trace(key,name,metric,rows.map(r=>r[metric]))).join('')+(showFast?LINES.slice(1).map(([key,name],i)=>trace(key,name,i+1,fastRows.map(r=>r[i+1]),true)).join(''):'');
-  const markers = configs.map(({c, roles, values}) => {
-    const x = X(efforts.indexOf(c.label));
-    const ink = roles.includes('current') ? 'current' : roles.includes('rec') ? 'rec' : 'trial';
-    const marks = roles.slice().sort((a,b)=>['rec','current','trial'].indexOf(a)-['rec','current','trial'].indexOf(b)).map(role => `<line class="cfg-rule cfg-${role}" x1="${x}" x2="${x}" y1="${top}" y2="${H-bottom}"/>`+(c.fast?`<g class="cfg-fast cfg-${role}" transform="translate(${x-3} 0)" aria-label="${esc(t('mfd.fastRow'))}"><path d="M3.9 0 .3 5.1h2.4L2 9l3.7-5.4H3.3z"/></g>`:'')+values.map((v, i) => !plottable(v) ? '' : `<circle class="cfg-mark cfg-${role}" data-metric="${LINES[i][0]}" cx="${x}" cy="${Y(v)}" r="${{current:2,rec:3.3,trial:4.6}[role]}"/>`).join('')).join('');
-    return `<g class="cfg cfg-${ink}" data-config="${esc(c.label)}:${c.fast?'fast':'normal'}" data-roles="${roles.join(' ')}">${marks}</g>`;
-  }).join('');
-  return `<svg class="cmp-chart" data-scale="log2" data-compact="${H<44}" data-efforts="${esc(efforts.join('|'))}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(description)}">${grid}${traces}${markers}</svg>`;
-}
 
 export const compareView = {render: comparison, keys: compareKeys, pageless: true, ownTitle: true, onClick: cmpClick};
