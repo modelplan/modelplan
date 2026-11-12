@@ -66,6 +66,7 @@ const BAR_H = 58;
 // blue "="; a fast value past 100 % pins to the end with › and prints the exact number. Every effort segment is a
 // control (hover previews it, click tries it). Demo v12 (owner 11-12: option B with the notch divisions).
 let barUid = 0;
+const STAR_MODE = 'a';
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const BAR_RECT = (x, y, w, h, cls, extra = '') => w > .05 ? `<rect${cls ? ` class="${cls}"` : ''} x="${(+x).toFixed(2)}" y="${(+y).toFixed(2)}" width="${(+w).toFixed(2)}" height="${(+h).toFixed(2)}"${extra}/>` : '';
 // One number with a small %, centred on x; pre = a small blue "=" (the trial equals the current).
@@ -77,7 +78,7 @@ function barsSvg(m, s, cols, W, ui) {
   const {L, E} = edges(ui, W), cmp = !!ui.compact, TH = cmp ? 9 : 11, inset = 1, rT = 3, ix0 = L + inset, ix1 = E - inset;
   const X = v => ix0 + (ix1 - ix0) * clamp01(v), id = 'eb' + (++barUid), rowH = BAR_H / 2;
   const cur = s.cur ? shareOfTop(m, cols.C) : null, trial = s.trying ? shareOfTop(m, cols.T) : null, rec = shareOfTop(m, cols.R);
-  const speedFast = s.trying ? s.trialFast : s.curFast;
+  const starMode = ui.starMode || STAR_MODE, speedFast = s.trying ? s.trialFast : s.curFast;
   const at = l => shareOfTop(m, colOf(m, s.tier, l, speedFast));
   let defs = '', g = '', hit = '';
   [['abl', 'mfd.pctAbility'], ['cost', 'mfd.pctCost']].forEach(([k, name], i) => {
@@ -115,7 +116,11 @@ function barsSvg(m, s, cols, W, ui) {
     // ★ (standard speed; the recommendation never includes fast): the gold line through the bar and a small ★ above it
     const xr = vr != null ? X(vr) : null;
     if (i === 0 && (xr == null || (E - xr > 30 && !over))) b += label(E, top + (cmp ? 5.5 : 6), t('mfd.pctMax'), 'pc-max', 'end');
-    if (xr != null) b += box(xr - 1.5, top + 6.5, 3, y0 + TH + 2 - top - 6.5, 'pc-halo') + box(xr - .5, top + 6.5, 1, y0 + TH + 1.5 - top - 6.5, 'pc-rec', ` data-role="rec" data-v="${vr}"`) + star(xr, top + 3.9, 3.6, ' data-role="rec"');
+    if (xr != null) {
+      // ★ placement is switchable (ui.starMode): a = above the tube on the tick, b = tick through the tube and ★ below it, c = ★ centred on the tube at the tick
+      const sy0 = starMode === 'a' ? top + 6.5 : y0 - 2, tick = (a, z) => box(xr - 1.5, a, 3, z - a, 'pc-halo') + box(xr - .5, a, 1, z - a - .5, 'pc-rec', ` data-role="rec" data-v="${vr}"`);
+      b += tick(sy0, y0 + TH + 2) + (starMode === 'a' ? star(xr, top + 3.9, 3.6, ' data-role="rec"') : starMode === 'b' ? star(xr, y0 + TH + 6, 3.2, ' data-role="rec"') : star(xr, cy, 3.6, ' data-role="rec"'));
+    }
     // fast can pass the full bar: the value pins to the end, a chevron marks the overflow, the number is exact
     if (over) b += `<path class="pc-over${(vt ?? 0) > 1 && tr ? ' trial' : ''}" d="M${E + 2} ${n1(cy - 3)}l3 3-3 3"/>`;
     // hover previews: a dashed line at every other effort's value, shown while the pointer is on that effort anywhere
@@ -143,19 +148,33 @@ function barsSvg(m, s, cols, W, ui) {
 // each as a share of the top effort. Current column tinted white, trial column blue; ★ on the ability line.
 function lineSvg(m, s, cols, {w: W, h: H}, ui) {
   const {L, E} = edges(ui, W), T0 = 6, B0 = 4, efforts = m.e.map(r => r[0]), bw = (E - L) / efforts.length;
-  const rows = efforts.map(l => shareOfTop(m, colOf(m, s.tier, l, false)));
+  const standard = efforts.map(l => shareOfTop(m, colOf(m, s.tier, l, false)));
+  // Fast on (the real mode, or the trial's): every effort's cost and time are drawn with the tier applied, the Standard
+  // lines stay faint behind them and a band between each pair shows every effort's move (the website's effort page).
+  const fastOn = !!s.tier && (s.trying ? s.trialFast : s.curFast);
+  const rows = fastOn ? efforts.map(l => shareOfTop(m, colOf(m, s.tier, l, true))) : standard;
   const ci = s.cur ? efforts.indexOf(s.cur) : -1, ti = s.trying ? efforts.indexOf(s.trial) : -1, ri = efforts.indexOf(m.rec);
   const at = {[ci]: s.cur ? shareOfTop(m, cols.C) : null, [ti]: s.trying ? shareOfTop(m, cols.T) : null};
-  const all = [...rows, ...Object.values(at).filter(Boolean)].flatMap(r => [r.abl, r.cost, r.time]).filter(numeric);
+  const all = [...rows, ...standard, ...Object.values(at).filter(Boolean)].flatMap(r => [r.abl, r.cost, r.time]).filter(numeric);
   const aria = t('mfd.pctChartAria', {m: m.short, efforts: efforts.join(' → ')});
   if (!all.length) return `<svg class="cmp-chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(aria)}"></svg>`;
   const span = Math.max(1, ...all), X = i => L + (i + .5) * bw, Y = v => T0 + (1 - v / span) * (H - T0 - B0);
   const band = (i, cls) => box(X(i) - bw / 2 + 3, 1, bw - 6, H - 2, cls, ` rx="2" data-effort="${esc(efforts[i])}"`);
-  let g = (ci >= 0 ? band(ci, 'pc-band pc-band-current') : '') + (ti >= 0 ? band(ti, 'pc-band pc-band-trial') : '');
+  // the recommended effort's column: a very faint gold wash under everything, so it never fights the blue trial / hover boxes
+  let g = (ri >= 0 ? band(ri, 'pc-band pc-band-rec') : '') + (ci >= 0 ? band(ci, 'pc-band pc-band-current') : '') + (ti >= 0 ? band(ti, 'pc-band pc-band-trial' + (ti === ci ? ' pc-band-same' : '')) : '');
   // hover preview: a dashed blue box on the column of the effort under the pointer (any other effort than the trial)
   g += efforts.map((l, i) => l === s.trial ? '' : band(i, 'pc-band pc-band-hover')).join('');
   for (const v of [1, .5, 0]) { const y = Y(v); g += `<line class="pc-grid${v === 1 ? ' unit' : ''}" x1="${L}" x2="${n1(E)}" y1="${n1(y)}" y2="${n1(y)}"/>` + label(L - 5, Math.max(8, Math.min(H - 1, y + 3)), v ? pctText(v) : '0', 'pc-tick-l', 'end'); }
   const dot = (cls, x, y, r, extra = '') => `<circle class="${cls}" cx="${n1(x)}" cy="${n1(y)}" r="${r}"${extra}/>`;
+  const path = (vs, runs) => runs.filter(r => r.length > 1).map(r => `<polyline points="${r.map(i => n1(X(i)) + ',' + n1(Y(vs[i]))).join(' ')}"/>`).join('');
+  const runsOf = vs => { const runs = []; vs.forEach((v, i) => { if (!numeric(v)) return; if (!runs.length || !numeric(vs[i - 1])) runs.push([]); runs.at(-1).push(i); }); return runs; };
+  if (fastOn) for (const k of ['time', 'cost']) {
+    const pairs = efforts.map((_, i) => [standard[i][k], rows[i][k]]).map(([a, b], i) => numeric(a) && numeric(b) ? {i, a, b} : null).filter(Boolean);
+    if (pairs.length < 2 || pairs.every(q => Math.abs(q.a - q.b) < 1e-9)) continue;
+    const d = pairs.map((q, j) => `${j ? 'L' : 'M'}${n1(X(q.i))} ${n1(Y(q.b))}`).join(' ') + [...pairs].reverse().map(q => ` L${n1(X(q.i))} ${n1(Y(q.a))}`).join('') + ' Z';
+    g += `<path class="pc-fastband pc-${k}" data-series="${k}" d="${d}"/>`;
+    g += `<g class="pc-line pc-${k} pc-std" data-series="${k}" data-fast="standard">${path(standard.map(r => r[k]), runsOf(standard.map(r => r[k])))}</g>`;
+  }
   for (const k of ['time', 'cost', 'abl']) {
     const vs = rows.map(r => r[k]);
     if (!vs.some(numeric)) continue;

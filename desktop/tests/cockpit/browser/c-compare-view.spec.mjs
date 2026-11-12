@@ -239,3 +239,80 @@ test('CKP-FAD-24 fast symbol: a trial that turns fast on shows a solid blue ⚡;
  await page.locator('.mfd-vk button.vk-fast').click();
  await expect(solFader.locator('.fd-fast')).toHaveCount(0);
 });
+
+// Owner 11-12: with fast on (real or trial) the WHOLE cost and time lines are drawn with the tier applied, the Standard lines stay faint behind them and a band joins each pair.
+const lineYs=(page,sel)=>page.locator(`.mfd-page svg.cmp-chart ${sel} polyline`).evaluate(p=>p.getAttribute('points').split(' ').map(q=>Number(q.split(',')[1])));
+test('CKP-MFD-33 fast lines: a fast trial raises every point of the cost and time lines; Standard stays faint with a band between; off draws neither',async({page})=>{
+ await open(page,'en',true);
+ await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
+ const chart=page.locator('.mfd-page svg.cmp-chart');
+ await expect(chart.locator('.pc-std')).toHaveCount(0);await expect(chart.locator('.pc-fastband')).toHaveCount(0);
+ const before=await lineYs(page,'.pc-line.pc-cost:not(.pc-std)');
+ await page.locator('.mfd-vk button.vk-fast').click();
+ await expect(chart.locator('.pc-std')).toHaveCount(2);await expect(chart.locator('.pc-fastband')).toHaveCount(2);
+ const std=await lineYs(page,'.pc-line.pc-cost.pc-std'),fast=await lineYs(page,'.pc-line.pc-cost:not(.pc-std)');
+ expect(fast).toHaveLength(before.length);expect(std).toHaveLength(before.length);
+ // the chart's scale stretches with the fast values, so compare the fast line with the Standard line in the same scale: every point is higher (a smaller y)
+ for(let i=0;i<fast.length;i++)expect(fast[i],`point ${i}`).toBeLessThan(std[i]);
+ expect(await chart.locator('.pc-std').first().evaluate(e=>Number(getComputedStyle(e).opacity))).toBeLessThan(.6);
+ // time: a stated speed-up lowers every point of the time line
+ const tstd=await lineYs(page,'.pc-line.pc-time.pc-std'),tfast=await lineYs(page,'.pc-line.pc-time:not(.pc-std)');
+ for(let i=0;i<tfast.length;i++)expect(tfast[i]).toBeGreaterThan(tstd[i]);
+ await page.locator('.mfd-vk button.vk-fast').click();
+ await expect(chart.locator('.pc-std')).toHaveCount(0);
+});
+test('CKP-MFD-33 fast lines: a real fast session draws the fast lines too',async({page})=>{
+ await open(page,'en',true,data=>{data.details.sessions[0].fast=true;});
+ await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
+ await expect(page.locator('.mfd-page svg.cmp-chart .pc-fastband')).toHaveCount(2);
+});
+
+// Owner 11-12: column strength is trial blue > current white > recommended gold; and when the trial effort equals the current
+// effort (a fast-only trial) both show: the white current fill with the blue trial fill and a solid blue outline on top.
+test('CKP-MFD-33 chart columns: trial blue > current white > ★ gold; trial = current keeps both',async({page})=>{
+ await open(page,'en',true);
+ await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
+ const chart=page.locator('.mfd-page svg.cmp-chart');
+ const alpha=async sel=>chart.locator(sel).evaluate(e=>{const c=getComputedStyle(e),m=c.fill.match(/rgba?\(([^)]+)\)/)[1].split(',').map(Number);return (m[3]??1)*Number(c.opacity);});
+ await page.locator('.mfd-vk button.vk-fast').click(); // fast-only trial: the trial effort is the current one
+ const cur=chart.locator('.pc-band-current'),tri=chart.locator('.pc-band-trial');
+ await expect(cur).toHaveCount(1);await expect(tri).toHaveCount(1);
+ expect(await cur.getAttribute('data-effort')).toBe(await tri.getAttribute('data-effort'));
+ const a={cur:await alpha('.pc-band-current'),trial:await alpha('.pc-band-trial'),rec:await alpha('.pc-band-rec')};
+ expect(a.cur).toBeGreaterThanOrEqual(.1);expect(a.cur).toBeLessThanOrEqual(.15);
+ expect(a.trial).toBeGreaterThan(a.cur);expect(a.cur).toBeGreaterThan(a.rec);
+ // equal: the blue outline stands on top of the white fill
+ await expect(tri).toHaveClass(/pc-band-same/);
+ expect(await tri.evaluate(e=>parseFloat(getComputedStyle(e).strokeOpacity))).toBeGreaterThanOrEqual(.6);
+ // a different trial effort draws no such outline
+ await page.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
+ await expect(chart.locator('.pc-band-trial')).not.toHaveClass(/pc-band-same/);
+});
+
+// Owner 11-12: the chart column layers, bottom to top: ★ gold wash, current white fill, trial blue fill + 1 px border. Every overlap keeps all its layers.
+test('CKP-MFD-33 chart column layers: every overlap of current, trial and ★ shows all its layers, trial blue on top',async({page})=>{
+ const cases=[
+  {name:'current = ★',edit:d=>{d.details.sessions[0].effort='medium';},act:null,want:['rec','current']},
+  {name:'trial = ★',edit:null,act:async()=>{await page.locator('.cmp-lad [data-mfd="try:Med"]').click();},want:['rec','current','trial']},
+  {name:'trial = current',edit:null,act:async()=>{await page.locator('.mfd-vk button.vk-fast').click();},want:['rec','current','trial']},
+  {name:'all three equal',edit:d=>{d.details.sessions[0].effort='medium';},act:async()=>{await page.locator('.mfd-vk button.vk-fast').click();},want:['rec','current','trial']},
+ ];
+ for(const c of cases){
+  await open(page,'en',true,c.edit);
+  await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
+  await c.act?.();
+  const chart=page.locator('.mfd-page svg.cmp-chart');
+  const info=await chart.evaluate(svg=>[...svg.querySelectorAll('.pc-band:not(.pc-band-hover)')].map(e=>({role:e.classList.contains('pc-band-rec')?'rec':e.classList.contains('pc-band-current')?'current':'trial',effort:e.dataset.effort,order:[...svg.children].indexOf(e),
+   stroke:parseFloat(getComputedStyle(e).strokeOpacity),fill:getComputedStyle(e).fill,w:e.getBBox().width})));
+  const roles=info.map(i=>i.role);
+  expect(roles.sort(),c.name).toEqual([...c.want].sort());
+  const by=r=>info.find(i=>i.role===r);
+  if(by('rec')&&by('current'))expect(by('rec').order,c.name).toBeLessThan(by('current').order);
+  if(by('trial')){expect(by('trial').order,c.name).toBeGreaterThan(Math.max(...info.filter(i=>i.role!=='trial').map(i=>i.order)));expect(by('trial').stroke,c.name).toBeGreaterThanOrEqual(.5);}
+  for(const i of info)expect(i.w).toBeGreaterThan(10);
+  // the same column when they coincide
+  const efforts=new Set(info.map(i=>i.effort));
+  if(c.name==='all three equal')expect(efforts.size).toBe(1);
+  if(c.name==='current = ★')expect(efforts.size).toBe(1);
+ }
+});

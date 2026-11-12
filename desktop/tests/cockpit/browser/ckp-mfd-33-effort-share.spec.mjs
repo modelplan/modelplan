@@ -75,6 +75,9 @@ test('CKP-MFD-33 idle: the full 0-100 % track and its end bar are always drawn; 
  await expect(chart.locator('.pc-band-current')).toHaveAttribute('data-effort','High');
  await expect(chart.locator('.pc-band-trial')).toHaveCount(0);
  await expect(chart.locator('.pc-line.pc-abl .pc-star')).toHaveCount(1);
+ // the ★ column carries a very faint gold wash (under the blue trial / hover boxes)
+ await expect(chart.locator('.pc-band-rec')).toHaveAttribute('data-effort','Med');
+ expect(await chart.locator('.pc-band-rec').evaluate(e=>parseFloat(getComputedStyle(e).opacity))).toBeLessThanOrEqual(.08);
  await expect(chart.locator('.pc-legend')).toContainText('Time');
  await expect(screen.locator('.cmp-lad .lad')).toHaveText(['Low','★Med','High','XHigh','Max']);
 });
