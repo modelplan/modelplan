@@ -19,6 +19,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/lineup"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -296,5 +297,21 @@ func TestCockpitPublicationCarriesPublishedSpeedTiers(t *testing.T) {
 	d.Speed = []digest.SpeedTier{{ID: "x", Billing: []digest.SpeedBilling{{Ratio: bad}}}}
 	if got = materializeCockpitPublication(d, nil, false); got == nil || len(got.SpeedTiers) != 0 {
 		t.Fatalf("non-finite tier admitted: %+v", got)
+	}
+}
+
+func TestPublishedLineupTagsCopyOnlyTheFieldLabelsInPublishedOrder(t *testing.T) {
+	d := &digest.Digest{Lineups: []digest.PublishedLineup{{DeveloperID: "openai"}}}
+	d.Lineups[0].Members = append(d.Lineups[0].Members, &lineup.Row{ID: "m", Tags: []string{"dominated", "best_value", "cheapest", "equivalent_costlier"}})
+	if got := publishedLineupTags(d, "openai", "m"); !reflect.DeepEqual(got, []string{"best_value", "cheapest"}) {
+		t.Fatalf("tags = %v", got)
+	}
+	for _, id := range []string{"unknown"} {
+		if got := publishedLineupTags(d, "openai", id); len(got) != 0 {
+			t.Fatalf("%s: %v", id, got)
+		}
+	}
+	if got := publishedLineupTags(d, "anthropic", "m"); len(got) != 0 {
+		t.Fatalf("no lineup for the developer must give no tags: %v", got)
 	}
 }

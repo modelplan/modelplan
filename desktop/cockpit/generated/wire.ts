@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: c3cf49891aace260752393455c6500eaed06411cbbdd8758de56b19017b0b1d4
+// Schema SHA-256: a56f692b7cf0dcac2e5dbaa45f4eececd5e09a89315a28fce6233de6ceb52992
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -182,11 +182,13 @@ export type WireCockpitPublicationEffort = {
 };
 
 export type WireCockpitPublicationModel = {
+  readonly "defaultSelected"?: boolean | null;
   readonly "developerId": string;
   readonly "efforts": ReadonlyArray<WireCockpitPublicationEffort>;
   readonly "id": string;
   readonly "name": string;
   readonly "recommended": string;
+  readonly "tags"?: ReadonlyArray<string>;
 };
 
 export type WireCockpitQueryParams = {
@@ -1475,6 +1477,16 @@ export const definitions: Readonly<Record<string, Schema>> = {
   "CockpitPublicationModel": {
     "additionalProperties": false,
     "properties": {
+      "defaultSelected": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "developerId": {
         "maxLength": 128,
         "minLength": 1,
@@ -1500,6 +1512,13 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "recommended": {
         "maxLength": 64,
         "type": "string"
+      },
+      "tags": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 3,
+        "type": "array"
       }
     },
     "required": [

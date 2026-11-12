@@ -2675,19 +2675,25 @@ public struct WireCockpitPublicationModel: Codable, Sendable {
     public let `developerId`: String
     public let `recommended`: String
     public let `efforts`: [WireCockpitPublicationEffort]
+    public let `defaultSelected`: Bool?
+    public let `tags`: [String]?
     private enum CodingKeys: String, CodingKey {
         case `id`
         case `name`
         case `developerId`
         case `recommended`
         case `efforts`
+        case `defaultSelected`
+        case `tags`
     }
-    public init(`id`: String, `name`: String, `developerId`: String, `recommended`: String, `efforts`: [WireCockpitPublicationEffort]) throws {
+    public init(`id`: String, `name`: String, `developerId`: String, `recommended`: String, `efforts`: [WireCockpitPublicationEffort], `defaultSelected`: Bool? = nil, `tags`: [String]? = nil) throws {
         self.`id` = `id`
         self.`name` = `name`
         self.`developerId` = `developerId`
         self.`recommended` = `recommended`
         self.`efforts` = `efforts`
+        self.`defaultSelected` = `defaultSelected`
+        self.`tags` = `tags`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -2697,6 +2703,10 @@ public struct WireCockpitPublicationModel: Codable, Sendable {
         self.`developerId` = try c.decode(String.self, forKey: .`developerId`)
         self.`recommended` = try c.decode(String.self, forKey: .`recommended`)
         self.`efforts` = try c.decode([WireCockpitPublicationEffort].self, forKey: .`efforts`)
+        if c.contains(.`defaultSelected`), try c.decodeNil(forKey: .`defaultSelected`) { throw WireDecodeError.invalidIdentity }
+        self.`defaultSelected` = try c.decodeIfPresent(Bool.self, forKey: .`defaultSelected`)
+        if c.contains(.`tags`), try c.decodeNil(forKey: .`tags`) { throw WireDecodeError.invalidIdentity }
+        self.`tags` = try c.decodeIfPresent([String].self, forKey: .`tags`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -2707,6 +2717,8 @@ public struct WireCockpitPublicationModel: Codable, Sendable {
         try c.encode(`developerId`, forKey: .`developerId`)
         try c.encode(`recommended`, forKey: .`recommended`)
         try c.encode(`efforts`, forKey: .`efforts`)
+        try c.encodeIfPresent(`defaultSelected`, forKey: .`defaultSelected`)
+        try c.encodeIfPresent(`tags`, forKey: .`tags`)
     }
     private func validate() throws {
         try WireValidation.identity(`id`)

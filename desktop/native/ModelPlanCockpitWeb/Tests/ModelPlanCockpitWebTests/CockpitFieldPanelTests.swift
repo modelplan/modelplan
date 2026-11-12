@@ -39,6 +39,81 @@ final class CockpitFieldPanelTests: XCTestCase {
     panel.close()
     XCTAssertEqual(closed, 2)
   }
+  /// Spike 11-08 / D63: native tells the page about Low Power Mode, which the page cannot read. Changes while open go
+  /// to `power` once the page has loaded and only when the state changes; a closed panel stops listening.
+  @MainActor func testLowPowerChangesReachTheOpenPageOnce() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-power-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    var low = false
+    let center = NotificationCenter()
+    let panel = CockpitFieldPanel(bundle: try bundle(root), lowPower: { low }, notifications: center)
+    var scripts: [String] = []
+    panel.scriptSink = { scripts.append($0) }
+    let changed = {
+      center.post(name: .NSProcessInfoPowerStateDidChange, object: nil)
+      RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+    XCTAssertFalse(panel.isLowPower)
+    panel.open(payload: #"{"lowPower":false}"#, near: nil)
+    low = true; changed()
+    XCTAssertTrue(scripts.isEmpty, "Nothing reaches a page that has not loaded")
+    panel.receive(#"{"type":"loaded"}"#)
+    XCTAssertEqual(scripts.count, 2)
+    XCTAssertTrue(scripts[0].hasPrefix("window.modelPlanField?.show("))
+    XCTAssertEqual(scripts[1], "window.modelPlanField?.power(true)", "The change before load catches up after show")
+    changed()
+    XCTAssertEqual(scripts.count, 2, "No change, nothing sent")
+    low = false; changed()
+    XCTAssertEqual(scripts.last, "window.modelPlanField?.power(false)")
+    panel.close()
+    low = true; changed()
+    XCTAssertEqual(scripts.count, 3, "A closed panel stops listening")
+  }
+  /// CKP-PORT-13 (D63): the page names public model IDs; native builds the only address it may open.
+  func testFleetAddressIsBuiltFromPublicIDsOnly() {
+    XCTAssertEqual(CockpitFieldPanel.fleetURL(models: ["sol-6.1", "auto:anthropic:ccb37fec2677f068"])?.absoluteString,
+                   "https://modelplan.ai/?focus=sol-6.1,auto:anthropic:ccb37fec2677f068")
+    XCTAssertNil(CockpitFieldPanel.fleetURL(models: []))
+    XCTAssertNil(CockpitFieldPanel.fleetURL(models: Array(repeating: "m", count: 11)), "the field flies ten at most")
+    for bad in ["a b", "a/b", "a?b", "a&focus=x", "https://evil.example", String(repeating: "x", count: 97), ""] {
+      XCTAssertNil(CockpitFieldPanel.fleetURL(models: ["ok", bad]), bad)
+    }
+  }
+  @MainActor func testTheWebsiteMessageOpensTheFleetAddressAndNothingElse() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-website-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let panel = CockpitFieldPanel(bundle: try bundle(root))
+    var opened: [URL] = []
+    panel.onWebsite = { opened.append($0) }
+    panel.receive(#"{"type":"website","models":["a"]}"#)
+    XCTAssertTrue(opened.isEmpty, "A closed panel opens nothing")
+    panel.open(payload: "{}", near: nil)
+    panel.receive(#"{"type":"website","models":["sol-6.1","glm"]}"#)
+    panel.receive(#"{"type":"website","models":["a b"]}"#)
+    panel.receive(#"{"type":"website","url":"https://evil.example"}"#)
+    XCTAssertEqual(opened.map(\.absoluteString), ["https://modelplan.ai/?focus=sol-6.1,glm"])
+    panel.close()
+  }
+  /// D63 (review of #734): a field opened while Low Power Mode is already on is quiet from the start, whatever the
+  /// payload said: right after `show` the page gets `power(true)`.
+  @MainActor func testAFieldOpenedInLowPowerModeIsQuietFromTheStart() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-power-open-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let center = NotificationCenter()
+    let panel = CockpitFieldPanel(bundle: try bundle(root), lowPower: { true }, notifications: center)
+    var scripts: [String] = []
+    panel.scriptSink = { scripts.append($0) }
+    XCTAssertTrue(panel.isLowPower)
+    panel.open(payload: #"{"lowPower":false}"#, near: nil)
+    defer { panel.close() }
+    panel.receive(#"{"type":"loaded"}"#)
+    XCTAssertEqual(scripts.count, 2)
+    XCTAssertTrue(scripts[0].hasPrefix("window.modelPlanField?.show("))
+    XCTAssertEqual(scripts[1], "window.modelPlanField?.power(true)")
+    center.post(name: .NSProcessInfoPowerStateDidChange, object: nil)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    XCTAssertEqual(scripts.count, 2, "still on, nothing more")
+  }
   /// CKP-PORT-11E: a click outside the field makes its panel resign key, which closes it once and destroys the page.
   @MainActor func testLosingKeyClosesTheField() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("field-key-" + UUID().uuidString)
@@ -84,6 +159,12 @@ final class CockpitFieldPanelTests: XCTestCase {
     let frame = try XCTUnwrap(panel.cardBlurFrame)
     XCTAssertEqual(frame.size, NSSize(width: 430, height: 500))
     XCTAssertEqual(frame.minX, 0)
+    // Item 6: the picker folds into a count; the page reports an empty card and the blur goes.
+    panel.receive(#"{"type":"card","x":0,"y":0,"width":0,"height":0,"radius":12}"#)
+    XCTAssertNil(panel.cardBlurFrame, "a folded card has no blur")
+    panel.receive(#"{"type":"card","x":0,"y":20,"width":430,"height":500,"radius":12}"#)
+    XCTAssertNotNil(panel.cardBlurFrame, "unfolded, the blur is back")
+  }
   }
 
   // MARK: Build 14c, G3-80: placement, moving and refitting across displays
