@@ -9,13 +9,13 @@ import ModelPlanSettings
 /// settings) the cockpit theme is night in light mode and for a saved day theme; the one `dayCockpit` switch
 /// brings the day paths back for v1.1.
 final class NightOnlyCockpitTests: XCTestCase {
-    private func ownerWithSettings(night label: String, theme: SettingsTheme) async throws -> (CockpitConsoleOwner, SettingsSnapshot) {
+    @MainActor private func ownerWithSettings(night label: String, theme: SettingsTheme) async throws -> (CockpitConsoleOwner, SettingsSnapshot) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("night-only-\(label)-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root)
         _ = try await store.update { $0.theme = theme }
-        let owner = await MainActor.run { CockpitConsoleOwner(bundle: root, settingsStore: store) }
+        let owner = CockpitConsoleOwner(bundle: root, settingsStore: store)
         return (owner, await store.snapshot())
     }
 
