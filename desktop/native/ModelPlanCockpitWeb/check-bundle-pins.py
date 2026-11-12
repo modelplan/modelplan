@@ -25,6 +25,8 @@ RESERVED_SOURCES = (
     ('assets/hull/SOURCES.md', 'cockpit/hull/SOURCES.md'),
     ('assets/bells/', 'cockpit/bells/assets/'),
     ('assets/hull/', 'cockpit/hull/assets/'),
+    ('assets/rack/SOURCES.md', 'cockpit/rack/SOURCES.md'),
+    ('assets/rack/', 'cockpit/rack/assets/'),
     ('assets/logo.svg', 'logo.svg'),
     ('assets/', 'cockpit/strip/assets/'),
 )

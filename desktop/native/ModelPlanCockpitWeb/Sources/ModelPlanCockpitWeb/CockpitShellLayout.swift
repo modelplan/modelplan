@@ -41,6 +41,9 @@ public struct CockpitShellLayout: Equatable, Sendable {
     /// CKP-SHELL-33 (owner D175/D178): the attached cockpit hangs this far below the menu bar; only the launch rack
     /// shows in the gap.
     public static let menuBarGap: CGFloat = 10
+    /// The gap the size tier (full / short / forced closed) is judged with: the pre-rack 6 pt, so the 10 pt gap comes out
+    /// of free space (a slightly smaller scale) and never changes which tier a screen gets (D51 thresholds unchanged).
+    static let tierGap: CGFloat = 6
     /// CKP-SHELL-33 (D158): the menu bar icon sits above the cockpit's LEFT canopy shoulder. The shoulder's x in page
     /// px (636 px canvas, 8 px margin), measured on the accepted rack demo's hull art (v7/v8: 40 pt and 16 pt of the
     /// 480 pt-wide 620 px shell, full and short versions).
@@ -60,16 +63,17 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let top = (min(usable.maxY, anchor.minY) - Self.menuBarGap).rounded(.down)
         let available = top - usable.minY
         guard available > 0 else { return nil }
+        let tierAvailable = (min(usable.maxY, anchor.minY) - Self.tierGap).rounded(.down) - usable.minY
         // The chosen size, or less when the screen is too short or narrow for it.
         let chosen = size.scale(screenWidth: screenWidth ?? usable.width)
-        func fitting(_ root: CGFloat) -> CGFloat { min(chosen, usable.width / Self.width, available / (root + Self.baseReserve)) }
+        func fitting(_ root: CGFloat, _ room: CGFloat) -> CGFloat { min(chosen, usable.width / Self.width, room / (root + Self.baseReserve)) }
         var profile = CockpitAppearance.Profile.full, forcedClosed = false
-        var scale = fitting(905)
-        if scale < Self.minimumFullScale || forceCompact {
+        var scale = fitting(905, available)
+        if fitting(905, tierAvailable) < Self.minimumFullScale || forceCompact {
             // The short version, as before D51: open when its root fits, otherwise forced closed.
             profile = .compact
-            forcedClosed = usable.height - Self.menuBarGap - Self.baseReserve < 635
-            scale = fitting(forcedClosed ? 609 : 635)
+            forcedClosed = usable.height - Self.tierGap - Self.baseReserve < 635
+            scale = fitting(forcedClosed ? 609 : 635, available)
         }
         let fellBack = scale < chosen
         let closed = shutterClosed || forcedClosed

@@ -109,7 +109,8 @@ final class ShellLayoutTests: XCTestCase {
         let floor = try fit(710)
         XCTAssertEqual(floor.profile, .compact); XCTAssertEqual(floor.rootHeight, 635); XCTAssertEqual(floor.scale, 0.85)
         let lowest = try fit(711)
-        XCTAssertEqual(lowest.profile, .full); XCTAssertEqual(lowest.scale, 705 / 939, accuracy: 1e-9)
+        // The tier is judged as before (705 / 939 >= 75 %); CKP-SHELL-33's 10 pt gap then comes out of the scale (701 / 939).
+        XCTAssertEqual(lowest.profile, .full); XCTAssertEqual(lowest.scale, 701 / 939, accuracy: 1e-9)
     }
     /// D51/D60 Settings "Cockpit size" 80 / 85 (default) / 90 / 100 %: drawn at that size when it fits, otherwise
     /// smaller to fit the screen.
