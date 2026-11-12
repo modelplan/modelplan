@@ -50,13 +50,11 @@ test('COL-2.1-18 contrast: every colour reads on the night metal (3:1); on the d
   assert.ok(ratio(s.alt,night)>=2.5||ratio(s.alt,day)>=1.8,key+' alternate readable on one theme');
  }
 });
-test('COL-2.1-18 two-tone marks: black-and-white makers and makers near a reserved UI colour; coloured brands stay single-colour',()=>{
+test('COL-2.1-18 two-tone marks: only near-white and near-grey makers; coloured brands stay single solid colours',()=>{
  assert.deepEqual(trimOf('openai'),{kind:'light',ink:'#111214',base:'#f3f3f1'});
  assert.deepEqual(trimOf('glm'),{kind:'dark',ink:'#ffffff',base:'#1a1d21'});
- assert.equal(trimOf('kimi'),null);assert.equal(trimOf('google'),null);assert.equal(trimOf('claude').kind,'light');// orange within 11 of the alert red
- assert.equal(trimOf('openai','#939393'),null);
+ assert.equal(trimOf('kimi'),null);assert.equal(trimOf('google'),null);assert.equal(trimOf('claude'),null);assert.equal(trimOf('minimax'),null);assert.equal(trimOf('openai','#939393'),null);
  assert.equal(trimForColour('#ececec').kind,'light');assert.equal(trimForColour('#b9c2cc').kind,'dark');assert.equal(trimForColour('#007cff'),null);
- // Every reserved UI colour is a plain six-digit colour; a maker within the collision distance of one gets a trim.
  for(const c of RESERVED_UI)assert.match(c,/^#[0-9a-f]{6}$/);
- for(const [key,s] of Object.entries({...MAKERS,...TOOLS}))if(RESERVED_UI.some(r=>deltaE(s.colour,r)<COLLISION_DELTA_E))assert.ok(trimOf(key),key+' is close to a UI colour and needs a trim');
+ for(const [key,s] of Object.entries({...MAKERS,...TOOLS}))if(RESERVED_UI.some(r=>deltaE(s.colour,r)<COLLISION_DELTA_E))assert.ok(trimOf(key),key+' is close to UI white and needs a trim');
 });

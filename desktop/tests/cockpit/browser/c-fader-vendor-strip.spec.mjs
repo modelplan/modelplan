@@ -20,6 +20,6 @@ test('CKP-FAD-03 top-edge vendor strip splits into a segment per subscription',a
  for(const strip of strips){expect(strip.top).toBeLessThanOrEqual(3.5);expect(strip.height).toBeCloseTo(3,0);expect(strip.edge).toBe(true);}
  const [first,second]=strips[0].segments;
  expect(first.width).toBeCloseTo(second.width,0);
- // OpenAI is black-and-white and Claude's orange sits close to the alert red: both bands are the brand colour with an ink trim.
- expect(first.tone).toBe('light');expect(first.image).toContain('linear-gradient');expect(second.tone).toBe('light');expect(second.image).toContain('linear-gradient');
+ // OpenAI is black-and-white: brand colour over an ink trim (two-tone); Claude stays one solid brand colour.
+ expect(first.tone).toBe('light');expect(first.image).toContain('linear-gradient');expect(second.tone).toBeNull();expect(second.paint).toBe('rgb(217, 119, 87)');
 });

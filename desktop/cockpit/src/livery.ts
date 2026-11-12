@@ -39,19 +39,18 @@ export function deltaE(a:string,b:string):number {
  return Math.sqrt((dL/Sl)**2+(dC/Sc)**2+(dH/Sh)**2+Rt*(dC/Sc)*(dH/Sh));
 }
 
-/** Colours the cockpit itself uses for state (UI white ink, trial blue, alert red, caution amber, OK teal, star gold): a maker
- * mark must not read as one of them. */
-export const RESERVED_UI=['#f0f2f4','#e9edf0','#9fd2ff','#ef4444','#eac17b','#5ad9ba','#d4b994'] as const;
+/** UI white inks of the cockpit: a near-white or near-grey maker mark must not read as one of them. Coloured brands stay
+ * single solid colours (state colours live on lamps and text, not on identity marks). */
+export const RESERVED_UI=['#f0f2f4','#e9edf0'] as const;
 export type Trim={readonly kind:'light'|'dark';readonly ink:string;readonly base:string};
 const chroma=(hex:string)=>Math.hypot(lab(hex)[1],lab(hex)[2]);
 const luma=(hex:string)=>lab(hex)[0];
 /** The two-tone treatment of a maker mark drawn in its brand colour, the way the website's rockets draw it (shared table
- * base/ink/trim, not a different hue): black-and-white makers (OpenAI "white with black trim", Z.ai "dark with white trim")
- * and makers whose colour is within COLLISION_DELTA_E of a reserved UI colour. Coloured makers stay single-colour. */
+ * base/ink/trim, not a different hue): near-white and near-grey makers (OpenAI "white over black", Z.ai "dark with a white
+ * edge"). Coloured makers stay single-colour. */
 export function trimOf(vendorKey:string|null|undefined,shown?:string):Trim|null {
  const shade=shadeOf(vendorKey);if(!shade||(shown!==undefined&&shown!==shade.colour))return null;
- const neutral=chroma(shade.colour)<12,reserved=RESERVED_UI.some(r=>deltaE(shade.colour,r)<COLLISION_DELTA_E);
- if(!neutral&&!reserved)return null;
+ if(chroma(shade.colour)>=12)return null;
  const base=shade.base??shade.colour,ink=shade.trim??shade.ink??(luma(shade.colour)>50?'#111214':'#ffffff');
  return {kind:luma(base)>50?'light':'dark',ink,base};
 }

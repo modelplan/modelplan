@@ -28,10 +28,10 @@ test('COL-2.1-18 Claude, GLM and Kimi keys carry the shared brand colours; GLM i
 test('COL-2.1-18 GLM next to Codex: both are black-and-white, told apart by their two-tone trim, not by hue',async({page})=>{
  await open(page,['openai','claude','glm']);
  expect((await keys(page)).slice(0,3).map(k=>k.v)).toEqual(['#ececec','#d97757','#b9c2cc']);
- expect(await page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.slice(0,3).map(e=>e.dataset.tt??null))).toEqual(['light','light','dark']);
+ expect(await page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.slice(0,3).map(e=>e.dataset.tt??null))).toEqual(['light',null,'dark']);
  // Colour-only marks of OpenAI (white, black trim) and Z.ai (dark, white trim) differ from each other and from plain UI white.
  const [a,b]=await page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.slice(0,3).filter((e,i)=>i!==1).map(e=>getComputedStyle(e).backgroundImage));
- // Claude's orange is within a few units of the alert red, so it is drawn with its ink trim too.
+ expect(await page.locator('.eng-keys .ek .bl').nth(1).evaluate(e=>getComputedStyle(e).backgroundImage)).toBe('none');
  expect(a).toContain('linear-gradient');expect(b).toContain('linear-gradient');expect(a).not.toBe(b);
 });
 
