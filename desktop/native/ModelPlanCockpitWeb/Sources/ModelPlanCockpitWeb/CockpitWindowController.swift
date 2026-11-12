@@ -4,7 +4,9 @@ import ModelPlanWire
 import WebKit
 import QuartzCore
 
-public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, deadlineReceiptTimeout, visibilityReceiptTimeout, appearanceWaitTimeout, deadlineConvergence, localEncoding, deliveryBacklog }
+public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, deadlineReceiptTimeout, visibilityReceiptTimeout, appearanceWaitTimeout, deadlineConvergence, localEncoding, deliveryBacklog
+  /// G3-95: the bundled cockpit could not serve a file it admitted earlier (removed or changed since). A reinstall problem.
+  case bundleResource }
 
 // WebKit's module CORS fetch requires NSHTTPURLResponse header fields, even
 // for a custom scheme. Only public, hash-pinned static files use this response;
@@ -62,6 +64,8 @@ public enum CockpitBridgeDiagnostic: String {
 final class BundleScheme: NSObject, WKURLSchemeHandler {
   let bundle: VerifiedCockpitBundle
   let observed: ((String) -> Void)?
+  /// Called on the main thread when a request for a bundled file failed.
+  var failed: (() -> Void)?
   init(_ bundle: VerifiedCockpitBundle, observed: ((String) -> Void)? = nil) { self.bundle = bundle; self.observed = observed }
   func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
     do {
@@ -70,7 +74,7 @@ final class BundleScheme: NSObject, WKURLSchemeHandler {
       task.didReceive(result.response)
       task.didReceive(result.data)
       task.didFinish()
-    } catch { task.didFailWithError(CockpitBundleError.integrity) }
+    } catch { task.didFailWithError(CockpitBundleError.integrity); failed?() }
   }
   func webView(_ webView: WKWebView, stop task: any WKURLSchemeTask) {}
 }
@@ -468,10 +472,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let config = WKWebViewConfiguration()
     config.websiteDataStore = .nonPersistent()
     #if MODELPLAN_TEST_ONLY_SPI
-    config.setURLSchemeHandler(BundleScheme(bundle, observed: verificationResource), forURLScheme: "modelplan-cockpit")
+    let scheme = BundleScheme(bundle, observed: verificationResource)
     #else
-    config.setURLSchemeHandler(BundleScheme(bundle), forURLScheme: "modelplan-cockpit")
+    let scheme = BundleScheme(bundle)
     #endif
+    // WebKit calls the handler on the main thread, and before the navigation failure that follows it, so the cause is
+    // the bundle's, not a generic navigation failure (G3-95).
+    scheme.failed = { [weak self] in MainActor.assumeIsolated { self?.fail(.bundleResource) } }
+    config.setURLSchemeHandler(scheme, forURLScheme: "modelplan-cockpit")
     proxy.owner = self
     config.userContentController.add(proxy, name: "cockpit")
     #if MODELPLAN_TEST_ONLY_SPI
