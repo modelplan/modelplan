@@ -20,7 +20,6 @@ export const vendorPalette:Readonly<Record<string,{colour:string;logo:string}>>=
 export {NEUTRAL};
 /** The members' identity colours for one view, in member order: brand colours, with the collision rule applied (COL-2.1-18). */
 export const memberColours=(members:readonly {readonly key:string;readonly row:{readonly vendorKey:string|null}}[]):Map<string,string>=>{const colours=resolveColours(members.map(m=>m.row.vendorKey));return new Map(members.map((m,i)=>[m.key,colours[i]!]));};
-export const memberColour=(m:{readonly row:{readonly vendorKey:string|null}}|null|undefined)=>m?.row.vendorKey&&Object.hasOwn(vendorPalette,m.row.vendorKey)?vendorPalette[m.row.vendorKey]!.colour:NEUTRAL;
 
 /** The member a session belongs to, or null when that cannot be said. */
 export function sessionMember(members:readonly Member[],session:Pick<Session,'source'|'subscriptionRef'>):Member|null {

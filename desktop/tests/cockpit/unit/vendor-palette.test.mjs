@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // COL-2.1-15: identity colours of the vendors whose logo is grey or white stay near their real brand colours.
-// The palette is read through its production consumer (memberColour, which paints the engine key, the fader and the
-// session lamp), not by calling a private table.
+// The palette is read through its production consumer (vendorPalette; surfaces with several makers go through memberColours and its collision rule), not by calling a private table.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {memberColour,vendorPalette} from '../../../cockpit/.tmp/compiled/src/session-binding.js';
-const colourOf=vendorKey=>memberColour({row:{vendorKey}});
-test('COL-2.1-15 Cursor, Copilot and OpenCode carry their brand-near accents through memberColour',()=>{
+import {brandColour} from '../../../cockpit/.tmp/compiled/src/livery.js';
+import {vendorPalette} from '../../../cockpit/.tmp/compiled/src/session-binding.js';
+const colourOf=vendorKey=>vendorPalette[vendorKey]?.colour??brandColour(vendorKey);
+test('COL-2.1-15 Cursor, Copilot and OpenCode carry their brand-near accents through the palette',()=>{
  assert.equal(colourOf('cursor'),'#f79dcb');
  assert.equal(colourOf('copilot'),'#c08cff');
  assert.equal(colourOf('opencode'),'#b5d65a');

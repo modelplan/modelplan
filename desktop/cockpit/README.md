@@ -175,3 +175,8 @@ table: `livery-shared.json` stays a verbatim copy of the website's `brandLivery.
 still demands identity with it, and the website colour stays in the generated table as `rocket`. Cursor is an app-only tool accent with no
 rocket row. Anything that paints a rocket (launch-field scene developer colours, porthole stills) uses `rocketColour()`, never `brandColour()`.
 The private table is not changed for Set 1.
+
+`app/livery.css` declares the `--mp-<maker>` developer variables for external or private visual packages appended after the frozen
+`official-visuals/theme.css` (`build.mjs`); nothing in this repo reads them, so the public build's pixels do not depend on that file.
+Contrast floors: night marks are at least 3:1 on the night metal (the lowest are Meta 3.22, Zhipu 3.25, DeepSeek 3.90, MiniMax 4.08); the
+enforced bar is the 3:1 in `livery.test.mjs`. Day marks (40% toward black) are at least 3.4:1.
