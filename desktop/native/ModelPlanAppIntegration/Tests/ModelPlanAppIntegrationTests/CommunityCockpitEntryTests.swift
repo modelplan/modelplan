@@ -549,12 +549,15 @@ final class CommunityCockpitEntryTests:XCTestCase {
         await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:wire),delivery:context))))
         let payload=try XCTUnwrap(surface.fieldPayload())
         XCTAssertTrue(payload.contains("synthetic-model"));XCTAssertFalse(payload.contains("subscriptionRef"),"Only public model data crosses")
+        XCTAssertTrue(payload.contains(#""lowPower":"#),"D63: the payload says whether Low Power Mode is on")
+        XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(lowPower:true)).contains(#""lowPower":true"#))
+        XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(lowPower:false)).contains(#""lowPower":false"#))
         XCTAssertTrue(payload.contains(#""focus":null"#) || !payload.contains(#""focus""#),"No rocket clicked, no focus")
         XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(focusName:"Synthetic")).contains(#""focus":"synthetic-model""#),"D63: the clicked rocket's name resolves to its published ID")
         XCTAssertFalse(try XCTUnwrap(surface.fieldPayload(focusName:"Not published")).contains("Not published"),"An unknown name focuses nothing")
         // CKP-PORT-11D: the payload is exactly presentation plus published models; no account or local field is in it.
         let object=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(payload.utf8)) as? [String:Any])
-        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","models","mine","focus"]),"only presentation and published models: \(object.keys.sorted())")
+        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","lowPower","models","mine","focus"]),"only presentation and published models: \(object.keys.sorted())")
         for forbidden in ["account","email","subscriptionRef","usedPercent","remaining","projectName","token"] { XCTAssertFalse(payload.contains(forbidden),"no \(forbidden) in the field payload") }
         surface.handle(.openField)
         XCTAssertTrue(surface.fieldIsOpen)

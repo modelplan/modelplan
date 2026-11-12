@@ -354,7 +354,7 @@ struct CockpitUnavailableNotice {
     /// Public model data only: the launch field never receives personal readings. The official page is
     /// the only one that asks; a community bundle has no field page, so the panel is not offered.
     private struct FieldPayload:Encodable {
-        let language:String,reduceMotion:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
+        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
     }
     private var fieldPanel:CockpitFieldPanel?
     /// G3-80 seams: where the pointer is, the cockpit's frame and the displays the field is placed on.
@@ -365,11 +365,12 @@ struct CockpitUnavailableNotice {
     var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
     /// `focusName`: the published display name of a rocket clicked in the porthole still (D63); an unknown name
     /// focuses nothing. Only the matching public model ID crosses.
-    func fieldPayload(focusName:String?=nil) -> String? {
+    /// `lowPower` is the Low Power Mode state at open (D63): the scene mounts quiet and on demand when it is on.
+    func fieldPayload(focusName:String?=nil,lowPower:Bool=ProcessInfo.processInfo.isLowPowerModeEnabled) -> String? {
         guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
         let mine=details.publication?.models.map(\.id) ?? []
         let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:focus)
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -388,8 +389,9 @@ struct CockpitUnavailableNotice {
         }
     }
     private func openField(focusName:String?=nil) {
-        guard let bundle=owner.verifiedBundle,let payload=fieldPayload(focusName:focusName) else { return }
+        guard let bundle=owner.verifiedBundle else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
+        guard let payload=fieldPayload(focusName:focusName,lowPower:panel.isLowPower) else { return }
         if let fieldScreens { panel.screens=fieldScreens }
         // Build 14c (G3-80): on the cockpit's display. The intent does not say whether a click or a key opened it, so
         // the pointer counts only while it is over the cockpit (macrev2-845-2).
