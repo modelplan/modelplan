@@ -290,3 +290,7 @@ dl.ss{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 6px;margin:2
 .dk-mfd .pc-fastband{stroke:none;opacity:.13}.dk-mfd .pc-fastband.pc-cost{fill:var(--pc-violet)}.dk-mfd .pc-fastband.pc-time{fill:var(--lcd-muted)}
 .dk-mfd .pc-line.pc-std{opacity:.4}
 .dk-mfd .cmp-chart .pc-up{fill:var(--pc-violet)}.dk-mfd .cmp-chart .pc-up-l{font:8px var(--f-lcd);fill:var(--pc-violet)}
+.dk-mfd .pc-gap{fill:var(--pc-glass)}.dk-mfd .pc-shade{fill:var(--pc-glass);opacity:.55}
+.dk-mfd .pc-ruler{fill:var(--lcd-muted)}
+.dk-mfd .cmp-bars.lane-3 .pc-t0{stop-color:#4aa3ff}.dk-mfd .cmp-bars.lane-3 .pc-t1{stop-color:#3a8df0;stop-opacity:.9}
+.dk-mfd .cmp-bars.lane-3 .pc-glow.trial rect{fill:#4aa3ff}

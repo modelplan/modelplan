@@ -102,7 +102,7 @@ test('CKP-MFD-33 notches: nine cuts every 10 %, the one at 50 % at full height, 
  }
 });
 
-test('CKP-MFD-33 trial higher: the tube splits into two lanes from 0, real on top (5 px) and the trial blue below (3 px); the trial column is tinted',async({page})=>{
+test('CKP-MFD-33 trial higher: the tube splits into two lanes from 0, real on top (4.5 px), a 1.5 px glass gap and the trial blue below (3 px); the trial column is tinted',async({page})=>{
  await open(page);
  const screen=await openSol(page);
  await screen.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
@@ -110,7 +110,7 @@ test('CKP-MFD-33 trial higher: the tube splits into two lanes from 0, real on to
  const b=await bars(page);
  for(const k of ['abl','cost']){
   near(b[k].fill.w,SOL.High[k]);near(b[k].lane.w,SOL.XHigh[k]);near(b[k].lane.x,0,.005);
-  expect(b[k].fill.h).toBe(5);expect(b[k].lane.h).toBe(3);expect(b[k].lane.y).toBeGreaterThan(b[k].fill.y+b[k].fill.h-.01);
+  expect(b[k].fill.h).toBe(4.5);expect(b[k].lane.h).toBe(3);expect(b[k].lane.y).toBeGreaterThan(b[k].fill.y+b[k].fill.h-.01);
   expect(b[k].lane.w).toBeGreaterThan(b[k].fill.w);
   expect(b[k].numbers.map(n=>[n.role,n.text,n.equal])).toEqual([['current',pct(SOL.High[k]),false],['trial',pct(SOL.XHigh[k]),false]]);
  }
@@ -160,13 +160,13 @@ test('CKP-MFD-33 no "★<number>": every ★ sits above its bar, every number be
  await expect(screen.locator('svg.cmp-chart .pc-legend')).toContainText('耗时');
 });
 
-test('CKP-MFD-33 A1: the small cockpit keeps both bars (9 px tube, 4 + 2 px lanes) and a readable chart under them',async({page})=>{
+test('CKP-MFD-33 A1: the small cockpit keeps both bars (9 px tube, 3.5 + 1.5 + 2 px lanes) and a readable chart under them',async({page})=>{
  await open(page,{tier:'compact',height:640});
  const screen=await openSol(page);
  let b=await bars(page);near(b.abl.fill.w,SOL.High.abl);near(b.cost.fill.w,SOL.High.cost);
  expect(b.abl.track.h).toBe(9);expect(b.abl.fill.h).toBe(7);
  await screen.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
- b=await bars(page);expect(b.abl.fill.h).toBe(4);expect(b.abl.lane.h).toBe(2);
+ b=await bars(page);expect(b.abl.fill.h).toBe(3.5);expect(b.abl.lane.h).toBe(2);
  const sizes=await screen.evaluate(s=>({bars:s.querySelector('svg.cmp-bars').getBoundingClientRect().height,
   chart:s.querySelector('svg.cmp-chart')?.getBoundingClientRect().height??0,lines:s.querySelectorAll('svg.cmp-chart .pc-line').length}));
  expect(sizes.bars).toBe(58);expect(sizes.chart).toBeGreaterThanOrEqual(50);expect(sizes.lines).toBe(3);

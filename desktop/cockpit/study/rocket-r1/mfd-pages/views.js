@@ -66,7 +66,8 @@ const BAR_H = 58;
 // blue "="; a fast value past 100 % pins to the end with › and prints the exact number. Every effort segment is a
 // control (hover previews it, click tries it). Demo v12 (owner 11-12: option B with the notch divisions).
 let barUid = 0;
-const STAR_MODE = 'a';
+const STAR_MODE = 'a', LANE_MODE = '3', DIV_MODE = 'notch';
+// Lane treatment (ui.laneMode): 1 = lanes separated only by the track tint, 2 = 1 px glass gap, 3 = 1.5 px glass gap and a deeper trial blue, 4 = 1 px gap and a dark hairline on the trial lane's top edge. Divisions (ui.divMode): notch | ruler.
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const BAR_RECT = (x, y, w, h, cls, extra = '') => w > .05 ? `<rect${cls ? ` class="${cls}"` : ''} x="${(+x).toFixed(2)}" y="${(+y).toFixed(2)}" width="${(+w).toFixed(2)}" height="${(+h).toFixed(2)}"${extra}/>` : '';
 // One number with a small %, centred on x; pre = a small blue "=" (the trial equals the current).
@@ -78,7 +79,7 @@ function barsSvg(m, s, cols, W, ui) {
   const {L, E} = edges(ui, W), cmp = !!ui.compact, TH = cmp ? 9 : 11, inset = 1, rT = 3, ix0 = L + inset, ix1 = E - inset;
   const X = v => ix0 + (ix1 - ix0) * clamp01(v), id = 'eb' + (++barUid), rowH = BAR_H / 2;
   const cur = s.cur ? shareOfTop(m, cols.C) : null, trial = s.trying ? shareOfTop(m, cols.T) : null, rec = shareOfTop(m, cols.R);
-  const starMode = ui.starMode || STAR_MODE, speedFast = s.trying ? s.trialFast : s.curFast;
+  const starMode = ui.starMode || STAR_MODE, laneMode = ui.laneMode || LANE_MODE, divMode = ui.divMode || DIV_MODE, speedFast = s.trying ? s.trialFast : s.curFast;
   const at = l => shareOfTop(m, colOf(m, s.tier, l, speedFast));
   let defs = '', g = '', hit = '';
   [['abl', 'mfd.pctAbility'], ['cost', 'mfd.pctCost']].forEach(([k, name], i) => {
@@ -98,17 +99,19 @@ function barsSvg(m, s, cols, W, ui) {
     let f = '', glow = '';
     const gl = (a, z, y, h, cls) => `<g class="pc-glow ${cls}" filter="url(#${id}g)">${BAR_RECT(a, y, z - a, h, '')}</g>`;
     if (tr) {
-      const lr = cmp ? 4 : 5, lt = ih - lr - 1;
+      const gap = laneMode === '3' ? 1.5 : 1, lr = laneMode === '3' ? (cmp ? 3.5 : 4.5) : cmp ? 4 : 5, lt = ih - lr - gap;
       if (vb != null) { glow += gl(ix0, xc, iy, lr, 'real'); f += BAR_RECT(ix0, iy, xc - ix0, lr, 'pc-fill', ` fill="url(#${id}${k})" data-v="${vb}"`) + BAR_RECT(ix0, iy, xc - ix0, 1, 'pc-hi') + BAR_RECT(xc - 1, iy, 1, lr, 'pc-cap'); }
-      glow += gl(ix0, xt, iy + lr + 1, lt, 'trial');
-      f += BAR_RECT(ix0, iy + lr + 1, xt - ix0, lt, 'pc-lane-trial', ` fill="url(#${id}t)" data-v="${vt}"`) + BAR_RECT(xt - 1, iy + lr + 1, 1, lt, 'pc-cap-trial');
+      glow += gl(ix0, xt, iy + lr + gap, lt, 'trial');
+      f += BAR_RECT(ix0, iy + lr + gap, xt - ix0, lt, 'pc-lane-trial', ` fill="url(#${id}t)" data-v="${vt}"`) + BAR_RECT(xt - 1, iy + lr + gap, 1, lt, 'pc-cap-trial')
+        + (laneMode === '1' ? '' : BAR_RECT(ix0, iy + lr, Math.max(xc, xt) - ix0, gap, 'pc-gap')) + (laneMode === '4' ? BAR_RECT(ix0, iy + lr + gap, xt - ix0, 1, 'pc-shade') : '');
     } else if (vb != null) {
       glow += gl(ix0, xc, iy, ih, 'real');
       f += BAR_RECT(ix0, iy, xc - ix0, ih, 'pc-fill', ` fill="url(#${id}${k})" data-v="${vb}"`) + BAR_RECT(ix0, iy, xc - ix0, 1, 'pc-hi');
     }
     // notches every 10 % (50 % at full height): cut into the tube, glass where the fill is, tinted where it is not
     const fillEnd = Math.max(vb != null ? xc : 0, tr ? xt : 0), nh = cmp ? 1.5 : 2;
-    for (let p = 1; p < 10; p++) { const x = X(p / 10), on = x < fillEnd - .5, c = `pc-notch${on ? ' on' : ''}${p === 5 ? ' mid' : ''}`;
+    if (divMode === 'ruler') for (let p = 0; p < 10; p++) { const x = X(p / 10), h = p % 5 ? 1.8 : 3; b += box(x - .5, y0 - 1 - h, 1, h, 'pc-ruler', ` opacity="${p % 5 ? .5 : .8}"`); }
+    else for (let p = 1; p < 10; p++) { const x = X(p / 10), on = x < fillEnd - .5, c = `pc-notch${on ? ' on' : ''}${p === 5 ? ' mid' : ''}`;
       f += p === 5 ? box(x - .5, iy, 1, ih, c, ` data-p="${p * 10}"`) : box(x - .5, iy, 1, nh, c, ` data-p="${p * 10}"`) + box(x - .5, iy + ih - nh, 1, nh, c, ` data-p="${p * 10}"`); }
     b += glow + `<g clip-path="url(#${clip})">${f}</g>`;
     // the 100 % stop: the end of the scale is never in doubt
@@ -141,7 +144,7 @@ function barsSvg(m, s, cols, W, ui) {
   });
   const shown = cur ? [s.cur, cur] : trial ? [s.trial, trial] : [m.rec, rec];
   const aria = t('mfd.pctBarsAria', {m: m.short, e: shown[0], a: pctText(shown[1].abl), c: pctText(shown[1].cost)});
-  return `<svg class="cmp-bars" viewBox="0 0 ${W} ${BAR_H}" width="${W}" height="${BAR_H}" role="img" aria-label="${esc(aria)}"><defs>${defs}</defs>${g}${hit}</svg>`;
+  return `<svg class="cmp-bars lane-${laneMode}" viewBox="0 0 ${W} ${BAR_H}" width="${W}" height="${BAR_H}" role="img" aria-label="${esc(aria)}"><defs>${defs}</defs>${g}${hit}</svg>`;
 }
 
 // The line chart under the bars: ability (white), cost (violet) and time (grey dotted) across the published efforts,
