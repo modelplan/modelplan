@@ -27,7 +27,7 @@ import ModelPlanSettings
             "units": ["ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"],
             "models": [["id": "model", "name": "Model", "developerId": "dev", "lineageId": "line", "lineageStatus": "current", "defaultSelected": true]], "lineups": []]
         var assembly = SelectionAssembly()
-        surface.render(selection: assembly.evaluate(feeds: .init(publication: try FeedDecoder.publication(JSONSerialization.data(withJSONObject: wire)), personal: nil, personalUsable: false), scope: .all, language: .english, now: Date()), publishedAt: nil, now: Date())
+        surface.render(selection: assembly.evaluate(feeds: .init(publication: try FeedDecoder.publication(JSONSerialization.data(withJSONObject: wire)), personal: nil, personalUsable: false), scope: .all, language: .chinese, now: Date()), publishedAt: nil, now: Date())
         surface.resumePresentation()
         return (provider, surface, help, scheduler)
     }
