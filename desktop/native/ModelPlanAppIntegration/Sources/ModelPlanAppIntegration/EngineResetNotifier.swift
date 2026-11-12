@@ -65,7 +65,8 @@ import ModelPlanSettings
         guard delivers else { return }
         applyQuotaResets(snapshot)
         guard case .available(let events)=EngineRowsEventDecoder.decode(snapshot.rows) else { return }
-        for event in events {
+        // D166: a forecast never notifies; exactly one notification follows its confirmation.
+        for event in events where event.status == "confirmed" {
             let key = event.rowID + "#" + event.id
             guard pending.insert(key).inserted else { continue }
             Task { @MainActor [weak self] in await self?.sendIfAllowed(event, key: key) }
@@ -102,7 +103,7 @@ import ModelPlanSettings
         // status after suspension so a confirmation can replace an in-flight announcement.
         guard attachment != nil, let event = currentEvent(matching: observed, in: composition) else { return }
         let now = composition.currentDate()
-        guard event.publishedAt <= now, now < event.expiresAt else { return }
+        guard event.status == "confirmed", event.publishedAt <= now, now < event.expiresAt else { return }
         // A later confirmation can carry the same event ID beyond the announcement's expiry.
         // Keep delivered identities within the policy's existing bounded ledger.
         let notice = SettingsNotice(kind: .official, subscriptionID: event.rowID, episodeID: event.id,
@@ -110,9 +111,23 @@ import ModelPlanSettings
         guard consumer.delivery(for: notice, snapshot: snapshot, now: now) != nil,
               !wasDeliveredByPreviousVersion(notice, snapshot: snapshot, now: now) else { return }
         let english = snapshot.preferences.language == .english
+        let text = EngineResetEventWording(english: english).notification(event, rose: Self.localReadingRose(after: event, in: composition))
         await send(notice, identifier: "reset-" + event.rowID + "-" + notice.episodeID, snapshot: snapshot, now: now,
-                   title: english ? "Official extra reset" : "官方额外重置",
-                   body: english ? "The public status does not confirm a personal quota reset." : "公开状态不代表个人额度已重置。")
+                   title: text.title, body: text.body)
+    }
+    /// A current reading of the event's row whose window restarted after the confirmation (direct resets only;
+    /// extra resets wait for the user to redeem them). An observation for the wording, never a confirmation.
+    static func localReadingRose(after event: EngineResetEvent, in composition: EngineDockMenuComposition) -> Bool {
+        guard !event.isResetCredit else { return false }
+        let confirmedAt = event.confirmedAt ?? event.publishedAt
+        return composition.accountMembers.members.contains { member in
+            member.rowID == event.rowID && (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true) &&
+            member.account.valueState == .current && member.account.windows.contains { window in
+                guard window.current, let observed = EngineResetTimestampContract.date(window.observedAt),
+                      let resets = EngineResetTimestampContract.date(window.resetsAt) else { return false }
+                return observed > confirmedAt && resets > confirmedAt
+            }
+        }
     }
     /// "Quota reset" (Settings kind `.reset`): a current reading of a member window reports a
     /// later reset instant than the one read before, after that earlier instant passed.

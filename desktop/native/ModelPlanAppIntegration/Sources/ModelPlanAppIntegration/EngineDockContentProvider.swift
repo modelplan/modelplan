@@ -107,6 +107,10 @@ public enum EngineDeadlineFacts {
             guard matches else { continue }
             includeDate(event.publishedAt)
             includeDate(event.expiresAt)
+            // D166: the confirmed dot ends before the event does; recompute then on the existing deadline path.
+            if event.status == "confirmed" {
+                includeDate((event.confirmedAt ?? event.publishedAt).addingTimeInterval(DockResetSignal.confirmedDotLifetime))
+            }
         }
         if let next { return .scheduled(next, hasUnknownDeadline: unknown) }
         return unknown ? .unknown : .none
@@ -179,20 +183,29 @@ public enum EngineDeadlineFacts {
             var signal=DockSubscriptionSignal(id:member.id);signal.dataState=input.dataState
             if let event=preferred {
                 if event.status == "confirmed" {
-                    var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:event.publishedAt,expiresAt:event.expiresAt)
-                    reset.restartedReading=member.account.valueState == .current && member.account.windows.contains { window in
+                    let confirmedAt=event.confirmedAt ?? event.publishedAt
+                    var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:confirmedAt,expiresAt:event.expiresAt)
+                    reset.kind=event.isResetCredit ? .resetCredit : .directReset
+                    // A local reading that restarted after the confirmation is an observation, not proof of the
+                    // public event; reset credits never restart a window, so they never claim one.
+                    reset.restartedReading = !event.isResetCredit && member.account.valueState == .current && member.account.windows.contains { window in
                         guard window.current else { return false }
                         guard let observed=date(window.observedAt),let resets=date(window.resetsAt) else { return false }
-                        return observed > event.publishedAt && resets > event.publishedAt
+                        return observed > confirmedAt && resets > confirmedAt
                     }
                     signal.reset=reset
-                } else { signal.reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt) }
+                } else {
+                    var reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt)
+                    reset.kind=event.isResetCredit ? .resetCredit : .directReset
+                    signal.reset=reset
+                }
             }
             passSignals.append(signal)
             if let event = preferred {
+                let wording = EngineResetEventWording(english: english)
                 reserve.append(.init(id: "reset-event:" + event.id + ":" + event.status, kind: .notice,
-                    label: "↺ " + (english ? "Extra reset" : "额外重置"), value: resetEventTitle(event, restarted: signal.reset?.restartedReading == true),
-                    detail: english ? "A notice is not your reset" : "公告不等于你的账户已重置",
+                    label: wording.label(event), value: wording.title(event, now: context.now),
+                    detail: wording.detail(rose: signal.reset?.restartedReading == true),
                     pill: event.status == "confirmed" ? (english ? "Confirmed" : "已确认") : (english ? "Announced" : "已预告")))
             }
             let resetCount = resetCountRow(member, now: context.now)
@@ -332,22 +345,6 @@ public enum EngineDeadlineFacts {
         if let running = today?.runningSessions, running > 0 { parts.append(english ? "\(running) running" : "\(running) 个运行中") }
         return .init(id: "today", kind: .statistic, label: english ? "Today" : "今日", value: parts.joined(separator: " · "))
     }
-    private func resetEventTitle(_ event: EngineResetEvent, restarted: Bool) -> String {
-        if event.status == "confirmed" {
-            if restarted { return english ? "Reset confirmed" : "重置已确认" }
-            return english ? "Reset · awaiting reading" : "已重置 · 等读数"
-        }
-        if event.schedulePrecision == "deadline",
-           let from = event.scheduledFrom, from == event.scheduledThrough {
-            let components = Calendar.current.dateComponents([.hour, .minute], from: from)
-            if let hour = components.hour, let minute = components.minute {
-                let time = String(format: "%02d:%02d", hour, minute)
-                return english ? "Reset " + time + " announced" : "预告 " + time + " 重置"
-            }
-        }
-        return english ? "Public reset announced" : "已公告公开重置"
-    }
-
     private func resetEventLinks(_ event: EngineResetEvent) -> [DockCardLink] {
         let order = english
             ? [("original", "Original"), ("aihot", "AIHot"), ("official", "Official source"), ("publication", "Source")]

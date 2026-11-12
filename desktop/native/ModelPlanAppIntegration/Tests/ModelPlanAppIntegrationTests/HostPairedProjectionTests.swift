@@ -998,7 +998,10 @@ actor EntrySyntheticClient: EngineClient {
             XCTAssertFalse(dock.card.isHidden)
         }
         try await render(Self.rows(weekly: 75, sequence: 8, resetCardClock: wall, resetConfirmed: true))
-        XCTAssertTrue(text(dock.card).contains("已重置 · 等读数"))
+        // D166: a confirmation shows its time; the balance stays the local reading.
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("已确认 · ") })
+        XCTAssertTrue(text(dock.card).contains("余量以本机读数为准"))
+        XCTAssertTrue(text(dock.card).contains("↺ 额度重置"))
         XCTAssertFalse(text(dock.card).contains("预告 17:00 重置"))
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         try await render(Self.rows(weekly: 75, sequence: 9, resetCardClock: wall, resetConfirmed: true,
@@ -1007,7 +1010,8 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(text(dock.card).contains("exp in 12m · Reported subset · Details truncated · Last known reading"))
         try await render(Self.rows(weekly: 75, sequence: 10, resetCardClock: wall, resetConfirmed: true,
             resetFacts: .init(count: 1, expiresIn: -60, restarted: true)))
-        XCTAssertTrue(text(dock.card).contains("Reset confirmed"))
+        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Confirmed · ") })
+        XCTAssertTrue(text(dock.card).contains("Local reading rose · your balance is the local reading"), "a restarted local reading is shown as an observation")
         XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Resets 1") })
         XCTAssertTrue(text(dock.card).contains("expired"))
         let confirmedAction = try XCTUnwrap(dock.card.onOpenURL)

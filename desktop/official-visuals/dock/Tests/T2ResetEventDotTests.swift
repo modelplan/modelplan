@@ -73,29 +73,38 @@ final class T2ResetEventDotTests: XCTestCase {
         return (result.image, station.eventRect, skin.bounds)
     }
 
-    /// COL-2.1-09 / DOCK-3.7-01: an announced public reset (not yet in effect) is a hollow dot in the notice
-    /// blue #9FD2FF, a confirmed one a solid dot in the same blue. Both come from the production projection.
-    @MainActor func testAnnouncedResetDotUsesNoticeBlue() throws {
+    /// D166 (supersedes the blue of COL-2.1-09 / DOCK-3.7-01): an announced public reset (a forecast) is a hollow
+    /// dot in notice amber #EAC17B, a confirmed one a solid dot in notice green #34C759. Shapes keep their meaning.
+    /// Both come from the production projection, for a reset credit and a direct reset alike.
+    @MainActor func testAnnouncedResetDotIsAmberAndConfirmedIsGreen() throws {
         let now = Date(timeIntervalSince1970: 1_792_506_300)
         var signal = DockSubscriptionSignal(id: "member-a"); signal.dataState = .fresh
+        for kind in [DockResetSignal.Kind.resetCredit, .directReset] {
+            var announcedReset = DockResetSignal(id: "event", status: .announced, announcedAt: now.addingTimeInterval(-60), scheduledThrough: now.addingTimeInterval(3600))
+            announcedReset.kind = kind; signal.reset = announcedReset
+            let announced = try XCTUnwrap(DockNoticeProjection.selected(for: signal, at: now))
+            XCTAssertEqual(announced.tone, .amber); XCTAssertEqual(announced.shape, .hollow)
+            var confirmedReset = DockResetSignal(id: "event", status: .confirmed, confirmedAt: now.addingTimeInterval(-60))
+            confirmedReset.kind = kind; signal.reset = confirmedReset
+            let confirmed = try XCTUnwrap(DockNoticeProjection.selected(for: signal, at: now))
+            XCTAssertEqual(confirmed.tone, .green); XCTAssertEqual(confirmed.shape, .solid)
+        }
         signal.reset = DockResetSignal(id: "event", status: .announced, announcedAt: now.addingTimeInterval(-60), scheduledThrough: now.addingTimeInterval(3600))
         let announced = try XCTUnwrap(DockNoticeProjection.selected(for: signal, at: now))
-        XCTAssertEqual(announced.tone, .blue); XCTAssertEqual(announced.shape, .hollow)
         signal.reset = DockResetSignal(id: "event", status: .confirmed, confirmedAt: now.addingTimeInterval(-60))
         let confirmed = try XCTUnwrap(DockNoticeProjection.selected(for: signal, at: now))
-        XCTAssertEqual(confirmed.tone, .blue); XCTAssertEqual(confirmed.shape, .solid)
 
         let scale = 3.0
         let hollow = try renderOverflowDot(announced)
-        // Hollow: the ring (6 u diameter, 1.2 u stroke) is blue; its centre shows the dark backdrop, not blue.
+        // Hollow: the ring (6 u diameter, 1.2 u stroke) is amber; its centre shows the dark backdrop, not amber.
         let ringX = Int((hollow.eventRect.midX + 2.4 - hollow.bounds.minX) * scale), ringY = Int((hollow.eventRect.midY - hollow.bounds.minY) * scale)
         let ring = try sample(hollow.image, x: ringX, y: ringY)
-        XCTAssertEqual(ring.r, 159, accuracy: 3); XCTAssertEqual(ring.g, 210, accuracy: 3); XCTAssertEqual(ring.b, 255, accuracy: 3)
+        XCTAssertEqual(ring.r, 234, accuracy: 3); XCTAssertEqual(ring.g, 193, accuracy: 3); XCTAssertEqual(ring.b, 123, accuracy: 3)
         let hole = try sample(hollow.image, x: Int((hollow.eventRect.midX - hollow.bounds.minX) * scale), y: ringY)
-        XCTAssertLessThan(hole.b, 100, "the hollow dot's centre is the dark backdrop")
+        XCTAssertLessThan(hole.r, 100, "the hollow dot's centre is the dark backdrop")
         let solid = try renderOverflowDot(confirmed)
         let centre = try sample(solid.image, x: Int((solid.eventRect.midX - solid.bounds.minX) * scale), y: Int((solid.eventRect.midY - solid.bounds.minY) * scale))
-        XCTAssertEqual(centre.r, 159, accuracy: 3); XCTAssertEqual(centre.g, 210, accuracy: 3); XCTAssertEqual(centre.b, 255, accuracy: 3)
+        XCTAssertEqual(centre.r, 52, accuracy: 3); XCTAssertEqual(centre.g, 199, accuracy: 3); XCTAssertEqual(centre.b, 89, accuracy: 3)
     }
 
     /// DOCK-3.1-18a: event dots are a 12 u hit area, solid 5 u or hollow 6 u with a 1.2 u ring, and the open card's
