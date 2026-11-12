@@ -103,11 +103,6 @@ for(const [tier,height] of [['tall',890],['compact',640]]){
   await page.locator('.fd-strip[aria-label^="Synthetic lineup-1:"]').click();
   const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
   const key=screen.locator('.cmp-lad [data-mfd="try:Low"]');await key.click();
-  // CKP-FAD-18 (47c2b884): the trial note now shows in every shell size, so the compact screen has no room left for the
-  // chart while a trial is shown (the chart needs 34 px). The trial itself is still reached through the ladder key; the tall
-  // screen keeps the chart and its trial marker.
-  await expect(screen.locator('.cmp-lad .lad.try')).toHaveCount(1);await expect(screen.locator('.cmp-trial-note')).toHaveCount(1);
-  if(tier==='compact')return;
   await expect(screen.locator('svg.cmp-chart .cfg-trial')).not.toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>{const area=document.querySelector('[data-fill="cmp"]'),svg=area?.querySelector('svg.cmp-chart');if(!svg||!area.clientWidth)return null;return {width:Math.abs(svg.getBoundingClientRect().width-area.clientWidth)<=1,height:svg.getBoundingClientRect().height<=area.clientHeight+1};})).toEqual({width:true,height:true});
  });
