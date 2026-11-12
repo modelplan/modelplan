@@ -87,7 +87,7 @@ import ModelPlanWire
         // G3-45 (owner 11-08) supersedes the G3-19 one-line notice: the page lists each detected tool
         // with a checkbox, checked by default when it can be read (D27 keeps standard readers on), and
         // no per-path controls. Browser sessions and unrecognised paths are not offered here.
-        let toolBoxes = try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.") }
+        let toolBoxes = try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.firstRun.tool.") }
         XCTAssertEqual(Set(toolBoxes.map { $0.accessibilityIdentifier() }), ["scope.firstRun.tool.codex", "scope.firstRun.tool.cursor"],
                        "one checkbox per detected tool and nothing else")
         XCTAssertTrue(toolBoxes.allSatisfy { $0.state == .on }, "readable tools start checked")

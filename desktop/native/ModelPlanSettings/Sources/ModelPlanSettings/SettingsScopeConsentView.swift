@@ -31,6 +31,8 @@ import ModelPlanWire
     /// revoke / forget buttons) are behind a disclosure instead of filling the page.
     private let compactTools: Bool
     private var pathDetailsExpanded = false
+    private var notFoundExpanded = false
+    private var scanTimer: Timer?
     private var observer: UUID?
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
@@ -58,6 +60,7 @@ import ModelPlanWire
     }
     /// Retire this presentation before detaching it from the accepted-event sink.
     public func retirePresentation() {
+        scanTimer?.invalidate(); scanTimer = nil
         if let observer { controller.removeObserver(observer); self.observer = nil }
         for button in buttons {
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
@@ -150,22 +153,74 @@ import ModelPlanWire
         let header = NSStackView(); header.orientation = .horizontal; header.alignment = .firstBaseline
         header.setViews([heading], in: .leading); header.setViews([hint], in: .trailing)
         addArrangedSubview(header); header.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
-        let tools = controller.firstRunTools
-        if controller.facts == nil {
-            label(.init("Looking for tools on this Mac…", "正在查找本机的工具…"), secondary: true)
+        let tools = controller.firstRunListTools
+        let engine = controller.firstRunEngine
+        // Owner 11-12: the real count while the reader works, never a made-up bar.
+        if engine == .ready, !tools.isEmpty {
+            let progress = controller.firstRunProgress
+            hint.stringValue = (progress.done < progress.total ? FirstRunCopy.progress(done: progress.done, total: progress.total)
+                                                               : FirstRunCopy.found(tools.count)).value(language)
+        }
+        switch engine {
+        case .ready: break
+        case .starting: label(FirstRunCopy.engineStarting, secondary: true)
+        case .waiting(let seconds): label(FirstRunCopy.engineWaiting(seconds), secondary: true)
+        case .slow(let seconds): label(FirstRunCopy.engineSlow(seconds), secondary: true)
+        case .failed:
+            label(FirstRunCopy.engineFailed)
+            arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.engine")
+            line([synchronousButton(FirstRunCopy.retry, id: "scope.firstRun.engine.retry") { [weak self] in self?.controller.retryFirstRunEngine() }])
+        }
+        if engine != .ready, engine != .failed { arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.engine") }
+        if !controller.firstRunPresenceDone, controller.facts == nil {
+            label(FirstRunCopy.looking, secondary: true)
             arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.looking")
         } else if tools.isEmpty {
-            label(.init("No supported tools were found on this Mac. You can finish now.", "本机没有找到支持的工具，可以直接完成。"), secondary: true)
+            label(FirstRunCopy.emptyTitle)
             arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.none")
+            label(FirstRunCopy.emptyBody, secondary: true)
+            arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.none.detail")
+            line([synchronousButton(FirstRunCopy.lookAgain, id: "scope.firstRun.lookAgain") { [weak self] in self?.controller.lookAgainForTools() }])
         }
         for tool in tools { firstRunCard(tool) }
-        if !controller.firstRunChoiceSatisfied {
-            label(.init("Tick at least one tool to continue.", "请至少勾选一个工具。"))
+        let missing = controller.firstRunNotFound
+        if !missing.isEmpty, !tools.isEmpty || controller.firstRunPresenceDone {
+            let names = missing.map { Self.toolName($0).value(language) }
+            let summary = synchronousButton(FirstRunCopy.notFound(names: names), id: "scope.firstRun.notFound") { [weak self] in
+                guard let self else { return }
+                self.notFoundExpanded.toggle(); self.render()
+            }
+            summary.isBordered = false; summary.alignment = .left
+            summary.attributedTitle = NSAttributedString(string: summary.title, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor])
+            line([summary])
+            if notFoundExpanded {
+                label(FirstRunCopy.notFoundOpen, secondary: true)
+                label(.init(names.joined(separator: ", "), names.joined(separator: "、")), secondary: true)
+                arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.notFound.names")
+            }
+        }
+        if let block = controller.firstRunDoneBlock, block == .chooseOne {
+            label(FirstRunCopy.needOne)
             arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.pickOne")
         }
         // The three former small-print paragraphs in one (FR-9-11).
         label(FirstRunCopy.smallPrint, secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.import")
+        updateScanTimer()
+    }
+    /// The page counts seconds (the reader's wait, each tool's 15) while the scan is not settled; one timer step re-renders it.
+    private func updateScanTimer() {
+        let running = !controller.firstRunScanSettled
+        if running, scanTimer == nil {
+            scanTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+                MainActor.assumeIsolated {
+                    guard let self, self.observer != nil else { timer.invalidate(); return }
+                    self.controller.firstRunTick()
+                }
+            }
+        } else if !running {
+            scanTimer?.invalidate(); scanTimer = nil
+        }
     }
     /// Width of the right-hand column of a card: the readings, or Allow and Later.
     private static let cardRightWidth: CGFloat = 136, cardInset: CGFloat = 12, cardSpacing: CGFloat = 10
@@ -191,7 +246,8 @@ import ModelPlanWire
             guard let self else { return }
             self.controller.chooseFirstRunTool(id, chosen: !self.controller.isFirstRunToolChosen(id))
         }
-        box.setButtonType(.switch); box.title = ""; box.state = controller.isFirstRunToolChosen(id) ? .on : .off
+        // Before the reader's rows exist the row is the local presence check: ticked as it will be, but not yet changeable.
+        box.setButtonType(.switch); box.title = ""; box.state = controller.isFirstRunToolChosen(id) || controller.facts == nil ? .on : .off
         box.setAccessibilityLabel(Self.toolName(id).value(language))
         box.translatesAutoresizingMaskIntoConstraints = false
         box.widthAnchor.constraint(equalToConstant: Self.boxWidth).isActive = true
@@ -209,16 +265,27 @@ import ModelPlanWire
             column.addArrangedSubview(field); wrappingLabels.append(field)
             field.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         }
-        // An unsupported login is not read at all, so its card says only why (D52). A supported tool
-        // that is merely signed out still says what happens once the user signs in.
-        if tool.detected, tool.block != .unsupportedLogin, !tool.scopes.isEmpty {
-            line(tool.promptsKeychain ? FirstRunCopy.keychainLine : FirstRunCopy.detected, id: prefix + "reads." + id)
-        }
-        if let block = tool.block {
-            line(Self.blockLine(block, tool: id), id: prefix + "status." + id, color: .systemOrange)
-        } else if tool.detected, !tool.canRead {
-            // Only browser-session or unrecognised paths: never describe a read that will not happen.
-            line(Self.unreadableLine, id: prefix + "status." + id)
+        // Owner 11-12: each row shows its own step, so a slow tool never holds the others back.
+        let status = controller.firstRunToolStatus(id)
+        switch status {
+        case .finding: line(FirstRunCopy.finding, id: prefix + "reads." + id)
+        case .waitingForEngine: line(FirstRunCopy.waitingForReader, id: prefix + "reads." + id)
+        case .reading: line(FirstRunCopy.reading, id: prefix + "reads." + id)
+        case .slowReading(let seconds): line(FirstRunCopy.readingSlow(seconds), id: prefix + "reads." + id)
+        case .couldNotRead: line(FirstRunCopy.couldNotRead, id: prefix + "status." + id, color: .systemOrange)
+        case .notRead: line(FirstRunCopy.notRead, id: prefix + "reads." + id)
+        case .read, .readAfterDone, .signInNeeded, .unsupportedLogin, .notReadable:
+            // An unsupported login is not read at all, so its card says only why (D52). A supported tool
+            // that is merely signed out still says what happens once the user signs in.
+            if tool.detected, tool.block != .unsupportedLogin, !tool.scopes.isEmpty {
+                line(tool.promptsKeychain ? FirstRunCopy.keychainLine : FirstRunCopy.detected, id: prefix + "reads." + id)
+            }
+            if let block = tool.block {
+                line(Self.blockLine(block, tool: id), id: prefix + "status." + id, color: .systemOrange)
+            } else if tool.detected, !tool.canRead {
+                // Only browser-session or unrecognised paths: never describe a read that will not happen.
+                line(Self.unreadableLine, id: prefix + "status." + id)
+            }
         }
         let right = NSStackView(); right.orientation = .vertical; right.alignment = .trailing; right.spacing = 2
         right.translatesAutoresizingMaskIntoConstraints = false
@@ -229,6 +296,8 @@ import ModelPlanWire
             let later = synchronousButton(FirstRunCopy.later, id: prefix + "keychain.later", enabled: controller.canMutate) { [weak self] in self?.controller.chooseKeychainLater() }
             let choice = NSStackView(views: [allow, later]); choice.orientation = .horizontal; choice.spacing = 6
             right.addArrangedSubview(choice)
+        } else if status == .couldNotRead {
+            right.addArrangedSubview(synchronousButton(FirstRunCopy.retry, id: prefix + "tryAgain." + id) { [weak self] in self?.controller.retryFirstRunTool(id) })
         } else {
             for reading in controller.firstRunReadings(forTool: id) { right.addArrangedSubview(readingField(reading, tool: id)) }
         }

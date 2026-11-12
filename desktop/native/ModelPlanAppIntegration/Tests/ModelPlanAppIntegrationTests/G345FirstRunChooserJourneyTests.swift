@@ -452,7 +452,8 @@ private actor G345Engine: EngineClient {
             XCTAssertNil(app.scopeConsentEntry.controller.facts)
             let window = try await firstRun(app)
             XCTAssertEqual(try text("scope.firstRun.heading", in: window), heading)
-            XCTAssertNotNil(try? find("scope.firstRun.looking", in: window, as: NSTextField.self), "still looking for tools")
+            // First run v1: the reader's start is said on the page (the local presence check lists rows meanwhile).
+            XCTAssertNotNil(try? find("scope.firstRun.engine", in: window, as: NSTextField.self), "the reader is still starting")
             XCTAssertTrue(try find("firstRun.subscriptions", in: window, as: NSView.self).isHiddenOrHasHiddenAncestor, "no subscriptions summary while loading")
             XCTAssertFalse(views(try XCTUnwrap(window.contentView)).compactMap { ($0 as? NSTextField)?.stringValue }.contains { $0 == "Subscriptions" || $0 == "订阅" })
             window.close()

@@ -102,7 +102,10 @@ import ModelPlanDock
             #else
             let prewarms = true
             #endif
-            if prewarms { owner.startPrewarm(applied: { [weak application] in application?.composition.latestSettings }) }
+            if prewarms {
+                application.releaseCockpitPrewarm = { [weak owner] in owner?.releasePrewarm() }
+                owner.startPrewarm(applied: { [weak application] in application?.composition.latestSettings })
+            }
         }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
@@ -177,13 +180,31 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
     /// CKP-SHELL-20 (owner D50): the hidden page starts with the saved appearance, so the first frame
     /// shown is already in the user's language and settings.
+    /// Owner 11-12 (E4): on a first launch (setup not finished) the prewarm waits so it does not compete with the reader
+    /// for the first seconds; the app releases it when the scan ends or the guide window is closed.
+    private(set) var prewarmHeld = false
+    private var prewarmReleaseRequested = false
+    private var prewarmApplied: (@MainActor () -> SettingsApplication?)?
     func startPrewarm(applied: @escaping @MainActor () -> SettingsApplication?) {
+        prewarmApplied = applied
         Task { @MainActor [weak self] in
             guard let self else { return }
             let snapshot = await settingsStore.snapshot()
-            if coordinator?.presented != true { adoptAppearance(snapshot, applied: applied()) }
-            coordinator?.prewarmEnabled = true
+            if snapshot.preferences.onboarding.completed == false, !prewarmReleaseRequested { prewarmHeld = true; return }
+            beginPrewarm(snapshot)
         }
+    }
+    func releasePrewarm() {
+        guard prewarmHeld else { prewarmReleaseRequested = true; return }
+        prewarmHeld = false
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            beginPrewarm(await settingsStore.snapshot())
+        }
+    }
+    private func beginPrewarm(_ snapshot: SettingsSnapshot) {
+        if coordinator?.presented != true { adoptAppearance(snapshot, applied: prewarmApplied?()) }
+        coordinator?.prewarmEnabled = true
     }
     func adoptAppearance(_ snapshot: SettingsSnapshot, applied: SettingsApplication?) {
         let theme:CockpitAppearance.Theme

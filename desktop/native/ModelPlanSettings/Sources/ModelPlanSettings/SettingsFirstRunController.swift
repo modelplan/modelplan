@@ -16,6 +16,14 @@ import AppKit
     /// FR-9-11: "Learn more ›" under the FR-9-03 line; the host opens Settings › Data & Privacy.
     let learnMoreButton = NSButton()
     public var onLearnMore: (@MainActor () -> Void)?
+    /// Owner 11-12: why Done cannot be pressed yet, always in words (the reader is still starting).
+    let doneReason = NSTextField(wrappingLabelWithString: "")
+    /// E2: the local presence check that lists the tool rows before the reader answers. The app may replace it.
+    public var presence: FirstRunPresenceDetector = .live()
+    /// Owner 11-12 (answer 1): the window was closed before Done. Nothing was saved; the app keeps its
+    /// "setting up" state and brings the page back from the menu bar icon or on the next launch.
+    public var onClosedBeforeDone: (@MainActor () -> Void)?
+    private var completedByDone = false
     let loginButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private(set) var readerButtons: [OptionalReaderID: NSButton] = [:]
     private let titleLabel = NSTextField(labelWithString: "")
@@ -47,7 +55,9 @@ import AppKit
         window.isReleasedWhenClosed = false; window.contentMinSize = .init(width: Self.column + 2 * Self.margin, height: 300)
         super.init(window: window); window.delegate = self
         build(window); refreshEnabled()
+        scopeConsentEntry?.controller.onLookAgain = { [weak self] in self?.runPresenceCheck() }
     }
+    private func runPresenceCheck() { scopeConsentEntry?.controller.setFirstRunPresence(presence.detect()) }
     static let column: CGFloat = 570, margin: CGFloat = 40
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     deinit {
@@ -64,7 +74,8 @@ import AppKit
         }
     }
     public func prepare() async {
-        active = true; generation &+= 1; let token = generation; errorMessage = nil
+        active = true; generation &+= 1; let token = generation; errorMessage = nil; completedByDone = false
+        runPresenceCheck()
         scopeUnavailable = scopeConsentEntry != nil
         options = nil; baseRevision = nil; touchedLogin = false; touchedReaders = []; pageValid = false
         if observer == nil { observer = editor.observeChanges { [weak self] in self?.refresh() } }
@@ -93,7 +104,11 @@ import AppKit
         scopePresentation?.suspend(); scopeUnavailable = false
         refreshEnabled()
     }
-    public func windowWillClose(_ notification: Notification) { suspend() }
+    public func windowWillClose(_ notification: Notification) {
+        let wasActive = active
+        suspend()
+        if wasActive, !completedByDone { onClosedBeforeDone?() }
+    }
 
     private func build(_ window: NSWindow) {
         let root = NSView(); window.contentView = root
@@ -123,7 +138,7 @@ import AppKit
         loginButton.setAccessibilityIdentifier("firstRun.login")
         loginSubtitle.font = .systemFont(ofSize: 12); loginSubtitle.textColor = .secondaryLabelColor
         // Wrapping copy wraps at the column width instead of growing past it or clipping a line.
-        for field in [privacy, recommendation, subscriptions, loginSubtitle, status] {
+        for field in [privacy, recommendation, subscriptions, loginSubtitle, status, doneReason] {
             field.preferredMaxLayoutWidth = Self.column; field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
         }
         // The footer shares its row with the buttons, so this line wraps narrower than the column.
@@ -131,6 +146,8 @@ import AppKit
         let login = NSStackView(views: [loginButton,loginSubtitle]); login.orientation = .vertical; login.alignment = .leading; login.spacing = 5
         status.font = .systemFont(ofSize: 12); status.textColor = .systemRed
         status.setAccessibilityIdentifier("firstRun.status")
+        doneReason.font = .systemFont(ofSize: 12); doneReason.textColor = .secondaryLabelColor
+        doneReason.setAccessibilityIdentifier("firstRun.doneReason"); doneReason.isHidden = true
         doneButton.bezelStyle = .rounded; doneButton.target = self; doneButton.action = #selector(done)
         doneButton.keyEquivalent = "\r"; doneButton.setAccessibilityIdentifier("firstRun.done")
         helpButton.isBordered = false; helpButton.target = self; helpButton.action = #selector(seeWhatsHere)
@@ -145,7 +162,7 @@ import AppKit
         footer.setViews([login], in: .leading); footer.setViews([buttons], in: .trailing)
         let rule = NSBox(); rule.boxType = .separator
         let firstRunScopes = scopePresentation?.container ?? NSStackView()
-        for view in [titleLabel,privacy,recommendation,learnMoreButton,subscriptions,firstRunScopes,connectionsView,readerStack,status,rule,footer] {
+        for view in [titleLabel,privacy,recommendation,learnMoreButton,subscriptions,firstRunScopes,connectionsView,readerStack,status,doneReason,rule,footer] {
             stack.addArrangedSubview(view)
             view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
@@ -200,6 +217,11 @@ import AppKit
             helpButton.isHidden = !page.showsExploration
             if scopeUnavailable { errorMessage = SettingsWords.text("Reading permissions are busy. Close and try again.", "读取权限正在处理，请关闭后重试。", language) }
             status.stringValue = errorMessage ?? ""; status.isHidden = errorMessage == nil
+            switch scopeConsentEntry?.controller.firstRunDoneBlock {
+            case .some(.engineStarting), .some(.engineFailed):
+                doneReason.stringValue = FirstRunCopy.needEngine.value(language); doneReason.isHidden = false
+            default: doneReason.stringValue = ""; doneReason.isHidden = true
+            }
             // FR-9-11: the first-run window is dark, whatever the theme setting says.
             if window?.appearance?.name != NSAppearance.Name.darkAqua { window?.appearance = NSAppearance(named: .darkAqua) }
         } catch {
@@ -230,7 +252,8 @@ import AppKit
         learnMoreButton.isEnabled = active && onLearnMore != nil
         for button in readerButtons.values { button.isEnabled = enabled && !editor.connections.isAvailable }
         // D61 (3): with readable tools on the page, at least one must be ticked.
-        let chosen = scopeConsentEntry?.controller.firstRunChoiceSatisfied ?? true
+        // Owner 11-12 (answer 3): and Done waits for the reader's handshake, because the choices are saved through it.
+        let chosen = scopeConsentEntry?.controller.firstRunCanFinish ?? true
         doneButton.isEnabled = enabled && chosen
         helpButton.isEnabled = enabled && chosen && !helpButton.isHidden && editor.context.capabilities.helpMapAvailable && editor.onHostRequest != nil
     }
@@ -256,14 +279,13 @@ import AppKit
             // first; if they cannot be sent the page stays open with them.
             if let entry = self.scopeConsentEntry, !(await entry.controller.commitFirstRunChoices()) {
                 guard self.active, self.generation == expectedGeneration else { return }
-                self.errorMessage = SettingsWords.text("Your reading choices could not be saved. Check the connection and press Done again.",
-                    "读取选择未能保存。请检查连接后再点“完成”。", self.editor.snapshot?.preferences.language ?? .chinese)
+                self.errorMessage = FirstRunCopy.rejected.value(self.editor.snapshot?.preferences.language ?? .chinese)
                 return
             }
             guard self.active, self.generation == expectedGeneration else { return }
             do {
                 _ = try await self.editor.completeFirstRun(options: options, action: action, host: self.host, expectedRevision: revision)
-                if self.generation == expectedGeneration { self.suspend(); self.close() }
+                if self.generation == expectedGeneration { self.completedByDone = true; self.suspend(); self.close() }
             } catch {
                 guard self.active, self.generation == expectedGeneration else { return }
                 self.errorMessage = FirstRunSaveError.message(error, language: self.editor.snapshot?.preferences.language ?? .chinese)
