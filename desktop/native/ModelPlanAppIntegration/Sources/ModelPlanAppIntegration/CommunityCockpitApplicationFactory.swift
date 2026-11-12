@@ -474,14 +474,24 @@ struct CockpitUnavailableNotice {
         // undo a recovery already seen. Decided before any state changes, so it cannot race the open event.
         // The coordinator closes the page right after a feature failure; that close is the failure's, not the user's.
         if wantsVisible, path == CockpitUnavailableReason.featureFailure.path { failureClosesPage = true }
-        if noticeTask != nil, !history, !path.hasPrefix("page.") { return }
+        if noticeTask != nil, !history, !path.hasPrefix("page.") {
+            // macrevc-887-2: a failure that follows a pending open (open.noDelivery, then the bundle error when the first
+            // context delivers it) is the more meaningful cause. It is named in the log and in the notice, without
+            // restarting the grace period. A bundle problem is never replaced by a milder cause.
+            if wantsVisible, path != noticePath, !CockpitUnavailableNotice.isBundleProblem(path: noticePath) {
+                CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(isForeground()) pageOpened=\(pageOpened) "
+                    + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] rebuilds=\(rebuilds) during-grace=true")
+                noticePath = path
+            }
+            return
+        }
         lastEventWasOpen = false
         let initiatedInForeground=isForeground()
         // A failure in the background or after a close shows nothing, so the log is all there is.
         CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened) "
             + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] rebuilds=\(rebuilds)")
         guard wantsVisible else { return }
-        if !history { noticePath=path } // the latest cause is the one the notice names
+        if !history { noticePath=path } // the cause that starts the grace period; a later non-page cause replaces it above
         if history { presentNotice(history:true,initiatedInForeground:initiatedInForeground); return }
         if path.hasPrefix("page.") {
             rebuilds += 1

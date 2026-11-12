@@ -32,7 +32,8 @@ extension CommunityCockpitEntryTests {
         XCTAssertEqual(notices.count,1,"The failed open still asks for the recovery notice")
         XCTAssertEqual(notices.first?.history,false)
         XCTAssertEqual(notices.first?.actions,[.settings,.dockReadings,.cancel])
-        XCTAssertEqual(lines.count,1)
+        XCTAssertEqual(lines.count,2,lines.joined(separator:"\n"))
+        XCTAssertTrue(lines.last?.hasPrefix("notice-shown cause=open.noDelivery bundleProblem=false") ?? false,"the notice names its cause in the log")
         let line=lines.first ?? ""
         XCTAssertTrue(line.hasPrefix("unavailable path=open.noDelivery wantsVisible=true foreground=true pageOpened=false "),line)
         XCTAssertTrue(line.contains("sinceLaunchMs="),"The line says how early in the launch it happened")
@@ -125,6 +126,31 @@ extension CommunityCockpitEntryTests {
         XCTAssertEqual(notices.count,1)
         XCTAssertFalse(notices[0].bundleProblem)
         XCTAssertTrue(lines.contains { $0.hasPrefix("notice-shown cause=open.noClient bundleProblem=false") })
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+    /// macrevc-887-2: an open before the first delivery is pending (open.noDelivery); when the delivery then finds a damaged
+    /// bundle, the notice names that cause and asks for a reinstall, though the grace period began with the pending open.
+    @MainActor func testG395BundleErrorAfterAPendingOpenIsNamedAndAsksForReinstall() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("g395-pending-bundle-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in RouteClient()})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        let coordinator=EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        owner.coordinator=coordinator
+        var notices:[CockpitUnavailableNotice]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},noticeGrace:.milliseconds(400))
+        surface.show()
+        try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
+        coordinator.onUnavailable?(.noDelivery)                        // the open waits for the first context
+        coordinator.onUnavailable?(.pageCreation("integrity"))         // the delivery finds a damaged bundle
+        try await Task.sleep(for:.milliseconds(1000))
+        XCTAssertEqual(notices.count,1,"one notice, the grace period was not restarted")
+        XCTAssertTrue(notices.first?.bundleProblem ?? false,"a damaged bundle gets the reinstall copy")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("unavailable path=open.pageCreation.integrity") },lines.joined(separator:"\n"))
+        XCTAssertTrue(lines.contains { $0.hasPrefix("notice-shown cause=open.pageCreation.integrity bundleProblem=true") },lines.joined(separator:"\n"))
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
     /// G3-95, slow load: a page that failed to load in time and a query that timed out are not bundle problems; only a
