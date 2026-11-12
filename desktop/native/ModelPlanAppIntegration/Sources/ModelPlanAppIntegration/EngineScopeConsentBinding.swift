@@ -43,9 +43,9 @@ import ModelPlanWire
             case .rows(let reply, _): entry.acceptedRows(reply.envelope.data)
             case .grant(let grant):
                 entry.controller.receiveAcceptedGrant(grant)
-                // The first-run import follows the committed consent with no further dialog; the engine
-                // runs it once and skips every tool that was not allowed.
-                if grant.committedAt != nil, !grant.supersededByLaterConsent, grant.receipt.code == .ok, let model = entry.historyImport {
+                // The first-run import follows the committed first-run consent with no further dialog; the
+                // engine runs it once and skips every tool that was not allowed. Other receipts never start it.
+                if entry.controller.takeCommittedFirstRunGrant(grant), let model = entry.historyImport {
                     Task { @MainActor in await model.runAfterFirstRunConsent() }
                 }
             case .historyImport(let reply): entry.acceptedHistoryImport(reply.envelope.data)

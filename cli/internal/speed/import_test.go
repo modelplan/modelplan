@@ -433,3 +433,45 @@ func TestImportCountsAResumedSessionsRequestOnceAcrossFiles(t *testing.T) {
 		t.Fatalf("want 2 requests (one shared, one fresh), got %d", r)
 	}
 }
+
+// Audit D finding 2: a history grant revoked while the import runs stops it before the next log is
+// opened, and nothing already read for that source is written; other sources still import.
+func TestImportStopsReadingASourceWhoseGrantIsRevokedMidRun(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	f.codexLog("rollout-a.jsonl", -3)
+	f.codexLog("rollout-b.jsonl", -2)
+	live := both()
+	var opened []string
+	res, err := Import(context.Background(), f.cache, ImportOptions{Claude: &ImportRoot{Dir: f.claude}, Now: f.now, Admission: both(),
+		Codex: &ImportRoot{Dir: f.home, Background: func(p string) bool { opened = append(opened, filepath.Base(p)); return false }},
+		Live:  func() consent.Admission { return *live },
+		Progress: func(done, total int) {
+			if done == total && total > 0 { // paused before the last codex log opens: the codex grant is revoked
+				live = admitted(consent.ScopeClaudeLocalHistory)
+			}
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opened) != 1 || opened[0] != "rollout-a.jsonl" {
+		t.Fatalf("logs opened after the revoke: %v", opened)
+	}
+	got := map[string]string{}
+	for _, s := range res.Sources {
+		got[s.Source] = s.Status
+	}
+	if got["codex"] != StatusNoConsent || got["claude-code"] != StatusImported {
+		t.Fatalf("%+v", res.Sources)
+	}
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "codex"); r != 0 {
+		t.Fatalf("codex rows written after the revoke: %d", r)
+	}
+	if _, has := l.Coverage["codex"]; has {
+		t.Fatal("codex coverage written after the revoke")
+	}
+	if r, _ := total(l, "claude-code"); r != 1 {
+		t.Fatalf("claude import lost: %d", r)
+	}
+}
