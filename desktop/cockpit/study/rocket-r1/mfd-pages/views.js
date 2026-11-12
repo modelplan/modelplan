@@ -66,8 +66,8 @@ const BAR_H = 58;
 // blue "="; a fast value past 100 % pins to the end with › and prints the exact number. Every effort segment is a
 // control (hover previews it, click tries it). Demo v12 (owner 11-12: option B with the notch divisions).
 let barUid = 0;
-const STAR_MODE = 'a', LANE_MODE = '3', DIV_MODE = 'notch';
-// Lane treatment (ui.laneMode): 1 = lanes separated only by the track tint, 2 = 1 px glass gap, 3 = 1.5 px glass gap and a deeper trial blue, 4 = 1 px gap and a dark hairline on the trial lane's top edge. Divisions (ui.divMode): notch | ruler.
+const STAR_MODE = 'a', LANE_MODE = '3';
+// Lane treatment (ui.laneMode): 1 = lanes separated only by the track tint, 2 = 1 px glass gap, 3 = 1.5 px glass gap and a deeper trial blue, 4 = 1 px gap and a dark hairline on the trial lane's top edge.
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const BAR_RECT = (x, y, w, h, cls, extra = '') => w > .05 ? `<rect${cls ? ` class="${cls}"` : ''} x="${(+x).toFixed(2)}" y="${(+y).toFixed(2)}" width="${(+w).toFixed(2)}" height="${(+h).toFixed(2)}"${extra}/>` : '';
 // One number with a small %, centred on x; pre = a small blue "=" (the trial equals the current).
@@ -79,7 +79,7 @@ function barsSvg(m, s, cols, W, ui) {
   const {L, E} = edges(ui, W), cmp = !!ui.compact, TH = cmp ? 9 : 11, inset = 1, rT = 3, ix0 = L + inset, ix1 = E - inset;
   const X = v => ix0 + (ix1 - ix0) * clamp01(v), id = 'eb' + (++barUid), rowH = BAR_H / 2;
   const cur = s.cur ? shareOfTop(m, cols.C) : null, trial = s.trying ? shareOfTop(m, cols.T) : null, rec = shareOfTop(m, cols.R);
-  const starMode = ui.starMode || STAR_MODE, laneMode = ui.laneMode || LANE_MODE, divMode = ui.divMode || DIV_MODE, speedFast = s.trying ? s.trialFast : s.curFast;
+  const starMode = ui.starMode || STAR_MODE, laneMode = ui.laneMode || LANE_MODE, speedFast = s.trying ? s.trialFast : s.curFast;
   const at = l => shareOfTop(m, colOf(m, s.tier, l, speedFast));
   let defs = '', g = '', hit = '';
   [['abl', 'mfd.pctAbility'], ['cost', 'mfd.pctCost']].forEach(([k, name], i) => {
@@ -110,8 +110,7 @@ function barsSvg(m, s, cols, W, ui) {
     }
     // notches every 10 % (50 % at full height): cut into the tube, glass where the fill is, tinted where it is not
     const fillEnd = Math.max(vb != null ? xc : 0, tr ? xt : 0), nh = cmp ? 1.5 : 2;
-    if (divMode === 'ruler') for (let p = 0; p < 10; p++) { const x = X(p / 10), h = p % 5 ? 1.8 : 3; b += box(x - .5, y0 - 1 - h, 1, h, 'pc-ruler', ` opacity="${p % 5 ? .5 : .8}"`); }
-    else for (let p = 1; p < 10; p++) { const x = X(p / 10), on = x < fillEnd - .5, c = `pc-notch${on ? ' on' : ''}${p === 5 ? ' mid' : ''}`;
+    for (let p = 1; p < 10; p++) { const x = X(p / 10), on = x < fillEnd - .5, c = `pc-notch${on ? ' on' : ''}${p === 5 ? ' mid' : ''}`;
       f += p === 5 ? box(x - .5, iy, 1, ih, c, ` data-p="${p * 10}"`) : box(x - .5, iy, 1, nh, c, ` data-p="${p * 10}"`) + box(x - .5, iy + ih - nh, 1, nh, c, ` data-p="${p * 10}"`); }
     b += glow + `<g clip-path="url(#${clip})">${f}</g>`;
     // the 100 % stop: the end of the scale is never in doubt
@@ -164,8 +163,8 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
   // Fast on: a fixed 0-150 % domain (the whole lines rise); a point past it is pinned to the top edge with a small ▲ and its exact value.
   const span = fastOn ? 1.5 : Math.max(1, ...all), X = i => L + (i + .5) * bw, Y = v => T0 + (1 - Math.min(v, span) / span) * (H - T0 - B0);
   const band = (i, cls) => box(X(i) - bw / 2 + 3, 1, bw - 6, H - 2, cls, ` rx="2" data-effort="${esc(efforts[i])}"`);
-  // the recommended effort's column: a very faint gold wash under everything, so it never fights the blue trial / hover boxes
-  let g = (ri >= 0 ? band(ri, 'pc-band pc-band-rec') : '') + (ci >= 0 ? band(ci, 'pc-band pc-band-current') : '') + (ti >= 0 ? band(ti, 'pc-band pc-band-trial' + (ti === ci ? ' pc-band-same' : '')) : '');
+  // column backgrounds, bottom to top: a pale white haze on the current effort, a pale blue haze with its border on the trial
+  let g = (ci >= 0 ? band(ci, 'pc-band pc-band-current') : '') + (ti >= 0 ? band(ti, 'pc-band pc-band-trial' + (ti === ci ? ' pc-band-same' : '')) : '');
   // hover preview: a dashed blue box on the column of the effort under the pointer (any other effort than the trial)
   g += efforts.map((l, i) => l === s.trial ? '' : band(i, 'pc-band pc-band-hover')).join('');
   for (const v of span > 1 ? [span, 1, .5, 0] : [1, .5, 0]) { const y = Y(v); g += `<line class="pc-grid${v === 1 ? ' unit' : ''}" x1="${L}" x2="${n1(E)}" y1="${n1(y)}" y2="${n1(y)}"/>` + label(L - 5, Math.max(8, Math.min(H - 1, y + 3)), v ? pctText(v) : '0', 'pc-tick-l', 'end'); }
@@ -189,7 +188,7 @@ function lineSvg(m, s, cols, {w: W, h: H}, ui) {
       const own = at[i]?.[k], y = numeric(own) ? Y(own) : numeric(v) ? Y(v) : null;
       if (y == null) return;
       const val = numeric(own) ? own : v;
-      if (val > span + 1e-9) p += `<path class="pc-up" d="M${n1(X(i) - 2.6)} ${n1(T0 + 1.6)}l2.6-4.2 2.6 4.2Z"/>` + label(X(i) + 5, T0 + 1.2, pctText(val), 'pc-up-l');
+      if (val > span + 1e-9) p += `<path class="pc-up" d="M${n1(X(i) - 2.6)} ${n1(T0 + 1.6)}l2.6-4.2 2.6 4.2Z"/>` + (X(i) + 5 + 24 > W ? label(X(i) - 5, T0 + 1.2, pctText(val), 'pc-up-l', 'end') : label(X(i) + 5, T0 + 1.2, pctText(val), 'pc-up-l'));
       if (k === 'abl' && i === ri) { if (i === ti) p += dot('pc-ring pc-ring-rec', X(i), y, 5.6, ' data-role="trial"'); p += star(X(i), y, 4, ' data-role="rec"'); }
       else if (i === ti) p += dot('pc-ring', X(i), y, 2.6, ' data-role="trial"');
       else if (i === ci) p += dot('pc-dot pc-dot-current', X(i), y, 2.5, ' data-role="current"');

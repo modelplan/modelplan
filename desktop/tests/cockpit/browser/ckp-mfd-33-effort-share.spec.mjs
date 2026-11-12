@@ -76,13 +76,14 @@ test('CKP-MFD-33 idle: the full 0-100 % track and its end bar are always drawn; 
  await expect(chart.locator('.pc-band-current')).toHaveAttribute('data-effort','High');
  await expect(chart.locator('.pc-band-trial')).toHaveCount(0);
  await expect(chart.locator('.pc-line.pc-abl .pc-star')).toHaveCount(1);
- // the ★ column carries a very faint gold wash (under the blue trial / hover boxes)
- await expect(chart.locator('.pc-band-rec')).toHaveAttribute('data-effort','Med');
- expect(await chart.locator('.pc-band-rec').evaluate(e=>parseFloat(getComputedStyle(e).opacity))).toBeLessThanOrEqual(.15);
- // rendered pixel: a clearly warm pale yellow (hue 35-55 degrees), not grey
- const bb=await chart.locator('.pc-band-rec').boundingBox(),px=firstPixel(await page.screenshot({clip:{x:bb.x+bb.width/2-3,y:bb.y+bb.height-8,width:1,height:1}}));
- const [pr,pg,pb]=px,mx=Math.max(pr,pg,pb),mn=Math.min(pr,pg,pb),hue=mx===mn?0:mx===pr?60*((pg-pb)/(mx-mn)):mx===pg?60*(2+(pb-pr)/(mx-mn)):60*(4+(pr-pg)/(mx-mn));
- expect(hue,`pixel ${px}`).toBeGreaterThan(35);expect(hue,`pixel ${px}`).toBeLessThan(55);expect(pr-pb,`pixel ${px}`).toBeGreaterThanOrEqual(10);
+ // no gold wash on the ★ column (the ★ on the key and the bar is enough)
+ await expect(chart.locator('.pc-band-rec')).toHaveCount(0);
+ // rendered pixels: the current column is a neutral, clearly lighter haze than the empty chart
+ const cb=await chart.locator('.pc-band-current').boundingBox(),eb=await chart.locator('.pc-hit[data-hover="Max"]').boundingBox();
+ const at=async(bb,dx)=>firstPixel(await page.screenshot({clip:{x:bb.x+bb.width/2+dx,y:bb.y+bb.height-9,width:1,height:1}}));
+ const cur=await at(cb,-8),empty=await at(eb,-8),lum=q=>.3*q[0]+.59*q[1]+.11*q[2];
+ expect(Math.max(...cur.slice(0,3))-Math.min(...cur.slice(0,3)),`current ${cur}`).toBeLessThanOrEqual(12);
+ expect(lum(cur)-lum(empty),`current ${cur} vs empty ${empty}`).toBeGreaterThanOrEqual(35);
  await expect(chart.locator('.pc-legend')).toContainText('Time');
  await expect(screen.locator('.cmp-lad .lad')).toHaveText(['Low','★Med','High','XHigh','Max']);
 });
@@ -117,6 +118,12 @@ test('CKP-MFD-33 trial higher: the tube splits into two lanes from 0, real on to
  const chart=screen.locator('svg.cmp-chart');
  await expect(chart.locator('.pc-band-trial')).toHaveAttribute('data-effort','XHigh');
  await expect(chart.locator('.pc-ring[data-role="trial"]')).toHaveCount(2);
+ // rendered pixels: the trial column is a light blue haze (hue 200-215 degrees, visible saturation), lighter than the empty chart
+ {const tb=await chart.locator('.pc-band-trial').boundingBox(),eb=await chart.locator('.pc-hit[data-hover="Low"]').boundingBox();
+  const px=async(bb,dx)=>firstPixel(await page.screenshot({clip:{x:bb.x+bb.width/2+dx,y:bb.y+bb.height-9,width:1,height:1}}));
+  const [r,g,b]=await px(tb,-8),e=await px(eb,6),mx=Math.max(r,g,b),mn=Math.min(r,g,b),hue=60*(4+(r-g)/(mx-mn)),sat=(mx-mn)/mx;
+  expect(hue,`trial ${r},${g},${b}`).toBeGreaterThan(200);expect(hue,`trial ${r},${g},${b}`).toBeLessThan(220);expect(sat).toBeGreaterThan(.3);
+  expect(.3*r+.59*g+.11*b-(.3*e[0]+.59*e[1]+.11*e[2])).toBeGreaterThanOrEqual(35);}
  // a chart column is a trial key too
  await chart.locator('.pc-hit[data-mfd="try:Low"]').click();
  await expect(screen.locator('.cmp-lad .lad.try')).toHaveText('Low');

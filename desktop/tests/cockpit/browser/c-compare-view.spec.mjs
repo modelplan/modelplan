@@ -267,53 +267,43 @@ test('CKP-MFD-33 fast lines: a real fast session draws the fast lines too',async
  await expect(page.locator('.mfd-page svg.cmp-chart .pc-fastband')).toHaveCount(2);
 });
 
-// Owner 11-12: column strength is trial blue > current white > recommended gold; and when the trial effort equals the current
-// effort (a fast-only trial) both show: the white current fill with the blue trial fill and a solid blue outline on top.
-test('CKP-MFD-33 chart columns: trial blue > current white, a warm ★ gold; trial = current keeps both',async({page})=>{
+// Owner 11-12: the chart columns are two layers only, a pale white haze (current) and a pale blue haze with a border (trial); no ★ wash.
+// When the trial equals the current effort the blue tint and border sit over the white.
+test('CKP-MFD-33 chart columns: trial = current keeps both layers, no gold ★ band',async({page})=>{
  await open(page,'en',true);
  await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
  const chart=page.locator('.mfd-page svg.cmp-chart');
  const alpha=async sel=>chart.locator(sel).evaluate(e=>{const c=getComputedStyle(e),m=c.fill.match(/rgba?\(([^)]+)\)/)[1].split(',').map(Number);return (m[3]??1)*Number(c.opacity);});
  await page.locator('.mfd-vk button.vk-fast').click(); // fast-only trial: the trial effort is the current one
  const cur=chart.locator('.pc-band-current'),tri=chart.locator('.pc-band-trial');
- await expect(cur).toHaveCount(1);await expect(tri).toHaveCount(1);
+ await expect(cur).toHaveCount(1);await expect(tri).toHaveCount(1);await expect(chart.locator('.pc-band-rec')).toHaveCount(0);
  expect(await cur.getAttribute('data-effort')).toBe(await tri.getAttribute('data-effort'));
- const a={cur:await alpha('.pc-band-current'),trial:await alpha('.pc-band-trial'),rec:await alpha('.pc-band-rec')};
- expect(a.cur).toBeGreaterThanOrEqual(.1);expect(a.cur).toBeLessThanOrEqual(.15);
- expect(a.trial).toBeGreaterThan(a.cur);expect(a.rec).toBeGreaterThanOrEqual(.1);expect(a.rec).toBeLessThanOrEqual(.15);
- // equal: the blue outline stands on top of the white fill
+ expect(await alpha('.pc-band-trial')).toBeGreaterThan(await alpha('.pc-band-current'));
  await expect(tri).toHaveClass(/pc-band-same/);
  expect(await tri.evaluate(e=>parseFloat(getComputedStyle(e).strokeOpacity))).toBeGreaterThanOrEqual(.6);
- // a different trial effort draws no such outline
  await page.locator('.cmp-lad [data-mfd="try:XHigh"]').click();
  await expect(chart.locator('.pc-band-trial')).not.toHaveClass(/pc-band-same/);
 });
 
-// Owner 11-12: the chart column layers, bottom to top: ★ gold wash, current white fill, trial blue fill + 1 px border. Every overlap keeps all its layers.
-test('CKP-MFD-33 chart column layers: every overlap of current, trial and ★ shows all its layers, trial blue on top',async({page})=>{
+// Owner 11-12: the chart column layers, bottom to top: current white haze, trial blue haze + 1 px border. Every overlap keeps its layers.
+test('CKP-MFD-33 chart column layers: current and trial layers in every overlap, trial blue on top, no gold band',async({page})=>{
  const cases=[
-  {name:'current = ★',edit:d=>{d.details.sessions[0].effort='medium';},act:null,want:['rec','current']},
-  {name:'trial = ★',edit:null,act:async()=>{await page.locator('.cmp-lad [data-mfd="try:Med"]').click();},want:['rec','current','trial']},
-  {name:'trial = current',edit:null,act:async()=>{await page.locator('.mfd-vk button.vk-fast').click();},want:['rec','current','trial']},
-  {name:'all three equal',edit:d=>{d.details.sessions[0].effort='medium';},act:async()=>{await page.locator('.mfd-vk button.vk-fast').click();},want:['rec','current','trial']},
+  {name:'current = ★',edit:d=>{d.details.sessions[0].effort='medium';},act:null,want:['current']},
+  {name:'trial = ★',edit:null,act:async()=>{await page.locator('.cmp-lad [data-mfd="try:Med"]').click();},want:['current','trial']},
+  {name:'trial = current',edit:null,act:async()=>{await page.locator('.mfd-vk button.vk-fast').click();},want:['current','trial']},
+  {name:'all three equal',edit:d=>{d.details.sessions[0].effort='medium';},act:async()=>{await page.locator('.mfd-vk button.vk-fast').click();},want:['current','trial']},
  ];
  for(const c of cases){
   await open(page,'en',true,c.edit);
   await page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
   await c.act?.();
   const chart=page.locator('.mfd-page svg.cmp-chart');
-  const info=await chart.evaluate(svg=>[...svg.querySelectorAll('.pc-band:not(.pc-band-hover)')].map(e=>({role:e.classList.contains('pc-band-rec')?'rec':e.classList.contains('pc-band-current')?'current':'trial',effort:e.dataset.effort,order:[...svg.children].indexOf(e),
-   stroke:parseFloat(getComputedStyle(e).strokeOpacity),fill:getComputedStyle(e).fill,w:e.getBBox().width})));
-  const roles=info.map(i=>i.role);
-  expect(roles.sort(),c.name).toEqual([...c.want].sort());
+  const info=await chart.evaluate(svg=>[...svg.querySelectorAll('.pc-band:not(.pc-band-hover)')].map(e=>({role:e.classList.contains('pc-band-current')?'current':e.classList.contains('pc-band-trial')?'trial':'other',effort:e.dataset.effort,order:[...svg.children].indexOf(e),stroke:parseFloat(getComputedStyle(e).strokeOpacity),w:e.getBBox().width})));
+  expect(info.map(i=>i.role).sort(),c.name).toEqual([...c.want].sort());
   const by=r=>info.find(i=>i.role===r);
-  if(by('rec')&&by('current'))expect(by('rec').order,c.name).toBeLessThan(by('current').order);
-  if(by('trial')){expect(by('trial').order,c.name).toBeGreaterThan(Math.max(...info.filter(i=>i.role!=='trial').map(i=>i.order)));expect(by('trial').stroke,c.name).toBeGreaterThanOrEqual(.5);}
+  if(by('trial')){expect(by('trial').order,c.name).toBeGreaterThan(by('current').order);expect(by('trial').stroke,c.name).toBeGreaterThanOrEqual(.5);}
   for(const i of info)expect(i.w).toBeGreaterThan(10);
-  // the same column when they coincide
-  const efforts=new Set(info.map(i=>i.effort));
-  if(c.name==='all three equal')expect(efforts.size).toBe(1);
-  if(c.name==='current = ★')expect(efforts.size).toBe(1);
+  if(c.name==='all three equal'||c.name==='trial = current')expect(new Set(info.map(i=>i.effort)).size).toBe(1);
  }
 });
 
@@ -330,4 +320,18 @@ test('CKP-MFD-33 fast chart domain: capped at 150 %, overflow pinned with a ▲ 
  await expect(chart.locator('.pc-up')).not.toHaveCount(0);
  await expect(chart.locator('.pc-up-l').first()).toHaveText(/^2\d\d%$/); // Max at fast = 250 %
  for(const y of await chart.locator('polyline').evaluateAll(l=>l.flatMap(e=>e.getAttribute('points').split(' ').map(q=>Number(q.split(',')[1])))))expect(y).toBeGreaterThanOrEqual(ys[0]-.1);
+});
+
+// Owner 11-12: every point pinned above 150 % gets its own ▲ and exact value, and the labels do not overlap.
+test('CKP-MFD-33 fast chart: each pinned point has its own ▲ and exact value, labels do not overlap',async({page})=>{
+ await open(page,'en',true);
+ await page.locator('[data-bank="1"]').click();
+ await page.locator('.fd-ch:not(.empty)').filter({hasText:'Luna'}).first().locator('.fd-strip').click();
+ await page.locator('.mfd-vk button.vk-fast').click();
+ const chart=page.locator('.mfd-page svg.cmp-chart');
+ await expect(chart.locator('.pc-up')).toHaveCount(2);
+ const labels=await chart.locator('.pc-up-l').evaluateAll(l=>l.map(e=>{const b=e.getBBox();return {t:e.textContent,l:b.x,r:b.x+b.width};}));
+ expect(labels.map(l=>l.t)).toEqual(['154%','250%']);
+ expect(labels[0].r).toBeLessThanOrEqual(labels[1].l);
+ const w=await chart.evaluate(svg=>Number(svg.getAttribute('width')));for(const l of labels){expect(l.l).toBeGreaterThanOrEqual(0);expect(l.r).toBeLessThanOrEqual(w+.5);}
 });
