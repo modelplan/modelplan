@@ -21,6 +21,8 @@ import AppKit
     private var controlIDs: [String] = []
     private var tracking: NSTrackingArea?
     private let readout = NSTextField(wrappingLabelWithString: "")
+    /// G3-69: "Show how" for a login item the system cannot find (app outside Applications).
+    let loginHowButton = NSButton(), loginHowLabel = NSTextField(wrappingLabelWithString: "")
 
     init(key: SettingKey) {
         self.key = key
@@ -35,7 +37,12 @@ import AppKit
         subtitle.preferredMaxLayoutWidth = 160
         subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         subtitle.setContentCompressionResistancePriority(.required, for: .vertical)
-        let copy = NSStackView(views: [titleLabel, subtitle])
+        loginHowButton.bezelStyle = .rounded; loginHowButton.target = self; loginHowButton.action = #selector(toggleLoginHow)
+        loginHowButton.setAccessibilityIdentifier("settings.login.how")
+        loginHowLabel.font = .systemFont(ofSize: 12); loginHowLabel.textColor = .secondaryLabelColor
+        loginHowLabel.setAccessibilityIdentifier("settings.login.howText")
+        loginHowButton.isHidden = true; loginHowLabel.isHidden = true
+        let copy = NSStackView(views: [titleLabel, subtitle, loginHowButton, loginHowLabel])
         copy.orientation = .vertical; copy.alignment = .leading; copy.spacing = 5
         copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
         controls.orientation = .vertical; controls.alignment = .trailing; controls.distribution = .fill; controls.spacing = 7
@@ -54,13 +61,16 @@ import AppKit
             copy.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
             subtitle.widthAnchor.constraint(equalTo: copy.widthAnchor),
             illustration.widthAnchor.constraint(equalToConstant: 96), illustration.heightAnchor.constraint(equalToConstant: 40),
-            // G3-26: rows listing every subscription give names room next to their controls.
-            controls.widthAnchor.constraint(equalToConstant: [.visible, .alias].contains(key) ? 380 : 230),
+            controls.widthAnchor.constraint(equalToConstant: Self.controlColumnWidth(key)),
             readout.widthAnchor.constraint(lessThanOrEqualToConstant: 230),
         ])
         setAccessibilityElement(false)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
+
+    /// G3-26: rows listing every subscription give names room next to their controls. Since D87 (G3-68) the
+    /// order list sits in Settings > Subscriptions beside visibility and aliases, so it shares their column.
+    static func controlColumnWidth(_ key: SettingKey) -> CGFloat { [.visible, .alias, .order].contains(key) ? 380 : 230 }
 
     override func layout() {
         super.layout()
@@ -258,7 +268,14 @@ import AppKit
         }
         let status: String
         switch key {
-        case .login: status = Self.loginStatus(context.capabilities.login, language: language)
+        case .login:
+            let notInApps = context.capabilities.login == .unavailable && context.capabilities.loginNotInApplications
+            status = Self.loginStatus(context.capabilities.login, notInApplications: notInApps, language: language)
+            loginHowButton.isHidden = !notInApps
+            loginHowButton.title = SettingsWords.text("Show how", "显示操作步骤", language)
+            loginHowLabel.stringValue = Self.loginHowTo(language: language)
+            if !notInApps { loginHowShown = false }
+            loginHowLabel.isHidden = !notInApps || !loginHowShown
         case .automaticUpdates: status = context.capabilities.updateServiceAvailable
             ? SettingsWords.text("Update service available", "更新服务可用", language)
             : SettingsWords.text("Update service unavailable", "更新服务不可用", language)
@@ -328,6 +345,7 @@ import AppKit
         let p = p.withoutUnstableMemberChoices(context.subscriptions)
         if order == nil {
             retireControls(); let view = SettingsOrderControl(frame: .zero); order = view; controls.addArrangedSubview(view)
+            view.listWidth = Self.controlColumnWidth(key)
             view.onMove = { onEdit($0, .moveSubscription($1, to: $2, expectedOrder: $3)) }
             view.onReset = { onEdit($0, .resetOrder) }
         }
@@ -372,7 +390,18 @@ import AppKit
         subtitle.stringValue = status
         if readout.superview != nil { controls.removeArrangedSubview(readout); readout.removeFromSuperview() }
     }
-    private static func loginStatus(_ state: LoginServiceState, language: SettingsLanguage) -> String {
+    private var loginHowShown = false
+    @objc private func toggleLoginHow() { loginHowShown.toggle(); loginHowLabel.isHidden = !loginHowShown }
+    /// G3-69 / D87: no self-move (signing risk); the app only says what to do.
+    static func loginHowTo(language: SettingsLanguage) -> String {
+        SettingsWords.text("Drag ModelPlan into the Applications folder, then reopen it from there.",
+                           "把 ModelPlan 拖到“应用程序”文件夹，然后从那里重新打开。", language)
+    }
+    static func loginStatus(_ state: LoginServiceState, notInApplications: Bool = false, language: SettingsLanguage) -> String {
+        if state == .unavailable && notInApplications {
+            return SettingsWords.text("ModelPlan isn't in the Applications folder (for example opened from Downloads), so it can't be a login item.",
+                                      "ModelPlan 不在“应用程序”文件夹里（例如从“下载”直接打开），所以不能设为登录项。", language)
+        }
         switch state {
         case .notRegistered: return SettingsWords.text("System: not registered", "系统：未注册", language)
         case .enabled: return SettingsWords.text("System: enabled", "系统：已开启", language)
@@ -380,7 +409,10 @@ import AppKit
         case .unavailable: return SettingsWords.text("System service unavailable", "系统服务不可用", language)
         }
     }
-    private static func sourceStatus(_ raw: String, language: SettingsLanguage) -> String {
+    private static func sourceStatus(_ value: String, language: SettingsLanguage) -> String {
+        let parts = value.components(separatedBy: SubscriptionSourceState.causeSeparator)
+        if parts.count == 2, !parts[1].isEmpty { return parts[1] }
+        let raw = parts[0]
         switch SubscriptionSourceState(rawValue: raw) {
         case .fresh: return SettingsWords.text("Current", "最新", language)
         case .stale: return SettingsWords.text("Stale", "数据已过时", language)

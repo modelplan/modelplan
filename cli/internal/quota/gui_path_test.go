@@ -160,6 +160,11 @@ func TestAmpVerifiedScriptWithRealNode(t *testing.T) {
 	}
 	defer artifact.Close()
 	t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+	// This test checks the verified-descriptor execution path, not Node start-up speed: a loaded
+	// CI runner once took over the production 8 s budget and got "signal: killed".
+	old := ampUsageTimeout
+	ampUsageTimeout = 2 * time.Minute
+	t.Cleanup(func() { ampUsageTimeout = old })
 	out, err := runAmpUsage(context.WithValue(context.Background(), ampArtifactKey{}, artifact), bin)
 	if err != nil || string(out) != "Paid: $10 remaining\n" {
 		t.Fatal(string(out), err)

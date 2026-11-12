@@ -142,6 +142,15 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         if context.statusItemNotice == nil { statusItemNoticeDismissed = false }
         notifyChange()
     }
+    /// The host's live read of the macOS login item. An explicit login choice is decided against it,
+    /// not against the observation cached when the app started; nil keeps that cached observation.
+    public var observeLogin: (@MainActor () -> LoginServiceState)?
+    private func currentLogin() -> LoginServiceState {
+        guard let observeLogin else { return context.capabilities.login }
+        let observed = observeLogin()
+        if observed != context.capabilities.login { context.capabilities.login = observed; notifyChange() }
+        return observed
+    }
     public func update(environment: SettingsEnvironment) {
         self.environment = environment; notifyChange()
         if let snapshot, let effective { onEnvironmentChange?(snapshot, effective) }
@@ -156,14 +165,13 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         let ids: [String]
         if case .moveSubscription = edit { ids = context.subscriptions.filter { !$0.isUnstable }.map(\.id) }
         else { ids = context.subscriptions.map(\.id) }
-        let observedLogin = context.capabilities.login
         let kind: SettingsCommittedEdit.Kind
         if case .resetHints = edit { kind = .resetHelpHints } else { kind = .preferences }
         let committed = try await transact(subscriptionID: edit.subscriptionID, kind: kind) { try edit.apply(to: &$0, catalogue: ids) }
         let intent: SettingsHostIntent?
         switch edit {
         case .login(let enabled):
-            intent = LoginServicePolicy.request(choice: enabled, observed: observedLogin, reason: .explicitUserChoice).map(SettingsHostIntent.action)
+            intent = LoginServicePolicy.request(choice: enabled, observed: currentLogin(), reason: .explicitUserChoice).map(SettingsHostIntent.action)
         case .resetHints: intent = .action(.resetHelpHints)
         case .shortcut:
             intent = .shortcutPreferencesChanged(openCockpit: committed.preferences.openShortcut, toggleDock: committed.preferences.dockShortcut)
@@ -207,7 +215,8 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     @discardableResult public func completeFirstRun(options: OnboardingOptions, action: FirstRunAction,
         host: FirstRunHost, expectedRevision: UInt64) async throws -> FirstRunCommit {
         if action == .seeWhatsHere, !context.capabilities.helpMapAvailable { throw SettingsEditorError.actionUnavailable }
-        let capabilities = context.capabilities
+        var capabilities = context.capabilities
+        capabilities.login = currentLogin()
         let result = try await persist(expectedRevision: expectedRevision, operation: { [store] revision in
             try await store.completeFirstRun(options: options, action: action, host: host,
                                              capabilities: capabilities, expectedRevision: revision)

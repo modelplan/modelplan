@@ -8,13 +8,13 @@ public enum SettingsB21Edit: Sendable {
     case dockPlacement(displayID: String, edge: SettingsDockEdge, alongFraction: Double)
     case fullscreen(Bool), activeDisplay(Bool), dockEdge(SettingsDockEdge)
     case login(Bool), automaticUpdates(Bool), menuDisplay(MenuDisplay), language(SettingsLanguage)
-    case shortcut(ShortcutAction, ShortcutChord), opening(OpeningPreference), countdown(Int)
+    case shortcut(ShortcutAction, ShortcutChord), opening(OpeningPreference), countdown(Int), cockpitSize(SettingsCockpitSize)
     case moveSubscription(String, to: Int, expectedOrder: [String]), resetOrder
     case visible(String, Bool), alias(AliasDraft), readerConsent(OptionalReaderID, Bool), resetHints
 
     public static let keys: Set<SettingKey> = [
         .showDock, .autoHide, .reveal, .magnification, .fullscreen, .activeDisplay, .dockEdge, .dockDisplay, .dockPosition, .order,
-        .login, .automaticUpdates, .menuDisplay, .language, .openShortcut, .dockShortcut, .opening, .countdown,
+        .login, .automaticUpdates, .menuDisplay, .language, .openShortcut, .dockShortcut, .opening, .countdown, .cockpitSize,
         .visible, .alias, .optionalReaders, .resetHints,
     ]
     public init(key: SettingKey, value: String, subscriptionID: String? = nil) throws {
@@ -34,6 +34,7 @@ public enum SettingsB21Edit: Sendable {
         case .language: if let v = SettingsLanguage(rawValue: value) { self = .language(v); return }
         case .opening: if let v = OpeningPreference(rawValue: value) { self = .opening(v); return }
         case .countdown: if let v = Int(value), [150,200,250].contains(v) { self = .countdown(v); return }
+        case .cockpitSize: if let v = SettingsCockpitSize(rawValue: value) { self = .cockpitSize(v); return }
         case .visible: if let id = subscriptionID, let v = Bool(value) { self = .visible(id, v); return }
         case .optionalReaders:
             if let id = subscriptionID.flatMap(OptionalReaderID.init(rawValue:)), let v = Bool(value) {
@@ -69,6 +70,7 @@ public enum SettingsB21Edit: Sendable {
         case .language(let v): p.language = v
         case .opening(let v): p.opening = v
         case .countdown(let v): p.beatMilliseconds = v
+        case .cockpitSize(let v): p.cockpitSize = v
         case .shortcut(let action, let chord):
             if action == .openCockpit { p.openShortcut = chord } else { p.dockShortcut = chord }
         case .moveSubscription(let id, let index, let expected):

@@ -53,3 +53,20 @@ test('CKP-FAD-01 three models or fewer keep one bank and no pager',async({page})
  await open(page,data);
  await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(3);await expect(page.locator('.bank-lcd')).toHaveCount(0);
 });
+
+// Build 14c (owner): a trial on a model with no live session (current unreported) showed no chart on the MFD compare
+// page. The table keeps its dashes (CKP-MFD-19); the chart is drawn relative to ★ = 1 with ★ and trial markers.
+test('build 14c: a trial on a fader with no live session keeps table dashes and draws the chart relative to ★',async({page})=>{
+ await open(page,fixture());
+ const idle=page.locator('.fd-ch:not(.empty)').nth(2);await expect(idle.locator('.fd-strip')).toHaveAttribute('aria-label',/^Synthetic lineup-1:/);
+ await idle.locator('.fd-strip').click();const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
+ await screen.locator('.cmp-lad [data-mfd="try:Low"]').click();
+ await expect(screen.locator('.cmp-note')).toContainText('current unknown · chart relative to ★');
+ const value=role=>screen.locator(`table.cmp td[data-role="${role}"] .cmp-value`);
+ await expect(value('current')).toHaveText(['--','--','--']);
+ await expect(value('trial')).toHaveText(['—','—','—']);
+ await expect(value('rec')).toHaveText(['—','—','—']);
+ const chart=screen.locator('svg.cmp-chart');await expect(chart).toHaveCount(1);
+ expect(await chart.locator('polyline').count()).toBeGreaterThan(0);
+ await expect(chart.locator('.cfg-trial')).not.toHaveCount(0);await expect(chart.locator('.cfg-rec')).not.toHaveCount(0);
+});
