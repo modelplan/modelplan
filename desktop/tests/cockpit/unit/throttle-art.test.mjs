@@ -28,6 +28,19 @@ for(const theme of ['night','day']){
   assert.equal(sheet.width,128);assert.equal(sheet.height,33*frame);
   for(let i=0;i<33;i++)assert.ok(Math.abs(opaqueCentre(sheet,i*frame,(i+1)*frame)-64)<=1,`frame ${i}`);
  });
+ // G3-92 (owner 11-12): the lever pivots about the slot centre, so its baked stick runs from the grip to the pivot row (65 u = row
+ // 130 of the tile) in every frame; the grip moves from row 33 (Max) to 227 (Low) of the frame.
+ test(`G3-92 ${theme} lever stick runs from the grip to the slot-centre pivot in every frame`,()=>{
+  const sheet=rgba(`lever-${theme}.png`),frame=268,pivot=130;
+  for(let i=0;i<33;i++){
+   const grip=Math.round(2*(16.5+97*(1-i/32))),open=y=>[62,63,64,65,66].every(x=>sheet.alpha(x,i*frame+y)>200);
+   if(Math.abs(grip-pivot)<14)continue;   // the grip sits on the pivot: no stick to measure
+   const dir=grip<pivot?1:-1;let y=grip+dir*14;   // start below/above the grip body
+   assert.ok(open(y),`frame ${i}: stick present beside the grip`);
+   while(open(y+dir))y+=dir;
+   assert.ok(Math.abs(y-pivot)<=3,`frame ${i}: stick (within 1.5 css px of the pivot) ends at row ${y}, pivot row ${pivot}`);
+  }
+ });
  test(`CKP-FAD-24 ${theme} plate is centred and has transparent surroundings`,()=>{
   const plate=rgba(`plate-${theme}.png`);
   assert.deepEqual([plate.width,plate.height],[76,268]);
