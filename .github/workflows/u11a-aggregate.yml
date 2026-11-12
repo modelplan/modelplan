@@ -15,13 +15,49 @@ on:
       - scripts/testdata/u11a/**
       - docs/u11a-aggregation.md
       - .github/workflows/u11a-aggregate.yml
+  # Merge queue (D112): merge_group has no paths filter; queue-scope applies the list above.
+  merge_group:
+    types: [checks_requested]
 permissions:
   contents: read
 concurrency:
   group: u11a-aggregate-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 jobs:
+  # Merge queue only (D112): run the checks below on the group commit ("PR + latest main") when the group
+  # changes a path from the pull_request list, unless the group commit's tree is the PR head's tree (the head
+  # contains the base and its own run tested exactly this). Linux only; no Mac time in the queue.
+  queue-scope:
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: .github
+      - id: scope
+        env:
+          BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_PATHS: ^(scripts/u11a-aggregate\.py$|scripts/tests/test_u11a_aggregate\.py$|scripts/testdata/u11a/|docs/u11a-aggregation\.md$|\.github/workflows/u11a-aggregate\.yml$)
+        run: |
+          set -eu
+          read -r _ p1 p2 extra <<<"$(git rev-list --parents -n 1 HEAD) x"
+          if [ "$p1" = "$BASE" ] && [ "$extra" = x ] && git merge-base --is-ancestor "$BASE" "$p2" \
+            && [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$p2^{tree}")" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "PR head $p2 contains the queue base: reusing its checks"
+          elif git diff --no-renames --name-only -z "$BASE" HEAD | grep -qzE "$QUEUE_PATHS"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "group changes watched paths: running checks on the group commit"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "group changes no watched path"
+          fi
+
   synthetic-samples:
+    needs: queue-scope
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

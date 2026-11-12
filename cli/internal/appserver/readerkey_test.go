@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
@@ -105,3 +107,99 @@ func TestReaderKeyStatusReportsPresenceWithoutAKey(t *testing.T) {
 		t.Fatalf("status = %+v", r)
 	}
 }
+
+func TestReaderKeySetAndRemoveRefuseAnUnsafeKeyFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := quota.SetManualKey(dir, "opencodego", "fake-other-provider-key-1", ""); err != nil {
+		t.Fatal(err)
+	}
+	h := ReaderKeyHandlers(ReaderKeyConfig{Dir: dir})
+	path := quota.ManualKeyPath(dir)
+	for _, mode := range []string{"loose", "garbage"} {
+		if mode == "loose" {
+			if err := os.Chmod(path, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			if err := os.Chmod(path, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("not json"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		before, _ := os.ReadFile(path)
+		set, setJSON, err := callReaderKey(t, h, "readerkey/set", `{"provider":"zai","region":"global","key":"`+readerKeyFake+`"}`)
+		if err != nil || set.Outcome != wire.ReaderKeyFileUnsafe {
+			t.Fatalf("%s set = %v %v", mode, set.Outcome, err)
+		}
+		rem, _, err := callReaderKey(t, h, "readerkey/remove", `{"provider":"opencodego","region":"none","key":""}`)
+		if err != nil || rem.Outcome != wire.ReaderKeyFileUnsafe {
+			t.Fatalf("%s remove = %v %v", mode, rem.Outcome, err)
+		}
+		after, _ := os.ReadFile(path)
+		if !bytes.Equal(before, after) {
+			t.Fatalf("%s: the unsafe file was rewritten", mode)
+		}
+		if strings.Contains(setJSON, readerKeyFake) {
+			t.Fatal("key echoed")
+		}
+	}
+}
+
+// Each mode refuses on its own (the app-server passes them independently): no write, no delete, no outbound request.
+func TestReaderKeyEachModeRefusesWithoutAnyEffect(t *testing.T) {
+	for _, cfg := range []ReaderKeyConfig{{ReadOnly: true}, {Offline: true}} {
+		dir := t.TempDir()
+		requests := 0
+		cfg.Dir = dir
+		cfg.Client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { requests++; return nil, errors.New("no network") })}
+		h := ReaderKeyHandlers(cfg)
+		if r, _, _ := callReaderKey(t, h, "readerkey/set", `{"provider":"zai","region":"global","key":"`+readerKeyFake+`"}`); r.Outcome != wire.ReaderKeyFailed || r.Present {
+			t.Fatalf("%+v set = %+v", cfg, r)
+		}
+		if _, err := os.Stat(quota.ManualKeyPath(dir)); err == nil {
+			t.Fatalf("%+v: set wrote the file", cfg)
+		}
+		if err := quota.SetManualKey(dir, "zai", readerKeyFake, "global"); err != nil {
+			t.Fatal(err)
+		}
+		if r, _, _ := callReaderKey(t, h, "readerkey/remove", `{"provider":"zai","region":"none","key":""}`); r.Outcome != wire.ReaderKeyFailed || !r.Present {
+			t.Fatalf("%+v remove = %+v", cfg, r)
+		}
+		if r, _, _ := callReaderKey(t, h, "readerkey/test", `{"provider":"zai","region":"global","key":"`+readerKeyFake+`"}`); r.Outcome != wire.ReaderKeyUnreachable {
+			t.Fatalf("%+v test = %+v", cfg, r)
+		}
+		if r, _, _ := callReaderKey(t, h, "readerkey/test", `{"provider":"zai","region":"none","key":""}`); r.Outcome != wire.ReaderKeyUnreachable {
+			t.Fatalf("%+v stored test = %+v", cfg, r)
+		}
+		if requests != 0 {
+			t.Fatalf("%+v: %d outbound requests", cfg, requests)
+		}
+	}
+}
+
+// Two providers saved at the same time both survive (the whole read-modify-replace is one transaction).
+func TestReaderKeyConcurrentSavesKeepEveryProvider(t *testing.T) {
+	for i := 0; i < 30; i++ {
+		dir := t.TempDir()
+		h := ReaderKeyHandlers(ReaderKeyConfig{Dir: dir})
+		var wg sync.WaitGroup
+		for _, body := range []string{`{"provider":"zai","region":"global","key":"` + readerKeyFake + `"}`, `{"provider":"opencodego","region":"none","key":"` + readerKeyFake + `2"}`} {
+			wg.Add(1)
+			go func(body string) {
+				defer wg.Done()
+				method := "readerkey/set"
+				h[method].Handle(context.Background(), json.RawMessage(body), Stamp{})
+			}(body)
+		}
+		wg.Wait()
+		if !quota.ManualKeyPresent(dir, "zai") || !quota.ManualKeyPresent(dir, "opencodego") {
+			t.Fatalf("iteration %d: a concurrent save was lost (zai=%v opencodego=%v)", i, quota.ManualKeyPresent(dir, "zai"), quota.ManualKeyPresent(dir, "opencodego"))
+		}
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

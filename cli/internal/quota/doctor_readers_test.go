@@ -174,9 +174,12 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, row := range wire {
-					want := 8 // the cause field is present only for a failure
+					want := 8 // cause and failures are present only when there is something to report
 					if _, ok := row["cause"]; ok {
-						want = 9
+						want++
+					}
+					if _, ok := row["failures"]; ok {
+						want++
 					}
 					if len(row) != want {
 						t.Fatal("new output field needs privacy review", row)
@@ -212,6 +215,29 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 							// A fixed reader code or empty; never text.
 							if !regexp.MustCompile(`^(|file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|other)$`).MatchString(value.(string)) {
 								t.Fatal("unreviewed cause", row)
+							}
+						case "failures":
+							// Codex's recent failures: a fixed code, a UTC time and a streak length; nothing else.
+							list, ok := value.([]any)
+							if !ok {
+								t.Fatal("failures is not a list", row)
+							}
+							for _, item := range list {
+								entry, ok := item.(map[string]any)
+								if !ok || len(entry) != 3 {
+									t.Fatal("new failure field needs privacy review", row)
+								}
+								code, _ := entry["code"].(string)
+								if !regexp.MustCompile(`^(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|other)$`).MatchString(code) {
+									t.Fatal("unreviewed failure code", row)
+								}
+								at, _ := entry["at"].(string)
+								if _, err := time.Parse(time.RFC3339, at); err != nil || !strings.HasSuffix(at, "Z") {
+									t.Fatal("failure time is not UTC", row)
+								}
+								if _, ok := entry["streakSeconds"].(float64); !ok {
+									t.Fatal("failure streak is not a number", row)
+								}
 							}
 						case "last":
 							if !regexp.MustCompile(`^(unknown|[0-9]+s)$`).MatchString(value.(string)) {

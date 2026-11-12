@@ -143,6 +143,15 @@ private let fakeKey = "fake-test-key-0001"
         let go = made(.opencodego, FakeKeyBackend(), language: .english)
         XCTAssertTrue(descendants(go).compactMap { ($0 as? NSTextField)?.stringValue }.contains("Stored on this Mac and sent only to opencode.ai to read plan usage"))
     }
+    func testInlineEntryNamesTheActionNotTheProvider() {
+        let section = ReaderKeySection(backend: FakeKeyBackend(), language: .english)
+        let inline = section.inlineEntry(for: .zai)
+        XCTAssertTrue(inline === section.inlineEntry(for: .zai), "one entry per provider, reused across renders")
+        XCTAssertTrue(descendants(inline).compactMap { ($0 as? NSTextField)?.stringValue }.contains("Add a key (optional)"))
+        XCTAssertNotNil(find(inline, "readerkey.zai.field", as: NSSecureTextField.self))
+        XCTAssertEqual(SettingsScopeConsentView.noKeyLine(.zai).english.contains("add a key"), true)
+        XCTAssertFalse(SettingsScopeConsentView.firstRunKeyLine.chinese.isEmpty)
+    }
     func testDismissClearsTheTypedKey() {
         let view = made(.zai, FakeKeyBackend())
         type(view, fakeKey)
@@ -152,8 +161,9 @@ private let fakeKey = "fake-test-key-0001"
     func testWireOutcomeWordsMap() {
         XCTAssertEqual(ReaderKeyOutcome(wire: "key_refused"), .keyRefused)
         XCTAssertEqual(ReaderKeyOutcome(wire: "plan_lapsed"), .planLapsed)
+        XCTAssertEqual(ReaderKeyOutcome(wire: "file_unsafe"), .fileUnsafe)
         XCTAssertEqual(ReaderKeyOutcome(wire: "anything else"), .failed)
-        for outcome in [ReaderKeyOutcome.saved, .removed, .ok, .keyRefused, .planLapsed, .noKey, .unreachable, .failed, .notAccepted] {
+        for outcome in [ReaderKeyOutcome.saved, .removed, .ok, .keyRefused, .planLapsed, .noKey, .unreachable, .failed, .notAccepted, .fileUnsafe] {
             XCTAssertFalse(outcome.message.english.isEmpty); XCTAssertFalse(outcome.message.chinese.isEmpty)
             XCTAssertFalse(outcome.message.english.contains(fakeKey))
         }

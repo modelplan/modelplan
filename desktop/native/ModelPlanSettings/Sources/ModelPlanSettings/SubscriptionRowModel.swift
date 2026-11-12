@@ -37,7 +37,7 @@ public struct SubscriptionRow: Equatable, Sendable, Identifiable {
     /// True when the status line is a problem to fix rather than a plain fact.
     public let needsAttention: Bool
     /// The one fix action, from the shared ReaderCauseTable.
-    public let fix: ReaderCauseEntry?
+    public let fix: RowFixEntry?
     /// Detected rows only: the tool can be added now (readable, with at least one standard path).
     public let canAdd: Bool
     /// A row for a tool that is reading but has no subscription yet: no visibility switch or order controls.
@@ -86,7 +86,7 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             }
         }
         if let code = actionableCode(facts?.code), !isKeychain(code),
-           let entry = ReaderCauseTable.entry(code: code, tool: tool.tool, toolName: name, keyEntryAvailable: keyEntryAvailable) {
+           let entry = ReaderCauseTable.rowEntry(code: code, tool: tool.tool, toolName: name, keyEntryAvailable: keyEntryAvailable) {
             return (entry.reason, true)
         }
         if tool.promptsKeychain {
@@ -116,7 +116,7 @@ public struct SubscriptionRowModel: Equatable, Sendable {
                 if state == .needsConsent { code = "consent_required" }
             }
             let displayName = sub.name.english.isEmpty ? name(tool) : sub.name
-            let fix = code.flatMap { ReaderCauseTable.entry(code: $0, tool: tool, toolName: displayName.value(english), keyEntryAvailable: keyEntryAvailable) }
+            let fix = code.flatMap { ReaderCauseTable.rowEntry(code: $0, tool: tool, toolName: displayName.value(english), keyEntryAvailable: keyEntryAvailable) }
             let status: SettingsText
             if let fix { status = fix.reason }
             else {
@@ -148,10 +148,10 @@ public struct SubscriptionRowModel: Equatable, Sendable {
                     continue
                 }
                 let pre = prerequisite(tool: tool, name: displayName.english, facts: toolFacts, keyEntryAvailable: keyEntryAvailable)
-                var fix: ReaderCauseEntry?
+                var fix: RowFixEntry?
                 let fixCode: String? = tool.block == .notSignedIn ? "not_signed_in" : (tool.block == nil ? actionableCode(toolFacts?.code) : nil)
                 if pre.needsAttention, let code = fixCode {
-                    fix = ReaderCauseTable.entry(code: code, tool: tool.tool, toolName: displayName.english, keyEntryAvailable: keyEntryAvailable)
+                    fix = ReaderCauseTable.rowEntry(code: code, tool: tool.tool, toolName: displayName.english, keyEntryAvailable: keyEntryAvailable)
                 }
                 detected.append(SubscriptionRow(id: tool.tool, tool: tool.tool, name: displayName, plan: "", section: .detected,
                                                 consent: toolFacts?.consent, state: toolFacts?.state, causeCode: nil, visible: true,

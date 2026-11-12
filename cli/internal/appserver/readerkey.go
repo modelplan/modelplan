@@ -4,6 +4,7 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -69,10 +70,13 @@ func ReaderKeyHandlers(c ReaderKeyConfig) map[string]Handler {
 	}
 	return map[string]Handler{
 		"readerkey/set": handler(func(_ context.Context, p wire.ReaderKeyParams, region string) wire.ReaderKeyOutcome {
-			switch {
-			case c.ReadOnly:
+			if c.ReadOnly || c.Offline {
 				return wire.ReaderKeyFailed
-			case quota.SetManualKey(c.Dir, string(p.Provider), p.Key, region) != nil:
+			}
+			switch err := quota.SetManualKey(c.Dir, string(p.Provider), p.Key, region); {
+			case errors.Is(err, quota.ErrManualKeyFileUnsafe):
+				return wire.ReaderKeyFileUnsafe
+			case err != nil:
 				return wire.ReaderKeyNotAccepted
 			}
 			return wire.ReaderKeySaved
@@ -82,13 +86,20 @@ func ReaderKeyHandlers(c ReaderKeyConfig) map[string]Handler {
 			return wire.ReaderKeyOK
 		}),
 		"readerkey/remove": handler(func(_ context.Context, p wire.ReaderKeyParams, _ string) wire.ReaderKeyOutcome {
-			if c.ReadOnly || quota.RemoveManualKey(c.Dir, string(p.Provider)) != nil {
+			if c.ReadOnly || c.Offline {
+				return wire.ReaderKeyFailed
+			}
+			err := quota.RemoveManualKey(c.Dir, string(p.Provider))
+			if errors.Is(err, quota.ErrManualKeyFileUnsafe) {
+				return wire.ReaderKeyFileUnsafe
+			}
+			if err != nil {
 				return wire.ReaderKeyFailed
 			}
 			return wire.ReaderKeyRemoved
 		}),
 		"readerkey/test": handler(func(ctx context.Context, p wire.ReaderKeyParams, region string) wire.ReaderKeyOutcome {
-			if c.Offline {
+			if c.Offline || c.ReadOnly {
 				return wire.ReaderKeyUnreachable
 			}
 			// With no key in the call, the stored key is tested.

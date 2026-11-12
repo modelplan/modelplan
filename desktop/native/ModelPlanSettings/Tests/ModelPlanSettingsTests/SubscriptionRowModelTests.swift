@@ -89,3 +89,16 @@ final class SubscriptionRowModelTests: XCTestCase {
         XCTAssertEqual(line(tool("grok", block: .notSignedIn, readable: false)).0.english, "Not signed in to Grok. Sign in first.")
     }
 }
+
+/// The Settings rows keep their own fix table; the card table (`ReaderCauseTable.entry`) stays guidance-only.
+final class RowFixTableTests: XCTestCase {
+    func testRowsKeepWiredFixesWhileTheCardTableStaysGuidanceOnly() throws {
+        XCTAssertEqual(ReaderCauseTable.rowEntry(code: "runtime_missing")?.target, .installNode)
+        XCTAssertEqual(ReaderCauseTable.rowEntry(code: "timeout")?.target, .retry)
+        XCTAssertEqual(ReaderCauseTable.rowEntry(code: "keychain_unset")?.target, .allowKeychain)
+        XCTAssertEqual(ReaderCauseTable.rowEntry(code: "key_missing", tool: "zai", keyEntryAvailable: true)?.target, .addKey)
+        XCTAssertEqual(ReaderCauseTable.rowEntry(code: "key_missing", tool: "zai")?.target, .openTool)
+        XCTAssertNil(ReaderCauseTable.rowEntry(code: "surprise"))
+        XCTAssertEqual(try XCTUnwrap(ReaderCauseTable.entry(code: "runtime_missing")).target, .guidance)
+    }
+}

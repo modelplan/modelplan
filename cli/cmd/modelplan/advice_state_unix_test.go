@@ -155,7 +155,10 @@ func TestHookFirstSyncAndBusySaveFitHostTimeout(t *testing.T) {
 	start := time.Now()
 	code := adviseHookAt(strings.NewReader(`{"session_id":"synthetic-thread"}`), &out, h.style, h.st, client, common{}, "claude-code", "", "", now)
 	elapsed := time.Since(start)
-	if code != 0 || !strings.Contains(out.String(), "18% left") || elapsed < firstSyncWait || elapsed >= 5*time.Second {
+	// The lower bound is the deterministic part (the stalled sync waits its full budget). The
+	// upper bound proves the busy save stays tied to hookSaveBudget; its slack is wide because a
+	// loaded CI runner once took 7.5 s of unrelated hook work, which says nothing about the budget.
+	if code != 0 || !strings.Contains(out.String(), "18% left") || elapsed < firstSyncWait || elapsed >= hookSaveBudget+5*time.Second {
 		t.Fatalf("hook time/output: code=%d elapsed=%s output=%s", code, elapsed, out.String())
 	}
 	b, err := os.ReadFile(filepath.Join(h.st.Dir, "observed", "advice-save-error.json"))

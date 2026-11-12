@@ -176,17 +176,25 @@ func writeManualKeys(dir string, keys map[string]ManualKey) error {
 	return nil
 }
 
+// ErrManualKeyFileUnsafe: the key file exists but is unreadable or has loose permissions. A write
+// is refused so another provider's key is never dropped; the user fixes or removes the file.
+var ErrManualKeyFileUnsafe = errors.New("manual key file unsafe")
+
 // SetManualKey stores (replaces) the key for provider. The error never contains the key.
 func SetManualKey(dir, provider, key, region string) error {
 	k, ok := normalizeManualKey(provider, key, region)
 	if !ok {
 		return errors.New("manual key not accepted")
 	}
+	unlock, lerr := lockManualKeys(dir)
+	if lerr != nil {
+		return errors.New("manual key file not written")
+	}
+	defer unlock()
 	keys, err := loadManualKeys(dir)
 	if err != nil {
-		// An unreadable or unsafe file is replaced, not trusted: it may hold other providers'
-		// keys, but a file other users could write cannot be relied on.
-		keys = nil
+		// An unreadable or unsafe file may hold the other provider's key: refuse, never replace it.
+		return ErrManualKeyFileUnsafe
 	}
 	if keys == nil {
 		keys = map[string]ManualKey{}
@@ -200,11 +208,16 @@ func RemoveManualKey(dir, provider string) error {
 	if !ManualKeyProvider(provider) {
 		return errors.New("manual key not accepted")
 	}
+	unlock, lerr := lockManualKeys(dir)
+	if lerr != nil {
+		return errors.New("manual key file not written")
+	}
+	defer unlock()
 	keys, err := loadManualKeys(dir)
 	if err != nil {
-		keys = nil
+		return ErrManualKeyFileUnsafe
 	}
-	if _, ok := keys[provider]; !ok && err == nil {
+	if _, ok := keys[provider]; !ok {
 		return nil
 	}
 	delete(keys, provider)

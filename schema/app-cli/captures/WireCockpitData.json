@@ -81,7 +81,8 @@
         "projectLabel": "synthetic",
         "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
         "state": "synthetic",
-        "rate": 42.5
+        "rate": 42.5,
+        "fast": false
       }
     ],
     "sessionCoverage": "synthetic",
@@ -92,6 +93,7 @@
         "provider": "openai",
         "rowId": "codex",
         "status": "announced",
+        "kind": "direct_reset",
         "publishedAt": "2026-10-29T12:00:00Z",
         "expiresAt": "2026-10-31T12:00:00Z",
         "source": {
@@ -142,6 +144,25 @@
         "pace": "tight",
         "basis": "recent-rate",
         "observedAt": "2026-10-29T12:00:00.123456789Z"
+      }
+    ],
+    "recentSessions": [
+      {
+        "sessionRef": "0123456789abcdef",
+        "source": "synthetic",
+        "subscriptionRef": "0123456789abcdef",
+        "model": "synthetic",
+        "effort": "synthetic",
+        "projectLabel": "synthetic",
+        "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
+      }
+    ],
+    "peaks": [
+      {
+        "rowId": "synthetic",
+        "startsAt": "2026-10-29T12:00:00.123456789Z",
+        "endsAt": "2026-10-29T12:00:00.123456789Z",
+        "status": "synthetic"
       }
     ]
   },
@@ -244,6 +265,7 @@
       {
         "at": "synthetic",
         "source": "synthetic",
+        "origin": "synthetic",
         "observedOutputTokens": 1
       }
     ],
@@ -251,6 +273,7 @@
       {
         "at": "synthetic",
         "source": "synthetic",
+        "origin": "synthetic",
         "observedOutputTokens": 1
       }
     ],
@@ -308,6 +331,7 @@
         "provider": "openai",
         "rowId": "codex",
         "status": "announced",
+        "kind": "direct_reset",
         "publishedAt": "2026-10-29T12:00:00Z",
         "expiresAt": "2026-10-31T12:00:00Z",
         "source": {
