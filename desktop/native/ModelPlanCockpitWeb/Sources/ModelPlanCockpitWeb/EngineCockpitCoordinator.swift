@@ -500,7 +500,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       guard let delivery, reply.delivery == delivery else { break }
       let status = reply.envelope.data
       // Progress while running changes nothing the cockpit draws; a finished, cancelled or removed import may.
-      guard status.phase != .running else { break }
+      // The status summary is not a revision of the imported values (a repeat import can change same-day sums
+      // with the same rows and coverage), so a running import forgets the last settled summary and its
+      // completion always asks again. Only repeated settled polls with no run between them are deduplicated.
+      guard status.phase != .running else { importState = nil; break }
       let state = "\(status.phase)|\(status.importedRows)|" + status.coverage.map { "\($0.source),\($0.from),\($0.through),\($0.rows)" }.joined(separator: ";")
       guard state != importState else { break }
       importState = state

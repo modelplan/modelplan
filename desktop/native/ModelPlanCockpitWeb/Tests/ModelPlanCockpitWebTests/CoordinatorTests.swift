@@ -281,6 +281,51 @@ final class CoordinatorTests: XCTestCase {
     await client.complete(); await settle()
     await coordinator.shutdown(); await client.stop()
   }
+
+  /// macrev2-856-1 (HIST-IMP-05, C-13): a repeat import can change imported values without changing the
+  /// summary (rows, coverage), so done(S) -> running -> done(S) still asks an open cockpit again.
+  @MainActor func testRepeatImportWithUnchangedSummaryRequeriesAnOpenCockpit() async throws {
+    let coordinator = EngineCockpitCoordinator { PageProbe($0) }
+    let client = HeldClient()
+    coordinator.bind(client: client)
+    let delivery = EngineDeliveryContext(
+      sessionID: "s-" + UUID().uuidString.lowercased(),
+      floor: .init(storeEpoch: "synthetic", generation: 3), revision: 2)
+    await coordinator.consume(.context(delivery))
+    coordinator.open()
+    func requests(_ n: Int) async throws {
+      for _ in 0..<200 {
+        if await client.requests == n { return }
+        try await Task.sleep(for: .milliseconds(5))
+      }
+      let seen = await client.requests
+      XCTFail("expected \(n) cockpit queries, saw \(seen)")
+    }
+    func settle() async { for _ in 0..<50 { await Task.yield() } }
+    func status(_ phase: String) throws -> EngineClientEvent {
+      let coverage = #"[{"source":"codex","from":"2026-11-08","through":"2026-11-08","rows":1}]"#
+      let json = #"{"schemaVersion":1,"phase":"\#(phase)","days":30,"filesDone":0,"filesTotal":0,"firstRunDone":true,"importedRows":1,"coverage":\#(coverage),"sources":[]}"#
+      let data = try WireDecoder.decode(WireHistoryImportStatus.self, from: Data(json.utf8))
+      let envelope = try WireEnvelope(
+        sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+        consentGeneration: delivery.floor.generation, data: data)
+      return .response(requestID: .string("import"), .historyImport(.init(envelope: envelope, delivery: delivery)))
+    }
+    try await requests(1)
+    await client.complete(); await settle()
+    await coordinator.consume(try status("done"))
+    try await requests(2)
+    await client.complete(); await settle()
+    // A repeated settled poll with no run between is still deduplicated.
+    await coordinator.consume(try status("done")); await settle()
+    try await requests(2)
+    await coordinator.consume(try status("running")); await settle()
+    try await requests(2)
+    await coordinator.consume(try status("done"))
+    try await requests(3)
+    await client.complete(); await settle()
+    await coordinator.shutdown(); await client.stop()
+  }
 }
 
 @MainActor private final class ShellLifecyclePage: CockpitPageSurface {
