@@ -208,6 +208,8 @@ struct StatusNoticePresentation {
         composition.dock.resetPosition = { [weak self] in self?.resetPositions() }
         // Build 14c (G3-79): the ignition opens the cockpit on the display the widget is on, where the user clicked.
         composition.dock.showConsole = { [weak self] in self?.showConsole(openPoint: NSEvent.mouseLocation) }
+        // D204 (G3-94): the ignition itself toggles an attached cockpit and brings a detached one to the front.
+        composition.dock.pressIgnition = { [weak self] point in self?.pressIgnition(at: point) }
     }
     private func updateMemberRefreshCapability() {
         guard let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery) else {
@@ -370,8 +372,19 @@ struct StatusNoticePresentation {
         refreshStatusTooltip()
         dockHelp?.refresh()
     }
+    /// D204 v3 (G3-94): attached to the menu bar, the ignition toggles the cockpit like a menu bar popover (it opens
+    /// under the icon of the display pressed on). Detached, it always brings the cockpit to the front like a Dock icon
+    /// (covered or on another Space: moved to the current Space; minimised: restored; closed: opened at its last
+    /// position) and never closes it; the detached cockpit closes from its own title-strip close key.
+    /// G3-94 was the attached case: the ignition's mouse-down closed the cockpit as an outside click, then its action
+    /// (open-only) opened it again.
+    func pressIgnition(at point: CGPoint) {
+        guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
+        if let console, console.isShowing, !console.isDetached { console.requestClose(); refreshStatusTooltip(); return }
+        showConsole(openPoint: point)
+    }
     /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
-    /// entry (menu item, ignition, shortcut, reopening the app) only ever opens.
+    /// entry (menu item, shortcut, reopening the app) only ever opens; the ignition follows D204 (`pressIgnition`).
     func toggleConsole() {
         if let console, console.isShowing { console.requestClose(); refreshStatusTooltip() } else { showConsole(fromStatusItem: true) }
     }

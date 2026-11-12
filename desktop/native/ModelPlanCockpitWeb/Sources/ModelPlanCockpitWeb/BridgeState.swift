@@ -23,6 +23,24 @@ public struct CockpitQueryTicket: Equatable, Sendable {
   public let context: CockpitEngineContext
   public let viewRevision: UInt64
 }
+/// CKP-SHELL-40 (owner D205): v1 is night-only. The cockpit renders the night look whatever the macOS
+/// appearance or the saved theme; the day paths in the page and in this module stay intact behind this one
+/// switch. v1.1 turns the day cockpit back on by setting `dayCockpit` (default off) at launch.
+public enum CockpitDayPolicy {
+  private static let lock = NSLock()
+  private static var enabled = false
+  /// Off in v1. Tests flip it and restore it; nothing else writes it.
+  public static var dayCockpit: Bool {
+    get { lock.lock(); defer { lock.unlock() }; return enabled }
+    set { lock.lock(); defer { lock.unlock() }; enabled = newValue }
+  }
+  /// The theme the cockpit may show for a requested one.
+  public static func resolve(_ requested: CockpitAppearance.Theme) -> CockpitAppearance.Theme {
+    dayCockpit ? requested : .night
+  }
+  /// The same pin for the field page's own theme enum.
+  public static func resolveField(dark: Bool) -> Bool { dayCockpit ? dark : true }
+}
 public struct CockpitAppearance: Equatable, Sendable {
   public enum Theme: String, Sendable { case day, night }
   public enum Locale: String, Sendable {
