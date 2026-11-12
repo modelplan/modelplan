@@ -14,7 +14,7 @@ public enum HelpUILayout {
               input.liveReadings.allSatisfy(HelpUIGeometry.valid) else { return empty(["invalidInput"]) }
         let anchors=Dictionary(uniqueKeysWithValues:input.anchors.filter { $0.visible && HelpUIGeometry.intersects($0.rect,bounds) }.map { ($0.id,$0.rect) })
         if input.map.mode != .hidden { return map(input,anchors:anchors,measure:measure) }
-        let width=min(370,safe.width)
+        var width=min(370,safe.width)
         let identity:HelpUICardIdentity,anchorID:String,height:CGFloat
         if let hint=input.firstUse {
             guard !hint.text.isEmpty,hint.text.utf8.count<=4096,!hint.dismissTitle.isEmpty,hint.dismissTitle.utf8.count<=256 else { return empty() }
@@ -25,6 +25,14 @@ public enum HelpUILayout {
                   (context.actionID?.utf8.count ?? 0)<=256,(context.actionTitle?.utf8.count ?? 0)<=512,
                   context.explanation.title.utf8.count<=512,context.explanation.body.utf8.count<=8192 else { return empty() }
             identity = .context(context.id);anchorID=context.anchorID
+            // Prototype tooltip (help-system study): `width:max-content;max-width:370px`. A tip is as wide as its
+            // text needs, not always the 370 pt ceiling; a card with an action keeps the full width for its button.
+            if context.actionID == nil || context.actionTitle == nil {
+                let inner=width-22
+                let natural=max(measure(context.explanation.title,inner,.contextTitle).width,
+                                measure(context.explanation.body,inner,.contextBody).width)
+                if natural.isFinite,natural>0 { width=min(width,max(48,ceil(natural)+22+1)) }
+            }
             height=ceil(measure(context.explanation.title,width-22,.contextTitle).height)
                 + ceil(measure(context.explanation.body,width-22,.contextBody).height)+23
                 + ((context.actionID != nil && context.actionTitle != nil) ? 26:0)

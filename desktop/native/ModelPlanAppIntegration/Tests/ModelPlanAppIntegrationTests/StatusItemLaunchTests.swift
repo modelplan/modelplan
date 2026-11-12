@@ -23,6 +23,21 @@ import XCTest
     func requestClose() { closes += 1; isShowing = false }
 }
 
+/// D88: an attachable console, as the cockpit is. It records which entry opened it.
+@MainActor private final class AttachableStatusConsole: EngineRowsConsoleSurface {
+    var entries: [Bool] = []
+    private(set) var isShowing = false
+    var isDetached = false
+    var onShowingChanged: (() -> Void)?
+    func show() { show(fromStatusItem: false) }
+    func show(fromStatusItem: Bool) { entries.append(fromStatusItem); isShowing = true }
+    func setDetached(_ value: Bool) { isDetached = value; onShowingChanged?() }
+    func pageClosed() { isShowing = false; onShowingChanged?() }
+    func render() {}
+    func hide() { isShowing = false }
+    func requestClose() { isShowing = false }
+}
+
 @MainActor final class StatusItemLaunchTests: XCTestCase {
     private func click(_ type: NSEvent.EventType, on button: NSButton, flags: NSEvent.ModifierFlags = []) throws -> NSEvent {
         try XCTUnwrap(NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: flags, timestamp: 0,
@@ -148,6 +163,47 @@ import XCTest
         }
     }
 
+    /// D88: only the icon's own click grows the cockpit out of the icon; Open Cockpit, the shortcut and the
+    /// widget ignition reach the same console as a plain entrance.
+    func testD88OnlyTheIconClickAsksForTheGrowEntrance() async throws {
+        let console = AttachableStatusConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        XCTAssertEqual(console.entries, [true], "the icon click grows from the icon")
+        console.pageClosed()
+        app.composition.dock.showConsole?()
+        XCTAssertEqual(console.entries, [true, false], "the widget ignition keeps its own entrance")
+        console.pageClosed()
+        app.showConsole()
+        XCTAssertEqual(console.entries, [true, false, false])
+    }
+
+    /// D88: the icon shows its native pressed highlight while the attached cockpit is open; a detached cockpit
+    /// is its own window, so the highlight goes off, and comes back when it is put back. Closing clears it.
+    func testD88IconIsPressedOnlyWhileTheAttachedCockpitIsOpen() async throws {
+        let console = AttachableStatusConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertFalse(button.isHighlighted, "closed: not pressed")
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        XCTAssertTrue(button.isHighlighted, "attached and open: pressed")
+        console.setDetached(true)
+        XCTAssertFalse(button.isHighlighted, "detached: not pressed")
+        console.setDetached(false)
+        XCTAssertTrue(button.isHighlighted, "put back: pressed again")
+        app.renderMenu()
+        XCTAssertTrue(button.isHighlighted, "a menu refresh keeps it")
+        console.pageClosed()
+        XCTAssertFalse(button.isHighlighted, "closed by the page: not pressed")
+    }
+
     private func application(cockpitEntryEnabled: Bool? = nil,
                              console: (any EngineRowsConsoleSurface)? = nil) async throws -> EngineDockMenuApplication {
         _ = NSApplication.shared
@@ -208,13 +264,41 @@ import XCTest
         app.statusItemVisibility = { visible }
         app.checkStatusItemVisibility()
         let notice = "The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right."
-        let menu = app.composition.dock.menu().items
-        XCTAssertEqual(menu.first?.title, notice); XCTAssertFalse(menu.first?.isEnabled ?? true)
+        // The warning belongs to Settings only: the widget's context menu never carries it (G3-57).
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice },
+                       "the widget context menu has no hidden-icon item")
         XCTAssertEqual(app.settingsHost.application.editor.context.statusItemNotice?.chinese, "菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。")
         visible = true
         app.checkStatusItemVisibility()
-        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice }, "the notice clears once the icon is visible")
         XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
+    }
+
+    /// G3-57 (owner, two displays): the "menu bar is full" warning showed although the icon was visible on the
+    /// external display. The icon is hidden only when its window is on screen on NO display.
+    func testG3_57IconVisibleOnAnyDisplayGivesNoHiddenWarning() async throws {
+        let app = try await application()
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let notice = "The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right."
+        // Hidden on the built-in display, shown on the external one: no warning.
+        app.statusWindowVisibilities = { [false, true] }
+        app.checkStatusItemVisibility()
+        XCTAssertFalse(app.statusItemHidden)
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice })
+        XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
+        // Hidden everywhere: the warning.
+        app.statusWindowVisibilities = { [false, false] }
+        app.checkStatusItemVisibility()
+        XCTAssertTrue(app.statusItemHidden)
+        XCTAssertNotNil(app.settingsHost.application.editor.context.statusItemNotice)
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice },
+                       "hidden on every display: Settings warns, the widget context menu does not")
+        // Back on one display: cleared.
+        app.statusWindowVisibilities = { [true, false] }
+        app.checkStatusItemVisibility()
+        XCTAssertFalse(app.statusItemHidden)
+        XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
+        XCTAssertNil(EngineDockMenuApplication.anyWindowVisible([]), "no known window gives no verdict")
     }
 
     func testMissingTemplateImageFallsBackToAVisibleTitle() async throws {

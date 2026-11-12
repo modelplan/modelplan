@@ -163,6 +163,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			}
 		}
 	}
+	if appserver.CockpitPeaksEnabled(ctx) {
+		result.Peaks = cockpitPeaks(published, view, now)
+	}
 	if appserver.CockpitForecastEnabled(ctx) {
 		result.Forecasts = wire.ProjectForecasts(view.Projection, func(ref string) bool { return byRef[ref] != nil }, now)
 	}
@@ -244,7 +247,16 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		if session.SubscriptionRef != nil && byRef[*session.SubscriptionRef] != nil {
 			subscription = session.SubscriptionRef
 		}
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
+		// CKP-FAD-11 / CKP-MFD-19: a recorded Fast session compares as Fast; any other mode stays unreported.
+		var fast *bool
+		if session.Speed == "fast" {
+			v := true
+			fast = &v
+		}
+		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast})
+	}
+	if appserver.CockpitSessionsEnabled(ctx) {
+		result.RecentSessions = cockpitRecentSessions(perf.Ledger.Sessions, allowed, sourceScope, byRef, labels, view.PublicModels, now)
 	}
 	inUse := map[string]bool{}
 	for _, session := range result.Sessions {

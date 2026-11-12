@@ -86,6 +86,9 @@ func ObserveOpenCode(cache, home string, in Ingest, now time.Time) error {
 		return nil
 	}
 	return observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return l.scanDB(path, "opencode", ParserOpenCode, now, readOpenCode)
+		return l.scanDB(path, "opencode", ParserOpenCode, openCodeAnchor, now, readOpenCode)
 	})
 }
+
+// openCodeAnchor: a message's own id and creation time, which a replaced database does not repeat.
+const openCodeAnchor = `SELECT COALESCE(json_extract(data, '$.id'), '') || '|' || COALESCE(json_extract(data, '$.time.created'), 0) FROM session_message WHERE rowid = ?`
