@@ -105,6 +105,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
 <key>CFBundleName</key><string>ModelPlan Community</string>
 <key>CFBundleDisplayName</key><string>ModelPlan Community</string>
 <key>CFBundleIdentifier</key><string>org.modelplan.community.swift.scaffold</string>
@@ -120,6 +122,16 @@ $owner_test_plist<key>NSHighResolutionCapable</key><true/>
 <key>NSHumanReadableCopyright</key><string>MIT community software. Apple silicon only.</string>
 </dict></plist>
 PLIST
+# SET-9-38: user-visible Info.plist text (app name, copyright) in both declared localizations.
+mkdir -p "$app/Contents/Resources/en.lproj" "$app/Contents/Resources/zh-Hans.lproj"
+cat > "$app/Contents/Resources/en.lproj/InfoPlist.strings" <<'STRINGS'
+"CFBundleDisplayName" = "ModelPlan Community";
+"NSHumanReadableCopyright" = "MIT community software. Apple silicon only.";
+STRINGS
+cat > "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings" <<'STRINGS'
+"CFBundleDisplayName" = "ModelPlan 社区版";
+"NSHumanReadableCopyright" = "MIT 社区软件。仅支持 Apple 芯片。";
+STRINGS
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"
 cp "$repo_root/THIRD-PARTY-TRADEMARKS.md" "$app/Contents/Resources/THIRD-PARTY-TRADEMARKS.md"

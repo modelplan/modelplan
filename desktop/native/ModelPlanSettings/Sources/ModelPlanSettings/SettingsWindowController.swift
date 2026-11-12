@@ -221,7 +221,7 @@ enum SettingsWords {
         guard !refreshing, SettingsStructure.task65.panes.indices.contains(sidebar.selectedRow) else { return }
         selectedPaneID = SettingsStructure.task65.panes[sidebar.selectedRow].id; refresh()
     }
-    private var language: SettingsLanguage { editor.snapshot?.preferences.language ?? .chinese }
+    private var language: SettingsLanguage { editor.snapshot?.preferences.language ?? .fallback }
     private func buildWindow(_ window: NSWindow) {
         let root = SettingsBackground(); window.contentView = root
         let side = SettingsBackground(); side.translatesAutoresizingMaskIntoConstraints = false

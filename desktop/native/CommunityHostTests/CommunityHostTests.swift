@@ -32,6 +32,15 @@ private struct NeverCLI: CLITransport {
     private func gate() -> LifecycleCoordinator {
         LifecycleCoordinator(store: SnapshotStore(transport: NeverCLI(), automaticTimers: false))
     }
+    func testHostTextAndEmptyMenuReadingFollowOneLanguage() {
+        XCTAssertTrue(CommunityHostLanguage.prefersChinese(preferredLanguages: ["fr-FR", "zh-Hans"]))
+        XCTAssertFalse(CommunityHostLanguage.prefersChinese(preferredLanguages: ["en-US", "zh-Hans"]))
+        for chinese in [false, true] {
+            let detail = CommunityMenuBarPresentation.emptyReading(chinese: chinese).detail
+            XCTAssertEqual(detail.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }, chinese, detail)
+            XCTAssertFalse(detail.contains(" / "), detail)
+        }
+    }
     func testLegacyHostDoesNotCreateASettingsIntegration() async {
         let host = CommunityDelegate(surfaces: NeutralSurfaceProvider())
         XCTAssertNil(host.configureSettings(gate()))
@@ -56,7 +65,8 @@ private struct NeverCLI: CLITransport {
         let host = CommunityDelegate(surfaces: NeutralSurfaceProvider()) { _ in creates += 1; throw Unavailable() }
         let first = host.configureSettings(gate())
         XCTAssertFalse(first?.isEnabled ?? true)
-        XCTAssertEqual(first?.title, "Settings could not open — quit and reopen ModelPlan / 设置未能打开，请退出并重新打开 ModelPlan")
+        // One language only (SET-9-38): with no Settings choice yet, the macOS list decides which one.
+        XCTAssertTrue(["Settings could not open — quit and reopen ModelPlan", "设置未能打开，请退出并重新打开 ModelPlan"].contains(first?.title ?? ""), first?.title ?? "")
         XCTAssertTrue(first === host.configureSettings(gate())); XCTAssertEqual(creates, 1)
     }
     func testCompanionInitializationDoesNotInstallCallbacksOrTouchItsPresentation() async {

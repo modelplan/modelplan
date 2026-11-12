@@ -38,7 +38,7 @@ import AppKit
     private var committed = "", cancelled = false
     private var unconfirmedText: String?
     var hasUnsavedDraft: Bool { unconfirmedText != nil }
-    private var language: SettingsLanguage = .chinese
+    private var language: SettingsLanguage = .fallback
     var onFinish: ((SettingsAliasControl, AliasDraft) -> Void)?
     var onDraftCleared: ((SettingsAliasControl) -> Void)?
     init(subscriptionID: String) {
@@ -105,7 +105,7 @@ import AppKit
     private(set) var isRetired = false
     private(set) var recording = false
     private var chord: ShortcutChord
-    private var language: SettingsLanguage = .chinese
+    private var language: SettingsLanguage = .fallback
     var onRecord: ((SettingsShortcutControl, ShortcutChord) -> Void)?
     override var acceptsFirstResponder: Bool { !isRetired && isEnabled }
     init(key: SettingKey, chord: ShortcutChord) {

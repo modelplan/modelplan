@@ -174,6 +174,8 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(info['CFBundleIdentifier'], 'ai.modelplan.candidate')
         self.assertEqual(info['CFBundleShortVersionString'], json.loads((ROOT / 'desktop/package.json').read_text())['version'])
         self.assertEqual(info['CFBundleVersion'], '123')
+        self.assertEqual(info['CFBundleLocalizations'], ['en', 'zh-Hans'])  # SET-9-38
+        self.assertEqual(info['CFBundleDevelopmentRegion'], 'en')
         for value in ('0', '-1', '1.2', 'abc'):
             with self.assertRaises(ValueError):
                 packaging.configure_product(self.app, self.source, value)

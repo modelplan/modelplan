@@ -93,7 +93,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private var helpBinding: CommunityContextHelpBinding?
     private var helpGeneration: UInt64 = 0
     private var needsSelection = false
-    public var instrumentLanguage: InstrumentLanguage { settings?.effective.language == .english ? .english : .chinese }
+    public var instrumentLanguage: InstrumentLanguage { (settings?.effective.language ?? .fallback) == .chinese ? .chinese : .english }
     private let openWebsite: @MainActor (InstrumentWebsiteLink) -> Void
     public init(mainScreen suppliedMainScreen: MainScreenView? = nil, openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }) {
         self.mainScreen = suppliedMainScreen ?? MainScreenView(); self.openWebsite = openWebsite
@@ -119,7 +119,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         mainScreen.appearance = nil
         modelPicker.target = self; modelPicker.action = #selector(pickedModel(_:))
         modelPicker.setAccessibilityIdentifier("community.model-picker")
-        modelPicker.setAccessibilityLabel("选择模型")
+        modelPicker.setAccessibilityLabel(instrumentLanguage == .chinese ? "选择模型" : "Choose a model")
         status.setAccessibilityIdentifier("community.instrument-status")
         modelPicker.frame = .init(x: 0, y: 0, width: 600, height: 26)
         mainScreen.frame.origin = .init(x: 0, y: 32)
@@ -170,7 +170,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         guard !retired, helpGeneration == token else { return }
         let binding = CommunityContextHelpBinding(composition: composition, source: mainScreen, container: view,
             active: { [weak self] in self?.isPresented == true && self?.retired == false },
-            language: { [weak self] in self?.instrumentLanguage ?? .chinese },
+            language: { [weak self] in self?.instrumentLanguage ?? .english },
             accessibility: { [weak self] in (self?.settings?.effective.reduceMotion ?? true, self?.settings?.effective.reduceTransparency ?? true) },
             publicationSource: { [weak self] in
                 guard let self else { return .init(publishedAt:nil,now:.distantPast,language:.chinese) }

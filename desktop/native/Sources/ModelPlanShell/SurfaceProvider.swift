@@ -11,19 +11,39 @@ import ModelPlanCore
     func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics)
 }
 
+/// Root-layer language rule for text shown before a Settings choice is known (the neutral surface and the host):
+/// the first zh* or en* entry of the macOS preferred-language list wins, English when neither appears.
+/// Mirrors `SettingsLanguage.resolve` in the separate Settings package.
+public enum NativeSurfaceLanguage {
+    public static func prefersChinese(preferredLanguages: [String] = Locale.preferredLanguages) -> Bool {
+        for raw in preferredLanguages {
+            let tag = raw.lowercased().replacingOccurrences(of: "_", with: "-")
+            if tag == "zh" || tag.hasPrefix("zh-") { return true }
+            if tag == "en" || tag.hasPrefix("en-") { return false }
+        }
+        return false
+    }
+    public static func text(_ english: String, _ chinese: String, chinese isChinese: Bool) -> String { isChinese ? chinese : english }
+}
+
 /// Complete neutral default; no official art, private checkout, WebKit or RealityKit dependency.
 @MainActor public struct NeutralSurfaceProvider: NativeSurfaceProvider {
-    public init() {}
-    public func makeOverview() -> any NativeOverviewSurface { NeutralOverview() }
+    private let preferredLanguages: [String]
+    public init(preferredLanguages: [String] = Locale.preferredLanguages) { self.preferredLanguages = preferredLanguages }
+    public func makeOverview() -> any NativeOverviewSurface { NeutralOverview(chinese: NativeSurfaceLanguage.prefersChinese(preferredLanguages: preferredLanguages)) }
 }
 @MainActor private final class NeutralOverview: NativeOverviewSurface {
     let view = NSView()
-    private let status = NSTextField(labelWithString: "Not connected")
+    private let chinese: Bool
+    private let status: NSTextField
     private let detail = NSTextField(wrappingLabelWithString: "")
-    init() {
-        let title = NSTextField(labelWithString:"ModelPlan Community")
+    private func t(_ en: String, _ zh: String) -> String { NativeSurfaceLanguage.text(en, zh, chinese: chinese) }
+    init(chinese: Bool) {
+        self.chinese = chinese
+        status = NSTextField(labelWithString: NativeSurfaceLanguage.text("Not connected", "未连接", chinese: chinese))
+        let title = NSTextField(labelWithString: NativeSurfaceLanguage.text("ModelPlan Community", "ModelPlan 社区版", chinese: chinese))
         title.font = .systemFont(ofSize:18, weight:.semibold)
-        let intel = NSTextField(wrappingLabelWithString:"Intel 未测试，3D 效果可能卡顿 / Intel untested; 3D may stutter")
+        let intel = NSTextField(wrappingLabelWithString:NativeSurfaceLanguage.text("Intel untested; 3D may stutter", "Intel 未测试，3D 效果可能卡顿", chinese: chinese))
         intel.font = .systemFont(ofSize:11); intel.textColor = .secondaryLabelColor
         let stack = NSStackView(views:[title,status,detail,intel])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
@@ -36,13 +56,14 @@ import ModelPlanCore
     }
     func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {
         guard let snapshot else {
-            status.stringValue = diagnostics.personal == "not-loaded" ? "Reading local snapshot…" : "Local data unavailable"
-            detail.stringValue = "Read-only access only. No reader or permission is enabled here."
+            status.stringValue = diagnostics.personal == "not-loaded" ? t("Reading local snapshot…", "正在读取本地快照…") : t("Local data unavailable", "本地数据不可用")
+            detail.stringValue = t("Read-only access only. No reader or permission is enabled here.", "仅只读访问。此处未启用任何读取器或权限。")
             return
         }
-        status.stringValue = snapshot.presentation.actionable ? "Read-only snapshot" : "Unavailable or stale"
-        detail.stringValue = "\(snapshot.presentation.quotas.count) quota windows · \(snapshot.presentation.live.filter(\.working).count) recently working sessions"
-        if snapshot.publication == nil { detail.stringValue += "\nPublished recommendations unavailable" }
-        if diagnostics.publicationWarning { detail.stringValue += "\nUsing dated, last-good public data" }
+        status.stringValue = snapshot.presentation.actionable ? t("Read-only snapshot", "只读快照") : t("Unavailable or stale", "不可用或已过期")
+        let quotas = snapshot.presentation.quotas.count, working = snapshot.presentation.live.filter(\.working).count
+        detail.stringValue = t("\(quotas) quota windows · \(working) recently working sessions", "\(quotas) 个额度窗口 · \(working) 个近期工作会话")
+        if snapshot.publication == nil { detail.stringValue += "\n" + t("Published recommendations unavailable", "已发布的推荐不可用") }
+        if diagnostics.publicationWarning { detail.stringValue += "\n" + t("Using dated, last-good public data", "正在使用带日期的上次良好公开数据") }
     }
 }

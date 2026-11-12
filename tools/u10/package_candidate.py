@@ -140,7 +140,8 @@ def configure_product(app, source, build_number, root=ROOT):
     info = plistlib.loads(info_path.read_bytes())
     info.update(CFBundleName='ModelPlan', CFBundleDisplayName='ModelPlan Candidate',
                 CFBundleIdentifier=BUNDLE_ID, CFBundleIconFile='ModelPlan.icns', CFBundleShortVersionString=version,
-                CFBundleVersion=build_number, ModelPlanCandidateStage='interface-only')
+                CFBundleVersion=build_number, ModelPlanCandidateStage='interface-only',
+                CFBundleDevelopmentRegion='en', CFBundleLocalizations=['en', 'zh-Hans'])
     info_path.write_bytes(plistlib.dumps(info))
     resources = app / 'Contents/Resources'
     (resources / 'build-edition.json').write_bytes(encoded({'edition': 'official', 'stage': 'interface-only'}))

@@ -68,7 +68,7 @@ import AppKit
         guard active, generation == token, !Task.isCancelled else { return }
         if let scopeConsentEntry {
             do {
-                try scopePresentation?.prepare(language: editor.snapshot?.preferences.language ?? .english)
+                try scopePresentation?.prepare(language: editor.snapshot?.preferences.language ?? .fallback)
                 scopeUnavailable = false; errorMessage = nil
                 if scopeObserver == nil { scopeObserver = scopeConsentEntry.controller.observe { [weak self] in self?.refresh() } }
             } catch { scopeUnavailable = true }
@@ -220,7 +220,7 @@ import AppKit
             if let entry = self.scopeConsentEntry, !(await entry.controller.commitFirstRunChoices()) {
                 guard self.active, self.generation == expectedGeneration else { return }
                 self.errorMessage = SettingsWords.text("Your reading choices could not be saved. Check the connection and press Done again.",
-                    "读取选择未能保存。请检查连接后再点“完成”。", self.editor.snapshot?.preferences.language ?? .chinese)
+                    "读取选择未能保存。请检查连接后再点“完成”。", self.editor.snapshot?.preferences.language ?? .fallback)
                 return
             }
             guard self.active, self.generation == expectedGeneration else { return }
@@ -229,7 +229,7 @@ import AppKit
                 if self.generation == expectedGeneration { self.suspend(); self.close() }
             } catch {
                 guard self.active, self.generation == expectedGeneration else { return }
-                self.errorMessage = FirstRunSaveError.message(error, language: self.editor.snapshot?.preferences.language ?? .chinese)
+                self.errorMessage = FirstRunSaveError.message(error, language: self.editor.snapshot?.preferences.language ?? .fallback)
                 await self.editor.reload(); self.baseRevision = self.editor.snapshot?.revision
             }
         }

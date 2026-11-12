@@ -133,7 +133,8 @@ import ModelPlanCommunityHost
 }
 
 /// Wrap the existing session in the private entry; no root-host protocol or second editor is needed.
-@MainActor public final class CommunityConnectionIntegration: NSObject, CommunityUsageRemediation, CommunitySubscriptionsSettingsPresenting {
+@MainActor public final class CommunityConnectionIntegration: NSObject, CommunityUsageRemediation, CommunitySubscriptionsSettingsPresenting, CommunityLanguageReporting {
+    public var prefersChinese: Bool { (flow.application.editor.snapshot?.preferences.language ?? .fallback) == .chinese }
     public let flow: CommunityConnectionFlow
     private let base: any CommunitySettingsIntegration
     private var restoration: Task<Void, Never>?
@@ -142,7 +143,7 @@ import ModelPlanCommunityHost
     public private(set) var currentUsageNextStep: CommunityConnectionNextStep? = .forReason(.notLoaded)
     public private(set) var currentUsageMessage = SettingsText("Personal readings have not loaded.", "个人读数尚未加载。")
     public private(set) lazy var usageAccessMenuItem: NSMenuItem = {
-        let item = NSMenuItem(title: "Usage access… / 用量授权…", action: #selector(openUsageAccess), keyEquivalent: "")
+        let item = NSMenuItem(title: SettingsText("Usage access…", "用量授权…").value(flow.application.editor.snapshot?.preferences.language ?? .fallback), action: #selector(openUsageAccess), keyEquivalent: "")
         item.target = self; return item
     }()
     public private(set) lazy var settingsMenuItem: NSMenuItem = {
@@ -177,7 +178,7 @@ import ModelPlanCommunityHost
                 currentUsageNextStep = nil
             }
         }
-        let language = editor.snapshot?.preferences.language ?? .chinese
+        let language = editor.snapshot?.preferences.language ?? .fallback
         usageAccessMenuItem.title = currentUsageMessage.value(language)
             + (currentUsageNextStep.map { " — " + $0.title.value(language) } ?? "")
     }
