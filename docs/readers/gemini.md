@@ -127,8 +127,6 @@ optional `userAgent` body field is not sent.
 ## Why not GET; read-only evidence
 
 The pinned vendor implementation routes both methods through `requestPost`;
-D99 reports the `modelId` of the quota buckets already parsed (no extra request; slugs only).
-
 `retrieveUserQuota` has no GET branch. Both monitor references also use POST for
 this capability. The vendor's operation-polling GET is for a different resource,
 not a quota GET. No equivalent GET is established by these reviewed sources;
@@ -144,6 +142,10 @@ has no inference, project enumeration, OAuth refresh or automatic migration call
 Unknown: backend provisioning/session/audit writes, service-quota consumption,
 billing treatment and current account eligibility. No live account or quota
 endpoint was probed for this card.
+
+## Reported models (D99)
+
+D99 reports the `modelId` of the quota buckets already parsed (no extra request; slugs only).
 
 ## Read shape and budget
 
