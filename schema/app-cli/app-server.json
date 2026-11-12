@@ -4387,6 +4387,18 @@
     "ResetEvent": {
       "additionalProperties": false,
       "properties": {
+        "confirmedAt": {
+          "description": "Confirmed events only: the publication's confirmation time, or when the CLI first read the confirmation (see confirmedAtBasis).",
+          "format": "date-time",
+          "type": "string"
+        },
+        "confirmedAtBasis": {
+          "enum": [
+            "published",
+            "observed",
+            "firstSeen"
+          ]
+        },
         "confirms": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
           "type": "string"
@@ -4398,6 +4410,13 @@
         "id": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
           "type": "string"
+        },
+        "kind": {
+          "description": "reset_credit: extra resets were issued (news, not a window restart); direct_reset: usage limits reset. Absent from older producers, read as direct_reset.",
+          "enum": [
+            "reset_credit",
+            "direct_reset"
+          ]
         },
         "planIds": {
           "items": {

@@ -243,7 +243,8 @@ public struct DockNozzlePose: Equatable, Sendable {
             c.restoreGState()
         }
         func drawNotice(_ notice: DockNotice, _ station: DockStationRecipe) throws {
-                let palette=notice.tone == .amber ? "noticeAmber":notice.tone == .blue ? "noticeBlue":"noticeWhite"
+                // D166: a confirmed reset is green; a skin without its own notice green uses its normal green.
+                let palette=notice.tone == .amber ? "noticeAmber":notice.tone == .blue ? "noticeBlue":notice.tone == .green ? (skin.palette["noticeGreen"] != nil ? "noticeGreen":"normal"):"noticeWhite"
                 let diameter=(notice.shape == .solid ? station.eventSolidDiameter:station.eventHollowDiameter) ?? station.eventRect.width/2
                 let stroke=station.eventStrokeWidth ?? 1.2
                 guard diameter.isFinite,diameter>0,diameter<=station.eventRect.width,stroke.isFinite,stroke>0,stroke<=diameter else{throw DockArtworkError.invalidManifest}
