@@ -95,38 +95,61 @@ jobs:
             fi; } | tee -a "$GITHUB_STEP_SUMMARY"
           [ "$DISPATCHED" = "$sha" ] || echo "::warning::native legs test the dispatched commit $DISPATCHED; only the jobs in desktop.yml test the merge $sha"
 
-  # Merge queue only: the queue is what tests "PR + latest main", because a PR no longer has to merge
+  # Scope for the Mac jobs, and for the queue.
+  # Pull requests: `mac` says whether the PR touches a path the Mac jobs (app-smoke, native-headless) read, per
+  # scripts/desktop-mac-scope.mjs; a PR that only changes the Tauri app, codex/ui or CLI snapshot code skips them
+  # (a skipped job counts as green for the required checks and the merge gates).
+  # Merge queue: the queue is what tests "PR + latest main", because a PR no longer has to merge
   # main first. merge_group has no paths filter, so this job applies the pull_request list above: a
   # group that adds nothing under those paths, or whose tree is the PR head's tree (the head already
-  # contains the base and its own run tested exactly this), skips the jobs below. The GUI leg never
+  # contains the base and its own run tested exactly this), skips the jobs below, and a group that adds
+  # nothing under the Mac paths skips only the Mac jobs. The GUI leg never
   # runs here. trusted-mac.yml has no merge_group route to the owner's Mac pool, so native-headless
-  # uses a hosted Mac here.
+  # uses a hosted Mac here. Pushes to main and dispatches skip this job, so every job runs there.
   queue-scope:
-    if: ${{ github.event_name == 'merge_group' }}
+    if: ${{ github.event_name == 'merge_group' || github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
       run: ${{ steps.scope.outputs.run }}
+      mac: ${{ steps.scope.outputs.mac }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           filter: blob:none
-          sparse-checkout: .github
+          sparse-checkout: |
+            .github
+            scripts
       - id: scope
         env:
           BASE: ${{ github.event.merge_group.base_sha }}
           QUEUE_PATHS: ^(desktop/|codex/ui/|codex/lib/|codex/cli-pin\.json$|cli/internal/snapshot/|cli/internal/digest/|cli/internal/desktopcontract/|cli/internal/contracttest/|schema/|testdata/contract-v1/|\.github/workflows/desktop\.yml$)
         run: |
           set -eu
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            # A pull_request checkout is the merge commit, so its first parent is the base.
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            if git diff --no-renames --name-only -z HEAD^1 HEAD | node scripts/desktop-mac-scope.mjs; then
+              echo "mac=true" >> "$GITHUB_OUTPUT"; echo "PR touches Mac paths: Mac jobs run"
+            else
+              echo "mac=false" >> "$GITHUB_OUTPUT"; echo "PR touches no Mac path: Mac jobs skipped"
+            fi
+            exit 0
+          fi
           read -r _ p1 p2 extra <<<"$(git rev-list --parents -n 1 HEAD) x"
           if [ "$p1" = "$BASE" ] && [ "$extra" = x ] && git merge-base --is-ancestor "$BASE" "$p2" \
             && [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$p2^{tree}")" ]; then
-            echo "run=false" >> "$GITHUB_OUTPUT"; echo "PR head $p2 contains the queue base: reusing its checks"
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "mac=false" >> "$GITHUB_OUTPUT"; echo "PR head $p2 contains the queue base: reusing its checks"
           elif git diff --no-renames --name-only -z "$BASE" HEAD | grep -qzE "$QUEUE_PATHS"; then
             echo "run=true" >> "$GITHUB_OUTPUT"; echo "group changes desktop paths: running checks on the group commit"
+            if git diff --no-renames --name-only -z "$BASE" HEAD | node scripts/desktop-mac-scope.mjs; then
+              echo "mac=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "mac=false" >> "$GITHUB_OUTPUT"; echo "group changes no Mac path: Mac jobs skipped"
+            fi
           else
-            echo "run=false" >> "$GITHUB_OUTPUT"; echo "group changes no desktop path"
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "mac=false" >> "$GITHUB_OUTPUT"; echo "group changes no desktop path"
           fi
 
   app:
@@ -236,7 +259,7 @@ jobs:
       contents: read
       actions: read
     needs: [queue-scope, pr-ref]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && needs.queue-scope.outputs.mac != 'false' }}
     # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -373,7 +396,7 @@ jobs:
   native-headless:
     name: native-headless (macos-latest)
     needs: queue-scope
-    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && needs.queue-scope.outputs.mac != 'false' }}
     uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@01340deab2a433e748ac1d1c13bde553bde7065c
     with:
       task: native-headless
