@@ -309,3 +309,19 @@ test('G3-66: reject codes are fixed code paths and never carry message data',()=
   for(const [msg,code] of cases){assert.equal(f.bridge.receive(JSON.stringify(msg),source),false);assert.equal(f.bridge.lastReject,code);assert.ok(!f.bridge.lastReject.includes(secret));assert.match(f.bridge.lastReject,/^[a-z]+\.[A-Za-z]+$/);}
   assert.equal(f.bridge.receive(' '.repeat(MAX_MESSAGE_BYTES+1),source),false);assert.equal(f.bridge.lastReject,'msg.size');
 });
+test('G3-96: reset events as CLI v0.5.59 emits them (kind, confirmedAt, confirmedAtBasis) are displayed, not rejected as data.schema',()=>{
+  // Build 14d: the CLI sets kind on every reset event and a confirmation time on a confirmed one. Their schema nodes
+  // carried an enum without a type, which the page's bounded validator refuses, so every display with a published
+  // reset event (the live Codex reset credit) failed with data.schema and the cockpit never opened.
+  const f=fixture(),data=capture();
+  const announced=data.projection.resetEvents[0];
+  assert.equal(announced.kind,'direct_reset','the real Go capture carries kind like the producer does');
+  const credit={...structuredClone(announced),id:'banked-1',kind:'reset_credit'};
+  const confirmed={...structuredClone(announced),id:'confirmed-1',status:'confirmed',confirms:'banked-1',kind:'reset_credit',confirmedAt:'2026-10-29T13:00:00Z',confirmedAtBasis:'firstSeen'};
+  data.projection.resetEvents=[announced,credit,confirmed];
+  data.details.resetEvents=[announced,credit,confirmed];
+  const accepted=f.bridge.receive(f.send('display',{data}),source);
+  assert.equal(f.bridge.lastReject,'none');
+  assert.equal(accepted,true);
+  assert.deepEqual(f.retained().details.resetEvents.map(e=>[e.kind,e.confirmedAtBasis??null]),[['direct_reset',null],['reset_credit',null],['reset_credit','firstSeen']]);
+});
