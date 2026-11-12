@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/modelplan/modelplan/cli/internal/profile"
 )
 
 // A session's project is known by an opaque reference: a keyed hash of its project root, with a
@@ -25,9 +27,9 @@ import (
 
 const maxProjects = 500
 
-// ProjectLabelsFile is the user's choice, ~/.config/modelplan/project-labels.json.
+// ProjectLabelsFile is the user's choice, project-labels.json in the profile config folder.
 func ProjectLabelsFile(home string) string {
-	return filepath.Join(home, ".config", "modelplan", "project-labels.json")
+	return profile.ConfigFile(home, "project-labels.json")
 }
 
 // ProjectLabels: project labels are on. They are on unless the user turned them off: without a
