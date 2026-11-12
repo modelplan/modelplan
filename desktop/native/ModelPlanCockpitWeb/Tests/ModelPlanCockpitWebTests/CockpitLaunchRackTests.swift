@@ -68,6 +68,9 @@ final class CockpitLaunchRackTests: XCTestCase {
     XCTAssertEqual(plan.rule, .minimum)
     assertOnScreen(plan.frame, visible, "tiny screen")
     XCTAssertEqual(plan.frame.maxY, short.maxY, "it stays at the same height")
+    // glm-872-2/3: on a visible frame too narrow to clear the catch zone, staying on screen wins (D187); the frame is
+    // clamped to the visible edge, so it may sit inside the zone. Nothing auto-latches: the zone arms only after leaving it.
+    XCTAssertEqual(plan.frame.minX, visible.minX, "clamped to the visible edge (10 pt from home), not pushed off screen")
     for (w, h, icon) in [(1512, 982, 360), (1280, 720, 360), (1280, 720, 840), (640, 700, 600), (500, 560, 10)] as [(CGFloat, CGFloat, CGFloat)] {
       let screen = CGSize(width: w, height: h), visible = CGRect(origin: .zero, size: screen)
       let tall = home(screen: screen, icon: icon), shortHome = home(screen: screen, icon: icon, height: 489, shoulder: 16)

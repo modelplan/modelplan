@@ -1082,9 +1082,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     flying = false
     shellSession.detached = false; shellSession.compactWhileDetached = false
     rackExtension = rackIcon() != nil ? 1 : 0; rackTarget = rackExtension
+    ignite(false)
     guard placement() != nil else { return }
     applyLayout()
-    ignite(false)
     updateAppearance(appearance)
     onShellChanged?()
   }
