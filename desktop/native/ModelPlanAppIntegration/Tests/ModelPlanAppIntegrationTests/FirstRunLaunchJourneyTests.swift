@@ -169,6 +169,26 @@ private actor LaunchEngine: EngineClient {
         XCTAssertEqual(app.scopeConsentEntry.controller.firstRunDoneBlock, .engineFailed)
     }
 
+    /// macrevb-881-2: Learn more (and the setup About item) open ordinary Settings while the guide is up, also when
+    /// the reader has not started yet or has failed to start.
+    func testPrivacyInformationOpensFromTheGuideWhileTheReaderIsDownOrFailed() async throws {
+        for failStart in [false, true] {
+            let launch = try await make(holdRows: !failStart, failStart: failStart)
+            let app = launch.app
+            await app.beginSetupAtLaunch()
+            _ = try XCTUnwrap(firstRunWindows().first)
+            startLifecycle(app)
+            if failStart {
+                try await wait { app.scopeConsentEntry.controller.firstRunEngine == .failed }
+                XCTAssertTrue(app.lifecyclePaused, "a failed start leaves the lifecycle paused")
+            }
+            let before = Set(NSApp.windows.map(\.windowNumber))
+            await app.settingsHost.present(paneID: "privacy", origin: .userInitiated)
+            XCTAssertTrue(NSApp.windows.contains { $0.isVisible && !before.contains($0.windowNumber) }, "Settings opened (failStart \(failStart))")
+            XCTAssertEqual(firstRunWindows().count, 1, "the guide stays open")
+        }
+    }
+
     func testClosingMidScanSavesNothingAndTheGuideComesBackFromTheIconAndTheNextLaunch() async throws {
         let launch = try await make()
         let app = launch.app
