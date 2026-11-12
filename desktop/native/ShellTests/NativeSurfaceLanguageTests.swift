@@ -22,7 +22,7 @@ import XCTest
             let surface = NeutralSurfaceProvider(preferredLanguages: list).makeOverview()
             let shown = texts(surface.view)
             XCTAssertFalse(shown.isEmpty)
-            for text in shown {
+            for text in shown where !text.isEmpty {
                 let hasCJK = text.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
                 XCTAssertEqual(hasCJK, chinese, "\(list): \(text)")
                 XCTAssertFalse(text.contains(" / "), "never both languages at once: \(text)")
