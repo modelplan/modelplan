@@ -14,8 +14,9 @@ const level=(value:unknown):string|null=>{
 };
 
 /** One fader per model (CKP-FAD-01, owner: one per model, three per bank). The engine's publication carries at most three
- * models, in use first; `more` adds the other published models the cockpit may show, after them and in their order. */
-export const FADER_LIMIT=30;
+ * models, in use first; `more` adds the other published models the cockpit may show. This is only a safety bound at the
+ * deck's own 100-fader read limit; the D123 cap of 12 is `FADER_SET_LIMIT`, which "show all models" lifts. */
+export const FADER_LIMIT=100;
 /** A subscription a fader can name: its member key, the developer whose models it runs and its identity colour. */
 export type FaderSubscription={readonly key:string;readonly developer:string|null;readonly colour:string};
 type Account={id:string;colour:string};
