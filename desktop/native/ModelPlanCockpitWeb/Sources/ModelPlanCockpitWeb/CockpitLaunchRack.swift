@@ -102,7 +102,7 @@ public struct CockpitRackMast: Equatable, Sendable {
   }
 }
 
-/// The rack art from the verified cockpit bundle (official edition); nil draws the community stand-in.
+/// The rack art from the verified cockpit bundle (the official edition the app ships).
 struct CockpitRackArt {
   let night: CGImage?, day: CGImage?
   static func load(_ bundle: VerifiedCockpitBundle) -> CockpitRackArt {
@@ -134,28 +134,24 @@ struct CockpitRackArt {
     }
     let image = night ? art.night : art.day
     let k = CockpitRackMast.pointsPerPixel
-    for (index, section) in geometry.sections.enumerated() where section.bottom - section.top > 0.05 {
+    for section in geometry.sections where section.bottom - section.top > 0.05 {
       let rect = CGRect(x: 0, y: section.top, width: CockpitRackMast.width, height: section.bottom - section.top)
-      if let image {
-        // Crop the art rows this span shows; CGImage crops use pixel rows from the top.
-        let scale = CGFloat(image.width) / (CockpitRackMast.width / k)
-        let rows = CGRect(x: 0, y: (section.top - section.artTop) / k * scale, width: CGFloat(image.width),
-                          height: (section.bottom - section.top) / k * scale)
-        guard let cropped = image.cropping(to: rows.integral) else { continue }
-        context.saveGState()
-        // The view is flipped; draw the image upright.
-        context.translateBy(x: rect.minX, y: rect.maxY); context.scaleBy(x: 1, y: -1)
-        context.draw(cropped, in: CGRect(origin: .zero, size: rect.size))
-        context.restoreGState()
-      } else {
-        // Community stand-in (MIT): a slim graphite mast that narrows per section.
-        let width = 8 - CGFloat(index) * 2
-        context.setFillColor(NSColor(white: night ? 0.32 : 0.78, alpha: 1).cgColor)
-        context.fill(CGRect(x: rect.midX - width / 2, y: rect.minY, width: width, height: rect.height))
-      }
+      // The packaged app ships the official cockpit bundle, which carries the approved rack art (owner 11-01: the normal
+      // build has the official appearance). A bundle without it draws no rack rather than a stand-in.
+      guard let image else { continue }
+      // Crop the art rows this span shows; CGImage crops use pixel rows from the top.
+      let scale = CGFloat(image.width) / (CockpitRackMast.width / k)
+      let rows = CGRect(x: 0, y: (section.top - section.artTop) / k * scale, width: CGFloat(image.width),
+                        height: (section.bottom - section.top) / k * scale)
+      guard let cropped = image.cropping(to: rows.integral) else { continue }
+      context.saveGState()
+      // The view is flipped; draw the image upright.
+      context.translateBy(x: rect.minX, y: rect.maxY); context.scaleBy(x: 1, y: -1)
+      context.draw(cropped, in: CGRect(origin: .zero, size: rect.size))
+      context.restoreGState()
     }
     // Night: the collar beacons pulse amber while the rack moves (D160); day beacons stay unlit (D172).
-    guard night, moving else { return }
+    guard image != nil, night, moving else { return }
     for (index, beacon) in geometry.beacons.enumerated() where beacon.out {
       let progress = geometry.progress[min(index + 1, 2)]
       let alpha = 0.35 + 0.65 * sin(.pi * max(0, min(1, progress)))

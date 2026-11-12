@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 -->
 # Menu-bar launch rack sources
 
-Copyright (c) 2026 ModelPlan. The owner chose launch rack style C (D160, night: graphite lattice, three telescoping sections widest at the top, an amber beacon at each collar) and its day variant option 1 (D172, warm pearl lattice, graphite collars, beacons unlit) on 2026-11-11/12, and accepted the rack demos v7 (D187) and v8 (D188) that draw these exact rasters. They are copied unchanged from the confirm-folder demo files `menubar-rack-v8-mast-night.png` and `menubar-rack-v8-mast-day.png` (byte-identical to v4-v7). They remain subject to the official visual license (`../../LICENSE.md`); the community build draws a plain MIT stand-in instead.
+Copyright (c) 2026 ModelPlan. The owner chose launch rack style C (D160, night: graphite lattice, three telescoping sections widest at the top, an amber beacon at each collar) and its day variant option 1 (D172, warm pearl lattice, graphite collars, beacons unlit) on 2026-11-11/12, and accepted the rack demos v7 (D187) and v8 (D188) that draw these exact rasters. They are copied unchanged from the confirm-folder demo files `menubar-rack-v8-mast-night.png` and `menubar-rack-v8-mast-day.png` (byte-identical to v4-v7). They remain subject to the official visual license (`../../LICENSE.md`). The packaged app ships the official cockpit bundle (the normal build has the official appearance, owner 2026-11-01), so it carries this art; the community-edition page bundle for forks excludes it, as it excludes the other reserved cockpit art.
 
 | File | Pixels | SHA-256 |
 | --- | --- | --- |
