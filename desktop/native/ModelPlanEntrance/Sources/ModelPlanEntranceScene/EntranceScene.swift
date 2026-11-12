@@ -595,7 +595,9 @@ struct HullFinish {
     /// Roughness of the hull metal: satin, low enough to carry the studio strips as soft highlight bands.
     /// Round 11 (owner: pass 5 has a soft, long highlight down the hull; r10 had one hot spot): night 0.30 -> 0.34,
     /// day 0.34 -> 0.36.
-    var roughness: Float { theme == .night ? 0.34 : 0.36 }
+    /// Round 11b (r11a at 0.34 / 0.36 lost the metal's contrast: the studio averaged into flat grey): night 0.28,
+    /// day 0.32; the hot spot is handled by a softer sun and coat instead.
+    var roughness: Float { theme == .night ? 0.28 : 0.32 }
     /// A thin glossy layer over the metal: a crisp copy of the strips on top of the soft band. The clearcoat has no
     /// normal map, so it stays smooth over the brushed grain. Round 10 (owner: the hull read as ceramic tile or
     /// plaster up close; pass 5 is smooth painted/anodised metal under a gentle gloss): night 0.35 -> 0.5, day
@@ -603,12 +605,14 @@ struct HullFinish {
     /// Round 11: night 0.5 -> 0.15, day 0.3 -> 0.1, `clearcoatRoughness` 0.08 -> 0.22. The crisp coat mirrored the
     /// sun as a blown-out spot on the lower body and, at grazing angles (where any coat reflects nearly all light),
     /// the studio's rim strips as a thin white line round the whole silhouette, which pass 5 does not have.
-    var clearcoat: Float { theme == .night ? 0.15 : 0.1 }
-    static let clearcoatRoughness: Float = 0.22
+    /// Round 11b: night 0.25, day 0.15, roughness 0.18 (r11a's 0.15 / 0.1 / 0.22 looked matte).
+    var clearcoat: Float { theme == .night ? 0.25 : 0.15 }
+    static let clearcoatRoughness: Float = 0.18
     /// Brushed metal: how far the highlights stretch across the grain (0 = round highlights). The grain runs around
     /// the hull, like a turned part, so the studio strips stretch along the axis.
     /// Round 11: 0.3 -> 0.55, so the key strip and the sun draw long soft vertical highlights, as on pass 5.
-    static let anisotropy: Float = 0.55
+    /// Round 11b: 0.4 (0.55 smeared the strips into an even grey).
+    static let anisotropy: Float = 0.4
     /// Multiplies the panel maps (`HullPanels.base` 0.74 on a plain panel). Night is dark gunmetal: a panel ~0.31
     /// sRGB (r4 ~0.35 read mid-grey; r5 ~0.25 read black, so the dark grooves had nothing to cut into); day satin
     /// aluminium (~0.72).
@@ -2002,6 +2006,13 @@ enum HullPanels {
         marks.setFillColor(gray: 0, alpha: 1)
         marks.fill(CGRect(x: 0, y: 0, width: w, height: h))
         marks.setBlendMode(.plusLighter)
+        // Lighter marks (worn streaks and scuffs), the same way, mixed toward white.
+        guard let lights = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                     space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { throw MapError.context }
+        lights.setFillColor(gray: 0, alpha: 1)
+        lights.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        lights.setBlendMode(.plusLighter)
         if band.name == "body" {
             // Round 11 (owner on r10: "block by block"; pass 5's middle and lower body have many fine seams, ring
             // bands with small slots at the section joints, rivet rows, rectangular access panels, a tall door and
@@ -2124,20 +2135,33 @@ enum HullPanels {
             cutDown(11, 2.1, 3.05); cutDown(12, 2.1, 3.05)
             outline(2, 9.45, 0.07, 0.1, corner: 0.2, fill: 0.35)
             cutDown(4.5, 7.75, 9.1); cutDown(5.8, 7.75, 9.1)
-            // Grime: thin streaks running down from the seams or anywhere, fading out.
+            // Grime: thin streaks running down from the seams or anywhere, fading out; about a third are lighter
+            // (worn), the rest darker. Round 11b: 1400 -> 2600 and stronger (r11a: hardly visible next to pass 5).
             let seamHeights = Array(Set(rings + joints)).filter { $0 > band.bottom && $0 < band.top }.sorted()
-            for _ in 0..<1400 {
+            for _ in 0..<2600 {
                 let az = r.signed() * 180
                 let fromSeam = r.next() < 0.5, pick = r.next()
                 let seam = seamHeights[min(seamHeights.count - 1, Int(pick * Float(seamHeights.count)))]
                 let start: Float = fromSeam ? seam - 0.01 : band.bottom + pick * span
-                let length = 0.12 + 0.9 * r.next() * r.next(), strength = 0.03 + 0.1 * r.next() * r.next()
+                let length = 0.12 + 0.9 * r.next() * r.next(), strength = 0.05 + 0.2 * r.next() * r.next()
+                let target = r.next() < 0.35 ? lights : marks
                 let width = max(1, CGFloat(0.003 + 0.008 * r.next()) * pxPerMetreU(start))
                 let cx = px(az), steps = 10
                 for s in 0..<steps {
                     let ya = start - length * Float(s) / Float(steps), yb = start - length * Float(s + 1) / Float(steps)
-                    marks.setFillColor(gray: CGFloat(strength * (1 - Float(s) / Float(steps))), alpha: 1)
-                    wrapped(CGRect(x: cx - width / 2, y: yv(yb), width: width, height: yv(ya) - yv(yb))) { marks.fill($0) }
+                    target.setFillColor(gray: CGFloat(strength * (1 - Float(s) / Float(steps))), alpha: 1)
+                    wrapped(CGRect(x: cx - width / 2, y: yv(yb), width: width, height: yv(ya) - yv(yb))) { target.fill($0) }
+                }
+            }
+            // Specks and scuffs: small dark and light spots all over (pass 5's weathered skin).
+            for _ in 0..<5500 {
+                let az = r.signed() * 180, y = band.bottom + r.next() * span
+                let d = CGFloat(0.003 + 0.01 * r.next() * r.next()) * pxPerMetreU(y)
+                let target = r.next() < 0.3 ? lights : marks
+                target.setFillColor(gray: CGFloat(0.08 + 0.3 * r.next()), alpha: 1)
+                let stretch = 1 + 3 * CGFloat(r.next())
+                wrapped(CGRect(x: px(az) - d / 2, y: yv(y) - d * stretch / 2, width: max(1, d), height: max(1, d * stretch))) {
+                    target.fillEllipse(in: $0)
                 }
             }
         }
@@ -2161,6 +2185,8 @@ enum HullPanels {
         let tones = toneData.bindMemory(to: UInt8.self, capacity: w * h)
         guard let marksData = marks.data else { throw MapError.context }
         let darks = marksData.bindMemory(to: UInt8.self, capacity: w * h)
+        guard let lightsData = lights.data else { throw MapError.context }
+        let brights = lightsData.bindMemory(to: UInt8.self, capacity: w * h)
         let wt = weights(band)
 
         // Soft groove shadow: the groove mask box-blurred over `aoWidth` each side.
@@ -2237,6 +2263,7 @@ enum HullPanels {
                         let shade = min(1, ao[i] * aoGain)
                         var v = base * (1 + brush * streak + detailAlbedo * grain) * (1 + wt.panelTone * variation)
                         v *= 1 - min(0.85, dark)
+                        v += (1 - v) * 0.6 * min(1, Float(brights[i]) / 255)
                         v *= 1 - wt.aoStrength * shade
                         v *= 1 - wt.grooveDark * g
                         v += (1 - v) * wt.lipLight * l
@@ -2823,7 +2850,9 @@ enum WindowShape {
 public enum EntranceLook {
     /// The directional sun, top left. Day has twice the night sun. On the metal it only adds a narrow glint (the
     /// earlier 12000 lux day sun blew the lit side out to white).
-    public static func sunIntensity(_ theme: EntranceTheme) -> Float { theme == .day ? 3000 : 1500 }
+    /// Round 11 (owner: pass 5 has a soft long highlight; r10 a blown-out spot on the lower body): night 1500 -> 700,
+    /// day 3000 -> 1500; the studio key strip carries the highlight.
+    public static func sunIntensity(_ theme: EntranceTheme) -> Float { theme == .day ? 1500 : 700 }
 
     /// Image-based light exponent for `EntranceScene.setEnvironment(_:intensityExponent:)`. The studio's brightest
     /// strip is 1.0, so the strips reach 2^exponent: about 5.7 at night (dark gunmetal, albedo ~0.1, needs bright
