@@ -519,6 +519,7 @@ while IFS= read -r line; do
   case "$line" in
     *'"id":1,'*) echo '{"id":1,"result":{}}' ;;
     *'"method":"account/rateLimits/read"'*) printf '{"id":2,"result":%s}\n' '` + strings.ReplaceAll(acctResponse, "\n", "") + `' ;;
+    *'"method":"account/read"'*) echo '{"id":3,"result":{"account":{"type":"apiKey"}}}' ;;
     *'"method":"model/list"'*) echo '{"id":4,"error":{"code":-32601,"message":"method not found"}}' ;;
   esac
 done
@@ -526,8 +527,12 @@ done
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	start := time.Now()
 	if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
 		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 15*time.Second {
+		t.Fatalf("refresh took %s: the fake must answer every request, so a model/list error must not wait for a timeout", d)
 	}
 	if s := loadAccount(cache); s.Status != "ok" || len(s.Windows) != 2 || len(s.ReportedModels) != 0 {
 		t.Fatalf("snap = %+v", s)

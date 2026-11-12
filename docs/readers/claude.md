@@ -29,6 +29,7 @@ Five-hour and seven-day usage percentages, reset timestamps and supported scoped
 The reference links above are source-reported behavior/pitfalls, not new incidents observed with a real account by this card.
 - The compared Pulse source reports stale/expired credentials and an optional desktop fallback; ModelPlan must not turn that into a credential-source waterfall. → fixture [TestClaudeAdmissionAndUnsupportedLoginsMakeNoRequests](https://github.com/modelplan/modelplan/blob/670fe9e7f9c2ac44ec64ac22e647b3baac73f11e/cli/internal/quota/claudeaccount_test.go) (`TestClaudeAdmissionAndUnsupportedLoginsMakeNoRequests`).
 - Changed invalid credentials must not inherit a previous account; a reset-past window must not appear current. → fixture [TestClaudeChangedInvalidBindingNeverInheritsAccount](https://github.com/modelplan/modelplan/blob/670fe9e7f9c2ac44ec64ac22e647b3baac73f11e/cli/internal/quota/claudeaccount_review_test.go) (`TestClaudeChangedInvalidBindingNeverInheritsAccount`).
+- A saved-login file replaced or removed while the requests run must not publish the old account's reading; the file is re-read before the result is kept. → fixture `TestAuditEClaudeCredentialChangeDuringRequestDiscardsTheReading` (cli/internal/quota/audit_e_test.go).
 - A credential-carrying redirect must not forward to any second URL. → fixture [TestClaudeDoesNotForwardCredentialOnRedirect](https://github.com/modelplan/modelplan/blob/670fe9e7f9c2ac44ec64ac22e647b3baac73f11e/cli/internal/quota/claudeaccount_test.go) (`TestClaudeDoesNotForwardCredentialOnRedirect`).
 
 ## Choice

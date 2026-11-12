@@ -333,8 +333,15 @@ class Walkthrough:
 
     def op_toggleCockpit(self, action):
         """Bring the cockpit to the wanted state with the menu bar icon; nothing to do when it is there already."""
-        target = "label:ModelPlan Cockpit"
-        if (resolve(self.tree(), target) is not None) == (action["want"] == "open"):
+        # The cockpit's window, as the checks measure it, not just its page: the app prewarms the next page while the
+        # cockpit is closed, and a page caught mid-prewarm once passed for an open cockpit, so the Air 1470x956 step
+        # never clicked the icon and found nothing to measure (build 6a084a0e). "Open" must also hold a moment later.
+        target = "window-of:label:ModelPlan Cockpit"
+        shown = resolve(self.tree(), target) is not None
+        if shown and action["want"] == "open":
+            self.host.sleep(1.5)
+            shown = resolve(self.tree(), target) is not None
+        if shown == (action["want"] == "open"):
             return
         self.host.helper("click", *centre(self.need("status-item")["frame"]))
         if action["want"] == "open":

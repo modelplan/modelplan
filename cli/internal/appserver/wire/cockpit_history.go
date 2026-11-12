@@ -17,7 +17,7 @@ type CockpitHistory struct {
 	Models         CockpitEntityRanking         `json:"models"`
 	Tools          CockpitEntityRanking         `json:"tools"`
 	// Daily holds local days with observed output, per source, for the last 182 days from
-	// DailyFrom on; Hourly the same for the last 48 local hours. A day or hour that is not
+	// DailyFrom on (the earliest day of live or imported data); Hourly the same for the last 48 local hours. A day or hour that is not
 	// listed has no observation, which is not the same as a known zero.
 	DailyFrom *string               `json:"dailyFrom" null:"coalesced"`
 	Daily     []CockpitSourceBucket `json:"daily" schema:"maxItems=728"`
@@ -54,9 +54,12 @@ type CockpitCycleShare struct {
 
 // CockpitSourceBucket is one source's observed output in one local day or hour. Sources are
 // this device's tools, not subscriptions: the page may show them only as locally observed.
+// Origin is "live" (read while the engine recorded) or "import" (older history the user imported;
+// never a day a live bucket covers); the page may draw the two differently.
 type CockpitSourceBucket struct {
 	At                   string `json:"at" schema:"maxLength=32"`
 	Source               string `json:"source"`
+	Origin               string `json:"origin"`
 	ObservedOutputTokens int64  `json:"observedOutputTokens"`
 }
 

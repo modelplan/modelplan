@@ -84,19 +84,62 @@
         "projectLabel": "synthetic",
         "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
         "state": "synthetic",
-        "rate": 42.5
+        "rate": 42.5,
+        "fast": false
       }
     ],
     "sessionCoverage": "synthetic",
     "resetEvents": [
       {
         "version": 1,
+        "id": "synthetic-confirmed",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "confirmed",
+        "kind": "reset_credit",
+        "confirmedAt": "2026-10-29T12:00:00Z",
+        "confirmedAtBasis": "firstSeen",
+        "confirms": "synthetic-confirmed",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "expiresAt": "2026-10-30T12:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
+        "id": "synthetic-credit",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "announced",
+        "kind": "reset_credit",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
         "id": "synthetic-reset",
         "provider": "openai",
         "rowId": "codex",
         "status": "announced",
+        "kind": "direct_reset",
         "publishedAt": "2026-10-29T12:00:00Z",
-        "expiresAt": "2026-10-31T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
         "source": {
           "kind": "publication",
           "publicationId": "0123456789abcdef01234567",
@@ -155,6 +198,25 @@
         "pace": "tight",
         "basis": "recent-rate",
         "observedAt": "2026-10-29T12:00:00.123456789Z"
+      }
+    ],
+    "recentSessions": [
+      {
+        "sessionRef": "0123456789abcdef",
+        "source": "synthetic",
+        "subscriptionRef": "0123456789abcdef",
+        "model": "synthetic",
+        "effort": "synthetic",
+        "projectLabel": "synthetic",
+        "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
+      }
+    ],
+    "peaks": [
+      {
+        "rowId": "synthetic",
+        "startsAt": "2026-10-29T12:00:00.123456789Z",
+        "endsAt": "2026-10-29T12:00:00.123456789Z",
+        "status": "synthetic"
       }
     ]
   },
@@ -257,6 +319,7 @@
       {
         "at": "synthetic",
         "source": "synthetic",
+        "origin": "synthetic",
         "observedOutputTokens": 1
       }
     ],
@@ -264,6 +327,7 @@
       {
         "at": "synthetic",
         "source": "synthetic",
+        "origin": "synthetic",
         "observedOutputTokens": 1
       }
     ],
@@ -317,12 +381,54 @@
     "resetEvents": [
       {
         "version": 1,
+        "id": "synthetic-confirmed",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "confirmed",
+        "kind": "reset_credit",
+        "confirmedAt": "2026-10-29T12:00:00Z",
+        "confirmedAtBasis": "firstSeen",
+        "confirms": "synthetic-confirmed",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "expiresAt": "2026-10-30T12:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
+        "id": "synthetic-credit",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "announced",
+        "kind": "reset_credit",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
         "id": "synthetic-reset",
         "provider": "openai",
         "rowId": "codex",
         "status": "announced",
+        "kind": "direct_reset",
         "publishedAt": "2026-10-29T12:00:00Z",
-        "expiresAt": "2026-10-31T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
         "source": {
           "kind": "publication",
           "publicationId": "0123456789abcdef01234567",
