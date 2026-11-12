@@ -83,3 +83,11 @@
 
   --key-led-on:#1f252b;--key-led-glow:none;
 }
+
+/* D131 / COL-2.1-18: the light maker colours (Codex, GLM, Cursor) are about 1.1-1.7:1 on the day metal; on day the
+   identity marks are drawn at 40% of the maker colour toward black (>= 3.4:1 for every table colour). Night is unchanged.
+   Logos and names stay beside every mark, so colour is never alone. */
+:root[data-theme="day"] .ck-eng .ek .bl,
+:root[data-theme="day"] .dk-fad .st-vend b,
+:root[data-theme="day"] .chip,
+:root[data-theme="day"] .mg:not(.orig){background:color-mix(in srgb,var(--v) 40%,#000)}
