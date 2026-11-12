@@ -1700,6 +1700,11 @@ enum HullPanels {
     /// the taper (5.02-5.2) and above it (6.57-6.95), one ring round the taper's middle (5.9) and two on the upper
     /// body (9.15, 11.25), so the panels are tall and narrow (r10: rings every 0.85 m made wide plates).
     static let rings: [Float] = [3.05, 5.02, 5.9, 6.95, 9.15, 11.25, 12.06, sillRing, aboveRing, 13.78, 13.98, 14.12]
+    /// CKP-ENT-13 round 3: the cone and the ring band above it. With the kit it keeps only its main ring seams
+    /// (the joints at 5.2 and 6.57 and the band edge at 6.95; the 5.9 ring is dropped), four longitudinal seams and
+    /// no second sheets.
+    static let cone = (bottom: Float(5.2), top: Float(6.95))
+    static let kitRings: [Float] = rings.filter { $0 != 5.9 }
     /// Just under the window's surround, and a little above it, like the pass-5 window still.
     static var sillRing: Float { WindowShape.bottom - WindowShape.bandsWidth - 0.012 }
     static var aboveRing: Float { WindowShape.top + WindowShape.bandsWidth + 0.03 }
@@ -1709,8 +1714,11 @@ enum HullPanels {
     /// seams per row at the file's axial-seam azimuths (12.5 + 45 n), staggered every other row like brickwork.
     /// The capsule follows the pass-5 still: no seam down the middle of the window side; seams at the window's
     /// corners below it, beside it in the window row, and a pair at +-17 degrees from above the window to the tip cap.
-    static func seamAzimuths(row y: Float, index k: Int) -> [Float] {
+    static func seamAzimuths(row y: Float, index k: Int, kit: Bool = false) -> [Float] {
         func both(_ a: [Float]) -> [Float] { a.flatMap { $0 >= 180 ? [180] : [-$0, $0] } }
+        // CKP-ENT-13 round 3 (coordinator: the cone read as a patchwork): with the kit the cone and the ring band
+        // above it (5.2-6.95 m) have only four longitudinal seams.
+        if kit, y >= cone.bottom - 0.01, y < cone.top - 0.01 { return [-135, -45, 45, 135] }
         switch y {
         case ..<11.79:
             // Round 11: tall narrow panels whose seams line up from row to row, as on pass 5 (r10: eight seams per
@@ -1957,6 +1965,8 @@ enum HullPanels {
     static func images(_ band: Band, detail: Detail? = nil, kit: HullKit? = nil) throws
         -> (albedo: CGImage, normal: CGImage, roughness: CGImage?) {
         let w = band.width, h = band.height
+        let rings = kit == nil ? Self.rings : Self.kitRings
+        func seamAzimuths(row y: Float, index k: Int) -> [Float] { Self.seamAzimuths(row: y, index: k, kit: kit != nil) }
         // Masks, drawn additively with CoreGraphics: red = grooves, green = lips, blue = scratches. Drawing y is
         // texture v (CoreGraphics' origin is bottom left; the image's top row is v = 1).
         guard let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
@@ -2138,7 +2148,7 @@ enum HullPanels {
             // Second sheets: about a third of the tall panels are split by a seam down part of them (the part to
             // the right a different tone), a fifth by a seam across.
             for (k, (y0, y1)) in zip(heights, heights.dropFirst()).enumerated() where y1 > band.bottom && y0 < band.top {
-                guard y1 - y0 > 0.5 else { continue }
+                guard y1 - y0 > 0.5, kit == nil || y1 <= cone.bottom + 0.01 || y0 >= cone.top - 0.01 else { continue }
                 let azimuths = seamAzimuths(row: y0, index: k).sorted()
                 for (i, a0) in azimuths.enumerated() {
                     let a1 = i + 1 < azimuths.count ? azimuths[i + 1] : azimuths[0] + 360
@@ -2378,6 +2388,10 @@ enum HullPanels {
             return made
         }
         let hasKit = kit != nil, kitRoughness = kit?.roughness ?? 0, kitBrightness = kit?.brightness ?? 1
+        // CKP-ENT-13 round 3: the kit's tile x follows the azimuth only (one scale per band, the circumference at
+        // the band's middle), so its vertical brushing runs along the hull's meridians, up the cone too, and never
+        // slants or jumps at a seam.
+        let kitMetresPerCol = 2 * .pi * radius((band.bottom + band.top) / 2) / Float(w)
         var plain = [Float](repeating: 0, count: kit == nil ? 0 : w * h)
         var rough = [UInt8](repeating: 255, count: kit == nil ? 0 : w * h * 4)
         height.withUnsafeMutableBufferPointer { hb in
@@ -2389,7 +2403,7 @@ enum HullPanels {
                     let around = detail == nil ? [] : ripMap(lu, lv), alongMap = detail == nil ? [] : ripMap(lv, lu)
                     // The kit's tiles: x around the hull, y down it (the drips run down), counted from 20 m so the
                     // bands meet without a jump.
-                    let ku = Detail.level(metresPerCol * kitScale), kv = Detail.level(metresPerRow * kitScale)
+                    let ku = Detail.level(kitMetresPerCol * kitScale), kv = Detail.level(metresPerRow * kitScale)
                     let metalRow = kit.map { kitRip($0.metal, 0, ku, kv) } ?? [], roughRow = kit.map { kitRip($0.metalRoughness, 1, ku, kv) } ?? []
                     let kitWX = (kit?.metal.size ?? 1) >> ku, kitWY = (kit?.metal.size ?? 1) >> kv
                     let kitTY = Int((20 - band.bottom - metresV) * kitScale) >> kv
@@ -2401,7 +2415,7 @@ enum HullPanels {
                         var streak: Float = 0, grain: Float = 0
                         var metal: Float = 1
                         if hasKit {
-                            let k = (kitTY % kitWY) * kitWX + (Int(Float(col) * metresPerCol * kitScale) >> ku) % kitWX
+                            let k = (kitTY % kitWY) * kitWX + (Int(Float(col) * kitMetresPerCol * kitScale) >> ku) % kitWX
                             metal = metalRow[k] * kitBrightness
                             let r = min(1, max(0.02, kitRoughness * roughRow[k]))
                             let byte = UInt8((r * 255).rounded())
