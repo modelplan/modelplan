@@ -146,6 +146,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	if !options.Offline && !options.ReadOnly {
 		fetcher = newAppPublication(ctx, st, appPublicationBase())
 		if fetcher != nil {
+			applyTestCadence(fetcher)
 			fetcher.subscribed = func() bool {
 				return len(quota.ReadPermitted(quota.ProductionPaths(st.Dir, version), time.Now()).Accounts) > 0
 			}

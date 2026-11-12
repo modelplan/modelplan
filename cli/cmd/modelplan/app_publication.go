@@ -43,10 +43,21 @@ func (a *appPublication) resetNoticeDue(s store.State, now time.Time) bool {
 	if a.resetAfter <= 0 {
 		a.resetAfter = a.drawResetAfter()
 	}
-	return now.Sub(s.CheckedAt) > a.resetAfter && now.Sub(s.LastAttemptAt) > backgroundEvery
+	return now.Sub(s.CheckedAt) > a.resetAfter && now.Sub(s.LastAttemptAt) > a.every()
+}
+
+// every is the wake-up and the minimum gap between two attempts (ten minutes unless a test build says otherwise).
+func (a *appPublication) every() time.Duration {
+	if a.testCadence > 0 {
+		return a.testCadence
+	}
+	return backgroundEvery
 }
 
 func (a *appPublication) drawResetAfter() time.Duration {
+	if a.testCadence > 0 {
+		return a.testCadence // test builds only, see app_publication_testcadence.go
+	}
 	j := time.Duration(0)
 	if a.jitter != nil {
 		j = a.jitter()
@@ -75,6 +86,9 @@ type appPublication struct {
 	jitter func() time.Duration
 	// resetAfter is this client's current reset-notice interval, redrawn after each check.
 	resetAfter time.Duration
+	// testCadence is set only by a binary built with the modelplan_test_cadence tag (never in a release): it replaces
+	// the 10-minute wake-up and the 15-30 minute reset-notice interval.
+	testCadence time.Duration
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -107,6 +121,10 @@ func newAppPublication(ctx context.Context, st *store.Store, base string) *appPu
 		client, err := publication.New(base, opened, version)
 		if err != nil {
 			return publication.Result{}, err
+		}
+		if testCadenceOn() { // test builds only
+			client.NoCheckDelay = true
+			client.Jitter = func() time.Duration { return 0 }
 		}
 		ctx, cancel := context.WithTimeout(ctx, appPublicationSyncLimit)
 		defer cancel()
@@ -148,7 +166,7 @@ func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration 
 	d, s, _ := publication.Load(a.st)
 	if d != nil && !publicationSyncDue(d, s, a.now()) && !a.resetNoticeDue(s, a.now()) {
 		*failures = 0
-		return backgroundEvery
+		return a.every()
 	}
 	a.resetAfter = 0 // redraw after every check
 	_, err := a.sync(ctx)
@@ -161,12 +179,12 @@ func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration 
 	if d != nil {
 		if err != nil && a.subscribed != nil && a.subscribed() {
 			// A failed reset-notice check backs off 10, 20, then 30 minutes.
-			delay := min(backgroundEvery<<min(*failures, 2), resetNoticeMax)
+			delay := min(a.every()<<min(*failures, 2), resetNoticeMax)
 			*failures++
 			return delay
 		}
 		*failures = 0
-		return backgroundEvery
+		return a.every()
 	}
 	delay := min(appPublicationRetry<<min(*failures, 5), backgroundEvery)
 	*failures++

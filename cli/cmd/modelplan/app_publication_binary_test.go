@@ -277,3 +277,61 @@ func TestAppServerOfflineAndReadOnlyFetchNothing(t *testing.T) {
 		})
 	}
 }
+
+// DOCK-3.8-30 through the real command: with an enabled subscription the publication loop re-checks the
+// pointer on its short cadence; with none it does not. The binary is built with the test-only cadence tag and told
+// to use two seconds instead of 15-30 minutes (the release binary has neither).
+func pointerChecks(h *appPublicationHost) int {
+	n := 0
+	for _, r := range h.requests() {
+		if r == "GET /publications/current.json" {
+			n++
+		}
+	}
+	return n
+}
+
+func TestAppServerRechecksPublicationPointerOnlyWithASubscription(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		subscribed bool
+	}{{"with a subscription", true}, {"without one", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			home, _ := freshAppHome(t)
+			if tc.subscribed {
+				// An enabled subscription the user declared in the local plan file (a reader the app reads without a grant).
+				path := filepath.Join(home, ".config", "modelplan", "local.json")
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(`{"schemaVersion":1,"plans":[{"planId":"codex-plus"}]}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f := newPublicationFixture(t, nil)
+			host, srv := newAppPublicationHost(t, f, false)
+			t.Setenv("MODELPLAN_BASE", srv.URL)
+			t.Setenv("MODELPLAN_TEST_PUBLICATION_RECHECK_SECONDS", "2")
+			binary := filepath.Join(t.TempDir(), "modelplan")
+			if raw, err := exec.Command("go", "build", "-tags", "modelplan_test_cadence", "-o", binary, ".").CombinedOutput(); err != nil {
+				t.Fatalf("build: %v %s", err, raw)
+			}
+			p := startQueryBinaryCaps(t, binary, []string{"rows", "consent", "publication"})
+			waitForAppPublication(t, p, 10*time.Second)
+			if tc.subscribed {
+				deadline := time.Now().Add(20 * time.Second)
+				for pointerChecks(host) < 3 && time.Now().Before(deadline) {
+					time.Sleep(100 * time.Millisecond)
+				}
+				if n := pointerChecks(host); n < 3 { // the first fetch and at least two re-checks
+					t.Fatalf("pointer checks = %d, want the first fetch and 2 re-checks: %v", n, host.requests())
+				}
+				return
+			}
+			time.Sleep(8 * time.Second)
+			if n := pointerChecks(host); n != 1 {
+				t.Fatalf("without a subscription the pointer was checked %d times: %v", n, host.requests())
+			}
+		})
+	}
+}
