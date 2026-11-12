@@ -106,6 +106,7 @@ import ModelPlanDock
             if prewarms { owner.startPrewarm(applied: { [weak application] in application?.composition.latestSettings }) }
         }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
+        owner.settingsSubscriptions = { [weak application] in Task { await application?.presentSettings(paneID: "subscriptions") } }
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
@@ -124,6 +125,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
+    /// CKP-SHELL-39: Settings on its Subscriptions pane, for the empty engine screen's button.
+    var settingsSubscriptions: (() -> Void)?
     /// Right-click menu hooks, set by the factory beside `settings`.
     var setSize: ((SettingsSize) -> Void)?
     var currentSize: (() -> SettingsSize?)?
@@ -402,6 +405,7 @@ struct CockpitUnavailableNotice {
         guard wantsVisible else { return }
         switch intent {
         case .chooseSetup,.openSettings:owner.settings?()
+        case .openSettingsSubscriptions:owner.settingsSubscriptions?()
         case .openHistory:unavailable(path:"intent.openHistory",history:true)
         case .openField:openField()
         case .openFieldAt(let name):openField(focusName:name)

@@ -87,6 +87,10 @@ test('D63 openField may name the clicked rocket by its published display name, n
   for(const bad of ['',' ','x'.repeat(65),42])assert.equal(f.bridge.action('openField',bad),false,String(bad));
   assert.equal(f.bridge.action('openField','Synthetic 5.5'),true);last=f.events.at(-1);assert.equal(last.action,'openField');assert.equal(last.key,'Synthetic 5.5');
 });
+test('openSettingsSubscriptions is one fixed action with no payload (CKP-SHELL-39)',()=>{
+  const f=fixture();assert.equal(f.bridge.action('openSettingsSubscriptions'),true);
+  const last=f.events.at(-1);assert.equal(last.action,'openSettingsSubscriptions');assert.equal(last.key,undefined);assert.equal(last.tool,undefined);
+});
 test('only fixed actions are emitted, history is limited to currently displayed rows',()=>{
   const f=fixture();assert.equal(f.bridge.action('openURL'),false);assert.equal(f.bridge.action('chooseSetup','x'),false);
   assert.equal(f.bridge.action('openHistory','unknown'),false);assert.equal(f.bridge.action('openSettings'),true);
