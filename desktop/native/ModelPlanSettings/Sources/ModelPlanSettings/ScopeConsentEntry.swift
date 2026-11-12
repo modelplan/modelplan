@@ -14,7 +14,7 @@ import ModelPlanWire
     public var historyImport: HistoryImportModel?
     private weak var firstRunView:SettingsScopeConsentView?
     /// G3-45: vendor marks for the first-run tool list; the app supplies its checked marks.
-    public var markImage: (@MainActor (String) -> NSImage?)?
+    public var markImage: (@MainActor (String) -> NSImage?)? { didSet { view.setMarkImage(markImage) } }
     public enum PresentationError:Error { case mutationInProgress }
 
     public init(client: any EngineClient, ready: @escaping @MainActor () -> Bool,
@@ -24,7 +24,7 @@ import ModelPlanWire
         let controller = ScopeConsentController(commands: commands)
         self.controller = controller
         self.buildSigning=buildSigning
-        self.view = SettingsScopeConsentView(controller: controller, language: language,buildSigning:buildSigning)
+        self.view = SettingsScopeConsentView(controller: controller, language: language,buildSigning:buildSigning,compactTools:true)
     }
     /// A separate view, the same accepted facts/controller/client. Never steal the
     /// Settings view's parent, create another consent service, or pre-check scopes.
@@ -52,6 +52,6 @@ import ModelPlanWire
         controller.receiveAcceptedPluginResult(requestID: requestID, result: result)
     }
     /// Clear on the owner's delivery turn before it acknowledges invalidation.
-    public func clearPrivateViews() { controller.clearAcceptedPrivateState() }
+    public func clearPrivateViews() { controller.clearAcceptedPrivateState(); historyImport?.invalidate() }
     public func suspend() { endFirstRunPresentation();view.suspend() }
 }

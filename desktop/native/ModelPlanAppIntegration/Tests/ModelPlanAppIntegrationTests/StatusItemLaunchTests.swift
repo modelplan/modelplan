@@ -264,13 +264,41 @@ import XCTest
         app.statusItemVisibility = { visible }
         app.checkStatusItemVisibility()
         let notice = "The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right."
-        let menu = app.composition.dock.menu().items
-        XCTAssertEqual(menu.first?.title, notice); XCTAssertFalse(menu.first?.isEnabled ?? true)
+        // The warning belongs to Settings only: the widget's context menu never carries it (G3-57).
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice },
+                       "the widget context menu has no hidden-icon item")
         XCTAssertEqual(app.settingsHost.application.editor.context.statusItemNotice?.chinese, "菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。")
         visible = true
         app.checkStatusItemVisibility()
-        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice }, "the notice clears once the icon is visible")
         XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
+    }
+
+    /// G3-57 (owner, two displays): the "menu bar is full" warning showed although the icon was visible on the
+    /// external display. The icon is hidden only when its window is on screen on NO display.
+    func testG3_57IconVisibleOnAnyDisplayGivesNoHiddenWarning() async throws {
+        let app = try await application()
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let notice = "The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right."
+        // Hidden on the built-in display, shown on the external one: no warning.
+        app.statusWindowVisibilities = { [false, true] }
+        app.checkStatusItemVisibility()
+        XCTAssertFalse(app.statusItemHidden)
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice })
+        XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
+        // Hidden everywhere: the warning.
+        app.statusWindowVisibilities = { [false, false] }
+        app.checkStatusItemVisibility()
+        XCTAssertTrue(app.statusItemHidden)
+        XCTAssertNotNil(app.settingsHost.application.editor.context.statusItemNotice)
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice },
+                       "hidden on every display: Settings warns, the widget context menu does not")
+        // Back on one display: cleared.
+        app.statusWindowVisibilities = { [true, false] }
+        app.checkStatusItemVisibility()
+        XCTAssertFalse(app.statusItemHidden)
+        XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
+        XCTAssertNil(EngineDockMenuApplication.anyWindowVisible([]), "no known window gives no verdict")
     }
 
     func testMissingTemplateImageFallsBackToAVisibleTitle() async throws {

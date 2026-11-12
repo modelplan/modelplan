@@ -328,3 +328,41 @@ test('pinnedModels (D136): restored from load before configure, reported after e
   assert.equal(b2.receive(send('load',{appearance,shell,redBelow:25,pinnedModels:bad}),source),false);
  }
 });
+test('G3-66: a show tick before the page document event is accepted once the host says visible',()=>{
+  const f=fixture(),tick={nowUnixMs:'1793620800000',reason:'show'};
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  // A prewarmed page: its own visibilitychange has not fired yet, so the document still reports hidden.
+  f.bridge.documentHidden(true);
+  assert.equal(f.bridge.receive(f.send('visibility',{visible:true,occluded:false,key:true}),source),true);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),true);
+});
+test('G3-66: a tick refused while the document is hidden names its code, and the next tick is accepted',()=>{
+  const f=fixture(),tick={nowUnixMs:'1793620800000',reason:'show'};
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  f.bridge.documentHidden(true);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),false);
+  assert.equal(f.bridge.lastReject,'tick.documentHidden');
+  f.bridge.documentHidden(false);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),true);
+  assert.equal(f.bridge.lastReject,'none');
+});
+test('G3-66: reject codes are fixed code paths and never carry message data',()=>{
+  const f=fixture(),base=JSON.parse(f.send('display',{data:capture()}));
+  const secret='synthetic-secret-value';
+  const cases=[[{...base,data:{...base.data,accessToken:secret}},'data.schema'],[{...base,extra:secret},'display.keys'],[{...base,requestId:secret},'msg.header'],[{...base,type:secret},'msg.type']];
+  for(const [msg,code] of cases){assert.equal(f.bridge.receive(JSON.stringify(msg),source),false);assert.equal(f.bridge.lastReject,code);assert.ok(!f.bridge.lastReject.includes(secret));assert.match(f.bridge.lastReject,/^[a-z]+\.[A-Za-z]+$/);}
+  assert.equal(f.bridge.receive(' '.repeat(MAX_MESSAGE_BYTES+1),source),false);assert.equal(f.bridge.lastReject,'msg.size');
+});
+test('G3-96: reset events as CLI v0.5.59 emits them (kind, confirmedAt, confirmedAtBasis) are displayed, not rejected as data.schema',()=>{
+  // Build 14d: the CLI sets kind on every reset event and a confirmation time on a confirmed one. Their schema nodes
+  // carried an enum without a type, which the page's bounded validator refuses, so every display with a published
+  // reset event (the live Codex reset credit) failed with data.schema and the cockpit never opened.
+  // The events come from the real projector (resetevents.CaptureEvents via swiftwire), unedited: announced direct reset,
+  // announced reset credit and a confirmed credit. A field the producer adds shows up here without anyone transcribing it.
+  const f=fixture(),data=capture();
+  assert.deepEqual(data.details.resetEvents.map(e=>[e.kind,e.status,e.confirmedAtBasis??null]),[['reset_credit','confirmed','firstSeen'],['reset_credit','announced',null],['direct_reset','announced',null]]);
+  const accepted=f.bridge.receive(f.send('display',{data}),source);
+  assert.equal(f.bridge.lastReject,'none');
+  assert.equal(accepted,true);
+  assert.deepEqual(f.retained().details.resetEvents,data.details.resetEvents);
+});

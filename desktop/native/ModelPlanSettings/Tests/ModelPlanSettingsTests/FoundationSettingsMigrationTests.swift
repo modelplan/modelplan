@@ -166,7 +166,7 @@ final class FoundationSettingsMigrationTests: XCTestCase {
         let result = try Migration.prepare(product: .official, target: .absent, legacy: { .init() })
         guard case .create(let candidate) = result else { return XCTFail("Expected default candidate") }
         let document = try XCTUnwrap(try JSONSerialization.jsonObject(with: candidate.document) as? [String: Any])
-        XCTAssertEqual(Set(document.keys), ["schemaVersion", "settings", "core"])
+        XCTAssertEqual(Set(document.keys), ["schemaVersion", "sparse", "settings", "core"])
         XCTAssertEqual(document["schemaVersion"] as? Int, 1)
         let settings = try XCTUnwrap(document["settings"] as? [String: Any])
         XCTAssertEqual(settings["dockEdge"] as? String, "right")

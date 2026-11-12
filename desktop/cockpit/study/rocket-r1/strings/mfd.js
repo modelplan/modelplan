@@ -47,9 +47,7 @@ register('mfd', {
   heatAria: ['aria', '近 26 周每日输出 token', 'Daily output tokens, last 26 weeks'],
   since: ['line', '从 {d} 开始记录', 'Recorded since {d}'],
   noRecord: ['lcd', '无记录', 'No record'],
-  dataFrom: ['lcd', '数据始于 {d}', 'Data from {d}'],
   importedDay: ['lcd', '已导入', 'Imported'],
-  importedAria: ['aria', '较浅的部分是导入的较早记录。', 'Lighter parts are earlier history imported from your tools.'],
   importedPart: ['lcd', '含已导入 {v}', 'incl. imported {v}'],
   moreAlerts: ['lcd', '+{n} ▸', '+{n} ▸'],
   alResetAnn: ['alert', '{s} 官方额外重置 · 约 {at}', '{s} official extra reset · ~{at}'],
@@ -111,6 +109,8 @@ register('mfd', {
   fastLine: ['line', '快速：速度 ×{s} · 成本 ×{c}', 'Fast: speed ×{s} · cost ×{c}'],
   fastRow: ['aria', '快速模式', 'Fast mode'], // the accessible name of the ⚡ glyph (drawn as SVG, polish A)
   currentUnknown: ['line', '当前未报告', 'current unknown'],
+  // Build 14c: with no reported current, the table keeps dashes and the chart is drawn relative to ★.
+  currentUnknownVsRec: ['line', '当前未报告 · 图以 ★ 为基准', 'current unknown · chart relative to ★'],
   cmpAria: ['aria', '{m} 档位比较（只在本机，不改会话）', '{m} effort comparison (local only, no session changes)'],
   ladderAria: ['aria', '试 {e}', 'Try {e}'],
   // round D1 (owner 2026-10-23): the comparison names itself on the screen and has its own bottom keys
@@ -118,8 +118,10 @@ register('mfd', {
   sameRec: ['line', '试 = ★', 'Try = ★'],
   sameAll: ['line', '试 = 当前 = ★', 'Try = Current = ★'],
   currentRec: ['line', '当前 = ★', 'Current = ★'],
+  cmpTrialNote: ['text', '试算，不会改工具设置', 'Trial only — your tool settings stay unchanged'],
   cmpTitle: ['line', '比较 · {m}', 'Compare · {m}'],
   cmpChartAria: ['aria', '{m} 横轴为已发布档位：{efforts}。标准速度的能力为亮中性色 1.5 像素实线，成本为中灰 1 像素实线，耗时为 1 像素点线；右端标注指标。纵轴为 log₂，×0.5 到 ×1 与 ×1 到 ×2 等距；当前或试为快速时，叠加同色虚线快速成本与耗时，闪电标明快速。均相对当前实际配置，当前为 ×1，推荐为标准速度。纵轴固定包含全部档位及快速配置；切换试档或快速不移动已有曲线。白色竖标为当前、金色为推荐、蓝色为试；缺失指标断开', '{m}: published efforts on x: {efforts}. Log2 ratio axis: ×0.5 to ×1 and ×1 to ×2 have equal spacing. Standard ability is bright neutral 1.5 px solid, cost mid-grey 1 px solid, time 1 px dotted, with metric names at their right endpoints; same-colour dashed Fast cost/time overlays when current or trial is Fast, identified by lightning glyphs. Ratios use the actual CURRENT configuration as ×1; recommendation is Standard. The fixed domain includes all efforts at both speeds, so trial or Fast changes never move existing lines. White/current, gold/recommendation and blue/trial markers; gaps for missing metrics'],
+  cmpChartRecAria: ['aria', '{m} 当前档位未报告；横轴为已发布档位：{efforts}，比值相对 ★ 推荐档位（标准速度，★ 为 ×1）。能力、成本、耗时各一条线；金色竖标为推荐、蓝色为试；缺失指标断开', '{m}: current effort is unreported; published efforts on x: {efforts}, ratios against the ★ recommendation at Standard speed (★ = ×1). One line each for ability, cost and time; gold/recommendation and blue/trial markers; gaps for missing metrics'],
   cmpChartUnknownAria: ['aria', '{m} 当前档位未报告；无法计算相对当前配置的比值，不绘制比较线', '{m}: current effort is unreported; ratios against CURRENT are unavailable, so no comparison lines are plotted'],
   cmpChartUnavailableAria: ['aria', '{m} 当前参考值不可用，无法计算相对当前配置的比值，不绘制比较线', '{m}: current reference values are unavailable; no ratios or comparison lines can be plotted'],
   kBack: ['lcd', '‹ 返回 {p}', '‹ {p}'],

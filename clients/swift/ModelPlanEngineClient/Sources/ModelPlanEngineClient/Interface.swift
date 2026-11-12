@@ -102,6 +102,8 @@ public protocol EngineClient: Actor {
     /// This does not grant scope, reserve validity or cancel an OS operation.
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool
     func supportsCapability(_ capability: String) async -> Bool
+    /// The server version from the accepted initialize reply of the current session; nil until one is accepted.
+    func acceptedServerVersion() async -> String?
     func start() async throws -> EngineDeliveryContext
     func stop() async
     func retry() async throws -> EngineDeliveryContext
@@ -133,6 +135,7 @@ public protocol EngineClient: Actor {
 
 extension EngineClient {
     public func supportsCapability(_ capability: String) async -> Bool { false }
+    public func acceptedServerVersion() async -> String? { nil }
     public func historyImportStart(_ request: WireHistoryImportStartParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     public func historyImportStatus(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     public func historyImportCancel(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }

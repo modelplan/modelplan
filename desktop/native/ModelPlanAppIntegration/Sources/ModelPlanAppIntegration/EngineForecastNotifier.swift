@@ -15,8 +15,8 @@ struct EngineForecastEpisode:Equatable,Sendable {
     let name:SettingsText, window:SettingsText
 }
 
-/// Admits a forecast only for a current reading of a verified subscription, with its run-out still
-/// ahead and before the reset. Quota readings alone never create a notice.
+/// Admits a forecast only for a current, unexpired reading of a verified subscription, with its
+/// run-out still ahead and before the reset. Quota readings alone never create a notice.
 enum EngineForecastDecoder {
     private static func date(_ timestamp:WireTimestamp?) -> Date? {
         guard let timestamp else { return nil }
@@ -31,6 +31,9 @@ enum EngineForecastDecoder {
                   let row=projection.rows.first(where:{ $0.id == forecast.source }),
                   let account=row.accounts.first(where:{ $0.subscriptionRef == forecast.subscriptionRef && $0.valueState == .current }),
                   let window=account.windows.first(where:{ $0.id == forecast.windowId && $0.current }),
+                  // The cached `current` flag holds only until the reading's own validity deadline; the
+                  // final recheck before delivery runs through here, so an expired reading never notifies.
+                  let validUntil=date(window.validUntil),validUntil > now,
                   let resets=date(window.resetsAt),resets > runsOut else { return nil }
             // A computed reset can jitter by a couple of minutes between readings of one cycle.
             let cycle=Int(resets.timeIntervalSince1970/600)

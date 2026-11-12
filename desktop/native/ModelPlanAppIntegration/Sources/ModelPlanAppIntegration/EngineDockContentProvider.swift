@@ -107,6 +107,13 @@ public enum EngineDeadlineFacts {
             guard matches else { continue }
             includeDate(event.publishedAt)
             includeDate(event.expiresAt)
+            // D166: the confirmed dot ends before the event does; recompute then on the existing deadline path.
+            if event.status == "confirmed" {
+                includeDate((event.confirmedAt ?? event.publishedAt).addingTimeInterval(DockResetSignal.confirmedDotLifetime))
+            } else if let through = event.scheduledThrough {
+                // The card turns to "awaiting confirmation" when the forecast window ends.
+                includeDate(through)
+            }
         }
         if let next { return .scheduled(next, hasUnknownDeadline: unknown) }
         return unknown ? .unknown : .none
@@ -179,20 +186,25 @@ public enum EngineDeadlineFacts {
             var signal=DockSubscriptionSignal(id:member.id);signal.dataState=input.dataState
             if let event=preferred {
                 if event.status == "confirmed" {
-                    var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:event.publishedAt,expiresAt:event.expiresAt)
-                    reset.restartedReading=member.account.valueState == .current && member.account.windows.contains { window in
-                        guard window.current else { return false }
-                        guard let observed=date(window.observedAt),let resets=date(window.resetsAt) else { return false }
-                        return observed > event.publishedAt && resets > event.publishedAt
-                    }
+                    let confirmedAt=event.confirmedAt ?? event.publishedAt
+                    var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:confirmedAt,expiresAt:event.expiresAt)
+                    reset.kind=event.isResetCredit ? .resetCredit : .directReset
+                    // A local reading that restarted after the confirmation is an observation, not proof of the
+                    // public event (same predicate as the notification).
+                    reset.restartedReading = event.restartedReading(in: member.account)
                     signal.reset=reset
-                } else { signal.reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt) }
+                } else {
+                    var reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt)
+                    reset.kind=event.isResetCredit ? .resetCredit : .directReset
+                    signal.reset=reset
+                }
             }
             passSignals.append(signal)
             if let event = preferred {
+                let wording = EngineResetEventWording(english: english)
                 reserve.append(.init(id: "reset-event:" + event.id + ":" + event.status, kind: .notice,
-                    label: "↺ " + (english ? "Extra reset" : "额外重置"), value: resetEventTitle(event, restarted: signal.reset?.restartedReading == true),
-                    detail: english ? "A notice is not your reset" : "公告不等于你的账户已重置",
+                    label: wording.label(event), value: wording.title(event, now: context.now),
+                    detail: wording.detail(rose: signal.reset?.restartedReading == true),
                     pill: event.status == "confirmed" ? (english ? "Confirmed" : "已确认") : (english ? "Announced" : "已预告")))
             }
             let resetCount = resetCountRow(member, now: context.now)
@@ -257,10 +269,33 @@ public enum EngineDeadlineFacts {
                 : nil
             // D41: one plain sentence and one button, whatever the Keychain outcome was.
             let needsKeychain = row.id == "claude" && row.state == .needsKeychain
-            reasons[member.id] = .init(input: input, reason: needsKeychain ? (english ? "Keychain access needed" : "需要允许读取钥匙串") : text(message.0.text),
-                nextStep: message.1.map { text($0.text) } ?? "",
-                originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
-                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,resetCountExpiry:resetCount?.expiry,links: preferred.map(resetEventLinks) ?? [],windowObservations:observations,cardReadingState:cardState)
+            let cause = needsKeychain ? nil : causeLine(member, now: context.now)
+            let keychainReason: String = english ? "Keychain access needed" : "需要允许读取钥匙串"
+            let messageReason: String = text(message.0.text)
+            let reasonText: String
+            if needsKeychain {
+                reasonText = keychainReason
+            } else if let causeReason = cause?.reason {
+                reasonText = causeReason
+            } else {
+                reasonText = messageReason
+            }
+            let nextStepText: String
+            if let causeNext = cause?.nextStep {
+                nextStepText = causeNext
+            } else if let messageNext = message.1 {
+                nextStepText = text(messageNext.text)
+            } else {
+                nextStepText = ""
+            }
+            let planName: String = account.plan.name.map { text($0) } ?? ""
+            let linkList = preferred.map(resetEventLinks) ?? []
+            let presentation = DockContentRow(input: input, reason: reasonText, nextStep: nextStepText,
+                originalObservedAt: date(account.observedAt), plan: planName,
+                sourceName: sourceName(account.route), resetTimes: resets, windowDescriptions: descriptions,
+                additionalRows: reserve, resetCountExpiry: resetCount?.expiry, links: linkList,
+                windowObservations: observations, cardReadingState: cardState)
+            reasons[member.id] = presentation
             if needsKeychain { reasons[member.id]?.actionLabel = english ? "Allow reading" : "允许读取" }
         }
         let status: String
@@ -277,10 +312,22 @@ public enum EngineDeadlineFacts {
             let number = reading?.remainingPercent.map { " · \(Int($0.rounded()))%" } ?? ""
             return member.name(english:english) + number + " · " + text(message(row, now: context.now).0.text)
         }
-        let subscriptions=members.map { member in SettingsSubscription(id:member.id,
-            name:.init(member.name(english:true),member.name(english:false)),
-            plan:member.account.plan.name.map{text($0)} ?? "",vendor:member.row.vendorKey ?? "",
-            source:sourceState(member,now:context.now),isUnstable:!member.isStable) }
+        let subscriptions: [SettingsSubscription] = members.map { member -> SettingsSubscription in
+            let failing = member.row.state == .failed || member.row.state == .needsAction
+            let causeCode: String?
+            // Only a member that is failing carries a cause; a stale but live row keeps its own status.
+            if failing {
+                causeCode = message(member.row, now: context.now).0.code.rawValue
+            } else {
+                causeCode = nil
+            }
+            let planName: String = member.account.plan.name.map { text($0) } ?? ""
+            return SettingsSubscription(id: member.id,
+                name: .init(member.name(english: true), member.name(english: false)),
+                plan: planName, vendor: member.row.vendorKey ?? "",
+                source: sourceState(member, now: context.now), isUnstable: !member.isStable,
+                causeCode: causeCode)
+        }
         let content = DockContent(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
         verifiedWindows = passWindows; recomputeDeadline = passDeadline
@@ -297,22 +344,6 @@ public enum EngineDeadlineFacts {
         if let running = today?.runningSessions, running > 0 { parts.append(english ? "\(running) running" : "\(running) 个运行中") }
         return .init(id: "today", kind: .statistic, label: english ? "Today" : "今日", value: parts.joined(separator: " · "))
     }
-    private func resetEventTitle(_ event: EngineResetEvent, restarted: Bool) -> String {
-        if event.status == "confirmed" {
-            if restarted { return english ? "Reset confirmed" : "重置已确认" }
-            return english ? "Reset · awaiting reading" : "已重置 · 等读数"
-        }
-        if event.schedulePrecision == "deadline",
-           let from = event.scheduledFrom, from == event.scheduledThrough {
-            let components = Calendar.current.dateComponents([.hour, .minute], from: from)
-            if let hour = components.hour, let minute = components.minute {
-                let time = String(format: "%02d:%02d", hour, minute)
-                return english ? "Reset " + time + " announced" : "预告 " + time + " 重置"
-            }
-        }
-        return english ? "Public reset announced" : "已公告公开重置"
-    }
-
     private func resetEventLinks(_ event: EngineResetEvent) -> [DockCardLink] {
         let order = english
             ? [("original", "Original"), ("aihot", "AIHot"), ("official", "Official source"), ("publication", "Source")]
@@ -420,6 +451,24 @@ public enum EngineDeadlineFacts {
         case .other: return english ? "Other source" : "其他来源"
         case .none, .unknown: return sourceName(.knownUnknown)
         }
+    }
+    /// D87 slice 4: a failed or stale row says its own cause from the shared table, in place of the
+    /// engine's generic sentence. A stale reading names its age and the cause of the failed refresh.
+    /// A code without a table entry returns nil and keeps the engine's text.
+    private func causeLine(_ member: EngineAccountMember, now: Date) -> (reason: String, nextStep: String)? {
+        let row = member.row, account = member.account
+        let language: SettingsLanguage = english ? .english : .chinese
+        let name = member.name(english: english)
+        if row.state == .stale || account.valueState == .retained,
+           let failure = account.lastFailure,
+           let entry = ReaderCauseTable.entry(code: failure.code.rawValue, tool: row.id, toolName: name),
+           let observed = date(account.observedAt) {
+            return (ReaderCauseTable.staleLine(entry: entry, ageSeconds: Int(max(0, now.timeIntervalSince(observed))), language: language),
+                    entry.action.value(language))
+        }
+        guard row.state == .failed || row.state == .needsAction,
+              let entry = ReaderCauseTable.entry(code: message(row, now: now).0.code.rawValue, tool: row.id, toolName: name) else { return nil }
+        return (entry.reason.value(language), entry.action.value(language))
     }
     private func message(_ row: RowsRow, now: Date) -> (RowsReason, RowsNextStep?) {
         if let expiry = date(row.expiresAt), now >= expiry, let after = row.stateAfterExpiry {

@@ -14,6 +14,8 @@ import ModelPlanWire
   var onShellChanged: (() -> Void)? { get set }
   /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
+  /// G3-80: the cockpit window's frame while it is on screen; the enlarged field opens on its display.
+  var cockpitFrame: CGRect? { get }
   /// CKP-SHELL-20: build and load the page without showing it or taking focus.
   func prewarm()
   func open()
@@ -32,6 +34,7 @@ public extension CockpitPageSurface {
   var onShown: (() -> Void)? { get { nil } set {} }
   var onShellChanged: (() -> Void)? { get { nil } set {} }
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
+  var cockpitFrame: CGRect? { nil }
   func prewarm() {}
   func requestClose() { discard() }
   func updateAppearance(_ appearance: CockpitAppearance) {}
@@ -121,6 +124,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// delivery change, feature failure and shutdown. The page applies the same freshness rules to it as
   /// to any data, against the clock at display time.
   private var lastReply: (delivery: EngineDeliveryContext, data: WireCockpitData)?
+  /// The last settled history-import state seen for this delivery (phase, rows, coverage). The cockpit reads
+  /// imported history on every query, but an import finishing or a removal need not change the engine's rows,
+  /// so a change here is what asks the cockpit again (HIST-IMP-05).
+  private var importState: String?
   /// CKP-SHELL-20 (owner D50): keep one loaded, hidden, empty page ready so a click does not wait for a
   /// WebKit cold start. Off by default; the app turns it on when the cockpit entry is enabled.
   public var prewarmEnabled = false {
@@ -135,6 +142,13 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// Hidden pages that ended on their own (a failure, not a release or a clear) since the last open.
   /// Three stop prewarming until the next open, so a page that cannot load is not rebuilt in a loop.
   private var warmFailures = 0
+  /// G3-66: an open that found no engine context yet. The first context completes it, so a click during the
+  /// engine start is not lost and needs no second click.
+  private var pendingOpen = false
+  /// Which engine-side inputs exist, for the failure log. Counters and flags only, never engine data.
+  public var diagnosticState: String {
+    "client=\(client != nil) delivery=\(delivery != nil) page=\(page != nil) presented=\(presented) pendingOpen=\(pendingOpen) warmFailures=\(warmFailures)"
+  }
   private var memoryPressured = false
   private var releasingWarmPage = false
   private var memorySource: (any DispatchSourceMemoryPressure)?
@@ -156,10 +170,15 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public var onUnavailable: ((CockpitUnavailableReason) -> Void)?
   public var onClosed: (() -> Void)?
   public var onOpened: (() -> Void)?
+  /// A fresh reply was handed to the presented page: the cockpit is showing data again (audit A-5: a query failure
+  /// followed by this is a recovery, not an unavailable cockpit).
+  public var onDisplayed: (() -> Void)?
   /// D88: forwarded from the presented page only.
   public var onShellChanged: (() -> Void)?
   /// D88: the presented page's detach / put-back key, for the one-time hints.
   public var attachmentHintAnchor: CockpitAttachmentHintAnchor? { presented ? page?.attachmentHintAnchor : nil }
+  /// G3-80: the presented page's window frame.
+  public var cockpitFrame: CGRect? { presented ? page?.cockpitFrame : nil }
 
   public init(downstream: (any EngineClientEventConsumer)? = nil, makePage: @escaping PageFactory) {
     self.downstream = downstream
@@ -208,7 +227,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   }
   public func open() {
     guard client != nil else { onUnavailable?(.noClient); return }
-    guard let delivery else { onUnavailable?(.noDelivery); return }
+    guard let delivery else { pendingOpen = true; onUnavailable?(.noDelivery); return }
     guard let context = try? Self.bridgeContext(delivery) else { onUnavailable?(.invalidContext); return }
     prewarmTask?.cancel(); prewarmTask = nil
     warmFailures = 0
@@ -388,6 +407,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     cancelQuery(); page?.requestClose()
   }
   public func close() {
+    pendingOpen = false
     cancelQuery()
     prewarmTask?.cancel(); prewarmTask = nil
     let previous = page, wasPresented = presented
@@ -442,7 +462,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func adopt(_ next: EngineDeliveryContext) async {
     guard delivery != next else { return }
     cancelQuery()
-    lastReply = nil
+    lastReply = nil; importState = nil
     // A restored scope (D64) waits for the first context; a change of session or floor after that returns to All.
     if let previous = delivery, previous.sessionID != next.sessionID || previous.floor != next.floor { selectedScope="all" }
     scopeMembers.removeAll()
@@ -451,6 +471,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       let context = try Self.bridgeContext(next)
       if let page { await clearKeepingWarmCount(page, adopting: context); page.updateScope(selectedScope) }
       refresh()
+      if pendingOpen { pendingOpen = false; open() }
       schedulePrewarm()
     } catch {
       delivery = nil
@@ -462,7 +483,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     switch event {
     case .clearPrivateViews(let invalidation):
       cancelQuery()
-      lastReply = nil
+      lastReply = nil; importState = nil
       // The engine's first floor arrives as a clear with no previous session; nothing private was shown yet, so a scope
       // restored for today (D64) stays, and is still checked against the first reply. After a session, a consent or
       // store change forgets the saved scope; an engine stop (the app quitting) keeps it for today.
@@ -495,9 +516,30 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
           if CockpitMemberScopes.isIndexedFallback(selectedScope) || !scopeMembers.contains(selectedScope) { selectedScope="all" }
           page?.display(reply.envelope.data, ticket: ticket)
           page?.updateScope(selectedScope)
+          onDisplayed?()
         }
       }
     case .rowsChanged: refresh()
+    case .response(_, .historyImport(let reply)):
+      guard let delivery, reply.delivery == delivery else { break }
+      let status = reply.envelope.data
+      // Progress while running changes nothing the cockpit draws; a finished, cancelled or removed import may.
+      guard status.phase != .running else { break }
+      // HIST-IMP-07: one re-query per import operation. The engine's revision changes exactly when a run settles
+      // or imported history is removed; a fast run's start reply can already be done, so neither the summary nor
+      // an observed running status identifies an operation. Repeated polls of one revision do not ask again.
+      // An older engine sends no revision: then every settled status may be a new completion and asks again.
+      if let revision = status.revision {
+        let state = String(revision)
+        guard state != importState else { break }
+        importState = state
+      } else {
+        importState = nil
+      }
+      // The kept reply may still hold the removed or superseded history; a hidden page refills too.
+      lastReply = nil
+      trace("import.changed")
+      refresh()
     case .featureFailure(.cockpit, _):
       cancelQuery()
       lastReply = nil

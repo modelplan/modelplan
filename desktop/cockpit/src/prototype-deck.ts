@@ -38,7 +38,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  let alertsView:{from:'caution'|'mfd';mark?:string|null;flash?:boolean}|null=null,returnPage:number|null=null,tuneModel:string|null=null;
  // The study's comparison view (mfd.js openComparison, views.js round D1): a fader trial shows "Compare · <model>" over
  // the current page, whose key goes dark; ‹ back, Esc, a page key or the same source again returns. One trial at a time.
- let compare:{modelId:string;current:string|null;trial?:string;fast?:boolean;currentFast:boolean}|null=null,cmpFill:{w:number;h:number}|null=null;root.dataset.detailsAvailable=String(details.liveSessions!==null);
+ let compare:{modelId:string;current:string|null;trial?:string;fast?:boolean;currentFast:boolean}|null=null,cmpFill:{w:number;h:number}|null=null,cmpWatch:ResizeObserver|null=null;root.dataset.detailsAvailable=String(details.liveSessions!==null);
  // The study controller's fixed three-channel skeleton. No fixture data is
  // bundled; absent publication and session capabilities leave all bays empty, and the bank row says so.
  const skeleton=(i:number)=>`<div class="fd-ch empty" data-slot="${i}"><div class="fd-leds"></div><button class="fd-strip" data-mat="well" tabindex="-1"></button>
@@ -68,11 +68,12 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  function openCompare(c:Channel,trial?:string,fast?:boolean){
   for(const id of Object.keys(previews))if(id!==c.id)delete previews[id];
   compare={modelId:c.id,current:c.current??null,...(trial?{trial}:{}),...(fast!==undefined?{fast}:{}),currentFast:!!c.currentFast};
-  if(trial&&trial!==c.current)previews[c.id]=trial;else delete previews[c.id];
+  if(trial&&trial!==c.base)previews[c.id]=trial;else delete previews[c.id];
   selectedModel=c.id;alertsView=null;paint();
  }
  function closeCompare(){if(!compare)return false;delete previews[compare.modelId];compare=null;paint();return true;}
- // faders.js tryEffort / pressLevel / pressStrip.
+ // faders.js tryEffort / pressLevel / pressStrip. G3-87: the ghost (a trial) is kept only off the real cap (current, or ★
+ // when current is unreported); pressing the LCD opens the comparison for the model without one.
  function tryEffort(c:Channel,level:string){openCompare(c,level,compare?.modelId===c.id?compare.fast:undefined);}
  function pressLevel(c:Channel,level:string){if(compare?.modelId===c.id&&level===(previews[c.id]??c.base))closeCompare();else tryEffort(c,level);}
  function pressStrip(c:Channel){if(compare?.modelId===c.id)closeCompare();else openCompare(c,previews[c.id]??c.current??undefined);}
@@ -117,6 +118,14 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const member=sessionMember(members,x);
    return [{ref:x.sessionRef,sub:member?ids.get(member.key)??null:null,tool:x.source,model:x.model,effort:x.effort,fast:false,project:x.projectLabel??'--',running:x.state==='running',startedAt:null,endedAt:null,lastAt:at,tokens:null}];});
  }
+ // D63: the 7-day time view adds the recorded sessions (cockpitSessionsV1) that are not live now. Each shows its last
+ // sighting only: no end time, title or token count.
+ function recentSeen(members:ReturnType<typeof cockpitMembers>,ids:Map<string,string>,live:ReadonlySet<string>){
+  const detail=data?.details;if(!detail?.recentSessions||detail.sessionCoverage!=='local-last-seen')return [];
+  return detail.recentSessions.slice(0,200).flatMap(x=>{const at=Date.parse(x.lastObservedAt);if(!Number.isFinite(at)||live.has(x.sessionRef))return [];
+   const member=x.subscriptionRef?members.find(m=>m.key===x.subscriptionRef):undefined;
+   return [{ref:x.sessionRef,sub:member?ids.get(member.key)??null:null,tool:x.source,model:x.model,effort:x.effort,fast:false,project:x.projectLabel??'--',running:false,startedAt:null,endedAt:null,lastAt:at,tokens:null}];});
+ }
  function publicData(now=renderedNow){
   const members=data?cockpitMembers(data):[],ids=new Map(members.map((m,i)=>[m.key,'member'+i]));
   // Owner build 13 / study fixtures: the Subscription page names the subscription ("ChatGPT Pro"), not the tool, and
@@ -133,7 +142,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text})=>({level,text}));
   // Public model data for the frontier (owner D39/D-B): the shared selection for this scope, ten at most.
   const published=publishedFleet(data,scope,now);
-  return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),sessionRanking:lastSeen(members,ids),models:published,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published},empty:accounts.length===0,ids,members};
+  return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),sessionRanking:(()=>{const live=lastSeen(members,ids);return [...live,...recentSeen(members,ids,new Set(live.map(x=>x.ref)))];})(),models:published,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published},empty:accounts.length===0,ids,members};
  }
  // The first local day of the recorded history (cockpitHistoryV1 dailyFrom), as a local midnight.
  function recordStart(){const from=data?.history?.coverage==='local-history'?data.history.dailyFrom:null;if(!from||!/^\d{4}-\d{2}-\d{2}$/.test(from))return null;const [y,m,day]=from.split('-').map(Number),at=new Date(y!,m!-1,day!);if(at.getFullYear()!==y||at.getMonth()!==m!-1||at.getDate()!==day)return null;return at.getTime();}
@@ -213,14 +222,25 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const f=faderInput().faders.find(x=>x.id===compare!.modelId);if(!f){compare=null;return false;}
   const fast=compareSpeedTiers(f,f.tier),model={id:f.id,name:f.name,short:f.short||f.name,rec:f.rec,e:f.e,pool:fast.pool},view={models:[model],speedTiers:fast.speedTiers,sessionRanking:[],accounts:[],now:d.now};
   const args:CompareArgs={modelId:f.id,current:compare!.current,...(compare!.trial?{trial:compare!.trial}:{}),...(compare!.fast!==undefined?{fast:compare!.fast}:{}),currentFast:compare!.currentFast};
-  const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=comparison(view,{...ui,scope:null,fill:cmpFill?{cmp:cmpFill}:{}},args);};
+  const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=comparison(view,{...ui,scope:null,trialNote:true,fill:cmpFill?{cmp:cmpFill}:{}},args);};
   bar.classList.add('dark');for(const {b} of buttons){b.classList.remove('on');b.setAttribute('aria-pressed','false');}
+  // CSP (style-src 'self') drops the ladder's inline geometry; apply it through CSSOM after every draw.
+  const ladder=()=>{for(const e of page.querySelectorAll<HTMLElement>('.cmp-lad[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}};
   page.className='mfd-page pg-compare is-view own-title';draw();
   // The chart is drawn at its measured size (mfd.js renderMfd), again once if that size changed.
-  const area=page.querySelector<HTMLElement>('[data-fill="cmp"]'),size=area?{w:Math.floor(area.clientWidth),h:Math.floor(area.clientHeight)}:null;
+  const measure=()=>{const area=page.querySelector<HTMLElement>('[data-fill="cmp"]');return area?{w:Math.floor(area.clientWidth),h:Math.floor(area.clientHeight)}:null;};
+  let size=measure();
   if(size&&size.w>0&&size.h>0&&(cmpFill?.w!==size.w||cmpFill?.h!==size.h)){cmpFill=size;draw();}
-  // CSP (style-src 'self') drops the ladder's inline geometry; apply it through CSSOM.
-  for(const e of page.querySelectorAll<HTMLElement>('.cmp-lad[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}
+  ladder();
+  // Build 14c: a fill measured at zero (the screen not laid out yet, e.g. the first paint after a fader trial) left the
+  // chart out for good. Watch the page's size (no timers: bundle rule) and draw the chart once the fill has a size, if
+  // the same comparison is still shown.
+  cmpWatch?.disconnect();cmpWatch=null;
+  if((!size||!size.w||!size.h)&&typeof ResizeObserver!=='undefined'){const shown=compare,watch=new ResizeObserver(()=>{
+    if(compare!==shown||!page.classList.contains('pg-compare')){watch.disconnect();if(cmpWatch===watch)cmpWatch=null;return;}
+    const next=measure();if(!next||!next.w||!next.h)return;watch.disconnect();if(cmpWatch===watch)cmpWatch=null;
+    if(cmpFill?.w!==next.w||cmpFill?.h!==next.h){cmpFill=next;draw();ladder();}});
+   cmpWatch=watch;watch.observe(page);}
   const keys=document.createElement('template');keys.innerHTML=compareKeys(view,ui,args,{back});
   footer.className='mfd-ok mfd-vk';footer.replaceChildren(...(keys.content.firstElementChild?.childNodes??[]));
   footer.onclick=e=>{if(!e.isTrusted)return;const key=(e.target as Element).closest<HTMLElement>('[data-mfd]');if(!key)return;

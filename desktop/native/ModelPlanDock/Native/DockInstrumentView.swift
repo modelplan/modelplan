@@ -283,6 +283,7 @@ enum DockGripInk {
     /// appearance input). Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:68 (.dk-n.hot).
     private var hotGlow: CALayer?
     @_spi(DockResourceChecks) public private(set) var hotNozzleForChecks: String?
+    @_spi(DockResourceChecks) public var hotGlowForChecks: CALayer? { hotGlow }
     public func setHotNozzle(_ id: String?, glow colour: CGColor? = nil, blur: CGFloat = 7) {
         guard id != hotNozzleForChecks || (id != nil && hotGlow == nil) else { return }
         hotGlow?.removeFromSuperlayer(); hotGlow = nil; hotNozzleForChecks = nil
@@ -730,7 +731,7 @@ enum DockGripInk {
                 switch notice.key.kind {
                 case .forecast:label=zh ? "可能提前耗尽":"May run out before reset"
                 case .resetAnnounced:label=zh ? "已公告额外重置":"Extra reset announced"
-                case .resetConfirmed:label=zh ? "额外重置已确认，等待读数":"Extra reset confirmed; awaiting a reading"
+                case .resetConfirmed:label=zh ? "公开重置已确认，余量以本机读数为准":"Public reset confirmed; your balance is the local reading"
                 case .cardsExpiring:label=zh ? "额外重置即将过期":"Resets expiring"
                 case .credits:label=zh ? "正在使用点数":"Using credits"
                 }

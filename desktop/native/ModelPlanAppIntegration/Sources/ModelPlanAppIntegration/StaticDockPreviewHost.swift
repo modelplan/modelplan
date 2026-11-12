@@ -132,8 +132,10 @@ public struct StaticDockGeometry {
         let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
         addTrackingArea(area); hoverArea = area
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true; updatePose() }
-    override func mouseExited(with event: NSEvent) { hovered = false; updatePose() }
+    // G3-62: the key is its own view, so the widget's pointer tracking never sees the pointer leave it; without
+    // this the key's tip stayed up after the pointer had gone.
+    override func mouseEntered(with event: NSEvent) { hovered = true; updatePose(); onHelpFocusChanged?() }
+    override func mouseExited(with event: NSEvent) { hovered = false; updatePose(); onHelpFocusChanged?() }
     override func highlight(_ flag: Bool) { super.highlight(flag); pressed = flag; updatePose() }
 
     private var canPresentHelp: Bool { isEnabled && !isHiddenOrHasHiddenAncestor && !bounds.isEmpty }
@@ -198,6 +200,15 @@ struct DockHelpInteraction: Equatable {
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
+    /// D204 (G3-94): the ignition's own press, with the screen point it came from. Nil falls back to `showConsole`.
+    public var pressIgnition: ((CGPoint) -> Void)?
+    /// D204 (G3-94): the ignition's frame on screen while it is on the widget; the cockpit does not treat a press there
+    /// as an outside click.
+    public var ignitionScreenFrame: CGRect? {
+        guard !consoleButton.isHiddenOrHasHiddenAncestor, let window = consoleButton.window,
+              consoleButton.bounds.width > 0, consoleButton.bounds.height > 0 else { return nil }
+        return window.convertToScreen(consoleButton.convert(consoleButton.bounds, to: nil))
+    }
     private func installIgnitionArt() {
         let side = dockView.presentedSkinForChecks?.fixedLayers.first { $0.resource.contains("recessed-guard") }?.rect.width ?? 0
         consoleButton.installArt(side > 0 ? T2IgnitionArt.shared : nil, guardSide: side)
@@ -222,8 +233,6 @@ struct DockHelpInteraction: Equatable {
     /// G3-28: the widget menu's Auto-Collapse item. The app writes the same stored setting
     /// as Settings' auto-collapse switch; without an app the preview applies nothing.
     public var requestAutoCollapse: ((Bool) -> Void)?
-    /// G3-22: shown as the first, disabled line of the widget menu (the status icon may be hidden).
-    public var statusIconNotice: SettingsText?
     /// Set only when the member-scoped refresh adapter is actually installed.
     public var ringRefreshAvailable = false
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
@@ -279,29 +288,59 @@ struct DockHelpInteraction: Equatable {
     }
     /// Where the expanded widget is on screen now, and the whole display it is on; nil while it
     /// is collapsed, hidden or withdrawn. The hull comes from the registered outline, not the panel.
-    var spotlightTarget: QuotaWidgetSpotlightTarget? {
+    var spotlightTarget: QuotaWidgetSpotlightTarget? { spotlightGeometry()?.target }
+
+    /// Frame and display only (cheap, polled every tick), plus how to read the widget view's pixels.
+    private struct SpotlightGeometry {
+        let target: QuotaWidgetSpotlightTarget
+        let view: DockInstrumentView
+        /// Global screen point to the view's own coordinates.
+        let toLocal: (CGPoint) -> CGPoint
+    }
+    private func spotlightGeometry() -> SpotlightGeometry? {
         guard permitted, !retired, !retiring, preferences.showDock, let presentation = edge.presentation,
               presentation.state == .expanded, let frame = presentation.paintedFrame,
               let placement = presentation.placement,
               !createsNativePanels || panel?.isVisible == true,
               let display = topology(of: sampleEnvironment()).display(placement.displayID) else { return nil }
         var widget = frame
-        do {
-            let view = edgeViews[placement.edge] ?? dockView
-            let local = view.registeredMoveOutlinePath?.boundingBox ?? view.bounds
-            let global: CGRect
-            if createsNativePanels, let window = view.window, window === panel {
-                global = window.convertToScreen(view.convert(local, to: nil))
-            } else {
-                // Detached checks: the view sits at the container origin, which fills the painted frame.
-                let y = view.isFlipped ? view.bounds.height - local.maxY : local.minY
-                global = CGRect(x: frame.minX + view.frame.minX + local.minX, y: frame.minY + view.frame.minY + y,
-                                width: local.width, height: local.height)
+        let view = edgeViews[placement.edge] ?? dockView
+        let local = view.registeredMoveOutlinePath?.boundingBox ?? view.bounds
+        let global: CGRect
+        let toLocal: (CGPoint) -> CGPoint
+        if createsNativePanels, let window = view.window, window === panel {
+            global = window.convertToScreen(view.convert(local, to: nil))
+            toLocal = { view.convert(window.convertFromScreen(CGRect(origin: $0, size: .zero)).origin, from: nil) }
+        } else {
+            // Detached checks: the view sits at the container origin, which fills the painted frame.
+            let y = view.isFlipped ? view.bounds.height - local.maxY : local.minY
+            global = CGRect(x: frame.minX + view.frame.minX + local.minX, y: frame.minY + view.frame.minY + y,
+                            width: local.width, height: local.height)
+            toLocal = { (point: CGPoint) -> CGPoint in
+                let x = point.x - frame.minX - view.frame.minX
+                let up = point.y - frame.minY - view.frame.minY
+                return CGPoint(x: x, y: view.isFlipped ? view.bounds.height - up : up)
             }
-            let clipped = global.intersection(frame)
-            if !clipped.isNull, !clipped.isEmpty { widget = clipped }
         }
-        return .init(widget: widget, display: display.frame, displayID: placement.displayID)
+        let clipped = global.intersection(frame)
+        if !clipped.isNull, !clipped.isEmpty { widget = clipped }
+        return SpotlightGeometry(target: .init(widget: widget, display: display.frame, displayID: placement.displayID),
+                                 view: view, toLocal: toLocal)
+    }
+
+    private struct SilhouetteKey: Equatable { let widget: CGRect, displayID: String, view: ObjectIdentifier }
+    private var silhouetteCache: (key: SilhouetteKey, at: Date, value: QuotaWidgetSilhouette?)?
+    /// The widget's real drawn outline (painted pixels), sampled once for the target that is presented. The
+    /// result is kept briefly per geometry so a repeated call for the same target costs nothing. nil: the widget
+    /// is not there, nothing (or everything) is painted; the overlay then draws a padded rounded rectangle.
+    func spotlightSilhouette(for target: QuotaWidgetSpotlightTarget) -> QuotaWidgetSilhouette? {
+        guard let geometry = spotlightGeometry() else { return nil }
+        let key = SilhouetteKey(widget: target.widget, displayID: target.displayID, view: ObjectIdentifier(geometry.view))
+        if let cached = silhouetteCache, cached.key == key, Date().timeIntervalSince(cached.at) < 2 { return cached.value }
+        let view = geometry.view, toLocal = geometry.toLocal
+        let value = QuotaWidgetSilhouette(frame: target.widget) { (point: CGPoint) -> Bool in view.isPainted(atLocal: toLocal(point)) }
+        silhouetteCache = (key, Date(), value)
+        return value
     }
     /// Presentation is allowed by the lifecycle, so a Show request can make the widget visible now.
     var canPresentForHelp: Bool { permitted && !retired && !retiring }
@@ -963,7 +1002,7 @@ struct DockHelpInteraction: Equatable {
         self.prepareDetachedAlternateAppearances = prepareDetachedAlternateAppearances
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
-        consoleButton.target = self; consoleButton.action = #selector(openConsole)
+        consoleButton.target = self; consoleButton.action = #selector(ignitionPressed)
         consoleButton.setAccessibilityIdentifier("dock.ignition")
         consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
@@ -1914,10 +1953,6 @@ struct DockHelpInteraction: Equatable {
         }
         let available = permitted && !lifecycleSuspended
         var items: [DockMenuPresentationItem] = []
-        if let statusIconNotice {
-            items.append(.init(title: statusIconNotice.value(preferences.language), accessibilityID: "dock.menu.notice"))
-            items.append(.init(title: nil))
-        }
         if lifecycleSuspended {
             items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
             items.append(.init(title: nil))
@@ -2030,6 +2065,12 @@ struct DockHelpInteraction: Equatable {
         guard cockpitEntryEnabled, !retired else { return }
         try? attention.acknowledge(.cockpitOpening, signals: attentionSignals, at: currentDate())
         publishAttention()
+    }
+    /// D204 (G3-94): the ignition toggles an attached cockpit and brings a detached one to the front (the app decides).
+    @objc private func ignitionPressed() {
+        guard cockpitEntryEnabled, permitted, !retired else { return }
+        guard let pressIgnition else { openConsole(); return }
+        dismissCard(); pressIgnition(NSEvent.mouseLocation)
     }
     @objc private func openConsole() {
         guard cockpitEntryEnabled, permitted, !retired, let showConsole else { return }

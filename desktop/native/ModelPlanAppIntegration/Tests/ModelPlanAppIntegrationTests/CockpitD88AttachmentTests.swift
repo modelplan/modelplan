@@ -12,8 +12,9 @@ import XCTest
 /// tests, and here the controller receives the intents they map to. Window server: GUI leg.
 @MainActor final class CockpitD88AttachmentTests: XCTestCase {
   private struct Fixture {
-    let page: CockpitWindowController, session: CockpitShellSession, icon: CGRect, usable: CGRect
-    var home: CGRect? { CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false)?.frame }
+    let page: CockpitWindowController, session: CockpitShellSession, icon: CGRect, usable: CGRect, screenWidth: CGFloat
+    /// The controller's own fit (Auto size judged on the full screen width); whole points, as the window server keeps them.
+    var home: CGRect? { CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: false, screenWidth: screenWidth)?.frame }
   }
   private var failures: [CockpitWindowFailure] = []
 
@@ -38,7 +39,7 @@ import XCTest
       appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion),
       shellSession: session, anchor: { icon })
     page.onFailure = { [weak self] in self?.failures.append($0) }
-    return Fixture(page: page, session: session, icon: icon, usable: usable)
+    return Fixture(page: page, session: session, icon: icon, usable: usable, screenWidth: screen.frame.width)
   }
   /// Opens the way the console does: the entrance is set on the shared shell session just before open().
   private func openPage(_ fixture: Fixture, entrance: CockpitEntrance) throws -> NSWindow {
@@ -114,9 +115,13 @@ import XCTest
     XCTAssertTrue(fixture.page.isAttached, "the put-back key re-attaches")
     XCTAssertEqual(window.frame, home, "back under the icon")
     XCTAssertEqual(titles(fixture.page), ["Detach"])
-    fixture.page.contextMenu()?.performActionForItem(at: 0)
+    // CI 11-10: the item's action resolved to NSObject's performSelector: and AppKit sent the item as a selector.
+    let detach = try XCTUnwrap(fixture.page.contextMenu())
+    XCTAssertEqual(detach.items.first?.action.map(NSStringFromSelector), "cockpitAttachmentItemChosen:")
+    detach.performActionForItem(at: 0)
     XCTAssertFalse(fixture.page.isAttached, "the menu item detaches")
-    fixture.page.contextMenu()?.performActionForItem(at: 0)
+    let putBack = try XCTUnwrap(fixture.page.contextMenu())
+    putBack.performActionForItem(at: 0)
     XCTAssertTrue(fixture.page.isAttached, "and puts back")
     XCTAssertEqual(failures, [])
   }
@@ -138,9 +143,37 @@ import XCTest
     XCTAssertEqual(changes, 1, "the settled open is reported once, for the hint")
     XCTAssertNotNil(fixture.page.attachmentHintAnchor)
     fixture.page.requestClose()
-    try await Task.sleep(for: .milliseconds(100))
-    XCTAssertLessThan(fixture.page.window?.frame.width ?? 0, home.width, "the close shrinks back into the icon")
-    try await Task.sleep(for: .milliseconds(400))
+    // Main 0af627e5: one sample at 100 ms read the full width. Sample until the window is gone instead, so a late
+    // first animation step on a loaded runner cannot fail it, while a frame held at full size still does.
+    var narrowest = CGFloat.infinity
+    let deadline = ContinuousClock.now + .seconds(2)
+    while let closing = fixture.page.window, ContinuousClock.now < deadline {
+      narrowest = min(narrowest, closing.frame.width)
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertLessThan(narrowest, home.width, "the close shrinks back into the icon")
+    XCTAssertNil(fixture.page.window)
+    XCTAssertEqual(failures, [])
+  }
+
+  /// A relayout during the shrink (a screen-parameter change) must not snap the closing window back to full size.
+  func testD88ScreenChangeDuringTheShrinkKeepsShrinking() async throws {
+    let fixture = try make(reduceMotion: false)
+    defer { fixture.page.discard() }
+    _ = try openPage(fixture, entrance: .growFromIcon)
+    let home = try XCTUnwrap(fixture.home)
+    try await Task.sleep(for: .milliseconds(600))
+    fixture.page.requestClose()
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApplication.shared)
+    var widths: [CGFloat] = []
+    let deadline = ContinuousClock.now + .seconds(2)
+    while let closing = fixture.page.window, ContinuousClock.now < deadline {
+      widths.append(closing.frame.width)
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertLessThan(widths.min() ?? 0, home.width, "the close still shrinks")
+    XCTAssertFalse(widths.dropFirst(widths.firstIndex { $0 < home.width } ?? widths.count).contains(home.width),
+                   "and is not set back to the layout frame mid-shrink")
     XCTAssertNil(fixture.page.window)
     XCTAssertEqual(failures, [])
   }

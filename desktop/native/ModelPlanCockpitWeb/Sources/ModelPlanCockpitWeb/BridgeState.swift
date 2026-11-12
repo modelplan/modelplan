@@ -23,6 +23,24 @@ public struct CockpitQueryTicket: Equatable, Sendable {
   public let context: CockpitEngineContext
   public let viewRevision: UInt64
 }
+/// CKP-SHELL-40 (owner D205): v1 is night-only. The cockpit renders the night look whatever the macOS
+/// appearance or the saved theme; the day paths in the page and in this module stay intact behind this one
+/// switch. v1.1 turns the day cockpit back on by setting `dayCockpit` (default off) at launch.
+public enum CockpitDayPolicy {
+  private static let lock = NSLock()
+  private static var enabled = false
+  /// Off in v1. Tests flip it and restore it; nothing else writes it.
+  public static var dayCockpit: Bool {
+    get { lock.lock(); defer { lock.unlock() }; return enabled }
+    set { lock.lock(); defer { lock.unlock() }; enabled = newValue }
+  }
+  /// The theme the cockpit may show for a requested one.
+  public static func resolve(_ requested: CockpitAppearance.Theme) -> CockpitAppearance.Theme {
+    dayCockpit ? requested : .night
+  }
+  /// The same pin for the field page's own theme enum.
+  public static func resolveField(dark: Bool) -> Bool { dayCockpit ? dark : true }
+}
 public struct CockpitAppearance: Equatable, Sendable {
   public enum Theme: String, Sendable { case day, night }
   public enum Locale: String, Sendable {
@@ -39,8 +57,10 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let showUsedPercent: Bool
   /// Settings "Show all models" (D135): the fader deck lifts the own-plans filter and the 12-fader cap.
   public let showAllModels: Bool
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, showAllModels: Bool = false) {
-    self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent; self.showAllModels = showAllModels
+  /// Settings "Cockpit size": native window geometry only, never sent to the page.
+  public let size: CockpitSize
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, showAllModels: Bool = false, size: CockpitSize = .standard) {
+    self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent; self.showAllModels = showAllModels; self.size = size
     if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
       self.redBelow = redBelow
     } else {
@@ -124,7 +144,8 @@ public struct CockpitMessageSource {
   }
 }
 
-// Replies have scalar fields plus one bounded three-string capabilities array.
+// Replies have scalar fields plus two bounded flat string arrays: the three-string `capabilities` of `ready` and the
+// `ids` (at most CockpitCautionIdentities.maxCount) of `cautionAck`. No other key may carry an array.
 // Reject nesting/duplicate keys before JSONSerialization can collapse them.
 enum FlatReply {
   static func parse(_ raw: String) throws -> [String: Any] {
@@ -170,11 +191,13 @@ enum FlatReply {
       white()
       if i < a.count, a[i] == 34 {
         _ = try string()
-      } else if key == "capabilities", i < a.count, a[i] == 91 {
+      } else if key == "capabilities" || key == "ids", i < a.count, a[i] == 91 {
+        // Flat arrays of strings only: the ready capabilities and the cautionAck identities (G3-56).
+        let limit = key == "ids" ? CockpitCautionIdentities.maxCount : 3
         i += 1; white()
         var count = 0
         while i < a.count, a[i] != 93 {
-          guard count < 3 else { throw CockpitBridgeError.limit }
+          guard count < limit else { throw CockpitBridgeError.limit }
           _ = try string(); count += 1; white()
           guard i < a.count else { throw CockpitBridgeError.invalidMessage }
           if a[i] == 93 { break }
@@ -315,9 +338,41 @@ public final class CockpitBridgeState {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
     // A newer display retires all prior unacknowledged display receipts.
     pending = pending.filter { $0.value.kind != "rendered" }
-    let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(data))
+    let (object, dropped) = try Self.finiteObject(data)
+    lastNonFinitePaths = dropped
     let tools = Set(data.projection.rows.filter { $0.kind == .tool && !$0.invalid }.map { $0.id })
     return try envelope("display", extra: ["data": object], receipt: "rendered", tools: tools, members: CockpitMemberScopes.keys(data))
+  }
+  /// G3-86: JSON has no NaN or infinity, so one such number made the whole display unencodable. It is sent
+  /// as null (the page shows that value as unavailable); the controller logs the field paths, never the values.
+  public private(set) var lastNonFinitePaths: [String] = []
+  private static let nonFiniteMarker = "\u{0}modelplan.nonfinite.7f1c2a"
+  static func finiteObject(_ data: WireCockpitData) throws -> (Any, [String]) {
+    let encoder = JSONEncoder()
+    encoder.nonConformingFloatEncodingStrategy = .convertToString(
+      positiveInfinity: nonFiniteMarker, negativeInfinity: nonFiniteMarker, nan: nonFiniteMarker)
+    var dropped: [String] = []
+    let object = replacingNonFinite(try JSONSerialization.jsonObject(with: encoder.encode(data)), path: "data", dropped: &dropped)
+    return (object, dropped)
+  }
+  private static func replacingNonFinite(_ value: Any, path: String, dropped: inout [String]) -> Any {
+    if let text = value as? String, text == nonFiniteMarker { dropped.append(path); return NSNull() }
+    if let object = value as? [String: Any] {
+      var out: [String: Any] = [:]
+      for (key, child) in object { out[key] = replacingNonFinite(child, path: path + "." + key, dropped: &dropped) }
+      return out
+    }
+    if let array = value as? [Any] {
+      return array.enumerated().map { replacingNonFinite($0.element, path: path + "[\($0.offset)]", dropped: &dropped) }
+    }
+    return value
+  }
+  /// G3-86: a display the delivery queue refused never reaches the page, so no receipt is awaited for it.
+  /// The page keeps the last display it rendered until the refresh that replaces this one.
+  func abandonDisplay(_ id: UUID) {
+    guard pending[id]?.kind == "rendered" else { return }
+    pending[id] = nil
+    if earlyDeadline?.requestID == id { earlyDeadline = nil }
   }
   func cancelDeadlineReports() {
     deadlineReportRequest = nil; appearanceAwaitingAck = nil; earlyDeadline = nil; bufferedDeadline = nil

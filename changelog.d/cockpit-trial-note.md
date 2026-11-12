@@ -1,0 +1,1 @@
+While a trial detent is shown, the effort comparison now carries one quiet line: "Trial only — your tool settings stay unchanged". In the compact shell, where the chart leaves no height for the line, it collapses to an info mark in the effort row that shows the same text on hover or focus.

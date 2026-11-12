@@ -76,7 +76,7 @@ test("verdicts: exact full head, case-insensitive, latest per lane, trusted only
   assert.deepEqual([...R.verdicts(R.feed([comment(v("merge", H.toUpperCase(), ""))]), H, [])], [["(unnamed)", "merge"]]);
 });
 
-test("tier gates: tier 1 any merge, tier 2 needs macrev2, macrev is advice on tier 2, blocks stop every tier", () => {
+test("tier gates: tier 1 needs a GPT merge, tier 2 needs macrev2/macrevb, macrev is advice on tier 2, blocks stop every tier", () => {
   assert.equal(evalPr({ comments: [comment(v("merge"))] }).state, R.SUCCESS);
   assert.equal(evalPr().state, R.PENDING);
   const t2 = [file("clients/swift/Wire.swift")];
@@ -84,11 +84,16 @@ test("tier gates: tier 1 any merge, tier 2 needs macrev2, macrev is advice on ti
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev")), glm] }).state, R.PENDING);
   assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrev")), comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS);
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), comment(v("block", H, "glm")), glm] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.SUCCESS, "Sonnet stands in for macrev2");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.PENDING, "tier 2: sonnet never counts");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "sonnet"))] }).state, R.PENDING, "tier 1: sonnet never counts");
   assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "sonnet")), comment(v("merge", H, "macrev2")), glm] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: [file("docs/a.md")] }).state, R.SUCCESS, "tier 0 needs no verdict");
-  assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(v("block"))] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment("REVIEW-TIER: 1")] }).state, R.PENDING);
+  // Owner D149: a GPT reviewer lane is required; sonnet never counts in the public gate
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevb")), glm] }).state, R.SUCCESS, "tier 2 macrevb");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS, "tier 2 macrev2");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevc")), glm] }).state, R.PENDING, "tier 2 macrevc is Terra");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "glm"))] }).state, R.PENDING, "tier 1 GLM-only");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "macrevc"))] }).state, R.SUCCESS, "tier 1 macrevc");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
 });
 
 test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothing looser does", () => {
@@ -544,6 +549,8 @@ test("merge-group evaluation: the group's own CI replaces any stale-base rule", 
   const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, ...o });
   const qci = greenQueue;
   assert.ok(R.QUEUE_WORKFLOWS.includes(".github/workflows/desktop.yml"), "the queue must test the Mac build class");
+  assert.deepEqual([...R.QUEUE_WORKFLOWS].sort(), [".github/workflows/ci.yml", ".github/workflows/desktop.yml", ".github/workflows/official-visuals.yml",
+    ".github/workflows/transport-fuzz.yml", ".github/workflows/u11-cockpit.yml", ".github/workflows/u11a-aggregate.yml", ".github/workflows/u14-harness.yml"], "queue membership is pinned");
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: qci }).state, R.SUCCESS);
   assert.equal(R.evaluateGroup({ steps: [], queueRuns: qci }).state, R.FAILURE);
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [] }).state, R.PENDING, "queue CI not started yet");
@@ -686,6 +693,25 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
   for (const p of prPathList) assert.match(p.replace(/\*\*$/, "x"), scope, `queue-scope misses ${p}`);
   assert.doesNotMatch("docs/mac-ci.md", scope);
   assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: queue-scope/);
+  // D112: every other queue workflow is Linux-only and decides with its own pull_request path list.
+  for (const path of R.QUEUE_WORKFLOWS.filter((p) => !/\/(ci|desktop)\.yml$/.test(p))) {
+    const text = readFileSync(join(root, path), "utf8");
+    assert.doesNotMatch(text, /macos|trusted-mac\.yml/i, `${path}: no Mac time in the merge queue`);
+    const block = /^  pull_request:\n    paths:\n((?:      - .*\n)+)/m.exec(text);
+    assert.ok(block, `${path}: pull_request paths list`);
+    const list = block[1].trim().split("\n").map((l) => l.replace(/^\s*- /, "").replace(/^['"]|['"]$/g, ""));
+    const re = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(text)[1]);
+    for (const p of list) assert.match(p.replace(/\*\*$/, "x"), re, `${path}: queue-scope misses ${p}`);
+    assert.doesNotMatch("docs/unrelated.md", re, `${path}: queue-scope is too wide`);
+    const jobs = text.slice(text.indexOf("\njobs:\n"));
+    const names = [...jobs.matchAll(/^  ([a-z0-9-]+):\n/gm)].map((m) => m[1]);
+    assert.ok(names.includes("queue-scope") && names.length >= 2, `${path}: queue-scope plus the checked job(s)`);
+    for (const job of names.filter((n) => n !== "queue-scope")) {
+      const body = new RegExp(`^  ${job}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(jobs)[1];
+      assert.match(body, /needs: queue-scope/, `${path}: ${job} must wait for queue-scope`);
+      assert.match(body, /needs\.queue-scope\.outputs\.run == 'true'/, `${path}: ${job} must follow queue-scope`);
+    }
+  }
   const probe = readFileSync(join(root, ".github/workflows/merge-gates-probe.yml"), "utf8");
   assert.match(probe, /pull_request:\s*\n\s*types:\s*\[[^\]]*\bedited\b/, "PR title/body edits must re-evaluate evidence");
   const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");

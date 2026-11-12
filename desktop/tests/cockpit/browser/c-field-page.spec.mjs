@@ -42,15 +42,64 @@ test('the official porthole opens the field by click and keyboard',async({page})
  expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
- const port=page.locator('.ck-port');await expect(port).toHaveAttribute('role','button');await expect(port).toHaveAttribute('aria-label','Open the 3D view');
- await port.click();await port.focus();await page.keyboard.press('Enter');
+ const port=page.locator('.ck-port'),key=page.locator('.port-big[data-bigfield]');await expect(port).not.toHaveAttribute('tabindex');await expect(port).not.toHaveAttribute('role','button');
+ await expect(key).toHaveAttribute('aria-label',/^Open the 3D launch field/);
+ await port.click();await key.focus();await page.keyboard.press('Enter');
  expect(await page.evaluate(()=>window.posted.filter(m=>m.type==='action'&&m.action==='openField').length)).toBe(2);
+});
+// Build 14c: after a click on the porthole and a key press (the walk clicks the field open, then presses Escape), the
+// focused port drew WebKit's default blue focus ring round the whole port box, over the canopy frame; with that ring
+// removed, the same click and key press lit the ⤢ key gold although nobody pressed it (owner, 14c). The port is not
+// focusable; only real keyboard navigation to the ⤢ key shows its ring.
+test('build 14c: a click and Escape on the porthole leave no ring on the port or its ⤢ key; Tab to the key shows it',async({page})=>{
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ const read=()=>page.evaluate(()=>{const p=document.querySelector('.ck-port'),k=p.querySelector('.port-big'),c=getComputedStyle(p),ck=getComputedStyle(k);
+  return {active:document.activeElement===p?'port':document.activeElement===k?'key':'other',port:c.outlineStyle,key:ck.outlineStyle,keyWidth:ck.outlineWidth};});
+ const port=page.locator('.ck-port');await port.click({position:{x:520,y:120}});await page.keyboard.press('Escape');
+ let v=await read();expect(v.active).not.toBe('port');expect([v.port,v.key]).toEqual(['none','none']);
+ await page.locator('.port-big').click();await page.keyboard.press('Escape');
+ v=await read();expect(v.active).not.toBe('key');expect(v.key).toBe('none');
+ // Real keyboard navigation: Tab from the control just before the key lands on it and shows the gold ring.
+ await page.evaluate(()=>{const k=document.querySelector('.port-big'),all=[...document.querySelectorAll('button,[tabindex="0"],a[href]')].filter(e=>e.offsetParent&&!e.disabled&&e.tabIndex>=0);
+  const i=all.indexOf(k);document.body.focus();if(i>0)all[i-1].focus();});
+ for(let n=0;n<40&&(await read()).active!=='key';n++)await page.keyboard.press('Tab');
+ v=await read();expect(v.active).toBe('key');expect([v.key,v.keyWidth]).toEqual(['solid','2px']);
 });
 test('D43 every vendor mark the scene asks for loads under the page CSP, close to square',async({page})=>{
  await open(page);
  const sizes=await page.evaluate(async names=>Promise.all(names.map(name=>new Promise(done=>{const image=new Image();image.onload=()=>done([name,image.naturalWidth>0,Math.abs(image.naturalWidth/image.naturalHeight-1)<=.05]);image.onerror=()=>done([name,false,false]);image.src='./assets/brands/'+name;}))),
   ['openai-white.svg','claude-rounded.svg','claude.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
  for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
+});
+// Spike 11-08 / D63: the page cannot read Low Power Mode, so native passes it in the payload and on every change.
+// Low power renders on demand only with the scene's quiet motion (no camera sway or fly-ins): idle means no frames.
+test('D63 low power: the field mounts quiet, draws no frames while idle, and follows a live change',async({page})=>{
+ await open(page);await show(page,payload(4,{reduceMotion:false,lowPower:true}));
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
+ const stats=()=>page.evaluate(()=>window.modelPlanField.stats());
+ await expect.poll(async()=>(await stats())?.quiet).toBe(true);
+ await page.waitForTimeout(2500);const settled=await stats();expect(settled.lowPower).toBe(true);expect(settled.scheduled).toBe(false);
+ await page.waitForTimeout(2000);expect((await stats()).frames).toBe(settled.frames);
+ expect(await page.evaluate(()=>window.modelPlanField.power(false))).toBe(true);
+ await expect.poll(async()=>(await stats())?.quiet).toBe(false);expect((await stats()).lowPower).toBe(false);
+ expect(await page.evaluate(()=>window.modelPlanField.power(true))).toBe(true);
+ await expect.poll(async()=>(await stats())?.quiet).toBe(true);
+ // A disposed scene's late context-loss report must not replace the new scene with the fallback.
+ await page.waitForTimeout(1500);await expect(page.locator('.field-stage .nogl')).toHaveCount(0);
+ await expect(page.locator('.field-stage canvas')).toHaveCount(1);expect((await stats())?.quiet).toBe(true);
+});
+test('D63 Reduce Motion alone also keeps the scene quiet, and the payload without lowPower is not low power',async({page})=>{
+ await open(page);await show(page,payload(4));
+ await expect.poll(()=>page.evaluate(()=>window.posted.includes('ready'))).toBe(true);
+ test.skip(await page.locator('.field-stage .nogl').count()>0,'no WebGL in this browser');
+ await expect.poll(()=>page.evaluate(()=>window.modelPlanField.stats()?.quiet)).toBe(true);
+ expect(await page.evaluate(()=>window.modelPlanField.stats().lowPower)).toBe(false);
 });
 // D63 / CKP-PORT-11/12: the ⤢ key, a double-click and a click on a still rocket open the field; a rocket focuses it.
 // Prototype rocket-r1/porthole.js placeBigKey / bindPorthole (task 91); hud-selection/still.js hitStillRocket (28 px).

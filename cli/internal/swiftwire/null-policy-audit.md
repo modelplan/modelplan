@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 79 optional/nullable fields reachable from the production
+This inventory covers the 83 optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -42,7 +42,7 @@ schema/Swift rule before the operation can be consumed; rejected input leaves th
 operation available for a valid result. AccessToken is therefore forbidden-null.
 No credential content is logged or included in assertion messages.
 
-## Outputs (68 fields)
+## Outputs (72 fields)
 
 Evidence references name the producer and the production decoder consuming each
 field. `coalesced` means no third state is exposed: absence/null both produce the
@@ -96,6 +96,7 @@ containers and failure ID retain their required-key checks.
 | HistoryItem.Window | coalesced | Same page/decoder: absent/null both mean no window label. |
 | HistoryItem.Value | coalesced | Same page/decoder: absent/null are unavailable, not numeric zero. |
 | HistoryPage.NextCursor | coalesced | [queries/history.go:156](../appserver/queries/history.go#L156), only encodes a cursor for a next position. `WireHistoryPage` absent/null both mean no next cursor. |
+| HistoryImportStatus.Revision | coalesced | [history_import.go](../appserver/history_import.go), `ImportController.status`, always encodes the process counter (settled runs and removals). An older engine omits it; `WireHistoryImportStatus` absent/null both mean no reported revision, and the cockpit coordinator then treats every settled status as a possible new completion. |
 | PublicationResult.PublishedAt | coalesced | [queries/publication.go:85](../appserver/queries/publication.go#L85), public projection conversion; `WirePublicationResult` requires the key, accepts null as no date. It does not expose an absent state. |
 | PublicationResult.SelectionRevision | distinct | Same conversion preserves raw published JSON. `WirePublicationResult` uses key presence to distinguish nil, `.null`, and value; the store retains the typed result. `TestSelectionRevisionPresenceRegression`/the wire encoder probes and `testSelectionRevisionPreservesAbsenceNullAndString` guard preservation. |
 | PublicationResult.Multipliers | coalesced | Same conversion; `WirePublicationResult` requires this nullable container. Null is unavailable; absent fails its independent required-key guard. |
@@ -110,6 +111,9 @@ containers and failure ID retain their required-key checks.
 | rows.Row.ExpiresAt | coalesced | Same projection/decoder: absent/null both have no expiry. |
 | rows.Row.StateAfterExpiry | coalesced | Same projection/decoder: absent/null both have no expiry-state override. |
 | rows.ExpiryState.NextStep | coalesced | [build.go:304](../rows/build.go#L304), expiry-latch projection; `RowsExpiryState` absent/null both have no post-expiry action. |
+| rows.ResetEvent.Kind | coalesced | Absent/null both mean an older producer; the App reads it as a direct reset. |
+| rows.ResetEvent.ConfirmedAt | coalesced | Absent/null both mean no confirmation time; the App falls back to the event's publishedAt. |
+| rows.ResetEvent.ConfirmedAtBasis | coalesced | Absent/null both mean the basis is unstated; the App shows the time without a qualifier only for published or observed. |
 | rows.ResetEvent.Confirms | coalesced | An absent or null confirmation reference yields no reference; the producer drops confirmations without an eligible reference. |
 | rows.ResetEvent.PlanIDs | coalesced | Absent/null both mean no published structured plan links; no plan is inferred. |
 | rows.ResetEvent.Schedule | coalesced | Absent/null both mean no published schedule. |

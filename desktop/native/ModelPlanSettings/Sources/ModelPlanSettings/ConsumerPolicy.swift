@@ -34,6 +34,7 @@ public struct EffectiveSettings: Equatable, Sendable {
     public let revealSeconds: Double, magnification: HoverMagnification, size: SettingsSize
     public let menuDisplay: MenuDisplay, language: SettingsLanguage, showProjectNames: Bool
     public let opening: OpeningPreference, ignitionSeconds: Double?
+    public let cockpitSize: SettingsCockpitSize
     public let redBelow: Int
     /// SET-9-10 / CKP-ENG-23: the cockpit shows used instead of remaining.
     public let showUsedPercent: Bool
@@ -52,6 +53,7 @@ public struct EffectiveSettings: Equatable, Sendable {
         size = p.size; magnification = reduceMotion ? .none : p.magnification
         menuDisplay = p.menuDisplay; language = p.language; showProjectNames = p.showProjectNames; redBelow = p.effectiveRedBelow; showUsedPercent = p.percentageMode == .used; showAllModels = p.showAllModels
         opening = e.v1NormalEntry || p.opening == .quick || reduceMotion || e.macOSMajor < 15 || !e.entranceAccepted ? .quick : .hold
+        cockpitSize = p.cockpitSize
         ignitionSeconds = opening == .hold ? 0.2 + 3 * Double(p.beatMilliseconds) / 1000 : nil
     }
     public var visibilityPolicy: DockVisibilityPolicy {
@@ -173,6 +175,8 @@ public enum SettingsActionRequest: Equatable, Sendable {
 }
 public struct SettingsCapabilities: Sendable {
     public var login: LoginServiceState = .notRegistered
+    /// G3-69: `login` is `.unavailable` because the system reported the app as not found (not in Applications).
+    public var loginNotInApplications = false
     public var appCacheClearAvailable = false
     public var updateServiceAvailable = false
     /// True only while the engine reports its forecast producer (F1). Injected from the
