@@ -105,7 +105,7 @@ private actor ActivityJourneyEngine: EngineClient {
         let clock = ContinuousClock(), started = clock.now
         let turnStarted=Date()
         try await engine.publish(fixture(phase: "model", sequence: 2, recordAt:turnStarted))
-        try await wait { rotations == [self.first:1] }
+        try await wait { rotations == [self.first:2] }
         XCTAssertLessThan(started.duration(to: clock.now), .seconds(5))
         XCTAssertLessThan(Date().timeIntervalSince(turnStarted),5)
         XCTAssertNil(app.composition.dock.lastWorkingEffectError)
@@ -119,12 +119,12 @@ private actor ActivityJourneyEngine: EngineClient {
         try await engine.publish(fixture(phase: "tool", sequence: 5, mismatched: true))
         XCTAssertTrue(rotations.isEmpty); XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty)
         try await engine.publish(fixture(phase: "model", sequence: 6, recordAt: Date().addingTimeInterval(-88)))
-        try await wait { rotations == [self.first:1] }
+        try await wait { rotations == [self.first:2] }
         // No further rows arrive. The UI must retire the expired signal on its own.
         try await wait { host.activeWorkingEffectIDs.isEmpty }
         XCTAssertTrue(rotations.isEmpty)
         try await engine.publish(fixture(phase: "tool", sequence: 7))
-        try await wait { rotations == [self.first:1] }
+        try await wait { rotations == [self.first:2] }
         try await app.foundationStore.update { $0.motion = .on }
         await app.prepare()
         app.updateSystemAccessibility(.init())
@@ -146,12 +146,14 @@ private actor ActivityJourneyEngine: EngineClient {
         try await engine.publish(fixture(phase: "tool", sequence: 2))
         try await wait { host.animatingWorkingEffectIDs == [self.first] }
         XCTAssertEqual(host.workingEffectCycleSeconds[first], 2, "on battery the flames step at half rate")
+        XCTAssertEqual(host.workingEffectRotationPeriodsForChecks[first], 2, "D171: the ring spin keeps one turn every 2 s on battery")
         try await engine.publish(fixture(phase: nil, sequence: 3))
         try await wait { host.activeWorkingEffectIDs.isEmpty }
         battery = false
         try await engine.publish(fixture(phase: "tool", sequence: 4))
         try await wait { host.animatingWorkingEffectIDs == [self.first] }
         XCTAssertEqual(host.workingEffectCycleSeconds[first], 1, "on AC the flames return to full rate")
+        XCTAssertEqual(host.workingEffectRotationPeriodsForChecks[first], 2, "D171: the spin period does not follow the flame clock")
         await app.composition.stop()
     }
     func testNormalEntryLifecycleSleepAndLockWithdrawWorkingEffects() async throws {
@@ -167,12 +169,12 @@ private actor ActivityJourneyEngine: EngineClient {
         app.updateSystemAccessibility(.init())
         let workspace = NotificationCenter(), locks = NotificationCenter()
         app.startLifecycle(workspace: workspace, local: NotificationCenter(), lockEvents: locks, displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
-        try await wait { rotations == [self.first:1] }
+        try await wait { rotations == [self.first:2] }
         workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
         XCTAssertTrue(app.lifecyclePaused); XCTAssertTrue(app.composition.dock.activeWorkingEffectIDs.isEmpty)
         workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
         try await wait { !app.lifecyclePaused }
-        try await wait { rotations == [self.first:1] }
+        try await wait { rotations == [self.first:2] }
         locks.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil)
         XCTAssertTrue(app.lifecyclePaused); XCTAssertTrue(app.composition.dock.activeWorkingEffectIDs.isEmpty)
         await app.stopLifecycle(); await app.composition.stop()
@@ -191,13 +193,13 @@ private actor ActivityJourneyEngine: EngineClient {
             await app.prepare(); app.updateSystemAccessibility(.init())
             await app.composition.start(); app.allowDockPresentation()
             host.refreshDockContent()
-            XCTAssertEqual(rotations,[first:1],tool)
+            XCTAssertEqual(rotations,[first:2],tool)
             osReduced=true;host.refreshDockContent()
             XCTAssertTrue(rotations.isEmpty,tool)
             XCTAssertTrue(host.animatingWorkingEffectIDs.isEmpty,tool)
             XCTAssertEqual(host.activeWorkingEffectIDs,[first],"Reduce Motion holds the approved frame static")
             osReduced=false;host.refreshDockContent()
-            XCTAssertEqual(rotations,[first:1],tool)
+            XCTAssertEqual(rotations,[first:2],tool)
             let engine=try XCTUnwrap(app.composition.client as? ActivityJourneyEngine)
             try await engine.publish(fixture(phase:nil,sequence:2,tool:tool))
             XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty,tool)

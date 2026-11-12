@@ -1325,7 +1325,7 @@ struct DockHelpInteraction: Equatable {
             do {
                 let profile = RenderProfile(dark: true, scale: backingScale, reduceMotion: application?.effective.reduceMotion ?? true)
                 try driver.configure(view: dockView, readings: rows, profile: profile,
-                                     rotation: DockEffectRotation(period: 1), provider: { _ in provider })
+                                     rotation: .working, provider: { _ in provider })
             } catch { driver.stop(); lastWorkingEffectError = error }
         } else { workingDriver?.stop() }
         workingEffectsDidConfigureForChecks?()
