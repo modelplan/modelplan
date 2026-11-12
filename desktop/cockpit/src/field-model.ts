@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Maps published public model data to the launch-field scene's model shape. No personal data.
-import {brandColour,NEUTRAL} from './livery.js';
+import {rocketColour,NEUTRAL} from './livery.js';
 export interface PublishedEffort {readonly effort:string;readonly label:string;readonly star?:boolean;readonly ability?:number|null;readonly cost?:number|null;readonly time?:number|null}
 export interface PublishedModel {readonly id:string;readonly name:string;readonly developerId:string;readonly recommended:string;readonly efforts:readonly PublishedEffort[]}
 export type FieldRow=readonly [string,number,number,number];
 export interface FieldModel {readonly id:string;readonly name:string;readonly short:string;readonly dev:string;readonly colour:string;readonly rec:string;readonly e:readonly FieldRow[];readonly sel:FieldRow;readonly reportedEffort:null;readonly previewEffort:null}
 export const FIELD_LIMIT=10;
 // The scene's own developer keys; anything else takes the neutral rocket.
-const developers:Readonly<Record<string,{dev:string;colour:string}>>={openai:{dev:'openai',colour:brandColour('openai')},anthropic:{dev:'anthropic',colour:brandColour('anthropic')},zhipuai:{dev:'zhipu',colour:brandColour('zhipuai')},zhipu:{dev:'zhipu',colour:brandColour('zhipuai')}};
+const developers:Readonly<Record<string,{dev:string;colour:string}>>={openai:{dev:'openai',colour:rocketColour('openai')},anthropic:{dev:'anthropic',colour:rocketColour('anthropic')},zhipuai:{dev:'zhipu',colour:rocketColour('zhipuai')},zhipu:{dev:'zhipu',colour:rocketColour('zhipuai')}};
 /** `short` names the model on narrow surfaces (callers pass the study's shortLabel); the default keeps the full name. */
 export function fieldModel(m:PublishedModel,short:(name:string)=>string=name=>name):FieldModel|null {
  const rows:FieldRow[]=[];let star:FieldRow|null=null;

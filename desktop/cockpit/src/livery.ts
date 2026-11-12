@@ -18,6 +18,10 @@ export function shadeOf(vendorKey:string|null|undefined):Shade|null {
 /** The brand colour as is (marks that also show the logo and name). Unknown vendors stay neutral. */
 export const brandColour=(vendorKey:string|null|undefined):string=>shadeOf(vendorKey)?.colour??NEUTRAL;
 
+/** The website's rocket livery colour for a maker (owner 11-12: UI accents only; rockets keep website livery). Anything that
+ * paints a rocket (launch-field scene, porthole stills) takes this, never brandColour: for OpenAI, Z.ai and xAI the two differ. */
+export const rocketColour=(vendorKey:string|null|undefined):string=>{const s=shadeOf(vendorKey);return s?(s.rocket??s.colour):NEUTRAL;};
+
 // CIEDE2000 on sRGB hex colours.
 const lab=(hex:string):[number,number,number]=>{
  const [r,g,b]=[1,3,5].map(i=>{const c=parseInt(hex.slice(i,i+2),16)/255;return c<=0.04045?c/12.92:((c+0.055)/1.055)**2.4;}) as [number,number,number];

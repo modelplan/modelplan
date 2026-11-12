@@ -165,6 +165,13 @@ site's `src/shell/brandLivery.ts`; `src/livery-shared.json` is its vendored copy
 | Cursor | `#f79dcb` | Assigned identity colour (unofficial): Cursor's brand is black and white (cursor.com/brand); light rose is the largest free gap in the palette. |
 | Claude | `#d97757` | Real brand accent (unchanged). |
 
-Same-screen collision fallbacks (CIEDE2000 under 15): GLM next to Kimi takes `#8dabfd` (12.7), xAI next to OpenCode takes `#978c0d` (13.4).
+Same-screen collision fallbacks (app UI only) (CIEDE2000 under 15): GLM next to Kimi takes `#8dabfd` (12.7), xAI next to OpenCode takes `#978c0d` (13.4).
 Day theme: marks are drawn at 40% of the colour toward black: Codex `#064133` (6.1:1 on the day metal), GLM `#162466` (7.4), xAI `#625c1a` (3.6),
 Cursor `#633f51` (4.7), GLM fallback `#384465` (5.0), xAI fallback `#3c3805` (6.2). Night uses the colours as is (all at least 3.25:1 on the night metal).
+
+**Owner 11-12: UI accents only; rockets keep website livery.** The Set 1 colours above are app UI accents (engine tabs, fader strips,
+record chips, subscription header). Codex, GLM and xAI are deliberate app-only overrides (`APP_UI` in `sync-livery.mjs`) of the shared
+table: `livery-shared.json` stays a verbatim copy of the website's `brandLivery.ts`, so `node sync-livery.mjs --check --source <file>`
+still demands identity with it, and the website colour stays in the generated table as `rocket`. Cursor is an app-only tool accent with no
+rocket row. Anything that paints a rocket (launch-field scene developer colours, porthole stills) uses `rocketColour()`, never `brandColour()`.
+The private table is not changed for Set 1.

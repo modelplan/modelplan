@@ -1,8 +1,8 @@
 {
- "sourceSha256": "b1cbc62f148c1eeacc0f3c878ef08781f698b885f9d85149f994683f9c33a779",
+ "sourceSha256": "dc32e093693369d9157c5e6dac611238d2d5619ff10b1c00185ce490fecc03e7",
  "makers": {
   "openai": {
-   "colour": "#10a37f"
+   "colour": "#ececec"
   },
   "anthropic": {
    "colour": "#d97757"
@@ -23,12 +23,10 @@
    "colour": "#e73562"
   },
   "zhipuai": {
-   "colour": "#3859ff",
-   "alt": "#8dabfd"
+   "colour": "#b9c2cc"
   },
   "xai": {
-   "colour": "#f5e642",
-   "alt": "#978c0d"
+   "colour": "#8f96a0"
   },
   "meta": {
    "colour": "#0467df"

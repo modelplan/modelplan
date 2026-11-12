@@ -3,10 +3,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {fieldModel} from '../../../cockpit/.tmp/compiled/src/field-model.js';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {MAKERS,TOOLS} from '../../../cockpit/.tmp/compiled/src/livery-table.js';
-import {brandColour,resolveColours,deltaE,COLLISION_DELTA_E,NEUTRAL} from '../../../cockpit/.tmp/compiled/src/livery.js';
+import {rocketColour,brandColour,resolveColours,deltaE,COLLISION_DELTA_E,NEUTRAL} from '../../../cockpit/.tmp/compiled/src/livery.js';
 const cockpit=fileURLToPath(new URL('../../../cockpit/',import.meta.url));
 const lum=hex=>{const [r,g,b]=[1,3,5].map(i=>{const c=parseInt(hex.slice(i,i+2),16)/255;return c<=0.03928?c/12.92:((c+0.055)/1.055)**2.4;});return 0.2126*r+0.7152*g+0.0722*b;};
 const ratio=(a,b)=>{const [x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+0.05)/(y+0.05);};
@@ -15,7 +16,7 @@ test('COL-2.1-18 Set 1 (owner 11-12): ChatGPT green, Zhipu blue, assigned yellow
  assert.equal(MAKERS.openai.colour,'#10a37f');assert.equal(MAKERS.zhipuai.colour,'#3859ff');assert.equal(MAKERS.xai.colour,'#f5e642');assert.equal(TOOLS.cursor.colour,'#f79dcb');assert.equal(MAKERS.anthropic.colour,'#d97757');
  assert.equal(brandColour('openai'),'#10a37f');assert.equal(brandColour('glm'),'#3859ff');assert.equal(brandColour('xai'),'#f5e642');assert.equal(brandColour('cursor'),'#f79dcb');assert.equal(brandColour('claude'),'#d97757');
  assert.equal(brandColour('no-such-vendor'),NEUTRAL);
- const text=readFileSync(new URL('../../../cockpit/src/livery-table.ts',import.meta.url),'utf8');
+ const text=readFileSync(new URL('../../../cockpit/src/livery-table.ts',import.meta.url),'utf8').replace(/,rocket:'#[0-9a-f]{6}'/g,''); // the website colour survives only as `rocket`
  for(const old of ['#ececec','#b9c2cc','#656d76','#8f96a0','#eef2f6'])assert.ok(!text.includes(old),'old colour '+old);
 });
 test('COL-2.1-18 Set 1 collision fallbacks: GLM next to Kimi takes #8dabfd, xAI next to OpenCode takes #978c0d; the four do not collide with each other',()=>{
@@ -60,4 +61,17 @@ test('COL-2.1-18 day rule: 40% of each Set 1 colour toward black keeps every mar
  const day='#b7bcc1',mix=h=>'#'+[1,3,5].map(i=>Math.round(parseInt(h.slice(i,i+2),16)*0.4).toString(16).padStart(2,'0')).join('');
  const expected={'#10a37f':'#064133','#3859ff':'#162466','#f5e642':'#625c1a','#f79dcb':'#633f51','#8dabfd':'#384465','#978c0d':'#3c3805'};
  for(const [c,d] of Object.entries(expected)){assert.equal(mix(c),d);assert.ok(ratio(d,day)>=3.4,c+' day '+ratio(d,day).toFixed(2));}
+});
+test('COL-2.1-18 owner 11-12: Set 1 is UI accents only; rockets keep the website livery, the shared copy stays verbatim',()=>{
+ const shared=JSON.parse(readFileSync(new URL('../../../cockpit/src/livery-shared.json',import.meta.url),'utf8')).makers;
+ assert.equal(shared.openai.colour,'#ececec');assert.equal(shared.zhipuai.colour,'#b9c2cc');assert.equal(shared.xai.colour,'#8f96a0');
+ assert.ok(!('alt' in shared.zhipuai)&&!('alt' in shared.xai),'the vendored copy carries no app-only alternates');
+ assert.deepEqual([rocketColour('openai'),rocketColour('glm'),rocketColour('xai')],['#ececec','#b9c2cc','#8f96a0']);
+ assert.deepEqual([brandColour('openai'),brandColour('glm'),brandColour('xai')],['#10a37f','#3859ff','#f5e642']);
+ assert.equal(rocketColour('claude'),brandColour('claude'));assert.equal(rocketColour('kimi'),brandColour('kimi'));
+ // The launch-field scene paints rockets: its developer colours are the rocket colours, not the UI accents.
+ const m=dev=>fieldModel({id:'a',name:'Synthetic',developerId:dev,recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40,cost:.2,time:30}]});
+ assert.equal(m('openai').colour,'#ececec');assert.equal(m('zhipuai').colour,'#b9c2cc');assert.equal(m('anthropic').colour,'#d97757');
+ const field=readFileSync(new URL('../../../cockpit/src/field-model.ts',import.meta.url),'utf8');
+ assert.ok(!/brandColour\(/.test(field),'field-model must not take UI accents');
 });
