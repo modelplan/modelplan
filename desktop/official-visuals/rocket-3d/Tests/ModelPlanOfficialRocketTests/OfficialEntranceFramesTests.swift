@@ -354,5 +354,141 @@ final class OfficialEntranceFramesTests: XCTestCase {
             XCTAssertGreaterThan(opacity.scale, 0.2)
         }
     }
+
+    // MARK: D185 step 1: material and light sample matrix (test only, opt-in)
+
+    /// D185 (owner: the hull still reads block by block next to pass 5, satin brushed aluminium under broad soft
+    /// light with dark flanks). Roughness alone has looped (rounds 10-11c: rough + thin strips read as paper, glossy
+    /// + strips as chrome), so the light is the primary axis: (a) the current strip studio, (b) two wide vertical
+    /// softboxes (left key wide, right fill narrower) in a dark room, (c) the same softboxes twice as wide plus a
+    /// soft top fill; day rooms are a light-grey backdrop like the pass-5 day still. Per light: roughness
+    /// {current map (night 0.22 / day 0.25), 0.38, 0.5}, anisotropy {0.4, 0}, clearcoat {current, off}, minus the
+    /// combinations that cannot match (strips at 0.5). Two controls under (b): the seam normal map off ("smooth")
+    /// and the base-colour map off ("flat", a plain colour at the plain panel's tone), to see whether the per-panel
+    /// steps come from the normals, the maps or the light. Overrides are applied to the built hull materials; the
+    /// product is unchanged. Runs only with MODELPLAN_ENTRANCE_MATRIX=1 and writes
+    /// `matrix-<theme>-<light>-r..-a..-cc..-<control>-<side|tq>.png` to MODELPLAN_ENTRANCE_FRAMES_DIR.
+    @MainActor
+    func testD185MaterialSampleMatrix() async throws {
+        guard ProcessInfo.processInfo.environment["MODELPLAN_ENTRANCE_MATRIX"] == "1" else {
+            throw XCTSkip("set MODELPLAN_ENTRANCE_MATRIX=1 to render the D185 material matrix")
+        }
+        guard #available(macOS 15.0, *) else { throw XCTSkip("the native entrance needs macOS 15") }
+        struct Tile {
+            var light = "strips", rough: Float? = nil, aniso: Float? = nil, clearcoat: Float? = nil, control = "none"
+            var name: String {
+                func f(_ v: Float?) -> String { v.map { String(format: "%.2f", $0) } ?? "cur" }
+                return "\(light)-r\(f(rough))-a\(f(aniso))-cc\(f(clearcoat))-\(control)"
+            }
+        }
+        var tiles: [Tile] = []
+        // (a) strips: roughness {current, 0.38} x anisotropy {current, 0}, plus clearcoat off at 0.38 (5).
+        for rough: Float? in [nil, 0.38] {
+            for aniso: Float? in [nil, 0] { tiles.append(Tile(light: "strips", rough: rough, aniso: aniso)) }
+        }
+        tiles.append(Tile(light: "strips", rough: 0.38, aniso: 0, clearcoat: 0))
+        // (b), (c) softboxes: roughness {current, 0.38, 0.5} x anisotropy {current, 0}, plus clearcoat off at 0.38 and
+        // 0.5 (8 each).
+        for light in ["softbox", "softbox-wide"] {
+            for rough: Float? in [nil, 0.38, 0.5] {
+                for aniso: Float? in [nil, 0] { tiles.append(Tile(light: light, rough: rough, aniso: aniso)) }
+            }
+            for rough: Float in [0.38, 0.5] { tiles.append(Tile(light: light, rough: rough, aniso: 0, clearcoat: 0)) }
+        }
+        // Controls (2).
+        tiles.append(Tile(light: "softbox", rough: 0.38, aniso: 0, control: "smooth"))
+        tiles.append(Tile(light: "softbox", rough: 0.38, aniso: 0, control: "flat"))
+        XCTAssertEqual(tiles.count, 23)
+        // The pass-5 side still (day-side.jpg / night-side.jpg, 1024 x 1536): hull level-on, the 0.24-7.0 m stretch
+        // in the crop x 380-650, y 735-1340 (270 x 605 px), the skirt 228 px wide. Same stretch here, nearly
+        // orthographic (fov 20, 19.17 m away), 540 x 1210 px (2x the crop). Plus a three-quarter view.
+        let sideEye = EntranceVector(0, 3.62, 19.17)
+        let side = EntranceCamera(position: sideEye, orientation: .lookAt(eye: sideEye, target: .init(0, 3.62, 0)),
+                                  fovDegrees: 20, viewport: .init(width: 540, height: 1210))
+        let tqEye = EntranceVector(9.6, 1.2, 16.6)
+        let threeQuarter = EntranceCamera(position: tqEye, orientation: .lookAt(eye: tqEye, target: .init(0, 3.62, 0)),
+                                          fovDegrees: 20, viewport: .init(width: 540, height: 1210))
+        let source = try OfficialRocket.source(), look = try OfficialRocket.lookImages()
+        let hullNames = ["aft_skirt", "lower_stage", "long_slanted_interstage", "slender_upper_body", "capsule_lower",
+                         "capsule_aperture_shell", "capsule_nose", "canopy-hull-patch"]
+        for theme in EntranceTheme.allCases {
+            let plan = StoryboardScenario.plan(edge: "right", theme: theme, geometry: source.geometry)
+            let scene = try EntranceScene(plan: plan, parts: [.hull, .glass], flat: false, rocket: source, look: look)
+            var originals: [(Entity, [any RealityKit.Material])] = []
+            func collect(_ e: Entity) {
+                if let model = e.components[ModelComponent.self] { originals.append((e, model.materials)) }
+                e.children.forEach(collect)
+            }
+            for name in hullNames { if let e = scene.entity(named: name) { collect(e) } }
+            XCTAssertFalse(originals.isEmpty, "\(theme): no hull meshes")
+            var lights: [String: CGImage] = ["strips": try XCTUnwrap(EntranceLook.studio(theme))]
+            for light in ["softbox", "softbox-wide"] { lights[light] = try XCTUnwrap(softboxes(theme, wide: light == "softbox-wide")) }
+            // The plain panel's tone for "flat": the kit's base metal is ~0.74 (night) / ~0.9 (day) of the tint.
+            let plainTone: CGFloat = theme == .day ? 0.9 : 0.74
+            for tile in tiles {
+                for (e, materials) in originals {
+                    guard var model = e.components[ModelComponent.self] else { continue }
+                    model.materials = materials.map { material -> any RealityKit.Material in
+                        guard var pbr = material as? PhysicallyBasedMaterial else { return material }
+                        if let r = tile.rough { pbr.roughness = .init(floatLiteral: r) }
+                        if let a = tile.aniso { pbr.anisotropyLevel = .init(floatLiteral: a) }
+                        if let c = tile.clearcoat { pbr.clearcoat = .init(floatLiteral: c) }
+                        if tile.control == "smooth" { pbr.normal.texture = nil }
+                        if tile.control == "flat", let tint = pbr.baseColor.tint.usingColorSpace(.sRGB) {
+                            pbr.baseColor = .init(tint: NSColor(srgbRed: tint.redComponent * plainTone, green: tint.greenComponent * plainTone,
+                                                                blue: tint.blueComponent * plainTone, alpha: 1))
+                        }
+                        return pbr
+                    }
+                    e.components.set(model)
+                }
+                try await scene.setEnvironment(try XCTUnwrap(lights[tile.light]), intensityExponent: EntranceLook.environmentExponent(theme))
+                for (view, camera) in [("side", side), ("tq", threeQuarter)] {
+                    let image = try await scene.render(camera: camera, rise: 0)
+                    let name = "matrix-\(theme.rawValue)-\(tile.name)-\(view)"
+                    print("D185-MATRIX \(name) coverage \(String(format: "%.3f", coverage(image)))")
+                    XCTAssertGreaterThan(coverage(image), 0.2, "\(name) misses the hull")
+                    try save(image, name)
+                }
+            }
+        }
+    }
+
+    /// Softbox rooms for the D185 matrix, equirectangular 512 x 256, sRGB-encoded linear light, azimuths in the
+    /// scene's convention (0 = +z, the camera side; `EntranceLook.imageCentreAzimuth` turns the image as the
+    /// product's studio does). Two tall vertical softboxes: a wide key at the left (-50) and a narrower, dimmer
+    /// fill at the right (+40), soft edges. `wide`: both twice as wide, plus a soft top fill. Night: a dark room;
+    /// day: a light-grey backdrop like the pass-5 day still.
+    private func softboxes(_ theme: EntranceTheme, wide: Bool) -> CGImage? {
+        let w = 512, h = 256, day = theme == .day
+        let room = day ? 0.35 : 0.012, floor = day ? 0.25 : 0.008
+        let scale = wide ? 2.0 : 1.0
+        func box(_ az: Double, _ e: Double, centre: Double, half: Double, low: Double, high: Double, soft: Double) -> Double {
+            let da = abs((az - centre + 540).truncatingRemainder(dividingBy: 360) - 180)
+            let fx = max(0, 1 - max(0, da - half) / soft), fy = max(0, 1 - max(0, low - e, e - high) / 20)
+            return fx * fx * (3 - 2 * fx) * fy * fy * (3 - 2 * fy)
+        }
+        guard let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = c.data
+        else { return nil }
+        let p = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        for y in 0..<h {
+            let e = 90 - 180 * (Double(y) + 0.5) / Double(h)
+            for x in 0..<w {
+                let image = 360 * (Double(x) + 0.5) / Double(w) - 180
+                let az = (image + EntranceLook.imageCentreAzimuth + 540).truncatingRemainder(dividingBy: 360) - 180
+                var v = e >= 0 ? room : floor + (room - floor) * max(0, 1 + e / 25)
+                v = max(v, box(az, e, centre: -50, half: 14 * scale, low: -20, high: 70, soft: 12 * scale))
+                v = max(v, 0.5 * box(az, e, centre: 40, half: 7 * scale, low: -15, high: 65, soft: 10 * scale))
+                if wide { v = max(v, (day ? 0.7 : 0.25) * max(0, (e - 35) / 55)) }
+                let linear = min(1, max(0, v))
+                let encoded = linear <= 0.0031308 ? 12.92 * linear : 1.055 * pow(linear, 1 / 2.4) - 0.055
+                let level = UInt8((encoded * 255).rounded()), o = (y * w + x) * 4
+                p[o] = level; p[o + 1] = level; p[o + 2] = level; p[o + 3] = 255
+            }
+        }
+        return c.makeImage()
+    }
 }
 #endif
