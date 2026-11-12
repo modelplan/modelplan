@@ -1,0 +1,1 @@
+While you have an enabled subscription, the app now re-checks the publication for announced reset notices every 15-30 minutes (a conditional request, spread per client) instead of every six hours; the other publication data keeps its schedule (DOCK-3.8-30).

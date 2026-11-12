@@ -141,3 +141,74 @@ func TestAppPublicationCloseWithoutStart(t *testing.T) {
 		t.Fatal("a plain-http remote base must not be used")
 	}
 }
+
+// DOCK-3.8-30: reset notices refresh every 15-30 minutes while a subscription is enabled; the
+// ordinary six-hour rule is untouched.
+func TestAppPublicationResetNoticeCadence(t *testing.T) {
+	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	st := &store.Store{Dir: t.TempDir()}
+	f := newPublicationFixture(t, nil)
+	at := func(checked time.Duration) {
+		saveFixture(t, st, f, store.State{CheckedAt: now.Add(-checked), LastAttemptAt: now.Add(-checked)})
+	}
+	cases := []struct {
+		name       string
+		subscribed bool
+		jitter     time.Duration
+		age        time.Duration
+		wantSyncs  int
+	}{
+		{"before 15 min", true, 0, 14 * time.Minute, 0},
+		{"after 15 min with no jitter", true, 0, 16 * time.Minute, 1},
+		{"jitter pushes it to 30 min", true, resetNoticeSpread, 29 * time.Minute, 0},
+		{"after 30 min at the latest", true, resetNoticeSpread, 31 * time.Minute, 1},
+		{"jitter above the range is clamped", true, time.Hour, 31 * time.Minute, 1},
+		{"no subscription keeps 6 h", false, 0, time.Hour, 0},
+		{"no subscription syncs after 6 h", false, 0, staleAfter + time.Minute, 1},
+	}
+	for _, c := range cases {
+		at(c.age)
+		a, _, syncs := scriptedAppPublication(st, now, []func() error{func() error { return nil }})
+		a.subscribed = func() bool { return c.subscribed }
+		a.jitter = func() time.Duration { return c.jitter }
+		failures := 0
+		a.pass(context.Background(), &failures)
+		if *syncs != c.wantSyncs {
+			t.Errorf("%s: %d syncs, want %d", c.name, *syncs, c.wantSyncs)
+		}
+	}
+}
+
+func TestAppPublicationResetNoticeJitterIsDrawnPerCheck(t *testing.T) {
+	a := &appPublication{subscribed: func() bool { return true }}
+	seen := map[time.Duration]bool{}
+	for range 200 {
+		d := a.drawResetAfter()
+		if d < resetNoticeMin || d > resetNoticeMax {
+			t.Fatalf("draw %v outside 15-30 min", d)
+		}
+		seen[d] = true
+	}
+	if len(seen) < 20 {
+		t.Fatalf("draws are not spread: %d distinct", len(seen))
+	}
+}
+
+func TestAppPublicationResetNoticeBacksOffOnFailure(t *testing.T) {
+	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	st := &store.Store{Dir: t.TempDir()}
+	saveFixture(t, st, newPublicationFixture(t, nil), store.State{CheckedAt: now.Add(-time.Hour), LastAttemptAt: now.Add(-time.Hour)})
+	down := func() error { return errors.New("offline") }
+	a, _, _ := scriptedAppPublication(st, now, []func() error{down, down, down, down})
+	a.subscribed = func() bool { return true }
+	a.jitter = func() time.Duration { return 0 }
+	failures := 0
+	var got []time.Duration
+	for range 4 {
+		got = append(got, a.pass(context.Background(), &failures))
+	}
+	want := []time.Duration{10 * time.Minute, 20 * time.Minute, 30 * time.Minute, 30 * time.Minute}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("backoff %v, want %v", got, want)
+	}
+}

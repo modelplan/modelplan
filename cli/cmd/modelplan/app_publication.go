@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -19,12 +20,40 @@ const (
 	appPublicationBusyRetry = 15 * time.Second
 	// The foreground sync command's limit; each request also has its own timeout.
 	appPublicationSyncLimit = 2 * time.Minute
+	// DOCK-3.8-30 (D148): announced reset notices travel in the publication, so while the user
+	// has an enabled subscription the app re-checks the pointer (a conditional ETag request, a
+	// 304 when nothing changed) every 15-30 minutes instead of every six hours. Each client
+	// draws its own point in that range so clients do not sync in lockstep.
+	resetNoticeMin    = 15 * time.Minute
+	resetNoticeSpread = 15 * time.Minute
+	resetNoticeMax    = resetNoticeMin + resetNoticeSpread
 )
 
 // publicationSyncDue is the shared background rule: a missing or stale publication, and no
 // attempt by any client in the last ten minutes.
 func publicationSyncDue(d *digest.Digest, s store.State, now time.Time) bool {
 	return (d == nil || now.Sub(s.CheckedAt) > staleAfter) && now.Sub(s.LastAttemptAt) > backgroundEvery
+}
+
+// resetNoticeDue is the faster rule for reset notices only; everything else keeps staleAfter.
+func (a *appPublication) resetNoticeDue(s store.State, now time.Time) bool {
+	if a.subscribed == nil || !a.subscribed() {
+		return false
+	}
+	if a.resetAfter <= 0 {
+		a.resetAfter = a.drawResetAfter()
+	}
+	return now.Sub(s.CheckedAt) > a.resetAfter && now.Sub(s.LastAttemptAt) > backgroundEvery
+}
+
+func (a *appPublication) drawResetAfter() time.Duration {
+	j := time.Duration(0)
+	if a.jitter != nil {
+		j = a.jitter()
+	} else {
+		j = time.Duration(rand.Int64N(int64(resetNoticeSpread) + 1))
+	}
+	return resetNoticeMin + min(max(j, 0), resetNoticeSpread)
 }
 
 func appPublicationBase() string { return env("MODELPLAN_BASE", publication.DefaultBase) }
@@ -40,6 +69,12 @@ type appPublication struct {
 	sync func(context.Context) (publication.Result, error)
 	now  func() time.Time
 	wait func(context.Context, time.Duration) error
+	// subscribed reports whether the user has at least one enabled subscription; nil means no.
+	subscribed func() bool
+	// jitter returns a duration in [0, resetNoticeSpread]; tests may inject it.
+	jitter func() time.Duration
+	// resetAfter is this client's current reset-notice interval, redrawn after each check.
+	resetAfter time.Duration
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -111,10 +146,11 @@ func (a *appPublication) run(ctx context.Context) {
 // retries are spaced here.
 func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration {
 	d, s, _ := publication.Load(a.st)
-	if d != nil && !publicationSyncDue(d, s, a.now()) {
+	if d != nil && !publicationSyncDue(d, s, a.now()) && !a.resetNoticeDue(s, a.now()) {
 		*failures = 0
 		return backgroundEvery
 	}
+	a.resetAfter = 0 // redraw after every check
 	_, err := a.sync(ctx)
 	if errors.Is(err, store.ErrBusy) {
 		return appPublicationBusyRetry
@@ -123,6 +159,12 @@ func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration 
 		d, _, _ = publication.Load(a.st)
 	}
 	if d != nil {
+		if err != nil && a.subscribed != nil && a.subscribed() {
+			// A failed reset-notice check backs off 10, 20, then 30 minutes.
+			delay := min(backgroundEvery<<min(*failures, 2), resetNoticeMax)
+			*failures++
+			return delay
+		}
 		*failures = 0
 		return backgroundEvery
 	}
