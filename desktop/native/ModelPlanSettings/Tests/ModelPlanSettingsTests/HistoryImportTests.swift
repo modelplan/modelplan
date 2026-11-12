@@ -8,10 +8,12 @@ import ModelPlanWire
 /// HIST-IMP-02 (Settings row), HIST-IMP-03 (first-run line and import after consent).
 @MainActor final class HistoryImportTests: XCTestCase {
     private final class Commands: HistoryImportCommands {
+        struct Failure: Error {}
         var ready = true
+        var failStatus = false
         var calls: [String] = []
         func start(days: Int, firstRun: Bool) async throws { calls.append("start \(days) \(firstRun)") }
-        func status() async throws { calls.append("status") }
+        func status() async throws { calls.append("status"); if failStatus { throw Failure() } }
         func cancel() async throws { calls.append("cancel") }
         func remove() async throws { calls.append("remove") }
     }
@@ -99,6 +101,70 @@ import ModelPlanWire
         model.receive(try status("running", done: 0, total: 1))
         await model.runAfterFirstRunConsent()
         XCTAssertEqual(commands.calls, ["start 30 true"], "a running import is not started twice")
+    }
+
+    /// Audit B finding 5: opening Data & Privacy during engine startup does not use up the first
+    /// status request; it goes out when the engine becomes ready, and existing imported rows show.
+    func testPrivacyOpenedBeforeReadinessAsksOnceTheEngineIsReady() async throws {
+        let editor = try await editor(), commands = Commands(); commands.ready = false
+        let entry = ScopeConsentEntry(client: ScopeConsentTestClient(), ready: { commands.ready }, language: .english)
+        let model = HistoryImportModel(commands: commands); entry.historyImport = model
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() }, scopeConsentEntry: entry)
+        await controller.prepare(); controller.selectPane("privacy")
+        await model.refreshIfNeeded()
+        XCTAssertEqual(commands.calls, [], "nothing can be asked before the engine is ready")
+        model.readinessChanged()
+        commands.ready = true
+        model.readinessChanged()
+        try await settle { commands.calls == ["status"] }
+        model.receive(try status("done", rows: 7, coverage: true))
+        let content = try XCTUnwrap(controller.window?.contentView)
+        let row = try XCTUnwrap(find("settings.historyImport", in: content))
+        let remove = try XCTUnwrap(find("settings.historyImport.remove", in: row) as? NSButton)
+        XCTAssertTrue(remove.isEnabled, "existing imported history can be removed")
+        await model.refreshIfNeeded(); model.readinessChanged()
+        XCTAssertEqual(commands.calls, ["status"], "the first status is asked once")
+        controller.close()
+    }
+
+    /// Audit B finding 5: a failed first status request does not latch; the next look asks again.
+    func testFailedFirstStatusRequestIsAskedAgain() async throws {
+        let commands = Commands(); commands.failStatus = true
+        let model = HistoryImportModel(commands: commands)
+        await model.refreshIfNeeded()
+        XCTAssertTrue(model.failed)
+        commands.failStatus = false
+        await model.refreshIfNeeded()
+        XCTAssertEqual(commands.calls, ["status", "status"])
+        await model.refreshIfNeeded()
+        XCTAssertEqual(commands.calls, ["status", "status"], "a request the engine took is not repeated")
+    }
+
+    /// Audit B finding 1: the owner's privacy invalidation clears the previous engine's import status
+    /// from the open Settings row, and the status is asked again afterwards.
+    func testPrivacyInvalidationClearsTheImportRowAndAsksAgain() async throws {
+        let editor = try await editor(), commands = Commands()
+        let entry = ScopeConsentEntry(client: ScopeConsentTestClient(), ready: { commands.ready }, language: .english)
+        let model = HistoryImportModel(commands: commands); entry.historyImport = model
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() }, scopeConsentEntry: entry)
+        await controller.prepare(); controller.selectPane("privacy")
+        try await settle { commands.calls == ["status"] }
+        model.receive(try status("done", rows: 12, coverage: true))
+        let content = try XCTUnwrap(controller.window?.contentView)
+        let row = try XCTUnwrap(find("settings.historyImport", in: content))
+        XCTAssertTrue(strings(row).contains { $0.contains("12 daily rows") })
+        let remove = try XCTUnwrap(find("settings.historyImport.remove", in: row) as? NSButton)
+        XCTAssertTrue(remove.isEnabled)
+        commands.ready = false
+        entry.clearPrivateViews()
+        XCTAssertNil(model.status); XCTAssertFalse(model.failed); XCTAssertFalse(model.hasImported)
+        XCTAssertFalse(strings(row).contains { $0.contains("12 daily rows") }, "the previous engine's counts are gone")
+        XCTAssertFalse(remove.isEnabled)
+        model.readinessChanged()
+        commands.ready = true
+        model.readinessChanged()
+        try await settle { commands.calls == ["status", "status"] }
+        controller.close()
     }
 
     private func settle(_ check: @escaping @MainActor () -> Bool) async throws {

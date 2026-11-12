@@ -30,8 +30,10 @@ type ImportController struct {
 	done   int
 	total  int
 	last   []wire.HistoryImportSource
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	// revision counts settled runs and removals; see wire.HistoryImportStatus.Revision.
+	revision int
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 }
 
 func NewImportController(e ImportEngine) *ImportController {
@@ -55,6 +57,8 @@ func (c *ImportController) status() wire.HistoryImportStatus {
 	defer c.mu.Unlock()
 	st.SchemaVersion, st.Phase, st.Days, st.FilesDone, st.FilesTotal = 1, c.phase, c.days, c.done, c.total
 	st.Sources = append([]wire.HistoryImportSource{}, c.last...)
+	rev := c.revision
+	st.Revision = &rev
 	if st.Coverage == nil {
 		st.Coverage = []wire.HistoryImportCoverage{}
 	}
@@ -89,6 +93,7 @@ func (c *ImportController) start(p wire.HistoryImportStartParams) error {
 		default:
 			c.phase, c.last = wire.ImportDone, res
 		}
+		c.revision++
 	}()
 	return nil
 }
@@ -145,6 +150,7 @@ func HistoryImportHandlers(c *ImportController) map[string]Handler {
 			}
 			c.mu.Lock()
 			c.phase, c.last, c.done, c.total = wire.ImportIdle, nil, 0, 0
+			c.revision++
 			c.mu.Unlock()
 			r, _ := reply(stamp)
 			r.Receipt = true

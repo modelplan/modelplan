@@ -2984,6 +2984,7 @@ public struct WireCockpitSession: Codable, Sendable {
     public let `lastObservedAt`: WireTimestamp
     public let `state`: String
     public let `rate`: Double?
+    public let `fast`: Bool?
     private enum CodingKeys: String, CodingKey {
         case `sessionRef`
         case `source`
@@ -2994,8 +2995,9 @@ public struct WireCockpitSession: Codable, Sendable {
         case `lastObservedAt`
         case `state`
         case `rate`
+        case `fast`
     }
-    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil) throws {
+    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil, `fast`: Bool? = nil) throws {
         self.`sessionRef` = `sessionRef`
         self.`source` = `source`
         self.`subscriptionRef` = `subscriptionRef`
@@ -3005,6 +3007,7 @@ public struct WireCockpitSession: Codable, Sendable {
         self.`lastObservedAt` = `lastObservedAt`
         self.`state` = `state`
         self.`rate` = `rate`
+        self.`fast` = `fast`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -3018,6 +3021,8 @@ public struct WireCockpitSession: Codable, Sendable {
         self.`lastObservedAt` = try c.decode(WireTimestamp.self, forKey: .`lastObservedAt`)
         self.`state` = try c.decode(String.self, forKey: .`state`)
         self.`rate` = try c.decodeIfPresent(Double.self, forKey: .`rate`)
+        if c.contains(.`fast`), try c.decodeNil(forKey: .`fast`) { throw WireDecodeError.invalidIdentity }
+        self.`fast` = try c.decodeIfPresent(Bool.self, forKey: .`fast`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -3032,6 +3037,7 @@ public struct WireCockpitSession: Codable, Sendable {
         try c.encode(`lastObservedAt`, forKey: .`lastObservedAt`)
         try c.encode(`state`, forKey: .`state`)
         try c.encode(`rate`, forKey: .`rate`)
+        try c.encodeIfPresent(`fast`, forKey: .`fast`)
     }
     private func validate() throws {
         try WireValidation.reference(`sessionRef`)
@@ -4283,6 +4289,7 @@ public struct WireHistoryImportStatus: Codable, Sendable {
     public let `importedRows`: Int
     public let `coverage`: [WireHistoryImportCoverage]
     public let `sources`: [WireHistoryImportSource]
+    public let `revision`: Int?
     private enum CodingKeys: String, CodingKey {
         case `schemaVersion`
         case `phase`
@@ -4293,8 +4300,9 @@ public struct WireHistoryImportStatus: Codable, Sendable {
         case `importedRows`
         case `coverage`
         case `sources`
+        case `revision`
     }
-    public init(`schemaVersion`: Int, `phase`: WireHistoryImportPhase, `days`: Int, `filesDone`: Int, `filesTotal`: Int, `firstRunDone`: Bool, `importedRows`: Int, `coverage`: [WireHistoryImportCoverage], `sources`: [WireHistoryImportSource]) throws {
+    public init(`schemaVersion`: Int, `phase`: WireHistoryImportPhase, `days`: Int, `filesDone`: Int, `filesTotal`: Int, `firstRunDone`: Bool, `importedRows`: Int, `coverage`: [WireHistoryImportCoverage], `sources`: [WireHistoryImportSource], `revision`: Int? = nil) throws {
         self.`schemaVersion` = `schemaVersion`
         self.`phase` = `phase`
         self.`days` = `days`
@@ -4304,6 +4312,7 @@ public struct WireHistoryImportStatus: Codable, Sendable {
         self.`importedRows` = `importedRows`
         self.`coverage` = `coverage`
         self.`sources` = `sources`
+        self.`revision` = `revision`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -4317,6 +4326,7 @@ public struct WireHistoryImportStatus: Codable, Sendable {
         self.`importedRows` = try c.decode(Int.self, forKey: .`importedRows`)
         self.`coverage` = try c.decode([WireHistoryImportCoverage].self, forKey: .`coverage`)
         self.`sources` = try c.decode([WireHistoryImportSource].self, forKey: .`sources`)
+        self.`revision` = try? c.decodeIfPresent(Int.self, forKey: .`revision`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -4331,6 +4341,7 @@ public struct WireHistoryImportStatus: Codable, Sendable {
         try c.encode(`importedRows`, forKey: .`importedRows`)
         try c.encode(`coverage`, forKey: .`coverage`)
         try c.encode(`sources`, forKey: .`sources`)
+        try c.encodeIfPresent(`revision`, forKey: .`revision`)
     }
     private func validate() throws {
         guard `schemaVersion` >= 1 else { throw WireDecodeError.invalidBound }

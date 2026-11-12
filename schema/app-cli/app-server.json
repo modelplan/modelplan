@@ -1298,6 +1298,16 @@
             }
           ]
         },
+        "fast": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "lastObservedAt": {
           "format": "date-time",
           "type": "string"
@@ -2515,6 +2525,17 @@
             "failed"
           ],
           "type": "string"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
         },
         "schemaVersion": {
           "maximum": 1,

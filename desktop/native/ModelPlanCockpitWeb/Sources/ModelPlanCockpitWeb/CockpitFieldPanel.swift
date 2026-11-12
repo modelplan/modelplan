@@ -123,6 +123,7 @@ import WebKit
     let panel = FieldWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
     // Task 91 round 5: a transparent composition on the desktop; the page draws a frosted card and the feathered scene.
     panel.isReleasedWhenClosed = false; panel.level = Self.level; panel.hasShadow = false
+    panel.identifier = CockpitWindowController.fieldWindowIdentifier // a press on it never closes the cockpit under it
     panel.isOpaque = false; panel.backgroundColor = .clear
     panel.appearance = NSAppearance(named: .darkAqua); panel.delegate = self
     let view = CockpitWebView(frame: NSRect(origin: .zero, size: frame.size), configuration: config)

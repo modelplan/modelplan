@@ -175,6 +175,9 @@ def zero_rows(binary, home, mode):
     fixture_input(home, mode)
     with EngineProcess(binary, home, 'u14-model-' + mode) as engine:
         fixture_hello(engine)
+        # The Codex reader's first background read is independent of history: once it ends, its outcome (a failed
+        # first read names its cause) changes the codex row. Settle it first so the comparison isolates history.
+        _await_row_settled(engine, 'codex', 'codex-first-read-did-not-finish')
         before = row_projection(engine.request('rows/subscribe'))
         ids = [r['id'] for r in before['rows']]
         require('codex' in ids and 'claude' in ids and len(ids) == len(set(ids)), 'missing-production-rows')
@@ -446,6 +449,18 @@ def _seed_post_logins(home):
     cursor.chmod(0o600)
     return {'gemini': {'path': gemini, 'sha256': digest(regular_bytes(gemini))},
             'cursor': {'path': cursor, 'sha256': digest(regular_bytes(cursor))}}, (canary, token)
+
+
+def _await_row_settled(engine, row_id, error_code, seconds=45):
+    """Poll rows until one row has left "pending" (its first read ended); the deadline bounds a read that never ends."""
+    import time
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        projection = row_projection(engine.request('rows/subscribe'))
+        if any(row['id'] == row_id and row['state'] != 'pending' for row in projection['rows']):
+            return
+        time.sleep(.1)
+    require(False, error_code)
 
 
 def _wait_scheduler_capture(engine, home, scope, path, capture_ready, error_code):

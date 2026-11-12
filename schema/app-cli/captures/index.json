@@ -1162,6 +1162,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "fast",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1612,7 +1620,16 @@
     {
       "file": "WireHistoryImportStatus.json",
       "type": "WireHistoryImportStatus",
-      "optional": [],
+      "optional": [
+        {
+          "field": "revision",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        }
+      ],
       "required": [
         "schemaVersion",
         "phase",
