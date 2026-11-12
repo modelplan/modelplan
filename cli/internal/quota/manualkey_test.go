@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -411,35 +412,52 @@ func TestRelayBaseURLKeyIsNeverSent(t *testing.T) {
 	}
 }
 
-// A WAL without its shared-memory file would make SQLite create that file in OpenCode's directory: the reader
-// fails closed and leaves the directory as it found it (D90).
-func TestOpenCodeLoginWALWithoutSHMWritesNothing(t *testing.T) {
-	isolateHome(t)
-	dir := filepath.Join(t.TempDir(), "xdg")
-	if err := os.MkdirAll(filepath.Join(dir, "opencode"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("XDG_DATA_HOME", dir)
-	path := filepath.Join(dir, "opencode", "opencode.db")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, q := range []string{`CREATE TABLE credential (integration_id TEXT, value TEXT, active INTEGER)`, `INSERT INTO credential VALUES ('opencode-go', '{"type":"key","key":"` + fakeGoKey + `"}', 1)`} {
-		if _, err := db.Exec(q); err != nil {
+// With a WAL and/or a shared-memory file present the reader works on a private copy: the key is still found, and the
+// tool's directory (files and bytes) is left exactly as it was (D90).
+func TestOpenCodeLoginWithWALOrSHMWritesNothing(t *testing.T) {
+	for _, withSHM := range []bool{false, true} {
+		isolateHome(t)
+		dir := filepath.Join(t.TempDir(), "xdg")
+		if err := os.MkdirAll(filepath.Join(dir, "opencode"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-	}
-	db.Close()
-	os.Remove(path + "-shm")
-	os.Remove(path + "-wal")
-	if err := os.WriteFile(path+"-wal", nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if k, code := opencodeLoginKey(context.Background(), time.Now()); k != "" || code != "unsupported_login" {
-		t.Fatalf("login = %q %q", k, code)
-	}
-	if _, err := os.Stat(path + "-shm"); err == nil {
-		t.Fatal("the reader created opencode.db-shm")
+		t.Setenv("XDG_DATA_HOME", dir)
+		path := filepath.Join(dir, "opencode", "opencode.db")
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, q := range []string{`CREATE TABLE credential (integration_id TEXT, value TEXT, active INTEGER)`, `INSERT INTO credential VALUES ('opencode-go', '{"type":"key","key":"` + fakeGoKey + `"}', 1)`} {
+			if _, err := db.Exec(q); err != nil {
+				t.Fatal(err)
+			}
+		}
+		db.Close()
+		os.Remove(path + "-shm")
+		os.Remove(path + "-wal")
+		if err := os.WriteFile(path+"-wal", nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if withSHM {
+			if err := os.WriteFile(path+"-shm", make([]byte, 32<<10), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		snapshot := func() map[string]string {
+			out := map[string]string{}
+			entries, _ := os.ReadDir(filepath.Dir(path))
+			for _, e := range entries {
+				b, _ := os.ReadFile(filepath.Join(filepath.Dir(path), e.Name()))
+				out[e.Name()] = string(b)
+			}
+			return out
+		}
+		before := snapshot()
+		if k, code := opencodeLoginKey(context.Background(), time.Now()); k != fakeGoKey || code != "" {
+			t.Fatalf("shm=%v login = %q %q", withSHM, k, code)
+		}
+		if after := snapshot(); !reflect.DeepEqual(before, after) {
+			t.Fatalf("shm=%v: the tool's directory changed", withSHM)
+		}
 	}
 }
