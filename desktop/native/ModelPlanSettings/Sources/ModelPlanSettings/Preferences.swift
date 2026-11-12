@@ -166,7 +166,30 @@ public struct SettingsSnapshot: Sendable {
     public let revision: UInt64
     public let preferences: SettingsPreferences
 }
-private struct PreferenceEnvelope: Codable { let schemaVersion: Int; let preferences: SettingsPreferences }
+
+/// SET-9-43 (D203): a settings file stores only the values that differ from the current defaults, so an untouched
+/// key follows a later default change. Files written this way carry `"sparse": true`. A file without that marker was
+/// written by an older build that stored EVERY key at once on the first save, so a stored value there may only be the
+/// default of that day. Rule: such a file loses `menuDisplay` when it is "icon" (the default until 11-06, f49ab2cd);
+/// every other key is kept as stored. A later explicit choice is written with the marker and stays.
+enum SettingsSparseFile {
+    static let marker = "sparse"
+    /// The encoded preferences without the keys that equal a default-constructed value.
+    static func sparse(_ preferences: SettingsPreferences) throws -> [String: Any] {
+        guard let values = try JSONSerialization.jsonObject(with: JSONEncoder().encode(preferences)) as? [String: Any],
+              let defaults = try JSONSerialization.jsonObject(with: JSONEncoder().encode(SettingsPreferences())) as? [String: Any]
+        else { throw SettingsError.invalidPreference }
+        return values.filter { key, value in
+            guard let base = defaults[key] else { return true }
+            return !(value as AnyObject).isEqual(base)
+        }
+    }
+    /// Applies the one-time rule to the stored values of a file that has no `sparse` marker.
+    static func migrate(_ values: inout [String: Any], isSparse: Bool) {
+        guard !isSparse, values["menuDisplay"] as? String == MenuDisplay.icon.rawValue else { return }
+        values.removeValue(forKey: "menuDisplay")
+    }
+}
 
 /// Single-writer actor. A failed validation/read/write never changes the last committed in-memory value.
 /// Give this one app-scoped instance an app-owned URL; do not open concurrent stores for the same file.
@@ -192,7 +215,10 @@ public actor SettingsStore {
             guard data.count <= Self.maximumBytes else { throw SettingsError.tooLarge }
             let header = try JSONDecoder().decode(SchemaHeader.self, from: data)
             guard header.schemaVersion == 1 else { throw SettingsError.unsupportedSchema }
-            current = try JSONDecoder().decode(PreferenceEnvelope.self, from: data).preferences
+            guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  var values = object["preferences"] as? [String: Any] else { throw SettingsError.invalidPreference }
+            SettingsSparseFile.migrate(&values, isSparse: object[SettingsSparseFile.marker] as? Bool == true)
+            current = try JSONDecoder().decode(SettingsPreferences.self, from: JSONSerialization.data(withJSONObject: values))
             try current.validate()
         } else { current = SettingsPreferences() }
         current.onboarding.reconcile(in: onboardingDefinition)
@@ -243,8 +269,8 @@ public actor SettingsStore {
             try persistFoundation(.init(settings: candidate, core: backing.document.core), backing: backing)
             current = candidate; revision &+= 1; return snapshot()
         }
-        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(PreferenceEnvelope(schemaVersion: 1, preferences: candidate))
+        let data = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, SettingsSparseFile.marker: true,
+            "preferences": try SettingsSparseFile.sparse(candidate)], options: [.sortedKeys])
         guard data.count <= Self.maximumBytes else { throw SettingsError.tooLarge }
         let directory = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
