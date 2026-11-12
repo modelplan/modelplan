@@ -56,6 +56,15 @@ const (
 // how long its dot stays within it.
 const confirmedLifetime = 24 * time.Hour
 
+// awaitingLifetime keeps a scheduled forecast after its window ends, so the
+// client can show it awaiting confirmation; a confirmation replaces it sooner.
+const awaitingLifetime = 24 * time.Hour
+
+// memoRetention outlasts the publication's 14-day reset horizon, so a
+// remembered confirmation is never forgotten while its record is still
+// published and can never be re-dated as a fresh one.
+const memoRetention = 15 * 24 * time.Hour
+
 func kindOf(eventType string) string {
 	if eventType == "reset_credit_issued" {
 		return KindResetCredit
@@ -92,6 +101,17 @@ func (m *Memo) sawAnnounced(id string, now time.Time) {
 	}
 }
 
+// remembered returns the confirmation instant already recorded for id.
+func (m *Memo) remembered(id string) (time.Time, string, bool) {
+	if m == nil {
+		return time.Time{}, "", false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.confirmed[id]
+	return c.at, c.basis, ok
+}
+
 // confirmation returns the first instant this process read id as confirmed.
 func (m *Memo) confirmation(id string, now time.Time) (time.Time, string) {
 	if m == nil {
@@ -118,12 +138,12 @@ func (m *Memo) prune(now time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for id, at := range m.announced {
-		if now.Sub(at) > 14*24*time.Hour {
+		if now.Sub(at) > memoRetention {
 			delete(m.announced, id)
 		}
 	}
 	for id, c := range m.confirmed {
-		if now.Sub(c.at) > 2*confirmedLifetime {
+		if now.Sub(c.at) > memoRetention {
 			delete(m.confirmed, id)
 		}
 	}
@@ -315,7 +335,10 @@ func ProjectWithMemo(d *digest.Digest, projection rows.Projection, now time.Time
 				(r.Schedule.Through.Equal(r.Schedule.From) && r.Schedule.Precision != "deadline") {
 				continue
 			}
-			expiry = r.Schedule.Through
+			if !r.Schedule.Through.After(r.PublishedAt) {
+				continue
+			}
+			expiry = r.Schedule.Through.Add(awaitingLifetime)
 		}
 		if !expiry.After(r.PublishedAt) {
 			continue
@@ -394,6 +417,10 @@ func confirmedEvent(r record, byTool map[string]rows.Row, publicationID string, 
 	var basis string
 	if r.ConfirmedAt != nil && !r.ConfirmedAt.IsZero() && !r.ConfirmedAt.After(now) && !r.ConfirmedAt.Before(r.PublishedAt) {
 		at, basis = r.ConfirmedAt.UTC(), BasisPublished
+	} else if remembered, rememberedBasis, ok := memo.remembered(id); ok {
+		// Once remembered, the instant is fixed: the event lives exactly
+		// confirmedLifetime after it and is never re-dated or re-admitted.
+		at, basis = remembered, rememberedBasis
 	} else {
 		reference := r.PublishedAt
 		if r.Schedule != nil && r.Schedule.Through.After(reference) {

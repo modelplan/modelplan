@@ -84,3 +84,20 @@ public enum EngineRowsEventDecoder {
         return .available(decoded)
     }
 }
+
+extension EngineResetEvent {
+    /// macrev2-862-3: evidence that this account's quota really restarted after the confirmation: a current
+    /// reading, taken after it, of a current window that began after it (its reset minus its duration).
+    /// A routine refresh of a window that started earlier is not evidence. Reset credits never restart a
+    /// window by themselves (the user redeems them), so they never claim one.
+    public func restartedReading(in account: RowsAccount) -> Bool {
+        guard !isResetCredit, account.valueState == .current else { return false }
+        let confirmed = confirmedAt ?? publishedAt
+        return account.windows.contains { window in
+            guard window.current, let duration = window.durationSeconds, duration > 0,
+                  let observed = EngineResetTimestampContract.date(window.observedAt),
+                  let resets = EngineResetTimestampContract.date(window.resetsAt) else { return false }
+            return observed > confirmed && resets.addingTimeInterval(-TimeInterval(duration)) > confirmed
+        }
+    }
+}

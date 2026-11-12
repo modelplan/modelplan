@@ -227,7 +227,8 @@ import ModelPlanSettings
         XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
         try await wait("The confirmation is delivered exactly once") { delivered == [eventID] }
 
-        try writeReading(used: 30, observed: at(-10), reset: at(10_800))
+        // A real restart: the five-hour window began after the confirmation (macrev2-862-3).
+        try writeReading(used: 30, observed: at(-5), reset: at(18_000 - 10))
         try await subscribe()
         XCTAssertEqual(dock.dockView.presentedReadingsForChecks[member]?.remainingPercent, 70)
         XCTAssertNil(try strip().quotaSegmentColorRolesForChecks.first?.quotaRole, "The improved reading clears quota paint")

@@ -110,6 +110,9 @@ public enum EngineDeadlineFacts {
             // D166: the confirmed dot ends before the event does; recompute then on the existing deadline path.
             if event.status == "confirmed" {
                 includeDate((event.confirmedAt ?? event.publishedAt).addingTimeInterval(DockResetSignal.confirmedDotLifetime))
+            } else if let through = event.scheduledThrough {
+                // The card turns to "awaiting confirmation" when the forecast window ends.
+                includeDate(through)
             }
         }
         if let next { return .scheduled(next, hasUnknownDeadline: unknown) }
@@ -187,12 +190,8 @@ public enum EngineDeadlineFacts {
                     var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:confirmedAt,expiresAt:event.expiresAt)
                     reset.kind=event.isResetCredit ? .resetCredit : .directReset
                     // A local reading that restarted after the confirmation is an observation, not proof of the
-                    // public event; reset credits never restart a window, so they never claim one.
-                    reset.restartedReading = !event.isResetCredit && member.account.valueState == .current && member.account.windows.contains { window in
-                        guard window.current else { return false }
-                        guard let observed=date(window.observedAt),let resets=date(window.resetsAt) else { return false }
-                        return observed > confirmedAt && resets > confirmedAt
-                    }
+                    // public event (same predicate as the notification).
+                    reset.restartedReading = event.restartedReading(in: member.account)
                     signal.reset=reset
                 } else {
                     var reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt)
