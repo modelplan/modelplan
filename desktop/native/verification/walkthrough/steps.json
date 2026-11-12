@@ -1428,6 +1428,14 @@
         },
         {
           "op": "click",
+          "target": "label:Overview"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        },
+        {
+          "op": "click",
           "target": "label:Codex · Shortcut key 1"
         },
         {
@@ -1463,6 +1471,14 @@
       "actions": [
         {
           "op": "park"
+        },
+        {
+          "op": "click",
+          "target": "label:Overview"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
         },
         {
           "op": "click",
@@ -1672,7 +1688,7 @@
         },
         {
           "op": "click",
-          "target": "label^:GPT-6 Astra: effort"
+          "target": "label~:Press to compare on the Main screen"
         },
         {
           "op": "wait",
@@ -1692,6 +1708,9 @@
       "checks": [
         {
           "exists": "label:ModelPlan Cockpit"
+        },
+        {
+          "exists": "label~:Back to"
         }
       ],
       "requirement": "D75 feature journeys"
@@ -1702,7 +1721,7 @@
       "expected": "The back key (or Back to Overview) ends the comparison and Overview lights again.",
       "prototype": "feature journey (D75)",
       "requires": [
-        "cockpit-open"
+        "j-press-strip"
       ],
       "actions": [
         {
@@ -1782,7 +1801,7 @@
       "expected": "With a comparison open, Esc leaves the comparison and the cockpit stays open (CKP-SHELL-26).",
       "prototype": "feature journey (D75)",
       "requires": [
-        "cockpit-open"
+        "j-press-strip"
       ],
       "actions": [
         {
@@ -1798,7 +1817,7 @@
         },
         {
           "op": "click",
-          "target": "label^:GPT-6 Astra: effort"
+          "target": "label~:Press to compare on the Main screen"
         },
         {
           "op": "wait",

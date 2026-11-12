@@ -102,6 +102,12 @@ class Targets(unittest.TestCase):
         self.assertEqual(w.resolve(self.TREE, "label~:los")["id"], "a")
         self.assertIsNone(w.resolve(self.TREE, "label^:los"))
 
+    def test_prefix_and_contains_also_match_the_title(self):
+        tree = {"windows": [{"role": "AXWindow", "frame": [0, 0, 100, 100], "children": [
+            {"id": "all", "label": "All · Shortcut key 0", "title": "Shortcut key 0", "frame": [1, 2, 3, 4]}]}]}
+        for target in ("label:Shortcut key 0", "label^:Shortcut", "label~:key 0", "label^:All", "label~:Shortcut key 0"):
+            self.assertEqual(w.resolve(tree, target)["id"], "all", target)
+
     def test_click_first_takes_the_first_target_on_screen_and_fails_when_none_is(self):
         run = w.Walkthrough(FakeHost(tree=self.TREE), "App.app", "out", [], {}, (1000, 800))
         run.op_clickFirst({"targets": ["label:Nope", "label:Close"]})
@@ -226,6 +232,15 @@ class Steps(unittest.TestCase):
         self.assertIn(("capture_window", 9), host.calls)
         self.assertEqual(record["window"]["bounds"], [100, 100, 300, 300])
         self.assertTrue((self.out / record["window"]["file"]).exists())
+
+    def test_comparison_steps_do_not_run_when_the_strip_press_fails(self):
+        steps = {s["id"]: s for s in json.loads((ROOT / "steps.json").read_text())["steps"]}
+        for later in ("j-compare-back", "j-esc-compare"):
+            self.assertEqual(steps[later]["requires"], ["j-press-strip"])
+        press = dict(steps["j-press-strip"], requires=[])
+        records = walker(FakeHost(), self.out, [press, dict(steps["j-compare-back"], requires=["j-press-strip"])]).walk_steps()
+        self.assertEqual(records[0]["status"], "fail")
+        self.assertEqual((records[1]["status"], records[1]["reason"]), ("not-run", "needs j-press-strip"))
 
     def test_a_failed_action_is_still_photographed_and_blocks_dependents(self):
         steps = [{"id": "a", "title": "t", "expected": "e", "actions": [{"op": "click", "target": "ax:gone"}]},
