@@ -455,4 +455,38 @@ final class BridgeTests: XCTestCase {
     XCTAssertThrowsError(try FlatReply.parse(#"{"capabilities":["a","b","c","d"]}"#))
     XCTAssertThrowsError(try FlatReply.parse(#"{"other":["a"]}"#))
   }
+  /// G3-96 (build 14d): CLI v0.5.59 sets `kind` on every reset event and a confirmation time on a confirmed one. The host
+  /// passes them to the page unchanged, so the page's schema must type them: an enum without a type made the page's
+  /// bounded validator reject every display as `data.schema`, and the cockpit never opened while a reset credit was published.
+  func testG396ResetEventKindAndConfirmationReachThePageTypedAsTheSchemaRequires() throws {
+    var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    while !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures").path) { root.deleteLastPathComponent() }
+    var data = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))) as? [String: Any])
+    var details = try XCTUnwrap(data["details"] as? [String: Any])
+    var announced = try XCTUnwrap((details["resetEvents"] as? [[String: Any]])?.first)
+    XCTAssertEqual(announced["kind"] as? String, "direct_reset", "the real Go capture carries kind like the producer")
+    announced["id"] = "banked-1"; announced["kind"] = "reset_credit"
+    var confirmed = announced
+    confirmed["id"] = "confirmed-1"; confirmed["status"] = "confirmed"; confirmed["confirms"] = "banked-1"
+    confirmed["confirmedAt"] = "2026-10-29T13:00:00Z"; confirmed["confirmedAtBasis"] = "firstSeen"
+    details["resetEvents"] = [announced, confirmed]
+    data["details"] = details
+    let wire = try WireDecoder.decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: data))
+    let state = CockpitBridgeState(context: try context())
+    _ = try ready(state)
+    let display = try object(state.display(wire, ticket: XCTUnwrap(state.queryTicket)))
+    let sent = try XCTUnwrap(((display["data"] as? [String: Any])?["details"] as? [String: Any])?["resetEvents"] as? [[String: Any]])
+    XCTAssertEqual(sent.map { $0["kind"] as? String }, ["reset_credit", "reset_credit"])
+    XCTAssertEqual(sent.map { $0["confirmedAtBasis"] as? String }, [nil, "firstSeen"])
+    XCTAssertEqual(sent.last?["confirmedAt"] as? String, "2026-10-29T13:00:00Z")
+    // The page validates against the generated schema; each field the host sends must name its type there.
+    let schema = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("schema/app-cli/app-server.json"))) as? [String: Any])
+    let event = try XCTUnwrap(((schema["$defs"] as? [String: Any])?["ResetEvent"] as? [String: Any])?["properties"] as? [String: [String: Any]])
+    for field in ["kind", "confirmedAtBasis", "status"] {
+      XCTAssertEqual(event[field]?["type"] as? String, "string", "ResetEvent.\(field) is typed for the page validator")
+    }
+    for (field, node) in event where node["type"] == nil && node["$ref"] == nil && node["anyOf"] == nil {
+      XCTFail("ResetEvent.\(field) has no type; the page rejects every display that carries it")
+    }
+  }
 }

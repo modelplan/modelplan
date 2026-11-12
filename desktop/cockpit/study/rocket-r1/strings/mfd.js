@@ -116,6 +116,7 @@ register('mfd', {
   sameRec: ['line', '试 = ★', 'Try = ★'],
   sameAll: ['line', '试 = 当前 = ★', 'Try = Current = ★'],
   currentRec: ['line', '当前 = ★', 'Current = ★'],
+  cmpTrialNote: ['text', '试算，不会改工具设置', 'Trial only — your tool settings stay unchanged'],
   cmpTitle: ['line', '比较 · {m}', 'Compare · {m}'],
   kBack: ['lcd', '‹ 返回 {p}', '‹ {p}'],
   kFast: ['silk', '快速', 'Fast'],

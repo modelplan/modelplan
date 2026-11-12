@@ -408,7 +408,7 @@ func revision(in Input) string {
 	}
 	if in.Perf != nil {
 		l := in.Perf.Ledger
-		l.Files = nil // how far the logs were read is no observation
+		l.Files, l.Counted = nil, nil // how far the logs were read is no observation
 		v.Perf, v.PerfOK = &l, in.Perf.OK
 		if in.Perf.LongOK {
 			v.Long, v.LongOK = &in.Perf.Long, true

@@ -122,7 +122,10 @@ A cold logical read is **C1 then C2, at most two requests**. Any C1 error or
 unsupported plan ends it; there is no legacy waterfall. A warm read is **C2 only**
 while the credential/account binding, at-most-24-hour plan metadata and future
 reset remain valid. A past reset or changed binding requires C1 inside the same
-read budget. Both requests share the managed read's 20-second deadline.
+read budget. If the store's file metadata changes while the requests run, the
+credential entry is read again: the reading is discarded (and the old account
+invalidated) only when its keyed credential/account binding changed or can no
+longer be read, not for unrelated Cursor state writes. Both requests share the managed read's 20-second deadline.
 
 The shared per-vendor/provider budget is reserved before credential I/O: at least
 five minutes across profiles and CLI/plugins/app. Unchanged successes stretch to

@@ -220,11 +220,15 @@ export function comparison(d, ui, args) {
   const howFits = textW(title) * 1.2 + textW(words.compare + ' ↗') + textW(words.how + ' ↗') + 36 <= size.w;
   const links = `<span class="cmp-header-links">${secondaryLink(modelUrl(m.id), words.compare)}${howFits ? secondaryLink(methodologyUrl('cost-basis'), words.how) : ''}</span>`;
   const {L, E} = edges(ui, size.w), levels = m.e.map(r => r[0]);
-  const ladder = `<div class="cmp-lad" style="--cl:${L}px;--cr:${size.w - E}px">${levels.map(l => `<button class="lad ${l === base && cur ? 'cur' : ''} ${l === trial && s.trying ? 'try' : ''} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${esc(l)}" data-hover="${esc(l)}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${l}</button>`).join('')}</div>`;
+  // CKP-FAD-18 (D151): one quiet line, bottom right, while a trial detent is shown. The compact shell has no height for it, so
+  // it collapses to an info mark inside the ladder row (CSS picks one by the profile); the full text is its accessible name.
+  const trialNote = s.trying && ui.trialNote !== false ? `<p class="cmp-trial-note">${esc(t('mfd.cmpTrialNote'))}</p>` : '';
+  const trialMark = trialNote ? `<button type="button" class="cmp-trial-i" aria-label="${esc(t('mfd.cmpTrialNote'))}">ⓘ</button>` : '';
+  const ladder = `<div class="cmp-lad" style="--cl:${L}px;--cr:${size.w - E}px">${levels.map(l => `<button class="lad ${l === base && cur ? 'cur' : ''} ${l === trial && s.trying ? 'try' : ''} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${esc(l)}" data-hover="${esc(l)}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${l}</button>`).join('')}${trialMark}</div>`;
   // polish A: on a short screen the chart is left out instead of being clipped (the bars and the keys still compare).
   const chart = size.h >= 34 && size.w >= 160 ? lineSvg(m, s, cols, size, ui) : '';
   return `<div class="cmp-h"><b class="mfd-title">${esc(title)}</b>${note ? `<span class="cmp-note">${note}</span>` : ''}${links}</div>
-    <div class="cmp-bars-row" data-trying="${s.trying}">${barsSvg(m, s, cols, size.w, ui)}</div><div class="mfd-fill" data-fill="cmp">${chart}</div>${ladder}`;
+    <div class="cmp-bars-row" data-trying="${s.trying}">${barsSvg(m, s, cols, size.w, ui)}</div><div class="mfd-fill" data-fill="cmp">${chart}</div>${ladder}${trialNote}`;
 }
 // The bottom key row while the comparison is shown (round D1): back to the page underneath, fast mode in the trial
 // (both states printed, only for a tool with a fast mode; otherwise a dark key) only. The two keys share the footer width.

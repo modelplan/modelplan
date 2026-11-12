@@ -80,7 +80,8 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 		return reflect.ValueOf(rows.ResetSchedule{Precision: "window", From: now.Add(time.Hour), Through: now.Add(3 * time.Hour)}), nil
 	}
 	if t == reflect.TypeFor[rows.ResetEvent]() {
-		return reflect.ValueOf(rows.ResetEvent{Version: 1, ID: "synthetic-reset", Provider: "openai", RowID: "codex", Status: "announced", PublishedAt: now, ExpiresAt: now.Add(48 * time.Hour), Source: rows.ResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567", Links: []rows.ResetLink{{Type: "aihot", URL: "https://aihot.news/codex-reset"}}}}), nil
+		// G3-96: the producer sets kind on every event it emits (resetevents.kindOf), so the capture carries it too.
+		return reflect.ValueOf(rows.ResetEvent{Version: 1, ID: "synthetic-reset", Provider: "openai", RowID: "codex", Status: "announced", Kind: "direct_reset", PublishedAt: now, ExpiresAt: now.Add(48 * time.Hour), Source: rows.ResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567", Links: []rows.ResetLink{{Type: "aihot", URL: "https://aihot.news/codex-reset"}}}}), nil
 	}
 
 	if t == reflect.TypeFor[wire.RefreshMember]() {

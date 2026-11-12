@@ -20,7 +20,7 @@ func EraseScope(p Paths, scope string, forget bool) error {
 		return errors.New("invalid scope")
 	}
 	if path == "local_history" {
-		unlock, err := consent.ReaderLock()
+		unlock, err := consent.ReaderLockWait()
 		if err != nil {
 			return err
 		}
