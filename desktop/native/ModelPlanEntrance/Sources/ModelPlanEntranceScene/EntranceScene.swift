@@ -632,7 +632,7 @@ struct HullFinish {
         // hull reflected about 4 % of the studio, so the strips barely beat the room and it all read as one grey;
         // real steel reflects far more, and pass 5's darkness comes from a dark room, not a dull metal (the studio
         // is darker to match, `EntranceLook.studio`). Day is mid steel, not white.
-        theme == .night ? NSColor(srgbRed: 0.62, green: 0.625, blue: 0.64, alpha: 1)
+        return theme == .night ? NSColor(srgbRed: 0.62, green: 0.625, blue: 0.64, alpha: 1)
             : NSColor(srgbRed: 0.88, green: 0.88, blue: 0.875, alpha: 1)
     }
     /// The finish as a flat colour, the tone of a plain panel (bells, the window surround, and the hull if its
