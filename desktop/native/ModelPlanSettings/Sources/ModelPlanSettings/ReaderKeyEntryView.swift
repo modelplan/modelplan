@@ -17,8 +17,11 @@ import AppKit
     private var remove: ConnectionButton!
     var buttons: [ConnectionButton] { [test, save, remove] }
 
-    init(entry: ReaderKeyEntry, language: SettingsLanguage) {
-        self.entry = entry; self.language = language
+    /// Inline in a tool row: the heading names the action ("Add a key"), not the provider the row already names.
+    private let inline: Bool
+
+    init(entry: ReaderKeyEntry, language: SettingsLanguage, inline: Bool = false) {
+        self.entry = entry; self.language = language; self.inline = inline
         super.init(frame: .zero)
         orientation = .vertical; alignment = .leading; spacing = 6
         let id = "readerkey." + entry.provider.rawValue
@@ -63,7 +66,7 @@ import AppKit
     }
 
     private func refresh() {
-        title.stringValue = entry.provider.title.value(language)
+        title.stringValue = inline ? (language == .english ? "Add a key (optional)" : "添加密钥（可选）") : entry.provider.title.value(language)
         field.placeholderString = language == .english ? "Paste your API key" : "粘贴你的 API 密钥"
         if field.stringValue != entry.typed { field.stringValue = entry.typed }
         for (index, region) in ReaderKeyRegion.allCases.enumerated() {
@@ -85,12 +88,14 @@ import AppKit
 /// Created once per host and reused, so re-rendering the host never clears what is being typed.
 @MainActor final class ReaderKeySection: NSStackView {
     private let entries: [ReaderKeyEntryView]
+    private var inlineEntries: [ReaderKeyProvider: ReaderKeyEntryView] = [:]
+    private let backend: ReaderKeyBackend
     private let heading = NSTextField(wrappingLabelWithString: "")
     private let note = NSTextField(wrappingLabelWithString: "")
     private var language: SettingsLanguage
 
     init(backend: ReaderKeyBackend, language: SettingsLanguage) {
-        self.language = language
+        self.language = language; self.backend = backend
         entries = ReaderKeyProvider.allCases.map { ReaderKeyEntryView(entry: .init(provider: $0, backend: backend), language: language) }
         super.init(frame: .zero)
         orientation = .vertical; alignment = .leading; spacing = 8
@@ -105,9 +110,18 @@ import AppKit
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 
     func apply(language: SettingsLanguage) {
-        self.language = language; for entry in entries { entry.apply(language: language) }; refresh()
+        self.language = language; for entry in entries + Array(inlineEntries.values) { entry.apply(language: language) }; refresh()
     }
-    func dismiss() { for entry in entries { entry.entry.dismiss() } }
+    /// One provider's entry for its own tool row (created once per provider and reused, so a re-render of the
+    /// row never clears what is being typed).
+    func inlineEntry(for provider: ReaderKeyProvider) -> ReaderKeyEntryView {
+        if let existing = inlineEntries[provider] { existing.apply(language: language); return existing }
+        let view = ReaderKeyEntryView(entry: .init(provider: provider, backend: backend), language: language, inline: true)
+        inlineEntries[provider] = view
+        let model = view.entry; Task { @MainActor in await model.load() }
+        return view
+    }
+    func dismiss() { for entry in entries { entry.entry.dismiss() }; for entry in inlineEntries.values { entry.entry.dismiss() } }
     private func refresh() {
         heading.stringValue = language == .english ? "Add a key (optional)" : "添加密钥（可选）"
         note.stringValue = language == .english

@@ -109,6 +109,20 @@ private actor KeyEngine: EngineClient {
         let field = try XCTUnwrap(find(view, "readerkey.zai.field", as: NSSecureTextField.self), "the key area appears once the engine supports it")
         let ids = { app.composition.store.snapshot.rows?.projection.rows.map(\.id) ?? [] }
         XCTAssertFalse(ids().contains("zai"), "no row before a key is saved")
+        // SET-9-41: ZCode is detected but no key is found: its own row says so and carries the one entry.
+        let status = try XCTUnwrap(find(view, "scope.settings.nokey.zai", as: NSTextField.self), "an honest no-key line on the detected row")
+        XCTAssertEqual(status.stringValue, SettingsScopeConsentView.noKeyLine(.zai).english)
+        XCTAssertNotNil(find(view, "scope.settings.row.zai", as: NSStackView.self))
+        XCTAssertNil(find(view, "readerkey.opencodego.field", as: NSSecureTextField.self), "a tool that is not detected gets no key entry")
+        XCTAssertNil(find(view, "readerkey.section", as: NSStackView.self), "one affordance, on the row, not a second generic section")
+
+        // First run does not dead-end for it: the row stays a normal choice and says where a key can be added later.
+        let firstRun = try app.scopeConsentEntry.makeFirstRunView(language: .english)
+        let later = try XCTUnwrap(find(firstRun, "scope.firstRun.keylater.zai", as: NSTextField.self))
+        XCTAssertEqual(later.stringValue, SettingsScopeConsentView.firstRunKeyLine.english)
+        XCTAssertNotNil(find(firstRun, "scope.firstRun.row.zai", as: NSStackView.self))
+        XCTAssertNil(find(firstRun, "readerkey.zai.field", as: NSSecureTextField.self), "first run keeps its single consent; the key entry lives in Settings")
+        app.scopeConsentEntry.endFirstRunPresentation()
 
         // Paste the key.
         field.stringValue = fakeKey
@@ -125,7 +139,7 @@ private actor KeyEngine: EngineClient {
 
         let engineValue = try XCTUnwrap(engine)
         let calls = await engineValue.recordedKeyCalls()
-        XCTAssertEqual(calls.map(\.method), ["readerkey/status", "readerkey/status", "readerkey/test", "readerkey/set"], "Save reuses the passing Test")
+        XCTAssertEqual(calls.map(\.method), ["readerkey/status", "readerkey/test", "readerkey/set"], "Save reuses the passing Test")
         XCTAssertEqual(calls.last, .init(method: "readerkey/set", provider: "zai", region: "global", key: fakeKey))
         let grants = await engineValue.recordedGrants()
         XCTAssertEqual(grants, [[zaiScope]], "saving turns on exactly that provider's reading scope")

@@ -227,6 +227,20 @@ import ModelPlanWire
             // Only browser-session or unrecognised paths: never describe a read that will not happen.
             line(Self.unreadableLine, id: prefix + "status." + id)
         }
+        if let provider = ReaderKeyProvider(rawValue: id), tool.detected {
+            if settings, let backend = readerKeys {
+                // D90 / SET-9-41: a detected key-only tool that is not being read says so and offers the one
+                // optional key entry right here; auto-detected sign-ins are still used first.
+                if !controller.isToolReading(id) {
+                    line(Self.noKeyLine(provider), id: prefix + "nokey." + id, color: .systemOrange)
+                }
+                let section = keySection ?? ReaderKeySection(backend: backend, language: language)
+                keySection = section
+                column.addArrangedSubview(section.inlineEntry(for: provider))
+            } else if !settings {
+                line(Self.firstRunKeyLine, id: prefix + "keylater." + id)
+            }
+        }
         let row = NSStackView(views: [box, mark, column]); row.orientation = .horizontal; row.alignment = .top; row.spacing = 10
         row.setAccessibilityIdentifier(prefix + "row." + id)
         addArrangedSubview(row)
@@ -301,6 +315,17 @@ import ModelPlanWire
         let keychain = tool.promptsKeychain ? mayAskKeychain : noKeychain
         return .init(base.english + keychain.english, base.chinese + keychain.chinese)
     }
+    /// Honest status for a detected key-only tool that is not being read: no key was found.
+    static func noKeyLine(_ provider: ReaderKeyProvider) -> SettingsText {
+        switch provider {
+        case .zai: return .init("No GLM key found, so it is not read yet. Sign in to ZCode, or add a key below.",
+                                "没有找到 GLM 密钥，所以暂未读取。请在 ZCode 里登录，或在下面添加密钥。")
+        case .opencodego: return .init("No OpenCode Go key found, so it is not read yet. Sign in to OpenCode, or add a key below.",
+                                       "没有找到 OpenCode Go 密钥，所以暂未读取。请在 OpenCode 里登录，或在下面添加密钥。")
+        }
+    }
+    static let firstRunKeyLine = SettingsText("If no key is found on this Mac, you can add one later in Settings › Data & Privacy.",
+                                              "如果本机上没有找到密钥，之后可在 设置 › 数据与隐私 中添加。")
     static func blockLine(_ block: ScopeToolBlock, tool: String) -> SettingsText {
         let name = toolName(tool)
         switch block {
@@ -371,7 +396,7 @@ import ModelPlanWire
                 }
             }
         }
-        if !firstRun, let backend = readerKeys {
+        if !firstRun, !compactTools, let backend = readerKeys {
             gap()
             let section = keySection ?? ReaderKeySection(backend: backend, language: language)
             keySection = section
