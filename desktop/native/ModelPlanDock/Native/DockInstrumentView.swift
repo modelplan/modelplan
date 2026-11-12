@@ -44,8 +44,6 @@ enum DockGripInk {
     @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }
     /// Skin-space origin of the view's local coordinates (the hover viewport when one is reserved).
     @_spi(DockResourceChecks) public var layoutOriginForChecks: CGPoint { layoutOrigin }
-    /// Set only by the owner-test option; the appearance reads it when it lays out the rings.
-    public var centresRings = false
     @_spi(DockResourceChecks) public var presentedImageForChecks: CGImage? { failed || community ? nil : image }
     /// G3-32: the text runs of the last full render (fallback marks, readouts, aliases).
     @_spi(DockResourceChecks) public private(set) var presentedTextMetricsForChecks: [DockGlyphMetric] = []
@@ -161,12 +159,20 @@ enum DockGripInk {
     /// The painted clock ring (dot circle plus its back stroke) the card measures its gap and
     /// arrow from, not the smaller nozzle box. View-local points; the nozzle box where no
     /// official skin is shown. Prototype: opus-r7/src/rocket-r1/card.js:154-163 (renderedRing).
+    /// G3-50: the ring as painted now, so a hover-magnified ring (its pose: scaled and moved inward)
+    /// keeps the card's gap and the arrow's 2 pt, as the prototype measures the transformed ring
+    /// (card.js refreshCardPlacement after each magnification write).
     public func cardRingAnchor(_ id: String) -> CGRect? {
         guard !community, !failed, let s = skin?.stations.first(where: { $0.subscriptionID == id }) else { return stationRect(id) }
-        let radius = max(s.diameter / 2, s.clock.radius + s.clock.backWidth / 2)
-        return CGRect(x: s.centre.x - radius - layoutOrigin.x, y: s.centre.y - radius - layoutOrigin.y,
+        var radius = max(s.diameter / 2, s.clock.radius + s.clock.backWidth / 2), centre = s.centre
+        if let pose = nozzlePosesForChecks[id], pose.scale.isFinite, pose.scale > 0, pose.offset.x.isFinite, pose.offset.y.isFinite {
+            radius *= pose.scale; centre.x += pose.offset.x; centre.y += pose.offset.y
+        }
+        return CGRect(x: centre.x - radius - layoutOrigin.x, y: centre.y - radius - layoutOrigin.y,
                       width: 2 * radius, height: 2 * radius)
     }
+    /// Called after the painted nozzle poses change, so a shown card can follow its ring.
+    public var onNozzlePosesChanged: (() -> Void)?
     /// Registered visible reading geometry for the Help-map owner, in view-local points.
     public func helpReadoutAnchor(_ id: String) -> CGRect? {
         guard !community, !failed, let skin, readings[id] != nil,
@@ -277,6 +283,7 @@ enum DockGripInk {
     /// appearance input). Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:68 (.dk-n.hot).
     private var hotGlow: CALayer?
     @_spi(DockResourceChecks) public private(set) var hotNozzleForChecks: String?
+    @_spi(DockResourceChecks) public var hotGlowForChecks: CALayer? { hotGlow }
     public func setHotNozzle(_ id: String?, glow colour: CGColor? = nil, blur: CGFloat = 7) {
         guard id != hotNozzleForChecks || (id != nil && hotGlow == nil) else { return }
         hotGlow?.removeFromSuperlayer(); hotGlow = nil; hotNozzleForChecks = nil
@@ -498,7 +505,7 @@ enum DockGripInk {
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
@@ -553,6 +560,7 @@ enum DockGripInk {
         }
         CATransaction.commit()
         needsDisplay = true
+        onNozzlePosesChanged?()
     }
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
@@ -723,7 +731,7 @@ enum DockGripInk {
                 switch notice.key.kind {
                 case .forecast:label=zh ? "可能提前耗尽":"May run out before reset"
                 case .resetAnnounced:label=zh ? "已公告额外重置":"Extra reset announced"
-                case .resetConfirmed:label=zh ? "额外重置已确认，等待读数":"Extra reset confirmed; awaiting a reading"
+                case .resetConfirmed:label=zh ? "公开重置已确认，余量以本机读数为准":"Public reset confirmed; your balance is the local reading"
                 case .cardsExpiring:label=zh ? "额外重置即将过期":"Resets expiring"
                 case .credits:label=zh ? "正在使用点数":"Using credits"
                 }
@@ -802,7 +810,7 @@ enum DockGripInk {
         let p=convert(event.locationInWindow,from:nil)
         let grip = isPainted(atLocal: p) ? registeredGripRects.firstIndex { $0.contains(p) } : nil
         if hoveredGripIndex != grip { hoveredGripIndex = grip; updateGripEmphasis() }
-        if case .subscription(let id)?=pointerAction(atLocal:p),isPainted(atLocal:p){nozzleEventDelegate?.hoverNozzle(id)}else{nozzleEventDelegate?.hoverNozzle(nil)}
+        nozzleEventDelegate?.hoverNozzle(hoverUnitID(atLocal:p))
         onHelpPointerMoved?()
     }
     public override func mouseEntered(with event:NSEvent){mouseMoved(with:event)}
@@ -852,6 +860,30 @@ enum DockGripInk {
         }
         super.keyDown(with:event)
     }
+    /// G3-73: hover is one continuous region per subscription unit (the ring, its percentage readout,
+    /// alias and notice dot, and the gap between them), like Pulse's single per-row hover region, so the
+    /// magnification stays on while the pointer travels from the number to the ring. Clicks keep the
+    /// tighter `pointerAction` rects.
+    private func hoverUnitRect(_ s:DockStationRecipe,id:String)->CGRect?{
+        guard var r=stationRect(id) else{return nil}
+        if community{return r}
+        let o=layoutOrigin
+        if s.showsReadout != false{r=r.union(s.readout.offsetBy(dx:-o.x,dy:-o.y))}
+        if let a=s.aliasRect{r=r.union(a.offsetBy(dx:-o.x,dy:-o.y))}
+        if notices[id] != nil{r=r.union(s.eventRect.offsetBy(dx:-o.x,dy:-o.y))}
+        return r
+    }
+    private func hoverUnitID(atLocal p:NSPoint)->String?{
+        guard !failed,!isHiddenOrHasHiddenAncestor,bounds.contains(p) else{return nil}
+        if let skin,!community{
+            for s in skin.stations.reversed(){
+                if let id=s.subscriptionID,let r=hoverUnitRect(s,id:id),r.contains(p){return id}
+            }
+            return nil
+        }
+        return orderedIDs.first{stationRect($0)?.contains(p)==true}
+    }
+    @_spi(DockResourceChecks) public func hoverUnitIDForChecks(atLocal p:NSPoint)->String?{hoverUnitID(atLocal:p)}
     private func pointerAction(atLocal p:NSPoint)->DockInstrumentAction?{
         if let skin,!community {
             let global=CGPoint(x:p.x+layoutOrigin.x,y:p.y+layoutOrigin.y)

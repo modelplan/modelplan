@@ -60,7 +60,15 @@ public struct DockInstrumentInput: Sendable {
 }
 public enum DockQuotaStatus: String, Codable, Hashable, Sendable {case unknown, normal, warning, critical}
 public struct DockQuotaArc: Equatable, Sendable {
-    public let windowID: String, fraction: Double?, status: DockQuotaStatus
+    /// `fraction` is the drawn arc length (D130: remaining in remaining mode, used in used mode).
+    /// `remainingFraction` is always the remaining truth (used-up detection, never reversed); `status` is keyed to it too.
+    public let windowID: String, fraction: Double?, status: DockQuotaStatus, remainingFraction: Double?
+    public init(windowID: String, fraction: Double?, status: DockQuotaStatus, remainingFraction: Double?) {
+        self.windowID = windowID; self.fraction = fraction; self.status = status; self.remainingFraction = remainingFraction
+    }
+    public init(windowID: String, fraction: Double?, status: DockQuotaStatus) {
+        self.init(windowID: windowID, fraction: fraction, status: status, remainingFraction: fraction)
+    }
 }
 public struct DockInstrumentReading: Sendable {
     public let subscriptionID: String, name: String, alias: String?, vendorResourceKey: String?
@@ -74,14 +82,18 @@ public struct DockInstrumentReading: Sendable {
     /// Position count comes from the frozen appearance provider, not quota percentage or a ten-point helper.
     public func litTimePoints(positions: Int) -> Int? {
         guard (1...128).contains(positions),let timeLeftFraction else{return nil}
-        return max(0,min(positions,Int(ceil(timeLeftFraction*Double(positions)))))
+        // D129: the clock follows the remaining/used choice: time left in remaining mode, time elapsed in used mode.
+        let shown = clockShowsElapsed ? 1-timeLeftFraction : timeLeftFraction
+        return max(0,min(positions,Int(ceil(shown*Double(positions)))))
     }
     public let isWorking: Bool, jetEligible: Bool
+    /// True when the Settings choice is "used": the clock lights time elapsed instead of time left.
+    public var clockShowsElapsed = false
     /// A transient display frame; the admitted reading and its observation time are never changed.
     func refreshSweepFrame(progress: Double) -> DockInstrumentReading {
         let p = progress.isFinite ? min(1, max(0, progress)) : 1
         func scaled(_ arc: DockQuotaArc?) -> DockQuotaArc? {
-            arc.map { .init(windowID: $0.windowID, fraction: $0.fraction.map { $0 * p }, status: $0.status) }
+            arc.map { .init(windowID: $0.windowID, fraction: $0.fraction.map { $0 * p }, status: $0.status, remainingFraction: ($0.remainingFraction.map { $0 * p })) }
         }
         let displayed = readout.hasSuffix("%") ? Double(readout.dropLast()) : nil
         let text = displayed.map { String(Int(($0 * p).rounded())) + "%" } ?? readout
@@ -91,16 +103,16 @@ public struct DockInstrumentReading: Sendable {
             selectedWindowLabel: selectedWindowLabel, selectedResetAt: selectedResetAt,
             remainingPercent: remainingPercent, readout: text, status: status, dataState: dataState,
             unavailableReason: unavailableReason, timeLeftFraction: timeLeftFraction,
-            isWorking: isWorking, jetEligible: jetEligible)
+            isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed)
     }
     /// Gallery-only fixture: the prototype varies level independently of its fixed 75% arc.
     @_spi(DockResourceChecks) public func comparisonFixture(status: DockQuotaStatus) -> DockInstrumentReading {
-        let fixtureOuter = outer.map { DockQuotaArc(windowID: $0.windowID, fraction: $0.fraction, status: status) }
+        let fixtureOuter = outer.map { DockQuotaArc(windowID: $0.windowID, fraction: $0.fraction, status: status, remainingFraction: ($0.remainingFraction)) }
         return DockInstrumentReading(subscriptionID: subscriptionID, name: name, alias: alias, vendorResourceKey: vendorResourceKey,
             duplicateAccountTag:duplicateAccountTag,
             outer: fixtureOuter, inner: inner, selectedWindowID: selectedWindowID, selectedWindowLabel: selectedWindowLabel,
             selectedResetAt: selectedResetAt, remainingPercent: remainingPercent, readout: readout, status: status,
-            dataState: dataState, unavailableReason:unavailableReason, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible)
+            dataState: dataState, unavailableReason:unavailableReason, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed)
     }
 }
 
@@ -154,11 +166,11 @@ public enum DockInstrumentProjection {
             (signal.observedOutput || (signal.observedInFlight && signal.expiresAt != nil)) &&
             (signal.expiresAt.map { now < $0 } ?? true)
         } == true && input.dataState == .fresh
-        func arc(_ w:DockQuotaWindowInput?) -> DockQuotaArc? {w.map{let r=value($0);return DockQuotaArc(windowID:$0.id,fraction:r.map{$0/100},status:status(r))}}
+        func arc(_ w:DockQuotaWindowInput?) -> DockQuotaArc? {w.map{let r=value($0);return DockQuotaArc(windowID:$0.id,fraction:r.map{(input.showUsedPercent ? 100-$0:$0)/100},status:status(r),remainingFraction:(r.map{$0/100}))}}
         return DockInstrumentReading(subscriptionID:input.id,name:input.name,alias:input.alias,vendorResourceKey:input.vendorResourceKey,duplicateAccountTag:input.duplicateAccountTag,
             outer:arc(outer),inner:arc(inner),selectedWindowID:selected?.id,selectedWindowLabel:selected?.label,
             selectedResetAt:selected.flatMap { value($0) == nil ? nil : $0.resetsAt },
             remainingPercent:remaining,readout:text,status:selectedStatus,dataState:input.dataState,
-            unavailableReason:(remaining == nil || input.dataState == .stale) ? input.unavailableReason : nil,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil)
+            unavailableReason:(remaining == nil || input.dataState == .stale) ? input.unavailableReason : nil,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil,clockShowsElapsed:input.showUsedPercent)
     }
 }

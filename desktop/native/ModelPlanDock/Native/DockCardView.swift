@@ -22,6 +22,15 @@ import CryptoKit
 /// four-column rows (label / ten-segment bar / percent / time) and wide rows (label / value / detail).
 @MainActor public struct DockCardStyle {
     public var width:CGFloat=300,padding:CGFloat=12,fontSize:CGFloat=12,brandSize:CGFloat=16
+    /// G3-50: the vendor mark's visible size (its longest side) inside the `brandSize` slot, for a mark
+    /// already cropped to its visible glyph. nil fills the slot. The slot keeps the header layout.
+    public var brandMarkSize:CGFloat?=nil
+    /// The height of the card title's line (ascender to descender of the bold name font): a mark this
+    /// tall reads as the same size as the title, as a 16 pt icon does beside 13 pt text in AppKit lists.
+    public static func titleMarkSize(nameFontSize:CGFloat)->CGFloat{
+        let font=NSFont.systemFont(ofSize:nameFontSize,weight:.bold)
+        return (2*(font.ascender-font.descender)).rounded()/2
+    }
     /// Plate padding above and below the content (horizontal padding is `padding`).
     public var verticalPadding:CGFloat=12
     /// The ten-segment quota bar: size and gap between segments.
@@ -42,6 +51,8 @@ import CryptoKit
     public var rowHighlight:NSColor?=nil,rowOutset:CGFloat=4,rowHighlightRadius:CGFloat=4
     /// Space under the readout before the plate's bottom padding (the prototype's empty .cd-events band).
     public var readoutBottomGap:CGFloat=0
+    /// Space above each event sentence (dock.css .cd-events p margin-top).
+    public var eventGap:CGFloat=6
     /// The notice's own window: gap above it and its inset (dock.css .cd-ev).
     public var noticeGap:CGFloat=7,noticePadding=NSEdgeInsets(top:6,left:8,bottom:6,right:8)
     /// Header: name size (semibold), small text size, gap after the mark, gap below the header.
@@ -60,12 +71,12 @@ import CryptoKit
     var fraction:Double?,on:NSColor,track:NSColor
     var size=CGSize(width:96,height:10){didSet{invalidateIntrinsicContentSize();needsDisplay=true}}
     var gap:CGFloat=2{didSet{needsDisplay=true}}
-    init(row:DockCardRow,on:NSColor,track:NSColor){self.fraction=row.remainingFraction;self.on=on;self.track=track;super.init(frame:CGRect(x:0,y:0,width:96,height:10));setAccessibilityElement(true);setAccessibilityRole(.levelIndicator);setAccessibilityValue(row.remainingFraction.map{NSNumber(value:$0*100)});setAccessibilityMinValue(0);setAccessibilityMaxValue(100);setAccessibilityLabel(row.label);setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));setAccessibilityIdentifier("dock.card.quota."+row.id)}
+    init(row:DockCardRow,on:NSColor,track:NSColor){self.fraction=row.fillFraction;self.on=on;self.track=track;super.init(frame:CGRect(x:0,y:0,width:96,height:10));setAccessibilityElement(true);setAccessibilityRole(.levelIndicator);setAccessibilityValue(row.fillFraction.map{NSNumber(value:$0*100)});setAccessibilityMinValue(0);setAccessibilityMaxValue(100);setAccessibilityLabel(row.label);setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));setAccessibilityIdentifier("dock.card.quota."+row.id)}
     required init?(coder:NSCoder){fatalError()}
     override var intrinsicContentSize:NSSize{size}
     func apply(row:DockCardRow,on:NSColor,track:NSColor){
-        let changed=fraction != row.remainingFraction
-        fraction=row.remainingFraction;self.on=on;self.track=track
+        let changed=fraction != row.fillFraction
+        fraction=row.fillFraction;self.on=on;self.track=track
         setAccessibilityLabel(row.label);setAccessibilityValue(fraction.map{NSNumber(value:$0*100)})
         setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));needsDisplay=true
         if changed{NSAccessibility.post(element:self,notification:.valueChanged)}
@@ -122,6 +133,7 @@ import CryptoKit
             guard style.width.isFinite,(160...800).contains(style.width),style.fontSize.isFinite,(8...24).contains(style.fontSize),
                   style.padding.isFinite,(0...32).contains(style.padding),style.verticalPadding.isFinite,(0...32).contains(style.verticalPadding),
                   style.brandSize.isFinite,(8...48).contains(style.brandSize),style.columns.count==3,
+                  style.brandMarkSize.map({$0.isFinite && $0>0 && $0<=style.brandSize}) ?? true,
                   style.columns.allSatisfy({$0.isFinite && $0>0}) else{throw DockArtworkError.invalidManifest}
         }catch{clear();throw error}
         self.style=style;content=value;let token=generation
@@ -157,7 +169,7 @@ import CryptoKit
             let image=brandView ?? NSImageView(image:original);brandView=image
             image.image=original;image.contentTintColor=nil;image.imageScaling = .scaleProportionallyDown
             image.setAccessibilityElement(false);place(image,in:self)
-            image.frame=CGRect(x:x,y:y,width:style.brandSize,height:style.brandSize)
+            image.frame=Self.brandMarkFrame(slot:CGRect(x:x,y:y,width:style.brandSize,height:style.brandSize),image:original.size,mark:style.brandMarkSize)
             x+=style.brandSize+style.headerGap;headerHeight=style.brandSize
         }else{brandView?.removeFromSuperview();brandView=nil}
         // Source · age, then any state badge, on the header's one line (card.js cd-h); the name keeps 64 pt.
@@ -188,7 +200,8 @@ import CryptoKit
             place(cell.field,in:self);let h=ceil(natural(cell.field).height)
             cell.field.frame=CGRect(x:headerX,y:y+(headerHeight-h)/2,width:cell.width,height:h);headerX+=cell.width+style.headerGap
         }
-        if let brandView{brandView.frame.origin.y=y+(headerHeight-style.brandSize)/2}
+        // The mark sits on the name's line, not centred on the whole title block (the plan line hangs below it).
+        if let brandView{brandView.frame.origin.y=y+(nameHeight-brandView.frame.height)/2}
         y+=headerHeight+style.headerBottomGap
         // Readout window with the fixed row grid (dock.css .cd-lcd / .cd-r, face.css 56/78/34/1fr).
         let pad=style.window == nil ? NSEdgeInsets(top:0,left:0,bottom:0,right:0) : style.windowPadding
@@ -197,7 +210,8 @@ import CryptoKit
         var rowY=y+pad.top
         let c=style.columns,g=style.columnGap
         highlightRects=[];noticeRect=nil
-        let readings=value.rows.filter{$0.kind != .notice},notices=value.rows.filter{$0.kind == .notice}
+        let readings=value.rows.filter{$0.kind != .notice && $0.kind != .event},notices=value.rows.filter{$0.kind == .notice}
+        let events=value.rows.filter{$0.kind == .event}
         let noticeTextWidth=inner-style.noticePadding.left-style.noticePadding.right
         for (index,row) in readings.enumerated(){
             if index>0{rowY+=style.rowGap}
@@ -261,6 +275,8 @@ import CryptoKit
             }
             let kept=Set(cells.map{ObjectIdentifier($0.view)}+(detailBelow.map{[ObjectIdentifier($0)]} ?? []))
             for child in rowView.subviews where !kept.contains(ObjectIdentifier(child)){child.removeFromSuperview()}
+            // The reserve line is spoken once, by the row; its text fields are not read a second time.
+            if row.kind == .reserve{rowView.subviews.forEach{$0.setAccessibilityElement(false)}}
             rowView.frame=CGRect(x:style.padding+pad.left,y:rowY,width:rowWidth,height:rowHeight)
             if row.emphasised,style.rowHighlight != nil{highlightRects.append(rowView.frame.insetBy(dx:-style.rowOutset,dy:0))}
             rowY+=rowHeight
@@ -270,6 +286,19 @@ import CryptoKit
             rowY+=pad.bottom
             windowRect=style.window == nil ? nil : CGRect(x:style.padding,y:windowTop,width:inner,height:rowY-windowTop)
             y=rowY
+        }
+        // Event sentences under the readout (prototype dock.css .cd-events p: 6 pt above, 11 pt LCD face, the
+        // full plate width; a warning or critical sentence takes its status ink).
+        for row in events{
+            let rowID="row."+row.id
+            usedRows.insert(rowID)
+            let rowView=rowViews[rowID] ?? DockCardRowView();rowViews[rowID]=rowView;place(rowView,in:self)
+            rowView.setAccessibilityElement(true);rowView.setAccessibilityRole(.staticText);rowView.setAccessibilityLabel(row.value)
+            let colour=row.tone == .warning || row.tone == .critical ? (style.quota[row.tone] ?? style.ink) : style.ink
+            let line=label(rowID+".value",row.value,font:readoutSmall,color:colour,wraps:true);place(line,in:rowView)
+            let h=wrapped(line,width:inner);line.frame=CGRect(x:-2,y:0,width:inner+4,height:h)
+            for child in rowView.subviews where child !== line{child.removeFromSuperview()}
+            y+=style.eventGap;rowView.frame=CGRect(x:style.padding,y:y,width:inner,height:h);y+=h
         }
         // The announced public reset is its own window (dock.css .cd-ev): title and pill, timing, then what it is not.
         let noticeTop=y+style.noticeGap
@@ -295,6 +324,8 @@ import CryptoKit
                 let h=wrapped(line,width:noticeTextWidth);top+=2;line.frame=CGRect(x:0,y:top,width:noticeTextWidth,height:h);top+=h;kept.insert(ObjectIdentifier(line))
             }
             for child in rowView.subviews where !kept.contains(ObjectIdentifier(child)){child.removeFromSuperview()}
+            // The reserve line is spoken once, by the row; its text fields are not read a second time.
+            if row.kind == .reserve{rowView.subviews.forEach{$0.setAccessibilityElement(false)}}
             rowView.frame=CGRect(x:style.padding+style.noticePadding.left,y:y,width:noticeTextWidth,height:top);y+=top
         }
         // Source links (announced public reset): one flowing line in reading order.
@@ -352,6 +383,22 @@ import CryptoKit
         frame.size=CGSize(width:style.width,height:max(40,ceil(y)))
         setAccessibilityElement(true);needsDisplay=true
     }
+    /// Checks: what VoiceOver reads for a row (its own label) and the text fields under it that would be read again.
+    @_spi(DockResourceChecks) public func rowSpeechForChecks(_ id:String)->(label:String?,spokenChildren:[String])?{
+        guard let row=rowViews["row."+id] else{return nil}
+        return (row.accessibilityLabel(),row.subviews.compactMap{($0 as? NSTextField).flatMap{$0.isAccessibilityElement() ? $0.stringValue:nil}})
+    }
+    /// The mark's frame in its slot: aspect-fitted to `mark` points (the whole slot when nil), centred.
+    public static func brandMarkFrame(slot:CGRect,image:CGSize,mark:CGFloat?)->CGRect{
+        let side=min(mark ?? slot.width,slot.width,slot.height)
+        guard image.width>0,image.height>0,image.width.isFinite,image.height.isFinite else{return slot}
+        let k=side/max(image.width,image.height),w=image.width*k,h=image.height*k
+        return CGRect(x:slot.midX-w/2,y:slot.midY-h/2,width:w,height:h)
+    }
+    /// The vendor mark's frame inside the card (checks).
+    public var brandMarkFrameForChecks:CGRect?{brandView?.frame}
+    /// The name label's frame inside the card (checks).
+    public var nameFrameForChecks:CGRect?{labels["name"]?.frame}
     private func current(_ value:DockCardContent,token:UInt64)->Bool{
         guard !isHiddenOrHasHiddenAncestor,generation==token,content==value,permitsAction?(value.subscriptionID,value.revision) ?? true else{return false}
         return generation==token && content==value

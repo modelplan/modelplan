@@ -45,7 +45,7 @@ private actor S04SyntheticClient: EngineClient {
     #if MODELPLAN_DOCK_NATIVE_JOURNEY
     /// Real panels in an admitted GUI session. The native-journey profile isolates the reset
     /// notification ledger and the status item (no system delivery, no autosaved position).
-    func testNormalEntryShowsWidgetThenRingHintOnRealSurfaces() async throws {
+    func testNormalEntryShowsRingHintOnTheExpandedWidget() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("s04-hints-" + UUID().uuidString)
         EngineRowsEntry.nativeJourneyProfile = profile
@@ -65,22 +65,17 @@ private actor S04SyntheticClient: EngineClient {
             makeClient: { _, engineStore in S04SyntheticClient(store: engineStore, rows: rows) }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         defer { app.composition.dock.close() }
-        for _ in 0..<200 where liveHintLayers().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
-        // #529 supplies the real visible-widget anchor, so the first hint must now appear.
-        let first = try XCTUnwrap(liveHintLayers().first, "The first hint must appear on the real visible widget")
-        let firstCard = try XCTUnwrap(first.input?.firstUse)
+        // The widget takes about three seconds to settle on a hosted Mac.
+        for _ in 0..<1000 where liveHintLayers().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        // D114: the widget starts expanded, so the first automatic hint is the ring hint; the
+        // "where it went" hint waits for the first collapse.
+        let ring = try XCTUnwrap(liveHintLayers().first, "The ring hint must appear on the real visible widget")
+        let ringCard = try XCTUnwrap(ring.input?.firstUse)
         XCTAssertEqual(liveHintLayers().count, 1)
-        XCTAssertEqual(firstCard.anchorID, "dock.findWidget")
-        first.onAction?(.dismissHint(offerID: firstCard.offerID, reason: .explicitButton))
-        for _ in 0..<200 where !liveHintLayers().contains(where: { $0.input?.firstUse?.anchorID == "dock.ringRefresh" }) {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        let second = try XCTUnwrap(liveHintLayers().first { $0.input?.firstUse?.anchorID == "dock.ringRefresh" })
-        XCTAssertEqual(liveHintLayers().count, 1)
-        let secondCard = try XCTUnwrap(second.input?.firstUse)
-        second.onAction?(.dismissHint(offerID: secondCard.offerID, reason: .explicitButton))
+        XCTAssertEqual(ringCard.anchorID, "dock.ringRefresh")
+        ring.onAction?(.dismissHint(offerID: ringCard.offerID, reason: .explicitButton))
         try await Task.sleep(for: .milliseconds(100))
-        XCTAssertTrue(liveHintLayers().isEmpty, "There must not be a third automatic hint")
+        XCTAssertTrue(liveHintLayers().isEmpty, "There must not be a second automatic hint while the widget is expanded")
         await app.composition.stop()
     }
 
@@ -122,7 +117,8 @@ private actor S04SyntheticClient: EngineClient {
     }
 
     /// Normal entry on real panels with the real display topology; only the pointer is supplied.
-    private func journeyApplication(_ name: String, pointer: @escaping @MainActor () -> CGPoint?) async throws -> (EngineDockMenuApplication, URL) {
+    private func journeyApplication(_ name: String, onboarded: Bool = false, console: (any EngineRowsConsoleSurface)? = nil,
+                                    pointer: @escaping @MainActor () -> CGPoint?) async throws -> (EngineDockMenuApplication, URL) {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent(name + "-" + UUID().uuidString)
         EngineRowsEntry.nativeJourneyProfile = profile
@@ -135,13 +131,15 @@ private actor S04SyntheticClient: EngineClient {
         projection["rows"] = records; root["projection"] = projection
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        if onboarded { _ = try await store.update { preferences in preferences.onboarding.next(in: .task65) } }
         let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: true,
-            dockEnvironment: {
+            cockpitEntryEnabled: console != nil ? true : nil, dockEnvironment: {
                 let topology = DockDisplayTopology.system()
                 return .init(displays: topology.displays, layouts: [], primaryDisplayID: topology.primaryID, pointer: pointer())
             },
-            makeClient: { _, engineStore in S04SyntheticClient(store: engineStore, rows: rows) }, activateSettings: {})
+            makeClient: { _, engineStore in S04SyntheticClient(store: engineStore, rows: rows) },
+            makeConsole: console.map { surface in { _ in surface } }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         return (app, profile)
     }
@@ -178,11 +176,56 @@ private actor S04SyntheticClient: EngineClient {
         await app.composition.stop()
     }
 
+    /// G3-62 on real panels: the ignition key's tip fits its text, goes when the cockpit opens (the pointer is still on
+    /// the key then) and stays away while the cockpit is open; it also goes when the pointer leaves the key.
+    func testG362IgnitionTipFitsItsTextAndGoesWhenTheCockpitOpensOrThePointerLeaves() async throws {
+        let console = IgnitionTipConsole()
+        var pointer: CGPoint? = CGPoint(x: -10_000, y: -10_000)
+        let (app, profile) = try await journeyApplication("g362-ignition", console: console, pointer: { pointer })
+        defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, view = dock.dockView
+        for _ in 0..<300 where dock.currentDockHelpSurface?.mapAnchors.contains(where: { $0.id == "dock.ignition" }) != true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let key = try XCTUnwrap(dock.currentDockHelpSurface?.mapAnchors.first { $0.id == "dock.ignition" }?.rect)
+        let panel = try XCTUnwrap(view.window)
+        let moved = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: panel.convertPoint(fromScreen: CGPoint(x: key.midX, y: key.midY)),
+            modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+        func settle(_ shown: Bool) async throws {
+            for _ in 0..<200 where (app.shownDockExplanationForChecks != nil) != shown { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        pointer = CGPoint(x: key.midX, y: key.midY)
+        view.mouseMoved(with: moved)
+        try await settle(true)
+        XCTAssertEqual(app.shownDockExplanationForChecks, HelpCatalog(.english).explanation(.ignition).accessibleDescription)
+        let frame = try XCTUnwrap(app.shownDockExplanationFrameForChecks)
+        XCTAssertLessThan(frame.width, 250, "the tip is sized to its text, not the 370 pt ceiling")
+        XCTAssertLessThan(frame.height, 70)
+        // The click that opens the cockpit leaves the pointer on the key: the tip goes and does not come back.
+        app.showConsole()
+        try await settle(false)
+        XCTAssertNil(app.shownDockExplanationForChecks, "the tip is dismissed when the cockpit opens")
+        view.mouseMoved(with: moved)
+        try await Task.sleep(for: .milliseconds(800))
+        XCTAssertNil(app.shownDockExplanationForChecks, "no tip while the cockpit is open")
+        // Closed again, the pointer still resting on the key: it shows again, and leaving the key clears it.
+        console.pageClosed()
+        view.mouseMoved(with: moved)
+        try await settle(true)
+        XCTAssertNotNil(app.shownDockExplanationForChecks)
+        pointer = CGPoint(x: -10_000, y: -10_000)
+        view.mouseExited(with: moved)
+        try await settle(false)
+        XCTAssertNil(app.shownDockExplanationForChecks, "leaving the key clears the tip")
+        await app.composition.stop()
+    }
+
     /// G3-12 / S-06 on real panels: Help from the status menu presents the map, and the user's
     /// dismissal returns the request to the status item (focus return). Before the fix the
     /// coordinator was built without the status request, so no dismissal ever reached it.
     func testG312StatusHelpMapDismissalReturnsToTheStatusItem() async throws {
-        let (app, profile) = try await journeyApplication("g312-focus", pointer: { nil })
+        let (app, profile) = try await journeyApplication("g312-focus", onboarded: true, pointer: { nil })
         defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
         defer { app.composition.dock.close() }
         let dock = app.composition.dock
@@ -196,11 +239,59 @@ private actor S04SyntheticClient: EngineClient {
         for _ in 0..<300 where mapLayer() == nil { try await Task.sleep(for: .milliseconds(10)) }
         let map = try XCTUnwrap(mapLayer(), "Help presents the map over the visible widget")
         XCTAssertNotNil(app.statusHelpRequestID)
+        // QA 11-08 item 7: no caption over a ring, and every caption has a leader to its target.
+        let presentation = try XCTUnwrap(map.presentation), screen = try XCTUnwrap(map.window).frame
+        let surface = try XCTUnwrap(dock.currentDockHelpSurface)
+        let rings = surface.mapAnchors.filter { $0.id.hasPrefix("dock.rings.") || $0.id.hasPrefix("dock.nozzle.") }.map {
+            CGRect(x: $0.rect.minX - screen.minX, y: screen.maxY - $0.rect.maxY, width: $0.rect.width, height: $0.rect.height)
+        }
+        XCTAssertFalse(rings.isEmpty)
+        XCTAssertFalse(presentation.mapLabels.isEmpty)
+        for label in presentation.mapLabels {
+            XCTAssertFalse(rings.contains { $0.intersects(label.frame) }, "\(label.id) covers a ring")
+            XCTAssertGreaterThanOrEqual(label.leader.count, 2, "\(label.id) has no leader")
+        }
         map.onAction?(.dismissMap(reason: .escape, returnFocusID: nil))
         for _ in 0..<200 where app.statusHelpRequestID != nil { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNil(app.statusHelpRequestID, "the Escape dismissal reaches the status item exactly once")
         XCTAssertNil(mapLayer())
         await app.composition.stop()
     }
+
+    /// HINT-9-01 on real panels, normal entry: Help from the status menu draws the map, and every caption
+    /// and the header fit the text field that draws them (read-only: the drawn fields' own cells decide).
+    func testStatusHelpMapCaptionsFitTheFieldsThatDrawThem() async throws {
+        let (app, profile) = try await journeyApplication("hint-fit", onboarded: true, pointer: { nil })
+        defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock
+        for _ in 0..<300 where dock.currentDockHelpSurface == nil || !app.dockHelpInstalled { try await Task.sleep(for: .milliseconds(10)) }
+        let help = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Help…" })
+        _ = try XCTUnwrap(help.target as? NSObject).perform(try XCTUnwrap(help.action), with: help)
+        func mapLayer() -> HelpUILayerView? {
+            NSApplication.shared.windows.filter(\.isVisible).flatMap { $0.contentView.map(descendants) ?? [] }
+                .compactMap { $0 as? HelpUILayerView }.first { $0.presentation?.mapHeader != nil }
+        }
+        for _ in 0..<300 where mapLayer() == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let map = try XCTUnwrap(mapLayer(), "Help presents the map over the visible widget")
+        let fields = descendants(map).compactMap { $0 as? NSTextField }.filter { !$0.isHidden && !$0.stringValue.isEmpty }
+        XCTAssertGreaterThan(fields.count, 3, "the header and the captions are drawn")
+        for field in fields {
+            let needed = try XCTUnwrap(field.cell).cellSize(forBounds: CGRect(x: 0, y: 0, width: field.frame.width, height: 10_000)).height
+            XCTAssertLessThanOrEqual(needed, field.frame.height + 0.5, "caption clipped: \(field.stringValue)")
+        }
+        map.onAction?(.dismissMap(reason: .escape, returnFocusID: nil))
+        await app.composition.stop()
+    }
     #endif
+}
+
+@MainActor private final class IgnitionTipConsole: EngineRowsConsoleSurface {
+    private(set) var isShowing = false
+    var onShowingChanged: (() -> Void)?
+    func show() { isShowing = true; onShowingChanged?() }
+    func pageClosed() { isShowing = false; onShowingChanged?() }
+    func render() {}
+    func hide() { isShowing = false; onShowingChanged?() }
+    func requestClose() { hide() }
 }

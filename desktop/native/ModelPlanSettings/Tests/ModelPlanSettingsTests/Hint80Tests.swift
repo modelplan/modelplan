@@ -5,7 +5,9 @@ import XCTest
 final class Hint80Tests: XCTestCase {
     func testV1FindsWidgetBeforeRingAndResetsTheSequence() throws {
         var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        // D114: the find hint belongs to the collapsed strip; the ring waits for it only then.
         context.v1MinimalHints = true; context.ringRefreshAvailable = true
+        context.widgetConcealed = true; context.statusAnchorAvailable = true
         try value.updateContext(context, at: 0)
         XCTAssertNil(try value.nextOffer(placeable: [.ringRefresh], at: 0), "A ring anchor cannot bypass the first hint")
         XCTAssertTrue(value.preferences.seen.isEmpty)
@@ -21,6 +23,49 @@ final class Hint80Tests: XCTestCase {
         XCTAssertEqual(value.preferences.seen, [.findWidget, .ringRefresh])
         value.reset(); try value.updateContext(context, at: 4)
         XCTAssertEqual(try value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 4)?.kind, .findWidget)
+    }
+    /// D114 (owner 2026-11-10): an expanded widget gets no "where it went" hint; the first time it is
+    /// collapsed to its strip the hint is offered once, and never again.
+    func testD114CollapseHintIsOfferedOnceAndOnlyAfterTheFirstCollapse() throws {
+        var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        context.v1MinimalHints = true; context.statusAnchorAvailable = true
+        try value.updateContext(context, at: 0)
+        XCTAssertNil(try value.nextOffer(placeable: [.findWidget], at: 0), "an expanded widget shows no hint")
+        context.widgetConcealed = true; context.dockReveal = UUID(); try value.updateContext(context, at: 1)
+        let offer = try XCTUnwrap(value.nextOffer(placeable: [.findWidget], at: 1), "the first collapse shows the hint")
+        XCTAssertEqual(offer.kind, .findWidget)
+        try value.confirmShown(offer, at: 1); value.dismiss()
+        XCTAssertTrue(value.preferences.seen.contains(.findWidget))
+        context.dockReveal = UUID(); try value.updateContext(context, at: 2)
+        XCTAssertNil(try value.nextOffer(placeable: [.findWidget], at: 2), "shown once")
+        var noAnchor = FirstUseHints(), bare = context; bare.statusAnchorAvailable = false; bare.dockReveal = UUID()
+        try noAnchor.updateContext(bare, at: 3)
+        XCTAssertNil(try noAnchor.nextOffer(placeable: [.findWidget], at: 3), "without the menu bar icon there is nothing to point at")
+    }
+    /// D114: with the widget expanded (the new default) the ring hint no longer waits for the collapse hint.
+    func testD114ExpandedWidgetOffersTheRingHintFirst() throws {
+        var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        context.v1MinimalHints = true; context.ringRefreshAvailable = true
+        try value.updateContext(context, at: 0)
+        XCTAssertEqual(try value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 0)?.kind, .ringRefresh)
+    }
+    /// D114 fresh install: expanded -> ring hint first (findWidget never seen), then the collapse hint once, no repeats.
+    func testD114FreshInstallReachesRingHintThenCollapseHintOnce() throws {
+        var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        context.v1MinimalHints = true; context.ringRefreshAvailable = true; context.statusAnchorAvailable = true
+        try value.updateContext(context, at: 0)
+        XCTAssertFalse(value.preferences.seen.contains(.findWidget))
+        let ring = try XCTUnwrap(value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 0))
+        XCTAssertEqual(ring.kind, .ringRefresh)
+        try value.confirmShown(ring, at: 0); value.dismiss()
+        context.dockReveal = UUID(); try value.updateContext(context, at: 1)
+        XCTAssertNil(try value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 1), "expanded: nothing left, ring does not repeat")
+        context.widgetConcealed = true; context.dockReveal = UUID(); try value.updateContext(context, at: 2)
+        let find = try XCTUnwrap(value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 2))
+        XCTAssertEqual(find.kind, .findWidget)
+        try value.confirmShown(find, at: 2); value.dismiss()
+        context.dockReveal = UUID(); try value.updateContext(context, at: 3)
+        XCTAssertNil(try value.nextOffer(placeable: Set(FirstUseHintKind.allCases), at: 3), "neither repeats")
     }
     /// G3-28 (owner 11-06): turning the widget off from the status menu or Settings shows a
     /// one-time hint at the menu bar icon. Collapsing to the strip never does.
@@ -42,6 +87,32 @@ final class Hint80Tests: XCTestCase {
         var fresh = FirstUseHints(); try fresh.updateContext(context, at: 3)
         XCTAssertNil(try fresh.nextOffer(placeable: [.widgetOff], at: 3), "without the menu bar icon there is nothing to point at")
     }
+    /// D88: the first attached open explains detach, the first detach explains put back; each shows once,
+    /// is kept in the same hints-seen preference, and needs the cockpit key as its anchor.
+    func testD88DetachAndPutBackHintsEachShowOnce() throws {
+        var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        context.v1MinimalHints = true; context.cockpitAttached = true
+        try value.updateContext(context, at: 0)
+        let detach = try XCTUnwrap(value.nextOffer(placeable: [.detach, .putBack], at: 0))
+        XCTAssertEqual(detach.kind, .detach, "attached: the detach hint")
+        try value.confirmShown(detach, at: 0); value.dismiss()
+        context.dockReveal = UUID(); try value.updateContext(context, at: 1)
+        XCTAssertNil(try value.nextOffer(placeable: [.detach, .putBack], at: 1), "the detach hint shows once")
+        context.cockpitAttached = false; context.dockReveal = UUID(); try value.updateContext(context, at: 2)
+        let putBack = try XCTUnwrap(value.nextOffer(placeable: [.detach, .putBack], at: 2))
+        XCTAssertEqual(putBack.kind, .putBack, "first detach: the put-back hint")
+        try value.confirmShown(putBack, at: 2); value.dismiss()
+        context.dockReveal = UUID(); try value.updateContext(context, at: 3)
+        XCTAssertNil(try value.nextOffer(placeable: [.detach, .putBack], at: 3), "the put-back hint shows once")
+        context.cockpitAttached = true; context.dockReveal = UUID(); try value.updateContext(context, at: 4)
+        XCTAssertNil(try value.nextOffer(placeable: [.detach, .putBack], at: 4))
+        XCTAssertEqual(value.preferences.seen, [.detach, .putBack])
+        let stored = try JSONDecoder().decode(FirstUseHintPreferences.self, from: JSONEncoder().encode(value.preferences))
+        XCTAssertEqual(stored.seen, [.detach, .putBack], "both are kept in the hints-seen preference")
+        var fresh = FirstUseHints(); context.cockpitAttached = nil; context.dockReveal = UUID()
+        try fresh.updateContext(context, at: 5)
+        XCTAssertNil(try fresh.nextOffer(placeable: [.detach, .putBack], at: 5), "no open cockpit key, no hint")
+    }
     func testUnavailableIgnitionDoesNotBlockDragOrBecomeSeen() throws {
         var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
         context.ignitionAvailable = false
@@ -59,7 +130,7 @@ final class Hint80Tests: XCTestCase {
         try value.updateContext(context, at: 0); return value
     }
     func testNineKindPriorityDetachFirstOpenThenOptionOnNextOpen() throws {
-        XCTAssertEqual(FirstUseHintKind.allCases, [.ignition,.detach,.optionHelp,.shutter,.field,.drag,.page,.pinned,.trial,.ringRefresh,.findWidget,.widgetOff])
+        XCTAssertEqual(FirstUseHintKind.allCases, [.ignition,.detach,.optionHelp,.shutter,.field,.drag,.page,.pinned,.trial,.ringRefresh,.findWidget,.widgetOff,.putBack])
         var value = try cockpit()
         let detach = try XCTUnwrap(value.nextOffer(placeable: [.detach,.optionHelp], at: 0))
         XCTAssertEqual(detach.kind, .detach); try value.confirmShown(detach, at: 0); value.dismiss()

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanCockpitWeb
 import ModelPlanCore
 import ModelPlanShell
 import ModelPlanEngineClient
@@ -41,6 +42,7 @@ struct StatusNoticePresentation {
         item.keyEquivalent = ""
         return item
     }()
+    private let applicationCloseItem = NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
     private let applicationQuitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     private(set) lazy var applicationMenu: NSMenu = {
         let root = NSMenu()
@@ -48,6 +50,7 @@ struct StatusNoticePresentation {
         let submenu = NSMenu()
         submenu.autoenablesItems = false
         submenu.addItem(applicationSettingsItem)
+        submenu.addItem(applicationCloseItem)
         submenu.addItem(.separator())
         submenu.addItem(applicationQuitItem)
         application.submenu = submenu
@@ -65,11 +68,11 @@ struct StatusNoticePresentation {
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
     private var helpRevealTask: Task<Void, Never>?
+    /// D56 Find Quota Widget: one spotlight for the status menu, the shortcut and the end of first run.
+    let spotlight = QuotaWidgetSpotlight()
     private var showFeedback: ShowQuotaWidgetOutcome?, hideFeedback: ShowQuotaWidgetOutcome?
     private var autoCollapseFailed = false
     /// True only for a sealed owner-test package; a release package never offers or applies these.
-    var ownerTestOptions: Bool
-    private static let ringsCentredKey = "ModelPlanOwnerTestRingsCentred"
     private var memberRefreshInFlight = Set<String>()
     private var unavailableMemberRefreshes = Set<String>()
     public var memberRefreshAdapter: (any DockMemberRefreshAdapting)? {
@@ -87,6 +90,7 @@ struct StatusNoticePresentation {
     var dockHelpInstalled: Bool { dockHelp?.isInstalled == true }
     /// The explanation card currently shown next to a widget element (checks only).
     var shownDockExplanationForChecks: String? { dockHelp?.shownExplanationForChecks?.accessibleDescription }
+    var shownDockExplanationFrameForChecks: CGRect? { dockHelp?.shownExplanationFrameForChecks }
     private var helpMapUnavailable = false
     /// The presentation boundary remains replaceable for synthetic, window-free tests.
     var requestHelpMap: (() -> Bool)?
@@ -145,7 +149,6 @@ struct StatusNoticePresentation {
         self.scopeBinding = EngineScopeConsentBinding(composition: composition)
         self.foundationStore = settingsStore
         self.appBundleURL = bundleURL
-        self.ownerTestOptions = CommunityConsentBundleIdentity.matchesOwnerTest(bundle: bundleURL)
         self.cockpitEntryEnabled = cockpitEntryEnabled ?? (Bundle(url: bundleURL)?.object(forInfoDictionaryKey: "ModelPlanCockpitEntryEnabled") as? Bool ?? false)
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
         let contextSource = EngineSettingsContext(bundle: bundleURL, executable: configuration.executableURL)
@@ -174,6 +177,15 @@ struct StatusNoticePresentation {
         composition.dock.requestAutoCollapse = { [weak self] on in
             Task { @MainActor [weak self] in await self?.setAutoCollapse(on) }
         }
+        if !createsNativePanels {
+            spotlight.makeSurface = { DetachedQuotaWidgetSpotlightSurface() }
+            spotlight.makeInput = { DetachedQuotaWidgetSpotlightInput() }
+        }
+        spotlight.onActiveChange = { [weak self] active in
+            guard let self else { return }
+            self.composition.dock.spotlightHold = active
+            self.dockHelp?.refresh()
+        }
         #if MODELPLAN_U6_DRIVE
         composition.provider.verificationWillClear = { [weak self] invalidation in
             self?.driveGuard?.recordClearInitiated(invalidation)
@@ -192,7 +204,9 @@ struct StatusNoticePresentation {
         composition.dock.cockpitEntryEnabled = self.cockpitEntryEnabled
         composition.dock.menuNoticeDidChange = { [weak self] notice, first in self?.applyMenuNotice(notice, first: first) }
         composition.dock.showSettings = settingsHost.action
-        composition.dock.showConsole = { [weak self] in self?.showConsole() }
+        composition.dock.resetPosition = { [weak self] in self?.resetPositions() }
+        // Build 14c (G3-79): the ignition opens the cockpit on the display the widget is on, where the user clicked.
+        composition.dock.showConsole = { [weak self] in self?.showConsole(openPoint: NSEvent.mouseLocation) }
     }
     private func updateMemberRefreshCapability() {
         guard let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery) else {
@@ -223,6 +237,17 @@ struct StatusNoticePresentation {
             self.settings.update(context: context)
         }
     }
+    private var engineServerVersion: String?
+    /// The accepted server version is asked once per change; a different answer refreshes About.
+    private func refreshEngineServerVersion() {
+        Task { @MainActor [weak self] in
+            guard let self, !self.terminating else { return }
+            let version = await self.composition.client.acceptedServerVersion()
+            guard version != self.engineServerVersion, version != nil else { return }
+            self.engineServerVersion = version
+            self.updateSettingsContext()
+        }
+    }
     private func updateSettingsContext() {
         let ready: Bool
         if case .ready = composition.store.snapshot.connection { ready = true } else { ready = false }
@@ -233,12 +258,22 @@ struct StatusNoticePresentation {
                          source: row.sourceName.isEmpty ? nil : .init(EngineDockContentProvider.sourceName(member.account.route, english: true), EngineDockContentProvider.sourceName(member.account.route, english: false)),
                          lastRead: row.originalObservedAt, nextRefresh: nil)
         }
-        guard ready != lastAboutConnectionReady || readers != settings.editor.context.readerDiagnostics else { return }
+        // G3-67: About's copied diagnostics come from the running engine: the server version of the accepted hello, the
+        // tools whose consent is allowed, and the coarse classes of the accepted row reasons.
+        let snapshot = composition.store.snapshot
+        var about = settings.editor.context.about
+        about.cliState = contextSource.make(engineReady: ready).about.cliState
+        about.applyEngineFacts(cliVersion: ready ? engineServerVersion : nil,
+                               allowedTools: (snapshot.consent?.scopes ?? []).filter { $0.state == .allowed && !$0.retired }.map(\.tool),
+                               reasonCodes: (snapshot.rows?.projection.rows ?? []).map(\.reason.code))
+        if ready { refreshEngineServerVersion() } else { engineServerVersion = nil }
+        guard ready != lastAboutConnectionReady || readers != settings.editor.context.readerDiagnostics
+                || about.diagnosticText != settings.editor.context.about.diagnosticText else { return }
         lastAboutConnectionReady = ready
         // Preserve Dock-owned catalogue, display and placement facts when the
         // engine connection changes; only About's CLI readiness comes from here.
         var context = settings.editor.context
-        context.about.cliState = contextSource.make(engineReady: ready).about.cliState
+        context.about = about
         context.readerDiagnostics = readers
         settings.update(context: context)
     }
@@ -284,16 +319,42 @@ struct StatusNoticePresentation {
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
     public func presentSettings() async { await settingsHost.present() }
+    /// G3-46: a menu bar full enough to hide the icon (G3-22) leaves no icon to open under. Then there is
+    /// no anchor, and the cockpit opens at the top-right of the screen below the menu bar.
     var cockpitAnchor: CGRect? {
-        guard let button = status?.button, let window = button.window else { return nil }
-        return window.convertToScreen(button.convert(button.bounds, to: nil))
+        guard !statusItemHidden, let status, status.isVisible, let button = status.button, let window = button.window,
+              window.isVisible else { return nil }
+        let rect = window.convertToScreen(button.convert(button.bounds, to: nil))
+        guard NSScreen.screens.contains(where: { $0.frame.intersects(rect) }) else { return nil }
+        return rect
     }
-    public func showConsole() {
+    /// Build 14c (G3-79): the screen point the latest open came from (the widget's ignition click). Nil for the menu
+    /// bar icon, the status menu and shortcuts, which open on the icon's display as before.
+    var cockpitOpenPoint: CGPoint?
+    /// D88: `fromStatusItem` is the menu bar icon's own click: the attached cockpit grows out of the icon.
+    /// `openPoint` is the click that opened it elsewhere (the widget's ignition): the cockpit opens on that display.
+    public func showConsole(fromStatusItem: Bool = false, openPoint: CGPoint? = nil) {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
+        cockpitOpenPoint = fromStatusItem ? nil : openPoint
         composition.dock.acknowledgeCockpitOpening()
-        if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
+        if console == nil {
+            console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition)
+            console?.onShowingChanged = { [weak self] in self?.cockpitPresentationChanged() }
+        }
         if let value = composition.latestSettings { console?.applySettings(value) }
-        console?.show()
+        console?.show(fromStatusItem: fromStatusItem)
+        refreshStatusTooltip()
+    }
+    /// D88: the cockpit opened, closed, detached or was put back: the icon highlight and the one-time
+    /// detach / put-back hints follow.
+    private func cockpitPresentationChanged() {
+        refreshStatusTooltip()
+        dockHelp?.refresh()
+    }
+    /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
+    /// entry (menu item, ignition, shortcut, reopening the app) only ever opens.
+    func toggleConsole() {
+        if let console, console.isShowing { console.requestClose(); refreshStatusTooltip() } else { showConsole(fromStatusItem: true) }
     }
     /// OS accessibility changes are presentation facts, never saved user choices.
     func updateSystemAccessibility(_ observed: SettingsEnvironment) {
@@ -326,14 +387,16 @@ struct StatusNoticePresentation {
         notificationConsumer.observeAuthorization(observedAuthorization)
         var context = settings.editor.context
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
+        settings.editor.observeLogin = { [weak self] in self?.loginServiceAdapter?.observedState ?? .unavailable }
+        context.capabilities.loginNotInApplications = loginServiceAdapter?.observedNotInApplications ?? false
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
-        if ownerTestOptions { composition.dock.ringsCentred = UserDefaults.standard.bool(forKey: Self.ringsCentredKey) }
         composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
         context.loginServiceObserved = true
         context.notificationServiceObserved = true
         // The choice stays visible; a service macOS refuses gets an honest reason and the fallback row.
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
+        else if context.capabilities.loginNotInApplications { context.unavailableControls[.login] = .init("ModelPlan isn't in the Applications folder (for example opened from Downloads), so it can't be a login item.", "ModelPlan 不在“应用程序”文件夹里（例如从“下载”直接打开），所以不能设为登录项。") }
         else { context.unavailableControls[.login] = .init("Unavailable for this copy of the app. Use Login Items in System Settings.", "此应用副本不可用，请使用系统设置中的登录项。") }
         if notificationAuthorizationService != nil && observedAuthorization != .unavailable {
             context.unavailableControls.removeValue(forKey: .notificationConsent)
@@ -387,7 +450,8 @@ struct StatusNoticePresentation {
                 guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
                       [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
                 return DockStatusHelpAnchor(frame: frame, sharing: window.sharingType, collection: window.collectionBehavior)
-            }, statusRequestID: { [weak self] in self?.statusHelpRequestID },
+            }, cockpitAnchor: { [weak self] in self?.console?.attachmentHintAnchor },
+               statusRequestID: { [weak self] in self?.statusHelpRequestID },
                statusDidDismiss: { [weak self] id in self?.statusHelpDidDismiss(id) })
             dockHelpSetupInProgress = false
             if terminating { await help?.dispose(); return }
@@ -451,6 +515,7 @@ struct StatusNoticePresentation {
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
         statusHelpRequestID = nil
+        spotlight.finish(.withdrawn)
         dockHelp?.suspend()
         composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
         // A retry or engine failure can withdraw rows while the OS gate remains open.
@@ -475,12 +540,8 @@ struct StatusNoticePresentation {
         guard !terminating, !lifecyclePaused else { return }
         switch action {
         case .openCockpit: showConsole()
-        case .toggleDock:
-            guard settings.editor.snapshot?.preferences.showDock == true else {
-                Task { @MainActor [weak self] in await self?.setDockShown(true) }
-                return
-            }
-            Task { @MainActor [weak self] in _ = try? await self?.settings.editor.commit(SettingsB21Edit.showDock(false)) }
+        // D56: the SET-9-05 widget slot is the Find Quota Widget shortcut.
+        case .toggleDock: findQuotaWidget()
         }
     }
     private func dispatchHostRequest(_ request: SettingsHostRequest) {
@@ -514,7 +575,11 @@ struct StatusNoticePresentation {
         case .firstRunCompleted(let effects, _):
             for effect in effects {
                 switch effect {
-                case .revealDock: composition.dock.setPresentationAllowed(true)
+                case .revealDock:
+                    composition.dock.setPresentationAllowed(true)
+                    // D56: once, at the end of first run, show where the widget is. "See what's
+                    // here" latches the Help map over the widget instead, which already shows it.
+                    if !effects.contains(.latchOptionHelp) { findQuotaWidget() }
                 case .returnToSettings: Task { [weak self] in await self?.settingsHost.present() }
                 case .openCockpit: showConsole()
                 case .latchOptionHelp: showHelp()
@@ -570,15 +635,45 @@ struct StatusNoticePresentation {
     /// G3-22: a full menu bar hides the item behind the notch (the owner's Mac: occluded at
     /// x=769..801 of 1470). Test seam: nil reads the real status-item window.
     var statusItemVisibility: (@MainActor () -> Bool?)?
+    /// Test seam for several displays: one entry per status-item window, true when that window is on screen.
+    var statusWindowVisibilities: (@MainActor () -> [Bool])?
     private(set) var statusItemHidden = false
+    /// G3-57: the last length written, so the gate does not rely on what the item reads back, and a one-shot flag that
+    /// makes the next render write title, position and length again (a display change or a window coming back on screen
+    /// leaves the other display's copy of the item with stale content, which the unchanged-value gates would never fix).
+    private var appliedStatusLength: CGFloat?
+    private var forceStatusRewrite = false
+    private var lastStatusRewrite = Date.distantPast
+    /// At most one forced rewrite every two seconds: a rewrite re-measures the item, which must not feed back into itself.
+    func rewriteStatusContent(now: Date = Date()) {
+        guard now.timeIntervalSince(lastStatusRewrite) >= 2 else { return }
+        lastStatusRewrite = now; forceStatusRewrite = true; renderMenu()
+    }
+    /// G3-57: with more than one display macOS keeps a status-item window per display's menu bar, and the button's
+    /// own window is only one of them (often the one on a display where the bar is full, or that shows no menu bar).
+    /// The icon counts as visible when its window is on screen on ANY display; nil when no window is known.
+    static func anyWindowVisible(_ states: [Bool]) -> Bool? { states.isEmpty ? nil : states.contains(true) }
+    private func statusItemWindows() -> [NSWindow] {
+        var windows = [NSWindow]()
+        if let own = status?.button?.window { windows.append(own) }
+        for window in NSApp.windows where String(describing: type(of: window)).contains("StatusBar") && !windows.contains(where: { $0 === window }) { windows.append(window) }
+        return windows
+    }
+    private func realStatusWindowVisibilities() -> [Bool] {
+        statusItemWindows().map { window in window.isVisible && window.occlusionState.contains(.visible) && NSScreen.screens.contains { $0.frame.intersects(window.frame) } }
+    }
     private var statusOcclusionObserver: NSObjectProtocol?
     private func watchStatusItemVisibility() {
         statusOcclusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
                                                                         object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
-                guard let self, let window = note.object as? NSWindow, window === self.status?.button?.window else { return }
+                guard let self, let window = note.object as? NSWindow, self.statusItemWindows().contains(where: { $0 === window }) else { return }
                 self.checkStatusItemVisibility()
+                if window.occlusionState.contains(.visible) { self.rewriteStatusContent() }
             }
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.rewriteStatusContent(); self?.checkStatusItemVisibility() }
         }
         // Give the menu bar a few seconds to lay the item out before telling the user.
         Task { @MainActor [weak self] in
@@ -589,11 +684,10 @@ struct StatusNoticePresentation {
     /// Shows the one-line notice in the widget menu and Settings while the item is covered; clears it when visible.
     func checkStatusItemVisibility() {
         guard !terminating else { return }
-        let visible = statusItemVisibility.map { $0() } ?? status?.button?.window.map { $0.occlusionState.contains(.visible) }
+        let visible = statusItemVisibility.map { $0() } ?? Self.anyWindowVisible(statusWindowVisibilities?() ?? realStatusWindowVisibilities())
         let hidden = visible == false
         guard hidden != statusItemHidden else { return }
         statusItemHidden = hidden
-        composition.dock.statusIconNotice = hidden ? EngineRowsText.statusItemHidden : nil
         var context = settings.editor.context
         context.statusItemNotice = hidden ? EngineRowsText.statusItemHidden : nil
         settings.update(context: context)
@@ -614,7 +708,7 @@ struct StatusNoticePresentation {
         }
     }
 
-    /// D44: a plain left click opens the cockpit. The menu stays attached to the status item, so
+    /// D44: a plain left click opens the cockpit, and closes it again while it is open (G3-40). The menu stays attached to the status item, so
     /// right-click, control-click, keyboard and accessibility presses show it natively, and so does
     /// a left click while the cockpit cannot open. Command stays free for dragging the icon.
     func handleStatusClick(_ event: NSEvent) -> Bool {
@@ -622,7 +716,7 @@ struct StatusNoticePresentation {
         if event.type == .leftMouseUp {
             guard statusPressPending else { return false }
             statusPressPending = false
-            if onStatusItem { showConsole() }
+            if onStatusItem { toggleConsole() }
             return true
         }
         guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
@@ -663,7 +757,10 @@ struct StatusNoticePresentation {
         else {
             component = DockStatusMenu(labels: [:], handlers: [:])
             component.onMenuActuallyOpen = { [weak self] open in
-                guard open, let self, let menu = self.liveStatusMenu else { return }
+                guard let self else { return }
+                // D88: menu tracking clears the icon's highlight; restore it while the attached cockpit is open.
+                guard open else { Task { @MainActor [weak self] in self?.refreshStatusTooltip() }; return }
+                guard let menu = self.liveStatusMenu else { return }
                 self.menuWillOpen(menu)
             }
             statusMenuComponent = component
@@ -683,6 +780,7 @@ struct StatusNoticePresentation {
         applicationSettingsItem.isEnabled = available && !terminating
         applicationSettingsItem.keyEquivalent = applicationSettingsItem.isEnabled ? "," : ""
         applicationQuitItem.title = quitTitle
+        applicationCloseItem.title = EngineRowsText.closeWindow.value(language)
         let showAvailability = ShowQuotaWidgetRequest.availability(paused: terminating,
             loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight)
         // Owner HIG decision (11-06): one checkable item with a constant title. The checkmark
@@ -697,13 +795,15 @@ struct StatusNoticePresentation {
             .init(title: label("Refresh", "刷新"), target: (available || canRetry) ? self : nil, selector: (available || canRetry) ? #selector(refreshRows) : nil),
             .init(title: showTitle, accessibilityID: "status.showQuotaWidget", checked: widgetShown,
                   action: showAvailability == .ready ? { [weak self] in Task { @MainActor [weak self] in await self?.setDockShown(!widgetShown) } } : nil),
+            // D56: shows where the widget is; it turns the widget on first when it is off.
+            .init(title: EngineRowsText.findQuotaWidget.value(language), accessibilityID: "status.findQuotaWidget",
+                  action: available && showAvailability == .ready ? { [weak self] in self?.findQuotaWidget() } : nil),
             .init(title: nil),
             .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
             .init(title: label("Website", "网站"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.website.url) }),
             .init(title: label("Methodology", "方法论"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.methodology.url) }),
             .init(title: label("Privacy", "隐私"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.privacy.url) }),
         ]
-        if let item = ownerTestRingItem(language) { menuItems.append(item) }
         let admitted = composition.presentedContent.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
         let content = composition.provider.dockContent
@@ -740,6 +840,8 @@ struct StatusNoticePresentation {
             .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
                   action: available ? { [weak self] in self?.showHelp(fromStatusMenu: true) } : nil),
             .init(title: settingsTitle, keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
+            .init(title: EngineRowsText.resetPosition.value(language), accessibilityID: "status.resetPosition",
+                  action: available ? { [weak self] in self?.resetPositions() } : nil),
             .init(title: EngineRowsText.about.value(language), action: available ? { [weak self] in self?.showAbout() } : nil),
             .init(title: quitTitle, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
@@ -755,8 +857,11 @@ struct StatusNoticePresentation {
             // G3-22: an icon-only item takes the square menu-bar length (was 32 pt for a 16 pt image);
             // a percentage title keeps a variable length. The autosave name keeps a ⌘-dragged position.
             let iconOnly = button.title.isEmpty && button.image != nil
-            button.imagePosition = iconOnly ? .imageOnly : .imageLeading
-            status?.length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            let position: NSControl.ImagePosition = iconOnly ? .imageOnly : .imageLeading
+            if forceStatusRewrite || button.imagePosition != position { button.imagePosition = position }
+            let length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            if forceStatusRewrite || appliedStatusLength != length || status?.length != length { status?.length = length; appliedStatusLength = length }
+            forceStatusRewrite = false
             // MENU-06: place the dot after the title is set, against the icon, not the text end.
             noticeIndicator.attach(to: button)
         }
@@ -772,8 +877,11 @@ struct StatusNoticePresentation {
     }
     static let statusFallbackTitle = "MP"
     static func configureStatusButton(_ button:NSButton,image:NSImage?,barThickness:CGFloat) {
-        let sized=image?.copy() as? NSImage
         let side=min(16,max(0,barThickness.isFinite ? barThickness : 0))
+        // Every menu render calls this; a button that already shows the image at this size is left alone, so a
+        // refresh does not re-measure the item (and move the notice dot) while the pointer is on it.
+        if image != nil,let current=button.image,current.isTemplate,current.size == NSSize(width:side,height:side),button.imageScaling == .scaleProportionallyDown{return}
+        let sized=image?.copy() as? NSImage
         sized?.size=NSSize(width:side,height:side);sized?.isTemplate=true
         button.image=sized;button.imageScaling = .scaleProportionallyDown;button.imagePosition = .imageLeading
     }
@@ -785,14 +893,42 @@ struct StatusNoticePresentation {
     func applyStatusContent(to button: NSButton, detail: String) {
         let title = composition.menuPresentation.title
         // Never let the item collapse to zero width when the template image is unavailable.
-        button.title = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
+        // Only changed values are written: re-setting the same title or position makes the item re-measure itself.
+        let shownTitle = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
+        if forceStatusRewrite || button.title != shownTitle { button.title = shownTitle }
         // With no image the fallback title is the whole item; image-only would hide it.
-        if button.image != nil { button.imagePosition = title.isEmpty ? .imageOnly : .imageLeading }
-        button.toolTip = detail
-        button.setAccessibilityHelp(detail)
+        if button.image != nil {
+            let position: NSControl.ImagePosition = title.isEmpty ? .imageOnly : .imageLeading
+            if button.imagePosition != position { button.imagePosition = position }
+        }
+        statusTooltip = detail
+        let tooltip = statusTooltipHidden ? nil : detail
+        if button.toolTip != tooltip { button.toolTip = tooltip }
+        // AppKit answers accessibilityHelp() from the tooltip until help is set explicitly, so comparing against the
+        // getter skipped the write and the help went nil with the tooltip (G3-49). Compare with what we last set.
+        if statusAccessibilityHelp != detail || button.accessibilityHelp() != detail {
+            button.setAccessibilityHelp(detail); statusAccessibilityHelp = detail
+        }
     }
+    /// G3-49: the icon's tooltip sits above every app window and drew over the porthole when a click left the
+    /// pointer on the icon. While the cockpit is showing the icon has no tooltip; the accessible help stays.
+    private var statusTooltip = ""
+    private var statusAccessibilityHelp: String?
+    private var statusTooltipHidden: Bool { console?.isShowing == true }
+    func refreshStatusTooltip() {
+        // G3-62: a tip shown for the ignition key goes when the cockpit opens, and stays away while it is open.
+        dockHelp?.setCockpitShowing(statusTooltipHidden)
+        guard let button = status?.button else { return }
+        button.toolTip = statusTooltipHidden ? nil : statusTooltip
+        // D88: the icon shows its native pressed highlight while the attached cockpit is open.
+        let pressed = statusItemPressed
+        if button.isHighlighted != pressed { button.highlight(pressed) }
+    }
+    /// D88: open and attached. A detached cockpit is its own window, so the icon is not pressed.
+    var statusItemPressed: Bool { console?.isShowing == true && console?.isDetached != true }
     private func showHelp(fromStatusMenu: Bool = false) {
         guard !terminating, !lifecyclePaused else { return }
+        spotlight.finish(.cancelled)
         helpRevealTask?.cancel(); helpRevealTask = nil
         let requestID = fromStatusMenu ? UUID() : nil
         statusHelpRequestID = requestID
@@ -822,7 +958,7 @@ struct StatusNoticePresentation {
     }
     /// Makes the widget visible for a Help request: saves Show when it was hidden, then
     /// reveals it from the strip. Returns false when Show cannot be saved.
-    private func showDockForHelp() async -> Bool {
+    private func showDockForHelp(highlight: Bool = true) async -> Bool {
         if settings.editor.snapshot?.preferences.showDock != true {
             guard ShowQuotaWidgetRequest.availability(paused: terminating, loaded: settings.editor.snapshot != nil,
                     saving: settings.editor.isSaving || showRequestInFlight) == .ready else { return false }
@@ -831,8 +967,26 @@ struct StatusNoticePresentation {
             showRequestInFlight = false
             guard !terminating, outcome == .ready, settings.editor.snapshot?.preferences.showDock == true else { return false }
         }
-        composition.dock.revealForUser()
+        composition.dock.revealForUser(highlight: highlight)
         return true
+    }
+    /// D56 Find Quota Widget, from the status menu, the shortcut or the end of first run. The
+    /// widget is turned on if it is off (as Help does), slides out if collapsed, and the rest of its
+    /// display dims. Afterwards the normal auto-collapse rules apply again.
+    func findQuotaWidget() {
+        guard !terminating, !lifecyclePaused, composition.dock.canPresentForHelp, settings.editor.snapshot != nil else { return }
+        spotlight.run(reduceMotion: { [weak self] in
+            // The effective setting already folds in the system's Reduce Motion.
+            self?.composition.latestSettings?.effective.reduceMotion ?? true
+        }, prepare: { [weak self] in
+            guard let self, !self.terminating, !self.lifecyclePaused else { return false }
+            return await self.showDockForHelp(highlight: false)
+        }, target: { [weak self] in
+            guard let self, !self.terminating, !self.lifecyclePaused else { return nil }
+            return self.composition.dock.spotlightTarget
+        }, silhouette: { [weak self] target in
+            self?.composition.dock.spotlightSilhouette(for: target)
+        })
     }
     func showFeedbackText(_ language: SettingsLanguage) -> String? {
         if autoCollapseFailed { return SettingsText("Could not change Auto-Collapse. Check Settings and try again.", "无法更改自动收起，请检查设置后重试。").value(language) }
@@ -846,19 +1000,6 @@ struct StatusNoticePresentation {
         case .failed, .unavailable: return SettingsText("Could not change Show Quota Widget. Check Settings and try again.", "无法更改「显示额度挂件」，请检查设置后重试。").value(language)
         case .ready, nil: return nil
         }
-    }
-    /// Owner test option: flip the ring position and see it at once. Off is the prototype position.
-    func ownerTestRingItem(_ language: SettingsLanguage) -> DockMenuPresentationItem? {
-        guard ownerTestOptions else { return nil }
-        let on = composition.dock.ringsCentred
-        return .init(title: SettingsText("Test option: centre the quota ring", "测试选项：额度圈居中").value(language),
-                     accessibilityID: "status.test.ringsCentred", checked: on, action: { [weak self] in self?.setRingsCentred(!on) })
-    }
-    func setRingsCentred(_ on: Bool) {
-        guard ownerTestOptions else { return }
-        UserDefaults.standard.set(on, forKey: Self.ringsCentredKey)
-        composition.dock.ringsCentred = on
-        renderMenu()
     }
     /// G3-28: the same stored setting as Settings' auto-collapse switch, through the same bounded
     /// path as Show, so a hint-ledger write cannot drop the choice. A failure shows in the status menu.
@@ -883,6 +1024,37 @@ struct StatusNoticePresentation {
         else { hideFeedback = currentOutcome == .ready ? nil : currentOutcome }
         if currentOutcome == .ready && shown { composition.dock.revealForUser() }
         renderMenu()
+    }
+    /// Set by the cockpit factory: returns a dragged-out cockpit under the menu bar icon.
+    var resetCockpitPosition: (() -> Void)?
+    /// "Reset Position" (widget and status menus): the cockpit goes back under the icon and the widget
+    /// returns to the default along-edge position. Edge and display choices are kept.
+    func resetPositions() {
+        guard !terminating, !lifecyclePaused else { return }
+        resetCockpitPosition?()
+        Task { @MainActor [weak self] in
+            guard let self, !self.terminating else { return }
+            await self.commitBounded(.dockPosition(SettingsPreferences().dockAlongFraction))
+        }
+    }
+    /// The cockpit menu's Quota Widget Size choice: the same stored setting as Settings.
+    func setWidgetSize(_ size: SettingsSize) async {
+        guard !terminating, !lifecyclePaused else { return }
+        await commitBounded(size)
+    }
+    private func commitBounded(_ edit: SettingsB21Edit) async {
+        for _ in 0..<ShowQuotaWidgetRequest.attemptLimit {
+            guard !terminating, settings.editor.snapshot != nil else { return }
+            do { _ = try await settings.editor.commit(edit); return }
+            catch { await settings.editor.reload() }
+        }
+    }
+    private func commitBounded(_ size: SettingsSize) async {
+        for _ in 0..<ShowQuotaWidgetRequest.attemptLimit {
+            guard !terminating, settings.editor.snapshot != nil else { return }
+            do { _ = try await settings.editor.commit(SettingsB20Edit.size(size)); return }
+            catch { await settings.editor.reload() }
+        }
     }
     @objc private func showConsoleMenu() { showConsole() }
     @objc private func openPublicLink(_ sender:NSMenuItem) {
@@ -911,6 +1083,7 @@ struct StatusNoticePresentation {
     }
     private func retireApplicationSurfaces() {
         helpRevealTask?.cancel(); helpRevealTask = nil
+        spotlight.finish(.cancelled)
         settings.editor.onHostRequest = nil
         applicationSettingsItem.isEnabled = false
         applicationSettingsItem.keyEquivalent = ""

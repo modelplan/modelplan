@@ -130,7 +130,7 @@ import ModelPlanEngineClient
     func testNormalEntrySettingsMenuAndWidgetActionShareTheWindow() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let surface = TestSettingsSurface()
         var builds = 0
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -163,7 +163,7 @@ import ModelPlanEngineClient
     func testNormalEntryApplicationMenuDispatchesCommandComma() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-key-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let surface = TestSettingsSurface()
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
@@ -202,7 +202,7 @@ import ModelPlanEngineClient
     func testNormalEntryDoesNotOfferUpdateActionWithAnAdvertisedCapability() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("no-updates-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
             dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
@@ -245,7 +245,8 @@ import ModelPlanEngineClient
         let host = SettingsWindowHost(application: app, canPresent: { true }, environment: { .init() },
             activate: { events.append("activate") }, makeSurface: { _ in surface })
         await host.present(origin: .userInitiated)
-        XCTAssertEqual(events, ["prepare", "activate", "show"])
+        // A second activation follows the show: Settings has by then made the app regular.
+        XCTAssertEqual(events, ["prepare", "activate", "show", "activate"])
         events = []; await host.present(origin: .restoration)
         XCTAssertEqual(events, ["prepare", "show"])
         events = []; await host.present()

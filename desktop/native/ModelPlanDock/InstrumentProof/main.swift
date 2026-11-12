@@ -386,10 +386,6 @@ struct NativeFailure:Error {let message:String}
     try require(edgeDriver.presentation?.state == .expanded && edgeEnv.presence.recordedLocks.contains(.menu),"real menu protection outlives stale-lock fallback")
     edgeEnv.presence.menuActuallyOpen=false;edgeTime=7.1;edgeDriver.refresh()
     try require(edgeDriver.presentation?.state == .sliver && edgeEnv.presence.recordedLocks.isEmpty,"stale locks clear only without actual protections")
-    edgeEnv.presence.cockpitClosed=false;edgeTime=8;edgeDriver.refresh();edgeEnv.presence.cockpitClosed=true;edgeTime=9;edgeDriver.restoreAfterCockpitClose()
-    try require(edgeDriver.presentation?.state == .sliver,"away close restores sliver without expanded flash")
-    edgeEnv.pointer=CGPoint(x:999,y:400);edgeTime=10;edgeDriver.restoreAfterCockpitClose()
-    try require(edgeDriver.presentation?.state == .expanded && !edgeDriver.acceptsPress(),"wake close restores dock with arrival guard")
     edgeDriver.stop();let paintsStopped=edgePaints;staleEdgeTimer()
     try require(edgePaints==paintsStopped && edgeScheduler.pending==nil,"cancelled generation cannot revive surface")
     edgeEnv.presence.autoHide=false;edgeTime=11;edgeDriver.resume();edgeTime=11.4
@@ -505,7 +501,7 @@ struct NativeFailure:Error {let message:String}
     let retiredCardTimer=interactionScheduler.saved[0]
     interactionTime=0.25;interactionScheduler.fire();try require(interaction.presentation?.card == .hover("a"),"deadline revalidates current hover/content")
     interactionTime=10;interactionEnv.parentExpanded=false;interactionEnv.insideShared=false;interaction.refresh()
-    try require(interaction.presentation?.card == .hidden,"native cockpit suppression withdraws the card")
+    try require(interaction.presentation?.card == .hidden,"a withdrawn parent withdraws the card")
     interactionEnv.catalogue=["b","c"];interaction.refresh();try require(interaction.presentation?.card == .hidden,"removed card target retired")
     interaction.stop();let stoppedCardPaints=interactionPaints;retiredCardTimer()
     try require(interactionPaints==stoppedCardPaints && interactionScheduler.pending==nil,"old hover callback cannot reopen stopped card")

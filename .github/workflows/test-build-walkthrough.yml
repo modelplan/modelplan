@@ -1,0 +1,109 @@
+# SPDX-License-Identifier: MIT
+name: Test build walkthrough
+# Synthetic walkthrough of a packaged owner test app on a hosted Mac: desktop/native/verification/
+# walkthrough/WALKTHROUGH.md. Hosted on purpose: trusted-mac.yml is pinned, and this runner is free
+# for a public repository and is thrown away after the job.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or commit of the test build
+        type: string
+        required: true
+      run_id:
+        description: desktop.yml owner_test run holding native-app-test-<sha> (empty finds it; none found packages it here)
+        type: string
+        required: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: test-build-walkthrough-${{ (github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release')) && format('dispatch-{0}', github.ref) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release') }}
+jobs:
+  walkthrough:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUBJECT_REF: ${{ inputs.ref }}
+      SUBJECT_RUN: ${{ inputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Find the packaged test app
+        id: find
+        run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/${SUBJECT_REF//\//%2F}" -q .sha)
+          name="native-app-test-$sha"
+          run=$SUBJECT_RUN
+          if [ -z "$run" ]; then
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$name&per_page=20" \
+              -q '[.artifacts[] | select(.expired | not)][0].workflow_run.id // empty')
+          fi
+          if [ -n "$run" ]; then
+            path=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" -q .path)
+            head=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" -q .head_sha)
+            if [ "$path" != .github/workflows/desktop.yml ] || [ "$head" != "$sha" ]; then
+              echo "run $run is $path at $head, not desktop.yml at $sha" >&2; exit 1
+            fi
+          fi
+          { echo "sha=$sha"; echo "artifact=$name"; echo "run=$run"; } >> "$GITHUB_OUTPUT"
+      - name: Fetch and check the artifact
+        if: ${{ steps.find.outputs.run != '' }}
+        env:
+          ARTIFACT: ${{ steps.find.outputs.artifact }}
+          RUN: ${{ steps.find.outputs.run }}
+        run: |
+          gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n "$ARTIFACT" -D "$RUNNER_TEMP/artifact"
+          cd "$RUNNER_TEMP/artifact"
+          grep -E '^[0-9a-f]{64}  ModelPlan-Community-native.zip$' BUILD.txt | shasum -a 256 -c -
+          ditto -x -k --noqtn ModelPlan-Community-native.zip "$RUNNER_TEMP/subject-app"
+          echo "APP=$RUNNER_TEMP/subject-app/ModelPlan Community.app" >> "$GITHUB_ENV"
+      # No artifact (they last three days): package the ref as desktop.yml's owner_test run does.
+      - uses: actions/checkout@v4
+        if: ${{ steps.find.outputs.run == '' }}
+        with:
+          ref: ${{ steps.find.outputs.sha }}
+          path: subject
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        if: ${{ steps.find.outputs.run == '' }}
+        with:
+          node-version: "24"
+      - name: Fetch the approved credential helper
+        if: ${{ steps.find.outputs.run == '' }}
+        working-directory: subject
+        run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
+      - name: Package the ref with the cockpit entry open
+        if: ${{ steps.find.outputs.run == '' }}
+        working-directory: subject
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "14.0"
+          DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+        run: |
+          python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/cli-archives"
+          bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/subject-build" --owner-test
+          echo "APP=$RUNNER_TEMP/subject-build/ModelPlan Community.app" >> "$GITHUB_ENV"
+      - name: Build the input helper
+        run: swiftc -O desktop/native/verification/walkthrough/walkthrough_input.swift -o "$RUNNER_TEMP/walkthrough_input"
+      - name: Walk the app
+        env:
+          SHA: ${{ steps.find.outputs.sha }}
+          ARTIFACT: ${{ steps.find.outputs.artifact }}
+        run: |
+          dir=desktop/native/verification/walkthrough
+          python3 "$dir/walkthrough.py" --app "$APP" --out "$RUNNER_TEMP/walkthrough" --home "$RUNNER_TEMP/profile" \
+            --helper "$RUNNER_TEMP/walkthrough_input" --steps "$dir/steps.json" --seed "$dir/seed.json" \
+            --source-sha "$SHA" --artifact "$ARTIFACT"
+      - name: Summarise
+        if: always()
+        run: cat "$RUNNER_TEMP/walkthrough/SUMMARY.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: walkthrough-${{ steps.find.outputs.sha }}
+          path: ${{ runner.temp }}/walkthrough/
+          if-no-files-found: warn
+          retention-days: 7

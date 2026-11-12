@@ -17,9 +17,10 @@ import ModelPlanSettings
 }
 
 /// SET-9-05 / SET-9-06 (D37) through the normal entry: nothing registers by default, a saved
-/// chord registers, Settings shows the outcome, and pressing it reaches its consumer.
+/// chord registers, Settings shows the outcome, and pressing it reaches its consumer. Since D56
+/// the widget slot is the Find Quota Widget shortcut (FindQuotaWidgetJourneyTests covers the spotlight).
 @MainActor final class SET905ShortcutRegistrationJourneyTests: XCTestCase {
-    func testSET_9_05SavedChordRegistersAndTogglesTheDock() async throws {
+    func testSET_9_05SavedChordRegistersAndFindsTheWidget() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set-9-05-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
         let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic",
@@ -38,9 +39,10 @@ import ModelPlanSettings
         XCTAssertEqual(registrar.registered[.toggleDock], chord)
         XCTAssertEqual(editor.context.shortcutPolicy(preferences: try XCTUnwrap(editor.snapshot).preferences).dockRegistration, .registered)
         XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.showDock, true)
+        // D56: pressing it finds the widget; it no longer turns it off.
         registrar.onPress?(.toggleDock)
-        for _ in 0..<100 where editor.snapshot?.preferences.showDock == true { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.showDock, false)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.showDock, true, "the Find shortcut never hides the widget")
         // The press saves on its own task; let it finish, as a person's next action would.
         for _ in 0..<500 where editor.isSaving { try await Task.sleep(for: .milliseconds(10)) }
         registrar.outcome = .conflict

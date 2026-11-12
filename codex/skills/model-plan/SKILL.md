@@ -1,6 +1,6 @@
 ---
 name: model-plan
-description: Choose an AI coding model and reasoning effort, show what each step up buys and costs as a multiplier, and plan around the user's own remaining quota and reset times (Claude Code, Codex, other coding plans) using ModelPlan's live published data. Use when the user asks which model or effort to use, whether a stronger model, a higher effort or fast mode is worth it, how to pace a subscription, or when their limits or public Codex resets happen. Also use for any question about remaining quota, before answering it: how much is left, when it resets, whether GPT, Codex or Claude quota has run out, and before starting a batch of subagents or a large task. 也用于额度问题：还剩多少额度、什么时候重置、GPT/Codex/Claude 额度用完了吗、开始批量任务或批量子代理之前。
+description: Choose an AI coding model and reasoning effort, show what each step up buys and costs as a multiplier, and plan around the user's own remaining quota and reset times (Claude Code, Codex, other coding plans) using ModelPlan's live published data. Use when the user asks which model or effort to use, whether a stronger model, a higher effort or fast mode is worth it, how to pace a subscription, or when their limits or public Codex resets happen. Also use for any question about remaining quota, before answering it: how much is left, when it resets, whether GPT, Codex or Claude quota has run out, before starting a batch of subagents or a large task, and which of the user's other plans still has quota when one runs out. 也用于额度问题：还剩多少额度、什么时候重置、GPT/Codex/Claude 额度用完了吗、开始批量任务或批量子代理之前、还有哪个 plan 有额度、Claude 用完了换什么、哪个 coding plan 还能用。
 ---
 
 # ModelPlan
@@ -27,7 +27,7 @@ curl -fsS --max-time 20 https://modelplan.ai/v1/client
 python3 '<this skill directory>/scripts/quota.py'
 ```
 
-The CLI adds local quota readings when available, remembered `advise` hints, account reset credits when available, quota history, measured speed and a hash-verified publication cache. In the current release, Claude Code quota comes only from a local snapshot recorded by the optional ModelPlan status line; automatic Claude Code detection is coming. The status line is optional: without that snapshot, Claude Code quota stays unknown while public model/effort advice and other available readings still work. Do not claim automatic detection is available today. The Python helper above is **deprecated**; keep it only as a temporary fallback until CLI auto-detection lands for every supported tool.
+The CLI adds local quota readings when available, remembered `advise` hints, account reset credits when available, quota history, measured speed and a hash-verified publication cache. Claude Code quota comes from Claude Code's own saved login when readable (on macOS a Keychain-only login needs the user's permission first), else from the optional ModelPlan status line's snapshot. Neither is required: without a reading, Claude Code quota stays unknown while public model/effort advice and other available readings still work. The Python helper above is **deprecated**; keep it only as a temporary fallback until CLI auto-detection lands for every supported tool.
 
 ### Own quota: ask once before installing
 
@@ -46,6 +46,16 @@ It uses this Skill's `cli-pin.json` and the same checksum-verifying fetcher as t
 Before answering a quota question, read it, never from memory. For Codex, run `modelplan quota --json --refresh-account`; `refresh.status` says what happened: `refreshed`, `too_soon` (use the cached reading and give its age), `failed` or `not_allowed`. The flag refreshes Codex only; every other source keeps its own schedule. Never report a window with `stale: true`, or an account with `stale: true`, as the current figure: give its age and say it may have moved.
 
 `quota` reports one account per source: Claude Code (its own saved login when readable, else a local reading), Codex (its account reading and session logs), other connected plans and plans the user typed into `~/.config/modelplan/local.json`. Each window has `usedPercent`, `resetsInMinutes`, `pace`, its own `ageMinutes` and, with recent readings, `runsOutInMinutes` (used up that soon at the recent rate, before the reset; say it as "at the recent rate", never as a forecast), and each account a `headroom` and a `harness` model/effort when known. `harness.attribution` says whose model and effort these are: `current-thread` only when the reader ran inside this thread (Codex: it matched `CODEX_THREAD_ID`; Claude Code: the status line last rendered for this `CLAUDE_CODE_SESSION_ID`, or kept this session's own last reading); `recent-thread` is another conversation's (Codex: the newest interactive thread on the machine; Claude Code: the session the status line rendered for last). Claude Code's usage windows are the account's either way. Say "latest local reading, this conversation unknown" for it, and give its `observedAt`. A window missing from the report was not seen, not proven absent.
+
+### When one plan runs low: the user's other plans
+
+For "which plan still has quota", "Claude ran out, what now" or before a large batch on a tight plan, use the same `modelplan quota --json` (with `--refresh-account` for Codex). Answer with:
+
+1. The current tool: what is left and when it resets.
+2. Every other account in the report: what is left, which window, its reset and its reading age. A plan whose account or window has `stale: true`, whose window has `unknownReason` (`reset_passed`: waiting for a reading of the new cycle), or that is listed in `sources` as not read is **not** "still has quota": say it is unknown and why (`sources[].reason`). Never fill in a number.
+3. One recommendation: wait for the reset, or switch to a named plan's model and effort. Compare models only with ModelPlan's published ability and cost (lineup, ladder); when a model has no published data, say so instead of comparing from memory. Percentages of different windows (5-hour, weekly, monthly) are not the same unit: say which window each one is.
+
+List only plans the report shows; never suggest buying a plan. Nothing switches on its own: the user decides. The plugins' hooks may already have named one other plan with room beside a low-quota notice; that line is a cached reading, so read the report before you build on it.
 
 ## 2. Pick the model and effort
 

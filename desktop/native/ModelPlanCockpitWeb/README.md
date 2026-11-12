@@ -63,7 +63,16 @@ window miniaturized states are forwarded too. No idle poll or rAF exists in this
 product package. Close removes handlers/observers, cancels the clear deadline,
 releases the web view and sends unload best-effort without awaiting indefinitely.
 
-The manifest must be explicitly pinned. Community is the default; official needs
+The manifest must be explicitly pinned. The pins are never committed: whoever
+compiles the App first builds both canonical editions, then runs
+`python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py`, which
+validates them and writes the gitignored `CockpitBundlePins.generated.swift` that
+the App then compiles in. Without that file the App has no pins and admits no
+cockpit page. `package-neutral.sh --owner-test` and
+U11 native do this; `--app <bundle>` then proves the packaged `Resources/Cockpit`
+is the built edition and its pin is in the executable. The `desktop` workflow's
+`cockpit-pins` job rebuilds both editions twice on every PR, main push and
+merge-queue group and requires identical pins. Community is the default; official needs
 explicit admission. Regular files only, no-follow directory-relative opens,
 strict relative paths, exact inventory and repeated SHA checks prevent serving
 unlisted, changed or symlinked content. Caps: 4096 files, 8 MiB/file, 64 MiB total,

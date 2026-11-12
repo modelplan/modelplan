@@ -57,15 +57,39 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 		}
 	}
 	now := cockpitHistoryNow()
-	var perf *speed.PerfView
+	var perf, live *speed.PerfView
+	var imported []speed.PerfRow
 	if s.cache != "" && len(allowed) != 0 {
 		ledger, ok := speed.LoadPerf(s.cache)
+		// Imported history (observed/imported.json) counts only for admitted sources, only before a
+		// source's first live day, and only while the file is readable.
+		impLedger, impOK := speed.LoadImported(s.cache)
+		var impRows []speed.PerfRow
+		if impOK && !speed.Off() {
+			for _, r := range impLedger.Rows {
+				if allowed[r.Source] {
+					impRows = append(impRows, r)
+				}
+			}
+			impLedger.Rows = impRows
+		}
+		if ok && ledger.Since.IsZero() && len(impLedger.Rows) != 0 {
+			// Live recording has not written yet: the imported days alone start the record.
+			if d := speed.ImportedFirstDay(impLedger.Rows); d != "" {
+				if t, err := time.ParseInLocation("2006-01-02", d, time.Local); err == nil {
+					ledger.Since = t.UTC()
+				}
+			}
+		}
 		if ok && !ledger.Since.IsZero() {
 			// Long rows carry no grant epoch; the snapshot's scope and cleanup rule is what admits them.
 			long, longOK := speed.LoadLong(s.cache)
 			_, _, long = speed.LegacyAdmitted(speed.Ledger{}, speed.PerfLedger{}, long, current)
 			v := speed.PerfView{Ledger: ledger, Long: long, LongOK: longOK, OK: ok, Recording: !speed.Off(), Now: now}.Admitted(current)
-			perf = &v
+			live = &v
+			imported = v.ImportedRows(impLedger, current)
+			merged := v.WithImported(imported)
+			perf = &merged
 		}
 	}
 	section := snapshot.BuildPerfHistory(perf, view.QuotaReport.Accounts, allowed, now)
@@ -74,7 +98,7 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 	if section.Coverage == "local-history" {
 		out.Sources = append(out.Sources, "local-history")
 		if perf != nil {
-			out.DailyFrom, out.Daily, out.Hourly = cockpitBuckets(*perf, allowed, now)
+			out.DailyFrom, out.Daily, out.Hourly = cockpitBuckets(*live, imported, allowed, now)
 			out.Projects = cockpitProjects(perf.Projects(), projectLabels(), view.PublicModels)
 			if ledger, ok := history.LoadPace(s.cache); ok {
 				pace := history.PaceView{Ledger: ledger, OK: true, Recording: !history.Off(), Now: now}
@@ -100,33 +124,48 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 	return out, ctx.Err()
 }
 
-const cockpitHistoryDays = 182
+const (
+	cockpitHistoryDays = 182
+	cockpitOriginLive  = "live"
+)
 
 // cockpitBuckets sums the ledgers across models. Only admitted sources count, and the days are
 // the ledgers' own local days.
-func cockpitBuckets(perf speed.PerfView, allowed map[string]bool, now time.Time) (*string, []wire.CockpitSourceBucket, []wire.CockpitSourceBucket) {
+//
+// perf is the live view alone; imported holds the already guarded imported rows (never a day a live
+// ledger covers). Each bucket names its origin, so a day is never one origin's figure presented as
+// the other's: "live" or "import". The first date is the earliest day either origin covers.
+func cockpitBuckets(perf speed.PerfView, imported []speed.PerfRow, allowed map[string]bool, now time.Time) (*string, []wire.CockpitSourceBucket, []wire.CockpitSourceBucket) {
 	first := now.Local().AddDate(0, 0, -(cockpitHistoryDays - 1)).Format("2006-01-02")
-	days, hours := map[[2]string]int64{}, map[[2]string]int64{}
+	days, hours := map[[3]string]int64{}, map[[3]string]int64{}
 	for _, d := range perf.DailyLong() {
 		if allowed[d.Source] && d.Day >= first {
-			days[[2]string{d.Day, d.Source}] += d.ObservedOutputTokens
+			days[[3]string{d.Day, d.Source, cockpitOriginLive}] += d.ObservedOutputTokens
+		}
+	}
+	for _, d := range speed.ImportedDaily(imported, first) {
+		if allowed[d.Source] {
+			days[[3]string{d.Day, d.Source, speed.OriginImport}] += d.ObservedOutputTokens
 		}
 	}
 	for _, h := range perf.Hourly() {
 		if allowed[h.Source] {
-			hours[[2]string{h.Hour, h.Source}] += h.ObservedOutputTokens
+			hours[[3]string{h.Hour, h.Source, cockpitOriginLive}] += h.ObservedOutputTokens
 		}
 	}
-	bucket := func(values map[[2]string]int64, limit int) []wire.CockpitSourceBucket {
+	bucket := func(values map[[3]string]int64, limit int) []wire.CockpitSourceBucket {
 		out := make([]wire.CockpitSourceBucket, 0, len(values))
 		for k, v := range values {
-			out = append(out, wire.CockpitSourceBucket{At: k[0], Source: k[1], ObservedOutputTokens: v})
+			out = append(out, wire.CockpitSourceBucket{At: k[0], Source: k[1], Origin: k[2], ObservedOutputTokens: v})
 		}
 		sort.Slice(out, func(i, j int) bool {
 			if out[i].At != out[j].At {
 				return out[i].At < out[j].At
 			}
-			return out[i].Source < out[j].Source
+			if out[i].Source != out[j].Source {
+				return out[i].Source < out[j].Source
+			}
+			return out[i].Origin < out[j].Origin
 		})
 		if len(out) > limit {
 			out = out[len(out)-limit:] // the newest survive
@@ -134,6 +173,9 @@ func cockpitBuckets(perf speed.PerfView, allowed map[string]bool, now time.Time)
 		return out
 	}
 	from := perf.LongCoverage().From
+	if d := speed.ImportedFirstDay(imported); d != "" && (from == nil || d < *from) {
+		from = &d
+	}
 	if from != nil && *from < first {
 		from = &first
 	}

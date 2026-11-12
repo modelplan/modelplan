@@ -24,7 +24,7 @@ public struct DockRecordedLocks: OptionSet, Sendable {
 }
 public enum DockPointerRegion: Equatable, Sendable { case unknown, outside, inside, wake }
 public struct DockPresence: Sendable {
-    public var enabled = true, autoHide = true, cockpitClosed = true, allowedOverFullscreen = true, outerEdge = true, lifecycleActive = true
+    public var enabled = true, autoHide = true, allowedOverFullscreen = true, outerEdge = true, lifecycleActive = true
     public var pointer: DockPointerRegion = .unknown
     public var recordedLocks: DockRecordedLocks = []
     public var mouseButtonDown = false, menuActuallyOpen = false, ignitionHeld = false, cardFocused = false, locating = false
@@ -32,10 +32,10 @@ public struct DockPresence: Sendable {
     fileprivate var protected: Bool { mouseButtonDown || menuActuallyOpen || ignitionHeld || cardFocused || locating }
 }
 public enum DockSurfaceState: Equatable, Sendable {
-    public enum Suppression: Equatable, Sendable { case userHidden, cockpit, fullscreen, sharedEdge, lifecycle }
+    public enum Suppression: Equatable, Sendable { case userHidden, fullscreen, sharedEdge, lifecycle }
     case suppressed(Suppression), sliver, expanded
 }
-public enum DockVisibilityIntent: Equatable, Sendable { case sample, reveal, restoreFromCockpit, lifecycleCancel }
+public enum DockVisibilityIntent: Equatable, Sendable { case sample, reveal, lifecycleCancel }
 public struct DockVisibilityChange: Sendable {
     public let state: DockSurfaceState
     public let didReveal: Bool, didCollapse: Bool, forcedHide: Bool
@@ -63,7 +63,7 @@ public struct DockVisibilityState: Sendable {
         var deadline: TimeInterval?, forced = false
         var clear: DockRecordedLocks = []
         func suppression() -> DockSurfaceState.Suppression? {
-            if !input.lifecycleActive { return .lifecycle }; if !input.enabled { return .userHidden }; if !input.cockpitClosed { return .cockpit }
+            if !input.lifecycleActive { return .lifecycle }; if !input.enabled { return .userHidden }
             if !input.allowedOverFullscreen { return .fullscreen }; if !input.outerEdge { return .sharedEdge }; return nil
         }
         if intent == .lifecycleCancel {
@@ -74,13 +74,6 @@ public struct DockVisibilityState: Sendable {
         } else if let reason = suppression() {
             surface = .suppressed(reason); outsideSince = nil; dwellSince = nil; revealedAt = nil
             if previous != surface { generation &+= 1 }; clear = input.recordedLocks
-        } else if intent == .restoreFromCockpit {
-            // Resolve before inserting/showing the native view: no revealed frame followed by a collapse.
-            generation &+= 1
-            let overRestoredDock = input.pointer == .inside || input.pointer == .wake
-            surface = !input.autoHide || overRestoredDock ? .expanded:.sliver
-            outsideSince = nil;dwellSince = nil;revealedAt = surface == .expanded ? now:nil
-            clear = input.recordedLocks
         } else if !input.autoHide || intent == .reveal {
             surface = .expanded; outsideSince = nil; dwellSince = nil
             if previous != .expanded { revealedAt = now }
@@ -108,8 +101,8 @@ public struct DockVisibilityState: Sendable {
                 }
             }
         }
-        return DockVisibilityChange(state: surface, didReveal: surface == .expanded && (previous != .expanded || intent == .restoreFromCockpit),
-                                    didCollapse: intent != .restoreFromCockpit && previous == .expanded && surface != .expanded, forcedHide: forced,
+        return DockVisibilityChange(state: surface, didReveal: surface == .expanded && previous != .expanded,
+                                    didCollapse: previous == .expanded && surface != .expanded, forcedHide: forced,
                                     clearRecordedLocks: clear, nextDeadline: deadline, generation: generation)
     }
 }

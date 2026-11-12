@@ -174,7 +174,14 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, row := range wire {
-					if len(row) != 8 {
+					want := 8 // cause and failures are present only when there is something to report
+					if _, ok := row["cause"]; ok {
+						want++
+					}
+					if _, ok := row["failures"]; ok {
+						want++
+					}
+					if len(row) != want {
 						t.Fatal("new output field needs privacy review", row)
 					}
 					for key, value := range row {
@@ -201,8 +208,36 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 								t.Fatal(row)
 							}
 						case "state":
-							if !regexp.MustCompile(`^(ok|stale|not_supported_yet|unavailable:(policy_pending|denied|consent_required|privacy_blocked|not_detected|rate_limited|login_expired|confirmation_needed|partial|not_read|reader_error|no_key|update_required|catalogue_off|not_admitted|config_unavailable|cache_unavailable|no_provider_file)(:(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|other))?)$`).MatchString(value.(string)) {
+							if !regexp.MustCompile(`^(ok|stale|not_supported_yet|unavailable:(policy_pending|denied|consent_required|privacy_blocked|not_detected|rate_limited|login_expired|confirmation_needed|partial|not_read|reader_error|no_key|no_provider_file|update_required|catalogue_off|not_admitted|config_unavailable|cache_unavailable)(:(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|other))?)$`).MatchString(value.(string)) {
 								t.Fatal("unreviewed state", row)
+							}
+						case "cause":
+							// A fixed reader code or empty; never text.
+							if !regexp.MustCompile(`^(|file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|other)$`).MatchString(value.(string)) {
+								t.Fatal("unreviewed cause", row)
+							}
+						case "failures":
+							// Codex's recent failures: a fixed code, a UTC time and a streak length; nothing else.
+							list, ok := value.([]any)
+							if !ok {
+								t.Fatal("failures is not a list", row)
+							}
+							for _, item := range list {
+								entry, ok := item.(map[string]any)
+								if !ok || len(entry) != 3 {
+									t.Fatal("new failure field needs privacy review", row)
+								}
+								code, _ := entry["code"].(string)
+								if !regexp.MustCompile(`^(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|other)$`).MatchString(code) {
+									t.Fatal("unreviewed failure code", row)
+								}
+								at, _ := entry["at"].(string)
+								if _, err := time.Parse(time.RFC3339, at); err != nil || !strings.HasSuffix(at, "Z") {
+									t.Fatal("failure time is not UTC", row)
+								}
+								if _, ok := entry["streakSeconds"].(float64); !ok {
+									t.Fatal("failure streak is not a number", row)
+								}
 							}
 						case "last":
 							if !regexp.MustCompile(`^(unknown|[0-9]+s)$`).MatchString(value.(string)) {

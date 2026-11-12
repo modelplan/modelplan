@@ -114,6 +114,7 @@ import ModelPlanShell
         let root = NSMenu(), applicationItem = NSMenuItem(title: "ModelPlan", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
         if let copy = settingsItem.copy() as? NSMenuItem { submenu.addItem(copy) }
+        submenu.addItem(withTitle: "Close Window / 关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         submenu.addItem(.separator())
         submenu.addItem(withTitle: "Quit / 退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         applicationItem.submenu = submenu; root.addItem(applicationItem)

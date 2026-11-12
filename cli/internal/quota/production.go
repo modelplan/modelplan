@@ -133,6 +133,12 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 						region = n.Regions[0]
 					}
 					g.ConfigSource = &ZaiConfigSource{Tool: "claude-code", SettingsPath: filepath.Join(profiles[0].Root, "settings.json"), Region: region}
+					// As for ZCode's route, the login generation follows the settings file (size
+					// and modification time; not read here), so a corrected key releases a held
+					// "sign-in rejected" state at the next due read.
+					if fi, err := os.Stat(g.ConfigSource.SettingsPath); err == nil {
+						g.Generation += ":claude-code:" + strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
+					}
 				}
 			}
 		}

@@ -9,7 +9,7 @@ public struct SettingsText: Equatable, Sendable {
 public enum SettingKey: String, CaseIterable, Sendable {
     case theme, size, motion, transparency, percentageMode, showPercentages, percentagePin, redBelow, sliverAlert
     case showDock, autoHide, reveal, magnification, fullscreen, captureHiding, activeDisplay, order
-    case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints
+    case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints, cockpitSize
     case notificationConsent, forecast, reset, official, expiring, stale
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
     case appVersion, cliStatus, architecture, diagnostics, readerDetails, refreshHistory, feedback, licenses, consentHelp
@@ -20,7 +20,11 @@ public enum SettingKey: String, CaseIterable, Sendable {
 public enum SettingAvailability: Equatable, Sendable {
     case available, readOnly, unsupportedCaptureHiding, cliOwned, serviceUnavailable, cacheUnavailable
 }
-public enum SubscriptionSourceState: String, Sendable { case fresh, stale, unavailable, denied, readerDisabled }
+public enum SubscriptionSourceState: String, Sendable {
+    case fresh, stale, unavailable, denied, readerDisabled
+    /// Separates the raw state from an optional cause sentence in the Settings source row value.
+    static let causeSeparator = "\u{1F}"
+}
 public struct SettingsReaderDiagnostic: Equatable, Sendable {
     public let name: SettingsText
     public let source: SettingsText?
@@ -42,14 +46,17 @@ public struct SettingsSubscription: Sendable {
     public let modelNames: [String], toolNames: [String]
     public let source: SubscriptionSourceState
     public let isUnstable: Bool
+    /// The engine's fixed failure code for this subscription's source, if it failed (D87); text comes from ReaderCauseTable.
+    public let causeCode: String?
     public var persistenceDisabledReason: SettingsText? {
         isUnstable ? .init("Unverified account — changes can't be saved yet", "未验证账号，暂不能保存设置") : nil
     }
     public init(id: String, name: SettingsText, plan: String = "", vendor: String = "",
                 modelNames: [String] = [], toolNames: [String] = [], source: SubscriptionSourceState = .unavailable,
-                isUnstable: Bool = false) {
+                isUnstable: Bool = false, causeCode: String? = nil) {
         self.id = id; self.name = name; self.plan = plan; self.vendor = vendor
         self.modelNames = modelNames; self.toolNames = toolNames; self.source = source; self.isUnstable = isUnstable
+        self.causeCode = causeCode
     }
 }
 public enum CLIReadState: String, Sendable { case ready, unavailable, denied, stale }
@@ -136,12 +143,12 @@ public struct SettingsPageContext: Sendable {
         let shortcuts = SettingsText("Unavailable until shortcuts can be registered.", "快捷键可注册前不可用。")
         let notices = SettingsText("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
         let surfaces = SettingsText("Unavailable until all views support this setting.", "所有界面支持此设置前不可用。")
-        for key in [SettingKey.magnification, .showPercentages, .sliverAlert, .fullscreen, .redBelow] { unavailableControls[key] = dock }
+        for key in [SettingKey.magnification, .sliverAlert, .fullscreen] { unavailableControls[key] = dock }
         for key in [SettingKey.percentagePin, .order, .visible, .alias] { unavailableControls[key] = members }
         for key in [SettingKey.login, .notificationConsent, .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] { unavailableControls[key] = services }
         for key in [SettingKey.openShortcut, .dockShortcut] { unavailableControls[key] = shortcuts }
         for key in [SettingKey.forecast, .reset, .official, .expiring, .stale] { unavailableControls[key] = notices }
-        for key in [SettingKey.language, .menuDisplay, .projectNames] { unavailableControls[key] = surfaces }
+        for key in [SettingKey.menuDisplay, .projectNames] { unavailableControls[key] = surfaces }
         unavailableControls[.automaticUpdates] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.updateStatus] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")
@@ -253,9 +260,10 @@ public enum SettingsCatalogue {
         .init(.automaticUpdates,"Check for updates automatically","自动检查更新","Show available versions quietly in Overview and the menu.","有可用版本时，在总览和菜单中轻声提醒。"),
         .init(.menuDisplay,"Menu-bar display","菜单栏显示","Icon, tightest percentage or two windows.","图标、最紧的百分比或并列两个窗口。"),
         .init(.openShortcut,"Open cockpit shortcut","打开驾驶舱快捷键","Global registration can fail; local matching remains available.","全局注册可能失败；应用内匹配仍可用。"),
-        .init(.dockShortcut,"Toggle Quota Widget shortcut","显示隐藏额度挂件快捷键","Text editing and composition do not trigger shortcuts.","文本编辑与输入法组合期间不触发。"),
+        .init(.dockShortcut,"Find Quota Widget shortcut","找到额度挂件快捷键","Shows where the Quota Widget is. Text editing and composition do not trigger shortcuts.","显示额度挂件的位置；文本编辑与输入法组合期间不触发。"),
         .init(.language,"Language","语言","Choose Chinese or English.","选择中文或英文。"),
         .init(.opening,"Cockpit opening","打开驾驶舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
+        .init(.cockpitSize,"Cockpit size","驾驶舱大小","Auto uses 85 % on laptop screens and 100 % on larger displays. On a screen too short for the size, the whole cockpit is drawn smaller to fit.","自动：笔记本屏幕用 85%，更大的显示器用 100%。屏幕放不下时，整个驾驶舱会再缩小以适配。"),
         .init(.countdown,"Countdown beat","倒数节奏","Three beats follow the 200 ms hold boundary.","按住200毫秒后开始三拍倒数。"),
         .init(.resetHints,"Show hints again","重新显示提示","Reset the first-use hints and the cockpit and Quota Widget open budgets.","重置首次提示及打开驾驶舱、额度挂件展开的提示预算。"),
         .init(.notificationConsent,"Enable notifications","开启通知","Ask for permission only after explicit opt-in.","仅在主动开启后请求通知权限。"),
@@ -404,6 +412,7 @@ public enum SettingsCatalogue {
         case .dockShortcut: return .text(shortcut(p.dockShortcut))
         case .language: return choices(p.language)
         case .opening: return choices(p.opening)
+        case .cockpitSize: return choices(p.cockpitSize)
         case .countdown: return .choice(String(p.beatMilliseconds), options: [150,200,250].map(String.init))
         case .resetHints: return .action(.resetHelpHints)
         case .loginSystemSettings, .notificationSystemSettings: return .action(nil)
@@ -411,7 +420,13 @@ public enum SettingsCatalogue {
         case .forecast, .reset, .official, .expiring, .stale: return .toggle(p.notifications.kinds.contains(NotificationKind(rawValue: k.rawValue)!))
         case .visible: return perSub(options: ["true", "false"]) { String(!p.subscriptions.hiddenIDs.contains($0.id)) }
         case .alias: return perSub { p.subscriptionSettings[$0.id]?.alias ?? "" }
-        case .source: return perSub { $0.source.rawValue }
+        case .source: return perSub { sub in
+            // The raw state stays first so the renderer can still parse it; the cause text rides after a
+            // separator. A stale or current source keeps its own status: a cause only explains a failure.
+            guard sub.source != .stale, sub.source != .fresh, let code = sub.causeCode,
+                  let entry = ReaderCauseTable.entry(code: code, tool: sub.vendor, toolName: sub.name.value(p.language)) else { return sub.source.rawValue }
+            return sub.source.rawValue + SubscriptionSourceState.causeSeparator + entry.reason.value(p.language) + " · " + entry.action.value(p.language)
+        }
         case .projectNames: return .toggle(p.showProjectNames)
         case .retention: return .text("sessions=35d; dailyTotals=371d; owner=CLI")
         case .clearCLI: return .action(nil)
