@@ -317,6 +317,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRootHeight: CGFloat? { layout?.rootHeight }
     public var verificationLayout: CockpitShellLayout? { layout }
     public var verificationDragRegion: NSView? { dragRegion }
+    /// The drag's snap guide as last shown: its frame and whether it showed ready (solid line).
+    public var verificationSnapGuide: (frame: CGRect, ready: Bool)? {
+      guard let guide = snapGuide, let shape = guide.contentView?.layer as? CAShapeLayer else { return nil }
+      return (guide.frame, shape.lineDashPattern == nil)
+    }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
@@ -872,6 +877,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let icon = requested.flatMap { screen.frame.intersects($0) ? $0 : nil } ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
+  /// Where Put back takes the cockpit: the attached fit on the display an attached open uses. The drag's snap guide,
+  /// its snap distance and the put back all use this one frame; a detached layout's own frame can be another display's
+  /// (post-merge sample 11-11: after a drop on another display the guide promised that display, the snap went home).
+  func attachedHome() -> CGRect? {
+    let detached = shellSession.detached
+    shellSession.detached = false; defer { shellSession.detached = detached }
+    guard let (usable, icon) = environment() else { return nil }
+    return CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable))?.frame
+  }
   /// D66: Auto judges the full width of the screen the cockpit opens on, whatever the Dock takes.
   private func screenWidth(_ usable: CGRect) -> CGFloat {
     screens().first { $0.visibleFrame == usable }?.frame.width ?? usable.width
@@ -996,7 +1010,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       if newlyDetached { updateAppearance(appearance) }
       // Build 14c (G3-79): the window stays inside the display under the pointer, so it can go to any display.
       window.setFrame(dragFrame(start: start.frame, from: start.point, to: point), display: true)
-      if let home = layout?.frame {
+      if let home = attachedHome() {
         let ready = hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40
         showSnapGuide(home, ready: ready)
       }
@@ -1005,7 +1019,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       restorePageFocus()
       guard dragStart != nil else { return }; dragStart = nil
       guard shellSession.detached else { return }
-      if let (_, _) = environment(), let home = layout?.frame,
+      if let home = attachedHome(),
          hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40 {
         setAttached(true)
       } else {
