@@ -39,6 +39,7 @@ public struct FirstRunReading: Sendable, Equatable {
     public let kind: FirstRunReadingKind
     /// Whole percent left, 0...100.
     public let percent: Int
+    public init(kind: FirstRunReadingKind, percent: Int) { self.kind = kind; self.percent = percent }
 }
 /// Transient UI choices over already-accepted facts. No persistence or protocol acceptance logic.
 @MainActor public final class ScopeConsentController {

@@ -5,7 +5,7 @@ import Foundation
 /// The large privacy promise and the FR-9-03 line stay in `FirstRunPage`; their wording is unchanged.
 public enum FirstRunCopy {
     public static let learnMore = SettingsText("Learn more ›", "了解详情 ›")
-    public static let toolsHeading = SettingsText("TOOLS MODELPLAN READS", "读取这些工具的额度")
+    public static let toolsHeading = SettingsText("Tools ModelPlan reads", "读取这些工具的额度")
     public static let toolsHint = SettingsText("Untick to stop reading", "取消勾选即不读取")
     /// A tool with no system prompt: it is read as soon as Done is pressed.
     public static let detected = SettingsText("Detected · read without asking", "本机已检测到 · 无需授权")

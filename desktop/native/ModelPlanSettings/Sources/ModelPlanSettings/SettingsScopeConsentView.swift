@@ -141,7 +141,7 @@ import ModelPlanWire
     /// each tool found on this Mac as a card with a checkbox, what it reads out now (D61) and, for a Keychain login,
     /// Allow and Later (D41). Done sends the choices as the one first-run consent.
     private func renderFirstRunChooser() {
-        let heading = NSTextField(labelWithString: FirstRunCopy.toolsHeading.value(language))
+        let heading = NSTextField(labelWithString: FirstRunCopy.toolsHeading.value(language).uppercased())
         heading.font = .systemFont(ofSize: 11, weight: .semibold); heading.textColor = .secondaryLabelColor
         heading.setAccessibilityIdentifier("scope.firstRun.heading")
         let hint = NSTextField(labelWithString: FirstRunCopy.toolsHint.value(language))
