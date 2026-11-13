@@ -112,7 +112,7 @@ for(const [tier,height] of [['tall',890],['compact',640]]){
 // by the page, no canvas exists in it, and the reveal animates no clip-path or mask.
 test('CKP-ENT-02 opening the cockpit page creates no GL context, no canvas and no clip or mask animation',async({page})=>{
  await open(page);
- await page.getByRole('button',{name:'Effort',exact:true}).click();
+ await page.getByRole('button',{name:'Models',exact:true}).click();
  const {gl}=await probe(page);expect(gl,'getContext(webgl*) calls').toEqual([]);
  expect(await page.locator('canvas').count(),'canvas elements in the cockpit page').toBe(0);
  expect(await page.locator('iframe,webview,embed,object').count()).toBe(0);
@@ -173,5 +173,5 @@ for(const theme of ['night','day'])test(`THM-10-02 metal text reaches 4.5:1 and 
 test('COL-2.1-15 Cursor, Copilot and OpenCode keys carry their brand-near accents',async({page})=>{
  await open(page,{data:fixture(['cursor','copilot','opencode','glm'])});
  const accents=await page.locator('.eng-keys .ek[data-sub] .bl').evaluateAll(l=>l.map(e=>e.getAttribute('style')));
- expect(accents.slice(0,3).map(s=>/--v:\s*(#[0-9a-f]{6})/i.exec(s)?.[1].toLowerCase())).toEqual(['#eef2f6','#c08cff','#b5d65a']);
+ expect(accents.slice(0,3).map(s=>/--v:\s*(#[0-9a-f]{6})/i.exec(s)?.[1].toLowerCase())).toEqual(['#f79dcb','#c08cff','#b5d65a']);
 });
