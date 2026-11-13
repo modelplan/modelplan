@@ -930,6 +930,11 @@ struct StatusNoticePresentation {
             menuItems.append(.init(title: summary,
                 action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil))
         }
+        // D238: a tool installed after the first run, not yet decided: one line until the user decides.
+        for offer in DetectedToolOffer.offers(content.menuRows, english: english) {
+            menuItems.append(.init(title: offer.title, accessibilityID: "status.detected." + offer.rowID,
+                action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "subscriptions", origin: .userInitiated) } } : nil))
+        }
         menuItems += [
             .init(title: nil),
             .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
