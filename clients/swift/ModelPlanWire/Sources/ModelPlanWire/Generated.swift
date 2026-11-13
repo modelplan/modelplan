@@ -449,6 +449,7 @@ public enum RowsActivityPhase: Codable, Sendable, Equatable {
 public enum RowsCode: Codable, Sendable, Equatable {
     case `ok`
     case `estimated`
+    case `usageNotReported`
     case `staleReading`
     case `observationTimeUnknown`
     case `notReadYet`
@@ -507,6 +508,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
         switch rawValue {
         case "ok": self = .`ok`
         case "estimated": self = .`estimated`
+        case "usage_not_reported": self = .`usageNotReported`
         case "stale_reading": self = .`staleReading`
         case "observation_time_unknown": self = .`observationTimeUnknown`
         case "not_read_yet": self = .`notReadYet`
@@ -567,6 +569,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
         switch self {
         case .`ok`: return "ok"
         case .`estimated`: return "estimated"
+        case .`usageNotReported`: return "usage_not_reported"
         case .`staleReading`: return "stale_reading"
         case .`observationTimeUnknown`: return "observation_time_unknown"
         case .`notReadYet`: return "not_read_yet"
@@ -664,19 +667,24 @@ public enum RowsConsent: Codable, Sendable, Equatable {
 public struct RowsCredits: Codable, Sendable {
     public let `balance`: Double?
     public let `unit`: String
+    public let `currency`: String?
     private enum CodingKeys: String, CodingKey {
         case `balance`
         case `unit`
+        case `currency`
     }
-    public init(`balance`: Double? = nil, `unit`: String) throws {
+    public init(`balance`: Double? = nil, `unit`: String, `currency`: String? = nil) throws {
         self.`balance` = `balance`
         self.`unit` = `unit`
+        self.`currency` = `currency`
         try validate()
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`balance` = try? c.decodeIfPresent(Double.self, forKey: .`balance`)
         self.`unit` = try c.decode(String.self, forKey: .`unit`)
+        if c.contains(.`currency`), try c.decodeNil(forKey: .`currency`) { throw WireDecodeError.invalidIdentity }
+        self.`currency` = try? c.decodeIfPresent(String.self, forKey: .`currency`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -684,6 +692,7 @@ public struct RowsCredits: Codable, Sendable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(`balance`, forKey: .`balance`)
         try c.encode(`unit`, forKey: .`unit`)
+        try c.encodeIfPresent(`currency`, forKey: .`currency`)
     }
     private func validate() throws {
     }

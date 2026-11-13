@@ -164,7 +164,7 @@ Then the rules apply in order:
 | 7 | C and R both empty, and the latest attempt succeeded with no windows | empty | no_usage_windows |
 | 8 | C and R both empty, and there was no attempt yet, or the reader is busy or cooling down | pending | not_read_yet, reader_busy, no_manual_reading |
 | 9 | R is not empty | stale | stale_reading or observation_time_unknown (the original error stays only in that account's `lastFailure`) |
-| 10 | C is not empty and R is empty | fresh | ok, estimated |
+| 10 | C is not empty and R is empty | fresh | ok, estimated, usage_not_reported (every current account has a balance and no usage percentage, D228) |
 | 11 | none of the above (unreachable by construction; asserted by a test) | failed | other |
 
 Notes:
@@ -182,7 +182,7 @@ The closed set of codes, with the state and next-step action each one gives:
 
 | code | state | action |
 |---|---|---|
-| ok, estimated | fresh | none |
+| ok, estimated, usage_not_reported | fresh | none |
 | stale_reading, observation_time_unknown | stale | refresh |
 | not_read_yet, reader_busy, consent_changed | pending | none (a refresh action carries `disabledReason` while cooling down) |
 | no_manual_reading | pending | none |

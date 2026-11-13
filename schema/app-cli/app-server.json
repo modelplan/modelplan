@@ -2102,6 +2102,10 @@
             }
           ]
         },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
         "unit": {
           "type": "string"
         }
@@ -2303,6 +2307,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",
@@ -3616,6 +3621,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",
@@ -4917,6 +4923,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",

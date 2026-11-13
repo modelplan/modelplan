@@ -80,6 +80,9 @@ func buildAccounts(in Input, c *candidate) []Account {
 							unit = "other"
 						}
 						a.Credits = &Credits{Balance: balance, Unit: unit}
+						if unit == "money" && isoCurrency(raw.Credits.Currency) {
+							a.Credits.Currency = raw.Credits.Currency
+						}
 					}
 				}
 				a.Windows = buildWindows(raw.Windows, a, in.Now)
@@ -287,4 +290,17 @@ func buildWindows(raw []WindowInput, account Account, now time.Time) []Window {
 		first = end
 	}
 	return result
+}
+
+// isoCurrency accepts only a three-letter upper-case ISO 4217 code; anything else is dropped.
+func isoCurrency(code string) bool {
+	if len(code) != 3 {
+		return false
+	}
+	for _, r := range code {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
 }

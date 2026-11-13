@@ -26,11 +26,7 @@ type cxTurn struct {
 	start time.Time // the current request's
 	first int64     // its first token, unix ms; 0 unknown
 	used  bool      // its usage was counted
-	// notice: the last usage came from a token_usage_record whose token_count notice is still to
-	// come. Codex writes that notice only after the response's tools finish and their outputs are
-	// recorded, so it can follow the next request's start; it never opens a request of its own.
-	notice bool
-	base   *cxUsage // the cumulative usage when the turn started
+	base  *cxUsage  // the cumulative usage when the turn started
 }
 
 type codexParser struct {
@@ -38,6 +34,7 @@ type codexParser struct {
 	cwd      string // the session's, from its session_meta
 	done     []turn
 	total    *cxUsage
+	record   *cxUsage // the last usage record whose token_count notice has not been seen yet (G3-101)
 	probe    liveProbe
 	liveOnly bool
 }
@@ -143,10 +140,19 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		if usage == nil || usage.Output == nil || *usage.Output < 0 {
 			return
 		}
-		if event == "token_count" && t.notice {
-			t.notice = false
-			if n := len(t.reqs); n > 0 && t.reqs[n-1].out == *usage.Output {
-				t.reqs[n-1].TokenKinds.enrich(usage.kinds())
+		// G3-101: Codex writes a usage record and then a token_count notice for the same
+		// response, and a tool call's output can land between them. The notice is the
+		// recorded response again, never a new request: counting it doubled the output
+		// and added a request with no generation time, so too few requests had a rate.
+		if kind == "token_usage_record" {
+			p.record = usage
+		} else if p.record != nil {
+			recorded := p.record
+			p.record = nil
+			if sameUsage(recorded, usage) {
+				if n := len(t.reqs); n > 0 && t.reqs[n-1].out == *usage.Output {
+					t.reqs[n-1].TokenKinds.enrich(usage.kinds())
+				}
 				return
 			}
 		}
@@ -170,7 +176,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		}
 		t.reqs = append(t.reqs, r)
 		t.out += out
-		t.used, t.notice = true, kind == "token_usage_record"
+		t.used = true
 	case event == "task_complete" || event == "turn_complete":
 		var c struct {
 			Payload struct {
@@ -221,4 +227,10 @@ func clip(s string) string {
 		return ""
 	}
 	return s
+}
+
+// sameUsage: one response's usage, as the record and its token_count notice both give it.
+func sameUsage(a, b *cxUsage) bool {
+	same := func(x, y *int64) bool { return x == nil || y == nil || *x == *y }
+	return a.Output != nil && b.Output != nil && *a.Output == *b.Output && same(a.Input, b.Input) && same(a.Cached, b.Cached)
 }

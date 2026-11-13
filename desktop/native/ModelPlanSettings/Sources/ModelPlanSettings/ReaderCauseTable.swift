@@ -87,6 +87,14 @@ public enum ReaderCauseTable {
             }
             return .init(reason: .init("This account has no plan to read", "这个账户没有可读取的套餐"),
                          action: .init("Check the plan with the provider", "到服务商处查看套餐"), target: .guidance)
+        case "usage_not_reported":
+            // D228: a current reading that has a balance but no usage percentage. Grok's X Subscription
+            // billing reports only the prepaid balance, so its card says that in one line instead of "--" rows.
+            let reason: SettingsText = (tool ?? "").lowercased() == "grok"
+                ? .init("The X Subscription reports no usage percentage; only the balance is shown", "X 订阅不提供用量百分比，只显示余额")
+                : .init(name.map { "\($0) reports no usage percentage; only the balance is shown" } ?? "No usage percentage is reported; only the balance is shown",
+                        name.map { "\($0) 不提供用量百分比，只显示余额" } ?? "不提供用量百分比，只显示余额")
+            return .init(reason: reason, action: .init("No action needed", "无需操作"), target: .guidance)
         case "consent_required":
             return .init(reason: .init("Reading permission needed", "需要读取授权"),
                          action: .init("Review permission in Settings", "在设置检查授权"), target: .openSettings)

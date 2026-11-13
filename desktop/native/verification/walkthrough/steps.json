@@ -4,7 +4,7 @@
     {
       "id": "first-run-window",
       "title": "First-run window",
-      "expected": "The Set up ModelPlan window lists the synthetic subscriptions (since build 14: one row per tool found, with a checkbox); the widget is visible beside it.",
+      "expected": "The Set up ModelPlan window lists the synthetic subscriptions (since build 14: one row per tool found, with a checkbox); no widget is shown before Done. Done stays disabled with a reason line until the reader's handshake, so the walk waits for that line to leave.",
       "actions": [
         {
           "op": "await",
@@ -13,8 +13,8 @@
         },
         {
           "op": "awaitAbsent",
-          "target": "ax:scope.firstRun.looking",
-          "timeout": 20
+          "target": "ax:firstRun.doneReason",
+          "timeout": 30
         },
         {
           "op": "park"

@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 83 optional/nullable fields reachable from the production
+This inventory covers the 84 optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -128,6 +128,7 @@ containers and failure ID retain their required-key checks.
 | rows.Account.LastFailure | coalesced | Same projection/decoder: absent/null both have no recorded failure. |
 | rows.Plan.Name | coalesced | [catalogue.go:81](../rows/catalogue.go#L81), `planValue`; `RowsPlan` absent/null both have no plan name. |
 | rows.Credits.Balance | coalesced | [values.go:77](../rows/values.go#L77), credit projection; `RowsCredits` absent/null both have unavailable balance, not zero. |
+| rows.Credits.Currency | forbidden | [values.go](../rows/values.go), money projection; absent means the reader reported no currency (the app says so), never null. |
 | rows.Row.RefreshNotBefore | coalesced | Omitted when the capability or live grant is absent; null means the budget deadline is unknown. |
 | rows.Account.RefreshNotBefore | coalesced | Omitted when the capability or live grant is absent; null means the member deadline is unknown. |
 | rows.Window.Source | forbidden | Omission means provenance unavailable; null or malformed data is rejected. |
