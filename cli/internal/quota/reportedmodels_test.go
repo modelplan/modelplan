@@ -291,6 +291,24 @@ func TestCopilotModelListTimeoutNeverFailsTheQuotaRead(t *testing.T) {
 	}
 }
 
+// A caller deadline that expires while the optional models.list hangs must keep the quota already received.
+func TestCopilotModelListPastTheCallerDeadlineKeepsTheQuota(t *testing.T) {
+	isolateHome(t)
+	bin, log := fakeCopilot(t)
+	t.Setenv("MODELPLAN_COPILOT", bin)
+	t.Setenv("MODELPLAN_TEST_COPILOT_MODELS", "hang")
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	e := fetchCopilot(ctx, nil, "local", "", now)
+	calls, _ := os.ReadFile(log)
+	if !bytes.Contains(calls, []byte(`"method":"models.list"`)) {
+		t.Fatalf("models.list was not reached: %s", calls)
+	}
+	if e.Status != "ok" || len(e.Windows) != 2 || len(e.ReportedModels) != 0 {
+		t.Fatalf("quota discarded by the optional stage: %+v", e)
+	}
+}
+
 func TestCopilotReportedModelsThroughTheProcessAndCache(t *testing.T) {
 	isolateHome(t)
 	bin, log := fakeCopilot(t)

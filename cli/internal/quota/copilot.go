@@ -94,6 +94,11 @@ func askCopilotModels(ctx context.Context, bin string) (json.RawMessage, []strin
 	}
 	defer func() { _ = in.Close(); _ = out.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	raw, models, err := copilotRPC(out, in, true)
+	if err == nil && len(raw) > 0 {
+		// The quota answered: a deadline that expires during the optional models.list stage only costs the
+		// models, never the quota reading (D99).
+		return raw, models, nil
+	}
 	if ctx.Err() != nil {
 		return nil, nil, codeError("timeout", "Copilot quota read timed out")
 	}
