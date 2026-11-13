@@ -13,7 +13,7 @@ final class V2BridgeContractTests: XCTestCase {
     }
     func receipt(_ load: String, version: Int? = 2, capabilities: [String]? = ["appearanceUpdates", "shellState", "shellActions"]) throws -> [String: Any] {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
-        object["shell"] = nil; object["appearance"] = nil; object["redBelow"] = nil; object["showUsedPercent"] = nil; object["type"] = "ready"; object["sequence"] = "1"
+        object["shell"] = nil; object["appearance"] = nil; object["redBelow"] = nil; object["showUsedPercent"] = nil; object["showAllModels"] = nil; object["type"] = "ready"; object["sequence"] = "1"
         object["appearanceVersion"] = version; object["capabilities"] = capabilities
         return object
     }
@@ -45,6 +45,21 @@ final class V2BridgeContractTests: XCTestCase {
             XCTAssertEqual(message["showUsedPercent"] as? Bool, !used)
         }
         XCTAssertFalse(CockpitAppearance(theme: .night, locale: .en, profile: .full).showUsedPercent, "Default is remaining")
+    }
+    /// D135 / SET-9-30: the Settings "Show all models" choice is a top-level boolean on load and on every appearance update.
+    func testShowAllModelsChoiceIsEncodedOnLoadAndEachAppearanceUpdate() throws {
+        for all in [false, true] {
+            let value = try state()
+            let load = try value.load(.init(theme: .night, locale: .en, profile: .full, showAllModels: all), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
+            XCTAssertEqual(body["showAllModels"] as? Bool, all)
+            XCTAssertNil((body["appearance"] as? [String: Any])?["showAllModels"], "The flag is not part of the strict appearance object")
+            _ = try value.accept(encode(receipt(load)), source: source)
+            let update = try value.setAppearance(.init(theme: .night, locale: .en, profile: .full, showAllModels: !all))
+            let message = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(update.utf8)) as? [String: Any])
+            XCTAssertEqual(message["showAllModels"] as? Bool, !all)
+        }
+        XCTAssertFalse(CockpitAppearance(theme: .night, locale: .en, profile: .full).showAllModels, "Default is the own-plan set")
     }
     func testCommittedThresholdIsEncodedOnLoadAndEachAppearanceUpdate() throws {
         for threshold in [10, 15, 20, 25, 30, 40] {
@@ -106,7 +121,7 @@ final class V2BridgeContractTests: XCTestCase {
         let header: Set<String> = ["version","pageId","requestId","sessionId","storeEpoch","generation","viewRevision","sequence","type"]
         let appearanceRaw = try value.setAppearance(.init(theme: .night, locale: .zhCN, profile: .compact, reduceMotion: true, reduceTransparency: true, showProjectNames: false))
         let appearance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(appearanceRaw.utf8)) as? [String: Any])
-        XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency","showProjectNames","redBelow","showUsedPercent"]))
+        XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency","showProjectNames","redBelow","showUsedPercent","showAllModels"]))
         XCTAssertEqual(appearance["type"] as? String, "appearance")
         XCTAssertEqual(appearance["reduceTransparency"] as? Bool, true)
         XCTAssertEqual(appearance["showProjectNames"] as? Bool, false)
