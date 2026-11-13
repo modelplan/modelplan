@@ -11,7 +11,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
     types: [checks_requested]
-  # D169: the whole GUI share once a night on main (skipped when the last nightly already passed at main's head).
+  # D169: the whole GUI share once a night on main (skipped when a nightly at main's head already passed or is running).
   schedule:
     - cron: "23 9 * * *"
   workflow_dispatch:
@@ -375,10 +375,12 @@ jobs:
           classes=full
           run=true
           if [ "$EVENT" = schedule ]; then
-            # Nothing new on main since the last green nightly: do not take the GUI Mac for the same commit.
-            # An unreadable answer runs the nightly.
-            passed=$(gh api "repos/$REPO/actions/workflows/desktop.yml/runs?event=schedule&status=success&head_sha=$GITHUB_SHA&per_page=1" --jq '.total_count') || passed=0
-            [ "$passed" = 0 ] || { run=false; echo "nightly already passed at $GITHUB_SHA"; }
+            # Nothing new on main since a green nightly, or another nightly at the same commit is still queued or
+            # running: do not take the GUI Mac for the same commit twice. An unreadable answer runs the nightly.
+            held=$(gh api "repos/$REPO/actions/workflows/desktop.yml/runs?event=schedule&head_sha=$GITHUB_SHA&per_page=50" \
+              --jq '[.workflow_runs[] | select((.id | tostring) != env.GITHUB_RUN_ID)
+                | select(.conclusion == "success" or .status != "completed")] | length') || held=0
+            [ "$held" = 0 ] || { run=false; echo "a nightly at $GITHUB_SHA already passed or is still running"; }
           elif [ "$EVENT" = workflow_dispatch ] && [ "$GUI_FULL" != true ] && [[ $REF == refs/heads/* ]] \
             && [ "$REF" != refs/heads/main ] && [[ $REF != refs/heads/release* ]]; then
             changed="$RUNNER_TEMP/d169-gui-changed.txt"

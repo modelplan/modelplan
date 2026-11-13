@@ -11,7 +11,8 @@ The selection is conservative. Any path it cannot place is a reason to run the f
 
   full   CI/workflow files, any Package.swift/Package.resolved, the partition and this selector,
          the test target's fixtures, a deleted Swift file, a non-Swift file inside the Swift package
-         graph (resources, data), a Swift file whose declarations no GUI class names, or a
+         graph (resources, data), a Swift file whose declarations no GUI class names (a headless
+         class does not count), or a
          selection that would cover most of the GUI share anyway, an empty change
   classes  the GUI classes declared in (or extended by) a changed test file, the GUI classes whose
          test files name a top-level declaration of a changed Swift file, and the GUI classes whose
@@ -199,7 +200,8 @@ def select(changed: list[str], root: Path = ROOT, manifest: dict | None = None) 
             reasons.append(f"{path}: tests of another target, not part of the app-integration GUI leg")
         else:
             names, extended = declarations((root / path).read_text())
-            users = suite.referencing(names | extended)
+            # Only GUI classes count: a file named by headless classes alone may still reach the GUI leg indirectly.
+            users = suite.referencing(names | extended) & gui
             if not users:
                 return full(f"{path} declares nothing a GUI-leg test names (it may be reached indirectly)")
             hits |= users

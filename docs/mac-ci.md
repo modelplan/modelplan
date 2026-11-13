@@ -60,7 +60,7 @@ step line for line, so a wider pattern, a default-on switch or a missing V1 refu
 The coordinator's lending script runs every 5 minutes. When no GUI job is queued or running and at least
 three non-GUI jobs are queued, it sets `MAC_GUI_LEND=enabled` and adds the `modelplan-mac-nongui` label to
 `modelplan-mac-gui-2` (runner id 263). As soon as a GUI job is queued it removes the label and sets
-`MAC_GUI_LEND=disabled`; a non-GUI job already running there finishes (at most 25 minutes). It never touches
+`MAC_GUI_LEND=disabled`; a non-GUI job already running there finishes (at most 30 minutes, the longest non-GUI job timeout). It never touches
 `modelplan-mac-arm64-1` (runner id 76). Changing labels needs an org runner-admin token, which the
 coordinator holds; GitHub Actions never sees it.
 
@@ -149,7 +149,8 @@ selects the classes declared in or extended by a changed test file, the classes 
 name a top-level declaration of a changed Swift file, and the classes whose test files spell a
 changed repository path. Anything it cannot place selects the full share: workflow files, any
 `Package.swift`/`Package.resolved`, the partition and the selector, test fixtures, deleted Swift
-files, non-Swift files in the Swift package graph, a Swift file no GUI test names, a selection that
+files, non-Swift files in the Swift package graph, a Swift file no GUI test names (headless-only users do
+not count), a selection that
 covers 60% or more of the GUI classes, an empty diff, or any selector error. `gui_full=true` on the
 dispatch forces the full share. The other GUI-job steps (native package tests, settings tests, Dock,
 window and shell checks) always run whole.
@@ -164,8 +165,8 @@ push, `main`/release dispatch) runs and verifies the whole share whatever the ca
 A selection is a speed-up for the PR round, not the merge gate. The merge queue runs the full GUI
 leg on the group commit, and `desktop` must pass there before anything reaches `main`; the
 coordinator's gate still requires a successful GUI leg at the PR head. A `schedule` run at 09:23
-UTC runs the full GUI leg on `main` (and nothing else); it is skipped when a nightly already passed
-at the same `main` commit. `trusted-mac.yml` admits `merge_group` (queue branches of `main`) and
+UTC runs the full GUI leg on `main` (and nothing else); it is skipped when a nightly at the same `main`
+commit already passed or is still queued or running. `trusted-mac.yml` admits `merge_group` (queue branches of `main`) and
 `schedule` (`main`) runs to the owner's Macs for the GUI tasks only, under the same owner gate.
 
 Non-UI Swift tests are not skipped on the strength of a Mac compile lane's earlier pass at the same

@@ -398,7 +398,8 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
   const sh = /run: \|\n((?:          .*\n|\n)+)/.exec(scope)[1].replace(/^          /gm, "");
   const dir = fs.mkdtempSync("/tmp/d169-scope-");
   fs.mkdirSync(`${dir}/desktop/native/tools/ci`, { recursive: true });
-  fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\n[ -n "${GH_FAIL:-}" ] && exit 1\necho "${PASSED:-0}"\n', { mode: 0o755 });
+  // gh answers the runs query with $RUNS, filtered by the step's own --jq expression (real jq).
+  fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\n[ -n "${GH_FAIL:-}" ] && exit 1\nwhile [ $# -gt 0 ]; do [ "$1" = --jq ] && f="$2"; shift; done\nprintf "%s" "${RUNS:-null}" | jq -r "$f"\n', { mode: 0o755 });
   fs.writeFileSync(`${dir}/git`, '#!/bin/bash\ncase "$1" in fetch) [ -z "${NO_BASE:-}" ];; merge-base) echo base;; diff) echo desktop/native/x.swift;; esac\n', { mode: 0o755 });
   fs.writeFileSync(`${dir}/python3`, '#!/bin/bash\n[ -n "${SEL_FAIL:-}" ] && exit 1\nprintf "%s\\n" "${SELECTED:-WidgetTests}"\n', { mode: 0o755 });
   const go = (env) => {
@@ -419,7 +420,15 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
     for (const REF of ["refs/heads/main", "refs/heads/release/v1", "refs/tags/v1"]) assert.equal(go({ ...branch, REF }), "run=true classes=full", REF);
     assert.equal(go({ EVENT: "merge_group", REF: "refs/heads/gh-readonly-queue/main/pr-1-a" }), "run=true classes=full");
     assert.equal(go({ EVENT: "schedule", REF: "refs/heads/main" }), "run=true classes=full");
-    assert.equal(go({ EVENT: "schedule", REF: "refs/heads/main", PASSED: "1" }), "run=false classes=full", "same main head already passed");
+    const runs = (...r) => JSON.stringify({ workflow_runs: r });
+    const self = { id: 7, status: "in_progress", conclusion: null };
+    const night = (RUNS) => go({ EVENT: "schedule", REF: "refs/heads/main", GITHUB_RUN_ID: "7", RUNS });
+    assert.equal(night(runs(self)), "run=true classes=full", "only this run at the head");
+    assert.equal(night(runs(self, { id: 5, status: "completed", conclusion: "success" })), "run=false classes=full", "same main head already passed");
+    assert.equal(night(runs(self, { id: 5, status: "completed", conclusion: "failure" })), "run=true classes=full", "a failed nightly is retried");
+    // glm-866-2: an earlier nightly still queued or running at the same head already holds the GUI Mac for it.
+    for (const status of ["queued", "in_progress", "waiting"])
+      assert.equal(night(runs(self, { id: 5, status, conclusion: null })), "run=false classes=full", status);
     assert.equal(go({ EVENT: "schedule", REF: "refs/heads/main", GH_FAIL: "1" }), "run=true classes=full", "unreadable -> run");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

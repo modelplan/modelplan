@@ -31,13 +31,14 @@ FILES = {
     "desktop/native/Lib/Sources/Lib/Orphan.swift": "public struct Orphan {}\n",
     "desktop/native/Lib/Sources/Lib/Hidden.swift": "private struct Hidden {}\n",
     "desktop/native/Lib/Sources/Lib/Common.swift": "public enum Common {}\n",
+    "desktop/native/Lib/Sources/Lib/Quick.swift": "public struct Quick {}\n",
     "desktop/native/Lib/Sources/Lib/Resources/data.json": "{}\n",
     "desktop/native/Lib/Tests/LibTests/LibTests.swift": "final class LibTests: XCTestCase {}\n",
     "desktop/native/Lib/README.md": "notes\n",
     "desktop/native/verification/bin/drive.py": "print()\n",
     f"{TESTS}/WidgetTests.swift": "final class WidgetTests: XCTestCase { func testA() { _ = Widget(); _ = Common.self } }\n",
     f"{TESTS}/WidgetTests+More.swift": "extension WidgetTests { func testB() {} }\n",
-    f"{TESTS}/FastTests.swift": "final class FastTests: XCTestCase { func testA() { _ = Widget() } }\n",
+    f"{TESTS}/FastTests.swift": "final class FastTests: XCTestCase { func testA() { _ = Widget(); _ = Quick() } }\n",
     f"{TESTS}/WindowTests.swift":
         'final class WindowTests: XCTestCase {\n  let p = "../../../../../schema/app-cli/captures"\n'
         '  let n = "CLI-NOTICES.md"\n  func testA() { makeHelper(); _ = Common.self }\n}\n',
@@ -93,6 +94,8 @@ class SelectTests(unittest.TestCase):
         # Reached only indirectly, or declares only private names: unsure, so the full suite.
         self.assertEqual(self.pick("desktop/native/Lib/Sources/Lib/Orphan.swift"), "full")
         self.assertEqual(self.pick("desktop/native/Lib/Sources/Lib/Hidden.swift"), "full")
+        # Named only by headless classes: no GUI class names it, so it may still reach the GUI leg indirectly.
+        self.assertEqual(self.pick("desktop/native/Lib/Sources/Lib/Quick.swift"), "full")
         # Named by most GUI classes: a selection would save little.
         self.assertEqual(self.pick("desktop/native/Lib/Sources/Lib/Common.swift"), "full")
 
