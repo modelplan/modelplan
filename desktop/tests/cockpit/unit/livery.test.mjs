@@ -61,10 +61,11 @@ test('COL-2.1-18 contrast: every colour reads on the night metal (3:1); on the d
   assert.ok(ratio(s.alt,night)>=2.5||ratio(s.alt,day)>=1.8,key+' alternate readable on one theme');
  }
 });
-test('COL-2.1-18 day rule: 40% of each D250 colour toward black keeps every mark >= 3.2:1 on the day metal',()=>{
+test('COL-2.1-18 day rule: 40% of each D250 colour toward black keeps every mark >= 3.4:1 on the day metal (Cursor starts from its grey alt)',()=>{
  const day='#b7bcc1',mix=h=>'#'+[1,3,5].map(i=>Math.round(parseInt(h.slice(i,i+2),16)*0.4).toString(16).padStart(2,'0')).join('');
- const expected={'#6aa8ff':'#2a4366','#8f7dff':'#393266','#8594a4':'#353b42','#eef2f6':'#5f6162','#ff9a6a':'#663e2a','#4422a0':'#1b0e40','#374452':'#161b21'};
- for(const [c,d] of Object.entries(expected)){assert.equal(mix(c),d);assert.ok(ratio(d,day)>=3.2,c+' day '+ratio(d,day).toFixed(2));}
+ const expected={'#6aa8ff':'#2a4366','#8f7dff':'#393266','#8594a4':'#353b42','#6f7782':'#2c3034','#ff9a6a':'#663e2a','#4422a0':'#1b0e40','#374452':'#161b21'};
+ const css=readFileSync(new URL('../../../cockpit/prototype/prototype-theme.css',import.meta.url),'utf8');assert.ok(css.includes('.mg:not(.orig)[style*="#eef2f6" i]')&&css.includes('color-mix(in srgb,#6f7782 40%,#000)'),'day CSS maps Cursor to its alt');
+ for(const [c,d] of Object.entries(expected)){assert.equal(mix(c),d);assert.ok(ratio(d,day)>=3.4,c+' day '+ratio(d,day).toFixed(2));}
 });
 test('COL-2.1-18 owner 11-12: D250 palette is UI accents only; rockets keep the website livery, the shared copy stays verbatim',()=>{
  const shared=JSON.parse(readFileSync(new URL('../../../cockpit/src/livery-shared.json',import.meta.url),'utf8')).makers;

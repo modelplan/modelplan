@@ -180,7 +180,7 @@ and Amp `#83b259` are owner-approved too but have no table row: the cockpit has 
 until that wiring exists.
 
 Same-screen collisions (CIEDE2000 under 15) now include GLM next to Copilot (9.7) and GLM next to xAI (12.6); the later one takes its alt.
-Day theme: marks are drawn at 40% of the colour toward black, at least 3.2:1 on the day metal for every colour (Cursor is the tightest at 3.25).
+Day theme: marks are drawn at 40% of the colour toward black, at least 3.4:1 on the day metal for every colour. Cursor's near-white would only reach 3.25, so on day Cursor starts from its grey alt `#6f7782` (CSS rule in `prototype-theme.css`).
 Night uses the colours as is.
 
 **UI accents only; rockets keep website livery.** The palette above is applied by `APP_UI` and `TOOLS` in `sync-livery.mjs` over the shared table:
