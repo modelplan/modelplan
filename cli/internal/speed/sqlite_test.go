@@ -41,8 +41,8 @@ func TestZCodeDatabase(t *testing.T) {
 		CREATE TABLE model_usage (id TEXT PRIMARY KEY, session_id TEXT, turn_id TEXT, model_id TEXT, started_at INTEGER,
 			completed_at INTEGER, duration_ms INTEGER, input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER,
 			cache_read_input_tokens INTEGER, cache_creation_input_tokens INTEGER, agent TEXT, mode TEXT);
-		CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, path TEXT, title TEXT);`)
-	exec(t, db, `INSERT INTO session VALUES ('z-1', ?, '', 'Secret title')`, repo)
+		CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, path TEXT, title TEXT, project_id TEXT);`)
+	exec(t, db, `INSERT INTO session VALUES ('z-1', ?, '', 'Secret title', 'prj-opaque')`, repo)
 	row := func(id string, start time.Time, end *time.Time, out int) {
 		var e any
 		if end != nil {
@@ -75,8 +75,12 @@ func TestZCodeDatabase(t *testing.T) {
 	if w.TotalObservedOutputTokens != 800 || w.Projects != 1 || w.Top[0].Sessions != 1 {
 		t.Fatalf("projects = %+v", w)
 	}
-	if r, _ := projector(cache, false)(repo); r != w.Top[0].Ref {
-		t.Fatal("the session's directory names its project")
+	// ZCode's own project is the session's project_id, not its folder.
+	if r, _ := projector(cache, false)("zcode", repo, nativeProject{ID: "prj-opaque"}); r != w.Top[0].Ref {
+		t.Fatal("the session's project_id names its project")
+	}
+	if r, _ := projector(cache, false)("zcode", repo, nativeProject{}); r != "" {
+		t.Fatal("a ZCode session without a project_id has no project")
 	}
 	// End-to-end times include the wait for the first token: never a generation sample.
 	if r := v.WorkloadRate("zcode"); r.N != 0 || r.Value != nil {
@@ -96,9 +100,11 @@ func TestOpenCodeDatabase(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 	seedPerf(t, cache, t0.Add(-time.Minute))
 	db := sqliteDB(t, OpenCodeDB(home), `
-		CREATE TABLE session_v2 (id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT);
+		CREATE TABLE session_v2 (id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT, project_id TEXT);
+		CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT, name TEXT);
 		CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL);`)
-	exec(t, db, `INSERT INTO session_v2 VALUES ('ses-a', ?, 'title'), ('ses-fork', ?, 'title')`, root, root)
+	exec(t, db, `INSERT INTO project VALUES ('prj-1', ?, 'Acme App'), ('global', '/', NULL)`, root)
+	exec(t, db, `INSERT INTO session_v2 VALUES ('ses-a', ?, 'title', 'prj-1'), ('ses-fork', ?, 'title', 'prj-1')`, root, root)
 	msg := func(row, session, id string, start time.Time, done bool, out, reasoning int) {
 		completed := ""
 		if done {
@@ -131,6 +137,13 @@ func TestOpenCodeDatabase(t *testing.T) {
 	r := v.Ranking().Recent7d
 	if r.Sessions != 1 || r.Top[0].Configs[0].EffortStatus != "unreported" || r.Top[0].ProjectRef == nil {
 		t.Fatalf("ranking = %+v", r)
+	}
+	// OpenCode's own project is its project row, named by its name.
+	if ref, label := projector(cache, true)("opencode", root, nativeProject{ID: "prj-1", Name: "Acme App"}); ref == "" || label != "Acme App" || ref != *r.Top[0].ProjectRef {
+		t.Fatalf("project = %q %q, want the session's project", ref, label)
+	}
+	if ref, _ := projector(cache, true)("opencode", root, nativeProject{ID: "global", Name: "/"}); ref != "" {
+		t.Fatal("OpenCode's global project is no project")
 	}
 	b, _ := os.ReadFile(PerfPath(cache))
 	for _, leak := range []string{"secret reply", "ses-a", "msg-1", root} {

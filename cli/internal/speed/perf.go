@@ -43,7 +43,7 @@ type PerfLedger struct {
 	Stores map[string]DBCursor `json:"stores,omitempty"`
 
 	admission    consent.Admission
-	project      func(cwd string) (ref, label string) // while observing: names a session's project
+	project      func(source, cwd string, np nativeProject) (ref, label string) // while observing: names a session's project
 	subscription string                               // while observing: the harness account's reference
 }
 
@@ -229,9 +229,9 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	if s.SubscriptionRef == "" {
 		s.SubscriptionRef = l.subscription
 	}
-	if t.cwd != "" && l.project != nil && (s.ProjectRef == "" || s.ProjectLabel == "") {
+	if (t.cwd != "" || t.np.ID != "") && l.project != nil && (s.ProjectRef == "" || s.ProjectLabel == "") {
 		// The first working directory names the project; a label comes once labels are on.
-		if ref, label := l.project(t.cwd); s.ProjectRef == "" {
+		if ref, label := l.project(source, t.cwd, t.np); s.ProjectRef == "" {
 			s.ProjectRef, s.ProjectLabel = ref, label
 		} else if ref == s.ProjectRef {
 			s.ProjectLabel = label

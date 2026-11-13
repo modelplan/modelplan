@@ -26,6 +26,7 @@ type liveProbe struct {
 	running     bool
 	requests    []request
 	cwd         string
+	np          nativeProject
 }
 type liveSample struct {
 	At       time.Time `json:"at"`
@@ -262,8 +263,8 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 			break
 		}
 	}
-	if x.cwd != "" && l.project != nil {
-		ref, label := l.project(x.cwd)
+	if (x.cwd != "" || x.np.ID != "") && l.project != nil {
+		ref, label := l.project(source, x.cwd, x.np)
 		if r.ProjectRef == "" {
 			r.ProjectRef = ref
 		}
