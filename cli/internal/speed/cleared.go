@@ -3,6 +3,7 @@ package speed
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,13 +74,15 @@ func (c Cleared) floor(source string) time.Time { return c.Tools[sourceTool(sour
 func (c Cleared) tool(source string) time.Time { return c.Tools[sourceTool(source)] }
 
 // LegacyCursorSources attributes the log cursors an earlier build wrote without a source, by
-// cursor key, from what the ledgers themselves know of that key: the source of the same key's
+// cursor key. First by where the log lives: the key of every log under roots (each tool's own log
+// folder) is computed and compared, which nothing in the key itself could reveal. Then, for keys
+// no log under roots matches, from what the ledgers know of that key: the source of the same key's
 // cursor in the other ledger, of a perf session or live record kept under it, a Claude counted
 // request read from it (claude-code), or a Codex-only field (a cumulative total, a background
-// thread's skip mark: codex). A key with no evidence, or with conflicting evidence, is left out:
-// a clear then keeps that cursor, and with it the data of whichever tool it belongs to. The
-// caller holds the ledger locks.
-func LegacyCursorSources(cache string) map[string]string {
+// thread's skip mark: codex). A key with no evidence, or with conflicting ledger evidence, is left
+// out. A clear removes such a cursor with the cleared tool's: it may be that tool's history. The
+// caller holds the ledger locks and calls this once, before rewriting either ledger.
+func LegacyCursorSources(cache string, roots []LogRoot) map[string]string {
 	evidence := map[string]map[string]bool{}
 	note := func(key, source string) {
 		if key == "" || (source != "claude-code" && source != "codex") {
@@ -133,9 +136,60 @@ func LegacyCursorSources(cache string) map[string]string {
 		}
 	}
 	out := map[string]string{}
+	if len(unattributed) > 0 {
+		for key, source := range logKeys(roots, unattributed) {
+			out[key] = source
+		}
+	}
 	for key := range unattributed {
+		if out[key] != "" {
+			continue
+		}
 		if len(evidence[key]) == 1 {
 			for source := range evidence[key] {
+				out[key] = source
+			}
+		}
+	}
+	return out
+}
+
+// LogRoot: a folder holding one source's logs (Claude Code: <config>/projects; Codex:
+// <home>/sessions).
+type LogRoot struct{ Dir, Source string }
+
+// maxAttributionEntries bounds the folder walk per root.
+const maxAttributionEntries = 50000
+
+// logKeys: for the wanted cursor keys, the source of the log under roots whose key it is. Links
+// are not followed; only regular .jsonl files count. A log in two roots' folders is left out.
+func logKeys(roots []LogRoot, want map[string]bool) map[string]string {
+	found := map[string]map[string]bool{}
+	for _, root := range roots {
+		if root.Dir == "" || !filepath.IsAbs(root.Dir) || root.Source == "" {
+			continue
+		}
+		visited := 0
+		_ = filepath.WalkDir(root.Dir, func(path string, d fs.DirEntry, err error) error {
+			if visited++; visited > maxAttributionEntries {
+				return fs.SkipAll
+			}
+			if err != nil || d.IsDir() || d.Type()&fs.ModeSymlink != 0 || !strings.HasSuffix(path, ".jsonl") {
+				return nil
+			}
+			if key := fileKey(path); want[key] {
+				if found[key] == nil {
+					found[key] = map[string]bool{}
+				}
+				found[key][root.Source] = true
+			}
+			return nil
+		})
+	}
+	out := map[string]string{}
+	for key, sources := range found {
+		if len(sources) == 1 {
+			for source := range sources {
 				out[key] = source
 			}
 		}

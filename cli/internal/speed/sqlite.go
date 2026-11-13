@@ -162,9 +162,13 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 	look := dbLookback.Milliseconds()
 	var pending []int64
 	liveSeen := map[string]bool{}
+	clearedAt := false // the row at c.RowID read here started before the tool's clear
 	for _, r := range rows {
 		if r.rowid > c.RowID {
 			c.RowID = r.rowid
+		}
+		if r.rowid == c.RowID {
+			clearedAt = r.start > 0 && r.start < cleared
 		}
 		if r.start <= 0 {
 			continue
@@ -217,7 +221,11 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 		c.ResetRow, c.ResetMark, c.ResetPending = 0, 0, nil // the re-read is complete
 	}
 	c.Anchor = ""
-	if c.RowID > 0 {
+	// The anchor is the identity of the request at the watermark. One from before the tool's clear
+	// is not kept: the clear erased it. Without an anchor, the next change to the database reads it
+	// from the start once (the reset above), which counts nothing before the clear or already
+	// counted, and anchors the first post-clear request at the watermark.
+	if c.RowID > 0 && !clearedAt {
 		if at, err := anchorOf(db, anchor, c.RowID); err == nil {
 			c.Anchor = at
 		}

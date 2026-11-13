@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -219,6 +220,10 @@ func TestHistoryClearDatabaseKeepsOldRequestHashesGone(t *testing.T) {
 	if seen := zcodeSeen(t, cache); len(seen) != 1 {
 		t.Fatalf("seed not observed: %v", seen)
 	}
+	oldAnchors := zcodeAnchors(t, cache)
+	if len(oldAnchors) != 1 {
+		t.Fatalf("seed made no anchor: %v", oldAnchors)
+	}
 	if err := EraseScope(Paths{Cache: cache}, "zai.local_history", true); err != nil {
 		t.Fatal(err)
 	}
@@ -230,6 +235,9 @@ func TestHistoryClearDatabaseKeepsOldRequestHashesGone(t *testing.T) {
 	if seen := zcodeSeen(t, cache); len(seen) != 0 {
 		t.Fatalf("the first read after the clear recorded pre-clear request hashes: %v", seen)
 	}
+	if anchors := zcodeAnchors(t, cache); len(anchors) != 0 {
+		t.Fatalf("the first read after the clear recorded a pre-clear request's anchor: %v (before the clear: %v)", anchors, oldAnchors)
+	}
 	row("new", clearedAt.Add(5*time.Second), 55)
 	observe(clearedAt.Add(2 * time.Minute))
 	observe(clearedAt.Add(3 * time.Minute))
@@ -240,4 +248,246 @@ func TestHistoryClearDatabaseKeepsOldRequestHashesGone(t *testing.T) {
 	if _, _, pr, po := ledgerTotals(t, cache, "zcode"); pr != 1 || po != 55 {
 		t.Fatalf("only the new request counts: perf %d/%d", pr, po)
 	}
+	if anchors := zcodeAnchors(t, cache); len(anchors) != 1 || anchors[0] == oldAnchors[0] {
+		t.Fatalf("want the post-clear request's anchor only, got %v (pre-clear %v)", anchors, oldAnchors)
+	}
+	row("newer", clearedAt.Add(10*time.Second), 11)
+	observe(clearedAt.Add(4 * time.Minute))
+	observe(clearedAt.Add(5 * time.Minute))
+	if _, _, pr, po := ledgerTotals(t, cache, "zcode"); pr != 2 || po != 66 {
+		t.Fatalf("later requests count once each: perf %d/%d", pr, po)
+	}
+}
+
+// claudeUnfinishedLines: a user turn still waiting for its first reply (no request, no session).
+func claudeUnfinishedLines(t *testing.T, at time.Time) []byte {
+	t.Helper()
+	prompt, _ := json.Marshal(map[string]any{"type": "user", "timestamp": at.Format(time.RFC3339Nano), "message": map[string]any{"content": "synthetic prompt"}})
+	return append(prompt, '\n')
+}
+
+// codexAbortedLines: a Codex turn that was aborted before any token usage (no cumulative total).
+func codexAbortedLines(t *testing.T, at time.Time) []byte {
+	t.Helper()
+	return []byte(fmt.Sprintf(`{"timestamp":%q,"type":"event_msg","payload":{"type":"task_started"}}`+"\n"+
+		`{"timestamp":%q,"type":"turn_context","payload":{"model":"synthetic-model","effort":"high"}}`+"\n"+
+		`{"timestamp":%q,"type":"event_msg","payload":{"type":"turn_aborted"}}`+"\n",
+		at.Format(time.RFC3339Nano), at.Format(time.RFC3339Nano), at.Add(time.Second).Format(time.RFC3339Nano)))
+}
+
+// stripCursorEvidence removes, besides each cursor's source, everything else the ledgers could
+// attribute a cursor key from: Codex totals, Claude counted hashes, perf sessions and live records.
+func stripCursorEvidence(t *testing.T, cache string) {
+	t.Helper()
+	stripCursorSources(t, cache)
+	for _, name := range []string{"speed.json", "perf.json"} {
+		path := filepath.Join(cache, "observed", name)
+		b, _ := os.ReadFile(path)
+		var doc map[string]json.RawMessage
+		var files map[string]map[string]json.RawMessage
+		if json.Unmarshal(b, &doc) != nil || json.Unmarshal(doc["files"], &files) != nil {
+			t.Fatalf("%s unreadable", name)
+		}
+		for _, c := range files {
+			delete(c, "total")
+		}
+		doc["files"], _ = json.Marshal(files)
+		delete(doc, "counted")
+		delete(doc, "live")
+		if _, ok := doc["sessions"]; ok {
+			doc["sessions"] = json.RawMessage("[]")
+		}
+		b, _ = json.Marshal(doc)
+		if err := os.WriteFile(path, b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func hasCursor(t *testing.T, cache, log string) (speedHas, perfHas bool) {
+	t.Helper()
+	for i, name := range []string{"speed.json", "perf.json"} {
+		b, _ := os.ReadFile(filepath.Join(cache, "observed", name))
+		var doc struct {
+			Files map[string]json.RawMessage `json:"files"`
+		}
+		_ = json.Unmarshal(b, &doc)
+		_, found := doc.Files[clearTestKey(log)]
+		if i == 0 {
+			speedHas = found
+		} else {
+			perfHas = found
+		}
+	}
+	return
+}
+
+// A legacy (source-less) cursor of the cleared tool that nothing in the ledgers attributes (an
+// unfinished Claude turn, an aborted Codex turn, outside the tools' log folders) is removed by the
+// clear: its path hash, offset and last-read date are the cleared tool's history.
+func TestHistoryClearErasesUnattributedLegacyCursor(t *testing.T) {
+	for _, tool := range []string{"claude", "codex"} {
+		t.Run(tool, func(t *testing.T) {
+			testenv.IsolateHome(t)
+			t.Setenv("MODELPLAN_HISTORY", "")
+			cache, dir := t.TempDir(), t.TempDir()
+			now := time.Now().UTC()
+			seedPerfLedger(t, cache, now.Add(-time.Hour))
+			var log string
+			if tool == "claude" {
+				log = filepath.Join(dir, "unfinished.jsonl")
+				appendFile(t, log, claudeUnfinishedLines(t, now.Add(-time.Minute)))
+				if err := speed.ObserveClaude(cache, log, false, speed.Ingest{}, now); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				log = filepath.Join(dir, "rollout-aborted.jsonl")
+				appendFile(t, log, codexAbortedLines(t, now.Add(-time.Minute)))
+				if err := speed.ObserveCodex(cache, []string{log}, func(string) bool { return false }, speed.Ingest{}, now); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if s, p := hasCursor(t, cache, log); !s || !p {
+				t.Fatalf("seed made no cursor: speed %v perf %v", s, p)
+			}
+			stripCursorSources(t, cache)
+			if got := speed.LegacyCursorSources(cache, nil)[clearTestKey(log)]; got != "" {
+				t.Fatalf("seed is attributable (%q); the case needs an unattributable cursor", got)
+			}
+			if err := EraseScope(Paths{Cache: cache}, tool+".local_history", true); err != nil {
+				t.Fatal(err)
+			}
+			if s, p := hasCursor(t, cache, log); s || p {
+				t.Fatalf("clear kept the unattributed legacy cursor: speed %v perf %v", s, p)
+			}
+		})
+	}
+}
+
+// Attribution is taken once, before either ledger is rewritten: a perf.json legacy cursor that only
+// speed.json's tagged cursor attributes still goes.
+func TestHistoryClearAttributesLegacyCursorsBeforeRewriting(t *testing.T) {
+	testenv.IsolateHome(t)
+	t.Setenv("MODELPLAN_HISTORY", "")
+	cache, dir := t.TempDir(), t.TempDir()
+	now := time.Now().UTC()
+	seedPerfLedger(t, cache, now.Add(-time.Hour))
+	log := filepath.Join(dir, "rollout-aborted.jsonl")
+	appendFile(t, log, codexAbortedLines(t, now.Add(-time.Minute)))
+	if err := speed.ObserveCodex(cache, []string{log}, func(string) bool { return false }, speed.Ingest{}, now); err != nil {
+		t.Fatal(err)
+	}
+	path := speed.PerfPath(cache)
+	b, _ := os.ReadFile(path)
+	var doc map[string]json.RawMessage
+	var files map[string]map[string]json.RawMessage
+	if json.Unmarshal(b, &doc) != nil || json.Unmarshal(doc["files"], &files) != nil {
+		t.Fatal("perf.json unreadable")
+	}
+	for _, c := range files {
+		delete(c, "source")
+	}
+	doc["files"], _ = json.Marshal(files)
+	b, _ = json.Marshal(doc)
+	if err := os.WriteFile(path, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := speed.LegacyCursorSources(cache, nil)[clearTestKey(log)]; got != "codex" {
+		t.Fatalf("perf.json's legacy cursor not attributable before the clear: %q", got)
+	}
+	if err := EraseScope(Paths{Cache: cache}, "codex.local_history", true); err != nil {
+		t.Fatal(err)
+	}
+	if s, p := hasCursor(t, cache, log); s || p {
+		t.Fatalf("clear kept the cleared tool's cursor: speed %v perf %v", s, p)
+	}
+}
+
+// Clearing one tool keeps another tool's legacy cursor that nothing in the ledgers attributes when
+// its log lies in that tool's log folder, so its already counted turn is not counted again.
+func TestHistoryClearKeepsOtherToolLegacyCursorFoundInItsLogFolder(t *testing.T) {
+	for _, cleared := range []string{"claude", "codex"} {
+		t.Run(cleared, func(t *testing.T) {
+			testenv.IsolateHome(t)
+			t.Setenv("MODELPLAN_HISTORY", "")
+			home, _ := os.UserHomeDir()
+			claudeRoot := filepath.Join(t.TempDir(), "claude-config")
+			t.Setenv("CLAUDE_CONFIG_DIR", claudeRoot)
+			cache := t.TempDir()
+			now := time.Now().UTC()
+			seedPerfLedger(t, cache, now.Add(-time.Hour))
+			rollout := filepath.Join(home, ".codex", "sessions", "2026", "11", "13", "rollout-synthetic.jsonl")
+			transcript := filepath.Join(claudeRoot, "projects", "-synthetic", "session.jsonl")
+			for _, p := range []string{rollout, transcript} {
+				if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			appendFile(t, rollout, codexLines(t, now.Add(-5*time.Minute), 100))
+			appendFile(t, transcript, claudeLines(t, now.Add(-5*time.Minute), "synthetic-first", 77))
+			codex := func(at time.Time) {
+				t.Helper()
+				if err := speed.ObserveCodex(cache, []string{rollout}, func(string) bool { return false }, speed.Ingest{}, at); err != nil {
+					t.Fatal(err)
+				}
+			}
+			claude := func(at time.Time) {
+				t.Helper()
+				if err := speed.ObserveClaude(cache, transcript, false, speed.Ingest{}, at); err != nil {
+					t.Fatal(err)
+				}
+			}
+			codex(now)
+			claude(now)
+			stripCursorEvidence(t, cache)
+			keptSource, keptLog, clearedLog := "codex", rollout, transcript
+			wantReq, wantOut := 2, int64(140)
+			if cleared == "codex" {
+				keptSource, keptLog, clearedLog = "claude-code", transcript, rollout
+				wantOut = 132
+			}
+			if err := EraseScope(Paths{Cache: cache}, cleared+".local_history", true); err != nil {
+				t.Fatal(err)
+			}
+			if s, p := hasCursor(t, cache, clearedLog); s || p {
+				t.Fatalf("clear kept the cleared tool's cursor: speed %v perf %v", s, p)
+			}
+			if s, p := hasCursor(t, cache, keptLog); !s || !p {
+				t.Fatalf("clear dropped the other tool's cursor: speed %v perf %v", s, p)
+			}
+			later := time.Now().UTC()
+			if keptSource == "codex" {
+				appendFile(t, rollout, codexLines(t, later.Add(5*time.Second), 40))
+			} else {
+				appendFile(t, transcript, claudeLines(t, later.Add(5*time.Second), "synthetic-second", 55))
+			}
+			for i := 0; i < 2; i++ {
+				if keptSource == "codex" {
+					codex(later.Add(time.Minute))
+				} else {
+					claude(later.Add(time.Minute))
+				}
+			}
+			_, _, pr, po := ledgerTotals(t, cache, keptSource)
+			if pr != wantReq || po != wantOut {
+				t.Fatalf("%s after clearing %s: perf %d/%d, want %d/%d (no recount)", keptSource, cleared, pr, po, wantReq, wantOut)
+			}
+		})
+	}
+}
+
+// zcodeAnchors: every database anchor the perf ledger's ZCode cursors keep.
+func zcodeAnchors(t *testing.T, cache string) []string {
+	t.Helper()
+	p, ok := speed.LoadPerf(cache)
+	if !ok {
+		t.Fatal("perf.json unreadable")
+	}
+	var out []string
+	for key, c := range p.Stores {
+		if strings.HasPrefix(key, "zcode:") && c.Anchor != "" {
+			out = append(out, c.Anchor)
+		}
+	}
+	return out
 }
