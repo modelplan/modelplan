@@ -547,6 +547,9 @@ func TestModelListLaterPageFailureAdvertisesNoPartialList(t *testing.T) {
 	for name, page2 := range map[string]string{
 		"error":     `echo '{"id":5,"error":{"code":-32603,"message":"internal"}}'`,
 		"malformed": `echo '{"id":5,"result":{"data":"not-a-list"}}'`,
+		"no data":   `echo '{"id":5,"result":{}}'`,
+		"null data": `echo '{"id":5,"result":{"data":null}}'`,
+		"null":      `echo '{"id":5,"result":null}'`,
 		"eof":       `exit 0`,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -608,6 +611,18 @@ func TestModelListOverTheCapsIsNotAdvertised(t *testing.T) {
 	// One page with more ids than the size cap.
 	if got := askCodexModels(send, func(id int) (json.RawMessage, error) { return page(id, modelListMax+1, false), nil }); got != nil {
 		t.Fatalf("size cap: %d ids", len(got))
+	}
+	// An explicit empty data array is a legitimate page; a page without one is malformed.
+	if got := askCodexModels(send, func(id int) (json.RawMessage, error) {
+		if id == 4 {
+			return page(id, 1, true), nil
+		}
+		return json.RawMessage(`{"data":[],"nextCursor":null}`), nil
+	}); strings.Join(got, ",") != "m-4-0" {
+		t.Fatalf("empty last page = %v", got)
+	}
+	if got := askCodexModels(send, func(int) (json.RawMessage, error) { return json.RawMessage(`{"nextCursor":null}`), nil }); got != nil {
+		t.Fatalf("page without data = %v", got)
 	}
 	// A complete two-page list is kept.
 	if got := askCodexModels(send, func(id int) (json.RawMessage, error) { return page(id, 2, id == 4), nil }); strings.Join(got, ",") != "m-4-0,m-4-1,m-5-0,m-5-1" {

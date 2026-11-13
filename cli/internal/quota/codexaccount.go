@@ -619,18 +619,19 @@ func askCodexModels(send func(any) error, wait func(int) (json.RawMessage, error
 			if err != nil {
 				break
 			}
+			// A page must carry its data array: a missing or null result or data is malformed, not the end.
 			var r struct {
-				Data []struct {
+				Data *[]struct {
 					ID     string `json:"id"`
 					Model  string `json:"model"`
 					Hidden bool   `json:"hidden"`
 				} `json:"data"`
 				NextCursor *string `json:"nextCursor"`
 			}
-			if json.Unmarshal(raw, &r) != nil {
+			if json.Unmarshal(raw, &r) != nil || r.Data == nil {
 				break
 			}
-			for _, m := range r.Data {
+			for _, m := range *r.Data {
 				id := strings.TrimSpace(m.Model)
 				if id == "" {
 					id = strings.TrimSpace(m.ID)
