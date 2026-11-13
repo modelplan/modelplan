@@ -64,7 +64,7 @@
 .ck-eng .qaverage{margin-left:auto;font-size:11px}
 .ck-eng .qrow-r{flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:2px;padding-top:2px;font-size:11px;line-height:13px}
 .ck-eng .qrv-c.warn{color:var(--st-mid)}
-.ck-eng .qrv-p{display:block;max-width:100%}
+.ck-eng .qrv-p{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ck-eng .ec.grey .qbar i.on{background:var(--lcd-muted);opacity:.6;box-shadow:none}
 .ck-eng .ec.grey :is(.qnum,.qtxt,.qrow){color:var(--lcd-muted)}
 .cls-narrow .qnum{font-size:16px;line-height:19px}

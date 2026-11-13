@@ -47,3 +47,12 @@ for(const [locale,balance,note] of [['en','$12.34',/balance, no usage/],['zh-CN'
   await expect(overview.locator('.ov-bal-note')).toHaveText(note);
   await expect(overview.locator('.mp-empty')).toHaveCount(0);
  });
+
+for(const [locale,full,value] of [['en','Balance $12.34','$12.34'],['zh-CN','余额 US$12.34','US$12.34']])
+ test(`G3-109 the engine column's reserve row shows a money balance in its currency (${locale})`,async({page})=>{
+  await open(page,locale);
+  const grok=page.locator('.u11-engine-table .ec[data-col]').nth(4).locator('.qrv-p');
+  await expect(grok).toHaveAttribute('data-full',full);
+  const shown=await grok.evaluate(e=>({text:e.textContent,fits:e.scrollWidth<=e.clientWidth+1}));
+  expect([full,value]).toContain(shown.text);expect(shown.fits).toBe(true);
+ });

@@ -11,7 +11,7 @@ import type {WireCockpitData,WireAccount,WireRow} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
 import {sessionMember,sessionMembers,memberColours,toolDevelopers,vendorPalette} from './session-binding.js';
 import {cautionItems} from './caution.js';
-import {prototypeEngineSupplement,currentWindow,displayWindow,scopedWindow,runOutMinutes,runOutFields,forecastOf} from './prototype-data-adapter.js';
+import {prototypeEngineSupplement,currentWindow,displayWindow,scopedWindow,runOutMinutes,runOutFields,forecastOf,moneyText} from './prototype-data-adapter.js';
 import {historyView,resetHistory,usageStats} from './prototype-history.js';
 import {publishedFleet} from './prototype-hud.js';
 import {scaleView,levelK,bankView,faderModel,lcdView,indicatorView,marksView,stripAria} from '../study/rocket-r1/fader-view.js';
@@ -131,8 +131,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  function balanceOnly(account:WireAccount):string|null{
   const c=account.credits,value=c?.balance;
   if(account.valueState!=='current'||!c||typeof value!=='number'||!Number.isFinite(value)||account.windows.some(w=>w.remainingPercent!==null))return null;
-  if(c.unit==='money'&&c.currency&&/^[A-Z]{3}$/.test(c.currency)){try{return new Intl.NumberFormat(locale,{style:'currency',currency:c.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(value);}catch{/* an unknown code falls through to the plain number */}}
-  return c.unit==='money'?new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(value):formatCredits(value,locale);
+  return moneyText(c,locale)??formatCredits(value,locale);
  }
  function publicData(now=renderedNow){
   const members=data?cockpitMembers(data):[],ids=new Map(members.map((m,i)=>[m.key,'member'+i]));

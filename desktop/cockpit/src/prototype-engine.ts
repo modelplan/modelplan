@@ -9,7 +9,7 @@ import {cockpitMembers} from './members.js';
 import {memberColours} from './session-binding.js';
 import {NEUTRAL} from './livery.js';
 import {cautionItems,cautionLevel} from './caution.js';
-import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf} from './prototype-data-adapter.js';
+import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf,moneyText} from './prototype-data-adapter.js';
 import {engineModel} from '../study/rocket-r1/engine-model.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
@@ -39,8 +39,10 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const windows=account.windows.filter(general).map(convert);
   const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
   const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
+  // G3-109: a money balance (Grok Build) has no credits/points; the reserve row shows it in its reported currency.
+  const money=moneyText(account.credits,locale);
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
+  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
@@ -85,7 +87,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  // CSS ellipsis is the last resort. Measured again whenever the table's width changes (not laid out yet: skipped).
  let watch:ResizeObserver|null=null;
  // The width watch starts once the table is in the page: WebKit reports nothing for a target observed while detached.
- function fit(){if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}for(const e of host.querySelectorAll<HTMLElement>('.qtxt[data-full]')){if(!e.isConnected||e.clientWidth<=0)continue;const forms=[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v);e.textContent=forms[0]??'';for(const form of forms.slice(1)){if(e.scrollWidth<=e.clientWidth)break;e.textContent=form;}}}
+ function fit(){if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}for(const e of host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full]')){if(!e.isConnected||e.clientWidth<=0)continue;const forms=[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v);e.textContent=forms[0]??'';for(const form of forms.slice(1)){if(e.scrollWidth<=e.clientWidth)break;e.textContent=form;}}}
 
  const choosePage=(element:Element)=>{const led=element.closest<HTMLElement>('.eng-led[data-page]');if(!led||!host.contains(led))return false;const requested=Number(led.dataset.page);if(Number.isInteger(requested)&&requested>=0&&requested<Math.ceil(members.length/6)){page=requested;paint();}return true;};
  host.onkeydown=e=>{if(e.isTrusted&&(e.key==='Enter'||e.key===' ')&&choosePage(e.target as Element))e.preventDefault();};
