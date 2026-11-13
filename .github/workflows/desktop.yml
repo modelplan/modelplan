@@ -108,7 +108,8 @@ jobs:
   # contains the base and its own run tested exactly this), skips the jobs below. D169: the GUI leg
   # runs here in full whenever the group changes a desktop path, even when the tree is the PR head's,
   # because a PR's own GUI run covers only the classes related to its change. trusted-mac.yml routes
-  # the queue's GUI legs to the owner's GUI Mac; native-headless still uses a hosted Mac here.
+  # the queue's GUI legs to the owner's GUI Mac and native-headless to the non-GUI Macs (D246);
+  # app-smoke stays on a hosted Mac (it launches the packaged AppKit app).
   queue-scope:
     if: ${{ github.event_name == 'merge_group' }}
     runs-on: ubuntu-latest
