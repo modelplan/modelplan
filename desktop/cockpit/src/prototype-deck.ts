@@ -127,6 +127,13 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const member=x.subscriptionRef?members.find(m=>m.key===x.subscriptionRef):undefined;
    return [{ref:x.sessionRef,sub:member?ids.get(member.key)??null:null,tool:x.source,model:x.model,effort:x.effort,fast:false,project:x.projectLabel??'--',running:false,startedAt:null,endedAt:null,lastAt:at,tokens:null}];});
  }
+ // The balance text of a current reading with a balance and no usage percentage; null otherwise.
+ function balanceOnly(account:WireAccount):string|null{
+  const c=account.credits,value=c?.balance;
+  if(account.valueState!=='current'||!c||typeof value!=='number'||!Number.isFinite(value)||account.windows.some(w=>w.remainingPercent!==null))return null;
+  if(c.unit==='money'&&c.currency&&/^[A-Z]{3}$/.test(c.currency)){try{return new Intl.NumberFormat(locale,{style:'currency',currency:c.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(value);}catch{/* an unknown code falls through to the plain number */}}
+  return c.unit==='money'?new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(value):formatCredits(value,locale);
+ }
  function publicData(now=renderedNow){
   const members=data?cockpitMembers(data):[],ids=new Map(members.map((m,i)=>[m.key,'member'+i]));
   // Owner build 13 / study fixtures: the Subscription page names the subscription ("ChatGPT Pro"), not the tool, and
@@ -195,6 +202,10 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   if(since!==null&&selected===0&&d.daily.length){const sum=page.querySelector('.ov-top .ov-sum'),label=sum?.previousElementSibling;if(label&&since>dayStart(d.now,29))label.textContent=t('mfd.since',{d:md(since,{lang:locale})});}
   if(since!==null&&selected===1)for(const stats of page.querySelectorAll<HTMLElement>('.sp-stats[data-days]')){const days=Number(stats.dataset.days),head=stats.querySelector('.stat-h');if(head&&Number.isFinite(days)&&since>dayStart(d.now,days-1))head.textContent+=' · '+t('mfd.since',{d:md(since,{lang:locale})});}
   if(selected===0&&!d.daily.length){const members=scope==='all'?d.members:d.members.filter(m=>m.key===scope),values=members.map(m=>prototypeEngineSupplement(m.account,data??undefined).todayTokens);if(values.length&&values.every((v):v is number=>v!==null)){const sum=values.reduce((a,v)=>a+v,0);if(Number.isSafeInteger(sum)){const total=node('div','ov-top');total.append(node('span','lbl',t('mfd.today')),node('b','ov-total',tok(sum)));const alerts=page.querySelector('.mfd-alerts');if(alerts)alerts.after(total);else page.prepend(total);}}}
+  // G3-109: a subscription with a balance but no usage percentage (Grok Build on the X Subscription, D228) has no
+  // chart; its Overview shows the balance and why there is no percentage instead of an empty "Quota only".
+  if(selected===0&&selectedId){const entry=d.members[Number(selectedId.slice('member'.length))],balance=entry?balanceOnly(entry.account):null,empty=page.querySelector('.mp-empty');
+   if(entry&&balance!==null&&empty){const block=node('div','ov-bal');block.append(node('span','lbl',t('mfd.balance')),node('b','',balance));empty.replaceWith(block,node('p','ov-bal-note',t(entry.row.id==='grok'?'mfd.balanceOnlyX':'mfd.balanceOnly')));}}
   // Study list IDs are positional; attach the originating member identity for focus restoration.
   for(const el of page.querySelectorAll<HTMLElement>('[data-mfd^="scope:member"]')){const match=/^scope:member(\d+)$/.exec(el.dataset.mfd??'');const member=match?d.members[Number(match[1])]:null;if(member){el.dataset.focusMember=member.key;}}
   // 30-day history and the full session list are unavailable, not zero.
