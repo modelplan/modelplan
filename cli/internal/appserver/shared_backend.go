@@ -4,6 +4,7 @@ package appserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -141,6 +142,7 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 	if err := ctx.Err(); err != nil {
 		return View{}, err
 	}
+	b.allowLaterLocalLogs(ctx)
 	result := consent.BuildStable(func(admission consent.Admission) View { return b.buildView(admission, false) }, func(admission consent.Admission) View { return b.buildView(admission, true) })
 	if ctx.Err() != nil {
 		return View{}, ctx.Err()
@@ -150,6 +152,33 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 	}
 	return result, nil
 }
+
+// allowLaterLocalLogs applies D240 (owner 2026-11-13): a tool installed after the first run
+// has its local-log scopes allowed without a prompt, through the same grant path Settings
+// uses, once, while the user has made no decision for that tool. Anything that needs the
+// tool's saved login, its runtime or a network call stays opt-in (offered in the menu, D238).
+// A failed or stale attempt is retried on the next view.
+func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
+	if b.config.LaterInstalled == nil || b.config.ReadOnly {
+		return
+	}
+	later := b.config.LaterInstalled(b.config.Detect())
+	if len(later) == 0 {
+		return
+	}
+	admission := consent.Capture()
+	if admission.Mode() == consent.Off {
+		return
+	}
+	state := admission.State()
+	scopes := consent.AutoLocalLogScopes(state, later)
+	if len(scopes) == 0 || state.StoreEpoch == "" {
+		return
+	}
+	_, _ = b.Grant(ctx, wire.ConsentGrantParams{RequestID: fmt.Sprintf("d240-local-logs-%d", state.Generation), ExpectStoreEpoch: state.StoreEpoch,
+		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: []string{}})
+}
+
 func (b *SharedBackend) buildView(admission consent.Admission, changed bool) View {
 	p := b.paths(admission)
 	detection := b.config.Detect()

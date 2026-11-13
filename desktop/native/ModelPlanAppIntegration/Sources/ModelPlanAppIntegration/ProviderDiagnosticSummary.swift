@@ -33,7 +33,9 @@ enum ProviderDiagnosticSummary {
     }
 }
 
-/// D238: a supported tool installed after the first run that the user has not decided on yet.
+/// D238: a supported tool installed after the first run that the user has not decided on yet and
+/// that needs more than local logs (its saved login, runtime or a network call; local-log scopes
+/// are allowed without a prompt, D240).
 /// The engine offers it on the menu surface only: consent unset, no values, no reader run and,
 /// like every unreadable tool, no Quota Widget ring (G3-38, owner D76). Choosing the line opens
 /// Settings › Subscriptions, where the tool's own switch grants its scope.
