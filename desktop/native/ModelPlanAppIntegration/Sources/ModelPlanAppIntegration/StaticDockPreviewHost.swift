@@ -723,6 +723,9 @@ struct DockHelpInteraction: Equatable {
         displayed.setNozzlePoses(poses)
     }
 
+    /// G3-98: a failed or never-started refresh releases the hidden number (a landed result does it in the view).
+    func resolveRefreshReadout(_ id: String) { interactionView.resolveRefreshReadout(id) }
+
     @discardableResult func sweepRefresh(_ id: String) -> Bool {
         guard permitted, !retired, preferences.showDock,
               model?.inputs.contains(where: { $0.id == id }) == true else { return false }

@@ -283,6 +283,8 @@ struct StatusNoticePresentation {
         guard !terminating, !lifecyclePaused,
               composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
         _ = composition.dock.sweepRefresh(id)
+        var handedOff = false
+        defer { if !handedOff { composition.dock.resolveRefreshReadout(id) } }
         guard !memberRefreshInFlight.contains(id),
               let member = composition.accountMembers.members.first(where: { $0.id == id && $0.isStable }),
               let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery) else { return }
@@ -295,9 +297,11 @@ struct StatusNoticePresentation {
         }
         unavailableMemberRefreshes.remove(id)
         memberRefreshInFlight.insert(id)
+        handedOff = true
         Task { @MainActor [weak self, weak adapter] in
             guard let self else { return }
-            defer { self.memberRefreshInFlight.remove(id) }
+            var landed = true
+            defer { self.memberRefreshInFlight.remove(id); if !landed { self.composition.dock.resolveRefreshReadout(id) } }
             guard let adapter, !self.terminating, !self.lifecyclePaused,
                   self.composition.client.isCurrent(delivery),
                   self.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }),
@@ -305,9 +309,10 @@ struct StatusNoticePresentation {
                       $0.id == id && $0.isStable && $0.rowID == member.rowID && $0.source == member.source &&
                       $0.account.subscriptionRef == member.account.subscriptionRef && $0.account.accountLocator == member.account.accountLocator
                   }),
-                  adapter.admission(for: member, delivery: delivery, now: Date()) == .ready else { return }
+                  adapter.admission(for: member, delivery: delivery, now: Date()) == .ready else { landed = false; return }
             do { try await adapter.request(member: member, delivery: delivery) }
             catch {
+                landed = false
                 guard !self.terminating, self.composition.client.isCurrent(delivery),
                       self.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
                 self.unavailableMemberRefreshes.insert(id); self.renderMenu()

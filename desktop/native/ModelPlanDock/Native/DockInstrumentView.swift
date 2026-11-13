@@ -459,6 +459,7 @@ enum DockGripInk {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
         let renderScale = presentationBackingScale ?? window.map { Int($0.backingScaleFactor) } ?? scale
         guard (1...2).contains(scale), (1...2).contains(renderScale) else{throw DockArtworkError.invalidManifest}
+        let previousReading = readoutHold.flatMap { readings[$0.id] }
         resetVisuals()
         do {
             let factor: CGFloat
@@ -478,9 +479,13 @@ enum DockGripInk {
             imageUsesHoverViewport = false
             appliedGeometryScale = factor
             let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:renderScale)
+            // G3-98: a landed result releases the hold; until then the new render keeps the number hidden.
+            if let hold=readoutHold,hold.resolvedAt==nil,let old=previousReading,let new=values[hold.id],
+               old.readout != new.readout || old.remainingPercent != new.remainingPercent || old.dataState != new.dataState {resolveRefreshReadout(hold.id)}
+            var held:DockRenderResult?;if readoutHold != nil{held=try renderer.render(skin:holdSkin(skin),readings:values,notices:notices,scale:renderScale)}
             community=false;failed=false;self.skin=skin;self.scale=renderScale;self.locale=locale;self.notices=notices
             self.officialRenderer=renderer
-            presentedTextMetricsForChecks=result.metrics;orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;restingInstrumentImage=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
+            presentedTextMetricsForChecks=result.metrics;orderedIDs=rows.map(\.subscriptionID);readings=values;image=held?.image ?? result.image;restingInstrumentImage=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
             frame.size = viewport?.size ?? skin.bounds.size
             CATransaction.begin();CATransaction.setDisableActions(true);layer?.contentsScale=CGFloat(renderScale)
             let visible=Set(skin.stations.compactMap(\.subscriptionID))
@@ -491,6 +496,7 @@ enum DockGripInk {
                 if parent.superlayer == nil{layer?.addSublayer(parent)};workingLayerParents[id]=parent
             }
             CATransaction.commit();refreshNodes();needsDisplay=true
+            if readoutHold != nil, values[readoutHold!.id] != nil { runRefreshSweep(original: (result.image, false)) } else { readoutHold = nil }
         } catch {
             retireOfficialPresentation()
             throw error
@@ -498,6 +504,7 @@ enum DockGripInk {
     }
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
     public func retireOfficialPresentation() {
+        readoutHold = nil
         setAccessibilityValue(nil)
         clearFocusedHelpExplanation(); resetVisuals(); focusedGripIndex = nil; registeredGripRects = []; registeredGripArtRects = []; community = false; failed = true
         restingInstrumentImage = nil
@@ -507,7 +514,7 @@ enum DockGripInk {
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){readoutHold=nil;onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
@@ -565,44 +572,68 @@ enum DockGripInk {
         onNozzlePosesChanged?()
     }
 
+    /// G3-98: the number of the refreshed ring is hidden from the click until its result lands.
+    private struct ReadoutHold { let id: String; let started: TimeInterval; var resolvedAt: TimeInterval? }
+    private var readoutHold: ReadoutHold?
+    private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+    private func holdSkin(_ skin: DockInstrumentSkin) -> DockInstrumentSkin {
+        guard let hold = readoutHold else { return skin }
+        let alpha = DockRefreshSweep.readoutAlpha(elapsed: now - hold.started, resolvedAt: hold.resolvedAt, reduceMotion: false)
+        var copy = skin
+        if let i = copy.stations.firstIndex(where: { $0.subscriptionID == hold.id }) { copy.stations[i].readoutOpacity = alpha }
+        return copy
+    }
+    /// The host reports that the refresh failed or never started; the number may return now.
+    public func resolveRefreshReadout(_ id: String) {
+        guard var hold = readoutHold, hold.id == id, hold.resolvedAt == nil else { return }
+        hold.resolvedAt = now - hold.started; readoutHold = hold
+    }
+
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
     @discardableResult public func playRefreshSweep(_ id: String, reduceMotion: Bool) -> Bool {
-        cancelRefreshSweep()
-        guard !failed, !community, let skin, let renderer = officialRenderer, let original = image,
+        cancelRefreshSweep(); readoutHold = nil
+        guard !failed, !community, skin != nil, officialRenderer != nil, let original = image,
               let reading = readings[id], reading.remainingPercent != nil,
               original.width <= 4096, original.height <= 4096,
               original.width * original.height <= 4_194_304 else { return false }
         refreshSweepCountForChecks += 1
         refreshSweepReadoutFramesForChecks = []
         if reduceMotion { return true }
-        refreshSweepOriginal = (original, imageUsesHoverViewport)
+        readoutHold = ReadoutHold(id: id, started: now, resolvedAt: nil)
+        runRefreshSweep(original: (original, imageUsesHoverViewport))
+        return true
+    }
+    private func runRefreshSweep(original: (image: CGImage, usesHoverViewport: Bool)) {
+        guard let hold = readoutHold else { return }
+        let id = hold.id
+        refreshSweepOriginal = original
         refreshSweepGeneration &+= 1
-        let token = refreshSweepGeneration, base = readings, notices = self.notices, scale = self.scale
-        let started = ProcessInfo.processInfo.systemUptime
+        let token = refreshSweepGeneration
         refreshSweepTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                guard let self, self.refreshSweepGeneration == token else { return }
-                let elapsed = max(0, ProcessInfo.processInfo.systemUptime - started)
+                guard let self, self.refreshSweepGeneration == token, let hold = self.readoutHold, hold.id == id,
+                      let skin = self.skin, let renderer = self.officialRenderer, let reading = self.readings[id] else { return }
+                let elapsed = max(0, self.now - hold.started)
                 guard let progress = DockRefreshSweep.fraction(elapsed: elapsed, target: 1, reduceMotion: false) else { break }
-                var frame = base; frame[id] = reading.refreshSweepFrame(progress: progress)
-                let alpha = DockRefreshSweep.readoutAlpha(elapsed: elapsed, reduceMotion: false)
+                var frame = self.readings; frame[id] = reading.refreshSweepFrame(progress: progress)
+                let alpha = DockRefreshSweep.readoutAlpha(elapsed: elapsed, resolvedAt: hold.resolvedAt, reduceMotion: false)
                 var sweepSkin = skin
                 if let i = sweepSkin.stations.firstIndex(where: { $0.subscriptionID == id }) { sweepSkin.stations[i].readoutOpacity = alpha }
                 self.refreshSweepReadoutFramesForChecks.append((alpha, frame[id]?.readout ?? ""))
                 let viewport = self.nozzlePosesForChecks.isEmpty ? nil : self.hoverViewport
                 do {
-                    self.image = try renderer.render(skin: sweepSkin, readings: frame, notices: notices, scale: scale,
+                    self.image = try renderer.render(skin: sweepSkin, readings: frame, notices: self.notices, scale: self.scale,
                         poses: self.nozzlePosesForChecks, cachedBackground: self.backgroundImage, viewport: viewport).image
                     self.imageUsesHoverViewport = viewport != nil
                 } catch { break }
                 self.needsDisplay = true
-                if elapsed >= DockRefreshSweep.duration { break }
+                if elapsed >= DockRefreshSweep.readoutEnd(resolvedAt: hold.resolvedAt) { break }
                 try? await Task.sleep(for: .milliseconds(50))
             }
             guard let self, self.refreshSweepGeneration == token else { return }
+            self.readoutHold = nil
             self.cancelRefreshSweep()
         }
-        return true
     }
     private func cancelRefreshSweep() {
         refreshSweepGeneration &+= 1; refreshSweepTask?.cancel(); refreshSweepTask = nil
@@ -611,8 +642,8 @@ enum DockGripInk {
             refreshSweepOriginal = nil; needsDisplay = true
         }
     }
-    public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
-    public override func viewDidHide(){clearFocusedHelpExplanation();focusedGripIndex=nil;focusedNoticeID=nil;resetVisuals();super.viewDidHide()}
+    public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{readoutHold=nil;resetVisuals()};super.viewWillMove(toWindow:newWindow)}
+    public override func viewDidHide(){readoutHold=nil;clearFocusedHelpExplanation();focusedGripIndex=nil;focusedNoticeID=nil;resetVisuals();super.viewDidHide()}
     private func clearObservers(){
         windowObservers.forEach{NotificationCenter.default.removeObserver($0)};windowObservers=[]
         if let workspaceObserver{NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver);self.workspaceObserver=nil}

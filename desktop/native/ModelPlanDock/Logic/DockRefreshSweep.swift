@@ -11,15 +11,22 @@ public enum DockRefreshSweep {
         return target * (1 - pow(1 - t, 3))
     }
 
-    /// G3-98: the number never counts along with the ring. It fades out, stays hidden, then fades in
-    /// showing the admitted value. Alpha only; the text is never an intermediate value.
+    /// G3-98: the number never counts along with the ring. It fades out, stays hidden until the refresh
+    /// result lands (or fails), capped at `readoutHoldCap`, then fades in with the value then admitted.
+    /// Alpha only; the text is never an intermediate value.
     public static let readoutFadeOut: TimeInterval = 0.15
     public static let readoutFadeIn: TimeInterval = 0.15
-    public static func readoutAlpha(elapsed: TimeInterval, reduceMotion: Bool) -> Double {
+    public static let readoutHoldCap: TimeInterval = 3
+    /// `resolvedAt` is the elapsed time the result landed or failed; nil while the refresh runs.
+    public static func readoutAlpha(elapsed: TimeInterval, resolvedAt: TimeInterval?, reduceMotion: Bool) -> Double {
         guard !reduceMotion, elapsed.isFinite, elapsed >= 0 else { return 1 }
+        let release = min(readoutHoldCap, max(readoutFadeOut, resolvedAt ?? readoutHoldCap))
         if elapsed < readoutFadeOut { return 1 - elapsed / readoutFadeOut }
-        let inStart = duration - readoutFadeIn
-        if elapsed < inStart { return 0 }
-        return min(1, (elapsed - inStart) / readoutFadeIn)
+        if elapsed < release { return 0 }
+        return min(1, (elapsed - release) / readoutFadeIn)
+    }
+    /// When the sweep loop may stop: ring done and the number fully back.
+    public static func readoutEnd(resolvedAt: TimeInterval?) -> TimeInterval {
+        max(duration, min(readoutHoldCap, max(readoutFadeOut, resolvedAt ?? readoutHoldCap)) + readoutFadeIn)
     }
 }
