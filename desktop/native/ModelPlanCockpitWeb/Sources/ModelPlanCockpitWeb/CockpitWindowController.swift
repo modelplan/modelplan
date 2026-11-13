@@ -1351,6 +1351,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// What the pointer shows over the strip: an open hand, a closed hand while dragging.
   func resetDragState() { isDragging = false }
   var currentCursor: NSCursor { isDragging ? .closedHand : .openHand }
+  static let gripDot: CGFloat = 3, gripGap: CGFloat = 5, gripColumns = 6, gripRows = 2
+  /// G3-99: the strip starts under the logo and wordmark, so the grip sits at the right end, in the empty part
+  /// (CKP-SHELL-31), never beside the wordmark.
+  var gripRect: NSRect {
+    let width = CGFloat(Self.gripColumns) * Self.gripDot + CGFloat(Self.gripColumns - 1) * Self.gripGap
+    let height = CGFloat(Self.gripRows) * Self.gripDot + CGFloat(Self.gripRows - 1) * Self.gripGap
+    return NSRect(x: bounds.maxX - 10 - width, y: bounds.midY - height / 2, width: width, height: height)
+  }
   /// The grip is visible only while hovered or dragging.
   var showsGrip: Bool { isHovered || isDragging }
   override var acceptsFirstResponder: Bool { true }
@@ -1378,9 +1386,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   override func draw(_ dirtyRect: NSRect) {
     guard showsGrip else { return }
     NSColor(white: 1, alpha: isDragging ? 0.34 : 0.22).setFill()
-    let dot: CGFloat = 3, gap: CGFloat = 5, columns = 6, rows = 2
-    let width = CGFloat(columns) * dot + CGFloat(columns - 1) * gap, height = CGFloat(rows) * dot + CGFloat(rows - 1) * gap
-    let origin = CGPoint(x: bounds.midX - width / 2, y: bounds.midY - height / 2)
+    let origin = gripRect.origin
+    let dot = Self.gripDot, gap = Self.gripGap, columns = Self.gripColumns, rows = Self.gripRows
     for row in 0..<rows { for column in 0..<columns {
       NSBezierPath(ovalIn: NSRect(x: origin.x + CGFloat(column) * (dot + gap), y: origin.y + CGFloat(row) * (dot + gap), width: dot, height: dot)).fill()
     } }

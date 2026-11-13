@@ -13,6 +13,13 @@ import XCTest
   private func click(_ type: NSEvent.EventType) throws -> NSEvent {
     try XCTUnwrap(NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
   }
+  /// G3-99 (build 14e): the strip is 216 wide and starts under the logo and wordmark; a centred grip landed
+  /// right beside "ModelPlan". It belongs in the empty right part, clear of the wordmark.
+  func testGripSitsInTheEmptyRightPartNotBesideTheWordmark() {
+    let drag = CockpitTitleDrag(frame: NSRect(x: 0, y: 0, width: 216, height: 32))
+    XCTAssertGreaterThanOrEqual(drag.gripRect.minX, drag.bounds.width * 0.6)
+    XCTAssertLessThanOrEqual(drag.gripRect.maxX, drag.bounds.width)
+  }
   func testNothingShowsWithoutHoverThenAnOpenHandAndGripAppear() throws {
     let drag = view()
     XCTAssertFalse(drag.showsGrip); XCTAssertFalse(drag.isHovered)
