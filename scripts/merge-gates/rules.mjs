@@ -340,6 +340,46 @@ export function evidenceState(pr, items, head, tiers = new Map(), { designTouchi
     : { state: SUCCESS, why: "scenario evidence verified" };
 }
 
+// ---- Reference apps (D239, owner 2026-11-13) ----
+// Reader, detection and metric work follows a named reference app (docs/readers/integration-standard.md §3).
+// A PR touching these paths must carry a body line
+//   Reference: <app>@<commit-or-tag> <path>[, <path>][; <app>@<ref> <path> ...]
+// naming at least one panel app, or "Reference: none (<reason>)". Missing or malformed fails at once, drafts too.
+const REFERENCE_SCOPE_RE = /^cli\/internal\/(quota|detect|localusage|speed|consent)\/|^desktop\/native\/.*\/Sources\/.*ReaderCause[^/]*\.swift$|^desktop\/cockpit\/src\/(.*\/)?reader-?causes?[^/]*$/i;
+export const REFERENCE_APPS = Object.freeze({ codexbar: "CodexBar", pulse: "Pulse", tokenmonitor: "TokenMonitor", ccusage: "ccusage", tokei: "Tokei" });
+const REFERENCE_LINE = /^\s*\*{0,2}Reference(?::\*{0,2}|\*{0,2}:)\s*/i;
+const REFERENCE_REF = /^([0-9a-f]{7,40}|v?[0-9][A-Za-z0-9._-]*)$/;
+const REFERENCE_FORM = "Reference: <app>@<commit-or-tag> <path>[; ...] naming CodexBar, Pulse, TokenMonitor, ccusage or Tokei, or Reference: none (<reason>)";
+
+export const referenceTouch = (paths) => paths.some((p) => REFERENCE_SCOPE_RE.test(p));
+
+// The first matching body line is the declaration. refs: [{app, ref, paths}].
+export function parseReference(body) {
+  const line = lines(body ?? "").find((l) => REFERENCE_LINE.test(l));
+  if (line === undefined) return { declared: false, refs: [], malformed: null };
+  const rest = line.replace(REFERENCE_LINE, "").replace(/\*+\s*$/, "").trim();
+  if (/^none\b/i.test(rest)) return /^none\s*\(\s*[^()\s][^()]*\)$/i.test(rest) ? { declared: true, refs: [], malformed: null }
+    : { declared: true, refs: [], malformed: "Reference: none needs a reason in brackets" };
+  const refs = [];
+  for (const entry of rest.split(";").map((e) => e.trim())) {
+    const m = /^([A-Za-z][A-Za-z -]*?)\s*@\s*(\S+)\s+(.+)$/.exec(entry);
+    const app = m && REFERENCE_APPS[m[1].toLowerCase().replace(/[\s-]/g, "")];
+    const paths = m ? m[3].split(/[,\s]+/).filter(Boolean) : [];
+    if (!m || !app || !REFERENCE_REF.test(m[2]) || !paths.length || paths.some((p) => !/[./]/.test(p)))
+      return { declared: true, refs: [], malformed: `malformed entry '${entry || "(empty)"}'` };
+    refs.push({ app, ref: m[2], paths });
+  }
+  return { declared: true, refs, malformed: null };
+}
+
+// null when the PR is out of scope or declares its reference; else why it fails.
+export function referenceProblem(pr, paths) {
+  if (!referenceTouch(paths)) return null;
+  const { declared, malformed } = parseReference(pr.body);
+  if (!declared) return `reader PR needs a Reference: line (D239): ${REFERENCE_FORM}`;
+  return malformed ? `Reference: line ${malformed} (D239): ${REFERENCE_FORM}` : null;
+}
+
 // ---- Trains ----
 // A train lands many PRs under one Scenarios line, and only that line is checked for evidence, so a member's
 // scenario missing from it would land unaccounted for (#650 dropped seven). evaluate.mjs reads members only for
@@ -510,6 +550,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (evidence.state === FAILURE) return res(FAILURE, evidence.why);
   const gap = trainScenarioGap(pr, members);
   if (gap) return res(FAILURE, gap);
+  const reference = referenceProblem(pr, prPaths(files));
+  if (reference) return res(FAILURE, reference);
   if (pr.draft) return res(PENDING, "draft");
 
   const paths = prPaths(files);
