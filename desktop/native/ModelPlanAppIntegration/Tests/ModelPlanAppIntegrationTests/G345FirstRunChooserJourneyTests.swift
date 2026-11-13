@@ -302,6 +302,9 @@ private actor G345Engine: EngineClient {
         XCTAssertEqual(try text("scope.firstRun.status.claude", in: window), "未登录 Claude Code。登录后会自动读取。")
         XCTAssertTrue(try text("scope.firstRun.reads.claude", in: window).contains("钥匙串"))
         // Settings > Data & Privacy states the same reason on the tool's paths (G3-38 A).
+        // The Settings window applies the committed language to this view when it renders
+        // (SettingsWindowController.swift:315); the detached view keeps its English fallback until then.
+        app.scopeConsentEntry.view.apply(language: .chinese)
         app.scopeConsentEntry.view.setPathDetailsExpanded(true) // the per-path rows sit behind a disclosure
         let settings = views(app.scopeConsentEntry.view)
         let status = try XCTUnwrap(settings.first { $0.accessibilityIdentifier() == "scope.status.claude.account_usage.saved_login" } as? NSTextField)
