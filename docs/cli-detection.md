@@ -40,7 +40,9 @@ Signals are OR-ed. Initial evaluator forms and boundaries:
   overrides inside the home are honoured; outside/inaccessible roots stay unknown.
   A root another tool shares is not a signal by itself: Gemini CLI is detected by
   `gemini`, `.gemini/oauth_creds.json` or `.gemini/tmp`, because Google
-  Antigravity also creates `~/.gemini` (G3-104). OpenCode Go is detected from the
+  Antigravity also creates `~/.gemini` (G3-104); Antigravity itself is detected by
+  `antigravity` or `.gemini/antigravity`. Kiro is detected by `kiro-cli` only, the
+  CLI its reader uses (the Kiro IDE alone also creates `~/.kiro`). OpenCode Go is detected from the
   OpenCode app (`opencode`, `.config/opencode`); that says nothing about an
   OpenCode Go subscription, so Settings labels it "OpenCode installed" and says
   when no OpenCode Go key is set (G3-105).
