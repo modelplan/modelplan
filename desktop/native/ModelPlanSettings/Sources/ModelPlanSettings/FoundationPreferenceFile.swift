@@ -59,6 +59,7 @@ enum FoundationPreferenceFile {
             guard var settings = object["settings"] as? [String: Any], let core = object["core"] as? [String: Any] else { throw Migration.Failure.invalidPreferences }
             // App-side legacy consent is never restored as an engine grant.
             settings.removeValue(forKey: "readerConsent")
+            SettingsSparseFile.migrate(&settings, isSparse: object[SettingsSparseFile.marker] as? Bool == true)
             do {
                 let settingsBytes = try JSONSerialization.data(withJSONObject: settings)
                 let coreBytes = try JSONSerialization.data(withJSONObject: core)
@@ -72,13 +73,12 @@ enum FoundationPreferenceFile {
         func encoded() throws -> Data {
             try settings.validate()
             guard settings.readerConsent == ReaderConsent() else { throw FoundationPreferenceError.engineOwnedConsent }
-            guard var values = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any]
-            else { throw Migration.Failure.invalidPreferences }
+            var values = try SettingsSparseFile.sparse(settings)
             values.removeValue(forKey: "readerConsent")
             let settingsBytes = try JSONSerialization.data(withJSONObject: values)
             let coreBytes = try JSONEncoder().encode(core)
             guard settingsBytes.count <= SettingsStore.maximumBytes, coreBytes.count <= 32768 else { throw Migration.Failure.tooLarge }
-            let data = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "settings": values,
+            let data = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, SettingsSparseFile.marker: true, "settings": values,
                 "core": JSONSerialization.jsonObject(with: coreBytes)], options: [.sortedKeys])
             guard data.count <= maximumBytes else { throw Migration.Failure.tooLarge }
             return data

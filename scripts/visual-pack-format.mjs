@@ -26,3 +26,35 @@ export function pngSize(bytes) {
   assert.ok(size && data && ended && offset === bytes.length, 'incomplete PNG');
   return size;
 }
+// WebP (D207 launch-field rocket atlases): RIFF/WEBP container with one image, no metadata chunks.
+export function webpSize(bytes) {
+  assert.ok(bytes.length >= 30 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP', 'WebP signature');
+  assert.equal(bytes.readUInt32LE(4) + 8, bytes.length, 'WebP length');
+  let offset = 12, size, image = false;
+  while (offset < bytes.length) {
+    assert.ok(offset + 8 <= bytes.length, 'truncated WebP chunk');
+    const type = bytes.toString('ascii', offset, offset + 4), length = bytes.readUInt32LE(offset + 4), body = offset + 8;
+    assert.ok(body + length <= bytes.length, 'truncated WebP data');
+    assert.ok(!['EXIF', 'XMP ', 'ICCP'].includes(type), 'unreviewed WebP metadata');
+    if (type === 'VP8X') {
+      assert.equal(offset, 12, 'WebP VP8X position');
+      assert.equal(bytes[body] & 0x2c, 0, 'unreviewed WebP metadata flag');
+      size = { width: 1 + bytes.readUIntLE(body + 4, 3), height: 1 + bytes.readUIntLE(body + 7, 3) };
+    } else if (type === 'VP8L' || type === 'VP8 ') {
+      assert.ok(!image, 'one WebP image'); image = true;
+      let own;
+      if (type === 'VP8L') {
+        assert.equal(bytes[body], 0x2f, 'VP8L signature');
+        const bits = bytes.readUInt32LE(body + 1);
+        own = { width: 1 + (bits & 0x3fff), height: 1 + ((bits >>> 14) & 0x3fff) };
+      } else {
+        assert.ok(bytes[body + 3] === 0x9d && bytes[body + 4] === 0x01 && bytes[body + 5] === 0x2a, 'VP8 start code');
+        own = { width: bytes.readUInt16LE(body + 6) & 0x3fff, height: bytes.readUInt16LE(body + 8) & 0x3fff };
+      }
+      if (size) assert.deepEqual(own, size, 'WebP canvas'); else size = own;
+    } else assert.ok(['ALPH'].includes(type), 'unreviewed WebP chunk ' + type);
+    offset = body + length + (length & 1);
+  }
+  assert.ok(size && image && offset === bytes.length && size.width > 0 && size.height > 0, 'incomplete WebP');
+  return size;
+}

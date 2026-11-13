@@ -77,6 +77,25 @@
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{0,47}$"
           }
+        },
+        "kind": {
+          "description": "reset_credit: extra resets were issued (news, not a window restart); direct_reset: usage limits reset. Absent from older producers, read as direct_reset.",
+          "enum": [
+            "reset_credit",
+            "direct_reset"
+          ]
+        },
+        "confirmedAt": {
+          "description": "Confirmed events only: the publication's confirmation time, or when the CLI first read the confirmation (see confirmedAtBasis).",
+          "type": "string",
+          "format": "date-time"
+        },
+        "confirmedAtBasis": {
+          "enum": [
+            "published",
+            "observed",
+            "firstSeen"
+          ]
         }
       },
       "allOf": [
