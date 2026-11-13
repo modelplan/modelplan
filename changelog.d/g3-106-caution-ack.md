@@ -1,0 +1,1 @@
+A pressed amber quota caution ("won't last until the reset") now stays acknowledged for the rest of that window's cycle. Before, the forecast pausing during an idle spell counted as a clear, so the caution blinked again on the next cockpit entry once usage resumed. It blinks again only in the window's next cycle or when it turns red.
