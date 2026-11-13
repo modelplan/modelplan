@@ -202,9 +202,12 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   if(since!==null&&selected===1)for(const stats of page.querySelectorAll<HTMLElement>('.sp-stats[data-days]')){const days=Number(stats.dataset.days),head=stats.querySelector('.stat-h');if(head&&Number.isFinite(days)&&since>dayStart(d.now,days-1))head.textContent+=' · '+t('mfd.since',{d:md(since,{lang:locale})});}
   if(selected===0&&!d.daily.length){const members=scope==='all'?d.members:d.members.filter(m=>m.key===scope),values=members.map(m=>prototypeEngineSupplement(m.account,data??undefined).todayTokens);if(values.length&&values.every((v):v is number=>v!==null)){const sum=values.reduce((a,v)=>a+v,0);if(Number.isSafeInteger(sum)){const total=node('div','ov-top');total.append(node('span','lbl',t('mfd.today')),node('b','ov-total',tok(sum)));const alerts=page.querySelector('.mfd-alerts');if(alerts)alerts.after(total);else page.prepend(total);}}}
   // G3-109: a subscription with a balance but no usage percentage (Grok Build on the X Subscription, D228) has no
-  // chart; its Overview shows the balance and why there is no percentage instead of an empty "Quota only".
-  if(selected===0&&selectedId){const entry=d.members[Number(selectedId.slice('member'.length))],balance=entry?balanceOnly(entry.account):null,empty=page.querySelector('.mp-empty');
-   if(entry&&balance!==null&&empty){const block=node('div','ov-bal');block.append(node('span','lbl',t('mfd.balance')),node('b','',balance));empty.replaceWith(block,node('p','ov-bal-note',t(entry.row.id==='grok'?'mfd.balanceOnlyX':'mfd.balanceOnly')));}}
+  // chart; its Overview shows the balance and why there is no percentage instead of an empty "Quota only". Recorded
+  // token history (macrev2-925-1) keeps its totals and chart: the balance then follows the totals instead of the empty state.
+  if(selected===0&&selectedId){const entry=d.members[Number(selectedId.slice('member'.length))],balance=entry?balanceOnly(entry.account):null;
+   if(entry&&balance!==null){const block=node('div','ov-bal'),note=node('p','ov-bal-note',t(entry.row.id==='grok'?'mfd.balanceOnlyX':'mfd.balanceOnly'));block.append(node('span','lbl',t('mfd.balance')),node('b','',balance));
+    const empty=page.querySelector('.mp-empty'),anchor=page.querySelector('.ov-top')??page.querySelector('.mfd-alerts')??page.querySelector('.mfd-back');
+    if(empty)empty.replaceWith(block,note);else if(anchor)anchor.after(block,note);else page.prepend(block,note);}}
   // Study list IDs are positional; attach the originating member identity for focus restoration.
   for(const el of page.querySelectorAll<HTMLElement>('[data-mfd^="scope:member"]')){const match=/^scope:member(\d+)$/.exec(el.dataset.mfd??'');const member=match?d.members[Number(match[1])]:null;if(member){el.dataset.focusMember=member.key;}}
   // 30-day history and the full session list are unavailable, not zero.
