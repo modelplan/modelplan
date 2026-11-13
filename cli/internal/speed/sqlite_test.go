@@ -77,7 +77,7 @@ func TestZCodeDatabase(t *testing.T) {
 	}
 	// ZCode's own project is the session's project_id, not its folder.
 	if _, label := projector(cache, true)("zcode", repo, nativeProject{ID: "prj-opaque"}); label != filepath.Base(repo) {
-		t.Fatalf("ZCode stores no name; its session folder name is the label: %q", label)
+		t.Fatalf("ZCode's label is the folder name from its own session record: %q", label)
 	}
 	if r, _ := projector(cache, false)("zcode", repo, nativeProject{ID: "prj-opaque"}); r != w.Top[0].Ref {
 		t.Fatal("the session's project_id names its project")

@@ -240,7 +240,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 				}
 			}
 		}
-		// G3-100: a real project the tool stores no name for (ZCode) is not "no project"; glm-909-1: neither is
+		// G3-100: a real project whose records hold no readable name is not "no project"; glm-909-1: neither is
 		// one whose name `project-labels off` withholds. The state says which, so the strip never guesses.
 		state := wire.ProjectNone
 		switch {

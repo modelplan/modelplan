@@ -26,7 +26,8 @@ import (
 //     Worktrees and subfolders are projects of their own, as Claude shows them.
 //   - OpenCode: the project row its session belongs to (its name, else its worktree's folder);
 //     the "global" project is no project.
-//   - ZCode: the session's project_id; ZCode keeps no project name locally, so it has no label.
+//   - ZCode: the session's project_id; its label is the folder name from ZCode's own session record
+//     (ZCode stores no separate project name).
 //   - Any other source: none.
 //
 // A session without a project carries an empty reference; the apps show "No project". The label
