@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: c3cf49891aace260752393455c6500eaed06411cbbdd8758de56b19017b0b1d4
+// Schema SHA-256: 2c21831f6520b13688b3a3e34c7c8a5854df8523b1581d2c50306c289760d5bd
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -395,9 +395,12 @@ export type WireResetCards = {
 };
 
 export type WireResetEvent = {
+  readonly "confirmedAt"?: string;
+  readonly "confirmedAtBasis"?: "published" | "observed" | "firstSeen";
   readonly "confirms"?: string;
   readonly "expiresAt": string;
   readonly "id": string;
+  readonly "kind"?: "reset_credit" | "direct_reset";
   readonly "planIds"?: ReadonlyArray<string>;
   readonly "provider": string;
   readonly "publishedAt": string;
@@ -2648,6 +2651,19 @@ export const definitions: Readonly<Record<string, Schema>> = {
   "ResetEvent": {
     "additionalProperties": false,
     "properties": {
+      "confirmedAt": {
+        "description": "Confirmed events only: the publication's confirmation time, or when the CLI first read the confirmation (see confirmedAtBasis).",
+        "format": "date-time",
+        "type": "string"
+      },
+      "confirmedAtBasis": {
+        "enum": [
+          "published",
+          "observed",
+          "firstSeen"
+        ],
+        "type": "string"
+      },
       "confirms": {
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
         "type": "string"
@@ -2658,6 +2674,14 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "id": {
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "type": "string"
+      },
+      "kind": {
+        "description": "reset_credit: extra resets were issued (news, not a window restart); direct_reset: usage limits reset. Absent from older producers, read as direct_reset.",
+        "enum": [
+          "reset_credit",
+          "direct_reset"
+        ],
         "type": "string"
       },
       "planIds": {

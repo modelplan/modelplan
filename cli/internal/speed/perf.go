@@ -38,6 +38,7 @@ type PerfLedger struct {
 	Rows          []PerfRow         `json:"rows"`
 	Sessions      []PerfSession     `json:"sessions,omitempty"`
 	Files         map[string]Cursor `json:"files,omitempty"`
+	Counted       []CountedRequest  `json:"counted,omitempty"` // Claude requests already counted (speed.go)
 	// Stores: how far each agent database was read (sqlite.go).
 	Stores map[string]DBCursor `json:"stores,omitempty"`
 

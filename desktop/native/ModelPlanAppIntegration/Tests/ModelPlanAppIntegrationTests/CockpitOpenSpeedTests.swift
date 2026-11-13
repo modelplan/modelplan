@@ -159,7 +159,7 @@ extension CommunityCockpitEntryTests {
             CockpitTimingLog.verificationLine = saved.5
         }
         func kib(_ sample: [Int32: Int]) -> Int { sample.values.filter { $0 > 0 }.reduce(0, +) }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+        let settings = try await completedOnboarding(try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"]))
         let memoryAtLaunch = Self.webKitFootprints()
         let entry = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-g3-42",
             allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: settings,

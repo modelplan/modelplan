@@ -341,7 +341,13 @@ private actor LifecycleEngine: EngineClient {
         let status = await app.foundationStore.foundationStatus()
         let document = try XCTUnwrap(status?.path)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: document)) as? [String: Any])
-        XCTAssertEqual((object["settings"] as? [String: Any])?["showDock"] as? Bool, true, "The created document saves the switch on")
+        // SET-9-43 (D203, #884): the document is sparse, so a switch left at its default (on) is not written. What counts
+        // is that the saved document reads back on: it never stores "off", and reading it decodes the switch on.
+        var saved = try XCTUnwrap(object["settings"] as? [String: Any])
+        XCTAssertNotEqual(saved["showDock"] as? Bool, false, "The created document never saves the switch off")
+        saved.removeValue(forKey: "readerConsent")
+        let reread = try JSONDecoder().decode(SettingsPreferences.self, from: JSONSerialization.data(withJSONObject: saved))
+        XCTAssertEqual(reread.showDock, true, "The created document reads back with the switch on")
         XCTAssertEqual(try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" }).isEnabled, true)
         XCTAssertNotNil(app.composition.dock.edgePresentation?.paintedFrame)
     }

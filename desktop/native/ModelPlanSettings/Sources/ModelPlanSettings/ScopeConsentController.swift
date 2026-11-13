@@ -44,6 +44,9 @@ public struct FirstRunReading: Sendable, Equatable {
 /// Transient UI choices over already-accepted facts. No persistence or protocol acceptance logic.
 @MainActor public final class ScopeConsentController {
     public private(set) var facts: WireConsentFacts?
+    /// True from a privacy clear that dropped accepted facts until replacement facts arrive. First-run
+    /// Done must not complete in that window: the user's choices were discarded and never sent.
+    public private(set) var factsClearedSinceAccepted = false
     public private(set) var rowsSummary: RowsRowsSummary?
     public private(set) var selectedIDs = Set<String>()
     public private(set) var phase: ScopeConsentPhase = .idle
@@ -183,6 +186,7 @@ public struct FirstRunReading: Sendable, Equatable {
         acceptedFactsCallbackToken = UUID()
         let previous = facts
         let unchanged = sameVisibleFacts(previous, value)
+        factsClearedSinceAccepted = false
         facts = value // Every value here was already accepted by M0; none is protocol-filtered here.
         if firstRunEngineReadyAt == nil { firstRunEngineReadyAt = clock() }
         firstRunEngineFailedFlag = false
@@ -276,6 +280,7 @@ public struct FirstRunReading: Sendable, Equatable {
         lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []
         activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil;diagnosticsPresentation=nil; notice = .none
         firstRunEngineReadyAt = nil; firstRunToolRetryAt = [:]
+        if facts != nil { factsClearedSinceAccepted = true }
         facts = nil; rowsSummary = nil; claudeRowState = nil; rowConsent = nil; keychainLater = false; selectedIDs = []; phase = .idle
         firstRunToolChoices = [:]; rowCodes = [:]; rowStates = [:]; rowReadings = [:]; changed()
     }
@@ -469,6 +474,7 @@ public struct FirstRunReading: Sendable, Equatable {
     }
     /// D61 (3): when any tool can be read, at least one must be ticked before Done.
     public var firstRunChoiceSatisfied: Bool {
+        guard !factsClearedSinceAccepted else { return false } // choices were reset with the facts: wait for new ones
         let readable = firstRunTools.filter(\.canRead)
         return readable.isEmpty || readable.contains { isFirstRunToolChosen($0.tool) }
     }
@@ -500,6 +506,7 @@ public struct FirstRunReading: Sendable, Equatable {
     /// Done's one consent request (owner 10-27: one first-run consent). Returns false when the request
     /// was not sent or the engine rejected it, so the page stays open with the user's choices.
     public func commitFirstRunChoices() async -> Bool {
+        guard !factsClearedSinceAccepted else { return false }
         guard facts != nil else { return true }
         guard firstRunChoiceSatisfied else { return false }
         guard let intent = firstRunChoiceIntent() else { return true }
