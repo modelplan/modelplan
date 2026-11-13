@@ -97,7 +97,7 @@ public struct CockpitVisibility: Equatable, Sendable {
   var active: Bool { visible && !occluded && key }
 }
 public enum CockpitIntent: Equatable, Sendable {
-  case chooseSetup, openSettings, close, detach, putBack, shutterToggle, openField
+  case chooseSetup, openSettings, openSettingsSubscriptions, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
   /// D63: open the enlarged field focused on the rocket with this published display name (resolved by the host).
   case openFieldAt(String)
@@ -532,6 +532,8 @@ public final class CockpitBridgeState {
       switch action {
       case "chooseSetup": intent = .chooseSetup
       case "openSettings": intent = .openSettings
+      // CKP-SHELL-39: the empty engine screen's one button; it opens the Subscriptions pane and carries nothing.
+      case "openSettingsSubscriptions": intent = .openSettingsSubscriptions
       case "scopeSelect":
         guard let key=m["key"] as? String, scopeMembers.contains(key),
           earlyDisplay.map({ pending[$0.requestID]?.members.contains(key) == true }) ?? true else { throw CockpitBridgeError.invalidMessage }

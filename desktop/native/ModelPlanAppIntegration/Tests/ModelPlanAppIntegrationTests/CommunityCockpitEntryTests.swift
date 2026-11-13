@@ -772,6 +772,31 @@ final class CommunityCockpitEntryTests:XCTestCase {
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
 
+    /// CKP-SHELL-39: the empty engine screen's button reaches the owner as Settings on its Subscriptions pane, and the
+    /// plain Settings key keeps opening Settings as before.
+    @MainActor func testEmptyScreenButtonOpensSettingsOnTheSubscriptionsPane() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("ckp-shell-39-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        var opened:[String]=[]
+        owner.settings = { opened.append("settings") }
+        owner.settingsSubscriptions = { opened.append("subscriptions") }
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        page.onIntent?(.openSettingsSubscriptions)
+        page.onIntent?(.openSettings)
+        XCTAssertEqual(opened,["subscriptions","settings"])
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
     /// SET-9-19: the committed setting reaches the appearance the page is given.
     @MainActor func testProjectNamesSettingReachesTheCockpitAppearance() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-project-names-"+UUID().uuidString)

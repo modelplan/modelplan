@@ -1,0 +1,1 @@
+The cockpit's engine screen no longer says only "No subscriptions" when nothing has been read yet: it shows one line ("No quota read yet. Sign in to a coding tool and it shows up here.") and one button that opens Settings › Subscriptions.

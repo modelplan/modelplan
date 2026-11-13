@@ -106,6 +106,8 @@ import XCTest
       guard let cockpit = list.firstIndex(of: window.windowNumber), let other = list.firstIndex(of: cover.windowNumber) else { return nil }
       return cockpit < other
     }
+    // Hosted runners without a logged-in window server session list no on-screen windows; the order is then unknowable.
+    guard order() != nil else { throw XCTSkip("the window server lists no on-screen windows here (GUI session needed)") }
     XCTAssertEqual(order(), false, "the other window covers the cockpit")
     page.open()
     XCTAssertEqual(order(), true, "the cockpit is in front again")
