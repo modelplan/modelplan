@@ -538,3 +538,79 @@ done
 		t.Fatalf("snap = %+v", s)
 	}
 }
+
+// D98 (macrevd P2): the reported list is all or nothing. When page one lists a model and a cursor but
+// a later page errors, is malformed or never comes (the app-server exits), the partial list is not
+// advertised (the cockpit falls back to the published plan list) and the quota reading stays ok.
+func TestModelListLaterPageFailureAdvertisesNoPartialList(t *testing.T) {
+	page1 := `{"id":4,"result":{"data":[{"id":"p1","model":"native-a","hidden":false}],"nextCursor":"next"}}`
+	for name, page2 := range map[string]string{
+		"error":     `echo '{"id":5,"error":{"code":-32603,"message":"internal"}}'`,
+		"malformed": `echo '{"id":5,"result":{"data":"not-a-list"}}'`,
+		"eof":       `exit 0`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			isolateHome(t)
+			cache := t.TempDir()
+			bin := filepath.Join(t.TempDir(), "codex")
+			script := `#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *'"id":1,'*) echo '{"id":1,"result":{}}' ;;
+    *'"method":"account/rateLimits/read"'*) printf '{"id":2,"result":%s}\n' '` + strings.ReplaceAll(acctResponse, "\n", "") + `' ;;
+    *'"method":"account/read"'*) echo '{"id":3,"result":{"account":{"type":"apiKey"}}}' ;;
+    *'"method":"model/list"'*'"cursor"'*) ` + page2 + ` ;;
+    *'"method":"model/list"'*) echo '` + page1 + `' ;;
+  esac
+done
+`
+			if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
+				t.Fatal(err)
+			}
+			s := loadAccount(cache)
+			if s == nil || s.Status != "ok" || len(s.Windows) != 2 {
+				t.Fatalf("the quota reading must survive: snap = %+v", s)
+			}
+			if len(s.ReportedModels) != 0 {
+				t.Fatalf("incomplete list advertised instead of fallback: %v", s.ReportedModels)
+			}
+			r := Report{}
+			applyAccount(&r, cache, acctNow)
+			if len(r.Accounts) == 0 || len(r.Accounts[0].ReportedModels) != 0 {
+				t.Fatalf("report carries a partial list: %+v", r.Accounts)
+			}
+		})
+	}
+}
+
+// The list longer than the caps is not advertised either: a truncated list would hide models.
+func TestModelListOverTheCapsIsNotAdvertised(t *testing.T) {
+	page := func(p int, n int, next bool) json.RawMessage {
+		var d []map[string]any
+		for i := 0; i < n; i++ {
+			d = append(d, map[string]any{"id": "x", "model": "m-" + strconv.Itoa(p) + "-" + strconv.Itoa(i)})
+		}
+		r := map[string]any{"data": d, "nextCursor": nil}
+		if next {
+			r["nextCursor"] = "c"
+		}
+		b, _ := json.Marshal(r)
+		return b
+	}
+	send := func(any) error { return nil }
+	// Every page has a cursor: the page cap runs out before the list ends.
+	if got := askCodexModels(send, func(id int) (json.RawMessage, error) { return page(id, 1, true), nil }); got != nil {
+		t.Fatalf("page cap: %v", got)
+	}
+	// One page with more ids than the size cap.
+	if got := askCodexModels(send, func(id int) (json.RawMessage, error) { return page(id, modelListMax+1, false), nil }); got != nil {
+		t.Fatalf("size cap: %d ids", len(got))
+	}
+	// A complete two-page list is kept.
+	if got := askCodexModels(send, func(id int) (json.RawMessage, error) { return page(id, 2, id == 4), nil }); strings.Join(got, ",") != "m-4-0,m-4-1,m-5-0,m-5-1" {
+		t.Fatalf("complete list = %v", got)
+	}
+}

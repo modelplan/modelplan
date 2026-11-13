@@ -597,13 +597,16 @@ const (
 
 // askCodexModels (D98) asks the app-server which models the signed-in account can use (model/list,
 // hidden models excluded). It is best effort: an error, a timeout (a Codex that never answers it) or a
-// malformed answer yields none and never fails the quota read. Only the model slug is kept.
+// malformed answer yields none and never fails the quota read. Only the model slug is kept. The list
+// is all or nothing: a failed or malformed later page, or a list longer than the page/size caps, also
+// yields none, because a partial list would hide the models on the pages that were not read.
 func askCodexModels(send func(any) error, wait func(int) (json.RawMessage, error)) []string {
 	done := make(chan []string, 1)
 	go func() {
 		var out []string
 		seen := map[string]bool{}
 		cursor := ""
+		complete := false
 		for p := 0; p < modelListPages; p++ {
 			params := map[string]any{"limit": 100}
 			if cursor != "" {
@@ -632,16 +635,23 @@ func askCodexModels(send func(any) error, wait func(int) (json.RawMessage, error
 				if id == "" {
 					id = strings.TrimSpace(m.ID)
 				}
-				if m.Hidden || id == "" || len(id) > 128 || seen[id] || len(out) >= modelListMax {
+				if m.Hidden || id == "" || len(id) > 128 || seen[id] {
 					continue
 				}
 				seen[id] = true
 				out = append(out, id)
 			}
+			if len(out) > modelListMax {
+				break
+			}
 			if r.NextCursor == nil || *r.NextCursor == "" {
+				complete = true
 				break
 			}
 			cursor = *r.NextCursor
+		}
+		if !complete {
+			out = nil
 		}
 		done <- out
 	}()
