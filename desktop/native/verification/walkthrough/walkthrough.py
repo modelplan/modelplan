@@ -62,8 +62,8 @@ def matcher(target):
         "ax": lambda n: n.get("id") == value,
         "ax^": lambda n: str(n.get("id", "")).startswith(value),
         "label": lambda n: value in (n.get("label"), n.get("title")),
-        "label^": lambda n: str(n.get("label") or n.get("title") or "").startswith(value),
-        "label~": lambda n: value in str(n.get("label") or n.get("title") or ""),
+        "label^": lambda n: any(str(n.get(k) or "").startswith(value) for k in ("label", "title")),
+        "label~": lambda n: any(value in str(n.get(k) or "") for k in ("label", "title")),
         "value": lambda n: n.get("value") == value,
         "value~": lambda n: value in str(n.get("value") or ""),
         "help~": lambda n: value in str(n.get("help") or ""),
@@ -336,7 +336,7 @@ class Walkthrough:
         window = self.need(action["window"])["frame"]
         scale = window[2] / 636.0
         root = round(window[3] / scale) - 34
-        strip_top = {877: 225, 691: 45, 627: 57, 609: 57}.get(min((877, 691, 627, 609), key=lambda r: abs(r - root)), 225)
+        strip_top = {877: 225, 691: 45, 627: 57, 609: 45}.get(min((877, 691, 627, 609), key=lambda r: abs(r - root)), 225)
         start = (window[0] + 132 * scale, window[1] + (strip_top + 13) * scale)
         self.host.helper("down", *start)
         self.host.helper("held", start[0] + action["by"][0], start[1] + action["by"][1], action.get("seconds", 1.0))
@@ -423,6 +423,17 @@ class Walkthrough:
         self.host.sleep(1.0)
         return name
 
+    def card_at_ring(self, name, frame):
+        """The card a ring opens. A hover that lands on a neighbour's edge (stacked rings) is retried at other
+        interior points of the same ring; a ring that never opens its own card is reported as it is."""
+        x, y, width, height = frame
+        card = None
+        for fraction in (0.5, 0.3, 0.7):
+            card = self.card_at((x + width / 2, y + height * fraction))
+            if card == name:
+                return card
+        return card
+
     def op_ringCardMap(self, _):
         """Which card opens at each ring, at the painted place and at the frame the app reports."""
         raw = self.host.helper("tree", self.pid)
@@ -437,14 +448,14 @@ class Walkthrough:
             painted[n["id"]] = node["frame"]
         result = []
         for ring in rings:
-            result.append({"ring": ring.get("label"), "cardAtPainted": self.card_at(centre(painted[ring["id"]])),
+            result.append({"ring": ring.get("label"), "cardAtPainted": self.card_at_ring(ring.get("label"), painted[ring["id"]]),
                            "cardAtReported": self.card_at(centre(ring["frame"])),
                            "reportedFrame": ring["frame"], "paintedFrame": painted[ring["id"]]})
         self.mirror_evidence["cards"] = result
         self.mirror_evidence["window"] = window["frame"] if window else None
         wrong = [r["ring"] for r in result if r["cardAtPainted"] != r["ring"]]
         self.measures["wrongCards"] = wrong
-        if len(wrong) > 1:  # Seven stacked rings leave one hover on a neighbour's edge; more than one is a real mix-up.
+        if wrong:
             raise WalkthroughError("card at painted ring differs: " + ", ".join(map(str, wrong)))
 
     def op_mirrorPixels(self, _):
