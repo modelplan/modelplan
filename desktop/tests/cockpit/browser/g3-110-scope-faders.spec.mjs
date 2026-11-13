@@ -65,3 +65,19 @@ test('G3-110 a scope switch starts at bank 1 and the same caps glide to the new 
  expect(after.k).not.toBe(before);
  expect(after.transition).toContain('top');expect(after.transition).toContain('0.28s');
 });
+
+// macrevb-930-1: scope membership counts every bound session, not only the six a fader displays. gpt-a has six
+// sessions on the Codex subscription and a seventh bound to Claude, so the Claude scope still holds gpt-a, also with
+// Settings' "show all models" on.
+test('G3-110 a model bound to the scoped subscription stays after six sessions on another subscription',async({page})=>{
+ const data=fixture();
+ data.details.sessions=Array.from({length:7},(_,i)=>({sessionRef:(160+i).toString(16).padStart(16,'0'),source:i===6?'claude':'codex',subscriptionRef:i===6?CLAUDE:CODEX,model:'gpt-a',effort:'medium',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'running',rate:null}));
+ const {send,receive}=await open(page,data);
+ expect(await receive(send('shell',{...shell,scope:CLAUDE}))).toBe(true);
+ expect([...await allNames(page)].sort()).toEqual(['Synthetic claude-a','Synthetic claude-b','Synthetic gpt-a']);
+ expect(await receive(send('appearance',{...appearance,redBelow:25,showAllModels:true}))).toBe(true);
+ expect([...await allNames(page)].sort()).toEqual(['Synthetic claude-a','Synthetic claude-b','Synthetic gpt-a']);
+ // The Codex scope keeps gpt-a through its developer as before.
+ expect(await receive(send('shell',{...shell,scope:CODEX}))).toBe(true);
+ expect(await allNames(page)).toContain('Synthetic gpt-a');
+});
