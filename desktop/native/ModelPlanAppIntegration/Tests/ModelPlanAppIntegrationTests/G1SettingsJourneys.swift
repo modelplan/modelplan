@@ -150,7 +150,9 @@ private actor G1SettingsEngine: EngineClient {
             let done = try control("firstRun.done", in: window, as: NSButton.self)
             XCTAssertEqual(login.state, .on)
             XCTAssertEqual(login.accessibilityHelp(), "You can turn this off in Settings")
-            XCTAssertGreaterThan(login.convert(login.bounds, to: nil).midY, done.convert(done.bounds, to: nil).midY)
+            // FR-9-11: the login choice and Done share the footer row, the choice on the left.
+            XCTAssertLessThan(login.convert(login.bounds, to: nil).minX, done.convert(done.bounds, to: nil).minX)
+            XCTAssertLessThan(abs(login.convert(login.bounds, to: nil).midY - done.convert(done.bounds, to: nil).midY), 40)
             if !enabled { XCTAssertTrue(login.isEnabled); login.performClick(nil) }
             XCTAssertTrue(done.isEnabled); done.performClick(nil)
             var saved = await app.foundationStore.snapshot()

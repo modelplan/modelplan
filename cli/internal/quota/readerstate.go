@@ -91,6 +91,9 @@ type readerEntry struct {
 	Status              string         `json:"status"`
 	Notice              string         `json:"notice,omitempty"`
 	NextStep            string         `json:"nextStep,omitempty"`
+	// LoginStamp: the tool's sign-in file (size and change time, never its content) when this
+	// profile was last read, so a new sign-in can end a failure back-off (G3-103).
+	LoginStamp string `json:"loginStamp,omitempty"`
 }
 type readerState struct {
 	// Kept separately so reserving an attempt does not change legacy Sources
@@ -213,7 +216,72 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 		return false
 	}
 	s, err := loadReaderState(p.Cache, provider)
-	return err == nil && !now.Before(s.NextAttemptAt) && readerAttemptDue(p.Cache, provider, now) && nativeReaders[provider].budgetDue(p.Cache, now) && xSubscriptionDue(p.Cache, provider, now)
+	if err != nil {
+		return false
+	}
+	g, _ := readerAllowed(p, provider)
+	early := s.retryEarly(p, provider, g, now)
+	return (early || !now.Before(s.NextAttemptAt) && readerAttemptDue(p.Cache, provider, now)) && nativeReaders[provider].budgetDue(p.Cache, now) && xSubscriptionDue(p.Cache, provider, now)
+}
+
+// retryEarly (G3-103): after failed reads the back-off grows to an hour, and a user who signs in
+// to the tool again or turns its reading back on would wait that long. Either change allows
+// the next read at the provider's five-minute floor. A rate limit, a Keychain outcome or a busy
+// reader keeps its back-off, and the floor still holds.
+func (s *readerState) retryEarly(p Paths, provider string, g ReaderGrant, now time.Time) bool {
+	if s.Failures == 0 || s.AttemptedAt.IsZero() || now.Before(s.AttemptedAt.Add(5*time.Minute)) {
+		return false
+	}
+	for _, e := range s.Entries {
+		if e.LastFailure != nil && (e.LastFailure.Code == "http_429" || e.LastFailure.Code == "reader_busy" || strings.HasPrefix(e.LastFailure.Code, "keychain_")) {
+			return false
+		}
+	}
+	if s.GrantKey != "" && g.Generation != "" && s.GrantKey != readerHash(p.Cache, provider+":grant", g.Generation) {
+		return true
+	}
+	profiles := g.Profiles
+	if len(profiles) == 0 {
+		if n := nativeReaders[provider]; n != nil && n.Profiles != nil {
+			profiles = n.Profiles()
+		}
+	}
+	if len(profiles) > 16 {
+		return false
+	}
+	for _, profile := range profiles {
+		key := readerHash(p.Cache, provider+":profile", profile.Root+"\x00"+profile.AccountFile)
+		for _, e := range s.Entries {
+			if key != "" && e.ProfileKey == key && e.LoginStamp != "" && e.LastFailure != nil && signInFailure(e.LastFailure.Code) && loginStamp(profile) != e.LoginStamp {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// signInFailure: failures a new sign-in can fix.
+func signInFailure(code string) bool {
+	switch code {
+	case "expired", "expired_login", "login_expired", "denied", "file_missing", "file_unreadable", "parse_error", "unsupported_login", "not_signed_in", "http_401", "http_403":
+		return true
+	}
+	return false
+}
+
+// loginStamp describes the profile's sign-in file by size and change time only; it never opens it.
+func loginStamp(profile ReaderProfile) string {
+	if profile.AccountFile == "" || !filepath.IsAbs(profile.AccountFile) {
+		return ""
+	}
+	info, err := os.Lstat(profile.AccountFile)
+	if os.IsNotExist(err) {
+		return "absent"
+	}
+	if err != nil {
+		return ""
+	}
+	return strconv.FormatInt(info.Size(), 10) + ":" + strconv.FormatInt(info.ModTime().UnixNano(), 10)
 }
 
 // refreshManaged reserves one provider-wide read before any tool/credential I/O.
@@ -245,7 +313,7 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 	if err != nil {
 		return err
 	}
-	if !localBackoffSpent && (now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now)) {
+	if !localBackoffSpent && !s.retryEarly(p, provider, g, now) && (now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now)) {
 		return nil
 	}
 	n := nativeReaders[provider]
@@ -322,6 +390,7 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 	}
 	call, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
+	login := loginStamp(profile)
 	out := n.Managed(call, nativeClient, readerContext{Paths: p, Grant: g, Profile: profile, ProfileKey: profileKey, Previous: previous, Now: now})
 	if g.StillValid != nil && !g.StillValid() {
 		return errors.New("reader consent changed")
@@ -337,6 +406,7 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 	}
 	e.ProfileKey = profileKey
 	e.AttemptedAt = now.UTC()
+	e.LoginStamp = login
 	e.LoginChanged, e.GenerationChanged = out.Invalidate, generationChanged || contains(s.GenerationDiscards, profileKey)
 	if e.Status != "ok" {
 		e.LastFailure = &readerFailure{Code: readerAttemptCode(e), At: now.UTC()}

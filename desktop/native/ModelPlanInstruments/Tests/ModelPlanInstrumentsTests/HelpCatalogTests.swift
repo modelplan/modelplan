@@ -124,7 +124,7 @@ final class HelpCatalogTests: XCTestCase {
         XCTAssertTrue(en.explanation(.effort).body.contains("session unchanged"))
         XCTAssertTrue(en.explanation(.effortLCD).body.contains("hold to pin"))
         XCTAssertTrue(en.explanation(.nozzle, context: .init(nozzleLocation: .overflow)).body.contains("cannot be dragged"))
-        XCTAssertTrue(en.explanation(.nozzle).body.contains("drag along the Quota Widget"))
+        XCTAssertTrue(en.explanation(.nozzle).body.contains("drag to move the whole Quota Widget"))  // G3-111 / D244: a nozzle drag moves the whole widget
         XCTAssertFalse(en.explanation(.nativeSetting).body.contains("browser"))
     }
 
