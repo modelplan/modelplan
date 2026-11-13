@@ -31,6 +31,9 @@ public struct FirstRunTool: Sendable, Equatable {
     public let promptsKeychain: Bool
     /// False only for a supported tool this Mac does not have (Settings lists it with the reason; first run does not).
     public var detected: Bool = true
+    /// G3-105: the engine's row says the tool's account key is missing (OpenCode is installed, but no
+    /// OpenCode Go key is set). Its local history can still be read, so this is not a block.
+    public var keyMissing: Bool = false
     public var canRead: Bool { detected && block == nil && !scopes.isEmpty }
 }
 /// Transient UI choices over already-accepted facts. No persistence or protocol acceptance logic.
@@ -381,7 +384,7 @@ public struct FirstRunTool: Sendable, Equatable {
                 $0.route.isKnown && $0.route != .knownUnknown && $0.route != .browserSession && $0.disabledReason == nil && !$0.cleanupPending
             }
             return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool),
-                                promptsKeychain: standard.contains { $0.keychain != nil })
+                                promptsKeychain: standard.contains { $0.keychain != nil }, keyMissing: rowCodes[tool] == .keyMissing)
         }
     }
     /// G3-59: Settings lists every tool first run would list (same rows, engine order), then each supported

@@ -57,7 +57,7 @@ private actor G345Engine: EngineClient {
     }
     /// Claude Code (local history, saved login), Codex (local history, runtime), Cursor (local history,
     /// saved login, browser session), ZCode (saved key) are detected; Gemini is not.
-    private func facts(keychain: Set<String> = ["claude.account_usage.saved_login"], denied: Set<String> = [], detectedOnly: Set<String>? = nil, browserOnlyTool: Bool = false) throws -> WireConsentFacts {
+    private func facts(keychain: Set<String> = ["claude.account_usage.saved_login"], denied: Set<String> = [], detectedOnly: Set<String>? = nil, browserOnlyTool: Bool = false, openCode: Bool = false) throws -> WireConsentFacts {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures().appendingPathComponent("WireConsentFacts.json"))) as? [String: Any])
         let base = try XCTUnwrap((object["scopes"] as? [[String: Any]])?.first)
         let paths: [(String, String, String, Bool, Bool)] = [
@@ -71,6 +71,7 @@ private actor G345Engine: EngineClient {
             ("zai.account_usage.api_key", "zai", "api_key_api", true, true),
             ("gemini.local_history", "gemini", "local_log", true, false),
         ] + (browserOnlyTool ? [("kimi.account_usage.browser_session", "kimi", "browser_session", false, true)] : [])
+            + (openCode ? [("opencodego.local_history", "opencodego", "local_log", true, true), ("opencodego.account_usage.api_key", "opencodego", "api_key_api", true, true)] : [])
         object["scopes"] = paths.map { id, tool, route, defaultCheck, detected -> [String: Any] in
             var scope = base
             scope["scope"] = id; scope["tool"] = tool; scope["route"] = route; scope["state"] = denied.contains(tool) ? "denied" : "unset"
@@ -83,7 +84,7 @@ private actor G345Engine: EngineClient {
     }
     /// `codexReads`: the engine also has a Codex row it reads (consent implicit). G3-67: Settings ticks a
     /// default-on tool only when the engine's own row says it reads it.
-    private func rows(codexReads: Bool = false) throws -> WireRowsSnapshot {
+    private func rows(codexReads: Bool = false, openCodeKeyMissing: Bool = false) throws -> WireRowsSnapshot {
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures().appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = try XCTUnwrap(json["projection"] as? [String: Any])
         let template = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
@@ -98,6 +99,7 @@ private actor G345Engine: EngineClient {
         projection["rows"] = [row("claude", "Claude Code", state: "needs_action", code: "not_signed_in", surfaces: ["menu", "settings"]),
                               row("zai", "ZCode / GLM", state: "needs_action", code: "unsupported_login", surfaces: ["menu", "settings"])]
             + (codexReads ? [row("codex", "Codex", state: "fresh", code: "ok", surfaces: ["menu", "settings"])] : [])
+            + (openCodeKeyMissing ? [row("opencodego", "OpenCode Go", state: "needs_action", code: "key_missing", surfaces: ["menu", "settings"])] : [])
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
@@ -118,12 +120,12 @@ private actor G345Engine: EngineClient {
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
-    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"], deniedAtFirstRun: Set<String> = [], dock: Bool = false, detectedOnly: Set<String>? = nil, browserOnlyTool: Bool = false, loadFacts: Bool = true, codexReads: Bool = false) async throws -> (EngineDockMenuApplication, G345Engine) {
+    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"], deniedAtFirstRun: Set<String> = [], dock: Bool = false, detectedOnly: Set<String>? = nil, browserOnlyTool: Bool = false, loadFacts: Bool = true, codexReads: Bool = false, openCode: Bool = false) async throws -> (EngineDockMenuApplication, G345Engine) {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g345-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
-        let consent: WireConsentFacts? = try loadFacts ? facts(keychain: keychain, denied: deniedAtFirstRun, detectedOnly: detectedOnly, browserOnlyTool: browserOnlyTool) : nil
-        let snapshot = dock ? try dockRows(cursor: false) : try rows(codexReads: codexReads)
+        let consent: WireConsentFacts? = try loadFacts ? facts(keychain: keychain, denied: deniedAtFirstRun, detectedOnly: detectedOnly, browserOnlyTool: browserOnlyTool, openCode: openCode) : nil
+        let snapshot = dock ? try dockRows(cursor: false) : try rows(codexReads: codexReads, openCodeKeyMissing: openCode)
         let after = dock ? try dockRows(cursor: true) : nil
         final class Holder: @unchecked Sendable { var engine: G345Engine? }
         let holder = Holder()
@@ -217,6 +219,25 @@ private actor G345Engine: EngineClient {
         XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "scope.details.toggle" })
         settings.setPathDetailsExpanded(true)
         XCTAssertFalse(ids(prefix: "scope.revoke.").isEmpty, "the disclosure shows the paths")
+    }
+
+    /// G3-105 (owner build 14e): OpenCode was installed, no OpenCode Go subscription, yet Settings said
+    /// "OpenCode Go · 本机已检测到". Detection finds OpenCode, so the row says that, and with the engine's
+    /// key_missing row it says no OpenCode Go key was found; OpenCode's local history stays readable.
+    func testG3105OpenCodeWithoutAGoKeyIsNotCalledADetectedSubscription() async throws {
+        let (app, _) = try await launch(locale: "zh-CN", openCode: true)
+        let settings = app.scopeConsentEntry.view
+        settings.apply(language: .chinese)
+        let row = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.row.opencodego" })
+        let texts = views(row).compactMap { ($0 as? NSTextField)?.stringValue }
+        XCTAssertTrue(texts.contains("本机已安装 OpenCode"), "\(texts)")
+        XCTAssertFalse(texts.contains("本机已检测到"), "presence of OpenCode is not a detected OpenCode Go subscription")
+        let status = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.status.opencodego" } as? NSTextField)
+        XCTAssertTrue(status.stringValue.hasPrefix("没有找到 OpenCode Go 订阅密钥"), status.stringValue)
+        XCTAssertTrue(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.opencodego" } as? NSButton).isEnabled,
+                      "local history can still be turned on")
+        // Other detected tools keep the plain tag.
+        XCTAssertTrue(views(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.row.codex" })).compactMap { ($0 as? NSTextField)?.stringValue }.contains("本机已检测到"))
     }
 
     /// G3-59 (owner build 14b): a tool that is installed but was not selected in first run can be enabled later in

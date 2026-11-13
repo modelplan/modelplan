@@ -38,6 +38,12 @@ Signals are OR-ed. Initial evaluator forms and boundaries:
   `.qwen`, `.kiro`, `.config/opencode`, and
   `Library/Application Support/{Cursor,Claude,Codex,ZCode}`. Claude/Codex root
   overrides inside the home are honoured; outside/inaccessible roots stay unknown.
+  A root another tool shares is not a signal by itself: Gemini CLI is detected by
+  `gemini`, `.gemini/oauth_creds.json` or `.gemini/tmp`, because Google
+  Antigravity also creates `~/.gemini` (G3-104). OpenCode Go is detected from the
+  OpenCode app (`opencode`, `.config/opencode`); that says nothing about an
+  OpenCode Go subscription, so Settings labels it "OpenCode installed" and says
+  when no OpenCode Go key is set (G3-105).
 - `{"type":"command","name":"claude"}`: locate/stat a literal executable
   basename in absolute PATH/install directories, without running it or a shell.
 - `{"type":"bundleId","value":"com.example.Tool"}`: silent OS-registration
