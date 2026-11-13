@@ -397,7 +397,7 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 		return nil
 	}
 	for _, p := range j.list {
-		work = append(work, importItem{path: p, ranges: j.ranges})
+		work = append(work, importItem{path: p, ranges: append([]span(nil), j.ranges...)})
 	}
 	for _, r := range j.pend {
 		if r.Path == "" {
@@ -408,11 +408,22 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			prog.done++ // gone for good: nothing left to retry
 			continue
 		}
-		it := importItem{path: r.Path}
-		for _, sp := range r.Spans {
-			it.ranges = append(it.ranges, span{sp.From, sp.Through})
+		// A retry log that is also in this run's list is read once with both range sets: reading it
+		// twice would let the first pass mark every request id seen and drop the owed turns.
+		at := -1
+		for k := range work {
+			if work[k].path == r.Path {
+				at = k
+				break
+			}
 		}
-		work = append(work, it)
+		if at < 0 {
+			work = append(work, importItem{path: r.Path})
+			at = len(work) - 1
+		}
+		for _, sp := range r.Spans {
+			work[at].ranges = append(work[at].ranges, span{sp.From, sp.Through})
+		}
 	}
 	for i, it := range work {
 		p := it.path

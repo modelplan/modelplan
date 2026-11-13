@@ -519,3 +519,28 @@ func TestImportRetriesAnUnreadableLogWithoutRecountingTheRest(t *testing.T) {
 		t.Fatalf("recounted: %d", r)
 	}
 }
+
+// A log queued for retry that the next run also lists (deeper history) is read once, so its owed turns count.
+func TestImportRetryWithExtendedDepth(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	// b carries its own request id: a shared id would be deduped across files for another reason.
+	b := filepath.Join(f.claude, "projects", canaryPath, "b.jsonl")
+	writeLines(t, b, claudeTurnAt(-2*dayS, "other-request-id", "claude-fixture")...)
+	os.Chtimes(b, f.now, f.now)
+	if err := os.Chmod(b, 0); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	if err := os.Chmod(b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.run(60, both())
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 2 {
+		t.Fatalf("owed turns lost after a deeper import: %d", r)
+	}
+	if c := l.Coverage["claude-code"]; len(c.Retry) != 0 {
+		t.Fatalf("retry not cleared: %+v", c)
+	}
+}
