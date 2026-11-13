@@ -94,6 +94,7 @@ import ModelPlanDock
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.openPoint = { [weak application] in application?.cockpitOpenPoint }
+        owner.ignitionFrame = { [weak application] in application?.composition.dock.ignitionScreenFrame }
         if application.cockpitEntryEnabled {
             owner.prepare()
             // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
@@ -105,6 +106,7 @@ import ModelPlanDock
             if prewarms { owner.startPrewarm(applied: { [weak application] in application?.composition.latestSettings }) }
         }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
+        owner.settingsSubscriptions = { [weak application] in Task { await application?.presentSettings(paneID: "subscriptions") } }
         owner.currentSize = { [weak application] in application?.composition.latestSettings?.snapshot.preferences.size }
         owner.setSize = { [weak application] size in Task { await application?.setWidgetSize(size) } }
         application.resetCockpitPosition = { [weak owner] in owner?.currentPage?.resetPosition() }
@@ -123,6 +125,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
+    /// CKP-SHELL-39: Settings on its Subscriptions pane, for the empty engine screen's button.
+    var settingsSubscriptions: (() -> Void)?
     /// Right-click menu hooks, set by the factory beside `settings`.
     var setSize: ((SettingsSize) -> Void)?
     var currentSize: (() -> SettingsSize?)?
@@ -144,6 +148,8 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var anchor: (() -> CGRect?)?
     /// Build 14c (G3-79): where the latest open was clicked; nil opens on the menu bar icon's display.
     var openPoint: (() -> CGPoint?)?
+    /// D204 (G3-94): the widget ignition's frame on screen; its press is not an outside click.
+    var ignitionFrame: (() -> CGRect?)?
     var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
@@ -192,7 +198,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         case .night:theme = .night
         case .system:theme=NSApplication.shared.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
         }
-        appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
+        appearance = .init(theme:CockpitDayPolicy.resolve(theme),locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
             redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,showUsedPercent:snapshot.preferences.percentageMode == .used,
             size:CockpitSize(snapshot.preferences.cockpitSize))
         if let applied { appearance=cockpitAppearance(applied) }
@@ -213,6 +219,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() })
+        page.ignitionFrame = { [weak self] in self?.ignitionFrame?() }
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
         currentPage = page
         page.contextMenuProvider = { [weak self, weak page] in self?.makeContextMenu(page: page) }
@@ -275,6 +282,7 @@ struct CockpitUnavailableNotice {
     private static let bundleErrors: Set<String> = ["unavailable", "invalidManifest", "unsafePath", "unsafeRoot", "unsafeInventory", "unsafeOpen", "unsafeRegular", "integrity", "limit"]
     /// True when a page could not be created because the bundle or its pins failed (the path ends in the error's case name).
     static func isBundleProblem(path: String) -> Bool {
+        if path == "page.bundleResource" { return true } // an admitted bundle that later could not serve a file
         guard path.hasPrefix("open.pageCreation.") else { return false }
         return bundleErrors.contains(String(path.dropFirst("open.pageCreation.".count)))
     }
@@ -311,6 +319,10 @@ struct CockpitUnavailableNotice {
     /// silent retry of a non-page failure has been spent.
     private var noticePath = ""
     private var retriedOpen = false
+    /// The quiet retry waiting to run, and the click it belongs to. A retry never outlives its click (hide, close, a new
+    /// click), so a reopen cannot be retried by the attempt before it.
+    private var retryTask: Task<Void,Never>?
+    private var attempt = 0
     static let openRetryDelay: Duration = .milliseconds(700)
     static let maxRebuilds = 2
     init(owner:CockpitConsoleOwner,composition:EngineDockMenuComposition,
@@ -329,7 +341,8 @@ struct CockpitUnavailableNotice {
             self?.lastEventWasOpen = true
             // A successful open after a failure is the recovery: the grace period and the rebuild state end here, so a
             // later user close (page button, outside click) is an ordinary close, not another failure to rebuild from.
-            self?.noticeTask?.cancel(); self?.noticeTask=nil; self?.rebuilding=false
+            self?.noticeTask?.cancel(); self?.noticeTask=nil; self?.retryTask?.cancel(); self?.retryTask=nil; self?.rebuilding=false
+            self?.noticePath="" // the episode is over: a later failure names its own cause
             onOpened?()
         }
         // Audit A-5: fresh data on the presented page is a recovery too. A query that failed and then succeeded on the
@@ -338,7 +351,7 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.onDisplayed = { [weak self] in
             if let self, self.noticeTask != nil, !self.rebuilding {
                 self.lastEventWasOpen = true
-                self.noticeTask?.cancel(); self.noticeTask=nil
+                self.noticeTask?.cancel(); self.noticeTask=nil; self.retryTask?.cancel(); self.retryTask=nil; self.noticePath=""
             }
             onDisplayed?()
         }
@@ -359,7 +372,7 @@ struct CockpitUnavailableNotice {
             // Audit A-5: a user close (the page's close key, an outside click) retires a notice still in its grace
             // period; the close that follows an engine feature failure keeps it.
             if self.failureClosesPage { self.failureClosesPage = false }
-            else { self.noticeTask?.cancel(); self.noticeTask=nil; self.rebuilding=false }
+            else { self.noticeTask?.cancel(); self.noticeTask=nil; self.retryTask?.cancel(); self.retryTask=nil; self.rebuilding=false }
             self.wantsVisible = false
             self.onShowingChanged?()
             self.fieldPanel?.close()
@@ -392,6 +405,7 @@ struct CockpitUnavailableNotice {
         guard wantsVisible else { return }
         switch intent {
         case .chooseSetup,.openSettings:owner.settings?()
+        case .openSettingsSubscriptions:owner.settingsSubscriptions?()
         case .openHistory:unavailable(path:"intent.openHistory",history:true)
         case .openField:openField()
         case .openFieldAt(let name):openField(focusName:name)
@@ -426,6 +440,7 @@ struct CockpitUnavailableNotice {
         // CKP-SHELL-33 (D186): the menu bar icon opens rack-first; the ignition keeps its own fade.
         entrance = fromStatusItem ? .fromIcon : .fade
         wantsVisible=true
+        retryTask?.cancel(); retryTask=nil; attempt += 1
         noticeTask?.cancel(); noticeTask=nil; rebuilding=false; rebuilds=0; retriedOpen=false; noticePath=""; failureClosesPage=false // a new click starts its own grace period
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
@@ -451,13 +466,13 @@ struct CockpitUnavailableNotice {
     var onShowingChanged: (() -> Void)?
     /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
     func requestClose() {
-        noticeTask?.cancel(); noticeTask=nil
+        noticeTask?.cancel(); noticeTask=nil; retryTask?.cancel(); retryTask=nil
         if pageOpened { owner.coordinator?.requestClose() } else { hide() }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
         wantsVisible = false
-        noticeTask?.cancel(); noticeTask=nil
+        noticeTask?.cancel(); noticeTask=nil; retryTask?.cancel(); retryTask=nil
         onShowingChanged?()
         showTask?.cancel()
         showTask = nil
@@ -485,6 +500,9 @@ struct CockpitUnavailableNotice {
                     + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] rebuilds=\(rebuilds) during-grace=true")
                 noticePath = path
             }
+            // G3-95: a pending open that started this grace period spent no retry; a retryable failure that follows it
+            // (a context the bridge could not use, a page that could not be made) gets the one quiet retry.
+            scheduleOpenRetry(path:path)
             return
         }
         lastEventWasOpen = false
@@ -493,7 +511,7 @@ struct CockpitUnavailableNotice {
         CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened) "
             + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] rebuilds=\(rebuilds)")
         guard wantsVisible else { return }
-        if !history { noticePath=path } // the cause that starts the grace period; a later non-page cause replaces it above
+        if !history, !CockpitUnavailableNotice.isBundleProblem(path:noticePath) { noticePath=path } // a bundle cause is never replaced by a milder one; the cause that starts the grace period; a later non-page cause replaces it above
         if history { presentNotice(history:true,initiatedInForeground:initiatedInForeground); return }
         if path.hasPrefix("page.") {
             rebuilds += 1
@@ -507,7 +525,7 @@ struct CockpitUnavailableNotice {
             guard let self else { return }
             try? await Task.sleep(for:self.noticeGrace)
             guard !Task.isCancelled else { return }
-            self.noticeTask=nil; self.rebuilding=false
+            self.noticeTask=nil; self.retryTask?.cancel(); self.retryTask=nil; self.rebuilding=false
             guard !(self.openCount != epoch && self.lastEventWasOpen) else { return } // a page opened and nothing failed after it: recovered
             self.presentNotice(history:false,initiatedInForeground:initiatedInForeground)
         }
@@ -519,9 +537,11 @@ struct CockpitUnavailableNotice {
         guard !retriedOpen,path.hasPrefix("open.") || path.hasPrefix("adopt."),path != CockpitUnavailableReason.noDelivery.path,
               !CockpitUnavailableNotice.isBundleProblem(path:path) else { return }
         retriedOpen=true
-        Task { @MainActor [weak self] in
+        let scheduledFor=attempt
+        retryTask=Task { @MainActor [weak self] in
             try? await Task.sleep(for:Self.openRetryDelay)
-            guard let self,self.wantsVisible,self.noticeTask != nil,!self.pageOpened else { return }
+            guard !Task.isCancelled,let self,self.attempt == scheduledFor,self.wantsVisible,self.noticeTask != nil,!self.pageOpened else { return }
+            self.retryTask=nil
             CockpitFailureLog.record("open-retry after=\(path)")
             self.owner.coordinator?.open()
         }

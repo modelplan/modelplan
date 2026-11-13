@@ -232,3 +232,10 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
   -webkit-mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%);mask-image:radial-gradient(ellipse 55% 160% at 50% 0%,#000 60%,#000c 70%,#0006 78%,transparent 86%)}
 #cockpit[data-ignite="true"] .ck-base :is(.bz,.bz-empty)::after{opacity:.6;transition-duration:.12s}
 #cockpit[data-ignite="true"] .ck-base .bz .bz-sheet{opacity:0}
+html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::after{transition:none}
+@media(prefers-reduced-motion:reduce){.ck-base :is(.bz,.bz-empty)::after{transition:none}}
+/* CKP-SHELL-39: empty engine screen, one line and one button */
+.ck-eng .ec-empty-box{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:10px}
+.ck-eng .ec-empty-box .ec-empty{font-size:12px;text-align:center;padding:0;color:var(--lcd-muted)}
+.ck-eng .ec-empty-open{font:12px var(--f-silk);color:#e9edf0;background:#1b2128;border:1px solid #4a525b;border-radius:6px;padding:6px 16px;cursor:pointer}
+.ck-eng .ec-empty-open:hover{background:#252d35}.ck-eng .ec-empty-open:focus-visible{outline:2px solid #7fd4b8;outline-offset:2px}

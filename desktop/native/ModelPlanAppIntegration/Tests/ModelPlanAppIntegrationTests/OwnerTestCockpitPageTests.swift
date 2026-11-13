@@ -219,7 +219,7 @@ extension CommunityCockpitEntryTests {
         XCTAssertFalse(window.isOpaque, "the panel is not opaque")
         XCTAssertEqual(window.backgroundColor?.alphaComponent ?? 1, 0, "the panel background is clear")
         XCTAssertFalse(window.hasShadow, "no window shadow around the hull, as in the study")
-        XCTAssertEqual(web.value(forKey: "drawsBackground") as? Bool, false, "the web view paints no backing")
+        XCTAssertFalse(web.isOpaque, "the web view paints no backing")
         XCTAssertEqual(web.underPageBackgroundColor.alphaComponent, 0, "nothing under the page")
         // The web view's own rendering of the window: corners and the reserve beside the bells are transparent.
         let image = try await web.takeSnapshot(configuration: nil)

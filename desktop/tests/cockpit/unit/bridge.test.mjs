@@ -87,6 +87,10 @@ test('D63 openField may name the clicked rocket by its published display name, n
   for(const bad of ['',' ','x'.repeat(65),42])assert.equal(f.bridge.action('openField',bad),false,String(bad));
   assert.equal(f.bridge.action('openField','Synthetic 5.5'),true);last=f.events.at(-1);assert.equal(last.action,'openField');assert.equal(last.key,'Synthetic 5.5');
 });
+test('openSettingsSubscriptions is one fixed action with no payload (CKP-SHELL-39)',()=>{
+  const f=fixture();assert.equal(f.bridge.action('openSettingsSubscriptions'),true);
+  const last=f.events.at(-1);assert.equal(last.action,'openSettingsSubscriptions');assert.equal(last.key,undefined);assert.equal(last.tool,undefined);
+});
 test('only fixed actions are emitted, history is limited to currently displayed rows',()=>{
   const f=fixture();assert.equal(f.bridge.action('openURL'),false);assert.equal(f.bridge.action('chooseSetup','x'),false);
   assert.equal(f.bridge.action('openHistory','unknown'),false);assert.equal(f.bridge.action('openSettings'),true);
@@ -321,15 +325,12 @@ test('G3-96: reset events as CLI v0.5.59 emits them (kind, confirmedAt, confirme
   // Build 14d: the CLI sets kind on every reset event and a confirmation time on a confirmed one. Their schema nodes
   // carried an enum without a type, which the page's bounded validator refuses, so every display with a published
   // reset event (the live Codex reset credit) failed with data.schema and the cockpit never opened.
+  // The events come from the real projector (resetevents.CaptureEvents via swiftwire), unedited: announced direct reset,
+  // announced reset credit and a confirmed credit. A field the producer adds shows up here without anyone transcribing it.
   const f=fixture(),data=capture();
-  const announced=data.projection.resetEvents[0];
-  assert.equal(announced.kind,'direct_reset','the real Go capture carries kind like the producer does');
-  const credit={...structuredClone(announced),id:'banked-1',kind:'reset_credit'};
-  const confirmed={...structuredClone(announced),id:'confirmed-1',status:'confirmed',confirms:'banked-1',kind:'reset_credit',confirmedAt:'2026-10-29T13:00:00Z',confirmedAtBasis:'firstSeen'};
-  data.projection.resetEvents=[announced,credit,confirmed];
-  data.details.resetEvents=[announced,credit,confirmed];
+  assert.deepEqual(data.details.resetEvents.map(e=>[e.kind,e.status,e.confirmedAtBasis??null]),[['reset_credit','confirmed','firstSeen'],['reset_credit','announced',null],['direct_reset','announced',null]]);
   const accepted=f.bridge.receive(f.send('display',{data}),source);
   assert.equal(f.bridge.lastReject,'none');
   assert.equal(accepted,true);
-  assert.deepEqual(f.retained().details.resetEvents.map(e=>[e.kind,e.confirmedAtBasis??null]),[['direct_reset',null],['reset_credit',null],['reset_credit','firstSeen']]);
+  assert.deepEqual(f.retained().details.resetEvents,data.details.resetEvents);
 });
