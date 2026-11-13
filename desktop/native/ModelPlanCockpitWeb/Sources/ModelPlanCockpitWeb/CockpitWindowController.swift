@@ -500,7 +500,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     view.menuProvider = { [weak self] in self?.contextMenu() }
     menuTarget.fire = { [weak self] in self?.toggleAttachment() }
     // Owner review 11-08 / CKP-SHELL-25: only the hull and canopy are drawn; the web view paints no backing of its
-    // own (`CockpitWebView.isOpaque` is false), so the clear panel shows the desktop around the transparent page.
+    // own, so the clear panel shows the desktop around the transparent page. `CockpitWebView.isOpaque` being false is
+    // not enough: WKWebView on macOS still paints its opaque backing unless `drawsBackground` is false (hosted
+    // macos-15 U11 showed opaque corners without it), and AppKit has no public equivalent.
+    view.setValue(false, forKey: "drawsBackground")
     view.underPageBackgroundColor = .clear
     pageLoadStarted = false
     // The initial v2 load applies appearance and shell before a page can paint.
