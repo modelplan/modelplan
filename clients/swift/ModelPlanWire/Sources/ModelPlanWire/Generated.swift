@@ -2614,6 +2614,34 @@ public struct WireCockpitProjectRanking: Codable, Sendable {
     }
 }
 
+public enum WireCockpitProjectState: Codable, Sendable, Equatable {
+    case `named`
+    case `unnamed`
+    case `hidden`
+    case `none`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "named": self = .`named`
+        case "unnamed": self = .`unnamed`
+        case "hidden": self = .`hidden`
+        case "none": self = .`none`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`named`: return "named"
+        case .`unnamed`: return "unnamed"
+        case .`hidden`: return "hidden"
+        case .`none`: return "none"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireCockpitPublication: Codable, Sendable {
     public let `contractVersion`: Int
     public let `publicationId`: String
@@ -2893,6 +2921,7 @@ public struct WireCockpitRecentSession: Codable, Sendable {
     public let `model`: String
     public let `effort`: String?
     public let `projectLabel`: String?
+    public let `projectState`: WireCockpitProjectState?
     public let `lastObservedAt`: WireTimestamp
     private enum CodingKeys: String, CodingKey {
         case `sessionRef`
@@ -2901,15 +2930,17 @@ public struct WireCockpitRecentSession: Codable, Sendable {
         case `model`
         case `effort`
         case `projectLabel`
+        case `projectState`
         case `lastObservedAt`
     }
-    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp) throws {
+    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `projectState`: WireCockpitProjectState? = nil, `lastObservedAt`: WireTimestamp) throws {
         self.`sessionRef` = `sessionRef`
         self.`source` = `source`
         self.`subscriptionRef` = `subscriptionRef`
         self.`model` = `model`
         self.`effort` = `effort`
         self.`projectLabel` = `projectLabel`
+        self.`projectState` = `projectState`
         self.`lastObservedAt` = `lastObservedAt`
         try validate()
     }
@@ -2921,6 +2952,8 @@ public struct WireCockpitRecentSession: Codable, Sendable {
         self.`model` = try c.decode(String.self, forKey: .`model`)
         self.`effort` = try c.decodeIfPresent(String.self, forKey: .`effort`)
         self.`projectLabel` = try c.decodeIfPresent(String.self, forKey: .`projectLabel`)
+        if c.contains(.`projectState`), try c.decodeNil(forKey: .`projectState`) { throw WireDecodeError.invalidIdentity }
+        self.`projectState` = try c.decodeIfPresent(WireCockpitProjectState.self, forKey: .`projectState`)
         self.`lastObservedAt` = try c.decode(WireTimestamp.self, forKey: .`lastObservedAt`)
         try validate()
     }
@@ -2933,6 +2966,7 @@ public struct WireCockpitRecentSession: Codable, Sendable {
         try c.encode(`model`, forKey: .`model`)
         try c.encode(`effort`, forKey: .`effort`)
         try c.encode(`projectLabel`, forKey: .`projectLabel`)
+        try c.encodeIfPresent(`projectState`, forKey: .`projectState`)
         try c.encode(`lastObservedAt`, forKey: .`lastObservedAt`)
     }
     private func validate() throws {
@@ -2981,6 +3015,7 @@ public struct WireCockpitSession: Codable, Sendable {
     public let `model`: String
     public let `effort`: String?
     public let `projectLabel`: String?
+    public let `projectState`: WireCockpitProjectState?
     public let `lastObservedAt`: WireTimestamp
     public let `state`: String
     public let `rate`: Double?
@@ -2992,18 +3027,20 @@ public struct WireCockpitSession: Codable, Sendable {
         case `model`
         case `effort`
         case `projectLabel`
+        case `projectState`
         case `lastObservedAt`
         case `state`
         case `rate`
         case `fast`
     }
-    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil, `fast`: Bool? = nil) throws {
+    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `projectState`: WireCockpitProjectState? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil, `fast`: Bool? = nil) throws {
         self.`sessionRef` = `sessionRef`
         self.`source` = `source`
         self.`subscriptionRef` = `subscriptionRef`
         self.`model` = `model`
         self.`effort` = `effort`
         self.`projectLabel` = `projectLabel`
+        self.`projectState` = `projectState`
         self.`lastObservedAt` = `lastObservedAt`
         self.`state` = `state`
         self.`rate` = `rate`
@@ -3018,6 +3055,8 @@ public struct WireCockpitSession: Codable, Sendable {
         self.`model` = try c.decode(String.self, forKey: .`model`)
         self.`effort` = try c.decodeIfPresent(String.self, forKey: .`effort`)
         self.`projectLabel` = try c.decodeIfPresent(String.self, forKey: .`projectLabel`)
+        if c.contains(.`projectState`), try c.decodeNil(forKey: .`projectState`) { throw WireDecodeError.invalidIdentity }
+        self.`projectState` = try c.decodeIfPresent(WireCockpitProjectState.self, forKey: .`projectState`)
         self.`lastObservedAt` = try c.decode(WireTimestamp.self, forKey: .`lastObservedAt`)
         self.`state` = try c.decode(String.self, forKey: .`state`)
         self.`rate` = try c.decodeIfPresent(Double.self, forKey: .`rate`)
@@ -3034,6 +3073,7 @@ public struct WireCockpitSession: Codable, Sendable {
         try c.encode(`model`, forKey: .`model`)
         try c.encode(`effort`, forKey: .`effort`)
         try c.encode(`projectLabel`, forKey: .`projectLabel`)
+        try c.encodeIfPresent(`projectState`, forKey: .`projectState`)
         try c.encode(`lastObservedAt`, forKey: .`lastObservedAt`)
         try c.encode(`state`, forKey: .`state`)
         try c.encode(`rate`, forKey: .`rate`)

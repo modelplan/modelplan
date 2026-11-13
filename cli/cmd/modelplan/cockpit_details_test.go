@@ -220,6 +220,9 @@ func TestCockpitDetailsProjectsOnlyAdmittedStampedLiveSessions(t *testing.T) {
 	if got.Sessions[1].Model != "unknown" || got.Sessions[1].Effort != nil || got.Sessions[1].ProjectLabel != nil {
 		t.Fatalf("untrusted fields escaped: %#v", got.Sessions[1])
 	}
+	if got.Sessions[0].ProjectState != wire.ProjectNamed || got.Sessions[1].ProjectState != wire.ProjectNone {
+		t.Fatalf("project state with labels on: %q / %q", got.Sessions[0].ProjectState, got.Sessions[1].ProjectState)
+	}
 	if got.Sessions[1].SubscriptionRef != nil {
 		t.Fatalf("a reference outside the cockpit's subscriptions stays unbound: %q", *got.Sessions[1].SubscriptionRef)
 	}
@@ -240,6 +243,10 @@ func TestCockpitDetailsProjectsOnlyAdmittedStampedLiveSessions(t *testing.T) {
 	got, err = (sharedCockpit{cache: cache}).cockpitDetails(context.Background(), view, admission, nil)
 	if err != nil || len(got.Sessions) != 2 || got.Sessions[0].ProjectLabel != nil {
 		t.Fatalf("disabled labels escaped: %#v, %v", got.Sessions, err)
+	}
+	// glm-909-1: with `project-labels off` a session that has a project says its name is hidden, not that it has none.
+	if got.Sessions[0].ProjectState != wire.ProjectHidden || got.Sessions[1].ProjectState != wire.ProjectNone {
+		t.Fatalf("project state with labels off: %q / %q", got.Sessions[0].ProjectState, got.Sessions[1].ProjectState)
 	}
 }
 

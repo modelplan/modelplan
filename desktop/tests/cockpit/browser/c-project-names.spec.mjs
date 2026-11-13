@@ -60,3 +60,17 @@ test('G3-100 a session with no project reads "No project" while names are on, an
  expect(await receive(send('display',{data:unnamed}))).toBe(true);
  await expect(page.locator('.t-proj').first()).toHaveText('Unnamed project');
 });
+
+test('glm-909-1 a project whose name the CLI hides reads "--", not "No project", while names are on',async({page})=>{
+ const {send,receive,data}=await open(page,true);
+ const hidden=structuredClone(data);hidden.details.sessions[0].projectLabel=null;hidden.details.sessions[0].projectState='hidden';
+ expect(await receive(send('display',{data:hidden}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('--');
+ const none=structuredClone(data);none.details.sessions[0].projectLabel=null;none.details.sessions[0].projectState='none';
+ expect(await receive(send('display',{data:none}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('No project');
+ const unnamed=structuredClone(data);unnamed.details.sessions[0].projectLabel='Unnamed project';unnamed.details.sessions[0].projectState='unnamed';
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ expect(await receive(send('display',{data:unnamed}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('未命名项目');
+});

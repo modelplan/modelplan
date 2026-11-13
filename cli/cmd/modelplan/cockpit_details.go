@@ -240,10 +240,17 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 				}
 			}
 		}
-		// G3-100: a real project the tool stores no name for (ZCode) is not "no project". It reads as a short
-		// opaque tag so the strip can tell it from a session with no project at all (null label, null ref).
-		if labels && label == nil && session.ProjectRef != nil {
-			label = unnamedProjectLabel(*session.ProjectRef)
+		// G3-100: a real project the tool stores no name for (ZCode) is not "no project"; glm-909-1: neither is
+		// one whose name `project-labels off` withholds. The state says which, so the strip never guesses.
+		state := wire.ProjectNone
+		switch {
+		case session.ProjectRef == nil:
+		case !labels:
+			state = wire.ProjectHidden
+		case label != nil:
+			state = wire.ProjectNamed
+		default:
+			state, label = wire.ProjectUnnamed, unnamedProjectLabel(*session.ProjectRef)
 		}
 		// The live record's account is the same evidence the working signal binds on. A reference
 		// outside this cockpit's subscriptions stays unbound; never substitute a source-wide one.
@@ -257,7 +264,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			v := true
 			fast = &v
 		}
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast})
+		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, ProjectState: state, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast})
 	}
 	if appserver.CockpitSessionsEnabled(ctx) {
 		result.RecentSessions = cockpitRecentSessions(perf.Ledger.Sessions, allowed, sourceScope, byRef, labels, view.PublicModels, now)

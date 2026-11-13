@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 2c21831f6520b13688b3a3e34c7c8a5854df8523b1581d2c50306c289760d5bd
+// Schema SHA-256: 5401b8774ef6ee2bcd03896d134668fe1db92d3e334850ea37265d2a21c6ae33
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -214,6 +214,7 @@ export type WireCockpitRecentSession = {
   readonly "lastObservedAt": string;
   readonly "model": string;
   readonly "projectLabel": string | null;
+  readonly "projectState"?: "named" | "unnamed" | "hidden" | "none";
   readonly "sessionRef": string;
   readonly "source": string;
   readonly "subscriptionRef": string | null;
@@ -231,6 +232,7 @@ export type WireCockpitSession = {
   readonly "lastObservedAt": string;
   readonly "model": string;
   readonly "projectLabel": string | null;
+  readonly "projectState"?: "named" | "unnamed" | "hidden" | "none";
   readonly "rate": number | null;
   readonly "sessionRef": string;
   readonly "source": string;
@@ -1640,6 +1642,15 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "projectState": {
+        "enum": [
+          "named",
+          "unnamed",
+          "hidden",
+          "none"
+        ],
+        "type": "string"
+      },
       "sessionRef": {
         "maxLength": 16,
         "pattern": "^[a-f0-9]{16}$",
@@ -1746,6 +1757,15 @@ export const definitions: Readonly<Record<string, Schema>> = {
             "type": "null"
           }
         ]
+      },
+      "projectState": {
+        "enum": [
+          "named",
+          "unnamed",
+          "hidden",
+          "none"
+        ],
+        "type": "string"
       },
       "rate": {
         "anyOf": [
