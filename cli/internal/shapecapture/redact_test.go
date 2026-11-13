@@ -162,6 +162,21 @@ func fakeHome(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
+	ocp := filepath.Join(home, ".local/share/opencode/opencode.db")
+	_ = os.MkdirAll(filepath.Dir(ocp), 0o755)
+	oc, err := sql.Open("sqlite", ocp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer oc.Close()
+	for _, q := range []string{
+		`CREATE TABLE session_message(id TEXT, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, time_updated INTEGER, data TEXT)`,
+		`INSERT INTO session_message VALUES('msg_7kf3k9d2qxapz1wa','ses_canary','assistant',1,` + itoa(now.Add(-time.Hour).UnixMilli()) + `,` + itoa(now.UnixMilli()) + `,'{"id":"part_canary","role":"assistant","modelID":"glm-5","providerID":"zai","tokens":{"input":3,"output":7},"text":"my private prompt text"}')`,
+	} {
+		if _, err := oc.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return home
 }
 
@@ -186,7 +201,7 @@ func TestEndToEndNoFakeSecretsSurvive(t *testing.T) {
 		}
 		files++
 		b, _ := os.ReadFile(p)
-		for _, bad := range append(poison, "alice", "SECRET", "secret-project", "xai-", "ya29", "2026-11", "evil.example") {
+		for _, bad := range append(poison, "alice", "SECRET", "msg_7kf3k9d2qxapz1wa", "part_canary", "ses_canary", "secret-project", "xai-", "ya29", "2026-11", "evil.example") {
 			if strings.Contains(string(b), bad) {
 				t.Errorf("%s leaked %q:\n%s", p, bad, b)
 			}
@@ -202,5 +217,49 @@ func TestEndToEndNoFakeSecretsSurvive(t *testing.T) {
 	}
 	if strings.Contains(string(b), "prompt") && strings.Contains(string(b), "my private") {
 		t.Fatal("prompt column value leaked")
+	}
+	b, _ = os.ReadFile(filepath.Join(out, "opencode", "db-1.shape.json"))
+	if !strings.Contains(string(b), `"modelID": "glm-5"`) || !strings.Contains(string(b), `"output": 1`) {
+		t.Fatalf("opencode shape lost structure: %s", b)
+	}
+}
+
+// The capture samples the same tree the readers consume when their override is set.
+func TestReaderOverridesAreHonoured(t *testing.T) {
+	home := fakeHome(t)
+	alt := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(alt, "g", "tmp", "h", "chats"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(alt, "g", "tmp", "h", "chats", "c.json"), []byte(`{"messages":[{"type":"gemini","model":"gemini-redirected"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	zdb := filepath.Join(alt, "custom.sqlite")
+	db, err := sql.Open("sqlite", zdb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{`CREATE TABLE model_usage(model_id TEXT, output_tokens INTEGER)`, `INSERT INTO model_usage VALUES('glm-redirected', 5)`} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	vars := map[string]string{"MODELPLAN_GEMINI_HOME": filepath.Join(alt, "g"), "MODELPLAN_ZCODE_DB": zdb}
+	env := Env{Home: home, Getenv: func(k string) string { return vars[k] }}
+	out := t.TempDir()
+	for _, tool := range Tools() {
+		if tool.Name != "gemini" && tool.Name != "zcode" {
+			continue
+		}
+		if _, err := Capture(tool, env, out, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(out, "gemini", "chats-1.shape.json")); !strings.Contains(string(b), "gemini-redirected") {
+		t.Fatalf("gemini override ignored: %s", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(out, "zcode", "db-1.shape.json")); !strings.Contains(string(b), "glm-redirected") {
+		t.Fatalf("zcode override ignored: %s", b)
 	}
 }

@@ -65,7 +65,16 @@ func Capture(t Tool, env Env, out string, now time.Time) (Manifest, error) {
 		if !safeLabel.MatchString(s.Label) {
 			continue
 		}
-		for i, path := range newest(root, s.Glob, s.Newest) {
+		paths := newest(root, s.Glob, s.Newest)
+		if s.File != nil {
+			if f := s.File(env); f != "" {
+				paths = nil
+				if fi, err := os.Lstat(f); err == nil && fi.Mode().IsRegular() {
+					paths = []string{f}
+				}
+			}
+		}
+		for i, path := range paths {
 			r := NewRedactor(s.Allow, now)
 			var doc []byte
 			var records int
@@ -203,6 +212,8 @@ func shapeSQLite(path string, s Source, r *Redactor) ([]byte, int, error) {
 	q := url.Values{}
 	q.Set("mode", "ro")
 	q.Add("_pragma", "query_only(1)")
+	q.Add("_pragma", "busy_timeout(1000)")
+	q.Add("_pragma", "trusted_schema(0)")
 	db, err := sql.Open("sqlite", "file:"+(&url.URL{Path: path}).EscapedPath()+"?"+q.Encode())
 	if err != nil {
 		return nil, 0, err

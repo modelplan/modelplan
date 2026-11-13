@@ -15,6 +15,9 @@ type Source struct {
 	Newest int      // how many newest matching files to sample
 	Allow  Allow
 	Tables []string // sqlite only: allow-listed table names
+	// File, when set and non-empty, names the one file the reader consumes instead of Glob
+	// (the reader's own override variable, e.g. MODELPLAN_ZCODE_DB).
+	File func(Env) string
 }
 
 // Tool is one supported tool.
@@ -102,8 +105,8 @@ func Tools() []Tool {
 			}},
 		}},
 		{Name: "gemini", Root: func(e Env) string {
-			if h := e.env("GEMINI_HOME"); h != "" && filepath.IsAbs(h) {
-				return h
+			if h := e.env("MODELPLAN_GEMINI_HOME"); h != "" && filepath.IsAbs(h) {
+				return filepath.Clean(h)
 			}
 			return filepath.Join(e.Home, ".gemini")
 		}, Sources: []Source{
@@ -153,11 +156,16 @@ func Tools() []Tool {
 			{Label: "db", Glob: []string{"opencode.db"}, Format: "sqlite", Newest: 1, Tables: []string{"session_message"}, Allow: Allow{
 				"type": Enum, "data": Struct, "time": Struct, "created": Time, "completed": Time, "tokens": Struct,
 				"input": Struct, "output": Struct, "reasoning": Struct, "cache": Struct, "read": Struct, "write": Struct,
-				"model": Struct, "id": Enum, "modelID": Enum, "providerID": Enum, "role": Enum, "mode": Enum,
+				"model": Struct, "id": Struct, "modelID": Enum, "providerID": Enum, "role": Enum, "mode": Enum,
 			}},
 		}},
 		{Name: "zcode", Root: under(".zcode", "cli", "db"), Sources: []Source{
-			{Label: "db", Glob: []string{"db.sqlite"}, Format: "sqlite", Newest: 1, Tables: []string{"model_usage", "session"}, Allow: Allow{
+			{Label: "db", Glob: []string{"db.sqlite"}, Format: "sqlite", Newest: 1, Tables: []string{"model_usage", "session"}, File: func(e Env) string {
+				if p := e.env("MODELPLAN_ZCODE_DB"); p != "" && filepath.IsAbs(p) {
+					return p
+				}
+				return ""
+			}, Allow: Allow{
 				"model_id": Enum, "started_at": Time, "completed_at": Time, "output_tokens": Struct,
 				"input_tokens": Struct, "cache_read_input_tokens": Struct, "cache_creation_input_tokens": Struct,
 			}},

@@ -282,7 +282,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		c.offline = true
 	}
 	if cmd == "doctor" && fs.NArg() > 0 && fs.Arg(0) == "shapes" {
-		if fs.NArg() != 1 || *share || *shapeTool == "" || *shapeOut == "" {
+		if fs.NArg() != 1 || *share || *refreshReaders || *shapeTool == "" || *shapeOut == "" {
 			fmt.Fprintln(stderr, "usage: modelplan doctor shapes --tool NAME|all --out DIR")
 			return exitUsage
 		}
