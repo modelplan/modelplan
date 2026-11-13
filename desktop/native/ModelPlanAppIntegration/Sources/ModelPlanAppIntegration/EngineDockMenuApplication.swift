@@ -283,10 +283,11 @@ struct StatusNoticePresentation {
         guard !terminating, !lifecyclePaused,
               composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
         _ = composition.dock.sweepRefresh(id)
+        // G3-98: a repeated click while this member's refresh runs keeps its number hidden for that result.
+        guard !memberRefreshInFlight.contains(id) else { return }
         var handedOff = false
         defer { if !handedOff { composition.dock.resolveRefreshReadout(id) } }
-        guard !memberRefreshInFlight.contains(id),
-              let member = composition.accountMembers.members.first(where: { $0.id == id && $0.isStable }),
+        guard let member = composition.accountMembers.members.first(where: { $0.id == id && $0.isStable }),
               let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery) else { return }
         guard let adapter = memberRefreshAdapter else { unavailableMemberRefreshes.insert(id); renderMenu(); return }
         let admission = adapter.admission(for: member, delivery: delivery, now: Date())
