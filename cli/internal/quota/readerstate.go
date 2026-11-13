@@ -687,7 +687,7 @@ func managedRowsAccount(provider, key string, a *Account, cache string, now time
 	}
 	out.ResetCards = a.ResetCards
 	if c := a.Credits; c != nil {
-		out.Credits = &rows.CreditsInput{Balance: c.Balance, Unit: c.Unit}
+		out.Credits = &rows.CreditsInput{Balance: c.Balance, Unit: c.Unit, Currency: c.Currency}
 	}
 	for _, w := range a.Windows {
 		if (provider == "claude" || provider == "gemini") && !w.ScopeKnown {
