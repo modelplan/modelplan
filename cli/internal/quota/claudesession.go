@@ -124,7 +124,16 @@ type claudeSessionFile struct {
 	Invalid    bool                `json:"invalid,omitempty"`
 	Omitted    bool                `json:"omitted,omitempty"`
 	Nodes      []claudeSessionNode `json:"nodes"`
+	// Seq orders nodes across trims; Modified bounds every record in the file.
+	Seq      int       `json:"seq,omitempty"`
+	Modified time.Time `json:"modified,omitempty"`
 }
+
+// claudeSessionFileNodes keeps only each file's newest keyed nodes. Selection
+// walks back from the newest leaf to its newest complete reply, which sits
+// within a few records; older nodes are dropped as an omitted prefix.
+const claudeSessionFileNodes = 96
+
 type claudeSessionCandidate struct {
 	observation ClaudeSessionObservation
 	interactive bool
@@ -223,7 +232,7 @@ func decodeClaudeSessionLine(a localusage.HistoryAccess, file *claudeSessionFile
 		}
 		at = parsed.UTC()
 	}
-	node := claudeSessionNode{ID: keyed("node", row.ID), Parent: keyed("node", row.Parent), Message: keyed("message", row.Message.ID), Kind: row.Type, At: at.UTC(), Index: len(file.Nodes)}
+	node := claudeSessionNode{ID: keyed("node", row.ID), Parent: keyed("node", row.Parent), Message: keyed("message", row.Message.ID), Kind: row.Type, At: at.UTC(), Index: file.Seq}
 	if row.Type == "assistant" {
 		if row.Message.Role != "" && row.Message.Role != "assistant" {
 			file.Invalid = true
@@ -256,10 +265,14 @@ func decodeClaudeSessionLine(a localusage.HistoryAccess, file *claudeSessionFile
 		}
 	}
 	file.Nodes = append(file.Nodes, node)
+	file.Seq++
 }
 
+// A file is complete when its newest leaf leads to a complete reply through
+// retained records. Ancestry above that reply cannot change the selection, so
+// an omitted prefix or a skipped record matters only below it.
 func claudeSessionFileProjection(file claudeSessionFile) (*claudeSessionCandidate, bool) {
-	partial := file.Invalid || file.Omitted
+	partial := file.Invalid
 	nodes := map[string]claudeSessionNode{}
 	all := file.Nodes
 	for _, node := range all {
@@ -298,7 +311,7 @@ func claudeSessionFileProjection(file claudeSessionFile) (*claudeSessionCandidat
 		}
 	}
 	if leaf == nil {
-		return nil, mainNodes == 0 && !partial
+		return nil, mainNodes == 0 && !partial && !file.Omitted
 	}
 	var selected *claudeSessionNode
 	seen := map[string]bool{}
@@ -308,9 +321,8 @@ func claudeSessionFileProjection(file claudeSessionFile) (*claudeSessionCandidat
 		}
 		seen[node.ID] = true
 		if node.Kind == "assistant" && node.Complete {
-			if selected == nil {
-				selected = node
-			}
+			selected = node
+			break
 		}
 		if node.Parent == "" {
 			break
@@ -323,7 +335,7 @@ func claudeSessionFileProjection(file claudeSessionFile) (*claudeSessionCandidat
 		node = &parent
 	}
 	if selected == nil {
-		return nil, !partial
+		return nil, !partial && !file.Omitted
 	}
 	fields := selected.Fields
 	if selected.Message != "" {
@@ -409,6 +421,8 @@ func ProjectClaudeSessions(a localusage.HistoryAccess, batches []ClaudeSessionBa
 	if state.Incomplete {
 		result.Availability = "partial"
 		result.Selected = nil
+	} else if state.Partial {
+		result.Availability = "partial"
 	}
 	return result
 }
@@ -465,6 +479,9 @@ func applyClaudeSessionProjection(account *Account, projection ClaudeSessionProj
 // repeated from this sanitized snapshot even when all source files are unchanged.
 type claudeSessionSnapshot struct {
 	Sessions []claudeSessionSnapshotEntry `json:"sessions"`
+	// RecentUnknown: an unread or undecidable transcript may hold a newer
+	// interactive session, so only the caller's own session can be selected.
+	RecentUnknown bool `json:"recentUnknown,omitempty"`
 }
 type claudeSessionSnapshotEntry struct {
 	ClaudeSessionObservation
@@ -481,30 +498,46 @@ func ClaudeSessionReducer(a localusage.HistoryAccess, now time.Time) localusage.
 		if ctx.Err() != nil || claudeSessionAdmission(a) != "" {
 			return state, errors.New("Claude session read unavailable")
 		}
+		// An unchanged file adds nothing: skip re-encoding the frontier for it.
+		if batch.EndFile && batch.Unchanged && batch.Reset == "" && len(batch.Lines) == 0 && len(state.Decoder) > 0 {
+			return state, nil
+		}
 		files := map[string]claudeSessionFile{}
 		if len(state.Decoder) > 0 {
 			if err := json.Unmarshal(state.Decoder, &files); err != nil {
 				return state, errors.New("Claude session frontier invalid")
 			}
 		}
-		if batch.Final {
-			if batch.DiscoveryComplete {
-				live := map[string]bool{}
-				for _, ref := range batch.LiveFileRefs {
-					live[ref] = true
-				}
-				for ref := range files {
-					if !live[ref] {
-						delete(files, ref)
-					}
+		// Files outside the engine's newest-file window leave the frontier.
+		if batch.DiscoveryComplete && (batch.Final || batch.LiveFileRefs != nil) {
+			live := map[string]bool{}
+			for _, ref := range batch.LiveFileRefs {
+				live[ref] = true
+			}
+			for ref := range files {
+				if !live[ref] {
+					delete(files, ref)
 				}
 			}
+		}
+		if batch.Final {
 			state.Incomplete = !batch.DiscoveryComplete || !batch.RecoveryComplete
 			snapshot := claudeSessionSnapshot{Sessions: []claudeSessionSnapshotEntry{}}
 			state.ObservedAt = time.Time{}
+			// Records that might be missing are no newer than unknown. The most
+			// recent interactive session is known only when it is at least as
+			// new as all of them; each session's own reading stays usable.
+			unknown, unknownUntimed := batch.UnknownAfter, false
+			var recent time.Time
 			for _, file := range files {
 				candidate, complete := claudeSessionFileProjection(file)
-				state.Incomplete = state.Incomplete || !complete
+				if !complete {
+					if file.Modified.IsZero() {
+						unknownUntimed = true
+					} else if file.Modified.After(unknown) {
+						unknown = file.Modified
+					}
+				}
 				if candidate == nil {
 					continue
 				}
@@ -512,7 +545,12 @@ func ClaudeSessionReducer(a localusage.HistoryAccess, now time.Time) localusage.
 				if candidate.observation.ObservedAt.After(state.ObservedAt) {
 					state.ObservedAt = candidate.observation.ObservedAt
 				}
+				if candidate.interactive && candidate.observation.ObservedAt.After(recent) {
+					recent = candidate.observation.ObservedAt
+				}
 			}
+			snapshot.RecentUnknown = unknownUntimed || (!unknown.IsZero() && (recent.IsZero() || recent.Before(unknown)))
+			state.Partial = snapshot.RecentUnknown
 			sort.Slice(snapshot.Sessions, func(i, j int) bool {
 				left, right := snapshot.Sessions[i], snapshot.Sessions[j]
 				if left.ObservedAt.Equal(right.ObservedAt) {
@@ -535,6 +573,9 @@ func ClaudeSessionReducer(a localusage.HistoryAccess, now time.Time) localusage.
 				delete(files, batch.FileRef)
 			}
 			file := files[batch.FileRef]
+			if batch.EndFile && !batch.Modified.IsZero() {
+				file.Modified = batch.Modified.UTC()
+			}
 			sessionKey := claudeSessionHash(a.Key, a.ProfileRef, batch.SessionID)
 			if file.SessionKey != "" && file.SessionKey != sessionKey {
 				return state, errors.New("Claude session scope invalid")
@@ -547,7 +588,7 @@ func ClaudeSessionReducer(a localusage.HistoryAccess, now time.Time) localusage.
 			}
 			// Bound the semantic frontier separately from the engine's byte budgets.
 			// Reaching this limit stays unknown until replacement/reset; it never guesses.
-			priorNodes := len(file.Nodes)
+			priorNodes, priorSeq := append([]claudeSessionNode(nil), file.Nodes...), file.Seq
 			batchBytes := 0
 			if len(batch.Lines) > 4096 {
 				return state, errors.New("Claude session batch too large")
@@ -567,20 +608,36 @@ func ClaudeSessionReducer(a localusage.HistoryAccess, now time.Time) localusage.
 				count := len(file.Nodes)
 				decodeClaudeSessionLine(a, &file, batch.SessionID, line, now)
 				total += len(file.Nodes) - count
+				if len(file.Nodes) >= 2*claudeSessionFileNodes {
+					total -= trimClaudeSessionFile(&file)
+				}
 			}
+			trimClaudeSessionFile(&file)
 			files[batch.FileRef] = file
 			if len(files) > 256 {
 				return state, errors.New("Claude session frontier too large")
 			}
 			encoded, _ := json.Marshal(files)
 			if len(encoded) > 1800<<10 {
-				file.Nodes, file.Invalid = file.Nodes[:priorNodes], true
+				file.Nodes, file.Seq, file.Invalid = priorNodes, priorSeq, true
 				files[batch.FileRef] = file
 			}
 		}
 		state.Decoder, _ = json.Marshal(files)
 		return state, nil
 	}
+}
+
+// trimClaudeSessionFile drops a file's oldest nodes beyond the per-file bound
+// and returns how many it dropped.
+func trimClaudeSessionFile(file *claudeSessionFile) int {
+	extra := len(file.Nodes) - claudeSessionFileNodes
+	if extra <= 0 {
+		return 0
+	}
+	file.Nodes = append([]claudeSessionNode(nil), file.Nodes[extra:]...)
+	file.Omitted = true
+	return extra
 }
 func claudeKeyedRef(ref string) bool {
 	b, err := hex.DecodeString(ref)
@@ -614,7 +671,7 @@ func selectClaudeSessions(snapshot []byte, a localusage.HistoryAccess, caller st
 			value.Attribution = "current-thread"
 			current = &value
 		}
-		if recent == nil && entry.Interactive {
+		if recent == nil && entry.Interactive && !s.RecentUnknown {
 			value := observation
 			value.Attribution = "recent-thread"
 			recent = &value

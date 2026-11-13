@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -16,8 +18,21 @@ const projectionTool = "claude-projection"
 // token-history schedules. Failed attempts back off up to one minute.
 const ProjectionInterval = 5 * time.Second
 
-const projectionBootstrapBytes int64 = 4 << 20
+// A first or reset read starts at this many bytes before the end of a
+// transcript: the projection needs only a session's newest records.
+const projectionBootstrapBytes int64 = 2 << 20
 const projectionRecordLimit = 4096
+
+// Only the newest projectionWindowFiles main transcripts (by modification time)
+// are tracked. Discovery may list more names, which are only stat'ed.
+const (
+	projectionWindowFiles     = 32
+	projectionDiscoverFiles   = 8192
+	projectionDiscoverEntries = 20000
+	// projectionOrder versions the newest-first cursor layout; older caches
+	// are rebuilt once.
+	projectionOrder = 2
+)
 
 // ProjectionState is trusted reducer output, persisted with the engine cursor in
 // one atomic commit. Snapshot contains only approved presentation fields; Decoder
@@ -33,6 +48,9 @@ type ProjectionState struct {
 	// Incomplete lets the reducer report missing ancestry or malformed records
 	// even when discovery and byte recovery completed. Clear only with evidence.
 	Incomplete bool `json:"incomplete,omitempty"`
+	// Partial publishes the snapshot while reporting that part of what it
+	// answers (for Claude, the most recent session) is still unknown.
+	Partial bool `json:"partial,omitempty"`
 }
 
 // ProjectionBatch is transient: never persist or log it. Each data batch holds
@@ -44,19 +62,28 @@ type ProjectionState struct {
 // Only Final establishes transaction-wide RecoveryComplete. LiveFileRefs is the
 // bounded discovery manifest; prune missing files only if DiscoveryComplete.
 // SessionID is the filename stem; reducers must verify any header agreement.
-// PrefixOmitted reports a bounded tail bootstrap; missing ancestry/headers must
-// stay unknown. On Final it means at least one file omitted an earlier prefix.
+// PrefixOmitted reports a bounded tail bootstrap or a skipped overlarge record;
+// missing ancestry/headers must stay unknown. On Final it means at least one
+// file omitted records.
+// Modified (EndFile) is the file's modification time: no record in it is newer.
+// UnknownAfter (Final) is the newest modification time among discovered files
+// this pass did not read to their end (outside the newest-file window or past
+// the pass budget); zero when every discovered file is covered. Records newer
+// than UnknownAfter cannot be missing. A reducer that needs every record must
+// treat a non-zero UnknownAfter as incomplete.
 type ProjectionBatch struct {
-	FileRef, SessionID string   `json:"-"`
-	Lines              [][]byte `json:"-"`
-	Offset             int64    `json:"-"`
-	Reset              string   `json:"-"`
-	EndFile, Unchanged bool     `json:"-"`
-	Final              bool     `json:"-"`
-	DiscoveryComplete  bool     `json:"-"`
-	RecoveryComplete   bool     `json:"-"`
-	PrefixOmitted      bool     `json:"-"`
-	LiveFileRefs       []string `json:"-"`
+	FileRef, SessionID string    `json:"-"`
+	Lines              [][]byte  `json:"-"`
+	Offset             int64     `json:"-"`
+	Reset              string    `json:"-"`
+	EndFile, Unchanged bool      `json:"-"`
+	Final              bool      `json:"-"`
+	DiscoveryComplete  bool      `json:"-"`
+	RecoveryComplete   bool      `json:"-"`
+	PrefixOmitted      bool      `json:"-"`
+	LiveFileRefs       []string  `json:"-"`
+	Modified           time.Time `json:"-"`
+	UnknownAfter       time.Time `json:"-"`
 }
 
 // ProjectionReducer must be deterministic and perform no I/O. It receives prior
@@ -211,6 +238,54 @@ type projectionRun struct {
 	pendingBytes              int
 	pendingOffset             int64
 	pendingRel, pendingRef    string
+	unknownAfter              time.Time
+}
+
+// projectionWindow orders discovered main files newest first and keeps the
+// newest projectionWindowFiles. It returns their modification times and the
+// newest time among the files left out. A file that vanished is skipped.
+func projectionWindow(root string, files []string) ([]string, map[string]time.Time, time.Time) {
+	type entry struct {
+		rel string
+		at  time.Time
+	}
+	all := make([]entry, 0, len(files))
+	for _, rel := range files {
+		info, err := os.Lstat(filepath.Join(root, rel))
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		all = append(all, entry{rel, info.ModTime()})
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].at.Equal(all[j].at) {
+			return all[i].rel < all[j].rel
+		}
+		return all[i].at.After(all[j].at)
+	})
+	var outside time.Time
+	if len(all) > projectionWindowFiles {
+		outside = all[projectionWindowFiles].at
+		all = all[:projectionWindowFiles]
+	}
+	window, modified := make([]string, 0, len(all)), make(map[string]time.Time, len(all))
+	for _, e := range all {
+		window = append(window, e.rel)
+		modified[e.rel] = e.at
+	}
+	return window, modified, outside
+}
+
+// unread records that records up to at may exist that this pass did not read.
+func (p *projectionRun) unread(at time.Time) {
+	if at.After(p.unknownAfter) {
+		p.unknownAfter = at
+	}
+}
+
+// gap marks that the current file skipped a record; ancestry through it stays unknown.
+func (p *projectionRun) gap() {
+	p.omitted, p.anyOmitted = true, true
 }
 
 func (p *projectionRun) start(prior *ProjectionState) {
@@ -237,6 +312,9 @@ func (p *projectionRun) call(b ProjectionBatch) bool {
 		return false
 	}
 	b.DiscoveryComplete = p.discoveryComplete
+	if b.LiveFileRefs == nil && p.discoveryComplete {
+		b.LiveFileRefs = p.live
+	}
 	s, err := p.reduce(p.ctx, p.state, b)
 	// Capture time belongs to the engine, not the decoder.
 	s.CapturedAt = p.prior.CapturedAt
@@ -279,30 +357,34 @@ func (p *projectionRun) flush() bool {
 	p.pending, p.pendingBytes = nil, 0
 	return p.call(b)
 }
-func (p *projectionRun) file(rel, ref string, complete, unchanged bool) {
+func (p *projectionRun) file(rel, ref string, complete, unchanged bool, modified time.Time) {
 	if !p.flush() {
 		return
 	}
 	b := p.batch(rel, ref)
-	b.EndFile, b.Unchanged, b.RecoveryComplete = true, unchanged, complete
+	b.EndFile, b.Unchanged, b.RecoveryComplete, b.Modified = true, unchanged, complete, modified
 	p.call(b)
 }
 func (p *projectionRun) finish(s *historyState, now time.Time) bool {
 	// Conclusive absence can clear a projection; an inaccessible root cannot.
 	complete := p.discoveryComplete && (s.Availability == "ok" || (s.Availability == "not_detected" && len(p.live) == 0))
-	if !p.call(ProjectionBatch{Final: true, RecoveryComplete: complete, LiveFileRefs: p.live, PrefixOmitted: p.anyOmitted}) || !validProjection(p.state, now) {
+	if !p.call(ProjectionBatch{Final: true, RecoveryComplete: complete, LiveFileRefs: p.live, PrefixOmitted: p.anyOmitted, UnknownAfter: p.unknownAfter}) || !validProjection(p.state, now) {
 		return false
 	}
 	complete = complete && !p.state.Incomplete
-	if p.state.Incomplete && s.Availability == "ok" {
+	if (p.state.Incomplete || p.state.Partial) && s.Availability == "ok" {
 		s.Availability = "partial"
 	}
+	// A partial snapshot is published only while nothing fully known exists
+	// yet (the first passes over a large history); it never replaces one.
+	partial := p.state.Partial
+	publish := complete && (!partial || len(p.prior.Snapshot) == 0 || p.prior.Partial)
 	p.state.CapturedAt = p.prior.CapturedAt
-	if !complete {
-		p.state.Snapshot, p.state.ObservedAt = p.prior.Snapshot, p.prior.ObservedAt
+	if !publish {
+		p.state.Snapshot, p.state.ObservedAt, p.state.Partial = p.prior.Snapshot, p.prior.ObservedAt, p.prior.Partial
 	} else if !bytes.Equal(p.state.Snapshot, p.prior.Snapshot) || !p.state.ObservedAt.Equal(p.prior.ObservedAt) {
 		p.state.CapturedAt = now.UTC()
 	}
-	s.Projection, s.Complete = &p.state, complete
+	s.Projection, s.Complete = &p.state, complete && !partial
 	return true
 }
