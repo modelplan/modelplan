@@ -498,6 +498,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
     case `rpcError`
     case `closed`
     case `regionRefused`
+    case `noPlan`
     case `other`
     case `readersOff`
     case `noConsent`
@@ -556,6 +557,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
         case "rpc_error": self = .`rpcError`
         case "closed": self = .`closed`
         case "region_refused": self = .`regionRefused`
+        case "no_plan": self = .`noPlan`
         case "other": self = .`other`
         case "readers_off": self = .`readersOff`
         case "no_consent": self = .`noConsent`
@@ -616,6 +618,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
         case .`rpcError`: return "rpc_error"
         case .`closed`: return "closed"
         case .`regionRefused`: return "region_refused"
+        case .`noPlan`: return "no_plan"
         case .`other`: return "other"
         case .`readersOff`: return "readers_off"
         case .`noConsent`: return "no_consent"

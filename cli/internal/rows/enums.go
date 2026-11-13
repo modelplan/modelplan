@@ -169,6 +169,7 @@ const (
 	CodeRPCError                      Code = "rpc_error"
 	CodeClosed                        Code = "closed"
 	CodeRegionRefused                 Code = "region_refused"
+	CodeNoPlan                        Code = "no_plan"
 	CodeOther                         Code = "other"
 	CodeReadersOff                    Code = "readers_off"
 	CodeNoConsent                     Code = "no_consent"

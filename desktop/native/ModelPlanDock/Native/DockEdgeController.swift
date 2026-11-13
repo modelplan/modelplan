@@ -175,6 +175,15 @@ public struct DockEdgePresentation:Equatable,Sendable {
         drag = PulsePanelDrag(press: global, placement: placement)
         return true
     }
+    /// D244: the ring is not a body drag region (its click stays a click); once its press moves, the same Pulse
+    /// carry starts from the press point.
+    public func beginCarry(global: CGPoint) -> Bool {
+        guard drag == nil, acceptsPress(), global.x.isFinite, global.y.isFinite,
+              let current = presentation, current.state == .expanded, let placement = current.placement else { return false }
+        dragStart = current
+        drag = PulsePanelDrag(press: global, placement: placement)
+        return true
+    }
     private func allowsDrag(_ presence: DockPresence) -> Bool {
         presence.lifecycleActive && presence.enabled && presence.allowedOverFullscreen
     }

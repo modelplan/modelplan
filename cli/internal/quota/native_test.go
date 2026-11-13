@@ -73,7 +73,7 @@ func TestParseZaiBodyCodes(t *testing.T) {
 		"http_401": {401, 1000, 1001, 1003, 1005},
 		"http_403": {403, 1220},
 		"http_429": {429, 1113, 1302, 1305, 1308, 1309, 1310, 1311, 1313, 1314, 1315, 1316, 1317, 1318, 1319, 1320, 1321},
-		"http_5xx": {500, 1200, 1230, 1234},
+		"http_5xx": {1200, 1230, 1234}, // the monitor envelope's 500 is no_plan (zai_noplan_test.go)
 		"other":    {0, 200, 1002, 1210, 1303, 1312, 987654},
 	} {
 		for _, code := range codes {

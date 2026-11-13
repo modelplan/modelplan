@@ -79,6 +79,14 @@ public enum ReaderCauseTable {
         case "region_refused":
             return .init(reason: .init("This address is a third-party relay, so its quota can't be read", "这个地址是第三方转发服务，查不到额度"),
                          action: .init("Use the official address to read its quota", "改用官方地址才能读取额度"), target: .guidance)
+        case "no_plan":
+            // z.ai answers a key without a Coding Plan with a body code, not a server error.
+            if isGLM(tool) {
+                return .init(reason: .init("This key has no GLM Coding Plan", "这个密钥没有开通 GLM 编程套餐"),
+                             action: .init("Use a key with a GLM Coding Plan, or subscribe to one", "换用已开通 GLM 编程套餐的密钥，或开通套餐"), target: .guidance)
+            }
+            return .init(reason: .init("This account has no plan to read", "这个账户没有可读取的套餐"),
+                         action: .init("Check the plan with the provider", "到服务商处查看套餐"), target: .guidance)
         case "usage_not_reported":
             // D228: a current reading that has a balance but no usage percentage. Grok's X Subscription
             // billing reports only the prepaid balance, so its card says that in one line instead of "--" rows.
