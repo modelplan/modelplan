@@ -93,6 +93,48 @@ import ModelPlanCockpitWeb
         XCTAssertEqual(saved.preferences.subscriptions.order, [first, second])
         XCTAssertEqual(shown(again), [first, second], "the widget shows the saved order after a relaunch")
     }
+
+    /// macrevd-932-1 / glm-932-1: a routine refresh (engine delivery, presentation tick, context update) that lands
+    /// between the ring press and the first movement drops the ring's short-lived capture. The press must still
+    /// carry the whole widget, and the order must stay as saved.
+    func testG3111RingPressCarriesTheWidgetWhenARefreshLandsBeforeTheFirstMove() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-ring-carry-refresh-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let seeded = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        _ = try await seeded.update { $0.subscriptions = .init(order: [self.second, self.first]) }
+        let (app, _) = try await launch(root, store: seeded)
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        let dock = app.composition.dock, view = dock.dockView, editor = app.settingsHost.application.editor
+        XCTAssertEqual(shown(app), [second, first])
+
+        let start = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+        let anchor = try XCTUnwrap(view.interactionAnchor(second))
+        let local = CGPoint(x: anchor.midX, y: anchor.midY)
+        let down = CGPoint(x: start.minX + local.x - view.bounds.minX, y: start.maxY - local.y + view.bounds.minY)
+        let revision = try XCTUnwrap(editor.snapshot?.revision)
+        let arrival = ContinuousClock.now + .seconds(1)
+        while !view.performPointerDown(atLocal: local, global: down) {
+            guard ContinuousClock.now < arrival else { return XCTFail("a press on a ring is taken") }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(dock.interactionControllerForChecks?.hasCapture, true, "the ring takes the press")
+
+        // The refresh lands while the button is still down and before the pointer has moved.
+        dock.refreshDockContent()
+        app.settingsHost.application.update(context: editor.context)
+        XCTAssertEqual(dock.interactionControllerForChecks?.hasCapture, false, "the refresh dropped the ring capture (the reviewed interleaving)")
+
+        let pulled = CGPoint(x: down.x, y: down.y - 150), dragged = CGPoint(x: local.x, y: local.y + 150)
+        view.performPointerDrag(atLocal: dragged, global: pulled)
+        XCTAssertNil(dock.interactionControllerForChecks?.presentation?.reorder, "D244: a ring drag previews no order")
+        XCTAssertNotEqual(dock.edgePresentation?.paintedFrame, start, "the whole widget follows the ring drag after a refresh")
+        view.performPointerUp(atLocal: dragged, global: pulled)
+        try await waitForSettings(editor) { (editor.snapshot?.revision ?? 0) > revision && !editor.isSaving }
+        let moved = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+        XCTAssertLessThan(moved.midY, start.midY - 100, "the drop saved the new widget position")
+        XCTAssertEqual(editor.snapshot?.preferences.subscriptions.order, [second, first], "a ring drag never writes the order")
+        XCTAssertEqual(shown(app), [second, first], "no ring moved")
+    }
 }
 
 /// D244: the cockpit reads the same saved order through the console owner's adopted settings, so its tabs and
