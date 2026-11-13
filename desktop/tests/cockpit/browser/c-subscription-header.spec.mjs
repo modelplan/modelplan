@@ -22,7 +22,7 @@ test('B13 Subscription header: subscription name, vendor mark, plan and whole mi
  const head=page.locator('.mfd-page .sp-h');
  await expect(head.locator('b')).toHaveText('ChatGPT Pro');
  const mark=await head.locator('.mg').evaluate(e=>({ink:getComputedStyle(e).getPropertyValue('--v').trim(),mask:getComputedStyle(e).webkitMaskImage||getComputedStyle(e).maskImage}));
- expect(mark.ink).toBe('#10a37f');expect(mark.mask).toContain('assets/brands/openai-white.svg');
+ expect(mark.ink).toBe('#6aa8ff');expect(mark.mask).toContain('assets/brands/openai-white.svg');
  await expect(page.locator('.mfd-page .sp-sub .pl')).toHaveText('Pro');
  const age=await page.locator('.mfd-page .sp-sub .src').textContent();
  expect(age).toMatch(/· 4 min ago$/);expect(age).not.toMatch(/\d\.\d/);
