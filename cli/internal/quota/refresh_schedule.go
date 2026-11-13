@@ -98,10 +98,11 @@ func PlanScopeRefresh(p Paths, scope string, now time.Time) (ScopeRefreshPlan, e
 			}
 			next = state.NextAttemptAt
 			// G3-103 (#911): a new sign-in or grant ends a failure back-off. The desktop plans the
-			// read at the five-minute floor, behind the shared gates, as the locked read admits it.
-			if state.earlyEligible(p, definition.Tool, grant) && state.NextAttemptAt.After(state.AttemptedAt.Add(5*time.Minute)) {
+			// read at the five-minute floor, any provider Retry-After and the reader-attempt gate,
+			// behind the shared gates, as the locked read admits it (macrev2-942-1).
+			if earlyAt, ok := state.earlyNext(p.Cache, definition.Tool); ok && state.earlyEligible(p, definition.Tool, grant) && state.NextAttemptAt.After(earlyAt) {
 				early = true
-				next = state.AttemptedAt.Add(5 * time.Minute)
+				next = earlyAt
 			}
 		}
 	}

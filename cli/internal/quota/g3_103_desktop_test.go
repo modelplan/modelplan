@@ -297,3 +297,87 @@ func TestG3103KimiRegrantPassesBudget(t *testing.T) {
 		t.Fatal("the five-minute floor no longer holds")
 	}
 }
+
+// macrev2-942-1: a new sign-in or grant shortens only the failure back-off. A provider's
+// Retry-After (here on HTTP 503) and another holder's reservation still hold, in the app's plan
+// and in the locked read.
+func TestG3103EarlyReadKeepsProviderRetryAfter(t *testing.T) {
+	scope := consent.ScopeGrokAccountUsageSavedLogin
+	regrant := func(p Paths) {
+		g := p.ReaderAccess.Grants["grok"]
+		g.Generation = "synthetic-grant-002"
+		p.ReaderAccess.Grants["grok"] = g
+	}
+	noRead := func(t *testing.T, p Paths, hits *int, want int, at time.Time) {
+		t.Helper()
+		if managedDue(p, "grok", at) {
+			t.Fatalf("the hook path reads at %v", at)
+		}
+		if err := ExecuteScopeRefresh(context.Background(), p, scope, at); err != nil || *hits != want {
+			t.Fatalf("read at %v: %v hits=%d", at, err, *hits)
+		}
+	}
+	t.Run("503 Retry-After over a regrant", func(t *testing.T) {
+		p := g3103Desktop(t, "grok", grokTestPaths(t))
+		mode, hits := "unavailable", 0
+		grokTestServer(t, &mode, &hits)
+		if err := ExecuteScopeRefresh(context.Background(), p, scope, grokNow); err != nil || hits != 1 {
+			t.Fatalf("%v hits=%d", err, hits)
+		}
+		regrant(p)
+		touchGrokAuth(t, p.ReaderAccess.Grants["grok"].Profiles[0].Root, grokNow.Add(time.Minute))
+		mode = "ok"
+		if got := g3103Plan(t, p, scope, grokNow.Add(5*time.Minute)); got.Before(grokNow.Add(2 * time.Hour)) {
+			t.Fatalf("a 503 Retry-After was planned early: %v", got)
+		}
+		noRead(t, p, &hits, 1, grokNow.Add(5*time.Minute))
+		noRead(t, p, &hits, 1, grokNow.Add(119*time.Minute))
+		if err := ExecuteScopeRefresh(context.Background(), p, scope, grokNow.Add(2*time.Hour)); err != nil || hits != 2 {
+			t.Fatalf("read after Retry-After: %v hits=%d", err, hits)
+		}
+	})
+	t.Run("shorter Retry-After inside the back-off", func(t *testing.T) {
+		p := grokTestPaths(t)
+		root := p.ReaderAccess.Grants["grok"].Profiles[0].Root
+		writeGrokAuth(t, root, grokAuth{Key: "synthetic-grok-access", Mode: "oidc", User: "synthetic-grok-user", Issuer: "https://auth.x.ai", Client: grokDefaultClient, Expires: grokNow.Add(-time.Hour).Format(time.RFC3339)})
+		touchGrokAuth(t, root, grokNow.Add(-time.Hour))
+		mode, hits := "unavailable-short", 0
+		grokTestServer(t, &mode, &hits)
+		p = g3103Desktop(t, "grok", p)
+		g3103FailThreeTimes(t, p, "grok", scope, grokNow)
+		writeGrokAuth(t, root, grokAuth{Key: "synthetic-grok-access", Mode: "oidc", User: "synthetic-grok-user", Issuer: "https://auth.x.ai", Client: grokDefaultClient, Expires: grokNow.Add(48 * time.Hour).Format(time.RFC3339)})
+		touchGrokAuth(t, root, grokNow.Add(33*time.Minute))
+		// The early read at 35 minutes gets 503 with Retry-After 15 minutes; the back-off is an hour.
+		if err := ExecuteScopeRefresh(context.Background(), p, scope, grokNow.Add(35*time.Minute)); err != nil || hits != 1 {
+			t.Fatalf("early read: %v hits=%d", err, hits)
+		}
+		regrant(p)
+		mode = "ok"
+		if got := g3103Plan(t, p, scope, grokNow.Add(40*time.Minute)); !got.Equal(grokNow.Add(50 * time.Minute)) {
+			t.Fatalf("the early read is planned for %v, not at the end of Retry-After", got)
+		}
+		noRead(t, p, &hits, 1, grokNow.Add(45*time.Minute))
+		if err := ExecuteScopeRefresh(context.Background(), p, scope, grokNow.Add(50*time.Minute)); err != nil || hits != 2 {
+			t.Fatalf("the early read did not run after Retry-After: %v hits=%d", err, hits)
+		}
+	})
+	t.Run("another holder's reservation", func(t *testing.T) {
+		p := grokTestPaths(t)
+		root := p.ReaderAccess.Grants["grok"].Profiles[0].Root
+		writeGrokAuth(t, root, grokAuth{Key: "synthetic-grok-access", Mode: "oidc", User: "synthetic-grok-user", Issuer: "https://auth.x.ai", Client: grokDefaultClient, Expires: grokNow.Add(-time.Hour).Format(time.RFC3339)})
+		touchGrokAuth(t, root, grokNow.Add(-time.Hour))
+		mode, hits := "ok", 0
+		grokTestServer(t, &mode, &hits)
+		p = g3103Desktop(t, "grok", p)
+		g3103FailThreeTimes(t, p, "grok", scope, grokNow)
+		if err := reserveReaderAttempt(p.Cache, "grok", grokNow.Add(100*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		writeGrokAuth(t, root, grokAuth{Key: "synthetic-grok-access", Mode: "oidc", User: "synthetic-grok-user", Issuer: "https://auth.x.ai", Client: grokDefaultClient, Expires: grokNow.Add(48 * time.Hour).Format(time.RFC3339)})
+		touchGrokAuth(t, root, grokNow.Add(33*time.Minute))
+		if got := g3103Plan(t, p, scope, grokNow.Add(35*time.Minute)); !got.Equal(grokNow.Add(100 * time.Minute)) {
+			t.Fatalf("the reader-attempt gate was skipped: planned %v", got)
+		}
+		noRead(t, p, &hits, 0, grokNow.Add(35*time.Minute))
+	})
+}

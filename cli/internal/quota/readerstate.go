@@ -110,7 +110,11 @@ type readerState struct {
 	// LocalBackoff: the latest read stopped at the credential, before any provider request.
 	// A later credential outcome overlays the entry, so this is kept apart from it, and a
 	// cache without it keeps its deadline: only recorded proof waives a back-off.
-	LocalBackoff bool          `json:"localBackoff,omitempty"`
+	LocalBackoff bool `json:"localBackoff,omitempty"`
+	// EarlyFloorAt (G3-103): the earliest an early re-read after a new sign-in or grant may go,
+	// recorded with each failure: the five-minute floor and any provider Retry-After. Only the
+	// failure back-off is shortened. A cache without it keeps its deadline.
+	EarlyFloorAt time.Time     `json:"earlyFloorAt,omitempty"`
 	NextProfile  int           `json:"nextProfile"`
 	Entries      []readerEntry `json:"entries"`
 }
@@ -229,7 +233,29 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 // the next read at the provider's five-minute floor. A rate limit, a Keychain outcome or a busy
 // reader keeps its back-off, and the floor still holds.
 func (s *readerState) retryEarly(p Paths, provider string, g ReaderGrant, now time.Time) bool {
-	return !now.Before(s.AttemptedAt.Add(5*time.Minute)) && s.earlyEligible(p, provider, g)
+	next, ok := s.earlyNext(p.Cache, provider)
+	return ok && !now.Before(next) && s.earlyEligible(p, provider, g)
+}
+
+// earlyNext is when an early re-read may go: the recorded floor and Retry-After, and the
+// reader-attempt reservation unless that reservation is this reader's own failure deadline.
+// Shared gates (Kimi budget, the X subscription) are checked separately by every caller.
+func (s *readerState) earlyNext(cache, provider string) (time.Time, bool) {
+	if s.EarlyFloorAt.IsZero() {
+		return time.Time{}, false
+	}
+	next := s.EarlyFloorAt
+	if floor := s.AttemptedAt.Add(5 * time.Minute); floor.After(next) {
+		next = floor
+	}
+	gate, err := loadReaderAttempt(cache, provider)
+	if err != nil {
+		return time.Time{}, false
+	}
+	if !gate.Equal(s.NextAttemptAt) && gate.After(next) {
+		next = gate
+	}
+	return next.UTC(), true
 }
 
 // earlyEligible is retryEarly without the five-minute floor, so the desktop scheduler can plan
@@ -492,6 +518,13 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 	}
 	if out.RetryAfter.After(s.NextAttemptAt) {
 		s.NextAttemptAt = out.RetryAfter.UTC()
+	}
+	s.EarlyFloorAt = time.Time{}
+	if e.Status != "ok" {
+		s.EarlyFloorAt = now.Add(5 * time.Minute).UTC()
+		if out.RetryAfter.After(s.EarlyFloorAt) {
+			s.EarlyFloorAt = out.RetryAfter.UTC()
+		}
 	}
 	if entryIndex < 0 {
 		s.Entries = append(s.Entries, e)
