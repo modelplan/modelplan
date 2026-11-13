@@ -69,3 +69,12 @@ export function publicationFaders(publication:unknown,live:unknown=null,more:rea
  const rest=faders.filter(f=>!used(f)),starred=rest.filter(f=>tierOf.get(f.id)===1),others=rest.filter(f=>tierOf.get(f.id)!==1).sort((a,b)=>ability(b)-ability(a));
  return {accounts,faders:[...inUse,...starred,...others]};
 }
+
+/** CKP-FAD-32 proposed (G3-110): a subscription scope shows only the faders of that subscription, as the opus-r7 study's faders()
+ * does (models of the scoped subscription's pool; core.js scopePools). A fader belongs to the scope when the subscription
+ * runs its developer (`accounts`) or when one of its sessions was bound to that subscription. `account` null is the All
+ * scope (the D123 set, unchanged). A subscription whose developer is unknown cannot be matched, so nothing is filtered. */
+export function scopedFaders<T extends {readonly accounts:readonly string[];readonly sessions:readonly {readonly sub:string|null}[]}>(faders:readonly T[],account:string|null,developerKnown:boolean):T[]{
+ if(account===null||!developerKnown)return [...faders];
+ return faders.filter(f=>f.accounts.includes(account)||f.sessions.some(s=>s.sub===account));
+}

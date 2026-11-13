@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publicationFaders} from '../../../cockpit/.tmp/compiled/src/publication-faders.js';
+import {publicationFaders,scopedFaders} from '../../../cockpit/.tmp/compiled/src/publication-faders.js';
 
 test('maps published model verdicts without inventing unknown readings',()=>{
  const input={contractVersion:1,models:[{id:'example',name:'Example',recommended:'medium',efforts:[
@@ -73,4 +73,24 @@ test('D135 models used in the last 7 days stay even when no own plan offers them
  const all=publicationFaders(publication,live,more,subs,{now,ownPlansOnly:false}).faders.map(f=>f.id);
  assert.equal(all.filter(id=>id==='api-key-model').length,1);
  assert.ok(all.includes('unused-foreign')&&all.includes('stale-foreign'));
+});
+
+test('G3-110 a subscription scope keeps only that subscription\'s faders; All keeps the D123 set',()=>{
+ const model=(id,ability,developerId)=>({id,name:id,developerId,recommended:'medium',efforts:[{effort:'medium',star:true,ability,cost:1,time:null}]});
+ const now=Date.parse('2026-11-13T00:00:00Z');
+ const subs=[{key:'codex',developer:'openai',colour:'#fff'},{key:'grok',developer:'xai',colour:'#fff'}];
+ // gpt-x in use through the Codex subscription; glm-y in use through the Grok subscription's harness (a bound session).
+ const live=[
+  {sessionRef:'0000000000000001',subscriptionRef:'codex',model:'gpt-x',lastObservedAt:new Date(now-1000).toISOString()},
+  {sessionRef:'0000000000000002',subscriptionRef:'grok',model:'glm-y',lastObservedAt:new Date(now-2000).toISOString()},
+ ];
+ const publication={contractVersion:1,models:[model('gpt-x',60,'openai'),model('grok-a',70,'xai'),model('gpt-z',50,'openai')]};
+ const more=[model('grok-b',40,'xai'),model('glm-y',30,'zhipuai')];
+ const {faders}=publicationFaders(publication,live,more,subs,{now,ownPlansOnly:true});
+ const all=faders.map(f=>f.id);
+ assert.deepEqual(scopedFaders(faders,null,true).map(f=>f.id),all);
+ assert.deepEqual(scopedFaders(faders,'grok',true).map(f=>f.id),['glm-y','grok-a','grok-b']);
+ assert.deepEqual(scopedFaders(faders,'codex',true).map(f=>f.id),['gpt-x','gpt-z']);
+ // A subscription whose developer is unknown cannot be matched: the D123 set stays.
+ assert.deepEqual(scopedFaders(faders,'other',false).map(f=>f.id),all);
 });
