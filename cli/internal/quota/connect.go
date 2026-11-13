@@ -517,6 +517,11 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 		}
 		doc[key], _ = json.Marshal(kept)
 	}
+	if history && (name == "speed.json" || name == "perf.json") {
+		if err := dropToolLedgerState(doc, tool); err != nil {
+			return err
+		}
+	}
 	// The importer's per-source coverage (dates and grant) goes with that source's imported rows.
 	if name == "imported.json" && history && doc["coverage"] != nil && string(doc["coverage"]) != "null" {
 		var coverage map[string]json.RawMessage
@@ -533,6 +538,47 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 	b, _ = json.Marshal(doc)
 	if err := replace(path, append(b, '\n')); err != nil {
 		return err
+	}
+	return nil
+}
+
+// dropToolLedgerState removes the per-tool residue the row filter cannot see: Claude's counted
+// request hashes, Codex's cumulative token totals in the file cursors (only Codex writes one), and
+// the hashed request ids of the tool's agent-database cursors (keyed "<source>:<file key>").
+func dropToolLedgerState(doc map[string]json.RawMessage, tool string) error {
+	if tool == "claude" {
+		delete(doc, "counted")
+	}
+	if tool == "codex" && len(doc["files"]) > 0 && string(doc["files"]) != "null" {
+		var files map[string]map[string]json.RawMessage
+		if json.Unmarshal(doc["files"], &files) != nil {
+			return errors.New("cached cursors invalid")
+		}
+		for _, cursor := range files {
+			delete(cursor, "total")
+		}
+		doc["files"], _ = json.Marshal(files)
+	}
+	if len(doc["stores"]) > 0 && string(doc["stores"]) != "null" {
+		var stores map[string]json.RawMessage
+		if json.Unmarshal(doc["stores"], &stores) != nil {
+			return errors.New("cached stores invalid")
+		}
+		for key := range stores {
+			source, _, _ := strings.Cut(key, ":")
+			switch source {
+			case "claude-code":
+				source = "claude"
+			case "zcode":
+				source = "zai"
+			case "opencode":
+				source = "opencodego"
+			}
+			if source == tool {
+				delete(stores, key)
+			}
+		}
+		doc["stores"], _ = json.Marshal(stores)
 	}
 	return nil
 }
