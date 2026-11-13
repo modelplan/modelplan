@@ -30,9 +30,12 @@ type SharedConfig struct {
 	// quota history is kept without a second read.
 	Reported func(quota.Report, time.Time)
 	// Activity is an admitted, cache-only observer, independent of quota refresh/rate.
-	Activity          func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
-	ResetPublication  func() (*digest.Digest, error)
-	Detect            func() detect.Report
+	Activity         func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
+	ResetPublication func() (*digest.Digest, error)
+	Detect           func() detect.Report
+	// LaterInstalled records each detection report and returns the tools detected now that
+	// were absent when this Mac's engine first looked (D238). Optional.
+	LaterInstalled    func(detect.Report) map[string]bool
 	Paths             func(consent.Admission) quota.Paths
 	Cleanup           func(string, bool) error
 	Offline, ReadOnly bool
@@ -151,6 +154,10 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	p := b.paths(admission)
 	detection := b.config.Detect()
 	detected := map[string]bool{}
+	later := map[string]bool{}
+	if b.config.LaterInstalled != nil {
+		later = b.config.LaterInstalled(detection)
+	}
 	in := admission.RowsInput(b.now())
 	in.ReadOnly = b.config.ReadOnly
 	in.Offline = b.config.Offline
@@ -166,7 +173,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		}
 		_, _, native := quota.NativeReader(id)
 		exists := native || id == "codex" || tool.Preferred == "codexbar" && tool.HelperStatus() == ""
-		in.Catalogue = append(in.Catalogue, rows.CatalogueEntry{ToolID: id, ReaderID: tool.ReaderID, Backend: tool.Preferred, Detected: tool.Detected, ReaderExists: exists, Status: tool.Status})
+		in.Catalogue = append(in.Catalogue, rows.CatalogueEntry{ToolID: id, ReaderID: tool.ReaderID, Backend: tool.Preferred, Detected: tool.Detected, ReaderExists: exists, Status: tool.Status, InstalledLater: later[tool.ProviderID]})
 	}
 	// Implicit local permission becomes a candidate only when a real tool/source
 	// establishes it. A blank home must not acquire phantom Claude/Codex cards.

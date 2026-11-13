@@ -69,6 +69,14 @@ signals reject admission. No scripts, regexes, executable predicates or shell
 expansions are evaluated. Limits: 256 KiB, 512 entries, 16 signals per entry.
 Reports contain logical IDs and statuses, never matched paths or identities.
 
+Tools installed later (D238): the app engine re-runs this same presence check on
+every view it builds (start, wake, each 30-second observation tick, consent
+changes). The first check on a Mac records the tools present then as the
+first-run baseline in `detected-tools.json` (logical tool ids only). A tool that
+appears afterwards and has no consent decision is offered in the status menu as
+detected-not-enabled; nothing is read from it until the user allows its scope.
+Readers that are on by default (Claude Code, Codex, ZCode) start without an offer.
+
 `modelplan detect` 仅检测工具是否存在，不代表登录、订阅或剩余额度。
 不读取凭据内容（唯一例外：OpenCode Go 只检查 OpenCode 密钥库里是否存在 `opencode-go` 条目，不读取密钥值，D230）、不启动工具、不联网、不写缓存。使用已核验的本地公开目录；
 尚未发布目录时使用内置回退。未知信号和规则被忽略；不能静默检查的信号保持未知，
