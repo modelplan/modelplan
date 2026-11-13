@@ -117,8 +117,10 @@ const (
 type Code string
 
 const (
-	CodeOK                            Code = "ok"
-	CodeEstimated                     Code = "estimated"
+	CodeOK        Code = "ok"
+	CodeEstimated Code = "estimated"
+	// CodeUsageNotReported: a current reading with a balance but no usage percentage (D228).
+	CodeUsageNotReported              Code = "usage_not_reported"
 	CodeStaleReading                  Code = "stale_reading"
 	CodeObservationTimeUnknown        Code = "observation_time_unknown"
 	CodeNotReadYet                    Code = "not_read_yet"
@@ -167,6 +169,7 @@ const (
 	CodeRPCError                      Code = "rpc_error"
 	CodeClosed                        Code = "closed"
 	CodeRegionRefused                 Code = "region_refused"
+	CodeNoPlan                        Code = "no_plan"
 	CodeOther                         Code = "other"
 	CodeReadersOff                    Code = "readers_off"
 	CodeNoConsent                     Code = "no_consent"
