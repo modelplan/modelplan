@@ -237,6 +237,13 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 		// under the old grouping is recomputed once under the tool's own definition, dropping a guessed project.
 		ref, label := l.project(source, t.cwd, t.np)
 		if s.ProjectRule < projectRule {
+			// macrevb-909-1: the live record of the same session carries the old guess too; it follows the
+			// recomputed project at once instead of waiting for (or outliving) its next live observation.
+			for i := range l.Live {
+				if l.Live[i].Key == key && l.Live[i].Source == source && sameEpoch(l.Live[i].GrantEpoch, epoch) && l.Live[i].ProjectRef == s.ProjectRef {
+					l.Live[i].ProjectRef, l.Live[i].ProjectLabel = ref, label
+				}
+			}
 			s.ProjectRef, s.ProjectLabel, s.ProjectRule = ref, label, projectRule
 		} else if s.ProjectRef == "" {
 			s.ProjectRef, s.ProjectLabel = ref, label

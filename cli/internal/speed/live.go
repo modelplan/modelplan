@@ -235,8 +235,10 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 		return false
 	}
 	r := LiveRecord{GrantEpoch: currentEpoch(l.admission, source), Key: key, Ref: newRef(), Source: source, Model: clip(x.cfg.model), Effort: clip(x.cfg.effort), Speed: speedMode(x.cfg.speed), StartedAt: x.start.UTC(), LastAt: x.last.UTC(), Running: x.running, SubscriptionRef: subscription}
+	recorded := false // the recorded session is the authority on its project, even when it has none
 	for _, s := range l.Sessions {
 		if s.Key == key && s.Source == source && sameEpoch(s.GrantEpoch, r.GrantEpoch) {
+			recorded = true
 			r.Ref = s.Ref
 			r.ProjectRef = s.ProjectRef
 			r.SubscriptionRef = s.SubscriptionRef
@@ -254,7 +256,9 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 			if old.StartedAt.Before(r.StartedAt) {
 				r.StartedAt = old.StartedAt
 			}
-			if r.ProjectRef == "" {
+			// macrevb-909-1: a session the tool's own rule moved to no project must not get back the old
+			// live record's guess; only a live record with no recorded session keeps its earlier project.
+			if r.ProjectRef == "" && !recorded {
 				r.ProjectRef = old.ProjectRef
 			}
 			if r.SubscriptionRef == "" {

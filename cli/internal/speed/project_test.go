@@ -325,3 +325,44 @@ func TestOldGuessedProjectIsReplacedOnNextObservation(t *testing.T) {
 		t.Fatalf("old guess remains: %+v", s)
 	}
 }
+
+// macrevb-909-1: after the tool's own rule moves a recorded session to no project, a later live observation
+// must not bring back the old live record's guessed project.
+func TestUpgradeClearsTheOldLiveProject(t *testing.T) {
+	utc(t)
+	cache, logs, cwd := t.TempDir(), t.TempDir(), t.TempDir()
+	codexHome(t)
+	p := filepath.Join(logs, "rollout-synthetic.jsonl")
+	writeLines(t, p, cxSession(cwd, 0, 300)...)
+	seedPerf(t, cache, t0.Add(-time.Minute))
+	now := t0.Add(time.Minute)
+	observe := func() {
+		if err := ObserveCodex(cache, []string{p}, func(string) bool { return false }, Ingest{Labels: true}, now); err != nil {
+			t.Fatal(err)
+		}
+		if err := ObserveLive(cache, []LiveLog{{Path: p, Source: "codex"}}, true, nil, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	observe()
+	l, _ := LoadPerf(cache)
+	if len(l.Live) != 1 || len(l.Sessions) != 1 {
+		t.Fatalf("precondition: live %d sessions %d", len(l.Live), len(l.Sessions))
+	}
+	l.Sessions[0].ProjectRef, l.Sessions[0].ProjectLabel, l.Sessions[0].ProjectRule = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "synthetic-old-guess", 0
+	l.Live[0].ProjectRef, l.Live[0].ProjectLabel = l.Sessions[0].ProjectRef, l.Sessions[0].ProjectLabel
+	b, _ := json.Marshal(l)
+	if err := os.WriteFile(PerfPath(cache), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeLines(t, p, cxTurnLines(100, fmt.Sprintf(`{"model":"fixture-model","effort":"high","cwd":%q}`, cwd), 30, req{200, 20, 1})...)
+	now = t0.Add(2 * time.Minute)
+	observe()
+	l, _ = LoadPerf(cache)
+	if l.Sessions[0].ProjectRule != projectRule || l.Sessions[0].ProjectRef != "" {
+		t.Fatalf("precondition: session not migrated: %+v", l.Sessions[0])
+	}
+	if l.Live[0].ProjectRef != "" || l.Live[0].ProjectLabel != "" {
+		t.Fatalf("old live project survived the new observation: %q %q", l.Live[0].ProjectRef, l.Live[0].ProjectLabel)
+	}
+}
