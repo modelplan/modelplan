@@ -88,6 +88,7 @@ func PlanScopeRefresh(p Paths, scope string, now time.Time) (ScopeRefreshPlan, e
 		return plan, nil
 	}
 	next := time.Time{}
+	early := false
 	if reader.Managed != nil {
 		if grant, ok := p.ReaderAccessGrant(definition.Tool); ok && grant.SavedLogin {
 			state, err := loadReaderState(p.Cache, definition.Tool)
@@ -96,15 +97,21 @@ func PlanScopeRefresh(p Paths, scope string, now time.Time) (ScopeRefreshPlan, e
 				return plan, nil
 			}
 			next = state.NextAttemptAt
+			// G3-103 (#911): a new sign-in or grant ends a failure back-off. The desktop plans the
+			// read at the five-minute floor, behind the shared gates, as the locked read admits it.
+			if state.earlyEligible(p, definition.Tool, grant) && state.NextAttemptAt.After(state.AttemptedAt.Add(5*time.Minute)) {
+				early = true
+				next = state.AttemptedAt.Add(5 * time.Minute)
+			}
 		}
 	}
 	var budgetKnown bool
-	next, budgetKnown = managedReaderNext(p.Cache, definition.Tool, next)
+	next, budgetKnown = readerGatesNext(p.Cache, definition.Tool, next, !early)
 	if !budgetKnown {
 		plan.BudgetKnown = false
 		return plan, nil
 	}
-	if capture := loadNative(p.Cache); capture != nil {
+	if capture := loadNative(p.Cache); capture != nil && !early {
 		for _, entry := range capture.Providers {
 			if entry.Provider == definition.Tool {
 				legacy, err := legacyNativeNext(p.Cache, definition.Tool, entry)
