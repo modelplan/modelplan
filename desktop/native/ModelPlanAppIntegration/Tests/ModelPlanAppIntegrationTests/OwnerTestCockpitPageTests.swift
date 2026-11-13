@@ -452,7 +452,7 @@ extension CommunityCockpitEntryTests {
         }
         let cases: [(String, CGRect, CockpitSize?, CGFloat)] = [
             ("1470x956, Dock at the bottom (default 85 %)", CGRect(x: 0, y: 70, width: 1470, height: 849), nil, 0.85),
-            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 711), nil, 705 / 939),
+            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 711), nil, (711 - CockpitShellLayout.menuBarGap) / 939),
             ("80 % chosen live", CGRect(x: 0, y: 0, width: 1680, height: 1026), .percent80, 0.8),
         ]
         for (name, usable, live, expected) in cases {
@@ -492,7 +492,7 @@ extension CommunityCockpitEntryTests {
             XCTAssertEqual(window.frame.height, 939 * scale, accuracy: 1, name)
             // Placement on the requested screen (the hosted runner's real display is smaller, so the window
             // server may move the panel; its size is what the test can hold it to).
-            XCTAssertEqual(layout.frame.maxY, usable.maxY - 6, accuracy: 1e-6, name)
+            XCTAssertEqual(layout.frame.maxY, usable.maxY - CockpitShellLayout.menuBarGap, accuracy: 1e-6, name)
             XCTAssertGreaterThanOrEqual(layout.frame.minY, usable.minY - 1e-6, name)
             // Crisp: WebKit draws the page at the final size; no view scales a bitmap of it.
             XCTAssertEqual(web.pageZoom, scale, accuracy: 1e-6, name)
