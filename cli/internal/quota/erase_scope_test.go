@@ -239,16 +239,13 @@ func TestHistoryClearRemovesRequestHashesAndCumulativeTotals(t *testing.T) {
 			if err := EraseScope(Paths{Cache: cache}, tool+".local_history", true); err != nil {
 				t.Fatal(err)
 			}
-			// A cursor without a source (an earlier build's) cannot be attributed: it goes, and the
-			// logs boundary keeps the other tool's log it belonged to from being read again.
-			if speed.LoadCleared(cache).Logs.IsZero() {
-				t.Fatal("unattributed cursors removed without the logs boundary")
-			}
+			// A cursor without a source (an earlier build's) that nothing attributes stays: it may
+			// be another tool's, and clearing one tool never drops another's data.
 			for _, name := range []string{"speed.json", "perf.json"} {
 				b, _ := os.ReadFile(filepath.Join(dir, name))
 				got := string(b)
-				if strings.Contains(got, "legacycursor") {
-					t.Fatalf("%s kept an unattributed log cursor: %s", name, got)
+				if !strings.Contains(got, "legacycursor") {
+					t.Fatalf("%s dropped an unattributed log cursor: %s", name, got)
 				}
 				switch tool {
 				case "claude":

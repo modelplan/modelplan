@@ -228,7 +228,7 @@ func TestHistoryClearCodexRemovesCursorsAndDoesNotRecount(t *testing.T) {
 		t.Fatalf("the other tool's rows changed: %d/%d", pr, po)
 	}
 	c := speed.LoadCleared(cache)
-	if len(c.Tools) != 1 || c.Tools["codex"].IsZero() || !c.Logs.IsZero() {
+	if len(c.Tools) != 1 || c.Tools["codex"].IsZero() {
 		t.Fatalf("boundary file holds more than the cleared tool's time: %+v", c)
 	}
 }

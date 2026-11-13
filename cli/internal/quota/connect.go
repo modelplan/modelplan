@@ -523,7 +523,7 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 		doc[key], _ = json.Marshal(kept)
 	}
 	if history && (name == "speed.json" || name == "perf.json") {
-		if err := dropToolLedgerState(doc, tool); err != nil {
+		if err := dropToolLedgerState(doc, tool, speed.LegacyCursorSources(filepath.Dir(filepath.Dir(path)))); err != nil {
 			return err
 		}
 	}
@@ -549,11 +549,12 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 
 // dropToolLedgerState removes the per-tool residue the row filter cannot see: Claude's counted
 // request hashes, the tool's log cursors (path hash, offset, last-read date, skip mark and Codex's
-// cumulative totals) and its agent-database cursors (keyed "<source>:<file key>"). A cursor
-// written before cursors carried their source cannot be attributed and goes too. What keeps the
-// cleared history from being counted again is the clear boundary (speed.MarkCleared), written
-// before this runs.
-func dropToolLedgerState(doc map[string]json.RawMessage, tool string) error {
+// cumulative totals) and its agent-database cursors (keyed "<source>:<file key>"). A cursor an
+// earlier build wrote without a source is first attributed from the ledgers (legacy, by key: see
+// speed.LegacyCursorSources) and keeps that source; one that cannot be attributed stays, so no
+// other tool's log is read again or loses its data. What keeps the cleared history from being
+// counted again is the clear boundary (speed.MarkCleared), written before this runs.
+func dropToolLedgerState(doc map[string]json.RawMessage, tool string, legacy map[string]string) error {
 	if tool == "claude" {
 		delete(doc, "counted")
 	}
@@ -564,16 +565,23 @@ func dropToolLedgerState(doc map[string]json.RawMessage, tool string) error {
 		if json.Unmarshal(doc["files"], &files) != nil {
 			return errors.New("cached cursors invalid")
 		}
-		var kept map[string]json.RawMessage
+		var kept map[string]map[string]json.RawMessage
 		if json.Unmarshal(doc["files"], &kept) != nil {
 			return errors.New("cached cursors invalid")
 		}
 		for key, cursor := range files {
 			source := cursor.Source
+			if source == "" && legacy[key] != "" {
+				source = legacy[key]
+				if kept[key] == nil {
+					kept[key] = map[string]json.RawMessage{}
+				}
+				kept[key]["source"], _ = json.Marshal(source)
+			}
 			if source == "claude-code" {
 				source = "claude"
 			}
-			if source == "" || source == tool {
+			if source != "" && source == tool {
 				delete(kept, key)
 			}
 		}
@@ -607,7 +615,7 @@ func dropToolLedgerState(doc map[string]json.RawMessage, tool string) error {
 // failure part way leaves the boundary in place rather than cursors gone without one. The caller
 // holds the ledger locks.
 func markHistoryCleared(cache, tool string) error {
-	return speed.MarkCleared(cache, tool, speed.HasUnattributedCursors(cache), time.Now())
+	return speed.MarkCleared(cache, tool, time.Now())
 }
 
 // active: the providers whose selected backend is this one and runs.

@@ -15,15 +15,11 @@ import (
 // old request would no longer be recognised. So the clear leaves one boundary per tool in
 // <cache>/observed/cleared.json: the time of the clear. The observers and the history importer
 // count nothing of that tool from before it. The file holds only tool names and times: no
-// paths, hashes or counts.
-//
-// Logs: cursors written by an earlier build carry no source, so a clear removes them all. The
-// logs boundary keeps the other tools' logs whose cursors went with them from being read again
-// from the start by the live observers (the importer, which reads by date, does not use it).
+// paths, hashes or counts. Each boundary applies only to its own tool: clearing one tool never
+// holds back another tool's logs.
 type Cleared struct {
 	SchemaVersion int                  `json:"schemaVersion"`
 	Tools         map[string]time.Time `json:"tools,omitempty"` // consent tool id → clear time, UTC
-	Logs          time.Time            `json:"logs,omitzero"`
 }
 
 // ClearedPath is the boundary file.
@@ -39,9 +35,9 @@ func LoadCleared(cache string) Cleared {
 	return c
 }
 
-// MarkCleared records a clear of tool (and, with logs, of the unattributed log cursors) at now.
-// A boundary never moves back. The caller holds the ledger locks (LockLedgersForCleanup).
-func MarkCleared(cache, tool string, logs bool, now time.Time) error {
+// MarkCleared records a clear of tool at now. A boundary never moves back. The caller holds the
+// ledger locks (LockLedgersForCleanup).
+func MarkCleared(cache, tool string, now time.Time) error {
 	if tool == "" {
 		return errors.New("no tool")
 	}
@@ -53,9 +49,6 @@ func MarkCleared(cache, tool string, logs bool, now time.Time) error {
 	}
 	if at.After(c.Tools[tool]) {
 		c.Tools[tool] = at
-	}
-	if logs && at.After(c.Logs) {
-		c.Logs = at
 	}
 	if err := os.MkdirAll(filepath.Dir(ClearedPath(cache)), 0o700); err != nil {
 		return err
@@ -74,36 +67,78 @@ func sourceTool(source string) string {
 }
 
 // floor: the earliest time a turn of source may count from in the live ledgers.
-func (c Cleared) floor(source string) time.Time {
-	at := c.Tools[sourceTool(source)]
-	if (source == "claude-code" || source == "codex") && c.Logs.After(at) {
-		at = c.Logs
-	}
-	return at
-}
+func (c Cleared) floor(source string) time.Time { return c.Tools[sourceTool(source)] }
 
-// tool: the importer's boundary for source (the logs boundary does not apply to it).
+// tool: the importer's boundary for source.
 func (c Cleared) tool(source string) time.Time { return c.Tools[sourceTool(source)] }
 
-// HasUnattributedCursors: a ledger holds a log cursor without a source (written by an earlier
-// build). A clear removes those, so it also sets the logs boundary.
-func HasUnattributedCursors(cache string) bool {
+// LegacyCursorSources attributes the log cursors an earlier build wrote without a source, by
+// cursor key, from what the ledgers themselves know of that key: the source of the same key's
+// cursor in the other ledger, of a perf session or live record kept under it, a Claude counted
+// request read from it (claude-code), or a Codex-only field (a cumulative total, a background
+// thread's skip mark: codex). A key with no evidence, or with conflicting evidence, is left out:
+// a clear then keeps that cursor, and with it the data of whichever tool it belongs to. The
+// caller holds the ledger locks.
+func LegacyCursorSources(cache string) map[string]string {
+	evidence := map[string]map[string]bool{}
+	note := func(key, source string) {
+		if key == "" || (source != "claude-code" && source != "codex") {
+			return
+		}
+		if evidence[key] == nil {
+			evidence[key] = map[string]bool{}
+		}
+		evidence[key][source] = true
+	}
+	unattributed := map[string]bool{}
 	for _, p := range []string{Path(cache), PerfPath(cache)} {
 		b, err := os.ReadFile(p)
-		if err != nil {
+		if err != nil || len(b) > 4<<20 {
 			continue
 		}
 		var l struct {
-			Files map[string]Cursor `json:"files"`
+			Files    map[string]Cursor `json:"files"`
+			Counted  []CountedRequest  `json:"counted"`
+			Sessions []struct {
+				Key    string `json:"key"`
+				Source string `json:"source"`
+			} `json:"sessions"`
+			Live []struct {
+				Key    string `json:"key"`
+				Source string `json:"source"`
+			} `json:"live"`
 		}
 		if json.Unmarshal(b, &l) != nil {
-			return true // unreadable: assume the worst
+			continue
 		}
-		for _, c := range l.Files {
-			if c.Source == "" {
-				return true
+		for key, c := range l.Files {
+			switch {
+			case c.Source != "":
+				note(key, c.Source)
+			case c.Total != nil || c.Skip:
+				note(key, "codex")
+				unattributed[key] = true
+			default:
+				unattributed[key] = true
+			}
+		}
+		for _, c := range l.Counted {
+			note(c.File, "claude-code")
+		}
+		for _, s := range l.Sessions {
+			note(s.Key, s.Source)
+		}
+		for _, r := range l.Live {
+			note(r.Key, r.Source)
+		}
+	}
+	out := map[string]string{}
+	for key := range unattributed {
+		if len(evidence[key]) == 1 {
+			for source := range evidence[key] {
+				out[key] = source
 			}
 		}
 	}
-	return false
+	return out
 }

@@ -84,8 +84,9 @@ func requestKey(id string) string {
 }
 
 // claudeObserver: a Claude Code parser that skips the requests other transcripts already counted.
-func claudeObserver(now time.Time, counted []CountedRequest, path string) *claudeParser {
+func claudeObserver(now time.Time, counted []CountedRequest, path string, cleared Cleared) *claudeParser {
 	p, key := newClaude(now), fileKey(path)
+	p.cleared = cleared.floor("claude-code")
 	p.elsewhere = map[string]bool{}
 	for _, c := range counted {
 		if c.File != key {
@@ -188,13 +189,13 @@ func ObserveClaude(cache, transcript string, often bool, in Ingest, now time.Tim
 		}
 	}
 	err := observe(cache, now, func(l *Ledger) bool {
-		p := claudeObserver(now, l.Counted, transcript)
+		p := claudeObserver(now, l.Counted, transcript, l.cleared)
 		changed := l.scan(transcript, "claude-code", p, now)
 		l.Counted = addCounted(l.Counted, p, transcript)
 		return changed
 	})
 	return errors.Join(err, observePerf(cache, now, in, func(l *PerfLedger) bool {
-		p := claudeObserver(now, l.Counted, transcript)
+		p := claudeObserver(now, l.Counted, transcript, l.cleared)
 		changed := l.scan(transcript, "claude-code", ParserClaude, p, now)
 		l.Counted = addCounted(l.Counted, p, transcript)
 		return changed

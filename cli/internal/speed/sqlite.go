@@ -155,8 +155,9 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].rowid < rows[j].rowid })
 	since := l.Since.UnixMilli()
-	if f := l.cleared.floor(source); !f.IsZero() && f.UnixMilli() > since {
-		since = f.UnixMilli() // from before the tool's history was cleared: marked, never counted
+	var cleared int64
+	if f := l.cleared.floor(source); !f.IsZero() {
+		cleared = f.UnixMilli()
 	}
 	look := dbLookback.Milliseconds()
 	var pending []int64
@@ -166,6 +167,11 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 			c.RowID = r.rowid
 		}
 		if r.start <= 0 {
+			continue
+		}
+		if r.start < cleared {
+			// From before the tool's history was cleared: only the row position moves on. No id
+			// hash, start or mark is kept, so the clear's erasure of them holds.
 			continue
 		}
 		if r.rowid <= c.ResetRow && r.start <= c.ResetMark && !slices.Contains(c.ResetPending, r.rowid) {
