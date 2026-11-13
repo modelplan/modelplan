@@ -27,12 +27,12 @@ import XCTest
     try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
-  private func page(session: CockpitShellSession = CockpitShellSession(), click: CGPoint?, separateSpaces: Bool) throws -> CockpitWindowController {
+  private func page(session: CockpitShellSession? = nil, click: CGPoint?, separateSpaces: Bool) throws -> CockpitWindowController {
     _ = NSApplication.shared
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let icon = self.icon
     let page = CockpitWindowController(bundle: try bundle(), context: context, appearance: .init(theme: .night, locale: .en, profile: .full),
-                                       shellSession: session, anchor: { icon }, openPoint: { click })
+                                       shellSession: session ?? CockpitShellSession(), anchor: { icon }, openPoint: { click })
     let displays = [a, b]
     page.screens = { displays }
     page.separateSpaces = { separateSpaces }
@@ -106,6 +106,8 @@ import XCTest
       guard let cockpit = list.firstIndex(of: window.windowNumber), let other = list.firstIndex(of: cover.windowNumber) else { return nil }
       return cockpit < other
     }
+    // Hosted runners without a logged-in window server session list no on-screen windows; the order is then unknowable.
+    guard order() != nil else { throw XCTSkip("the window server lists no on-screen windows here (GUI session needed)") }
     XCTAssertEqual(order(), false, "the other window covers the cockpit")
     page.open()
     XCTAssertEqual(order(), true, "the cockpit is in front again")
