@@ -156,22 +156,23 @@ extension CommunityCockpitEntryTests {
         }
     }
 
-    /// CKP-SHELL-31: the drag strip is installed on the composed window; hovering shows the open hand and the grip.
-    @MainActor func testShell31DragStripHoverShowsOpenHandAndGripOnTheComposedWindow() async throws {
+    /// CKP-SHELL-31 as amended by D227: the drag strip is installed on the composed window; hovering shows the open
+    /// hand, with no grip.
+    @MainActor func testShell31DragStripHoverShowsOpenHandOnTheComposedWindow() async throws {
         try await withComposedCockpit { _, page, _ in
             let window = try XCTUnwrap(page.window)
             let strip = try titleDrag(window)
-            XCTAssertFalse(strip.showsGrip, "nothing shows without hover")
+            XCTAssertFalse(strip.isHovered)
             strip.mouseEntered(with: try XCTUnwrap(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0,
                 windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)))
-            XCTAssertTrue(strip.showsGrip); XCTAssertTrue(strip.currentCursor === NSCursor.openHand)
+            XCTAssertTrue(strip.isHovered); XCTAssertTrue(strip.currentCursor === NSCursor.openHand)
             strip.mouseDown(with: try event(.leftMouseDown, window, at: CGPoint(x: strip.frame.midX, y: strip.frame.midY)))
             XCTAssertTrue(strip.currentCursor === NSCursor.closedHand, "a closed hand while dragging")
             strip.mouseUp(with: try event(.leftMouseUp, window, at: CGPoint(x: strip.frame.midX, y: strip.frame.midY)))
             XCTAssertTrue(strip.currentCursor === NSCursor.openHand)
             strip.mouseExited(with: try XCTUnwrap(NSEvent.enterExitEvent(with: .mouseExited, location: .zero, modifierFlags: [], timestamp: 0,
                 windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)))
-            XCTAssertFalse(strip.showsGrip)
+            XCTAssertFalse(strip.isHovered)
         }
     }
 }
