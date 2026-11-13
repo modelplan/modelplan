@@ -4,6 +4,8 @@ package speed
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -51,6 +53,30 @@ type Span struct {
 	// Epoch: the grant the span was imported under. After a revoke and a new grant the span no
 	// longer counts and the source is read again.
 	Epoch *GrantEpoch `json:"epoch,omitempty"`
+	// Retry: logs inside the span that could not be read. The span still counts as covered, but
+	// each of these files is read again, alone, on the next import (HIST-IMP-12).
+	Retry []RetryFile `json:"retry,omitempty"`
+}
+
+// RetryFile is one log whose read failed and the turn spans it still owes.
+type RetryFile struct {
+	// Key identifies the log by a hash of its path; the ledger never holds a path (it can carry a project name). The
+	// path itself lives only in memory and is found again by hash on the next import.
+	Key   string `json:"key"`
+	Path  string `json:"-"`
+	Spans []Span `json:"spans"`
+}
+
+// RetryKey is the ledger's identity of an unreadable log.
+func RetryKey(path string) string {
+	h := sha256.Sum256([]byte(path))
+	return hex.EncodeToString(h[:16])
+}
+
+// importItem is one log to read and the spans whose turns it may contribute.
+type importItem struct {
+	path   string
+	ranges []span
 }
 
 // ImportLedger is imported.json's content.
@@ -152,6 +178,8 @@ type importJob struct {
 	parser string
 	ranges []span
 	list   []string
+	pend   []RetryFile // unreadable logs of an earlier run, read again alone
+	failed []RetryFile // logs of this run that could not be read
 	rows   []PerfRow
 	turns  int
 	status string
@@ -218,6 +246,7 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			c = Span{}
 		}
 		j.ranges = missing(c, from, cutoff)
+		j.pend = c.Retry
 		j.epoch, j.live = currentEpoch(adm, j.source), live
 		active = append(active, j)
 	}
@@ -228,10 +257,28 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			j.list = j.files(j.earliest())
 			prog.total += len(j.list)
 		}
+		if len(j.pend) > 0 { // find the unreadable logs again by their hash (no path is stored)
+			byKey := map[string]string{}
+			found, complete := j.walk(time.Time{})
+			for _, f := range found {
+				byKey[RetryKey(f)] = f
+			}
+			// An unfound log counts as deleted only after a complete scan. While a folder cannot be
+			// listed (or the scan stops at its cap) the log is left out of this run and stays owed.
+			var pend []RetryFile
+			for _, r := range j.pend {
+				r.Path = byKey[r.Key]
+				if r.Path != "" || complete {
+					pend = append(pend, r)
+				}
+			}
+			j.pend = pend
+		}
+		prog.total += len(j.pend)
 	}
 	prog.report()
 	for _, j := range active {
-		if len(j.ranges) == 0 {
+		if len(j.ranges) == 0 && len(j.pend) == 0 {
 			j.status = StatusImported
 			continue
 		}
@@ -370,13 +417,44 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 		}
 		return nil
 	}
+	var work []importItem
 	withdraw := func(i int) error {
 		j.withdrawn, j.status, j.rows, j.turns = true, StatusNoConsent, nil, 0
-		prog.done += len(j.list) - i - 1 // the logs left unread
+		prog.done += len(work) - i - 1 // the logs left unread
 		prog.report()
 		return nil
 	}
-	for i, p := range j.list {
+	for _, p := range j.list {
+		work = append(work, importItem{path: p, ranges: append([]span(nil), j.ranges...)})
+	}
+	for _, r := range j.pend {
+		if r.Path == "" {
+			prog.done++ // gone for good: nothing left to retry
+			continue
+		}
+		if _, err := os.Lstat(r.Path); errors.Is(err, os.ErrNotExist) {
+			prog.done++ // gone for good: nothing left to retry
+			continue
+		}
+		// A retry log that is also in this run's list is read once with both range sets: reading it
+		// twice would let the first pass mark every request id seen and drop the owed turns.
+		at := -1
+		for k := range work {
+			if work[k].path == r.Path {
+				at = k
+				break
+			}
+		}
+		if at < 0 {
+			work = append(work, importItem{path: r.Path})
+			at = len(work) - 1
+		}
+		for _, sp := range r.Spans {
+			work[at].ranges = append(work[at].ranges, span{sp.From, sp.Through})
+		}
+	}
+	for i, it := range work {
+		p := it.path
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -405,7 +483,13 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			if errors.Is(err, errGrantWithdrawn) {
 				return withdraw(i)
 			}
-			continue // unreadable file: skipped
+			// Unreadable: its span stays covered but the file is retried on the next import.
+			rf := RetryFile{Key: RetryKey(p), Path: p}
+			for _, r := range it.ranges {
+				rf.Spans = append(rf.Spans, Span{From: r.lo, Through: r.hi})
+			}
+			j.failed = append(j.failed, rf)
+			continue
 		}
 		if cp != nil {
 			for id := range cp.mine {
@@ -413,7 +497,7 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			}
 		}
 		for _, t := range turns {
-			if t.at.IsZero() || !j.inRange(t.at) {
+			if t.at.IsZero() || !inRange(it.ranges, t.at) {
 				continue
 			}
 			tmp.addTurn(j.source, j.parser, t, false)
@@ -427,8 +511,8 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 	return nil
 }
 
-func (j *importJob) inRange(t time.Time) bool {
-	for _, r := range j.ranges {
+func inRange(ranges []span, t time.Time) bool {
+	for _, r := range ranges {
 		if r.has(t) {
 			return true
 		}
@@ -436,20 +520,38 @@ func (j *importJob) inRange(t time.Time) bool {
 	return false
 }
 
+// importWalkDir and importOpen are the importer's filesystem calls; tests replace them to fail a
+// folder listing or a log read without depending on file permissions (which root ignores).
+var (
+	importWalkDir = filepath.WalkDir
+	importOpen    = os.Open
+)
+
 // files lists the source's logs modified since `since`, in a stable order. Links, directories and
 // the harness's sub-agent folders are not followed.
 func (j *importJob) files(since time.Time) []string {
+	out, _ := j.walk(since)
+	return out
+}
+
+// walk is files plus whether the scan saw every log: false when a folder could not be listed or the
+// scan stopped at its cap. A missing root is complete (there are no logs).
+func (j *importJob) walk(since time.Time) ([]string, bool) {
 	root := filepath.Join(j.root.Dir, j.dir)
 	if !filepath.IsAbs(root) {
-		return nil
+		return nil, true
 	}
 	var out []string
-	visited := 0
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	visited, complete := 0, true
+	_ = importWalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if visited++; visited > maxImportFiles {
+			complete = false
 			return fs.SkipAll
 		}
 		if err != nil {
+			if !(path == root && errors.Is(err, fs.ErrNotExist)) {
+				complete = false
+			}
 			return nil
 		}
 		if d.IsDir() {
@@ -468,13 +570,13 @@ func (j *importJob) files(since time.Time) []string {
 		return nil
 	})
 	sort.Strings(out)
-	return out
+	return out, complete
 }
 
 // readWhole streams one log line by line through a parser and returns its finished turns. A line
 // that is too long or does not parse is skipped by the parser; an unfinished last turn is dropped.
 func readWhole(admitted func() error, path string, p parser) ([]turn, error) {
-	fh, err := os.Open(path)
+	fh, err := importOpen(path)
 	if err != nil {
 		return nil, err
 	}
@@ -552,6 +654,31 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		}
 	}
 	c.Epoch = epoch
+	// Every pending log was tried this run: the ones that read are done, the ones that failed
+	// again (and new failures) are in j.failed.
+	tried := map[string]bool{}
+	for _, r := range j.pend {
+		tried[r.Key] = true
+	}
+	var retry []RetryFile
+	for _, r := range c.Retry {
+		if !tried[r.Key] {
+			retry = append(retry, r)
+		}
+	}
+	for _, f := range j.failed {
+		merged := false
+		for i := range retry {
+			if retry[i].Key == f.Key {
+				retry[i].Spans = append(retry[i].Spans, f.Spans...)
+				merged = true
+			}
+		}
+		if !merged {
+			retry = append(retry, f)
+		}
+	}
+	c.Retry = retry
 	led.Coverage[j.source] = c
 	if auto && led.AutoRan == nil {
 		t := now.UTC().Truncate(time.Second)
