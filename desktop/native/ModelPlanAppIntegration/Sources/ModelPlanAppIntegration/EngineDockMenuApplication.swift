@@ -702,7 +702,7 @@ struct StatusNoticePresentation {
         guard hidden != statusItemHidden else { return }
         statusItemHidden = hidden
         var context = settings.editor.context
-        context.statusItemNotice = hidden ? EngineRowsText.statusItemHidden : nil
+        context.statusItemNotice = hidden ? (cockpitEntryEnabled ? EngineRowsText.statusItemHidden : EngineRowsText.statusItemHiddenWithoutCockpit) : nil
         settings.update(context: context)
     }
     var statusButtonForTesting: NSStatusBarButton? { status?.button }
