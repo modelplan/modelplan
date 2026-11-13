@@ -525,6 +525,17 @@ do {
         try expect(DockRefreshSweep.fraction(elapsed: 0.6, target: 0.75, reduceMotion: false) == 0.75, "ends at admitted value")
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: 0.75, reduceMotion: true) == 0.75, "Reduce Motion is static")
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: .nan, reduceMotion: false) == nil, "invalid values are rejected")
+        // G3-98: fade out, hidden until the result lands (cap 3 s), fade in; never counts; Reduce Motion never dims.
+        func al(_ e: Double, _ r: Double? = nil) -> Double { DockRefreshSweep.readoutAlpha(elapsed: e, resolvedAt: r, reduceMotion: false) }
+        try expect(al(0) == 1 && al(0.15) == 0, "fades out in 0.15 s")
+        try expect(al(1.2) == 0 && al(2.9) == 0, "stays hidden past the sweep while no result has landed")
+        try expect(abs(al(1.0, 0.8) - 1) < 0.000001, "fades in from the moment the result landed")
+        try expect(al(0.5, 0.3) > 0.999, "a quick result returns the number promptly")
+        try expect(al(0.15, 0.05) == 0 && abs(al(0.2, 0.05) - 1.0 / 3) < 0.000001 && al(0.4, 0.05) > 0.999, "an instant failure still completes the fade-out first")
+        try expect(al(3.0) == 0 && al(3.15) > 0.999, "timeout fades the number back in at 3 s")
+        try expect(abs(DockRefreshSweep.readoutEnd(resolvedAt: nil) - 3.15) < 0.000001 && DockRefreshSweep.readoutEnd(resolvedAt: 0.2) == 0.6, "loop end follows the result")
+        try expect(stride(from: 0.0, through: 3.2, by: 0.01).allSatisfy { (0...1).contains(al($0)) }, "alpha stays in range")
+        try expect(DockRefreshSweep.readoutAlpha(elapsed: 0.3, resolvedAt: nil, reduceMotion: true) == 1, "Reduce Motion swaps instantly, no fade")
     }
     try test("B08 independent card:leave and menu protection without a repeat loop"){
         var card=DockCardInteraction()
