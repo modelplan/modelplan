@@ -505,7 +505,9 @@ private actor G345Engine: EngineClient {
         for (locale, five, week) in [("en-US", "5h  63% left", "Weekly  41% left"), ("zh-CN", "5小时  剩 63%", "每周  剩 41%")] {
             let (app, _) = try await launch(locale: locale, readings: true)
             for _ in 0..<300 where app.scopeConsentEntry.controller.firstRunReadings(forTool: "codex").isEmpty { try await Task.sleep(for: .milliseconds(10)) }
-            XCTAssertEqual(app.scopeConsentEntry.controller.firstRunReadings(forTool: "codex"), [.init(kind: .fiveHour, percent: 63), .init(kind: .weekly, percent: 41)])
+            let expected: [FirstRunReading] = [FirstRunReading(kind: .fiveHour, percent: 63), FirstRunReading(kind: .weekly, percent: 41)]
+            let readings: [FirstRunReading] = app.scopeConsentEntry.controller.firstRunReadings(forTool: "codex")
+            XCTAssertEqual(readings, expected)
             let window = try await firstRun(app)
             XCTAssertEqual(try text("scope.firstRun.reading.codex.fiveHour", in: window), five)
             XCTAssertEqual(try text("scope.firstRun.reading.codex.weekly", in: window), week)
