@@ -46,7 +46,7 @@ Signals are OR-ed. Initial evaluator forms and boundaries:
   OpenCode app (`opencode`, `.config/opencode`); that says nothing about an
   OpenCode Go subscription (G3-105). The subscription is found only by the existence
   of an `opencode-go` entry in OpenCode's own key store (an active `opencode-go` row
-  in `opencode.db`'s `credential` table, opened immutable and read-only with a query
+  in `opencode.db`'s `credential` table, opened read-only (not immutable, so committed WAL state counts) with a query
   that selects no value column, or an `opencode-go` top-level key in `auth.json`,
   scanned for key names only with the buffer zeroed afterwards) or a set
   `OPENCODE_API_KEY`. The key value is never read into a variable, stored, logged

@@ -122,6 +122,39 @@ func TestD230OpenCodeGoSubscriptionIsFoundByEntryExistenceOnly(t *testing.T) {
 	}
 }
 
+// OpenCode keeps its database in WAL mode while it runs: a credential committed by the open writer and
+// not yet checkpointed must still count (an immutable open would miss it).
+func TestD230OpenCodeGoEntryInLiveWALIsFound(t *testing.T) {
+	home := d230Home(t)
+	path := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	w, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: path}).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	w.SetMaxOpenConns(1)
+	for _, q := range []string{`PRAGMA journal_mode=WAL`, `PRAGMA wal_autocheckpoint=0`,
+		`CREATE TABLE credential (integration_id TEXT, active INTEGER, value TEXT)`, `PRAGMA wal_checkpoint(TRUNCATE)`} {
+		if _, err := w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := w.Exec(`INSERT INTO credential VALUES ('opencode-go', 1, ?)`, d230Secret); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(path + "-wal"); err != nil || fi.Size() == 0 {
+		t.Fatalf("precondition: the committed row must still be in the WAL (%v)", err)
+	}
+	tool := d230Tool(t, Env{Home: home, Path: t.TempDir(), OS: "darwin"})
+	if tool.Subscription != SubscriptionFound {
+		t.Fatalf("subscription %q with the credential in the live WAL", tool.Subscription)
+	}
+	var n int
+	if err := w.QueryRow(`SELECT count(*) FROM credential`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("source database changed: %d %v", n, err)
+	}
+}
+
 // The key-only scan hands out key names and nothing else: every visited slice is a top-level key,
 // and no value byte (the secret) is ever passed to the caller.
 func TestD230AuthScanVisitsKeysOnlyNeverValues(t *testing.T) {

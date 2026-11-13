@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite" // pure Go; read-only, immutable open
+	_ "modernc.org/sqlite" // pure Go; read-only, query-only open
 )
 
 // OpenCode Go subscription evidence (G3-105, owner decision D230, 2026-11-13). Finding OpenCode says
@@ -73,12 +73,14 @@ func (e Env) openCodeGoSubscription() string {
 }
 
 // openCodeDBHasGoEntry asks only whether an active opencode-go credential row exists. The database is
-// opened immutable and read-only, so nothing is written into OpenCode's directory.
+// opened read-only and query-only (never immutable: OpenCode runs in WAL mode, and an immutable open
+// ignores the WAL, so a committed credential still in the WAL of a running OpenCode would be missed).
+// No checkpoint is run and no row of the source is changed.
 func openCodeDBHasGoEntry(path string) bool {
 	if fi, err := os.Lstat(path); err != nil || !fi.Mode().IsRegular() {
 		return false
 	}
-	u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&immutable=1&_pragma=query_only(1)&_pragma=trusted_schema(0)"}
+	u := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro&_pragma=query_only(1)&_pragma=trusted_schema(0)&_pragma=busy_timeout(100)"}
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
 		return false
