@@ -44,8 +44,15 @@ Signals are OR-ed. Initial evaluator forms and boundaries:
   `antigravity` or `.gemini/antigravity`. Kiro is detected by `kiro-cli` only, the
   CLI its reader uses (the Kiro IDE alone also creates `~/.kiro`). OpenCode Go is detected from the
   OpenCode app (`opencode`, `.config/opencode`); that says nothing about an
-  OpenCode Go subscription, so Settings labels it "OpenCode installed" and says
-  when no OpenCode Go key is set (G3-105).
+  OpenCode Go subscription (G3-105). The subscription is found only by the existence
+  of an `opencode-go` entry in OpenCode's own key store (an active `opencode-go` row
+  in `opencode.db`'s `credential` table, opened immutable and read-only with a query
+  that selects no value column, or an `opencode-go` top-level key in `auth.json`,
+  scanned for key names only with the buffer zeroed afterwards) or a set
+  `OPENCODE_API_KEY`. The key value is never read into a variable, stored, logged
+  or sent (owner decision D230). Without it the `opencodego.account_usage.api_key`
+  path is reported as not detected and Settings says "OpenCode installed · no
+  OpenCode Go subscription found".
 - `{"type":"command","name":"claude"}`: locate/stat a literal executable
   basename in absolute PATH/install directories, without running it or a shell.
 - `{"type":"bundleId","value":"com.example.Tool"}`: silent OS-registration
@@ -63,7 +70,7 @@ expansions are evaluated. Limits: 256 KiB, 512 entries, 16 signals per entry.
 Reports contain logical IDs and statuses, never matched paths or identities.
 
 `modelplan detect` 仅检测工具是否存在，不代表登录、订阅或剩余额度。
-不读取凭据内容、不启动工具、不联网、不写缓存。使用已核验的本地公开目录；
+不读取凭据内容（唯一例外：OpenCode Go 只检查 OpenCode 密钥库里是否存在 `opencode-go` 条目，不读取密钥值，D230）、不启动工具、不联网、不写缓存。使用已核验的本地公开目录；
 尚未发布目录时使用内置回退。未知信号和规则被忽略；不能静默检查的信号保持未知，
 版本不足的条目提示更新。
 CodexBar 使用目录中的 `codexbar.accessClass`；缺失或为假的 `audited`、缺失或未知的

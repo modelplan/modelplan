@@ -217,7 +217,7 @@ import ModelPlanWire
         }
         if let block = tool.block {
             line(Self.blockLine(block, tool: id), id: prefix + "status." + id, color: .systemOrange)
-        } else if tool.detected, tool.keyMissing, let missing = Self.keyMissingLine(id) {
+        } else if tool.detected, tool.keyMissing, !Self.hasOpenCodeGoSubscription(tool), let missing = Self.keyMissingLine(id) {
             line(missing, id: prefix + "status." + id, color: .systemOrange)
         } else if tool.detected, !tool.canRead {
             // Only browser-session or unrecognised paths: never describe a read that will not happen.
@@ -257,13 +257,17 @@ import ModelPlanWire
                      "opencode": "OpenCode", "kiro": "Kiro", "amp": "Amp", "droid": "Droid", "antigravity": "Antigravity", "minimax": "MiniMax"]
         return names[tool].map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
     }
-    /// G3-105: presence is what the engine detects, so say what was found. For OpenCode Go the signal is the
-    /// OpenCode app or its config, which says nothing about an OpenCode Go subscription.
+    /// G3-105: presence is what the engine detects, so say what was found. OpenCode installed is not an
+    /// OpenCode Go subscription; D230: the engine reports the OpenCode Go account path as detected only when
+    /// OpenCode's key store has an opencode-go entry (or OPENCODE_API_KEY is set).
     static func presenceTag(_ tool: FirstRunTool) -> SettingsText {
         guard tool.detected else { return .init("Not detected on this Mac", "本机未检测到") }
-        if tool.tool == "opencodego" { return .init("OpenCode installed on this Mac", "本机已安装 OpenCode") }
+        if tool.tool == "opencodego", !hasOpenCodeGoSubscription(tool) {
+            return .init("OpenCode installed · no OpenCode Go subscription found", "OpenCode 已安装 · 未找到 OpenCode Go 订阅")
+        }
         return .init("Detected on this Mac", "本机已检测到")
     }
+    static func hasOpenCodeGoSubscription(_ tool: FirstRunTool) -> Bool { tool.routes.contains(.apiKeyApi) }
     /// G3-105: an installed tool whose subscription key is missing, in plain words; nil keeps the generic row.
     static func keyMissingLine(_ tool: String) -> SettingsText? {
         guard tool == "opencodego" else { return nil }
