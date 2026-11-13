@@ -66,7 +66,8 @@ test('G3-47 vendor keys keep their identity colour and mark',async({page})=>{
  const keys=await page.evaluate(()=>[...document.querySelectorAll('.eng-keys .ek[data-sub]')].map(k=>{const i=k.querySelector('img.lamp');
   const n=k.querySelector('.ek-name').getBoundingClientRect(),m=i?.getBoundingClientRect();
   return {name:k.querySelector('.ek-name')?.textContent,strip:getComputedStyle(k.querySelector('.bl')).backgroundColor,mark:i?{src:i.getAttribute('src'),loaded:i.complete&&i.naturalWidth>0,beside:m.left+m.width/2+7<=n.left&&Math.abs((m.top+m.height/2)-(n.top+n.height/2))<=1.5}:null};}));
- expect(keys.map(k=>k.strip)).toEqual(['rgb(106, 168, 255)','rgb(255, 154, 106)','rgb(238, 242, 246)','rgb(198, 204, 212)']);
+ // COL-2.1-18 Set 1: Codex green, Claude orange, Cursor rose (no two of them collide, so no alternate shade); unbound stays neutral.
+ expect(keys.map(k=>k.strip)).toEqual(['rgb(16, 163, 127)','rgb(217, 119, 87)','rgb(247, 157, 203)','rgb(198, 204, 212)']);
  expect(keys.slice(0,3).map(k=>k.mark?.loaded)).toEqual([true,true,true]);
  // The mark sits beside the name on one centre line, as in the study.
  expect(keys.slice(0,3).map(k=>k.mark?.beside)).toEqual([true,true,true]);

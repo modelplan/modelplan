@@ -52,6 +52,6 @@ import ModelPlanWire
         controller.receiveAcceptedPluginResult(requestID: requestID, result: result)
     }
     /// Clear on the owner's delivery turn before it acknowledges invalidation.
-    public func clearPrivateViews() { controller.clearAcceptedPrivateState() }
+    public func clearPrivateViews() { controller.clearAcceptedPrivateState(); historyImport?.invalidate() }
     public func suspend() { endFirstRunPresentation();view.suspend() }
 }

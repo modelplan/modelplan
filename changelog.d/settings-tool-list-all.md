@@ -1,1 +1,0 @@
-Settings now lists every tool first run would list (detected ones with a switch that adds or removes the subscription right away) and, below them, each supported tool this Mac does not have, with the reason.

@@ -216,6 +216,9 @@ type CockpitSession struct {
 	LastObservedAt  time.Time `json:"lastObservedAt"`
 	State           string    `json:"state"`
 	Rate            *float64  `json:"rate" null:"coalesced"`
+	// Fast is present (true) only for a session whose recorded speed mode is the harness's fast
+	// mode. Absent means the mode was not reported or was standard; the ledger cannot tell those apart.
+	Fast *bool `json:"fast,omitempty" null:"forbidden"`
 }
 type CockpitAlert struct {
 	Source           string  `json:"source"`

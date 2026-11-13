@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Maps published public model data to the launch-field scene's model shape. No personal data.
+import {rocketColour,NEUTRAL} from './livery.js';
 export interface PublishedEffort {readonly effort:string;readonly label:string;readonly star?:boolean;readonly ability?:number|null;readonly cost?:number|null;readonly time?:number|null}
 export interface PublishedModel {readonly id:string;readonly name:string;readonly developerId:string;readonly recommended:string;readonly efforts:readonly PublishedEffort[]}
 export type FieldRow=readonly [string,number,number,number];
@@ -8,7 +9,7 @@ export interface FieldModel {readonly id:string;readonly name:string;readonly sh
  readonly labels:Readonly<Record<string,string>>}
 export const FIELD_LIMIT=10;
 // The scene's own developer keys; anything else takes the neutral rocket.
-const developers:Readonly<Record<string,{dev:string;colour:string}>>={openai:{dev:'openai',colour:'#6aa8ff'},anthropic:{dev:'anthropic',colour:'#ff9a6a'},zhipuai:{dev:'zhipu',colour:'#8f7dff'},zhipu:{dev:'zhipu',colour:'#8f7dff'}};
+const developers:Readonly<Record<string,{dev:string;colour:string}>>={openai:{dev:'openai',colour:rocketColour('openai')},anthropic:{dev:'anthropic',colour:rocketColour('anthropic')},zhipuai:{dev:'zhipu',colour:rocketColour('zhipuai')},zhipu:{dev:'zhipu',colour:rocketColour('zhipuai')}};
 /** `short` names the model on narrow surfaces (callers pass the study's shortLabel); the default keeps the full name. */
 export function fieldModel(m:PublishedModel,short:(name:string)=>string=name=>name):FieldModel|null {
  const rows:FieldRow[]=[],labels:Record<string,string>={};let star:FieldRow|null=null;
@@ -18,7 +19,7 @@ export function fieldModel(m:PublishedModel,short:(name:string)=>string=name=>na
   if(e.star||e.effort===m.recommended)star=star??row;
  }
  const sel=star??rows[0];if(!sel)return null;
- const developer=Object.hasOwn(developers,m.developerId)?developers[m.developerId]!:{dev:m.developerId,colour:'#c6ccd4'};
+ const developer=Object.hasOwn(developers,m.developerId)?developers[m.developerId]!:{dev:m.developerId,colour:NEUTRAL};
  return {id:m.id,name:m.name,short:short(m.name),dev:developer.dev,colour:developer.colour,rec:sel[0],e:rows,sel,reportedEffort:null,previewEffort:null,labels};
 }
 /** The rockets to fly: the chosen IDs in publication order, never more than the field's limit. */

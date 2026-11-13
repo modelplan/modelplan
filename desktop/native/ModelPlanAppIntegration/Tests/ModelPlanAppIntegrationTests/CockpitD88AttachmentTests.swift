@@ -143,9 +143,37 @@ import XCTest
     XCTAssertEqual(changes, 1, "the settled open is reported once, for the hint")
     XCTAssertNotNil(fixture.page.attachmentHintAnchor)
     fixture.page.requestClose()
-    try await Task.sleep(for: .milliseconds(100))
-    XCTAssertLessThan(fixture.page.window?.frame.width ?? 0, home.width, "the close shrinks back into the icon")
-    try await Task.sleep(for: .milliseconds(400))
+    // Main 0af627e5: one sample at 100 ms read the full width. Sample until the window is gone instead, so a late
+    // first animation step on a loaded runner cannot fail it, while a frame held at full size still does.
+    var narrowest = CGFloat.infinity
+    let deadline = ContinuousClock.now + .seconds(2)
+    while let closing = fixture.page.window, ContinuousClock.now < deadline {
+      narrowest = min(narrowest, closing.frame.width)
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertLessThan(narrowest, home.width, "the close shrinks back into the icon")
+    XCTAssertNil(fixture.page.window)
+    XCTAssertEqual(failures, [])
+  }
+
+  /// A relayout during the shrink (a screen-parameter change) must not snap the closing window back to full size.
+  func testD88ScreenChangeDuringTheShrinkKeepsShrinking() async throws {
+    let fixture = try make(reduceMotion: false)
+    defer { fixture.page.discard() }
+    _ = try openPage(fixture, entrance: .growFromIcon)
+    let home = try XCTUnwrap(fixture.home)
+    try await Task.sleep(for: .milliseconds(600))
+    fixture.page.requestClose()
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApplication.shared)
+    var widths: [CGFloat] = []
+    let deadline = ContinuousClock.now + .seconds(2)
+    while let closing = fixture.page.window, ContinuousClock.now < deadline {
+      widths.append(closing.frame.width)
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    XCTAssertLessThan(widths.min() ?? 0, home.width, "the close still shrinks")
+    XCTAssertFalse(widths.dropFirst(widths.firstIndex { $0 < home.width } ?? widths.count).contains(home.width),
+                   "and is not set back to the layout frame mid-shrink")
     XCTAssertNil(fixture.page.window)
     XCTAssertEqual(failures, [])
   }

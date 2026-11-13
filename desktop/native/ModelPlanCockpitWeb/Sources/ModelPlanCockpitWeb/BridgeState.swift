@@ -23,6 +23,24 @@ public struct CockpitQueryTicket: Equatable, Sendable {
   public let context: CockpitEngineContext
   public let viewRevision: UInt64
 }
+/// CKP-SHELL-40 (owner D205): v1 is night-only. The cockpit renders the night look whatever the macOS
+/// appearance or the saved theme; the day paths in the page and in this module stay intact behind this one
+/// switch. v1.1 turns the day cockpit back on by setting `dayCockpit` (default off) at launch.
+public enum CockpitDayPolicy {
+  private static let lock = NSLock()
+  private static var enabled = false
+  /// Off in v1. Tests flip it and restore it; nothing else writes it.
+  public static var dayCockpit: Bool {
+    get { lock.lock(); defer { lock.unlock() }; return enabled }
+    set { lock.lock(); defer { lock.unlock() }; enabled = newValue }
+  }
+  /// The theme the cockpit may show for a requested one.
+  public static func resolve(_ requested: CockpitAppearance.Theme) -> CockpitAppearance.Theme {
+    dayCockpit ? requested : .night
+  }
+  /// The same pin for the field page's own theme enum.
+  public static func resolveField(dark: Bool) -> Bool { dayCockpit ? dark : true }
+}
 public struct CockpitAppearance: Equatable, Sendable {
   public enum Theme: String, Sendable { case day, night }
   public enum Locale: String, Sendable {
@@ -79,7 +97,7 @@ public struct CockpitVisibility: Equatable, Sendable {
   var active: Bool { visible && !occluded && key }
 }
 public enum CockpitIntent: Equatable, Sendable {
-  case chooseSetup, openSettings, close, detach, putBack, shutterToggle, openField
+  case chooseSetup, openSettings, openSettingsSubscriptions, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
   /// D63: open the enlarged field focused on the rocket with this published display name (resolved by the host).
   case openFieldAt(String)
@@ -313,9 +331,41 @@ public final class CockpitBridgeState {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
     // A newer display retires all prior unacknowledged display receipts.
     pending = pending.filter { $0.value.kind != "rendered" }
-    let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(data))
+    let (object, dropped) = try Self.finiteObject(data)
+    lastNonFinitePaths = dropped
     let tools = Set(data.projection.rows.filter { $0.kind == .tool && !$0.invalid }.map { $0.id })
     return try envelope("display", extra: ["data": object], receipt: "rendered", tools: tools, members: CockpitMemberScopes.keys(data))
+  }
+  /// G3-86: JSON has no NaN or infinity, so one such number made the whole display unencodable. It is sent
+  /// as null (the page shows that value as unavailable); the controller logs the field paths, never the values.
+  public private(set) var lastNonFinitePaths: [String] = []
+  private static let nonFiniteMarker = "\u{0}modelplan.nonfinite.7f1c2a"
+  static func finiteObject(_ data: WireCockpitData) throws -> (Any, [String]) {
+    let encoder = JSONEncoder()
+    encoder.nonConformingFloatEncodingStrategy = .convertToString(
+      positiveInfinity: nonFiniteMarker, negativeInfinity: nonFiniteMarker, nan: nonFiniteMarker)
+    var dropped: [String] = []
+    let object = replacingNonFinite(try JSONSerialization.jsonObject(with: encoder.encode(data)), path: "data", dropped: &dropped)
+    return (object, dropped)
+  }
+  private static func replacingNonFinite(_ value: Any, path: String, dropped: inout [String]) -> Any {
+    if let text = value as? String, text == nonFiniteMarker { dropped.append(path); return NSNull() }
+    if let object = value as? [String: Any] {
+      var out: [String: Any] = [:]
+      for (key, child) in object { out[key] = replacingNonFinite(child, path: path + "." + key, dropped: &dropped) }
+      return out
+    }
+    if let array = value as? [Any] {
+      return array.enumerated().map { replacingNonFinite($0.element, path: path + "[\($0.offset)]", dropped: &dropped) }
+    }
+    return value
+  }
+  /// G3-86: a display the delivery queue refused never reaches the page, so no receipt is awaited for it.
+  /// The page keeps the last display it rendered until the refresh that replaces this one.
+  func abandonDisplay(_ id: UUID) {
+    guard pending[id]?.kind == "rendered" else { return }
+    pending[id] = nil
+    if earlyDeadline?.requestID == id { earlyDeadline = nil }
   }
   func cancelDeadlineReports() {
     deadlineReportRequest = nil; appearanceAwaitingAck = nil; earlyDeadline = nil; bufferedDeadline = nil
@@ -482,6 +532,8 @@ public final class CockpitBridgeState {
       switch action {
       case "chooseSetup": intent = .chooseSetup
       case "openSettings": intent = .openSettings
+      // CKP-SHELL-39: the empty engine screen's one button; it opens the Subscriptions pane and carries nothing.
+      case "openSettingsSubscriptions": intent = .openSettingsSubscriptions
       case "scopeSelect":
         guard let key=m["key"] as? String, scopeMembers.contains(key),
           earlyDisplay.map({ pending[$0.requestID]?.members.contains(key) == true }) ?? true else { throw CockpitBridgeError.invalidMessage }
