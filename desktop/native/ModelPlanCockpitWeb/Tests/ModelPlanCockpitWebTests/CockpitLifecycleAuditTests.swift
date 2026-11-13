@@ -183,6 +183,24 @@ import ModelPlanWire
     XCTAssertEqual(failures, [])
   }
 
+  /// G3-102 (build 14e): a detached cockpit stayed above every other app. Attached floats over the widget (D49);
+  /// detached is a normal window; putting it back floats it again. Through the strip's drag entry and the put-back.
+  func testADetachedCockpitIsANormalWindowAndAnAttachedOneFloats() throws {
+    let page = try page(try bundle(), reduceMotion: true, icon: try menuBarIcon())
+    page.prewarm(); detachSyntheticLoad(page)
+    defer { page.discard() }
+    let window = try XCTUnwrap(page.window)
+    XCTAssertEqual(window.level, CockpitWindowController.panelLevel, "attached: above the widget")
+    let from = CGPoint(x: window.frame.minX + 60, y: window.frame.maxY - 30)
+    page.titleDrag(.began, point: from)
+    page.titleDrag(.moved, point: CGPoint(x: from.x + 80, y: from.y - 300))
+    page.titleDrag(.ended, point: CGPoint(x: from.x + 80, y: from.y - 300))
+    XCTAssertFalse(page.isAttached)
+    XCTAssertEqual(window.level, .normal, "detached: other apps can cover it")
+    page.setAttached(true)
+    XCTAssertEqual(window.level, CockpitWindowController.panelLevel, "put back: floats again")
+  }
+
   /// Finding 4 (P2): the strip takes first responder on mouse-down; after the drag ends or is cancelled the page has
   /// the keyboard again, so Esc reaches the page instead of the finished drag.
   func testTheKeyboardReturnsToThePageAfterATitleDrag() throws {

@@ -109,6 +109,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// D49: the widget stays at `.floating` while the cockpit is open, and the cockpit opens over it.
   /// A widget being dragged rises to `.statusBar`, above this.
   public static let panelLevel = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+  /// G3-102 (build 14e): a detached cockpit is an ordinary window, so other apps can cover it; only the attached
+  /// one (under the menu-bar icon, over the widget, D49) floats.
+  public static func level(detached: Bool) -> NSWindow.Level { detached ? .normal : panelLevel }
   /// Windows the open cockpit brings up (the enlarged field, the Help overlay) sit above it.
   public static let aboveCockpitLevel = NSWindow.Level(rawValue: panelLevel.rawValue + 1)
   /// The drag snap guide shares the cockpit's level so it can be ordered just below the cockpit.
@@ -924,6 +927,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
       reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size)
+    window?.level = Self.level(detached: shellSession.detached)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       // Audit A-6: only a shown cockpit goes to full opacity; a prewarmed page (warm-painting at alpha 0) stays hidden.
@@ -1193,6 +1197,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       shape.strokeColor = NSColor.gray.cgColor; shape.fillColor = NSColor.clear.cgColor
       shape.lineWidth = 1; shape.lineDashPattern = ready ? nil : [6, 4]
     }
+    snapGuide?.level = window.level
     snapGuide?.order(.below, relativeTo: window.windowNumber)
   }
   private func cancelDrag() {
