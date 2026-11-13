@@ -47,3 +47,12 @@ test('SET-9-19 the bridge refuses an appearance without the setting',async({page
  const {send,receive}=await open(page,true);const {showProjectNames,...older}=appearance;
  expect(await receive(send('appearance',older))).toBe(false);
 });
+
+test('G3-100 a session with no project reads "No project" while names are on, and "--" when names are off',async({page})=>{
+ const {send,receive,data}=await open(page,true);
+ const bare=structuredClone(data);bare.details.sessions[0].projectLabel=null;
+ expect(await receive(send('display',{data:bare}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('No project');
+ expect(await receive(send('appearance',{...appearance,showProjectNames:false}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('--');
+});
