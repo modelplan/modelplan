@@ -77,10 +77,12 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  // Closing, the glass slides down into the hull top (cockpit.css `cockpit-shutter`, 250 ms) and then
  // the slab is drawn; opening, the open shell is drawn at once and the glass rises out of the hull top. The native side uses the same 250 ms. Reduce Motion, a
  // hidden page and the first shell draw at once (CKP-MOT-03). The page keeps no timers (bundle.test.mjs): the motion
- // ends on the animation's own end event.
+ // ends on the animation's own finish. That is its `finished` promise, settled with the animation itself, not the
+ // animationend event, which waits for a later rendering update (macrev2-923-1: a loaded runner left it undelivered).
+ // A cancelled run (the class removed, a newer motion) settles too, unless a newer motion has started since.
  const portrow=root.querySelector<HTMLElement>('.ck-portrow')!;
- const shutterEnded=(e:AnimationEvent)=>{if(e.target===portrow&&e.animationName==='cockpit-shutter')finishShutter();};
- portrow.addEventListener('animationend',shutterEnded);portrow.addEventListener('animationcancel',shutterEnded);
+ let shutterRun:Animation|null=null;
+ const shutterEnded=(run:Animation)=>{if(run===shutterRun){shutterRun=null;finishShutter();}};
  function shutterLayout(closed:boolean){
   const want=closed?'closed':'open',motion=root.dataset.shell!==undefined&&active&&!reduceMotion&&!motionQuery.matches;
   if(closed&&root.dataset.shutterMotion==='closing')return;
@@ -91,10 +93,14 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   // caution blink, cursors, mouth shimmer: [data-shell="open"]) stops at once, as for a closed page.
   if(closed)root.dataset.shell='closing';else drawShell(false);
   // No motion drawn (the stylesheet's own Reduce Motion rule): settle at once.
-  if(!portrow.getAnimations().some(a=>(a as CSSAnimation).animationName==='cockpit-shutter'))finishShutter();
+  const run=portrow.getAnimations().find(a=>(a as CSSAnimation).animationName==='cockpit-shutter');
+  shutterRun=run??null;
+  if(!run){finishShutter();return;}
+  run.finished.then(()=>shutterEnded(run),()=>shutterEnded(run));
  }
  // The motion's end, or a hidden page cutting it short (MOT-2.3-08: a hidden page runs no animation).
  function finishShutter(){
+  shutterRun=null;
   if(root.dataset.shutterMotion===undefined)return;
   delete root.dataset.shutterMotion;drawShell(nativeShell?.profile==='closed');
  }
@@ -185,6 +191,6 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
   active(value){active=value;root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}},
-  dispose(){if(disposed)return;disposed=true;portrow.removeEventListener('animationend',shutterEnded);portrow.removeEventListener('animationcancel',shutterEnded);base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  dispose(){if(disposed)return;disposed=true;shutterRun=null;base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }
