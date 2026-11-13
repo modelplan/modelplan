@@ -19,7 +19,7 @@ test('--official assembles desktop/official-visuals/; the default community buil
   build('--official');
   assert.equal(JSON.parse(read('build-edition.json')).edition, 'official');
   assert.equal(read('VISUAL-LICENSE.md'), readFileSync(join(official, 'LICENSE.md'), 'utf8'));
-  assert.ok(read('app.css').endsWith(readFileSync(join(official, 'theme.css'), 'utf8')));
+  assert.ok(read('app.css').endsWith(readFileSync(join(official, 'theme.css'), 'utf8') + '\n' + readFileSync(join(desktop, 'app/livery.css'), 'utf8')), 'official css ends with the theme, then the maker liveries');
   assert.ok(read('main.js').includes('M0-8.2C2.8-6.2'), 'official logo is bundled');
   assert.ok(existsSync(join(dist, 'runtime/manifest.json')), 'official runtime manifest is bundled');
   const runtime = JSON.parse(read('runtime/manifest.json'));

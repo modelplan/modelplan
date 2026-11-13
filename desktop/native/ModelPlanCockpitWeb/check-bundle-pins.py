@@ -28,6 +28,7 @@ RESERVED_SOURCES = (
     ('assets/rack/SOURCES.md', 'cockpit/rack/SOURCES.md'),
     ('assets/rack/', 'cockpit/rack/assets/'),
     ('assets/logo.svg', 'logo.svg'),
+    ('assets/art/rockets/', 'runtime/field-scene/rockets/'),
     ('assets/', 'cockpit/strip/assets/'),
 )
 THIRD_PARTY = ('assets/brands/', 'assets/SOURCES.md')

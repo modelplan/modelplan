@@ -6,6 +6,8 @@ import {effectiveRedBelow} from './threshold.js';
 import type {WireCockpitData,WireWindow} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
 import {cockpitMembers} from './members.js';
+import {memberColours} from './session-binding.js';
+import {NEUTRAL} from './livery.js';
 import {cautionItems,cautionLevel} from './caution.js';
 import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf} from './prototype-data-adapter.js';
 import {engineModel} from '../study/rocket-r1/engine-model.js';
@@ -13,7 +15,7 @@ import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 // Vendor marks are the bundled official-edition files under assets/brands/ (third-party marks, SOURCES.md).
-const palette:Readonly<Record<string,{colour:string;logo:string}>>={openai:{colour:'#6aa8ff',logo:'openai-white.svg'},claude:{colour:'#ff9a6a',logo:'claude-rounded.svg'},cursor:{colour:'#eef2f6',logo:'cursor.svg'},copilot:{colour:'#c08cff',logo:'copilot.svg'},kimi:{colour:'#ff8fcf',logo:'kimi-white.svg'},glm:{colour:'#8f7dff',logo:'zai-white.svg'},opencode:{colour:'#b5d65a',logo:'opencode.svg'}};
+const logos:Readonly<Record<string,string>>={openai:'openai-white.svg',claude:'claude-rounded.svg',cursor:'cursor.svg',copilot:'copilot.svg',kimi:'kimi-white.svg',glm:'zai-white.svg',opencode:'opencode.svg'};
 const finite=(v:number|null)=>v!==null&&Number.isFinite(v)?v:null;
 const role=(w:WireWindow)=>w.role==='session'&&w.durationSeconds===18000?'5h':w.role==='weekly'&&w.durationSeconds===604800?'week':w.role==='daily'?'day':w.role==='monthly'?'month':'other';
 const general=(w:WireWindow)=>!w.modelScope&&w.poolKey==='main'&&(w.role==='session'?(w.limitKey==='main'||w.limitKey==='five_hour'):w.role==='weekly'?(w.limitKey==='main'||w.limitKey==='weekly'):false);
@@ -25,8 +27,9 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  const base=(w:WireWindow)=>`${w.role}:${w.durationSeconds??'unknown'}:${w.limitKey}:${w.poolKey}`;
  const semantic=(w:WireWindow)=>JSON.stringify([w.role,w.durationSeconds,w.limitKey,w.poolKey,w.modelScope?.models?[...w.modelScope.models].sort():null]);
  function sourceAt(now:number){
+ const colours=memberColours(members);
  const accounts=members.map(({key,row,account})=>{
-  const brand=row.vendorKey&&Object.hasOwn(palette,row.vendorKey)?palette[row.vendorKey]:null;
+  const brand=row.vendorKey&&Object.hasOwn(logos,row.vendorKey)?{colour:colours.get(key)!,logo:logos[row.vendorKey]!}:null;
   const name=locale==='en'?row.name.en:row.name.zh;
   const ids=new Map<string,number>(),bases=new Map<string,number>(),meanings=new Map<string,number>(),semantics=new Map<WireWindow,string>();
   for(const w of account.windows){const meaning=semantic(w),key=base(w);semantics.set(w,meaning);ids.set(w.id,(ids.get(w.id)??0)+1);bases.set(key,(bases.get(key)??0)+1);meanings.set(meaning,(meanings.get(meaning)??0)+1);}
@@ -37,7 +40,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
   const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?brand.logo:'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
+  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
