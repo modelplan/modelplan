@@ -81,6 +81,8 @@ test('MOT-2.3-08 a hidden or closed cockpit runs no animation',async({page})=>{
  expect(await running(page)).toEqual([]);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);
+ // G3-108: the porthole's own 250 ms close runs first; once closed, nothing runs.
+ await page.waitForTimeout(350);
  expect((await motions(page)).filter(m=>m.animation!=='none')).toEqual([]);
 });
 
