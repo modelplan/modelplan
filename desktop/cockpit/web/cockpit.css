@@ -221,3 +221,8 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .ck-eng .ek .ek-identity .lamp[src$="openai-white.svg"]{--fit:1.75}
 .ck-eng .ek .ek-identity .lamp[src$="claude-rounded.svg"],.ck-eng .ek .ek-identity .lamp[src$="cursor.svg"],.ck-eng .ek .ek-identity .lamp[src$="copilot.svg"],.ck-eng .ek .ek-identity .lamp[src$="opencode.svg"]{--fit:.875}
 .ck-eng .ek .ek-identity .lamp[src$="kimi-white.svg"]{--fit:.91}
+/* CKP-SHELL-39: empty engine screen, one line and one button */
+.ck-eng .ec-empty-box{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:10px}
+.ck-eng .ec-empty-box .ec-empty{font-size:12px;text-align:center;padding:0;color:var(--lcd-muted)}
+.ck-eng .ec-empty-open{font:12px var(--f-silk);color:#e9edf0;background:#1b2128;border:1px solid #4a525b;border-radius:6px;padding:6px 16px;cursor:pointer}
+.ck-eng .ec-empty-open:hover{background:#252d35}.ck-eng .ec-empty-open:focus-visible{outline:2px solid #7fd4b8;outline-offset:2px}

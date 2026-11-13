@@ -62,6 +62,28 @@ import ModelPlanWire
     page.verificationReceive(try reply(load, type: "ready", sequence: 1), source: source)
   }
 
+  /// Post-merge 887: a bundle admitted earlier whose index.html is gone when the page loads fails as a bundle problem
+  /// (`bundleResource`), not as a generic navigation failure, so the notice can ask for a reinstall.
+  func testABundledFileThatDisappearsAfterAdmissionFailsAsABundleResource() async throws {
+    guard NSScreen.main != nil else { throw XCTSkip("needs a display") }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-bundle-gone-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+    let html = Data("<!doctype html><title>synthetic</title>".utf8)
+    try html.write(to: root.appendingPathComponent("index.html"))
+    let manifest = try JSONSerialization.data(withJSONObject: [
+      "schemaVersion": 1, "edition": "community", "interfaceOnly": true, "files": ["index.html": VerifiedCockpitBundle.digest(html)],
+    ])
+    try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
+    let admitted = try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
+    try FileManager.default.removeItem(at: root.appendingPathComponent("index.html"))
+    let page = try page(admitted, reduceMotion: true, icon: nil)
+    addTeardownBlock { @MainActor in page.discard() }
+    page.open()
+    for _ in 0..<500 where failures.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(failures, [.bundleResource])
+  }
+
   /// Finding 1 (P1): a press on the enlarged field, outside the smaller cockpit under it, reached the cockpit's
   /// local press monitor as an outside click and closed the cockpit (and, through the console, the field).
   func testAPressOnTheEnlargedFieldDoesNotCloseTheAttachedCockpit() throws {

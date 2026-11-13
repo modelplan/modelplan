@@ -1,1 +1,0 @@
-The cockpit no longer closes as unavailable about a minute after opening when several updates arrive at once: a burst of settings or appearance updates now replaces the queued older ones instead of filling the delivery queue, one update that cannot be queued is skipped and resent, and a reading that is not a finite number is shown as unavailable instead of ending the cockpit.
