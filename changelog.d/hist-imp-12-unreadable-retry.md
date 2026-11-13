@@ -1,1 +1,1 @@
-A history log that cannot be read during an import is no longer marked as covered: that one file is retried on the next import, and the logs already read are not counted again.
+A history log that cannot be read during an import is no longer marked as covered: that one file is retried on the next import, and the logs already read are not counted again. A log whose folder cannot be listed stays owed until it is read or confirmed deleted.

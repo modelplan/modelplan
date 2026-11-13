@@ -259,12 +259,20 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		}
 		if len(j.pend) > 0 { // find the unreadable logs again by their hash (no path is stored)
 			byKey := map[string]string{}
-			for _, f := range j.files(time.Time{}) {
+			found, complete := j.walk(time.Time{})
+			for _, f := range found {
 				byKey[RetryKey(f)] = f
 			}
-			for i := range j.pend {
-				j.pend[i].Path = byKey[j.pend[i].Key]
+			// An unfound log counts as deleted only after a complete scan. While a folder cannot be
+			// listed (or the scan stops at its cap) the log is left out of this run and stays owed.
+			var pend []RetryFile
+			for _, r := range j.pend {
+				r.Path = byKey[r.Key]
+				if r.Path != "" || complete {
+					pend = append(pend, r)
+				}
 			}
+			j.pend = pend
 		}
 		prog.total += len(j.pend)
 	}
@@ -515,17 +523,28 @@ func inRange(ranges []span, t time.Time) bool {
 // files lists the source's logs modified since `since`, in a stable order. Links, directories and
 // the harness's sub-agent folders are not followed.
 func (j *importJob) files(since time.Time) []string {
+	out, _ := j.walk(since)
+	return out
+}
+
+// walk is files plus whether the scan saw every log: false when a folder could not be listed or the
+// scan stopped at its cap. A missing root is complete (there are no logs).
+func (j *importJob) walk(since time.Time) ([]string, bool) {
 	root := filepath.Join(j.root.Dir, j.dir)
 	if !filepath.IsAbs(root) {
-		return nil
+		return nil, true
 	}
 	var out []string
-	visited := 0
+	visited, complete := 0, true
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if visited++; visited > maxImportFiles {
+			complete = false
 			return fs.SkipAll
 		}
 		if err != nil {
+			if !(path == root && errors.Is(err, fs.ErrNotExist)) {
+				complete = false
+			}
 			return nil
 		}
 		if d.IsDir() {
@@ -544,7 +563,7 @@ func (j *importJob) files(since time.Time) []string {
 		return nil
 	})
 	sort.Strings(out)
-	return out
+	return out, complete
 }
 
 // readWhole streams one log line by line through a parser and returns its finished turns. A line

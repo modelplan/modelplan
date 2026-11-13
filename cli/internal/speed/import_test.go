@@ -546,6 +546,49 @@ func TestImportRetryWithExtendedDepth(t *testing.T) {
 	}
 }
 
+// macrevb-874-1: a log whose folder cannot be listed is not deleted. Its retry stays owed while the
+// folder is unreadable, and the log is read exactly once after the folder is restored.
+func TestImportRetrySurvivesAnUnreadableFolder(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	b := filepath.Join(f.claude, "projects", "synthetic-retry-folder", "b.jsonl")
+	if err := os.MkdirAll(filepath.Dir(b), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeLines(t, b, claudeTurnAt(-2*dayS, "synthetic-unique-request", "claude-fixture")...)
+	dir := filepath.Dir(b)
+	t.Cleanup(func() { os.Chmod(dir, 0o755); os.Chmod(b, 0o644) })
+	if err := os.Chmod(b, 0); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	if l, _ := LoadImported(f.cache); len(l.Coverage["claude-code"].Retry) != 1 {
+		t.Fatalf("precondition: retry not queued: %+v", l.Coverage["claude-code"])
+	}
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	if l, _ := LoadImported(f.cache); len(l.Coverage["claude-code"].Retry) != 1 {
+		t.Fatalf("retry dropped while its folder is unreadable: %+v", l.Coverage["claude-code"])
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	l, _ := LoadImported(f.cache)
+	if n, _ := total(l, "claude-code"); n != 2 || len(l.Coverage["claude-code"].Retry) != 0 {
+		t.Fatalf("restored log: turns=%d want 2, retry=%+v", n, l.Coverage["claude-code"].Retry)
+	}
+	f.run(30, both())
+	if l, _ := LoadImported(f.cache); func() int { n, _ := total(l, "claude-code"); return n }() != 2 {
+		t.Fatal("restored log counted twice")
+	}
+}
+
 // Post-merge sampling 2026-11-12 (#858): the consent fence around a source's commit, as LocalWrite
 // applies it in production (it refuses a source the live consent no longer permits).
 func localWriteGuard(live **consent.Admission) func(string, func() error) error {
