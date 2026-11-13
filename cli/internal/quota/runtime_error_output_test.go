@@ -148,7 +148,7 @@ func TestKiroRuntimeErrorOutput(t *testing.T) {
 					e := fetchKiro(context.Background(), nil, "local", "", acctNow)
 					want, reason := "other", "other"
 					if name == "signed_out" {
-						want, reason = "unsupported_login", "Kiro CLI is signed out (kiro-cli login)"
+						want, reason = "not_signed_in", "Kiro CLI is signed out (kiro-cli login)"
 					}
 					if name == "old_runtime" {
 						want, reason = "schema_changed", "Kiro CLI is too old for its usage call; update it"

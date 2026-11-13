@@ -79,6 +79,14 @@ public enum ReaderCauseTable {
         case "region_refused":
             return .init(reason: .init("This address is a third-party relay, so its quota can't be read", "这个地址是第三方转发服务，查不到额度"),
                          action: .init("Use the official address to read its quota", "改用官方地址才能读取额度"), target: .guidance)
+        case "usage_not_reported":
+            // D228: a current reading that has a balance but no usage percentage. Grok's X Subscription
+            // billing reports only the prepaid balance, so its card says that in one line instead of "--" rows.
+            let reason: SettingsText = (tool ?? "").lowercased() == "grok"
+                ? .init("The X Subscription reports no usage percentage; only the balance is shown", "X 订阅不提供用量百分比，只显示余额")
+                : .init(name.map { "\($0) reports no usage percentage; only the balance is shown" } ?? "No usage percentage is reported; only the balance is shown",
+                        name.map { "\($0) 不提供用量百分比，只显示余额" } ?? "不提供用量百分比，只显示余额")
+            return .init(reason: reason, action: .init("No action needed", "无需操作"), target: .guidance)
         case "consent_required":
             return .init(reason: .init("Reading permission needed", "需要读取授权"),
                          action: .init("Review permission in Settings", "在设置检查授权"), target: .openSettings)

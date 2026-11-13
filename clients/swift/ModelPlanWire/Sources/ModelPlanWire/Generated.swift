@@ -449,6 +449,7 @@ public enum RowsActivityPhase: Codable, Sendable, Equatable {
 public enum RowsCode: Codable, Sendable, Equatable {
     case `ok`
     case `estimated`
+    case `usageNotReported`
     case `staleReading`
     case `observationTimeUnknown`
     case `notReadYet`
@@ -506,6 +507,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
         switch rawValue {
         case "ok": self = .`ok`
         case "estimated": self = .`estimated`
+        case "usage_not_reported": self = .`usageNotReported`
         case "stale_reading": self = .`staleReading`
         case "observation_time_unknown": self = .`observationTimeUnknown`
         case "not_read_yet": self = .`notReadYet`
@@ -565,6 +567,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
         switch self {
         case .`ok`: return "ok"
         case .`estimated`: return "estimated"
+        case .`usageNotReported`: return "usage_not_reported"
         case .`staleReading`: return "stale_reading"
         case .`observationTimeUnknown`: return "observation_time_unknown"
         case .`notReadYet`: return "not_read_yet"
@@ -661,19 +664,24 @@ public enum RowsConsent: Codable, Sendable, Equatable {
 public struct RowsCredits: Codable, Sendable {
     public let `balance`: Double?
     public let `unit`: String
+    public let `currency`: String?
     private enum CodingKeys: String, CodingKey {
         case `balance`
         case `unit`
+        case `currency`
     }
-    public init(`balance`: Double? = nil, `unit`: String) throws {
+    public init(`balance`: Double? = nil, `unit`: String, `currency`: String? = nil) throws {
         self.`balance` = `balance`
         self.`unit` = `unit`
+        self.`currency` = `currency`
         try validate()
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`balance` = try? c.decodeIfPresent(Double.self, forKey: .`balance`)
         self.`unit` = try c.decode(String.self, forKey: .`unit`)
+        if c.contains(.`currency`), try c.decodeNil(forKey: .`currency`) { throw WireDecodeError.invalidIdentity }
+        self.`currency` = try? c.decodeIfPresent(String.self, forKey: .`currency`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -681,6 +689,7 @@ public struct RowsCredits: Codable, Sendable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(`balance`, forKey: .`balance`)
         try c.encode(`unit`, forKey: .`unit`)
+        try c.encodeIfPresent(`currency`, forKey: .`currency`)
     }
     private func validate() throws {
     }
@@ -1112,6 +1121,9 @@ public struct RowsResetEvent: Codable, Sendable {
     public let `provider`: String
     public let `rowId`: String
     public let `status`: RowsResetEventStatus
+    public let `kind`: RowsResetEventKind?
+    public let `confirmedAt`: WireTimestamp?
+    public let `confirmedAtBasis`: RowsResetEventConfirmedAtBasis?
     public let `confirms`: String?
     public let `planIds`: [String]?
     public let `publishedAt`: WireTimestamp
@@ -1124,6 +1136,9 @@ public struct RowsResetEvent: Codable, Sendable {
         case `provider`
         case `rowId`
         case `status`
+        case `kind`
+        case `confirmedAt`
+        case `confirmedAtBasis`
         case `confirms`
         case `planIds`
         case `publishedAt`
@@ -1131,12 +1146,15 @@ public struct RowsResetEvent: Codable, Sendable {
         case `expiresAt`
         case `source`
     }
-    public init(`version`: Int, `id`: String, `provider`: String, `rowId`: String, `status`: RowsResetEventStatus, `confirms`: String? = nil, `planIds`: [String]? = nil, `publishedAt`: WireTimestamp, `schedule`: RowsResetSchedule? = nil, `expiresAt`: WireTimestamp, `source`: RowsResetSource) throws {
+    public init(`version`: Int, `id`: String, `provider`: String, `rowId`: String, `status`: RowsResetEventStatus, `kind`: RowsResetEventKind? = nil, `confirmedAt`: WireTimestamp? = nil, `confirmedAtBasis`: RowsResetEventConfirmedAtBasis? = nil, `confirms`: String? = nil, `planIds`: [String]? = nil, `publishedAt`: WireTimestamp, `schedule`: RowsResetSchedule? = nil, `expiresAt`: WireTimestamp, `source`: RowsResetSource) throws {
         self.`version` = `version`
         self.`id` = `id`
         self.`provider` = `provider`
         self.`rowId` = `rowId`
         self.`status` = `status`
+        self.`kind` = `kind`
+        self.`confirmedAt` = `confirmedAt`
+        self.`confirmedAtBasis` = `confirmedAtBasis`
         self.`confirms` = `confirms`
         self.`planIds` = `planIds`
         self.`publishedAt` = `publishedAt`
@@ -1152,6 +1170,9 @@ public struct RowsResetEvent: Codable, Sendable {
         self.`provider` = try c.decode(String.self, forKey: .`provider`)
         self.`rowId` = try c.decode(String.self, forKey: .`rowId`)
         self.`status` = try c.decode(RowsResetEventStatus.self, forKey: .`status`)
+        self.`kind` = try? c.decodeIfPresent(RowsResetEventKind.self, forKey: .`kind`)
+        self.`confirmedAt` = try? c.decodeIfPresent(WireTimestamp.self, forKey: .`confirmedAt`)
+        self.`confirmedAtBasis` = try? c.decodeIfPresent(RowsResetEventConfirmedAtBasis.self, forKey: .`confirmedAtBasis`)
         self.`confirms` = try? c.decodeIfPresent(String.self, forKey: .`confirms`)
         self.`planIds` = try? c.decodeIfPresent([String].self, forKey: .`planIds`)
         self.`publishedAt` = try c.decode(WireTimestamp.self, forKey: .`publishedAt`)
@@ -1168,6 +1189,9 @@ public struct RowsResetEvent: Codable, Sendable {
         try c.encode(`provider`, forKey: .`provider`)
         try c.encode(`rowId`, forKey: .`rowId`)
         try c.encode(`status`, forKey: .`status`)
+        try c.encodeIfPresent(`kind`, forKey: .`kind`)
+        try c.encodeIfPresent(`confirmedAt`, forKey: .`confirmedAt`)
+        try c.encodeIfPresent(`confirmedAtBasis`, forKey: .`confirmedAtBasis`)
         try c.encodeIfPresent(`confirms`, forKey: .`confirms`)
         try c.encodeIfPresent(`planIds`, forKey: .`planIds`)
         try c.encode(`publishedAt`, forKey: .`publishedAt`)
@@ -1181,6 +1205,53 @@ public struct RowsResetEvent: Codable, Sendable {
     }
 }
 
+public enum RowsResetEventConfirmedAtBasis: Codable, Sendable, Equatable {
+    case `published`
+    case `observed`
+    case `firstSeen`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "published": self = .`published`
+        case "observed": self = .`observed`
+        case "firstSeen": self = .`firstSeen`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`published`: return "published"
+        case .`observed`: return "observed"
+        case .`firstSeen`: return "firstSeen"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public enum RowsResetEventKind: Codable, Sendable, Equatable {
+    case `resetCredit`
+    case `directReset`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "reset_credit": self = .`resetCredit`
+        case "direct_reset": self = .`directReset`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`resetCredit`: return "reset_credit"
+        case .`directReset`: return "direct_reset"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public enum RowsResetEventStatus: Codable, Sendable, Equatable {
     case `announced`
     case `confirmed`

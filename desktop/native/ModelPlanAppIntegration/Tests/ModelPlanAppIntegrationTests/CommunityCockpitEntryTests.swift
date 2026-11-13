@@ -549,12 +549,15 @@ final class CommunityCockpitEntryTests:XCTestCase {
         await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:wire),delivery:context))))
         let payload=try XCTUnwrap(surface.fieldPayload())
         XCTAssertTrue(payload.contains("synthetic-model"));XCTAssertFalse(payload.contains("subscriptionRef"),"Only public model data crosses")
+        XCTAssertTrue(payload.contains(#""lowPower":"#),"D63: the payload says whether Low Power Mode is on")
+        XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(lowPower:true)).contains(#""lowPower":true"#))
+        XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(lowPower:false)).contains(#""lowPower":false"#))
         XCTAssertTrue(payload.contains(#""focus":null"#) || !payload.contains(#""focus""#),"No rocket clicked, no focus")
         XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(focusName:"Synthetic")).contains(#""focus":"synthetic-model""#),"D63: the clicked rocket's name resolves to its published ID")
         XCTAssertFalse(try XCTUnwrap(surface.fieldPayload(focusName:"Not published")).contains("Not published"),"An unknown name focuses nothing")
         // CKP-PORT-11D: the payload is exactly presentation plus published models; no account or local field is in it.
         let object=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(payload.utf8)) as? [String:Any])
-        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","models","mine","focus"]),"only presentation and published models: \(object.keys.sorted())")
+        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","lowPower","models","mine","focus"]),"only presentation and published models: \(object.keys.sorted())")
         for forbidden in ["account","email","subscriptionRef","usedPercent","remaining","projectName","token"] { XCTAssertFalse(payload.contains(forbidden),"no \(forbidden) in the field payload") }
         surface.handle(.openField)
         XCTAssertTrue(surface.fieldIsOpen)
@@ -766,6 +769,31 @@ final class CommunityCockpitEntryTests:XCTestCase {
             page.onIntent?(.openWebsite(try XCTUnwrap(CockpitWebsiteLink(page:name,value:value))))
         }
         XCTAssertEqual(opened.map(\.absoluteString),["https://modelplan.ai/plans?seller=openai","https://modelplan.ai/effort?model=gpt-6.1-sol","https://modelplan.ai/methodology#effort-ladder"])
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
+    /// CKP-SHELL-39: the empty engine screen's button reaches the owner as Settings on its Subscriptions pane, and the
+    /// plain Settings key keeps opening Settings as before.
+    @MainActor func testEmptyScreenButtonOpensSettingsOnTheSubscriptionsPane() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("ckp-shell-39-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        var opened:[String]=[]
+        owner.settings = { opened.append("settings") }
+        owner.settingsSubscriptions = { opened.append("subscriptions") }
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        page.onIntent?(.openSettingsSubscriptions)
+        page.onIntent?(.openSettings)
+        XCTAssertEqual(opened,["subscriptions","settings"])
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
 

@@ -25,6 +25,15 @@ final class ReaderCauseTableTests: XCTestCase {
         }
     }
 
+    /// D228: a balance-only reading names X Subscription for Grok and the tool otherwise; no control is drawn.
+    func testUsageNotReportedNamesTheXSubscriptionForGrok() throws {
+        let grok = try XCTUnwrap(ReaderCauseTable.entry(code: "usage_not_reported", tool: "grok", toolName: "Grok Build"))
+        XCTAssertEqual(grok.reason, SettingsText("The X Subscription reports no usage percentage; only the balance is shown", "X 订阅不提供用量百分比，只显示余额"))
+        XCTAssertEqual(grok.target, .guidance)
+        let other = try XCTUnwrap(ReaderCauseTable.entry(code: "usage_not_reported", tool: "kimi", toolName: "Kimi Code"))
+        XCTAssertEqual(other.reason.chinese, "Kimi Code 不提供用量百分比，只显示余额")
+    }
+
     /// Review finding (GLM Q2): no step may suggest a button that does not exist. Only the card's Settings entry is a
     /// real control, so every cause either points at it or is plain guidance that renders no control.
     func testEveryCauseNextStepIsTheWiredSettingsEntryOrPlainGuidance() throws {

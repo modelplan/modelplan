@@ -118,7 +118,7 @@ final class DecodeTests: XCTestCase {
                 try check(entry.type, wrongType, accepted: field.wrongType, context: entry.type + "." + field.field + " type")
             }
         }
-        XCTAssertEqual(fields, 128)
+        XCTAssertEqual(fields, 132)
     }
 
     func testModelScopeAndResetEventsRejectMalformedValues() throws {

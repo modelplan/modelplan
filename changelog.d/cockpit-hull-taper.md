@@ -1,1 +1,0 @@
-The cockpit hull is narrow under the porthole and steps out above the instruments, as in the design; the porthole frame keeps its rounded sides, the closed cockpit sits right under the menu bar with its lid aligned to the walls, and the title strip shows the rocket mark with the ModelPlan wordmark.
