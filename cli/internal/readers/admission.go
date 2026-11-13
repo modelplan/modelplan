@@ -18,7 +18,8 @@ var (
 // CheckAdmission applies the first-batch policy before credential or source I/O.
 // A saved-login grant cannot approve a vendor's POST request. Approval requires a
 // reviewed policy change; the exact request set and body schema are compiled here.
-// Gemini Code Assist and Cursor were approved as pinned on 2026-10-29.
+// Gemini Code Assist and Cursor were approved as pinned on 2026-10-29; the opt-in
+// Gemini token refresh (one POST to Google's OAuth token endpoint) by D232, 2026-11-13.
 // Local history is independent and remains eligible under its own consent.
 func CheckAdmission(scope string) error {
 	switch scope {
@@ -27,7 +28,7 @@ func CheckAdmission(scope string) error {
 		consent.ScopeMiniMaxAccountUsageAPIKey, consent.ScopeClaudeAccountUsageSavedLogin,
 		consent.ScopeKimiAccountUsageAPIKey, consent.ScopeKimiAccountUsageSavedLogin,
 		consent.ScopeZaiAccountUsageAPIKey, consent.ScopeOpenCodeGoAccountUsageAPIKey,
-		consent.ScopeGrokAccountUsageSavedLogin:
+		consent.ScopeGrokAccountUsageSavedLogin, consent.ScopeGeminiAccountUsageTokenRefresh:
 		return nil
 	default:
 		return ErrUnsupportedScope

@@ -52,6 +52,11 @@ func EraseScope(p Paths, scope string, forget bool) error {
 		return nil
 	}
 	d, known := consent.Definition(scope)
+	if known && d.Requires != "" {
+		// An extension scope stores nothing: its refreshed token lives only in memory and is
+		// keyed to the grant generation, which this revoke changes.
+		return nil
+	}
 	if !known {
 		return forgetTool(p, tool, false, forget, "")
 	} // Erase established cache formats even after a reader retires.

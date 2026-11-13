@@ -117,6 +117,7 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 				continue
 			}
 			g.SavedLogin = true
+			g.TokenRefresh = id == "gemini" && state.AllowsScope(consent.ScopeGeminiAccountUsageTokenRefresh, mode)
 			g.KeychainConsent = state.KeychainStatus(id, mode)
 			g.Keychain = g.KeychainConsent == "allowed"
 			g.KeychainPriorGrant = g.Keychain

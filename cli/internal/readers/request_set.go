@@ -71,6 +71,11 @@ func requestSet(scope string, r *http.Request) (requestPin, bool) {
 		default:
 			valid = false
 		}
+	case consent.ScopeGeminiAccountUsageTokenRefresh:
+		// D232: one refresh-token exchange, no bearer header, closed form body.
+		method, p.body = http.MethodPost, "gemini_refresh"
+		p.headers = []string{"Accept", "Content-Type", "User-Agent"}
+		valid = host == "oauth2.googleapis.com" && path == "/token"
 	case consent.ScopeCursorAccountUsageSavedLogin:
 		p.limit, p.crossHost, method, p.body = 2, true, http.MethodPost, "cursor"
 		switch {
@@ -113,7 +118,11 @@ func (p requestPin) validHeaders(r *http.Request) bool {
 				return false
 			}
 		}
-		if r.Header.Get("Content-Type") != "application/json" || r.Header.Get("Accept") != "application/json" || r.Header.Get("User-Agent") != "modelplan" {
+		contentType := "application/json"
+		if p.body == "gemini_refresh" {
+			contentType = "application/x-www-form-urlencoded"
+		}
+		if r.Header.Get("Content-Type") != contentType || r.Header.Get("Accept") != "application/json" || r.Header.Get("User-Agent") != "modelplan" {
 			return false
 		}
 	}

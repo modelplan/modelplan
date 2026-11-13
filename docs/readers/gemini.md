@@ -195,12 +195,50 @@ method/authority/path/header-name/body-schema and cold/warm request counts;
 include a failing extra-field/extra-call/refresh or copied-token example.
 No approved-POST transport/body-schema or live-server safety result is claimed.
 
+## Token refresh (D232, owner decision 2026-11-13)
+
+The owner asked for CodexBar parity on the one-hour access token. A separate scope,
+`gemini.account_usage.token_refresh`, extends the saved-login scope above. It is
+unchecked (`defaultCheck: false`), has no effect unless `gemini.account_usage.saved_login`
+is also allowed, follows the same consent text version and is never allowed in Passive mode.
+
+| Slot | Method | Host | Path | Application-set header names | Body |
+| --- | --- | --- | --- | --- | --- |
+| G0, only when the saved access token has lapsed | POST | `oauth2.googleapis.com` | `/token` | `Accept`, `Content-Type` (`application/x-www-form-urlencoded`), `User-Agent` | exactly `client_id`, `client_secret`, `grant_type=refresh_token`, `refresh_token`, each once |
+
+- Client: the Gemini CLI's installed-app OAuth client as published in its open-source
+  repository ([oauth2.ts lines 76-85 at b9776560](https://github.com/google-gemini/gemini-cli/blob/b9776560ea5710bc673891499aaec68c737d160a/packages/core/src/code_assist/oauth2.ts#L76-L85),
+  Apache-2.0; the file notes the secret is not treated as a secret for an installed
+  application). ModelPlan never reads a client secret from the installed binary or the
+  login file; a `client_secret` field in `oauth_creds.json` is ignored.
+- No `Authorization` header is sent to the token endpoint; the refresh scope's pin cannot
+  reach Code Assist, and the saved-login pin cannot reach the token endpoint.
+- The new access token (and its ID token, used only for the keyed account binding) stays in
+  the process's memory, keyed by a hash of profile, saved login and grant generation, and is
+  reused until a minute before it lapses. `~/.gemini` and ModelPlan's cache are never written;
+  the read still checks that `oauth_creds.json` did not change during the read.
+- A refused refresh (HTTP 400/401, for example `invalid_grant`) ends the read as expired with
+  `http_401`; a malformed reply is `schema_changed`; neither keeps response text. Revoking
+  the scope erases nothing (it stores nothing) and changes the grant generation, which drops
+  the in-memory token.
+- Behaviour reference: CodexBar `GeminiStatusProbe.swift` at
+  `7447bc77c2497323d9c41e40164ce705533493c8` (MIT). CodexBar also writes the refreshed token
+  back to `oauth_creds.json` and can read the client from the installed CLI; ModelPlan does neither.
+- Proposed Settings copy (app follow-up): "Renew the Gemini CLI sign-in when it lapses
+  (Google's token endpoint; the new token stays in memory)" /
+  "Gemini CLI 登录过期时自动续期（访问 Google 的令牌接口，新令牌只保存在内存中）".
+
+Fixtures: `TestD232GeminiRefreshesLapsedTokenInMemoryOnly`,
+`TestD232GeminiRefreshFailuresStopBeforeCodeAssist`,
+`TestD232GeminiLapsedTokenWithoutRefreshConsentMakesNoRequest` (quota),
+`TestD232GeminiRefreshPin` (readers), `TestD232GeminiTokenRefreshScopeIsAnOptInExtension` (consent).
+
 ## Choice
 
 Approved capability and tier: the exact H/O saved-login request set above,
 standard and unchecked (`defaultCheck: false`), subject to per-scope consent
 and the shared admission/budget rules. Local history keeps its separate consent and does not
-stand in for account quota. Reject token refresh, arbitrary selectors/hosts,
+stand in for account quota. Token refresh is rejected under this scope and admitted only under the separate D232 scope above. Reject arbitrary selectors/hosts,
 project enumeration, browser/CLI fallbacks and method substitution.
 
 Licence: original card/schema analysis of the public client; no upstream code is
