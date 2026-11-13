@@ -213,6 +213,21 @@ func buildCandidate(in Input, c *candidate) Row {
 	}
 	if exportValues {
 		row.Accounts = buildAccounts(in, c)
+		// D228: every current reading carries a balance and none a usage percentage (Grok's
+		// X Subscription bills reports only the prepaid balance), so the row says so plainly.
+		balanceOnly, anyCurrent := true, false
+		for _, a := range row.Accounts {
+			if a.ValueState != ValueStateCurrent {
+				continue
+			}
+			anyCurrent = true
+			percent := false
+			for _, w := range a.Windows {
+				percent = percent || w.RemainingPercent != nil
+			}
+			balanceOnly = balanceOnly && a.Credits != nil && !percent
+		}
+		f.UsageNotReported = anyCurrent && balanceOnly
 		for _, a := range row.Accounts {
 			switch a.ValueState {
 			case ValueStateCurrent:

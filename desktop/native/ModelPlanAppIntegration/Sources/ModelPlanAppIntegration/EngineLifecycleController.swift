@@ -11,6 +11,8 @@ import ModelPlanShell
     private let composition: EngineDockMenuComposition
     private let onPause: @MainActor () -> Void
     private let onReady: @MainActor () -> Void
+    /// First run v1: the reader did not start (spawn, handshake or first subscription failed), for the page to say so.
+    private let onStartFailed: (@MainActor () -> Void)?
     private var attachment: UUID?
     private var desired = false, subscriptionReady = false, delivered = false, manualRetry = false
     private var generation: UInt64 = 0
@@ -18,8 +20,8 @@ import ModelPlanShell
     private var startTask: Task<Void, Never>?, stopTask: Task<Void, Never>?
 
     init(composition: EngineDockMenuComposition, onPause: @escaping @MainActor () -> Void,
-         onReady: @escaping @MainActor () -> Void) {
-        self.composition = composition; self.onPause = onPause; self.onReady = onReady
+         onReady: @escaping @MainActor () -> Void, onStartFailed: (@MainActor () -> Void)? = nil) {
+        self.composition = composition; self.onPause = onPause; self.onReady = onReady; self.onStartFailed = onStartFailed
         attachment = composition.store.attach(self)
     }
     func suspend() {
@@ -51,7 +53,7 @@ import ModelPlanShell
             } catch {
                 guard self.desired, self.generation == token, !Task.isCancelled else { return }
                 Logger(subsystem: "org.modelplan.community", category: "lifecycle").error("Engine restart or consent failed")
-                self.subscriptionReady = false; self.delivered = false; self.onPause()
+                self.subscriptionReady = false; self.delivered = false; self.onPause(); self.onStartFailed?()
             }
         }
     }
@@ -89,8 +91,8 @@ import ModelPlanShell
          lockEvents: NotificationCenter, displayIDs: @escaping @MainActor () -> Set<UInt32>, onConsole: @escaping @MainActor () -> Bool?,
          displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool,
          onPause: @escaping @MainActor () -> Void, onReady: @escaping @MainActor () -> Void,
-         onGateOpen: @escaping @MainActor () -> Void) {
-        let worker = EngineLifecycleWorker(composition: composition, onPause: onPause, onReady: onReady)
+         onGateOpen: @escaping @MainActor () -> Void, onStartFailed: (@MainActor () -> Void)? = nil) {
+        let worker = EngineLifecycleWorker(composition: composition, onPause: onPause, onReady: onReady, onStartFailed: onStartFailed)
         let gate = LifecycleCoordinator(store: worker)
         self.worker = worker; self.gate = gate
         self.events = SystemEvents(gate: gate, workspace: workspace, local: local, distributed: lockEvents, displayIDs: displayIDs,

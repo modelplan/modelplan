@@ -16,6 +16,7 @@ type classification struct {
 	Failure                         Code
 	Busy                            bool
 	Estimated                       bool
+	UsageNotReported                bool
 }
 
 // classify is the first matching row of the approved table. Missing/retired
@@ -77,6 +78,9 @@ func classify(f classification) Outcome {
 	} else if f.Current > 0 { // 10: C + N is fresh; R always took precedence.
 		if f.Estimated {
 			return Describe(CodeEstimated)
+		}
+		if f.UsageNotReported {
+			return Describe(CodeUsageNotReported)
 		}
 		return Describe(CodeOK)
 	}

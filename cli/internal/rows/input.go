@@ -122,8 +122,9 @@ type AccountInput struct {
 }
 
 type CreditsInput struct {
-	Balance *float64
-	Unit    string
+	Balance  *float64
+	Unit     string
+	Currency string
 }
 
 // WindowInput keys/roles/plans may contain raw provider values. The projection

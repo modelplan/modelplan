@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -474,6 +475,132 @@ func TestImportStopsReadingASourceWhoseGrantIsRevokedMidRun(t *testing.T) {
 	}
 	if r, _ := total(l, "claude-code"); r != 1 {
 		t.Fatalf("claude import lost: %d", r)
+	}
+}
+
+// HIST-IMP-12: a log that cannot be read is never marked covered; it is retried alone.
+func TestImportRetriesAnUnreadableLogWithoutRecountingTheRest(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	b := f.claudeLog("b.jsonl", -2)
+	if err := os.Chmod(b, 0); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 1 {
+		t.Fatalf("first run: %d", r)
+	}
+	if c := l.Coverage["claude-code"]; len(c.Retry) != 1 || c.Retry[0].Key != RetryKey(b) {
+		t.Fatalf("unreadable log not queued for retry: %+v", c)
+	}
+	// The retry queue names the log by hash: no path (it can carry a project name) reaches the ledger file.
+	if raw, err := os.ReadFile(ImportPath(f.cache)); err != nil || strings.Contains(string(raw), b) || strings.Contains(string(raw), `"path"`) {
+		t.Fatalf("ledger holds a path: %s %v", raw, err)
+	}
+	// still unreadable: stays queued, nothing double counted
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 1 || len(l.Coverage["claude-code"].Retry) != 1 {
+		t.Fatalf("second run: %d %+v", r, l.Coverage)
+	}
+	if err := os.Chmod(b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 2 {
+		t.Fatalf("after restore: %d", r)
+	}
+	if len(l.Coverage["claude-code"].Retry) != 0 {
+		t.Fatalf("retry not cleared: %+v", l.Coverage)
+	}
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 2 {
+		t.Fatalf("recounted: %d", r)
+	}
+}
+
+// A log queued for retry that the next run also lists (deeper history) is read once, so its owed turns count.
+func TestImportRetryWithExtendedDepth(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	// b carries its own request id: a shared id would be deduped across files for another reason.
+	b := filepath.Join(f.claude, "projects", canaryPath, "b.jsonl")
+	writeLines(t, b, claudeTurnAt(-2*dayS, "other-request-id", "claude-fixture")...)
+	os.Chtimes(b, f.now, f.now)
+	if err := os.Chmod(b, 0); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	if err := os.Chmod(b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.run(60, both())
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 2 {
+		t.Fatalf("owed turns lost after a deeper import: %d", r)
+	}
+	if c := l.Coverage["claude-code"]; len(c.Retry) != 0 {
+		t.Fatalf("retry not cleared: %+v", c)
+	}
+}
+
+// macrevb-874-1 / glm-874-3: a log whose folder cannot be listed is not deleted. Its retry stays owed
+// while the folder is unreadable, and the log is read exactly once after the folder is restored. The
+// failures are injected (not chmod) so the test means the same when run as root.
+func TestImportRetrySurvivesAnUnreadableFolder(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	b := filepath.Join(f.claude, "projects", "synthetic-retry-folder", "b.jsonl")
+	if err := os.MkdirAll(filepath.Dir(b), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeLines(t, b, claudeTurnAt(-2*dayS, "synthetic-unique-request", "claude-fixture")...)
+	dir := filepath.Dir(b)
+	unreadable, unlistable := false, false
+	t.Cleanup(func() { importWalkDir, importOpen = filepath.WalkDir, os.Open })
+	importOpen = func(p string) (*os.File, error) {
+		if unreadable && p == b {
+			return nil, fs.ErrPermission
+		}
+		return os.Open(p)
+	}
+	importWalkDir = func(root string, fn fs.WalkDirFunc) error {
+		return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if unlistable && err == nil && d.IsDir() && p == dir {
+				if r := fn(p, d, nil); r != nil {
+					return r
+				}
+				if r := fn(p, d, fs.ErrPermission); r != nil {
+					return r
+				}
+				return fs.SkipDir
+			}
+			return fn(p, d, err)
+		})
+	}
+	retries := func() int { l, _ := LoadImported(f.cache); return len(l.Coverage["claude-code"].Retry) }
+	turns := func() int { l, _ := LoadImported(f.cache); n, _ := total(l, "claude-code"); return n }
+	unreadable = true
+	f.run(30, both())
+	if retries() != 1 {
+		t.Fatal("precondition: retry not queued")
+	}
+	unlistable = true
+	f.run(30, both())
+	if retries() != 1 {
+		t.Fatal("retry dropped while its folder is unreadable")
+	}
+	unreadable, unlistable = false, false
+	f.run(30, both())
+	if turns() != 2 || retries() != 0 {
+		t.Fatalf("restored log: turns=%d want 2, retries=%d", turns(), retries())
+	}
+	f.run(30, both())
+	if turns() != 2 {
+		t.Fatal("restored log counted twice")
 	}
 }
 
