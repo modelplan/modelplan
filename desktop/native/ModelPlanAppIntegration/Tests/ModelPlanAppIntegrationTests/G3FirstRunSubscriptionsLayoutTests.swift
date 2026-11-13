@@ -175,7 +175,7 @@ private actor G3LayoutEngine: EngineClient {
                 let root = try XCTUnwrap(window.contentView)
                 let views = flatten(root).filter { $0 is NSControl || $0 is SettingsDiagramView }
                 var problems = layoutProblems(in: views, root: root)
-                let column = try ["firstRun.title", "firstRun.privacy", "firstRun.subscriptions", "firstRun.login", "firstRun.done"]
+                let column = try ["firstRun.title", "firstRun.privacy", "firstRun.publicRecommendation", "firstRun.learnMore", "firstRun.subscriptions", "firstRun.login"]
                     .map { try control($0, in: window, as: NSView.self) }
                 problems += leadingEdgeProblems(column, label: "leading edge")
                 // The permissions column shares the page's leading edge and width.

@@ -6,7 +6,9 @@ import {esc, tok, unit, md, mon, tip, fill} from './fmt.js';
 import {accountsIn} from './scope.js';
 import {statusItems,statusRow} from './public-helpers.js';
 
-const DAY = 864e5;
+// The same local wall time `back` calendar days earlier: a day across a DST change is 23 or 25 hours, so fixed 24-hour
+// steps would date a bucket a day off (audit F 6). The series are indexed by local calendar day (prototype-history.ts).
+const daysBefore = (ms, back) => { const x = new Date(ms); return new Date(x.getFullYear(), x.getMonth(), x.getDate() - back, x.getHours(), x.getMinutes(), x.getSeconds(), x.getMilliseconds()).getTime(); };
 
 export function alertList(d, {max = 3} = {}) {
   const a = statusItems(d.alerts);
@@ -34,7 +36,7 @@ export function overviewBars(d,ui,list){
  const pitch=W/n,bw=Math.max(.5,pitch-2),height=base-top,scale=(height-(ui.stack?Math.max(0,ser.length-1)*2:0))/max;
  let body='';
  for(let i=0;i<n;i++){
-  const at=instants?.[i], stamp=hourly?(at!=null?new Date(at).toLocaleTimeString(ui.lang,{hour:'2-digit',minute:'2-digit',hour12:false,timeZoneName:'shortOffset'}):`${String(i).padStart(2,'0')}:00`):md(d.now-(n-1-i)*DAY,ui);
+  const at=instants?.[i], stamp=hourly?(at!=null?new Date(at).toLocaleTimeString(ui.lang,{hour:'2-digit',minute:'2-digit',hour12:false,timeZoneName:'shortOffset'}):`${String(i).padStart(2,'0')}:00`):md(daysBefore(d.now,n-1-i),ui);
   const per=ser.filter(x=>x.v[i]!=null),lines=[`${stamp} · ${per.length?tok(total[i]):t('mfd.noRecord')}`,...per.map(x=>`${x.a.short} ${tok(x.v[i])}${importNote(x.imp[i],x.v[i])}`)],imported=ser.reduce((s,x)=>s+(x.imp[i]||0),0);
   let y=base;
   const active=ser.filter(x=>(x.v[i]||0)>0),last=active.at(-1);
@@ -60,9 +62,9 @@ function legend(d,ui,list){const colours=new Map(chartPalette(d.accounts.filter(
    scope. Hover: the date and the tokens per subscription. Days before the record began have no cell. */
 export function heatCells(d, ui, list) {
   const today = new Date(d.now), wdToday = (today.getDay() + 6) % 7, count = 25 * 7 + wdToday + 1;
-  const len = Math.max(...list.map(x => x.daily.values.length)), first = d.now - (count - 1) * DAY;
+  const len = Math.max(...list.map(x => x.daily.values.length)), first = daysBefore(d.now, count - 1);
   const cells = Array.from({length: count}, (_, k) => {
-    const at = first + k * DAY, per = list.map(x => ({a: x.a, v: x.daily.values[x.daily.values.length - count + k] ?? null, i: (x.daily.imported || [])[x.daily.values.length - count + k] ?? 0}));
+    const at = daysBefore(d.now, count - 1 - k), per = list.map(x => ({a: x.a, v: x.daily.values[x.daily.values.length - count + k] ?? null, i: (x.daily.imported || [])[x.daily.values.length - count + k] ?? 0}));
     const rec = per.filter(p => p.v != null);
     return {k, at, col: Math.floor(k / 7), row: k % 7, recorded: rec.length > 0, total: rec.reduce((s, p) => s + p.v, 0), imported: rec.reduce((s, p) => s + p.i, 0), per: rec};
   });
@@ -82,12 +84,12 @@ function heatmap(d, ui, list) {
   const c = Math.max(5, Math.min(14, Math.floor((AW + gap) / 26 - gap), Math.floor((AH - top - since + gap) / 7 - gap))), pitch = c + gap;
   const colour = ui.scope ? list[0]?.a.colour : null;
   const months = [];
-  for (let col = 0; col < 26; col++) { const at = first + col * 7 * 864e5, prev = at - 7 * 864e5; if (col === 0 || new Date(at).getMonth() !== new Date(prev).getMonth()) months.push({col, at}); }
+  for (let col = 0; col < 26; col++) { const at = daysBefore(first, -col * 7), prev = daysBefore(at, 7); if (col === 0 || new Date(at).getMonth() !== new Date(prev).getMonth()) months.push({col, at}); }
   const H = top + 7 * pitch - gap, W = 26 * pitch - gap, x0 = Math.max(0, Math.floor((AW - W) / 2)), y0 = Math.max(0, Math.floor((AH - since - H) / 2));
   const rects = cells.map(x => {
     if (x.step == null) return '';
     const lines = [md(x.at, ui), ...(x.per.length ? x.per.map(p => `${p.a.short} ${tok(p.v)}${importNote(p.i, p.v)}`) : [t('mfd.noRecord')])];
-    return `<rect class="hm s${x.step} ${x.at + 864e5 > d.now ? 'today' : ''}" x="${x.col * pitch}" y="${top + x.row * pitch}" width="${c}" height="${c}" rx="1.2" data-tip="${tip(lines)}"/>`;
+    return `<rect class="hm s${x.step} ${startOfDay(x.at) === startOfDay(d.now) ? 'today' : ''}" x="${x.col * pitch}" y="${top + x.row * pitch}" width="${c}" height="${c}" rx="1.2" data-tip="${tip(lines)}"/>`;
   }).join('');
   return `<svg class="ov-heat ${colour ? 'vendor' : ''}" style="left:${x0}px;top:${y0}px;${colour ? `--hv:${colour}` : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t('mfd.heatAria')}">
     ${months.filter((m, i) => !i || m.col - months[i - 1].col >= 3).map(m => `<text class="hm-m" x="${m.col * pitch}" y="9">${esc(mon(m.at, ui))}</text>`).join('')}${rects}</svg>
