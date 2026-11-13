@@ -132,7 +132,8 @@ func projector(cache string, labels bool) func(source, cwd string, np nativeProj
 			}
 		case "zcode":
 			if np.ID != "" && np.ID != "global" {
-				id = "zcode:" + np.ID
+				// ZCode stores no project name; its own record of the session folder gives the folder name.
+				id, name = "zcode:"+np.ID, nativeLabel(cwd)
 			}
 		}
 		if id == "" {

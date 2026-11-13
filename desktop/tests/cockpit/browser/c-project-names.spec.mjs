@@ -55,4 +55,8 @@ test('G3-100 a session with no project reads "No project" while names are on, an
  await expect(page.locator('.t-proj').first()).toHaveText('No project');
  expect(await receive(send('appearance',{...appearance,showProjectNames:false}))).toBe(true);
  await expect(page.locator('.t-proj').first()).toHaveText('--');
+ const unnamed=structuredClone(data);unnamed.details.sessions[0].projectLabel='Unnamed project';
+ expect(await receive(send('appearance',{...appearance,showProjectNames:true}))).toBe(true);
+ expect(await receive(send('display',{data:unnamed}))).toBe(true);
+ await expect(page.locator('.t-proj').first()).toHaveText('Unnamed project');
 });

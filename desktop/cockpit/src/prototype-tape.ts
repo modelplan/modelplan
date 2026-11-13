@@ -5,6 +5,8 @@ import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
 import {sessionMember,memberColours,NEUTRAL} from './session-binding.js';
 import {shortLabel} from '../study/rocket-r1/short-label.js';
+// The producer's label for a project that has a reference but no name the tool stores (cockpit_details.go).
+const UNNAMED='Unnamed project';
 type Locale='en'|'zh-CN';
 const esc=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 type TapeSession=NonNullable<WireCockpitData['details']>['sessions'][number];
@@ -28,7 +30,7 @@ export function mountPrototypeTape(root:HTMLElement,link?:TapeLink){
    const rate=s.state==='running'&&s.rate!==null&&Number.isFinite(s.rate)&&s.rate>=0?s.rate:null;
    const running=s.state==='running'?(locale==='en'?'Running':'运行中'):(locale==='en'?'Last seen':'最近读数'),rateLabel=rate===null?'':(locale==='en'?'Session rate ':'会话速率 ')+rate+' t/s';
    // G3-100: no project in the tool's own definition reads "No project"; with names turned off the label stays hidden ("--").
-   const project=s.projectLabel??(named?(locale==='en'?'No project':'无项目'):'--');
+   const project=s.projectLabel===UNNAMED?(locale==='en'?UNNAMED:'未命名项目'):s.projectLabel??(named?(locale==='en'?'No project':'无项目'):'--');
    const linked=!!link&&(!!s.subscriptionRef||link.knows(s.sessionRef));
    return `<button class="tl t-observed" type="button"${linked?'':' aria-disabled="true" tabindex="-1"'} data-session="${esc(s.sessionRef)}" aria-label="${esc([s.source,s.model,s.effort??'--',project,running,rateLabel].filter(Boolean).join(' · '))}">
    <i class="chip"></i><span class="t-tool">${esc(s.source)}</span><span class="t-model" title="${esc(s.model)}">${esc(modelName(s.model))}</span><span class="t-eff">${esc(s.effort??'--')}</span>

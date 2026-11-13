@@ -299,11 +299,9 @@ func cockpitModelID(raw, source string, models []digest.Model) string {
 	return "unknown"
 }
 
-// unnamedProjectLabel: a language-neutral tag for a project that has a reference but no stored name.
-func unnamedProjectLabel(ref string) *string {
-	if len(ref) > 6 {
-		ref = ref[:6]
-	}
-	v := "#" + ref
+// unnamedProjectLabel: the label of a project that has a reference but no readable name. The page shows it
+// in the viewer's language (prototype-tape.ts matches this exact text).
+func unnamedProjectLabel(string) *string {
+	v := "Unnamed project"
 	return &v
 }
