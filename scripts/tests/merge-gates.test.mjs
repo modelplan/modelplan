@@ -857,7 +857,7 @@ test("an action_required run never ran: it is skipped when picking the latest ru
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "success", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.SUCCESS);
 });
 
-test("D239: reader, detection and metric PRs name the reference app they follow, or none with a reason", () => {
+test("D239: reader, detection and metric PRs name the reference app they follow, or none with a reason (advisory, D243)", () => {
   const ok = (body, files) => evalPr({ p: pr({ body }), files, comments: [comment(v("merge", H, "macrev2")), comment(`GLMREV: OK @ ${H}`)], verified: () => true });
   // Scope: the reader packages and the reader-cause copy table; everything else is untouched by the rule.
   for (const p of ["cli/internal/quota/claude.go", "cli/internal/detect/catalogue.go", "cli/internal/localusage/codex.go",
@@ -869,15 +869,20 @@ test("D239: reader, detection and metric PRs name the reference app they follow,
     assert.equal(R.referenceTouch([p]), false, p);
 
   const reader = [file("cli/internal/quota/claude.go")];
-  const missing = evalPr({ p: pr({ body: "Scenarios: none" }), files: reader });
-  assert.equal(missing.state, R.FAILURE);
-  assert.match(missing.why, /Reference: line/);
-  assert.match(missing.why, /D239/);
-  assert.equal(evalPr({ p: pr({ draft: true, body: "Scenarios: none" }), files: reader }).state, R.FAILURE, "a draft sees it at once");
+  // D243 step 3: a missing or malformed line is reported in the description, never a FAILURE.
+  const missing = ok("Scenarios: none", reader);
+  assert.equal(missing.state, R.SUCCESS);
+  assert.match(missing.why, /; info: no Reference: line \(D239\)$/);
+  const draft = evalPr({ p: pr({ draft: true, body: "Scenarios: none" }), files: reader });
+  assert.equal(draft.state, R.PENDING, "a draft only waits");
+  assert.match(draft.why, /^draft; info: no Reference: line/, "and sees the note at once");
   // A renamed-away reader file counts too.
-  assert.equal(evalPr({ p: pr({ body: "Scenarios: none" }), files: [file("cli/internal/old/a.go", { previous_filename: "cli/internal/detect/a.go" })] }).state, R.FAILURE);
+  const renamed = ok("Scenarios: none", [file("cli/internal/old/a.go", { previous_filename: "cli/internal/detect/a.go" })]);
+  assert.equal(renamed.state, R.SUCCESS);
+  assert.match(renamed.why, /info: no Reference: line/);
   // Out of scope: no line needed.
   assert.equal(ok("Scenarios: none", [file("cli/internal/rows/rows.go")]).state, R.SUCCESS);
+  assert.doesNotMatch(ok("Scenarios: none", [file("cli/internal/rows/rows.go")]).why, /info:/);
 
   const good = {
     "Reference: CodexBar@0827f30 Sources/CodexBarCore/Providers/Claude/ClaudeUsageFetcher.swift": [["CodexBar", "0827f30"]],
@@ -894,6 +899,7 @@ test("D239: reader, detection and metric PRs name the reference app they follow,
     assert.deepEqual(parsed.refs.map((r) => [r.app, r.ref]), refs, line);
     const r = ok(`Scenarios: none\n${line}`, reader);
     assert.equal(r.state, R.SUCCESS, `${line}: ${r.why}`);
+    assert.doesNotMatch(r.why, /info:/, line);
   }
   for (const line of [
     "Reference:",
@@ -910,9 +916,9 @@ test("D239: reader, detection and metric PRs name the reference app they follow,
     "Reference: CodexBar@0827f30 Sources/a.swift; Pulse",
     "References: CodexBar@0827f30 Sources/a.swift",
   ]) {
-    const r = evalPr({ p: pr({ body: `Scenarios: none\n${line}` }), files: reader, comments: [comment(v("merge", H, "macrev2"))] });
-    assert.equal(r.state, R.FAILURE, line);
-    assert.match(r.why, /Reference/, line);
+    const r = ok(`Scenarios: none\n${line}`, reader);
+    assert.equal(r.state, R.SUCCESS, line);
+    assert.match(r.why, /info: (Reference: line malformed|no Reference: line) \(D239\)/, line);
   }
   assert.equal(R.parseReference("no line").declared, false);
   assert.equal(R.parseReference("References: #12").declared, false, "a References line is not the declaration");

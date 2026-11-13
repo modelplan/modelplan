@@ -344,7 +344,8 @@ export function evidenceState(pr, items, head, tiers = new Map(), { designTouchi
 // Reader, detection and metric work follows a named reference app (docs/readers/integration-standard.md §3).
 // A PR touching these paths must carry a body line
 //   Reference: <app>@<commit-or-tag> <path>[, <path>][; <app>@<ref> <path> ...]
-// naming at least one panel app, or "Reference: none (<reason>)". Missing or malformed fails at once, drafts too.
+// naming at least one panel app, or "Reference: none (<reason>)". D243 step 3 (owner 2026-11-13): advisory only. A
+// missing or malformed line is reported in the status description ("info:"), drafts too, and never fails.
 const REFERENCE_SCOPE_RE = /^cli\/internal\/(quota|detect|localusage|speed|consent)\/|^desktop\/native\/.*\/Sources\/.*ReaderCause[^/]*\.swift$|^desktop\/cockpit\/src\/(.*\/)?reader-?causes?[^/]*$/i;
 export const REFERENCE_APPS = Object.freeze({ codexbar: "CodexBar", pulse: "Pulse", tokenmonitor: "TokenMonitor", ccusage: "ccusage", tokei: "Tokei" });
 const REFERENCE_LINE = /^\s*\*{0,2}Reference(?::\*{0,2}|\*{0,2}:)\s*/i;
@@ -533,7 +534,8 @@ export function dataSyncProblem({ pr, files, items, sync }) {
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
 export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
-  const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
+  let info = null;
+  const res = (state, why, extra = {}) => ({ state, why: info ? `${why}; info: ${info}` : why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
   if (pr.state !== "open") return res(FAILURE, `PR is ${pr.state}`);
   if (pr.base.ref !== "main") return res(FAILURE, `base is ${pr.base.ref}, not main; coordinator decides`);
@@ -550,8 +552,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (evidence.state === FAILURE) return res(FAILURE, evidence.why);
   const gap = trainScenarioGap(pr, members);
   if (gap) return res(FAILURE, gap);
-  const reference = referenceProblem(pr, prPaths(files));
-  if (reference) return res(FAILURE, reference);
+  if (referenceProblem(pr, prPaths(files))) info = parseReference(pr.body).declared ? "Reference: line malformed (D239)" : "no Reference: line (D239)";
   if (pr.draft) return res(PENDING, "draft");
 
   const paths = prPaths(files);
