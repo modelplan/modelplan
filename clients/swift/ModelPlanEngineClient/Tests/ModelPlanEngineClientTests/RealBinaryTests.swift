@@ -167,6 +167,10 @@ extension RealBinaryTests {
         let data = (try? Data(contentsOf: home.appendingPathComponent("proxy.trace"))) ?? Data()
         return String(decoding: data, as: UTF8.self).contains("\"method\":\"" + method + "\"")
     }
+    func traceCount(_ home: URL, method: String) -> Int {
+        let data = (try? Data(contentsOf: home.appendingPathComponent("proxy.trace"))) ?? Data()
+        return String(decoding: data, as: UTF8.self).components(separatedBy: "\"method\":\"" + method + "\"").count - 1
+    }
     func testBusyBootstrapRowsAreRetriedWithoutChangingConsent() async throws {
         let binary = try binary(); let home = try home(); let probe = EventProbe()
         try cli(binary, home: home, arguments: ["consent", "init", "--json"])
@@ -174,6 +178,9 @@ extension RealBinaryTests {
         addTeardownBlock { await client.stop() }
         let context = try await client.start()
         try await eventually { await probe.rowCount() > 0 }
+        // Rows can arrive from an unsolicited rows/changed before the retried subscribe is
+        // written to the trace, so wait for the retry itself instead of the first row.
+        try await eventually(timeout: 15) { self.traceCount(home, method: "rows/subscribe") >= 2 }
         let observed = await client.context
         XCTAssertEqual(observed, context)
         XCTAssertTrue(client.isCurrent(context))
