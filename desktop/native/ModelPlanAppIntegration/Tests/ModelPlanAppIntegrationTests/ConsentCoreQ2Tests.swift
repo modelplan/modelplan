@@ -144,7 +144,8 @@ import ModelPlanCore
         XCTAssertEqual(context.about.cliState, .unavailable)
         XCTAssertEqual(context.about.cliVersion, "unknown")
         XCTAssertEqual(context.about.version, "1.2.3"); XCTAssertEqual(context.about.macOSVersion, "15.4.3")
-        let rows = try SettingsCatalogue.rows(preferences: .init(), context: context, paneID: "about")
+        var chinese = SettingsPreferences(); chinese.language = .chinese // the oracle below is Chinese; the default is English
+        let rows = try SettingsCatalogue.rows(preferences: chinese, context: context, paneID: "about")
         let status = try XCTUnwrap(rows.first { $0.key == .cliStatus })
         if case .text(let copy) = status.value { XCTAssertTrue(copy.contains("核验")); XCTAssertNotEqual(copy, "unavailable") }
         else { XCTFail("Expected human status") }
