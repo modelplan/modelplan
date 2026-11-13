@@ -26,7 +26,11 @@ type cxTurn struct {
 	start time.Time // the current request's
 	first int64     // its first token, unix ms; 0 unknown
 	used  bool      // its usage was counted
-	base  *cxUsage  // the cumulative usage when the turn started
+	// notice: the last usage came from a token_usage_record whose token_count notice is still to
+	// come. Codex writes that notice only after the response's tools finish and their outputs are
+	// recorded, so it can follow the next request's start; it never opens a request of its own.
+	notice bool
+	base   *cxUsage // the cumulative usage when the turn started
 }
 
 type codexParser struct {
@@ -139,6 +143,13 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		if usage == nil || usage.Output == nil || *usage.Output < 0 {
 			return
 		}
+		if event == "token_count" && t.notice {
+			t.notice = false
+			if n := len(t.reqs); n > 0 && t.reqs[n-1].out == *usage.Output {
+				t.reqs[n-1].TokenKinds.enrich(usage.kinds())
+				return
+			}
+		}
 		if t.used {
 			// The token_count notice may add cache fields to the preceding usage record.
 			if n := len(t.reqs); n > 0 && t.reqs[n-1].out == *usage.Output {
@@ -159,7 +170,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		}
 		t.reqs = append(t.reqs, r)
 		t.out += out
-		t.used = true
+		t.used, t.notice = true, kind == "token_usage_record"
 	case event == "task_complete" || event == "turn_complete":
 		var c struct {
 			Payload struct {

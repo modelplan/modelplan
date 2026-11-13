@@ -54,7 +54,7 @@ func buildAccounts(in Input, c *candidate) []Account {
 			list = []AccountInput{{}}
 		}
 		for _, raw := range list {
-			a := Account{Route: safeRoute(raw.Route), AccountLocator: safeRef(p.AccountLocator, in.IdentityOff), SubscriptionRef: safeRef(raw.SubscriptionRef, in.IdentityOff), Plan: planValue(raw.PlanID, c.declared), Beta: raw.Beta, ValueState: ValueStateNone, Windows: []Window{}}
+			a := Account{Route: safeRoute(raw.Route), AccountLocator: safeRef(p.AccountLocator, in.IdentityOff), SubscriptionRef: safeRef(raw.SubscriptionRef, in.IdentityOff), Plan: planValue(c.id, raw.PlanID, c.declared), Beta: raw.Beta, ValueState: ValueStateNone, Windows: []Window{}}
 			if c.declared != "" {
 				a.Route = RouteManual
 			}
@@ -100,7 +100,7 @@ func buildAccounts(in Input, c *candidate) []Account {
 			} else {
 				// Old subscription identity and values cannot follow a changed login/grant.
 				a.SubscriptionRef = nil
-				a.Plan = planValue("", c.declared)
+				a.Plan = planValue(c.id, "", c.declared)
 			}
 			for i := range a.Windows {
 				a.Windows[i].Current = a.ValueState == ValueStateCurrent && a.Windows[i].RemainingPercent != nil && a.Windows[i].ValidUntil != nil && in.Now.Before(*a.Windows[i].ValidUntil)

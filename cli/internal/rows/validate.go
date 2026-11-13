@@ -102,7 +102,7 @@ func Validate(in Input, out Projection) error {
 		}
 		var expiry *time.Time
 		for _, a := range row.Accounts {
-			if err := validateAccount(in, a, declaredPlan, refs); err != nil {
+			if err := validateAccount(in, row.ID, a, declaredPlan, refs); err != nil {
 				return err
 			}
 			if a.ValueState == ValueStateCurrent {
@@ -194,7 +194,7 @@ func validateOutcome(state State, reason Reason, step *NextStep, now time.Time) 
 	return nil
 }
 
-func validateAccount(in Input, a Account, declared string, refs map[string]bool) error {
+func validateAccount(in Input, tool string, a Account, declared string, refs map[string]bool) error {
 	fail := func(field string) error { return fmt.Errorf("invalid rows account field: %s", field) }
 	seenActivity := map[string]bool{}
 	for _, v := range a.Activity {
@@ -225,7 +225,7 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 		}
 	}
 	if declared != "" {
-		if !reflect.DeepEqual(a.Plan, planValue("", declared)) {
+		if !reflect.DeepEqual(a.Plan, planValue("", "", declared)) {
 			return fail("declared plan")
 		}
 	} else if a.Plan.ID == "unknown" {
@@ -237,7 +237,7 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 		if strings.HasPrefix(raw, "cursor-") {
 			raw = "cursor " + strings.TrimPrefix(raw, "cursor-")
 		}
-		expected := planValue(raw, "")
+		expected := planValue(tool, raw, "")
 		if expected.ID == "unknown" || !reflect.DeepEqual(a.Plan, expected) {
 			return fail("plan allow-list")
 		}

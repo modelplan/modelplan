@@ -197,6 +197,7 @@
         "closed",
         "no_key",
         "region_refused",
+        "no_plan",
         "other"
       ]
     },
