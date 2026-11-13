@@ -12,7 +12,7 @@ private actor LaunchEngine: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
     let store: EngineStore, facts: WireConsentFacts, rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "fr-launch", floor: .init(storeEpoch: "fr-launch", generation: 1), revision: 1)
-    private var released = false, failStart = false, holdRows = false
+    private var released = false, failStart = false, holdRows = false, stoppedWhileGated = false
     private var gate: CheckedContinuation<Void, Never>?
     private var grants: [WireConsentGrantParams] = []
     init(store: EngineStore, facts: WireConsentFacts, rows: WireRowsSnapshot, holdRows: Bool = false, failStart: Bool = false) {
@@ -28,12 +28,15 @@ private actor LaunchEngine: EngineClient {
     func start() async throws -> EngineDeliveryContext {
         if failStart { throw EngineClientError.notReady }
         if !released { await withCheckedContinuation { gate = $0 } }
+        // A stop while the handshake is pending ends that start, as a real engine stop does.
+        if stoppedWhileGated { stoppedWhileGated = false; throw CancellationError() }
         await store.consume(.connection(.ready(context))); await store.consume(.context(context))
         await store.consume(.consentChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: facts), delivery: context)))
         return context
     }
     func retry() async throws -> EngineDeliveryContext { try await start() }
-    func stop() async {}
+    /// macrevb-881-3: resume a pending start so lifecycle teardown (stopAndWait) can finish.
+    func stop() async { if let pending = gate { gate = nil; stoppedWhileGated = true; pending.resume() } }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion {
         if !holdRows { try await deliverRows() }
         return .init(requestID: .string("fr-rows"))
