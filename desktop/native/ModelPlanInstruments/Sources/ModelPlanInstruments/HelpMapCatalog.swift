@@ -49,7 +49,7 @@ public struct HelpMapCatalog: Sendable {
         case .screen: return copy("公共屏：页键切页，底键选项或返回原页。", "Main screen: page keys change pages; bottom keys select or return.")
         case .record: return copy("会话记录：运行中的在前，按一行查看详情。", "Session record: running sessions come first; press a row for details.")
         case .base: return copy("喷口光：表示这个订阅正在用，不表示额度告警。", "Glow: this subscription is working now; it does not mean an alert.")
-        case .nozzle: return copy("喷口：每个是一个订阅，悬停查看卡片、点按刷新，拖动移动整个挂件，⌥ 加方向键移动一位。", "Nozzle: each is a subscription; hover for its card, click to refresh, drag to move the widget; Option arrows move it one place.")
+        case .nozzle: return copy("喷口：每个是一个订阅，悬停查看卡片、点按刷新，拖动移动整个额度挂件，⌥ 加方向键移动一位。", "Nozzle: each is a subscription; hover for its card, click to refresh, drag to move the Quota Widget; Option arrows move it one place.")
         case .dockMove: return copy("背景与握柄：拖动可移动整个额度挂件，松手即贴到左、右、上或下边缘。", "Background and grips: drag to move the whole Quota Widget; release it on the left, right, top or bottom edge.")
         case .overflow: return copy("更多订阅：暂不支持拖动排序，可用 ⌥ 加方向键移动一位。", "Overflow: pointer dragging is unavailable; use Option arrows to reorder one place.")
         case .rings: return copy("额度圈：外圈较短、内圈较长，两个都表示剩余。", "Quota rings: outer is shorter and inner longer; both show quota left.")
