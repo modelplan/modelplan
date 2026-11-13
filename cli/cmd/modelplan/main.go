@@ -122,6 +122,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        --preview renders a sample without recording it)
   modelplan sync [--force]             refresh the local cache from the verified publication
   modelplan doctor                     show base URL, cache and publication state
+  modelplan doctor shapes --tool T --out DIR  write structure-only samples of local reader inputs (no values)
   modelplan doctor readers [--refresh] sanitised native-reader verification; cache only by default
   modelplan doctor --share             sanitised cache source/status report; no readers or network
   modelplan diagnostics --share        copy-safe versions, enabled scopes and recent error codes
@@ -254,6 +255,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	withHistory := fs.Bool("history", false, "desktop: include the 7/30-day performance history and rankings in the snapshot")
 	refreshReaders := fs.Bool("refresh", false, "doctor readers: explicitly refresh admitted readers within request budgets")
 	share := fs.Bool("share", false, "doctor: print a sanitised share report")
+	shapeTool := fs.String("tool", "", "doctor shapes: tool to sample (codex, claude, gemini, grok, antigravity, kiro, opencode, zcode, or all)")
+	shapeOut := fs.String("out", "", "doctor shapes: empty output directory")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		if !errors.Is(err, flag.ErrHelp) {
 			fmt.Fprintln(stderr, "invalid command flags")
@@ -277,6 +280,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return exitUsage
 		}
 		c.offline = true
+	}
+	if cmd == "doctor" && fs.NArg() > 0 && fs.Arg(0) == "shapes" {
+		if fs.NArg() != 1 || *share || *shapeTool == "" || *shapeOut == "" {
+			fmt.Fprintln(stderr, "usage: modelplan doctor shapes --tool NAME|all --out DIR")
+			return exitUsage
+		}
+		return doctorShapes(stdout, stderr, *shapeTool, *shapeOut)
 	}
 	if cmd == "doctor" && fs.NArg() > 0 && fs.Arg(0) == "readers" {
 		if fs.NArg() != 1 || *share || (c.offline && *refreshReaders) {
@@ -1460,7 +1470,7 @@ func reorder(args []string) []string {
 	return append(fl, pos...)
 }
 
-var takesValue = map[string]bool{"provider": true, "plan": true, "profile": true, "privacy": true, "effort-suggestion": true, "days": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
+var takesValue = map[string]bool{"provider": true, "plan": true, "profile": true, "privacy": true, "effort-suggestion": true, "days": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true, "tool": true, "out": true}
 
 func printJSON(w io.Writer, v any) int {
 	e := json.NewEncoder(w)
