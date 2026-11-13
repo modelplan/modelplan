@@ -91,7 +91,7 @@ import ModelPlanWire
         entry.acceptedFacts(try ScopeConsentFixtures.facts())
         let view = try entry.makeFirstRunView(language: .english)
         let line = try XCTUnwrap(find("scope.firstRun.import", in: view) as? NSTextField)
-        XCTAssertEqual(line.stringValue, HistoryImportText.firstRunLine.english)
+        XCTAssertEqual(line.stringValue, FirstRunCopy.smallPrint.english, "FR-9-11: the three small-print paragraphs are one")
         XCTAssertTrue(line.stringValue.contains("up to 30 days"))
         XCTAssertNil(find("settings.historyImport.start", in: view), "no extra dialog or control on the consent page")
         entry.endFirstRunPresentation()

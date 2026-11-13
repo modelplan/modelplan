@@ -2,6 +2,13 @@
 
 This repository is the canonical source for the public clients and publication reader. Write GitHub issues, PRs, comments and commits in English; discuss with the owner in their language.
 
+## Before you start
+
+Decided questions are not re-derived. Read the index in [docs/adr/README.md](docs/adr/README.md) and the ADRs that touch your task; if your plan contradicts one, name it and ask the owner before acting.
+
+- Design and visual work takes maker colours from `desktop/cockpit/src/livery-table.ts` only ([ADR 0007](docs/adr/0007-maker-colours-one-table.md)); a test fails on hard-coded maker colours elsewhere.
+- Reader, detection and metric work follows a reference app and names it in the PR's `Reference:` line ([ADR 0008](docs/adr/0008-reference-apps-for-readers.md)).
+
 ## Source, data, visual and license changes
 
 Before adding/exporting source, changing a dependency or license, editing visual assets, or changing a workflow, read [docs/source-policy.md](docs/source-policy.md). Run `node scripts/check-source-policy.mjs` before pushing. The root MIT license covers its declared software scope; per-file data and third-party notices govern their own material.
