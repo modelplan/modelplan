@@ -125,7 +125,10 @@ type claudeSessionFile struct {
 	Omitted    bool                `json:"omitted,omitempty"`
 	Nodes      []claudeSessionNode `json:"nodes"`
 	// Seq orders nodes across trims; Modified bounds every record in the file.
-	Seq      int       `json:"seq,omitempty"`
+	Seq int `json:"seq,omitempty"`
+	// GapSeq is Seq when the engine last skipped a record: nodes with a lower
+	// Index were read before it, so a newer reply may have been skipped.
+	GapSeq   int       `json:"gapSeq,omitempty"`
 	Modified time.Time `json:"modified,omitempty"`
 }
 
@@ -312,6 +315,12 @@ func claudeSessionFileProjection(file claudeSessionFile) (*claudeSessionCandidat
 	}
 	if leaf == nil {
 		return nil, mainNodes == 0 && !partial && !file.Omitted
+	}
+	// A record skipped after the newest leaf was read may be a newer reply
+	// (oversized, so never decoded). The session stays unknown until a fully
+	// read later record supersedes the gap.
+	if leaf.Index < file.GapSeq {
+		return nil, false
 	}
 	var selected *claudeSessionNode
 	seen := map[string]bool{}
@@ -582,6 +591,9 @@ func ClaudeSessionReducer(a localusage.HistoryAccess, now time.Time) localusage.
 			}
 			file.SessionKey = sessionKey
 			file.Omitted = file.Omitted || batch.PrefixOmitted
+			if batch.Skipped {
+				file.GapSeq = file.Seq
+			}
 			total := 0
 			for _, f := range files {
 				total += len(f.Nodes)

@@ -115,3 +115,49 @@ func TestClaudeSessionLargeHistoryConvergesAcrossPasses(t *testing.T) {
 	}
 	assertClaudeSessionCachePrivate(t, cache)
 }
+
+// An oversized newest reply is skipped, never decoded. The older reply it
+// follows is not reported as a complete current reading: the session stays
+// unknown until a fully read later reply supersedes the gap.
+func TestClaudeSessionOversizedNewestReplyKeepsTheSessionUnknown(t *testing.T) {
+	a := sessionAccess(t)
+	root, cache := t.TempDir(), t.TempDir()
+	now := claudeSessionNow
+	active := largeSession(t, root, "project-active", "session-active", "cli", "claude-opus-5-5", now.Add(-time.Minute), 0)
+	if r := RefreshClaudeSessions(context.Background(), root, cache, a, now); !r.Complete || r.Availability != "ok" {
+		t.Fatalf("seed: %+v", r)
+	}
+	if selected := sessionSelected(t, cache, a, "", now); selected.Model != "claude-opus-5-5" {
+		t.Fatalf("seed selected %+v", selected)
+	}
+	huge := sessionRow("raw-node-huge", "raw-node-reply", "session-active", "claude-sonnet-4-6", "low", "fast", now.Add(10*time.Second), map[string]any{"entrypoint": "cli", "padding": strings.Repeat("PRIVATE-CONTENT-CANARY", (1<<20)/22+1)})
+	appendClaudeSession(t, active, append(huge, '\n'))
+	at := now.Add(20 * time.Second)
+	if err := os.Chtimes(active, at, at); err != nil {
+		t.Fatal(err)
+	}
+	r := RefreshClaudeSessions(context.Background(), root, cache, a, at)
+	if r.Complete && r.Availability == "ok" {
+		t.Fatalf("skipped newest reply reported complete: %+v", r)
+	}
+	// The last fully known snapshot stays as the engine's contract requires, but
+	// never as a current (ok) reading.
+	for _, caller := range []string{"", "session-active"} {
+		if projection, _ := ReadClaudeSessions(cache, a, caller, at); projection.Availability == "ok" {
+			t.Fatalf("caller %q: superseded reply read as current: %+v", caller, projection)
+		}
+	}
+	next := sessionRow("raw-node-next", "raw-node-huge", "session-active", "claude-haiku-4-5", "medium", "standard", now.Add(30*time.Second), map[string]any{"entrypoint": "cli"})
+	appendClaudeSession(t, active, append(next, '\n'))
+	at = now.Add(40 * time.Second)
+	if err := os.Chtimes(active, at, at); err != nil {
+		t.Fatal(err)
+	}
+	if r := RefreshClaudeSessions(context.Background(), root, cache, a, at); !r.Complete || r.Availability != "ok" {
+		t.Fatalf("superseded gap: %+v", r)
+	}
+	if selected := sessionSelected(t, cache, a, "session-active", at); selected.Model != "claude-haiku-4-5" || selected.Attribution != "current-thread" {
+		t.Fatalf("after the gap selected %+v", selected)
+	}
+	assertClaudeSessionCachePrivate(t, cache)
+}

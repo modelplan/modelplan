@@ -71,6 +71,9 @@ type ProjectionState struct {
 // the pass budget); zero when every discovered file is covered. Records newer
 // than UnknownAfter cannot be missing. A reducer that needs every record must
 // treat a non-zero UnknownAfter as incomplete.
+// Skipped (data or EndFile batch) reports that a record of this file was
+// skipped after every line delivered in earlier batches and before this
+// batch's lines: anything delivered before it may have been superseded.
 type ProjectionBatch struct {
 	FileRef, SessionID string    `json:"-"`
 	Lines              [][]byte  `json:"-"`
@@ -81,6 +84,7 @@ type ProjectionBatch struct {
 	DiscoveryComplete  bool      `json:"-"`
 	RecoveryComplete   bool      `json:"-"`
 	PrefixOmitted      bool      `json:"-"`
+	Skipped            bool      `json:"-"`
 	LiveFileRefs       []string  `json:"-"`
 	Modified           time.Time `json:"-"`
 	UnknownAfter       time.Time `json:"-"`
@@ -233,6 +237,7 @@ type projectionRun struct {
 	resetReason               string
 	now                       time.Time
 	omitted, anyOmitted       bool
+	skipped                   bool
 	records                   int
 	pending                   [][]byte
 	pendingBytes              int
@@ -283,9 +288,12 @@ func (p *projectionRun) unread(at time.Time) {
 	}
 }
 
-// gap marks that the current file skipped a record; ancestry through it stays unknown.
+// gap marks that the current file skipped a record; ancestry through it stays
+// unknown. Lines read before the skip are delivered first, so the next batch's
+// Skipped places the gap after them.
 func (p *projectionRun) gap() {
-	p.omitted, p.anyOmitted = true, true
+	p.flush()
+	p.omitted, p.anyOmitted, p.skipped = true, true, true
 }
 
 func (p *projectionRun) start(prior *ProjectionState) {
@@ -326,12 +334,12 @@ func (p *projectionRun) call(b ProjectionBatch) bool {
 	return true
 }
 func (p *projectionRun) reset(reason string, omitted bool) {
-	p.resetReason, p.omitted = reason, omitted
+	p.resetReason, p.omitted, p.skipped = reason, omitted, false
 	p.anyOmitted = p.anyOmitted || omitted
 }
 func (p *projectionRun) batch(rel, ref string) ProjectionBatch {
-	b := ProjectionBatch{FileRef: ref, SessionID: strings.TrimSuffix(filepath.Base(rel), ".jsonl"), Reset: p.resetReason, PrefixOmitted: p.omitted}
-	p.resetReason = ""
+	b := ProjectionBatch{FileRef: ref, SessionID: strings.TrimSuffix(filepath.Base(rel), ".jsonl"), Reset: p.resetReason, PrefixOmitted: p.omitted, Skipped: p.skipped}
+	p.resetReason, p.skipped = "", false
 	return b
 }
 func (p *projectionRun) line(rel, ref string, line []byte, offset int64) bool {
