@@ -25,8 +25,8 @@ test('saved order puts the members it names first, the rest after in engine orde
 
 function page() {
  const calls=[];let id=200;
- const view={clear(){},render(){},nextDeadline(){return null;},tick(){},configure(_a,_r,_u,order){calls.push(['configure',order]);},
-  updateAppearance(_a,_n,_r,_u,order){calls.push(['appearance',order]);},shell(){},active(){},dispose(){}};
+ const view={clear(){},render(){},nextDeadline(){return null;},tick(){},configure(_a,_r,_u,_m,order){calls.push(['configure',order]);},
+  updateAppearance(_a,_n,_r,_u,_m,order){calls.push(['appearance',order]);},shell(){},active(){},dispose(){}};
  const bridge=new CockpitBridge(pageId,source.origin,()=>{},view,()=>`00000000-0000-4000-8000-${String(++id).padStart(12,'0')}`);
  return {bridge,calls,send:commands()};
 }
