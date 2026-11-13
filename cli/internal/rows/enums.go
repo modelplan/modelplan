@@ -167,6 +167,8 @@ const (
 	CodeRPCError                      Code = "rpc_error"
 	CodeClosed                        Code = "closed"
 	CodeRegionRefused                 Code = "region_refused"
+	CodeCodexCustomProvider           Code = "codex_custom_provider" // D232: Codex uses Bedrock or a custom provider
+	CodeTeamUnsupported               Code = "team_unsupported"      // D232: team/enterprise usage not on this endpoint
 	CodeOther                         Code = "other"
 	CodeReadersOff                    Code = "readers_off"
 	CodeNoConsent                     Code = "no_consent"

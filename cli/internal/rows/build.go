@@ -404,6 +404,9 @@ func nextStep(in Input, c *candidate, outcome Outcome) *NextStep {
 		return nil
 	}
 	step := &NextStep{Action: outcome.Action, Text: actionTexts[outcome.Action]}
+	if c != nil {
+		step.Hint = toolHint(c.id, outcome.Code)
+	}
 	if outcome.Code == CodeNoReader {
 		step.Text = Text{EN: "Reader support is not available yet", ZH: "暂不支持此读取器"}
 	}

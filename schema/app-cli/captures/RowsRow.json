@@ -27,7 +27,16 @@
       "zh": "synthetic"
     },
     "availableAt": "2026-10-29T12:00:00.123456789Z",
-    "disabledReason": "cooldown"
+    "disabledReason": "cooldown",
+    "hint": {
+      "signInCommand": "codex login",
+      "installCommand": "npm i -g @openai/codex",
+      "installUrl": "https://kiro.dev",
+      "text": {
+        "en": "To sign in, run this in Terminal",
+        "zh": "在终端运行这条命令登录"
+      }
+    }
   },
   "accounts": [
     {
@@ -132,7 +141,16 @@
         "zh": "synthetic"
       },
       "availableAt": "2026-10-29T12:00:00.123456789Z",
-      "disabledReason": "cooldown"
+      "disabledReason": "cooldown",
+      "hint": {
+        "signInCommand": "codex login",
+        "installCommand": "npm i -g @openai/codex",
+        "installUrl": "https://kiro.dev",
+        "text": {
+          "en": "To sign in, run this in Terminal",
+          "zh": "在终端运行这条命令登录"
+        }
+      }
     }
   }
 }

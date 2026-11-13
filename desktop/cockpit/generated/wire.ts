@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 2c21831f6520b13688b3a3e34c7c8a5854df8523b1581d2c50306c289760d5bd
+// Schema SHA-256: 253c94607817b049d71b2bd0348ab4d790a0dc11695f21be46af76fc0cdb1b31
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -327,7 +327,14 @@ export type WireExpiryState = {
 
 export type WireFailure = {
   readonly "at": string;
-  readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+  readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "codex_custom_provider" | "team_unsupported" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+};
+
+export type WireHint = {
+  readonly "installCommand"?: string;
+  readonly "installUrl"?: string;
+  readonly "signInCommand"?: string;
+  readonly "text": WireText;
 };
 
 export type WireModelScope = {
@@ -344,6 +351,7 @@ export type WireNextStep = {
   readonly "action": "open_settings_consent" | "open_settings_keychain" | "open_tool" | "install_runtime" | "refresh" | "update_cli" | "none";
   readonly "availableAt"?: string | null;
   readonly "disabledReason"?: "cooldown" | "read_only" | "offline" | null;
+  readonly "hint"?: WireHint | null;
   readonly "text": WireText;
 };
 
@@ -371,7 +379,7 @@ export type WireProposedResetSource = {
 };
 
 export type WireReason = {
-  readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+  readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "codex_custom_provider" | "team_unsupported" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
   readonly "text": WireText;
 };
 
@@ -2262,6 +2270,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "rpc_error",
           "closed",
           "region_refused",
+          "codex_custom_provider",
+          "team_unsupported",
           "other",
           "readers_off",
           "no_consent",
@@ -2273,6 +2283,31 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "required": [
       "code",
       "at"
+    ],
+    "type": "object"
+  },
+  "Hint": {
+    "additionalProperties": false,
+    "properties": {
+      "installCommand": {
+        "maxLength": 128,
+        "type": "string"
+      },
+      "installUrl": {
+        "maxLength": 128,
+        "pattern": "^https://",
+        "type": "string"
+      },
+      "signInCommand": {
+        "maxLength": 64,
+        "type": "string"
+      },
+      "text": {
+        "$ref": "#/$defs/Text"
+      }
+    },
+    "required": [
+      "text"
     ],
     "type": "object"
   },
@@ -2355,6 +2390,16 @@ export const definitions: Readonly<Record<string, Schema>> = {
               "offline"
             ],
             "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "hint": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Hint"
           },
           {
             "type": "null"
@@ -2533,6 +2578,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "rpc_error",
           "closed",
           "region_refused",
+          "codex_custom_provider",
+          "team_unsupported",
           "other",
           "readers_off",
           "no_consent",

@@ -197,6 +197,8 @@
         "closed",
         "no_key",
         "region_refused",
+        "codex_custom_provider",
+        "team_unsupported",
         "other"
       ]
     },

@@ -64,6 +64,8 @@ var outcomes = map[Code]Outcome{
 	CodeRPCError:                      {State: StateFailed, Code: CodeRPCError, Action: ActionRefresh, Text: Text{EN: "The tool background service returned an error", ZH: "工具后台服务返回错误"}},
 	CodeClosed:                        {State: StateFailed, Code: CodeClosed, Action: ActionRefresh, Text: Text{EN: "The tool background service closed unexpectedly", ZH: "工具后台服务意外退出"}},
 	CodeRegionRefused:                 {State: StateNeedsAction, Code: CodeRegionRefused, Action: ActionNone, Text: Text{EN: "This address is a third-party relay; its quota cannot be read", ZH: "这个地址是第三方转发服务，查不到额度"}},
+	CodeCodexCustomProvider:           {State: StateNeedsAction, Code: CodeCodexCustomProvider, Action: ActionNone, Text: Text{EN: "Codex uses another model provider, so there are no ChatGPT plan limits to read", ZH: "Codex 使用的是其他模型服务商，没有 ChatGPT 套餐额度可读"}},
+	CodeTeamUnsupported:               {State: StateNeedsAction, Code: CodeTeamUnsupported, Action: ActionNone, Text: Text{EN: "Team and enterprise usage cannot be read from this tool", ZH: "团队版和企业版的用量无法从这个工具读取"}},
 }
 
 // Describe returns only compiled messages. Unknown codes never carry caller text.
@@ -119,6 +121,8 @@ var signalCodes = map[signalKey]Code{
 	{SignalError, "closed"}:                             CodeClosed,
 	{SignalError, "no_key"}:                             CodeKeyMissing,
 	{SignalError, "region_refused"}:                     CodeRegionRefused,
+	{SignalError, "codex_custom_provider"}:              CodeCodexCustomProvider,
+	{SignalError, "team_unsupported"}:                   CodeTeamUnsupported,
 	{SignalBlocked, "native-off"}:                       CodePrivacyBlocked,
 	{SignalBlocked, "codexbar-off"}:                     CodePrivacyBlocked,
 	{SignalBlocked, "off"}:                              CodePrivacyBlocked,
