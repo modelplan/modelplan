@@ -185,7 +185,10 @@ private actor LaunchEngine: EngineClient {
             let before = Set(NSApp.windows.map(\.windowNumber))
             await app.settingsHost.present(paneID: "privacy", origin: .userInitiated)
             XCTAssertTrue(NSApp.windows.contains { $0.isVisible && !before.contains($0.windowNumber) }, "Settings opened (failStart \(failStart))")
-            XCTAssertEqual(firstRunWindows().count, 1, "the guide stays open")
+            XCTAssertEqual(firstRunWindows().count, 1, "the guide stays open (failStart \(failStart))")
+            // glm-881-5: windows are process-wide; close this build's guide and Settings before the next build.
+            NSApp.windows.filter { $0.isVisible && !before.contains($0.windowNumber) }.forEach { $0.close() }
+            firstRunWindows().forEach { $0.close() }
         }
     }
 
