@@ -520,6 +520,13 @@ func inRange(ranges []span, t time.Time) bool {
 	return false
 }
 
+// importWalkDir and importOpen are the importer's filesystem calls; tests replace them to fail a
+// folder listing or a log read without depending on file permissions (which root ignores).
+var (
+	importWalkDir = filepath.WalkDir
+	importOpen    = os.Open
+)
+
 // files lists the source's logs modified since `since`, in a stable order. Links, directories and
 // the harness's sub-agent folders are not followed.
 func (j *importJob) files(since time.Time) []string {
@@ -536,7 +543,7 @@ func (j *importJob) walk(since time.Time) ([]string, bool) {
 	}
 	var out []string
 	visited, complete := 0, true
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	_ = importWalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if visited++; visited > maxImportFiles {
 			complete = false
 			return fs.SkipAll
@@ -569,7 +576,7 @@ func (j *importJob) walk(since time.Time) ([]string, bool) {
 // readWhole streams one log line by line through a parser and returns its finished turns. A line
 // that is too long or does not parse is skipped by the parser; an unfinished last turn is dropped.
 func readWhole(admitted func() error, path string, p parser) ([]turn, error) {
-	fh, err := os.Open(path)
+	fh, err := importOpen(path)
 	if err != nil {
 		return nil, err
 	}
