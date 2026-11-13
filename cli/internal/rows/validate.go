@@ -254,6 +254,9 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 		default:
 			return fail("credits unit")
 		}
+		if a.Credits.Currency != "" && (a.Credits.Unit != "money" || !isoCurrency(a.Credits.Currency)) {
+			return fail("credits currency")
+		}
 	}
 	if a.ObservedAt != nil && (!validTime(a.ObservedAt) || a.ObservedAt.After(in.Now)) {
 		return fail("observation clock")

@@ -38,7 +38,7 @@ private actor ReserveJourneyClient: EngineClient {
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
     private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, currentWindowMissingObservation, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues, retiredWithValues }
     private enum ProofMutation { case fallbackMember, unknownBound, unrecognizedBound, unknownUnbound, duplicateFallback, duplicateRef, missingLatch, nonStaleLatch, missingReset, absentReset, malformedReset, missingWeeklyReset, absentWeeklyReset, malformedWeeklyReset, mismatchReset, laterReset, missingValidUntil, malformedValidUntil, futureAccountObservation, malformedAccountObservation, futureWindowObservation, malformedWindowObservation, duplicateWindowID }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, mixedOneRetained: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, mixedOneRetained: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil, currency: String? = nil, usageNotReported: Bool = false) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -73,6 +73,8 @@ private actor ReserveJourneyClient: EngineClient {
         window["resetsAt"] = deadline; window["remainingPercent"] = 42.5
         account["windows"] = [window]
         account["credits"] = ["balance": balance ?? NSNull(), "unit": unit]
+        if let currency { account["credits"] = ["balance": balance ?? NSNull(), "unit": unit, "currency": currency] }
+        if usageNotReported { row["reason"] = ["code": "usage_not_reported", "text": ["en": "engine text", "zh": "engine text"]] }
         if multiWindowTransition || proofTwoWindows {
             account["freshUntil"] = "2028-12-01T00:00:00Z"
             var weekly = window
@@ -422,6 +424,33 @@ private actor ReserveJourneyClient: EngineClient {
         XCTAssertEqual(fallback?.value, "1,000,000,000,000,000,000,000 credits")
         let largeOther = try await reserve(balance: 1_000_000_000_000_001.0, unit: "other", english: true)
         XCTAssertEqual(largeOther?.value, "1,000,000,000,000,001")
+    }
+
+    /// Owner build 14e (Grok card): "余额 0 · 未报告币种" although the Grok reader reports USD. A reported
+    /// currency is shown; only a balance without one keeps the note.
+    func testReportedCurrencyIsShownInsteadOfCurrencyNotReported() async throws {
+        let usd = try await projection(balance: 0, unit: "money", english: true, currency: "USD").1
+        XCTAssertEqual(usd?.value, "$0.00"); XCTAssertEqual(usd?.detail, "")
+        let zh = try await projection(balance: 12.5, unit: "money", english: false, currency: "USD").1
+        XCTAssertTrue(zh?.value.contains("$12.50") == true, zh?.value ?? "nil"); XCTAssertEqual(zh?.detail, "")
+        let none = try await projection(balance: 12.5, unit: "money", english: false).1
+        XCTAssertEqual(none?.detail, "未报告币种")
+    }
+
+    /// D228: a fresh reading with only a balance (Grok's X Subscription) says so in one line on the card.
+    func testUsageNotReportedRowSaysSoInOneCardLine() async throws {
+        _ = try await projection(balance: 0, unit: "money", english: false, currency: "USD", usageNotReported: true,
+            providerProbe: { _, content, _ in
+                let rows = content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows ?? []
+                let line = rows.first { $0.id == "usage-not-reported" }
+                XCTAssertEqual(line?.kind, .event)
+                XCTAssertEqual(line?.value, "Codex 不提供用量百分比，只显示余额")
+                XCTAssertEqual(rows.first?.id, "usage-not-reported", "the line sits above the balance and today rows")
+            })
+        _ = try await projection(balance: 0, unit: "money", english: false, currency: "USD",
+            providerProbe: { _, content, _ in
+                XCTAssertNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "usage-not-reported" })
+            })
     }
 
     func testLastKnownReserveRemainsLabeledAndRevokedDoesNotExposeIt() async throws {

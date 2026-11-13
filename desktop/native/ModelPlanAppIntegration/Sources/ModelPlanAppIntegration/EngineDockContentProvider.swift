@@ -227,7 +227,14 @@ public enum EngineDeadlineFacts {
                     case .missing,.invalid: number=nil
                     }
                     if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:number+(english ? " credits":" 点数"),detail:reserveDetail(),hint:"credits")) }
-                case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:M5CreditsDisplayFormat.moneyText(balance,english:english),detail:reserveDetail(english ? "Currency not reported":"未报告币种"),hint:"money"))
+                case "money":
+                    // G3-103 follow-up: a reader that reports its currency (Grok: USD) shows it; only a balance
+                    // without one keeps the "currency not reported" note.
+                    if let code = credits.currency, let money = M5CreditsDisplayFormat.currencyText(balance, code: code, english: english) {
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:money,detail:reserveDetail(),hint:"money"))
+                    } else {
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:M5CreditsDisplayFormat.moneyText(balance,english:english),detail:reserveDetail(english ? "Currency not reported":"未报告币种"),hint:"money"))
+                    }
                 default:
                     let unit=M5CreditsDisplayFormat.Unit(identifier:credits.unit)
                     switch M5CreditsDisplayFormat.unknownUnitText(balance,unit:unit,knowledge:.unknown,english:english) {
@@ -240,6 +247,11 @@ public enum EngineDeadlineFacts {
                 }
             }
             reserve.append(todayRow(account))
+            // D228: a reading with a balance but no usage percentage says so in one line from the shared cause table.
+            if row.reason.code == .usageNotReported,
+               let entry = ReaderCauseTable.entry(code: "usage_not_reported", tool: row.id, toolName: member.name(english: english)) {
+                reserve.insert(.init(id: "usage-not-reported", kind: .event, label: "", value: entry.reason.value(english ? .english : .chinese)), at: 0)
+            }
             let cardState: DockCardReadingState
             if row.consent != .allowed && row.consent != .implicit && row.consent != .notRequired {
                 cardState = .error

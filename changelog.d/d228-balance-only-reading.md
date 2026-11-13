@@ -1,0 +1,1 @@
+A money balance now shows the currency its reader reports (Grok Build: US dollars) instead of "Currency not reported". When a tool reports a balance but no usage percentage, such as Grok Build on the X Subscription, its card says so in one line instead of showing an empty "Other --" row, and Grok no longer adds an "Additional usage" row when no additional-usage cap is set.
