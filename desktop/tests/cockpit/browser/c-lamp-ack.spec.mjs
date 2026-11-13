@@ -114,6 +114,32 @@ test('G3-56 a pressed amber caution that escalates to red blinks again',async({p
  await expect(lamp).toHaveClass(/\bred\b/);await expect(lamp).toHaveClass(flash);
 });
 
+// G3-106: the amber forecast comes and goes with the recent usage rate. An idle spell (no run-out for a while) while the
+// window is still read is not a clear: the pressed caution stays steady when the forecast returns, on the same page and
+// on the next entry, with other numbers. Only the window's next cycle blinks it again.
+test('G3-106 a pressed amber caution stays steady through a paused forecast and the next entry',async({page})=>{
+ const iso=minutes=>new Date(Date.parse('2026-11-04T12:00:00Z')+minutes*60000).toISOString();
+ const data=visualFixture().data,row=data.projection.rows[0],account=row.accounts[0],w=account.windows.find(x=>x.role==='weekly');
+ for(const r of data.projection.rows)for(const a of r.accounts)for(const x of a.windows)if(x.remainingPercent!==null)x.remainingPercent=90;
+ const set=(remaining,resetMin,runOutMin)=>{w.remainingPercent=remaining;w.resetsAt=iso(resetMin);
+  data.details.forecasts=[{source:row.id,subscriptionRef:account.subscriptionRef,windowId:w.id,runsOutAt:runOutMin===null?null:iso(runOutMin),
+   pace:runOutMin===null?'on_track':'tight',basis:runOutMin===null?'none':'recent-rate',observedAt:iso(-2)}];return data;};
+ const reset=5*1440+120;set(60,reset,2*1440);
+ let o=await open(page,data);await expect(o.lamp).toHaveClass(/\bamber\b/);await expect(o.lamp).toHaveClass(flash);await pressed(page,o.lamp);
+ // Idle: no run-out for a while, the window still read. Then the forecast returns with another ETA and percent.
+ set(59,reset,null);expect(await o.receive(o.send('display',{data}))).toBe(true);await expect(o.lamp).not.toHaveClass(/\blit\b/);
+ set(57,reset+1,1440);expect(await o.receive(o.send('display',{data}))).toBe(true);
+ await expect(o.lamp).toHaveClass(/\bamber\b/);await expect(o.lamp).not.toHaveClass(flash);
+ // Next entry: a new page from what the host kept, the forecast paused and back again.
+ const ids=(await posted(page)).at(-1);expect(ids).toHaveLength(1);
+ set(57,reset,null);o=await open(page,data,ids);
+ set(56,reset,1200);expect(await o.receive(o.send('display',{data}))).toBe(true);
+ await expect(o.lamp).toHaveClass(/\bamber\b/);await expect(o.lamp).not.toHaveClass(flash);
+ // The window's next cycle is a recurrence.
+ set(100,reset+7*1440,null);expect(await o.receive(o.send('display',{data}))).toBe(true);
+ set(50,reset+7*1440,3*1440);expect(await o.receive(o.send('display',{data}))).toBe(true);await expect(o.lamp).toHaveClass(flash);
+});
+
 test('G3-56 a fallback member (no verified subscription reference) is acknowledged in memory only',async({page})=>{
  const {data,windows}=zeroData();windows[0].remainingPercent=0;
  // No verified subscription: the member is keyed row#route, which names a different account after a restart.

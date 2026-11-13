@@ -1,0 +1,1 @@
+A tool that failed to read (for example Grok Build before you signed in) is read again within five minutes after you sign in to it again or turn its reading back on in Settings, instead of waiting out a back-off of up to an hour. A provider's own rate limit is still respected.

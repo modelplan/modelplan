@@ -395,6 +395,21 @@ func ReaderLock() (func(), error) {
 	return lockFile(file)
 }
 
+// ReaderLockWait is ReaderLock for a user-requested erase (revoke or forget). A
+// background reader or snapshot commit holds the lock only briefly, and failing
+// fast here would leave a durable revocation with unfinished cleanup, so wait up
+// to two seconds for it, as the consent writers do.
+func ReaderLockWait() (func(), error) {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		unlock, err := ReaderLock()
+		if err == nil || !errors.Is(err, ErrBusy) || time.Now().After(deadline) {
+			return unlock, err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // ErrReaderBusy distinguishes admission contention from collection failures.
 var ErrReaderBusy = errors.New("reader admission busy")
 

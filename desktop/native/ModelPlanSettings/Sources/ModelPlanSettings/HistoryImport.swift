@@ -23,7 +23,11 @@ import ModelPlanWire
     public private(set) var failed = false
     private let commands: any HistoryImportCommands
     private var observers: [UUID: @MainActor () -> Void] = [:]
+    /// The first status request went out and the engine took it; reset by a failure or an invalidation.
     private var asked = false
+    /// The page wanted the status; a request that could not go out (engine not ready) retries on readiness.
+    private var wanted = false
+    private var wasReady: Bool?
     private var poll: Task<Void, Never>?
     private let pollInterval: Duration
 
@@ -37,7 +41,8 @@ import ModelPlanWire
     private func changed() { for body in Array(observers.values) { body() } }
 
     public var isRunning: Bool { status?.phase == .running }
-    public var hasImported: Bool { (status?.importedRows ?? 0) > 0 }
+    /// Rows or a recorded coverage span: either is imported history that Remove can delete.
+    public var hasImported: Bool { (status?.importedRows ?? 0) > 0 || status?.coverage.isEmpty == false }
     public var canStart: Bool { commands.ready && !isRunning }
     public var canRemove: Bool { commands.ready && !isRunning && hasImported }
     /// 0...1 while running; nil until the engine has counted the files.
@@ -53,13 +58,37 @@ import ModelPlanWire
         changed()
     }
     public func refresh() async {
-        guard commands.ready else { return }
-        do { try await commands.status() } catch { failed = true; changed() }
+        _ = await requestStatus()
     }
-    /// The first look at the page asks once; later changes arrive as accepted events.
+    private func requestStatus() async -> Bool {
+        guard commands.ready else { return false }
+        do { try await commands.status(); return true } catch { failed = true; changed(); return false }
+    }
+    /// The first look at the page asks once; later changes arrive as accepted events. The latch is
+    /// taken only by a request the engine accepted: before readiness nothing is consumed, and a
+    /// failed request lets the next look (or the engine becoming ready) ask again.
     public func refreshIfNeeded() async {
         guard status == nil, !asked else { return }
-        asked = true; await refresh()
+        wanted = true
+        guard commands.ready else { return }
+        asked = true
+        if !(await requestStatus()) { asked = false }
+    }
+    /// The owner calls this on every accepted snapshot fanout. When the engine becomes ready, a page
+    /// that asked before readiness gets its status, and the row re-renders its availability.
+    public func readinessChanged() {
+        let ready = commands.ready
+        guard ready != wasReady else { return }
+        wasReady = ready
+        changed()
+        if ready, wanted, status == nil, !asked { Task { [weak self] in await self?.refreshIfNeeded() } }
+    }
+    /// Clear on the owner's synchronous privacy-invalidation turn: the previous engine's counts,
+    /// coverage and errors go, polling stops, and the status is asked again once the engine is ready.
+    public func invalidate() {
+        poll?.cancel(); poll = nil
+        status = nil; failed = false; asked = false; wasReady = nil
+        changed()
     }
     public func start() async {
         guard canStart else { return }
@@ -104,9 +133,6 @@ public enum HistoryImportText {
     public static let removeButton = SettingsText("Remove imported history", "删除已导入的历史")
     public static let daysLabel = SettingsText("Days back", "回溯天数")
     public static func dayChoice(_ days: Int) -> SettingsText { .init("\(days) days", "\(days) 天") }
-    /// HIST-IMP-03: the one plain line under the first-run consent.
-    public static let firstRunLine = SettingsText("After you continue, ModelPlan imports up to 30 days of past usage from these tools in the background (counts, models and times only). Cancel or remove it in Settings › Data & Privacy.",
-                                                  "继续后，ModelPlan 会在后台从这些工具导入最多 30 天的过往用量（只含次数、模型和时间）。可在 设置 › 数据与隐私 中取消或删除。")
     public static func running(days: Int) -> SettingsText { .init("Importing \(days) days of local history…", "正在导入 \(days) 天的本地历史…") }
     public static let unavailable = SettingsText("Not available until the engine is ready.", "引擎就绪前不可用。")
     public static let failed = SettingsText("The import could not run. Nothing was changed.", "导入未能运行，未做任何改动。")

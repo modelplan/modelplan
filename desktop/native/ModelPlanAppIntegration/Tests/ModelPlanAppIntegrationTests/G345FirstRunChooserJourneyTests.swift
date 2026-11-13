@@ -81,7 +81,9 @@ private actor G345Engine: EngineClient {
         }
         return try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: object))
     }
-    private func rows() throws -> WireRowsSnapshot {
+    /// `codexReads`: the engine also has a Codex row it reads (consent implicit). G3-67: Settings ticks a
+    /// default-on tool only when the engine's own row says it reads it.
+    private func rows(codexReads: Bool = false) throws -> WireRowsSnapshot {
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures().appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = try XCTUnwrap(json["projection"] as? [String: Any])
         let template = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
@@ -95,6 +97,31 @@ private actor G345Engine: EngineClient {
         }
         projection["rows"] = [row("claude", "Claude Code", state: "needs_action", code: "not_signed_in", surfaces: ["menu", "settings"]),
                               row("zai", "ZCode / GLM", state: "needs_action", code: "unsupported_login", surfaces: ["menu", "settings"])]
+            + (codexReads ? [row("codex", "Codex", state: "fresh", code: "ok", surfaces: ["menu", "settings"])] : [])
+        json["projection"] = projection
+        return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+    /// FR-9-11 / D61: Codex has a current 5h window with 63% left and a weekly one with 41% left; Claude Code is signed out.
+    private func readingRows() throws -> WireRowsSnapshot {
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures().appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
+        var projection = try XCTUnwrap(json["projection"] as? [String: Any])
+        var codex = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
+        var account = try XCTUnwrap((codex["accounts"] as? [[String: Any]])?.first)
+        let window = try XCTUnwrap((account["windows"] as? [[String: Any]])?.first)
+        func make(_ id: String, _ role: String, _ left: Double) -> [String: Any] {
+            var value = window
+            value["id"] = id; value["role"] = role; value["remainingPercent"] = left; value["current"] = true
+            value.removeValue(forKey: "modelScope"); value["validUntil"] = "2099-01-01T00:00:00Z"
+            return value
+        }
+        account["windows"] = [make("codex-5h", "session", 63.2), make("codex-week", "weekly", 41.4)]
+        account["valueState"] = "current"; account["freshUntil"] = "2099-01-01T00:00:00Z"
+        codex["id"] = "codex"; codex["vendorKey"] = "codex"; codex["name"] = ["en": "Codex", "zh": "Codex"]
+        codex["state"] = "fresh"; codex["consent"] = "implicit"; codex["surfaces"] = ["dock", "menu", "settings"]
+        codex["reason"] = ["code": "ok", "text": ["en": "ok", "zh": "ok"]]
+        codex["expiresAt"] = "2099-01-01T00:00:00Z"; codex.removeValue(forKey: "stateAfterExpiry"); codex.removeValue(forKey: "nextStep")
+        codex["accounts"] = [account]
+        projection["rows"] = [codex]
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
@@ -115,12 +142,12 @@ private actor G345Engine: EngineClient {
         json["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
-    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"], deniedAtFirstRun: Set<String> = [], dock: Bool = false, detectedOnly: Set<String>? = nil, browserOnlyTool: Bool = false, loadFacts: Bool = true) async throws -> (EngineDockMenuApplication, G345Engine) {
+    private func launch(locale: String, keychain: Set<String> = ["claude.account_usage.saved_login"], deniedAtFirstRun: Set<String> = [], dock: Bool = false, detectedOnly: Set<String>? = nil, browserOnlyTool: Bool = false, loadFacts: Bool = true, codexReads: Bool = false, readings: Bool = false) async throws -> (EngineDockMenuApplication, G345Engine) {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g345-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
         let consent: WireConsentFacts? = try loadFacts ? facts(keychain: keychain, denied: deniedAtFirstRun, detectedOnly: detectedOnly, browserOnlyTool: browserOnlyTool) : nil
-        let snapshot = dock ? try dockRows(cursor: false) : try rows()
+        let snapshot = dock ? try dockRows(cursor: false) : readings ? try readingRows() : try rows(codexReads: codexReads)
         let after = dock ? try dockRows(cursor: true) : nil
         final class Holder: @unchecked Sendable { var engine: G345Engine? }
         let holder = Holder()
@@ -184,7 +211,7 @@ private actor G345Engine: EngineClient {
     /// twice, each with three buttons and a leftover status line. It follows the first-run list instead: one row per
     /// tool with its mark, what is read and why a tool is not read; paths and saved permissions are behind a disclosure.
     func testSettingsListsOneRowPerToolLikeTheFirstRunList() async throws {
-        let (app, _) = try await launch(locale: "en-US")
+        let (app, _) = try await launch(locale: "en-US", codexReads: true)
         let settings = app.scopeConsentEntry.view
         settings.apply(language: .english) // Settings applies the editor language when it is presented; this view is driven directly
         let controller = app.scopeConsentEntry.controller
@@ -196,7 +223,7 @@ private actor G345Engine: EngineClient {
             XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "scope.mark." + tool }, "\(tool) has its mark")
         }
         let box = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.codex" } as? NSButton)
-        XCTAssertEqual(box.state, .on, "a default-on tool shows on")
+        XCTAssertEqual(box.state, .on, "a default-on tool the engine reads shows on")
         XCTAssertTrue(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.status.zai" } as? NSTextField).stringValue.contains("nothing is read"))
         // G3-59: a supported tool that is not installed is listed with the reason and cannot be switched on.
         let gemini = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.tool.gemini" } as? NSButton)
@@ -245,15 +272,15 @@ private actor G345Engine: EngineClient {
                        "every detected tool once, in the engine's order; undetected Gemini is not listed")
         for tool in ["claude", "codex", "cursor", "zai"] {
             XCTAssertFalse(try find("scope.firstRun.row." + tool, in: window, as: NSView.self).isHiddenOrHasHiddenAncestor)
-            XCTAssertTrue(views(try find("scope.firstRun.row." + tool, in: window, as: NSView.self)).compactMap { ($0 as? NSTextField)?.stringValue }.contains("Detected on this Mac"))
             guard tool != "zai" else { continue }
+            // FR-9-11: a tool with no system prompt says it is detected and read without asking; a Keychain login says macOS asks once.
             let reads = try text("scope.firstRun.reads." + tool, in: window)
-            XCTAssertTrue(reads.hasPrefix("Reads") || reads.hasPrefix("Asks"), reads)
+            XCTAssertEqual(reads, tool == "claude" ? FirstRunCopy.keychainLine.english : FirstRunCopy.detected.english)
         }
         XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.firstRun.reads.zai" },
                      "a login that is not read does not describe a read")
         XCTAssertTrue(try text("scope.firstRun.reads.claude", in: window).contains("Keychain"), "Claude Code says macOS may ask for the Keychain")
-        XCTAssertTrue(try text("scope.firstRun.reads.codex", in: window).contains("No Keychain prompt"))
+        XCTAssertEqual(try text("scope.firstRun.reads.codex", in: window), FirstRunCopy.detected.english)
         XCTAssertEqual(try text("scope.firstRun.status.claude", in: window), "Not signed in to Claude Code. ModelPlan reads it after you sign in.", "G3-38: signed-out Claude Code says so, in the one shared sentence")
         XCTAssertTrue(try text("scope.firstRun.status.zai", in: window).contains("nothing is read"), "D52: ZCode with an account login is listed, not read")
         let byTool = Dictionary(uniqueKeysWithValues: boxes.map { ($0.accessibilityIdentifier().replacingOccurrences(of: "scope.firstRun.tool.", with: ""), $0) })
@@ -294,8 +321,8 @@ private actor G345Engine: EngineClient {
     func testChinesePageAndSettingsSayWhyAToolIsNotRead() async throws {
         let (app, _) = try await launch(locale: "zh-CN")
         let window = try await firstRun(app)
-        XCTAssertEqual(try text("scope.firstRun.notice", in: window).contains("设置 › 数据与隐私"), true)
-        XCTAssertTrue(views(try find("scope.firstRun.row.codex", in: window, as: NSView.self)).compactMap { ($0 as? NSTextField)?.stringValue }.contains("本机已检测到"))
+        XCTAssertEqual(try text("scope.firstRun.import", in: window).contains("设置 › 数据与隐私"), true, "the merged small print points to Data & Privacy")
+        XCTAssertEqual(try text("scope.firstRun.reads.codex", in: window), "本机已检测到 · 无需授权")
         XCTAssertEqual(try text("scope.firstRun.status.claude", in: window), "未登录 Claude Code。登录后会自动读取。")
         XCTAssertTrue(try text("scope.firstRun.reads.claude", in: window).contains("钥匙串"))
         // Settings > Data & Privacy states the same reason on the tool's paths (G3-38 A).
@@ -337,8 +364,8 @@ private actor G345Engine: EngineClient {
     func testKeychainAccessClassNotVendorDecidesTheKeychainRead() async throws {
         let (app, engine) = try await launch(locale: "en-US", keychain: ["cursor.account_usage.saved_login"])
         let window = try await firstRun(app)
-        XCTAssertTrue(try text("scope.firstRun.reads.cursor", in: window).contains("macOS may ask once for Keychain access"))
-        XCTAssertTrue(try text("scope.firstRun.reads.codex", in: window).contains("No Keychain prompt"))
+        XCTAssertEqual(try text("scope.firstRun.reads.cursor", in: window), FirstRunCopy.keychainLine.english)
+        XCTAssertEqual(try text("scope.firstRun.reads.codex", in: window), FirstRunCopy.detected.english)
         let before = await engine.recorded()
         XCTAssertTrue(before.isEmpty, "nothing that can prompt is asked before Done")
         try find("firstRun.done", in: window, as: NSButton.self).performClick(nil)
@@ -420,15 +447,91 @@ private actor G345Engine: EngineClient {
     /// While the tools are still being found the chooser has its own heading, and the subscriptions
     /// summary is not shown beside it.
     func testChooserHasItsOwnHeadingAndNoSubscriptionsSummaryWhileLoading() async throws {
-        for (locale, heading) in [("en-US", "Choose which tools ModelPlan reads"), ("zh-CN", "选择要读取的工具")] {
+        for (locale, heading) in [("en-US", "TOOLS MODELPLAN READS"), ("zh-CN", "读取这些工具的额度")] {
             let (app, _) = try await launch(locale: locale, loadFacts: false)
             XCTAssertNil(app.scopeConsentEntry.controller.facts)
             let window = try await firstRun(app)
             XCTAssertEqual(try text("scope.firstRun.heading", in: window), heading)
-            XCTAssertNotNil(try? find("scope.firstRun.looking", in: window, as: NSTextField.self), "still looking for tools")
+            // First run v1: the reader's start is said on the page (the local presence check lists rows meanwhile).
+            XCTAssertNotNil(try? find("scope.firstRun.engine", in: window, as: NSTextField.self), "the reader is still starting")
             XCTAssertTrue(try find("firstRun.subscriptions", in: window, as: NSView.self).isHiddenOrHasHiddenAncestor, "no subscriptions summary while loading")
             XCTAssertFalse(views(try XCTUnwrap(window.contentView)).compactMap { ($0 as? NSTextField)?.stringValue }.contains { $0 == "Subscriptions" || $0 == "订阅" })
             window.close()
         }
+    }
+
+    private func frame(_ id: String, in window: NSWindow) throws -> CGRect {
+        let view = try find(id, in: window, as: NSView.self)
+        return view.convert(view.bounds, to: nil)
+    }
+
+    /// FR-9-11 (owner-approved mock): dark window; the privacy promise in large type with the FR-9-03 line and
+    /// "Learn more ›" under it; the tool cards as the main element; one merged small print; the footer in one row.
+    func testFR_9_11_PageOrderCopyAndDarkWindow() async throws {
+        let copy: [(String, String, String)] = [("en-US", "Learn more ›", "TOOLS MODELPLAN READS"), ("zh-CN", "了解详情 ›", "读取这些工具的额度")]
+        for (locale, learn, heading) in copy {
+            let (app, _) = try await launch(locale: locale)
+            let window = try await firstRun(app)
+            XCTAssertEqual(window.appearance?.name, .darkAqua, "the first-run window is dark")
+            let title = try find("firstRun.title", in: window, as: NSTextField.self), privacy = try find("firstRun.privacy", in: window, as: NSTextField.self)
+            XCTAssertGreaterThanOrEqual(privacy.font?.pointSize ?? 0, 24, "the privacy promise is the large type")
+            XCTAssertLessThanOrEqual(title.font?.pointSize ?? 99, 14, "\"Set up ModelPlan\" is a small line above it")
+            XCTAssertEqual(try find("firstRun.learnMore", in: window, as: NSButton.self).title, learn)
+            XCTAssertEqual(try text("scope.firstRun.heading", in: window), heading)
+            // Top to bottom (window coordinates grow upwards).
+            let order = ["firstRun.title", "firstRun.privacy", "firstRun.publicRecommendation", "firstRun.learnMore", "scope.firstRun.heading",
+                         "scope.firstRun.row.codex", "scope.firstRun.import", "firstRun.login"]
+            let middles = try order.map { try frame($0, in: window).midY }
+            XCTAssertEqual(middles, middles.sorted(by: >), "page order: \(order)")
+            // The footer is one row: the login choice on the left, Done on the right.
+            let login = try frame("firstRun.login", in: window), done = try frame("firstRun.done", in: window)
+            XCTAssertLessThan(login.maxX, done.minX)
+            XCTAssertLessThan(abs(login.midY - done.midY), 40, "login and Done share the footer row")
+            // The three former small-print paragraphs are one; the session-file sentence lives in Data & Privacy.
+            XCTAssertEqual(try text("scope.firstRun.import", in: window), FirstRunCopy.smallPrint.value(locale.hasPrefix("zh") ? .chinese : .english))
+            let all = views(try XCTUnwrap(window.contentView)).compactMap { ($0 as? NSTextField)?.stringValue }
+            XCTAssertFalse(all.contains { $0.contains("Local session files") || $0.contains("读取本地会话文件") })
+            XCTAssertFalse(all.contains { $0.hasPrefix("Choose which tools") || $0.hasPrefix("选择要读取的工具") })
+            // The window is as tall as the page: nothing is cut off and no empty band is left below the footer.
+            window.contentView?.layoutSubtreeIfNeeded()
+            let footer = try frame("firstRun.done", in: window), content = window.contentLayoutRect
+            XCTAssertLessThan(footer.minY - content.minY, 80, "no empty band below the footer (\(locale))")
+            window.close()
+        }
+    }
+
+    /// FR-9-11 / D61: the card shows the read quota values, in the reader's language, with the status colour.
+    func testFR_9_11_CardShowsTheReadQuotaValues() async throws {
+        for (locale, five, week) in [("en-US", "5h  63% left", "Weekly  41% left"), ("zh-CN", "5小时  剩 63%", "每周  剩 41%")] {
+            let (app, _) = try await launch(locale: locale, readings: true)
+            for _ in 0..<300 where app.scopeConsentEntry.controller.firstRunReadings(forTool: "codex").isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+            let expected: [FirstRunReading] = [FirstRunReading(kind: .fiveHour, percent: 63), FirstRunReading(kind: .weekly, percent: 41)]
+            let readings: [FirstRunReading] = app.scopeConsentEntry.controller.firstRunReadings(forTool: "codex")
+            XCTAssertEqual(readings, expected)
+            let window = try await firstRun(app)
+            XCTAssertEqual(try text("scope.firstRun.reading.codex.fiveHour", in: window), five)
+            XCTAssertEqual(try text("scope.firstRun.reading.codex.weekly", in: window), week)
+            let card = try frame("scope.firstRun.row.codex", in: window), value = try frame("scope.firstRun.reading.codex.fiveHour", in: window)
+            XCTAssertGreaterThan(value.minX, card.midX, "the values sit at the right of the card")
+            XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.firstRun.reading.claude.fiveHour" }, "a tool with no reading shows no value")
+            window.close()
+        }
+    }
+
+    /// FR-9-11: "Learn more ›" opens Settings on Data & Privacy, and the first-run page stays open.
+    func testFR_9_11_LearnMoreOpensSettingsOnDataAndPrivacy() async throws {
+        let (app, _) = try await launch(locale: "en-US")
+        let window = try await firstRun(app)
+        let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+        try find("firstRun.learnMore", in: window, as: NSButton.self).performClick(nil)
+        var settings: SettingsWindowController?
+        for _ in 0..<300 where settings == nil {
+            try await Task.sleep(for: .milliseconds(10))
+            settings = NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible }?.windowController as? SettingsWindowController
+        }
+        let opened = try XCTUnwrap(settings, "Settings opened")
+        addTeardownBlock { @MainActor in opened.window?.close() }
+        XCTAssertEqual(opened.selectedPaneID, "privacy")
+        XCTAssertTrue(window.isVisible, "the first-run page stays open")
     }
 }

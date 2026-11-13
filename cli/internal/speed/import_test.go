@@ -4,7 +4,9 @@ package speed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -431,5 +433,248 @@ func TestImportCountsAResumedSessionsRequestOnceAcrossFiles(t *testing.T) {
 	l, _ := LoadImported(f.cache)
 	if r, _ := total(l, "claude-code"); r != 2 {
 		t.Fatalf("want 2 requests (one shared, one fresh), got %d", r)
+	}
+}
+
+// Audit D finding 2: a history grant revoked while the import runs stops it before the next log is
+// opened, and nothing already read for that source is written; other sources still import.
+func TestImportStopsReadingASourceWhoseGrantIsRevokedMidRun(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	f.codexLog("rollout-a.jsonl", -3)
+	f.codexLog("rollout-b.jsonl", -2)
+	live := both()
+	var opened []string
+	res, err := Import(context.Background(), f.cache, ImportOptions{Claude: &ImportRoot{Dir: f.claude}, Now: f.now, Admission: both(),
+		Codex: &ImportRoot{Dir: f.home, Background: func(p string) bool { opened = append(opened, filepath.Base(p)); return false }},
+		Live:  func() consent.Admission { return *live },
+		Progress: func(done, total int) {
+			if done == total && total > 0 { // paused before the last codex log opens: the codex grant is revoked
+				live = admitted(consent.ScopeClaudeLocalHistory)
+			}
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opened) != 1 || opened[0] != "rollout-a.jsonl" {
+		t.Fatalf("logs opened after the revoke: %v", opened)
+	}
+	got := map[string]string{}
+	for _, s := range res.Sources {
+		got[s.Source] = s.Status
+	}
+	if got["codex"] != StatusNoConsent || got["claude-code"] != StatusImported {
+		t.Fatalf("%+v", res.Sources)
+	}
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "codex"); r != 0 {
+		t.Fatalf("codex rows written after the revoke: %d", r)
+	}
+	if _, has := l.Coverage["codex"]; has {
+		t.Fatal("codex coverage written after the revoke")
+	}
+	if r, _ := total(l, "claude-code"); r != 1 {
+		t.Fatalf("claude import lost: %d", r)
+	}
+}
+
+// HIST-IMP-12: a log that cannot be read is never marked covered; it is retried alone.
+func TestImportRetriesAnUnreadableLogWithoutRecountingTheRest(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	b := f.claudeLog("b.jsonl", -2)
+	if err := os.Chmod(b, 0); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 1 {
+		t.Fatalf("first run: %d", r)
+	}
+	if c := l.Coverage["claude-code"]; len(c.Retry) != 1 || c.Retry[0].Key != RetryKey(b) {
+		t.Fatalf("unreadable log not queued for retry: %+v", c)
+	}
+	// The retry queue names the log by hash: no path (it can carry a project name) reaches the ledger file.
+	if raw, err := os.ReadFile(ImportPath(f.cache)); err != nil || strings.Contains(string(raw), b) || strings.Contains(string(raw), `"path"`) {
+		t.Fatalf("ledger holds a path: %s %v", raw, err)
+	}
+	// still unreadable: stays queued, nothing double counted
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 1 || len(l.Coverage["claude-code"].Retry) != 1 {
+		t.Fatalf("second run: %d %+v", r, l.Coverage)
+	}
+	if err := os.Chmod(b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 2 {
+		t.Fatalf("after restore: %d", r)
+	}
+	if len(l.Coverage["claude-code"].Retry) != 0 {
+		t.Fatalf("retry not cleared: %+v", l.Coverage)
+	}
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 2 {
+		t.Fatalf("recounted: %d", r)
+	}
+}
+
+// A log queued for retry that the next run also lists (deeper history) is read once, so its owed turns count.
+func TestImportRetryWithExtendedDepth(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	// b carries its own request id: a shared id would be deduped across files for another reason.
+	b := filepath.Join(f.claude, "projects", canaryPath, "b.jsonl")
+	writeLines(t, b, claudeTurnAt(-2*dayS, "other-request-id", "claude-fixture")...)
+	os.Chtimes(b, f.now, f.now)
+	if err := os.Chmod(b, 0); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	if err := os.Chmod(b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.run(60, both())
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 2 {
+		t.Fatalf("owed turns lost after a deeper import: %d", r)
+	}
+	if c := l.Coverage["claude-code"]; len(c.Retry) != 0 {
+		t.Fatalf("retry not cleared: %+v", c)
+	}
+}
+
+// macrevb-874-1 / glm-874-3: a log whose folder cannot be listed is not deleted. Its retry stays owed
+// while the folder is unreadable, and the log is read exactly once after the folder is restored. The
+// failures are injected (not chmod) so the test means the same when run as root.
+func TestImportRetrySurvivesAnUnreadableFolder(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	b := filepath.Join(f.claude, "projects", "synthetic-retry-folder", "b.jsonl")
+	if err := os.MkdirAll(filepath.Dir(b), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeLines(t, b, claudeTurnAt(-2*dayS, "synthetic-unique-request", "claude-fixture")...)
+	dir := filepath.Dir(b)
+	unreadable, unlistable := false, false
+	t.Cleanup(func() { importWalkDir, importOpen = filepath.WalkDir, os.Open })
+	importOpen = func(p string) (*os.File, error) {
+		if unreadable && p == b {
+			return nil, fs.ErrPermission
+		}
+		return os.Open(p)
+	}
+	importWalkDir = func(root string, fn fs.WalkDirFunc) error {
+		return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if unlistable && err == nil && d.IsDir() && p == dir {
+				if r := fn(p, d, nil); r != nil {
+					return r
+				}
+				if r := fn(p, d, fs.ErrPermission); r != nil {
+					return r
+				}
+				return fs.SkipDir
+			}
+			return fn(p, d, err)
+		})
+	}
+	retries := func() int { l, _ := LoadImported(f.cache); return len(l.Coverage["claude-code"].Retry) }
+	turns := func() int { l, _ := LoadImported(f.cache); n, _ := total(l, "claude-code"); return n }
+	unreadable = true
+	f.run(30, both())
+	if retries() != 1 {
+		t.Fatal("precondition: retry not queued")
+	}
+	unlistable = true
+	f.run(30, both())
+	if retries() != 1 {
+		t.Fatal("retry dropped while its folder is unreadable")
+	}
+	unreadable, unlistable = false, false
+	f.run(30, both())
+	if turns() != 2 || retries() != 0 {
+		t.Fatalf("restored log: turns=%d want 2, retries=%d", turns(), retries())
+	}
+	f.run(30, both())
+	if turns() != 2 {
+		t.Fatal("restored log counted twice")
+	}
+}
+
+// Post-merge sampling 2026-11-12 (#858): the consent fence around a source's commit, as LocalWrite
+// applies it in production (it refuses a source the live consent no longer permits).
+func localWriteGuard(live **consent.Admission) func(string, func() error) error {
+	return func(tool string, write func() error) error {
+		source := "codex"
+		if tool == "claude" {
+			source = "claude-code"
+		}
+		if currentEpoch(**live, source) == nil {
+			return errors.New("local reader not permitted")
+		}
+		return write()
+	}
+}
+
+// Item 1: a source that finished reading, then was revoked and regranted while another source is
+// still importing, must not have its rows written back under the revoked epoch.
+func TestImportDropsASourceRevokedAndRegrantedBetweenReadAndCommit(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	f.codexLog("rollout-a.jsonl", -3)
+	live := both()
+	regrant := func() *consent.Admission {
+		state := consent.Empty()
+		state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+		state.Generation = 3
+		state.Revoked[consent.ScopeClaudeLocalHistory] = 1
+		state.Scopes[consent.ScopeClaudeLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, At: t0}
+		state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, At: t0}
+		a := consent.NewAdmission(state, consent.Automatic)
+		return &a
+	}
+	res, err := Import(context.Background(), f.cache, ImportOptions{Claude: &ImportRoot{Dir: f.claude}, Now: f.now, Admission: both(),
+		Codex: &ImportRoot{Dir: f.home, Background: func(string) bool { live = regrant(); return false }}, // claude is already read
+		Live:  func() consent.Admission { return *live }, Guard: localWriteGuard(&live)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 0 {
+		t.Fatalf("claude rows written under the revoked epoch: %d (%+v)", r, res.Sources)
+	}
+	if _, has := l.Coverage["claude-code"]; has {
+		t.Fatal("claude coverage written under the revoked epoch")
+	}
+}
+
+// Item 2: revoking a source that already finished reading must not abort the other source's import.
+func TestImportRevokeOfAFinishedSourceDoesNotAbortTheOtherSource(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	f.codexLog("rollout-a.jsonl", -3)
+	live := both()
+	res, err := Import(context.Background(), f.cache, ImportOptions{Claude: &ImportRoot{Dir: f.claude}, Now: f.now, Admission: both(),
+		Codex: &ImportRoot{Dir: f.home, Background: func(string) bool { live = admitted(consent.ScopeCodexLocalHistory); return false }},
+		Live:  func() consent.Admission { return *live }, Guard: localWriteGuard(&live)})
+	if err != nil {
+		t.Fatalf("one source's revoke aborted the import: %v", err)
+	}
+	got := map[string]string{}
+	for _, s := range res.Sources {
+		got[s.Source] = s.Status
+	}
+	if got["claude-code"] != StatusNoConsent {
+		t.Fatalf("%+v", res.Sources)
+	}
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "codex"); r != 1 {
+		t.Fatalf("codex import lost: %d", r)
+	}
+	if r, _ := total(l, "claude-code"); r != 0 {
+		t.Fatalf("claude rows written after the revoke: %d", r)
 	}
 }

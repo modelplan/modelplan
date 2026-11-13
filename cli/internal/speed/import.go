@@ -4,6 +4,8 @@ package speed
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -51,6 +53,30 @@ type Span struct {
 	// Epoch: the grant the span was imported under. After a revoke and a new grant the span no
 	// longer counts and the source is read again.
 	Epoch *GrantEpoch `json:"epoch,omitempty"`
+	// Retry: logs inside the span that could not be read. The span still counts as covered, but
+	// each of these files is read again, alone, on the next import (HIST-IMP-12).
+	Retry []RetryFile `json:"retry,omitempty"`
+}
+
+// RetryFile is one log whose read failed and the turn spans it still owes.
+type RetryFile struct {
+	// Key identifies the log by a hash of its path; the ledger never holds a path (it can carry a project name). The
+	// path itself lives only in memory and is found again by hash on the next import.
+	Key   string `json:"key"`
+	Path  string `json:"-"`
+	Spans []Span `json:"spans"`
+}
+
+// RetryKey is the ledger's identity of an unreadable log.
+func RetryKey(path string) string {
+	h := sha256.Sum256([]byte(path))
+	return hex.EncodeToString(h[:16])
+}
+
+// importItem is one log to read and the spans whose turns it may contribute.
+type importItem struct {
+	path   string
+	ranges []span
 }
 
 // ImportLedger is imported.json's content.
@@ -113,6 +139,10 @@ type ImportOptions struct {
 	// Admission: the consent in force; nil reads the current one. A source without its history
 	// grant is skipped.
 	Admission *consent.Admission
+	// Live reads the consent in force now. A source whose history grant is no longer the one the run
+	// was admitted under stops before its next log is opened and writes nothing. Nil reads the
+	// current consent when Admission is nil too (production), and skips the live check otherwise.
+	Live func() consent.Admission
 	// Progress, when set, is called with the number of log files read so far and the total to read
 	// (counted before the first read), from the importing goroutine.
 	Progress func(done, total int)
@@ -148,10 +178,19 @@ type importJob struct {
 	parser string
 	ranges []span
 	list   []string
+	pend   []RetryFile // unreadable logs of an earlier run, read again alone
+	failed []RetryFile // logs of this run that could not be read
 	rows   []PerfRow
 	turns  int
 	status string
+	// epoch: the grant the run was admitted under; live reads the grant in force now (nil: no
+	// live check). withdrawn: the grant changed mid-run, so nothing of this source is written.
+	epoch     *GrantEpoch
+	live      func() consent.Admission
+	withdrawn bool
 }
+
+var errGrantWithdrawn = errors.New("history grant withdrawn during the import")
 
 // Import reads the older logs of the sources the caller holds consent for and merges their turns
 // into imported.json. Cancelling ctx before the read finishes leaves the ledger untouched.
@@ -171,6 +210,10 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 	adm := consent.Capture()
 	if o.Admission != nil {
 		adm = *o.Admission
+	}
+	live := o.Live
+	if live == nil && o.Admission == nil {
+		live = consent.Capture
 	}
 	jobs := []*importJob{
 		{source: "claude-code", root: o.Claude, dir: "projects", newP: func() parser { return newClaude(now) }, parser: ParserClaude},
@@ -203,6 +246,8 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			c = Span{}
 		}
 		j.ranges = missing(c, from, cutoff)
+		j.pend = c.Retry
+		j.epoch, j.live = currentEpoch(adm, j.source), live
 		active = append(active, j)
 	}
 	// One pass per source: files that may hold turns of a missing range.
@@ -212,10 +257,28 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			j.list = j.files(j.earliest())
 			prog.total += len(j.list)
 		}
+		if len(j.pend) > 0 { // find the unreadable logs again by their hash (no path is stored)
+			byKey := map[string]string{}
+			found, complete := j.walk(time.Time{})
+			for _, f := range found {
+				byKey[RetryKey(f)] = f
+			}
+			// An unfound log counts as deleted only after a complete scan. While a folder cannot be
+			// listed (or the scan stops at its cap) the log is left out of this run and stays owed.
+			var pend []RetryFile
+			for _, r := range j.pend {
+				r.Path = byKey[r.Key]
+				if r.Path != "" || complete {
+					pend = append(pend, r)
+				}
+			}
+			j.pend = pend
+		}
+		prog.total += len(j.pend)
 	}
 	prog.report()
 	for _, j := range active {
-		if len(j.ranges) == 0 {
+		if len(j.ranges) == 0 && len(j.pend) == 0 {
 			j.status = StatusImported
 			continue
 		}
@@ -241,13 +304,32 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		res.Cancelled = true
 		return res, nil
 	}
-	// Commit, source by source, each under its own consent fence.
+	// Commit, source by source, each under its own consent fence. A source whose grant changed
+	// after its read (revoked, or revoked and granted again) writes nothing; the others go on.
+	skip := func(j *importJob) {
+		j.withdrawn, j.status, j.rows, j.turns = true, StatusNoConsent, nil, 0
+		for i := range res.Sources {
+			if res.Sources[i].Source == j.source {
+				res.Sources[i].Status, res.Sources[i].Turns = StatusNoConsent, 0
+			}
+		}
+	}
+	grantChanged := func(j *importJob) bool {
+		return j.live != nil && !sameEpoch(currentEpoch(j.live(), j.source), j.epoch)
+	}
 	committed := false
 	for _, j := range active {
 		j := j
+		if j.withdrawn {
+			continue
+		}
 		write := func() error {
 			if !committed && ctx.Err() != nil { // checked again under the fence, just before the write
 				res.Cancelled = true
+				return nil
+			}
+			if grantChanged(j) { // under the fence: the live grant is not the one this read was made under
+				skip(j)
 				return nil
 			}
 			return commitImport(cache, j, o.Auto, now, adm, &committed)
@@ -259,6 +341,10 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			err = write()
 		}
 		if err != nil {
+			if grantChanged(j) { // the guard refused because consent was withdrawn: not a failure
+				skip(j)
+				continue
+			}
 			return res, err
 		}
 	}
@@ -320,12 +406,66 @@ func (j *importJob) earliest() time.Time {
 func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 	tmp := &PerfLedger{}
 	seen := map[string]bool{} // Claude request ids counted so far in this run
+	// admitted: still running and still under the grant the run started with. Checked before each
+	// log is opened and while one is parsed, so a revoke stops the reads, not only the write.
+	admitted := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if j.live != nil && !sameEpoch(currentEpoch(j.live(), j.source), j.epoch) {
+			return errGrantWithdrawn
+		}
+		return nil
+	}
+	var work []importItem
+	withdraw := func(i int) error {
+		j.withdrawn, j.status, j.rows, j.turns = true, StatusNoConsent, nil, 0
+		prog.done += len(work) - i - 1 // the logs left unread
+		prog.report()
+		return nil
+	}
 	for _, p := range j.list {
+		work = append(work, importItem{path: p, ranges: append([]span(nil), j.ranges...)})
+	}
+	for _, r := range j.pend {
+		if r.Path == "" {
+			prog.done++ // gone for good: nothing left to retry
+			continue
+		}
+		if _, err := os.Lstat(r.Path); errors.Is(err, os.ErrNotExist) {
+			prog.done++ // gone for good: nothing left to retry
+			continue
+		}
+		// A retry log that is also in this run's list is read once with both range sets: reading it
+		// twice would let the first pass mark every request id seen and drop the owed turns.
+		at := -1
+		for k := range work {
+			if work[k].path == r.Path {
+				at = k
+				break
+			}
+		}
+		if at < 0 {
+			work = append(work, importItem{path: r.Path})
+			at = len(work) - 1
+		}
+		for _, sp := range r.Spans {
+			work[at].ranges = append(work[at].ranges, span{sp.From, sp.Through})
+		}
+	}
+	for i, it := range work {
+		p := it.path
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		prog.done++
 		prog.report()
+		if err := admitted(); err != nil {
+			if errors.Is(err, errGrantWithdrawn) {
+				return withdraw(i)
+			}
+			return err
+		}
 		if j.root.Background != nil && j.source == "codex" && j.root.Background(p) {
 			continue
 		}
@@ -335,12 +475,21 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			cp = c
 			c.prior, c.mine = seen, map[string]bool{}
 		}
-		turns, err := readWhole(ctx, p, parser)
+		turns, err := readWhole(admitted, p, parser)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			continue // unreadable file: skipped
+			if errors.Is(err, errGrantWithdrawn) {
+				return withdraw(i)
+			}
+			// Unreadable: its span stays covered but the file is retried on the next import.
+			rf := RetryFile{Key: RetryKey(p), Path: p}
+			for _, r := range it.ranges {
+				rf.Spans = append(rf.Spans, Span{From: r.lo, Through: r.hi})
+			}
+			j.failed = append(j.failed, rf)
+			continue
 		}
 		if cp != nil {
 			for id := range cp.mine {
@@ -348,7 +497,7 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			}
 		}
 		for _, t := range turns {
-			if t.at.IsZero() || !j.inRange(t.at) {
+			if t.at.IsZero() || !inRange(it.ranges, t.at) {
 				continue
 			}
 			tmp.addTurn(j.source, j.parser, t, false)
@@ -362,8 +511,8 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 	return nil
 }
 
-func (j *importJob) inRange(t time.Time) bool {
-	for _, r := range j.ranges {
+func inRange(ranges []span, t time.Time) bool {
+	for _, r := range ranges {
 		if r.has(t) {
 			return true
 		}
@@ -371,20 +520,38 @@ func (j *importJob) inRange(t time.Time) bool {
 	return false
 }
 
+// importWalkDir and importOpen are the importer's filesystem calls; tests replace them to fail a
+// folder listing or a log read without depending on file permissions (which root ignores).
+var (
+	importWalkDir = filepath.WalkDir
+	importOpen    = os.Open
+)
+
 // files lists the source's logs modified since `since`, in a stable order. Links, directories and
 // the harness's sub-agent folders are not followed.
 func (j *importJob) files(since time.Time) []string {
+	out, _ := j.walk(since)
+	return out
+}
+
+// walk is files plus whether the scan saw every log: false when a folder could not be listed or the
+// scan stopped at its cap. A missing root is complete (there are no logs).
+func (j *importJob) walk(since time.Time) ([]string, bool) {
 	root := filepath.Join(j.root.Dir, j.dir)
 	if !filepath.IsAbs(root) {
-		return nil
+		return nil, true
 	}
 	var out []string
-	visited := 0
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	visited, complete := 0, true
+	_ = importWalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if visited++; visited > maxImportFiles {
+			complete = false
 			return fs.SkipAll
 		}
 		if err != nil {
+			if !(path == root && errors.Is(err, fs.ErrNotExist)) {
+				complete = false
+			}
 			return nil
 		}
 		if d.IsDir() {
@@ -403,13 +570,13 @@ func (j *importJob) files(since time.Time) []string {
 		return nil
 	})
 	sort.Strings(out)
-	return out
+	return out, complete
 }
 
 // readWhole streams one log line by line through a parser and returns its finished turns. A line
 // that is too long or does not parse is skipped by the parser; an unfinished last turn is dropped.
-func readWhole(ctx context.Context, path string, p parser) ([]turn, error) {
-	fh, err := os.Open(path)
+func readWhole(admitted func() error, path string, p parser) ([]turn, error) {
+	fh, err := importOpen(path)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +588,7 @@ func readWhole(ctx context.Context, path string, p parser) ([]turn, error) {
 	var off int64
 	for n := 0; ; n++ {
 		if n%importCancelEvery == 0 {
-			if err := ctx.Err(); err != nil {
+			if err := admitted(); err != nil {
 				return nil, err
 			}
 		}
@@ -487,6 +654,31 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		}
 	}
 	c.Epoch = epoch
+	// Every pending log was tried this run: the ones that read are done, the ones that failed
+	// again (and new failures) are in j.failed.
+	tried := map[string]bool{}
+	for _, r := range j.pend {
+		tried[r.Key] = true
+	}
+	var retry []RetryFile
+	for _, r := range c.Retry {
+		if !tried[r.Key] {
+			retry = append(retry, r)
+		}
+	}
+	for _, f := range j.failed {
+		merged := false
+		for i := range retry {
+			if retry[i].Key == f.Key {
+				retry[i].Spans = append(retry[i].Spans, f.Spans...)
+				merged = true
+			}
+		}
+		if !merged {
+			retry = append(retry, f)
+		}
+	}
+	c.Retry = retry
 	led.Coverage[j.source] = c
 	if auto && led.AutoRan == nil {
 		t := now.UTC().Truncate(time.Second)

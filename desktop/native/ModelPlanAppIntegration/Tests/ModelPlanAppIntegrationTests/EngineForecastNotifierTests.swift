@@ -8,7 +8,7 @@ import ModelPlanWire
 @MainActor final class EngineForecastNotifierTests: XCTestCase {
     private let now=Date(timeIntervalSince1970:1_800_000_000)
     private func stamp(_ seconds:TimeInterval) -> String { ISO8601DateFormatter().string(from:now.addingTimeInterval(seconds)) }
-    private func rows(runsOut:TimeInterval?=1200,reset:TimeInterval=18000,valueState:String="current") throws -> WireRowsSnapshot {
+    private func rows(runsOut:TimeInterval?=1200,reset:TimeInterval=18000,validUntil:TimeInterval?=nil,valueState:String="current") throws -> WireRowsSnapshot {
         var repo=URL(fileURLWithPath:#filePath).deletingLastPathComponent()
         while !FileManager.default.fileExists(atPath:repo.appendingPathComponent("schema/app-cli/captures").path) { repo.deleteLastPathComponent() }
         var data=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:repo.appendingPathComponent("schema/app-cli/captures/WireRowsSnapshot.json"))) as? [String:Any])
@@ -16,7 +16,7 @@ import ModelPlanWire
         var list=try XCTUnwrap(projection["rows"] as? [[String:Any]])
         var accounts=try XCTUnwrap(list[0]["accounts"] as? [[String:Any]])
         var windows=try XCTUnwrap(accounts[0]["windows"] as? [[String:Any]])
-        windows[0]["current"]=true;windows[0]["resetsAt"]=stamp(reset);windows[0]["validUntil"]=stamp(reset)
+        windows[0]["current"]=true;windows[0]["resetsAt"]=stamp(reset);windows[0]["validUntil"]=stamp(validUntil ?? reset)
         accounts[0]["windows"]=windows;accounts[0]["valueState"]=valueState
         list[0]["accounts"]=accounts;projection["rows"]=list
         var forecast:[String:Any]=["source":try XCTUnwrap(list[0]["id"] as? String),"subscriptionRef":try XCTUnwrap(accounts[0]["subscriptionRef"] as? String),
@@ -32,6 +32,33 @@ import ModelPlanWire
         XCTAssertTrue(EngineForecastDecoder.episodes(try rows(runsOut:18060),now:now).isEmpty)
         XCTAssertTrue(EngineForecastDecoder.episodes(try rows(valueState:"retained"),now:now).isEmpty)
         XCTAssertTrue(EngineForecastDecoder.episodes(nil,now:now).isEmpty)
+    }
+    /// Audit B finding 3 (SET-9-18): the reading's validity deadline expires before its run-out and reset.
+    func testAnExpiredReadingIsNoLongerAnEpisode() throws {
+        let snapshot=try rows(runsOut:1200,reset:18000,validUntil:1)
+        XCTAssertEqual(EngineForecastDecoder.episodes(snapshot,now:now).count,1)
+        XCTAssertTrue(EngineForecastDecoder.episodes(snapshot,now:now.addingTimeInterval(1)).isEmpty)
+        XCTAssertTrue(EngineForecastDecoder.episodes(snapshot,now:now.addingTimeInterval(2)).isEmpty)
+    }
+    /// Audit B finding 3: admission while valid, delivery processed after the deadline with the same
+    /// snapshot still cached; the final recheck refuses it.
+    func testDeliveryDelayedPastTheReadingDeadlineDoesNotNotify() async throws {
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("forecast-expired-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        try await store.update { $0.notifications.optedIn=true;$0.notifications.kinds.insert(.forecast) }
+        var clock=now
+        let notifier=EngineForecastNotifier(settings:store,cacheURL:directory.appendingPathComponent("forecast.json"),deliverToSystem:false,now:{ clock })
+        var delivered:[String]=[]
+        notifier.deliveryOverride={ delivered.append($0) }
+        notifier.apply(rows:try rows(runsOut:1200,reset:18000,validUntil:1))
+        clock=now.addingTimeInterval(2)
+        for _ in 0..<50 { await Task.yield();try await Task.sleep(for:.milliseconds(2)) }
+        XCTAssertEqual(delivered,[],"An expired reading never notifies")
+        clock=now
+        notifier.apply(rows:try rows(runsOut:1200,reset:18000,validUntil:1))
+        for _ in 0..<50 { await Task.yield();try await Task.sleep(for:.milliseconds(2)) }
+        XCTAssertEqual(delivered.count,1,"The same reading notifies while it is still valid")
     }
     func testOneNotificationPerWindowCycleAndOnlyWhenTheKindIsOn() async throws {
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("forecast-notices-"+UUID().uuidString)
