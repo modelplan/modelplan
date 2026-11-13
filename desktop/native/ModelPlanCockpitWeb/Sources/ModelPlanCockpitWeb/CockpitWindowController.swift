@@ -1338,21 +1338,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   override var canBecomeMain: Bool { true }
 }
 /// The drag area of the expanded cockpit's top strip. Hovering it shows an open hand (closed while
-/// dragging) and a faint grip of dots, drawn here with no art; nothing shows without hover.
+/// dragging). D227 (owner 2026-11-12, G3-99): it draws nothing, no grip dots, on hover or while dragging.
 @MainActor final class CockpitTitleDrag: NSView {
   enum Phase { case began, moved, ended, cancelled }
   var event: ((Phase, CGPoint) -> Void)?
   /// Right-click on the strip reaches the web view's own context menu.
   var contextMenu: ((NSEvent) -> Void)?
-  private(set) var isHovered = false { didSet { if isHovered != oldValue { needsDisplay = true } } }
+  private(set) var isHovered = false
   private(set) var isDragging = false {
-    didSet { if isDragging != oldValue { needsDisplay = true; window?.invalidateCursorRects(for: self) } }
+    didSet { if isDragging != oldValue { window?.invalidateCursorRects(for: self) } }
   }
   /// What the pointer shows over the strip: an open hand, a closed hand while dragging.
   func resetDragState() { isDragging = false }
   var currentCursor: NSCursor { isDragging ? .closedHand : .openHand }
-  /// The grip is visible only while hovered or dragging.
-  var showsGrip: Bool { isHovered || isDragging }
   override var acceptsFirstResponder: Bool { true }
   override func updateTrackingAreas() {
     super.updateTrackingAreas()
@@ -1374,15 +1372,5 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   override func cancelOperation(_ sender: Any?) { isDragging = false; event?(.cancelled, .zero) }
   override func keyDown(with event: NSEvent) {
     if event.keyCode == 53 { isDragging = false; self.event?(.cancelled, .zero) } else { super.keyDown(with: event) }
-  }
-  override func draw(_ dirtyRect: NSRect) {
-    guard showsGrip else { return }
-    NSColor(white: 1, alpha: isDragging ? 0.34 : 0.22).setFill()
-    let dot: CGFloat = 3, gap: CGFloat = 5, columns = 6, rows = 2
-    let width = CGFloat(columns) * dot + CGFloat(columns - 1) * gap, height = CGFloat(rows) * dot + CGFloat(rows - 1) * gap
-    let origin = CGPoint(x: bounds.midX - width / 2, y: bounds.midY - height / 2)
-    for row in 0..<rows { for column in 0..<columns {
-      NSBezierPath(ovalIn: NSRect(x: origin.x + CGFloat(column) * (dot + gap), y: origin.y + CGFloat(row) * (dot + gap), width: dot, height: dot)).fill()
-    } }
   }
 }
