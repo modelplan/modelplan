@@ -240,6 +240,11 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 				}
 			}
 		}
+		// G3-100: a real project the tool stores no name for (ZCode) is not "no project". It reads as a short
+		// opaque tag so the strip can tell it from a session with no project at all (null label, null ref).
+		if labels && label == nil && session.ProjectRef != nil {
+			label = unnamedProjectLabel(*session.ProjectRef)
+		}
 		// The live record's account is the same evidence the working signal binds on. A reference
 		// outside this cockpit's subscriptions stays unbound; never substitute a source-wide one.
 		var subscription *string
@@ -292,4 +297,13 @@ func cockpitModelID(raw, source string, models []digest.Model) string {
 		}
 	}
 	return "unknown"
+}
+
+// unnamedProjectLabel: a language-neutral tag for a project that has a reference but no stored name.
+func unnamedProjectLabel(ref string) *string {
+	if len(ref) > 6 {
+		ref = ref[:6]
+	}
+	v := "#" + ref
+	return &v
 }

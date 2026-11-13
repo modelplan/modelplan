@@ -278,3 +278,11 @@ func TestCockpitDetailsWithholdsCorruptCachedSessionRate(t *testing.T) {
 		t.Fatalf("corrupt rate escaped: %#v, %v", got.Sessions, err)
 	}
 }
+
+// G3-100: a project the tool stores no name for (ZCode) reads as a short opaque tag, so the strip never
+// calls it "no project"; a session with no project keeps a null label.
+func TestUnnamedProjectLabelIsATagNotNull(t *testing.T) {
+	if v := unnamedProjectLabel("0123456789abcdef"); v == nil || *v != "#012345" {
+		t.Fatalf("label = %v", v)
+	}
+}

@@ -44,7 +44,7 @@ type PerfLedger struct {
 
 	admission    consent.Admission
 	project      func(source, cwd string, np nativeProject) (ref, label string) // while observing: names a session's project
-	subscription string                               // while observing: the harness account's reference
+	subscription string                                                         // while observing: the harness account's reference
 }
 
 // Ingest: what the caller knows while the ledger reads new turns. Labels: project labels are on
@@ -68,6 +68,9 @@ type PerfSession struct {
 	// labels are on.
 	ProjectRef   string `json:"projectRef,omitempty"`
 	ProjectLabel string `json:"projectLabel,omitempty"`
+	// ProjectRule: the project rule that set ProjectRef (0 = the old git-root grouping, 1 = each tool's own
+	// definition, G3-100). An older session is re-attributed once on its next observation.
+	ProjectRule int `json:"projectRule,omitempty"`
 	// SubscriptionRef: the account the harness was signed in to when the session's first turn
 	// with a known one was read; "" when unknown.
 	SubscriptionRef string       `json:"subscriptionRef,omitempty"`
@@ -229,9 +232,13 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	if s.SubscriptionRef == "" {
 		s.SubscriptionRef = l.subscription
 	}
-	if (t.cwd != "" || t.np.ID != "") && l.project != nil && (s.ProjectRef == "" || s.ProjectLabel == "") {
-		// The first working directory names the project; a label comes once labels are on.
-		if ref, label := l.project(source, t.cwd, t.np); s.ProjectRef == "" {
+	if (t.cwd != "" || t.np.ID != "") && l.project != nil && (s.ProjectRule < projectRule || s.ProjectRef == "" || s.ProjectLabel == "") {
+		// The first working directory names the project; a label comes once labels are on. A session recorded
+		// under the old grouping is recomputed once under the tool's own definition, dropping a guessed project.
+		ref, label := l.project(source, t.cwd, t.np)
+		if s.ProjectRule < projectRule {
+			s.ProjectRef, s.ProjectLabel, s.ProjectRule = ref, label, projectRule
+		} else if s.ProjectRef == "" {
 			s.ProjectRef, s.ProjectLabel = ref, label
 		} else if ref == s.ProjectRef {
 			s.ProjectLabel = label
@@ -422,3 +429,6 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 		}
 	}
 }
+
+// projectRule is the current project attribution rule (see PerfSession.ProjectRule).
+const projectRule = 1

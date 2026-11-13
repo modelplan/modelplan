@@ -294,3 +294,34 @@ func TestClearProjectLabelsCoversLiveRecords(t *testing.T) {
 		t.Fatalf("live = %+v", l.Live)
 	}
 }
+
+// G3-100 upgrade: a session recorded under the old git-root grouping is re-attributed once on its next
+// observation, so the guessed name does not outlive the fix. Counts are kept.
+func TestOldGuessedProjectIsReplacedOnNextObservation(t *testing.T) {
+	utc(t)
+	cache, dir, root := t.TempDir(), t.TempDir(), t.TempDir()
+	repo, _ := gitRepo(t, root)
+	seedPerf(t, cache, t0.Add(-time.Minute))
+	p := filepath.Join(dir, "s.jsonl")
+	prompt := strings.Replace(ccPrompt(0), `"type":"user"`, fmt.Sprintf(`"cwd":%q,"type":"user"`, filepath.Join(repo, "src")), 1)
+	writeLines(t, p, prompt, ccReply(10, "r1", "claude-fixture", "high", "", 900, 0, "end_turn", false))
+	if err := ObserveClaude(cache, p, false, Ingest{Labels: true}, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	l, _ := LoadPerf(cache)
+	if len(l.Sessions) != 1 || l.Sessions[0].ProjectRule != projectRule {
+		t.Fatalf("a new session is recorded under the current rule: %+v", l.Sessions)
+	}
+	l.Sessions[0].ProjectRef, l.Sessions[0].ProjectLabel, l.Sessions[0].ProjectRule = "oldref", "old-guess", 0
+	b, _ := json.Marshal(l)
+	os.WriteFile(PerfPath(cache), b, 0o600)
+	writeLines(t, p, strings.Replace(ccPrompt(15), `"type":"user"`, fmt.Sprintf(`"cwd":%q,"type":"user"`, filepath.Join(repo, "src")), 1), ccReply(20, "r2", "claude-fixture", "high", "", 100, 0, "end_turn", false))
+	if err := ObserveClaude(cache, p, false, Ingest{Labels: true}, t0.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	l, _ = LoadPerf(cache)
+	s := l.Sessions[0]
+	if s.ProjectRef == "oldref" || s.ProjectLabel != "src" || s.ProjectRule != projectRule {
+		t.Fatalf("old guess remains: %+v", s)
+	}
+}

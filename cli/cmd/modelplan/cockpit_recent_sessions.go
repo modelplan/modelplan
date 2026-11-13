@@ -61,6 +61,8 @@ func cockpitRecentSessions(sessions []speed.PerfSession, allowed map[string]bool
 		if labels && session.ProjectRef != "" && safeCockpitLabel(session.ProjectLabel) {
 			v := session.ProjectLabel
 			entry.ProjectLabel = &v
+		} else if labels && session.ProjectRef != "" {
+			entry.ProjectLabel = unnamedProjectLabel(session.ProjectRef)
 		}
 		if session.SubscriptionRef != "" && verified[session.SubscriptionRef] != nil {
 			v := session.SubscriptionRef
