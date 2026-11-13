@@ -36,10 +36,10 @@ class DragStripTests(unittest.TestCase):
         return next(call for call in host.calls if call[0] == "down")[1:]
 
     def test_point_is_inside_the_drag_region_at_any_scale(self):
-        for scale, root in ((1.0, 877), (0.85, 877), (0.75, 877), (1.0, 691), (1.0, 627)):
+        for scale, root in ((1.0, 877), (0.85, 877), (0.75, 877), (1.0, 691), (1.0, 627), (1.0, 609), (0.8, 609)):
             x0, y0 = 300.0, 120.0
             x, y = self.start([x0, y0, 636 * scale, (root + 34) * scale])
-            strip_top = {877: 225, 691: 45, 627: 57}[root]
+            strip_top = {877: 225, 691: 45, 627: 57, 609: 45}[root]  # 609 is the compact shutter-closed root: strip top 45
             self.assertGreaterEqual((x - x0) / scale, 24); self.assertLessEqual((x - x0) / scale, 24 + 216)
             self.assertGreaterEqual((y - y0) / scale, strip_top - 3); self.assertLessEqual((y - y0) / scale, strip_top + 29)
 

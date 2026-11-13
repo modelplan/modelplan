@@ -324,7 +324,7 @@ class Walkthrough:
         window = self.need(action["window"])["frame"]
         scale = window[2] / 636.0
         root = round(window[3] / scale) - 34
-        strip_top = {877: 225, 691: 45, 627: 57, 609: 57}.get(min((877, 691, 627, 609), key=lambda r: abs(r - root)), 225)
+        strip_top = {877: 225, 691: 45, 627: 57, 609: 45}.get(min((877, 691, 627, 609), key=lambda r: abs(r - root)), 225)
         start = (window[0] + 132 * scale, window[1] + (strip_top + 13) * scale)
         self.host.helper("down", *start)
         self.host.helper("held", start[0] + action["by"][0], start[1] + action["by"][1], action.get("seconds", 1.0))
