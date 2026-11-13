@@ -2,6 +2,7 @@
 // Adapter around the released study engine model/view. Every wire string is
 // escaped once before the prototype's trusted HTML renderer; its fmt wrapper
 // does not escape again. All non-text substitutions use closed vocabularies.
+import {ht} from './host-text.js';
 import {effectiveRedBelow} from './threshold.js';
 import type {WireCockpitData,WireWindow} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
@@ -46,7 +47,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  const items=cautionItems(data,now,redBelow());
  const alerts=items.flatMap(x=>x.level==='blue'?[]:[{level:x.level,sub:esc(x.member)}]);
  const level=cautionLevel(items);
- const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(locale==='en'?'Alert active':'告警激活'):(locale==='en'?'Alert inactive':'告警未激活'));}
+ const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(ht(locale,'host.alertActive')):(ht(locale,'host.alertInactive')));}
  return {now,accounts,alerts,caution:{level,key:''}};
  }
  let renderedNow=initialNow;
@@ -73,11 +74,11 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   for(const row of host.querySelectorAll<HTMLElement>('.qrow-t'))row.dataset.available=String(!!row.querySelector('.qtokens,.qaverage'));
   // Native supplies only allowlisted marks; retain the established accessibility hook.
   for(const image of host.querySelectorAll<HTMLImageElement>('.ek img.lamp'))image.classList.add('vendor-mark');
-  for(const led of host.querySelectorAll<HTMLElement>('.eng-led[data-page]')){const n=Number(led.dataset.page);led.setAttribute('role','button');led.setAttribute('aria-label',locale==='en'?`Page ${n+1}`:`第 ${n+1} 页`);led.setAttribute('aria-current',String(n===page));}
+  for(const led of host.querySelectorAll<HTMLElement>('.eng-led[data-page]')){const n=Number(led.dataset.page);led.setAttribute('role','button');led.setAttribute('aria-label',ht(locale,'host.pageN',{n:n+1}));led.setAttribute('aria-current',String(n===page));}
   // Unknown vendors have no mark; never turn their input into an image URL.
   for(const image of host.querySelectorAll<HTMLImageElement>('img[src="assets/brands/../../neutral.png"]'))image.remove();
-  for(const b of host.querySelectorAll<HTMLButtonElement>('.ek[data-sub]')){const member=seen.get(b.dataset.sub??'');if(member){b.dataset.scope=member.key;b.dataset.unstable=String(member.unstable);const name=locale==='en'?member.row.name.en:member.row.name.zh;const digit=b.querySelector('.ki')?.textContent??'';const shortcut=locale==='en'?`Shortcut key ${digit}`:`快捷键 ${digit}`;b.setAttribute('aria-label',`${name} · ${shortcut}`);b.title=`${name} · ${shortcut}`;const label=b.querySelector<HTMLElement>('.ek-name');if(label)label.title=b.title;}}
-  const all=host.querySelector<HTMLButtonElement>('.ek[data-all]');if(all){all.dataset.scope='';const shortcut=locale==='en'?'Shortcut key 0':'快捷键 0';all.setAttribute('aria-label',`${locale==='en'?'All':'全部'} · ${shortcut}`);all.title=shortcut;}
+  for(const b of host.querySelectorAll<HTMLButtonElement>('.ek[data-sub]')){const member=seen.get(b.dataset.sub??'');if(member){b.dataset.scope=member.key;b.dataset.unstable=String(member.unstable);const name=locale==='en'?member.row.name.en:member.row.name.zh;const digit=b.querySelector('.ki')?.textContent??'';const shortcut=ht(locale,'host.shortcutKey',{digit});b.setAttribute('aria-label',`${name} · ${shortcut}`);b.title=`${name} · ${shortcut}`;const label=b.querySelector<HTMLElement>('.ek-name');if(label)label.title=b.title;}}
+  const all=host.querySelector<HTMLButtonElement>('.ek[data-all]');if(all){all.dataset.scope='';const shortcut=ht(locale,'host.shortcutKey',{digit:0});all.setAttribute('aria-label',`${ht(locale,'host.allScope')} · ${shortcut}`);all.title=shortcut;}
   root.dataset.scope=scope?'subscription':'all';
  };
  const choosePage=(element:Element)=>{const led=element.closest<HTMLElement>('.eng-led[data-page]');if(!led||!host.contains(led))return false;const requested=Number(led.dataset.page);if(Number.isInteger(requested)&&requested>=0&&requested<Math.ceil(members.length/6)){page=requested;paint();}return true;};

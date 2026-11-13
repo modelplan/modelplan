@@ -18,7 +18,7 @@ async function open(page,{locale='en',theme='night',empty=true}={}) {
 }
 const posted=page=>page.evaluate(()=>window.sent.filter(m=>m.type==='action').map(m=>m.action));
 const COPY={
- en:{line:'No quota read yet. Sign in to a coding tool and it shows up here.',button:'Open Settings › Subscriptions'},
+ en:{line:'No quota read yet. Sign in to a coding tool and it appears here.',button:'Open Settings › Subscriptions'},
  'zh-CN':{line:'还没读到订阅额度。登录一个编程工具后，这里会自动显示。',button:'打开 设置 › 订阅'},
 };
 

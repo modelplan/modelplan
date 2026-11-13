@@ -1,24 +1,26 @@
 // SPDX-License-Identifier: MIT
 // Cockpit annotations use the released study's captions, attached to the
 // currently visible controls. They do not expose or retain reading data.
+import {ht} from './host-text.js';
 import {leaderAnchor,routeLeader} from '../study/rocket-r1/help-routing.js';
 type Locale='en'|'zh-CN';
-const notes:ReadonlyArray<readonly [string,string,string]>=[
- ['.ck-port','Window: click to open the 3D launch field.','悬窗：点击打开 3D 发射场。'],
- ['[data-shutter]','Window shutter: drag or press to fold or expand the Window.','悬窗开关：拖动或按一下，收起或展开。'],
- ['[data-caution]','Alert lamp: press for all alerts and to stop flashing.','注意灯：按一下查看全部提醒并停止闪烁。'],
- ['[data-settings]','Settings: adjust preferences or show hints again in its window.','设置：在独立窗口调整偏好或重新显示提示。'],
- ['[data-detach]','Detach','分离窗口'],['[data-close]','Close: end the local Try and close the Cockpit.','关闭：结束本地试档并收起驾驶舱。'],
- ['.eng-krow','Engine shortcuts: 0 = All; 1–6 = visible subscriptions.','引擎快捷键：0 = 全部；1–6 = 当前显示的订阅。'],
- ['.lb-t,.qrow-t,.qaverage','Today’s output; today’s average generation speed is summed eligible output tokens divided by summed generation seconds, not live speed; current source binding, not historical account attribution','今日输出；今日平均生成速度为可测速输出 token 总量除以生成秒数总量，不是实时速度；按当前来源关联，非历史账户归属'],
- ['.t-live','Generation speed in the last 60 seconds; at least 5 eligible samples; -- means unavailable','近 60 秒生成速度：合格请求至少 5 个样本；-- 表示不可用'],
- ['.lb-first','5h: only five-hour quota appears here; a blank means none exists.','5小时：这一行只放 5 小时额度，空白表示没有此额度。'],
- ['.lb-second','Weekly: only weekly quota appears here; a blank means none exists.','每周：这一行只放每周额度，空白表示没有此额度。'],
- ['.lb-other','Other: remaining periods and scoped quotas; +N means more.','其他：其他周期和专项额度，+N 表示还有更多。'],
- ['.dk-fad','Faders: each is a model; drag or press an effort for a local comparison that leaves the session unchanged.','推杆：每个代表一个模型，拖动或点档位作本地比较，不会改会话。'],
- ['.mfd-pk','Main screen: page keys change pages; bottom keys select or return.','公共屏：页键切页，底键选项或返回原页。'],
- ['.ck-tape','Session record: running sessions come first; press a row for details.','会话记录：运行中的在前，按一行查看详情。'],
- ['.ck-base .bz-line','Glow: this subscription is working now; it does not mean an alert.','喷口光：表示这个订阅正在用，不表示额度告警。'],
+const notes:ReadonlyArray<readonly [string,string]>=[
+ ['.ck-port','host.helpNote1'],
+ ['[data-shutter]','host.helpNote2'],
+ ['[data-caution]','host.helpNote3'],
+ ['[data-settings]','host.helpNote4'],
+ ['[data-detach]','host.helpNote5'],
+ ['[data-close]','host.helpNote6'],
+ ['.eng-krow','host.helpNote7'],
+ ['.lb-t,.qrow-t,.qaverage','host.helpNote8'],
+ ['.t-live','host.helpNote9'],
+ ['.lb-first','host.helpNote10'],
+ ['.lb-second','host.helpNote11'],
+ ['.lb-other','host.helpNote12'],
+ ['.dk-fad','host.helpNote13'],
+ ['.mfd-pk','host.helpNote14'],
+ ['.ck-tape','host.helpNote15'],
+ ['.ck-base .bz-line','host.helpNote16']
 ];
 export function mountPrototypeHelp(root:HTMLElement,getLocale:()=>Locale,isActive:()=>boolean,isAttached:()=>boolean){
  const layer=document.createElement('section');layer.id='help-map';layer.className='annot help-map';layer.hidden=true;layer.setAttribute('role','region');document.body.append(layer);
@@ -26,10 +28,10 @@ export function mountPrototypeHelp(root:HTMLElement,getLocale:()=>Locale,isActiv
  const visible=(e:Element)=>{if(!e.isConnected||!e.getClientRects().length)return false;for(let p:Element|null=e;p;p=p.parentElement){const s=getComputedStyle(p);if((p as HTMLElement).hidden||s.display==='none'||s.visibility==='hidden'||s.opacity==='0')return false;}return true;};
  function render(){
   if(!held||!isActive()){layer.hidden=true;return;}
-  const locale=getLocale();layer.replaceChildren();layer.hidden=false;layer.dataset.surface='cockpit';layer.setAttribute('aria-label',locale==='en'?'Cockpit help':'驾驶舱说明');
-  const title=document.createElement('div');title.className='help-map-title';title.textContent=locale==='en'?'Engine = subscription · Fader = model · Glow = working now':'发动机 = 订阅 · 推杆 = 模型 · 喷口光 = 正在用';
-  const dismiss=document.createElement('span');dismiss.className='help-map-dismiss';dismiss.textContent=locale==='en'?'Press Esc or click to dismiss help':'按 Esc 或点一下退出说明';title.append(dismiss);layer.append(title);
-  const targets=notes.flatMap(([selector,en,zh])=>{const target=[...root.querySelectorAll(selector)].find(visible);if(!target)return [];const box=target.getBoundingClientRect(),caption=document.createElement('span');caption.className='an';caption.dataset.target=selector;caption.textContent=selector==='[data-detach]'&&!isAttached()?(locale==='en'?'Put back':'放回菜单栏'):locale==='en'?en:zh;layer.append(caption);return [{target,box,caption}];}).sort((a,b)=>a.box.y-b.box.y);
+  const locale=getLocale();layer.replaceChildren();layer.hidden=false;layer.dataset.surface='cockpit';layer.setAttribute('aria-label',ht(locale,'host.helpAria'));
+  const title=document.createElement('div');title.className='help-map-title';title.textContent=ht(locale,'host.helpTitle');
+  const dismiss=document.createElement('span');dismiss.className='help-map-dismiss';dismiss.textContent=ht(locale,'host.helpDismiss');title.append(dismiss);layer.append(title);
+  const targets=notes.flatMap(([selector,key])=>{const target=[...root.querySelectorAll(selector)].find(visible);if(!target)return [];const box=target.getBoundingClientRect(),caption=document.createElement('span');caption.className='an';caption.dataset.target=selector;caption.textContent=selector==='[data-detach]'&&!isAttached()?(ht(locale,'host.helpPutBack')):ht(locale,key);layer.append(caption);return [{target,box,caption}];}).sort((a,b)=>a.box.y-b.box.y);
   if(!targets.length){layer.hidden=true;return;}
   const viewportWidth=window.innerWidth,viewportHeight=window.innerHeight,ship=root.getBoundingClientRect();const available=Math.max(180,ship.x-28),width=Math.min(400,available),gap=root.dataset.layout==='890'?12:6,edge=ship.x;
   Object.assign(title.style,{left:Math.max(8,edge-width-14)+'px',top:'34px',width:width+'px'});
