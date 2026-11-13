@@ -274,6 +274,8 @@ enum DockGripInk {
     private var refreshSweepOriginal: (image: CGImage, usesHoverViewport: Bool)?
     private var refreshSweepGeneration: UInt64 = 0
     @_spi(DockResourceChecks) public private(set) var refreshSweepCountForChecks = 0
+    /// G3-98: (readout alpha, readout text) of every sweep frame, for checks.
+    @_spi(DockResourceChecks) public private(set) var refreshSweepReadoutFramesForChecks: [(alpha: Double, text: String)] = []
     @_spi(DockResourceChecks) public var refreshSweepAnimatingForChecks: Bool { refreshSweepTask != nil }
     /// The effect driver only receives a currently successful official skin.
     var workingEffectSkin: DockInstrumentSkin? { failed || community ? nil : skin }
@@ -571,6 +573,7 @@ enum DockGripInk {
               original.width <= 4096, original.height <= 4096,
               original.width * original.height <= 4_194_304 else { return false }
         refreshSweepCountForChecks += 1
+        refreshSweepReadoutFramesForChecks = []
         if reduceMotion { return true }
         refreshSweepOriginal = (original, imageUsesHoverViewport)
         refreshSweepGeneration &+= 1
@@ -582,9 +585,13 @@ enum DockGripInk {
                 let elapsed = max(0, ProcessInfo.processInfo.systemUptime - started)
                 guard let progress = DockRefreshSweep.fraction(elapsed: elapsed, target: 1, reduceMotion: false) else { break }
                 var frame = base; frame[id] = reading.refreshSweepFrame(progress: progress)
+                let alpha = DockRefreshSweep.readoutAlpha(elapsed: elapsed, reduceMotion: false)
+                var sweepSkin = skin
+                if let i = sweepSkin.stations.firstIndex(where: { $0.subscriptionID == id }) { sweepSkin.stations[i].readoutOpacity = alpha }
+                self.refreshSweepReadoutFramesForChecks.append((alpha, frame[id]?.readout ?? ""))
                 let viewport = self.nozzlePosesForChecks.isEmpty ? nil : self.hoverViewport
                 do {
-                    self.image = try renderer.render(skin: skin, readings: frame, notices: notices, scale: scale,
+                    self.image = try renderer.render(skin: sweepSkin, readings: frame, notices: notices, scale: scale,
                         poses: self.nozzlePosesForChecks, cachedBackground: self.backgroundImage, viewport: viewport).image
                     self.imageUsesHoverViewport = viewport != nil
                 } catch { break }

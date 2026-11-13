@@ -164,6 +164,7 @@ private actor CardDismissalClient: EngineClient {
         XCTAssertEqual(refresh.requests, [memberID], "A click requests only the admitted member")
         XCTAssertEqual(dock.dockView.refreshSweepCountForChecks, count + 1)
         XCTAssertFalse(dock.dockView.refreshSweepAnimatingForChecks, "Reduce Motion keeps the sweep static")
+        XCTAssertTrue(dock.dockView.refreshSweepReadoutFramesForChecks.isEmpty, "G3-98: Reduce Motion never dims or changes the readout")
         refresh.current = .deferred
         XCTAssertTrue(nozzle.beginNozzle(id: memberID, local: start))
         nozzle.endNozzle(global: .zero, currentID: memberID)

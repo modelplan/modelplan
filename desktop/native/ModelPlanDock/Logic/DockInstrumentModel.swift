@@ -90,18 +90,16 @@ public struct DockInstrumentReading: Sendable {
     /// True when the Settings choice is "used": the clock lights time elapsed instead of time left.
     public var clockShowsElapsed = false
     /// A transient display frame; the admitted reading and its observation time are never changed.
-    func refreshSweepFrame(progress: Double) -> DockInstrumentReading {
+    @_spi(DockResourceChecks) public func refreshSweepFrame(progress: Double) -> DockInstrumentReading {
         let p = progress.isFinite ? min(1, max(0, progress)) : 1
         func scaled(_ arc: DockQuotaArc?) -> DockQuotaArc? {
             arc.map { .init(windowID: $0.windowID, fraction: $0.fraction.map { $0 * p }, status: $0.status, remainingFraction: ($0.remainingFraction.map { $0 * p })) }
         }
-        let displayed = readout.hasSuffix("%") ? Double(readout.dropLast()) : nil
-        let text = displayed.map { String(Int(($0 * p).rounded())) + "%" } ?? readout
         return DockInstrumentReading(subscriptionID: subscriptionID, name: name, alias: alias,
             vendorResourceKey: vendorResourceKey, duplicateAccountTag: duplicateAccountTag,
             outer: scaled(outer), inner: scaled(inner), selectedWindowID: selectedWindowID,
             selectedWindowLabel: selectedWindowLabel, selectedResetAt: selectedResetAt,
-            remainingPercent: remainingPercent, readout: text, status: status, dataState: dataState,
+            remainingPercent: remainingPercent, readout: readout, status: status, dataState: dataState,
             unavailableReason: unavailableReason, timeLeftFraction: timeLeftFraction,
             isWorking: isWorking, jetEligible: jetEligible, clockShowsElapsed: clockShowsElapsed)
     }

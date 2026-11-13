@@ -525,6 +525,14 @@ do {
         try expect(DockRefreshSweep.fraction(elapsed: 0.6, target: 0.75, reduceMotion: false) == 0.75, "ends at admitted value")
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: 0.75, reduceMotion: true) == 0.75, "Reduce Motion is static")
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: .nan, reduceMotion: false) == nil, "invalid values are rejected")
+        // G3-98: the readout fades out, stays hidden, fades in; it never counts; Reduce Motion never dims it.
+        try expect(DockRefreshSweep.readoutAlpha(elapsed: 0, reduceMotion: false) == 1, "readout starts visible")
+        try expect(DockRefreshSweep.readoutAlpha(elapsed: 0.15, reduceMotion: false) == 0, "readout is hidden after the fade-out")
+        try expect(DockRefreshSweep.readoutAlpha(elapsed: 0.3, reduceMotion: false) == 0, "readout stays hidden mid-sweep")
+        try expect(abs(DockRefreshSweep.readoutAlpha(elapsed: 0.525, reduceMotion: false) - 0.5) < 0.000001, "readout fades back in")
+        try expect(DockRefreshSweep.readoutAlpha(elapsed: DockRefreshSweep.duration, reduceMotion: false) == 1, "readout ends fully visible")
+        try expect(stride(from: 0.0, through: 0.6, by: 0.01).allSatisfy { (0...1).contains(DockRefreshSweep.readoutAlpha(elapsed: $0, reduceMotion: false)) }, "alpha stays in range")
+        try expect(DockRefreshSweep.readoutAlpha(elapsed: 0.3, reduceMotion: true) == 1, "Reduce Motion swaps instantly, no fade")
     }
     try test("B08 independent card:leave and menu protection without a repeat loop"){
         var card=DockCardInteraction()
