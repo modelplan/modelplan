@@ -23,6 +23,24 @@ public struct CockpitQueryTicket: Equatable, Sendable {
   public let context: CockpitEngineContext
   public let viewRevision: UInt64
 }
+/// CKP-SHELL-40 (owner D205): v1 is night-only. The cockpit renders the night look whatever the macOS
+/// appearance or the saved theme; the day paths in the page and in this module stay intact behind this one
+/// switch. v1.1 turns the day cockpit back on by setting `dayCockpit` (default off) at launch.
+public enum CockpitDayPolicy {
+  private static let lock = NSLock()
+  private static var enabled = false
+  /// Off in v1. Tests flip it and restore it; nothing else writes it.
+  public static var dayCockpit: Bool {
+    get { lock.lock(); defer { lock.unlock() }; return enabled }
+    set { lock.lock(); defer { lock.unlock() }; enabled = newValue }
+  }
+  /// The theme the cockpit may show for a requested one.
+  public static func resolve(_ requested: CockpitAppearance.Theme) -> CockpitAppearance.Theme {
+    dayCockpit ? requested : .night
+  }
+  /// The same pin for the field page's own theme enum.
+  public static func resolveField(dark: Bool) -> Bool { dayCockpit ? dark : true }
+}
 public struct CockpitAppearance: Equatable, Sendable {
   public enum Theme: String, Sendable { case day, night }
   public enum Locale: String, Sendable {
@@ -79,7 +97,7 @@ public struct CockpitVisibility: Equatable, Sendable {
   var active: Bool { visible && !occluded && key }
 }
 public enum CockpitIntent: Equatable, Sendable {
-  case chooseSetup, openSettings, close, detach, putBack, shutterToggle, openField
+  case chooseSetup, openSettings, openSettingsSubscriptions, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
   /// D63: open the enlarged field focused on the rocket with this published display name (resolved by the host).
   case openFieldAt(String)
@@ -514,6 +532,8 @@ public final class CockpitBridgeState {
       switch action {
       case "chooseSetup": intent = .chooseSetup
       case "openSettings": intent = .openSettings
+      // CKP-SHELL-39: the empty engine screen's one button; it opens the Subscriptions pane and carries nothing.
+      case "openSettingsSubscriptions": intent = .openSettingsSubscriptions
       case "scopeSelect":
         guard let key=m["key"] as? String, scopeMembers.contains(key),
           earlyDisplay.map({ pending[$0.requestID]?.members.contains(key) == true }) ?? true else { throw CockpitBridgeError.invalidMessage }

@@ -16,9 +16,9 @@ test('CKP-FAD-03 top-edge vendor strip splits into a segment per subscription',a
  await renderVisualDeck(page,fx,'en');
  const strips=await page.locator('.fd-ch:not(.empty) .fd-strip').evaluateAll(list=>list.map(strip=>{const box=strip.getBoundingClientRect(),band=strip.querySelector('.st-vend'),r=band.getBoundingClientRect();
   return {top:r.top-box.top,height:r.height,edge:r.width>=box.width-8,segments:[...band.children].map(b=>({colour:getComputedStyle(b).getPropertyValue('--v').trim(),paint:getComputedStyle(b).backgroundColor,width:b.getBoundingClientRect().width}))};}));
- expect(strips.map(s=>s.segments.map(x=>x.colour))).toEqual([['#6aa8ff','#ff9a6a'],['#ff9a6a'],['#8f7dff']]);
+ expect(strips.map(s=>s.segments.map(x=>x.colour))).toEqual([['#10a37f','#d97757'],['#d97757'],['#3859ff']]);
  for(const strip of strips){expect(strip.top).toBeLessThanOrEqual(3.5);expect(strip.height).toBeCloseTo(3,0);expect(strip.edge).toBe(true);}
  const [first,second]=strips[0].segments;
  expect(first.width).toBeCloseTo(second.width,0);
- expect(first.paint).toBe('rgb(106, 168, 255)');expect(second.paint).toBe('rgb(255, 154, 106)');
+ expect(first.paint).toBe('rgb(16, 163, 127)');expect(second.paint).toBe('rgb(217, 119, 87)');
 });

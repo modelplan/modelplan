@@ -499,8 +499,13 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 	if !ok {
 		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Cursor period-usage format is not supported yet"}, Invalidate: changed}
 	}
+	// The store fingerprint covers the whole database, so any Cursor state write changes it. Only a
+	// changed or unreadable credential binding invalidates the reading; other writes keep it.
 	if stamp == "" || cursorStateAt(path) != stamp {
-		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Cursor sign-in changed during the read; refresh required"}, Invalidate: true}
+		again, err := readCursorSessionAt(ctx, path, r.Now)
+		if err != nil || readerHash(r.Paths.Cache, "cursor:credential", again.token) != credentialKey || readerHash(r.Paths.Cache, "cursor:account", again.user) != accountKey {
+			return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Cursor sign-in changed during the read; refresh required"}, Invalidate: true}
+		}
 	}
 	a := &Account{Source: "native:cursor", Via: "native", Plan: meta.Plan, ObservedAt: r.Now.UTC(), Windows: windows}
 	if !IdentityOff() {

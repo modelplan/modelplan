@@ -200,6 +200,15 @@ struct DockHelpInteraction: Equatable {
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
+    /// D204 (G3-94): the ignition's own press, with the screen point it came from. Nil falls back to `showConsole`.
+    public var pressIgnition: ((CGPoint) -> Void)?
+    /// D204 (G3-94): the ignition's frame on screen while it is on the widget; the cockpit does not treat a press there
+    /// as an outside click.
+    public var ignitionScreenFrame: CGRect? {
+        guard !consoleButton.isHiddenOrHasHiddenAncestor, let window = consoleButton.window,
+              consoleButton.bounds.width > 0, consoleButton.bounds.height > 0 else { return nil }
+        return window.convertToScreen(consoleButton.convert(consoleButton.bounds, to: nil))
+    }
     private func installIgnitionArt() {
         let side = dockView.presentedSkinForChecks?.fixedLayers.first { $0.resource.contains("recessed-guard") }?.rect.width ?? 0
         consoleButton.installArt(side > 0 ? T2IgnitionArt.shared : nil, guardSide: side)
@@ -714,6 +723,9 @@ struct DockHelpInteraction: Equatable {
         displayed.setNozzlePoses(poses)
     }
 
+    /// G3-98: a failed or never-started refresh releases the hidden number (a landed result does it in the view).
+    func resolveRefreshReadout(_ id: String) { interactionView.resolveRefreshReadout(id) }
+
     @discardableResult func sweepRefresh(_ id: String) -> Bool {
         guard permitted, !retired, preferences.showDock,
               model?.inputs.contains(where: { $0.id == id }) == true else { return false }
@@ -993,7 +1005,7 @@ struct DockHelpInteraction: Equatable {
         self.prepareDetachedAlternateAppearances = prepareDetachedAlternateAppearances
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
-        consoleButton.target = self; consoleButton.action = #selector(openConsole)
+        consoleButton.target = self; consoleButton.action = #selector(ignitionPressed)
         consoleButton.setAccessibilityIdentifier("dock.ignition")
         consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
@@ -1325,7 +1337,7 @@ struct DockHelpInteraction: Equatable {
             do {
                 let profile = RenderProfile(dark: true, scale: backingScale, reduceMotion: application?.effective.reduceMotion ?? true)
                 try driver.configure(view: dockView, readings: rows, profile: profile,
-                                     rotation: DockEffectRotation(period: 1), provider: { _ in provider })
+                                     rotation: .working, provider: { _ in provider })
             } catch { driver.stop(); lastWorkingEffectError = error }
         } else { workingDriver?.stop() }
         workingEffectsDidConfigureForChecks?()
@@ -2056,6 +2068,12 @@ struct DockHelpInteraction: Equatable {
         guard cockpitEntryEnabled, !retired else { return }
         try? attention.acknowledge(.cockpitOpening, signals: attentionSignals, at: currentDate())
         publishAttention()
+    }
+    /// D204 (G3-94): the ignition toggles an attached cockpit and brings a detached one to the front (the app decides).
+    @objc private func ignitionPressed() {
+        guard cockpitEntryEnabled, permitted, !retired else { return }
+        guard let pressIgnition else { openConsole(); return }
+        dismissCard(); pressIgnition(NSEvent.mouseLocation)
     }
     @objc private func openConsole() {
         guard cockpitEntryEnabled, permitted, !retired, let showConsole else { return }

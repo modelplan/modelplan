@@ -2102,6 +2102,10 @@
             }
           ]
         },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
         "unit": {
           "type": "string"
         }
@@ -2303,6 +2307,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",
@@ -3615,6 +3620,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",
@@ -4397,7 +4403,8 @@
             "published",
             "observed",
             "firstSeen"
-          ]
+          ],
+          "type": "string"
         },
         "confirms": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
@@ -4416,7 +4423,8 @@
           "enum": [
             "reset_credit",
             "direct_reset"
-          ]
+          ],
+          "type": "string"
         },
         "planIds": {
           "items": {
@@ -4913,6 +4921,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",

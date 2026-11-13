@@ -4,7 +4,9 @@ import ModelPlanWire
 import WebKit
 import QuartzCore
 
-public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, deadlineReceiptTimeout, visibilityReceiptTimeout, appearanceWaitTimeout, deadlineConvergence, localEncoding, deliveryBacklog }
+public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, deadlineReceiptTimeout, visibilityReceiptTimeout, appearanceWaitTimeout, deadlineConvergence, localEncoding, deliveryBacklog
+  /// G3-95: the bundled cockpit could not serve a file it admitted earlier (removed or changed since). A reinstall problem.
+  case bundleResource }
 
 // WebKit's module CORS fetch requires NSHTTPURLResponse header fields, even
 // for a custom scheme. Only public, hash-pinned static files use this response;
@@ -62,6 +64,8 @@ public enum CockpitBridgeDiagnostic: String {
 final class BundleScheme: NSObject, WKURLSchemeHandler {
   let bundle: VerifiedCockpitBundle
   let observed: ((String) -> Void)?
+  /// Called on the main thread when a request for a bundled file failed.
+  var failed: (() -> Void)?
   init(_ bundle: VerifiedCockpitBundle, observed: ((String) -> Void)? = nil) { self.bundle = bundle; self.observed = observed }
   func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
     do {
@@ -70,7 +74,7 @@ final class BundleScheme: NSObject, WKURLSchemeHandler {
       task.didReceive(result.response)
       task.didReceive(result.data)
       task.didFinish()
-    } catch { task.didFailWithError(CockpitBundleError.integrity) }
+    } catch { task.didFailWithError(CockpitBundleError.integrity); failed?() }
   }
   func webView(_ webView: WKWebView, stop task: any WKURLSchemeTask) {}
 }
@@ -80,6 +84,17 @@ final class BundleScheme: NSObject, WKURLSchemeHandler {
   func userContentController(
     _ controller: WKUserContentController, didReceive message: WKScriptMessage
   ) { owner?.receive(message) }
+}
+
+/// D204: whether the user can see the cockpit window, from the window's own facts.
+public struct CockpitUserVisibility: Equatable, Sendable {
+  public var onScreen: Bool, miniaturized: Bool, onActiveSpace: Bool, occluded: Bool, appHidden: Bool
+  public init(onScreen: Bool, miniaturized: Bool, onActiveSpace: Bool, occluded: Bool, appHidden: Bool) {
+    self.onScreen = onScreen; self.miniaturized = miniaturized; self.onActiveSpace = onActiveSpace
+    self.occluded = occluded; self.appHidden = appHidden
+  }
+  /// Partly covered is visible; only a fully covered window (occlusion state without `.visible`) is not.
+  public var visible: Bool { onScreen && !miniaturized && onActiveSpace && !occluded && !appHidden }
 }
 
 /// CKP-SHELL-20: construction creates state only. prewarm() builds the sole web view and loads the page in
@@ -115,6 +130,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private let openPoint: () -> CGPoint?
   /// The displays placement and drags use; tests replace it with a fixed arrangement.
   var screens: @MainActor () -> [CockpitScreen] = { CockpitScreenSelection.system() }
+  /// D204: whether each display has its own Spaces (and so its own menu bar); tests replace it.
+  var separateSpaces: @MainActor () -> Bool = { NSScreen.screensHaveSeparateSpaces }
+  /// D204 (G3-94): the widget ignition's frame on screen. A press on it is the ignition's own toggle, decided on
+  /// mouse-up; its mouse-down is not an outside click that closes the attached cockpit first.
+  public var ignitionFrame: (@MainActor () -> CGRect?)?
+  /// D204: the occlusion state counts only once the window server has reported it since the last order-front;
+  /// until then a freshly ordered-in window is not mistaken for a covered one.
+  private var occlusionReported = false
   private var layout: CockpitShellLayout?
   private var scope = "all"
   private var outsideMonitor: Any?, localMonitor: Any?
@@ -206,8 +229,24 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private lazy var appearanceWatchdog = CockpitDeadlineReceiptWatchdog(
     arm: { [weak self] delay, fire in self?.armDeadline(delay, fire) ?? {} }, timedOut: { [weak self] _ in
       guard let self, !self.ending, self.visibilityFence.isConfirmedVisible, self.appearanceGate.isDeferred else { return }
+      // G3-97: the retry hooks run only on rendered, nextDeadline and a visibility receipt. A display receipt that
+      // clears another way (a refused or replaced display) leaves the deferred appearance with nothing to wake it,
+      // and failing then rebuilt a sendable page mid-use. Re-check once: if it is sendable now, publish and wait
+      // one more bounded period. A display that stays pending still fails here, as before.
+      if !self.appearanceWaitRetried, self.bridge.ready, !self.bridge.blocked,
+         self.appearanceGate.retry(visible: true, displayPending: self.bridge.hasPendingDisplay) {
+        self.appearanceWaitRetried = true
+        CockpitFailureLog.record("page-resync appearance retry after wait timeout")
+        self.publishAppearance()
+        return
+      }
       self.fail(.appearanceWaitTimeout)
     })
+  /// G3-97: set once the appearance wait timed out on a sendable state and the appearance was republished.
+  private var appearanceWaitRetried = false
+  private func cancelAppearanceWait() {
+    appearanceWatchdog.cancel(); appearanceWaitRetried = false
+  }
   private func watchDeferredAppearance() {
     guard visibilityFence.isConfirmedVisible, appearanceGate.isDeferred, appearanceWatchdog.currentID == nil else { return }
     appearanceWatchdog.wait(for: UUID())
@@ -357,6 +396,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     build()
   }
   public func open() {
+    let wasVisible = isVisibleToUser
     let wasClosing = closeTask != nil
     closeTask?.cancel(); closeTask = nil
     if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
@@ -371,6 +411,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let target = panel.frame
       let start = Self.entranceStart(entrance, reduceMotion: appearance.reduceMotion, detached: shellSession.detached, icon: anchor())
       grewFromIcon = start != nil
+      occlusionReported = false
       if let start {
         // D88: grow out of the icon. The content keeps its 636 pt bounds, so it scales with the frame.
         entering = true
@@ -416,19 +457,45 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       }
       applyLayout()
     }
+    // D204: an open brings the cockpit in front (a detached one where it is); an unseen attached one is laid out again.
+    if !wasVisible, !wasClosing, !shellSession.detached { applyLayout() }
     panel.alphaValue = 1
-    panel.makeKeyAndOrderFront(nil)
+    bringToFront(panel)
     lastVisibility = nil; visibilityChanged()
+  }
+  /// D204: whether the user can see the cockpit: shown and not closing, ordered in, not minimised, on the active Space
+  /// and not fully covered (a partly covered window is visible), with the app not hidden. An open of an attached
+  /// cockpit the user cannot see lays it out again under the icon of the display asked on before it comes in front.
+  public var isVisibleToUser: Bool {
+    guard shown, !ending, closeTask == nil, let window else { return false }
+    return CockpitUserVisibility(onScreen: window.isVisible, miniaturized: window.isMiniaturized, onActiveSpace: window.isOnActiveSpace,
+      occluded: occlusionReported && !window.occlusionState.contains(.visible), appHidden: NSApp.isHidden).visible
+  }
+  /// D204: off the Dock if minimised, and onto the current Space without switching the user to the window's own Space.
+  private func bringToFront(_ panel: NSWindow) {
+    if panel.isMiniaturized { panel.deminiaturize(nil) }
+    occlusionReported = false
+    let behavior = panel.collectionBehavior
+    if !panel.isOnActiveSpace, !behavior.contains(.canJoinAllSpaces) {
+      // Ordered in with this behaviour the window moves to the active Space; the old behaviour is restored after.
+      panel.collectionBehavior = behavior.union(.moveToActiveSpace)
+      panel.makeKeyAndOrderFront(nil)
+      panel.collectionBehavior = behavior
+    } else { panel.makeKeyAndOrderFront(nil) }
   }
   private func build() {
     if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
     let config = WKWebViewConfiguration()
     config.websiteDataStore = .nonPersistent()
     #if MODELPLAN_TEST_ONLY_SPI
-    config.setURLSchemeHandler(BundleScheme(bundle, observed: verificationResource), forURLScheme: "modelplan-cockpit")
+    let scheme = BundleScheme(bundle, observed: verificationResource)
     #else
-    config.setURLSchemeHandler(BundleScheme(bundle), forURLScheme: "modelplan-cockpit")
+    let scheme = BundleScheme(bundle)
     #endif
+    // WebKit calls the handler on the main thread, and before the navigation failure that follows it, so the cause is
+    // the bundle's, not a generic navigation failure (G3-95).
+    scheme.failed = { [weak self] in MainActor.assumeIsolated { self?.fail(.bundleResource) } }
+    config.setURLSchemeHandler(scheme, forURLScheme: "modelplan-cockpit")
     proxy.owner = self
     config.userContentController.add(proxy, name: "cockpit")
     #if MODELPLAN_TEST_ONLY_SPI
@@ -438,7 +505,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     view.menuProvider = { [weak self] in self?.contextMenu() }
     menuTarget.fire = { [weak self] in self?.toggleAttachment() }
     // Owner review 11-08 / CKP-SHELL-25: only the hull and canopy are drawn; the web view paints no backing of its
-    // own, so the clear panel shows the desktop around the transparent page.
+    // own, so the clear panel shows the desktop around the transparent page. `CockpitWebView.isOpaque` being false is
+    // not enough: WKWebView on macOS still paints its opaque backing unless `drawsBackground` is false (hosted
+    // macos-15 U11 showed opaque corners without it), and AppKit has no public equivalent.
     view.setValue(false, forKey: "drawsBackground")
     view.underPageBackgroundColor = .clear
     pageLoadStarted = false
@@ -483,6 +552,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           [weak self] _ in Task { @MainActor in self?.visibilityChanged() }
         })
     }
+    observers.append(center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: panel, queue: .main) { [weak self] _ in
+      Task { @MainActor in self?.occlusionReported = true }
+    })
     let workspaceCenter = NSWorkspace.shared.notificationCenter
     for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
       let observer = workspaceCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -533,7 +605,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// or complete view disposal. An unknown floor remains blocked after receipt.
   public func clearPrivateViews(adopting context: CockpitEngineContext? = nil) async {
     freshnessDriver.hide(); freshnessDriver.invalidate(); bridge.cancelDeadlineReports(); visibilityFence.invalidate()
-    orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); appearanceWatchdog.cancel()
+    orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); cancelAppearanceWait()
     receiptWatchdog.cancel(); renderWatchdog.cancel(); backlog = BacklogResync()
     visibilityTimeout?.cancel(); visibilityTimeout = nil
     freshnessHasRendered = false; pendingFreshnessReason = nil
@@ -749,7 +821,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private func suspendForHiddenPage() {
     refreshAfterHiddenDisplay = refreshAfterHiddenDisplay || bridge.hasPendingDisplay || backlog.display
     backlog = BacklogResync()
-    appearanceGate.deferUntilVisible(); appearanceWatchdog.cancel(); orderedDelivery.invalidate()
+    appearanceGate.deferUntilVisible(); cancelAppearanceWait(); orderedDelivery.invalidate()
     freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
 
@@ -869,7 +941,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
-    appearance = CockpitAppearance(theme: .night, locale: value.locale, profile: appearance.profile,
+    appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
       reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
@@ -900,7 +972,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentAppearance(id) == true }, onAccepted: { [weak self] in
           guard let self else { return }
           guard self.bridge.acknowledgeAppearance(id) else { self.fail(.messageRejected); return }
-          if self.appearanceGate.acknowledge(appearanceVersion) { self.appearanceWatchdog.cancel() }
+          if self.appearanceGate.acknowledge(appearanceVersion) { self.cancelAppearanceWait() }
           if let buffered = self.bridge.takeBufferedDeadline() {
             self.receiptWatchdog.cancel(); self.freshnessDriver.accept(deadline: buffered.value)
           } else if self.receiptWatchdog.currentID != id { self.receiptWatchdog.wait(for: id) }
@@ -913,7 +985,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         // A newer untriggered appearance or shell carries the whole state, so it replaces a queued older one.
         send(raw, coalesce: "appearance", onAccepted: { [weak self] in
           guard let self else { return }
-          if self.appearanceGate.acknowledge(appearanceVersion) { self.appearanceWatchdog.cancel() }
+          if self.appearanceGate.acknowledge(appearanceVersion) { self.cancelAppearanceWait() }
         }, dropped: { [weak self] in self?.backlog.appearance = true })
       }
       guard let shell = currentShell else { fail(); return }
@@ -944,8 +1016,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
        let replayed = CockpitScreenSelection.replayFrame(origin: origin, size: layout?.frame.size ?? CGSize(width: 1, height: 1), screens: displays) {
       remembered = CockpitScreenSelection.overlapping(replayed, in: displays)
     }
-    guard let screen = remembered ?? CockpitScreenSelection.openScreen(point: openPoint(), anchor: requested, screens: displays) else { return nil }
-    let icon = requested.flatMap { screen.frame.intersects($0) ? $0 : nil } ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
+    // D204: an attached open follows the menu bar the user can see (`attachedScreen`); a detached one, the click's display.
+    let asked = shellSession.detached
+      ? CockpitScreenSelection.openScreen(point: openPoint(), anchor: requested, screens: displays)
+      : CockpitScreenSelection.attachedScreen(point: openPoint(), anchor: requested, screens: displays, separateSpaces: separateSpaces())
+    guard let screen = remembered ?? asked else { return nil }
+    let onScreen = shellSession.detached
+      ? requested.flatMap { screen.frame.intersects($0) ? $0 : nil }
+      : CockpitScreenSelection.icon(requested, on: screen, screens: displays)
+    let icon = onScreen ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
   /// Where Put back takes the cockpit: the attached fit on the display an attached open uses. The drag's snap guide,
@@ -975,9 +1054,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     return (fit, replayed ?? fit.frame)
   }
   private func applyLayout(animated: Bool = false) {
-    guard let window, let (fit, frame) = placement() else { return }
+    // D88: a closing cockpit keeps its close animation. A relayout then (a screen-parameter change, a resize from
+    // Settings) set the frame back to the layout frame and cut the shrink into the icon; a re-open cancels the close
+    // first and lays out again.
+    guard closeTask == nil, let window, let (fit, frame) = placement() else { return }
     layout = fit
-    appearance = .init(theme: .night, locale: appearance.locale, profile: fit.profile,
+    appearance = .init(theme: CockpitDayPolicy.resolve(appearance.theme), locale: appearance.locale, profile: fit.profile,
       reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size)
     if animated {
       NSAnimationContext.runAnimationGroup { context in
@@ -1169,7 +1251,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
     verificationOutsidePress?(eventType,isTray)
     #endif
-    if eventType == .leftMouseDown, isTray { return }
+    // D204 (G3-94): nor is the ignition's. It closed the cockpit here and its mouse-up action opened it again.
+    if eventType == .leftMouseDown, isTray || ignitionFrame?()?.contains(point) == true { return }
     #if MODELPLAN_TEST_ONLY_SPI
     verificationCloseOrigin?("outside")
     #endif
@@ -1187,7 +1270,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // Audit A-2: the invalidation drops a display still queued behind an in-flight call. A re-open during the fade
     // confirms visibility on the same page, so it must ask for fresh data then, as a hidden page does.
     refreshAfterHiddenDisplay = refreshAfterHiddenDisplay || bridge.hasPendingDisplay
-    orderedDelivery.invalidate(); appearanceGate.deferUntilVisible(); appearanceWatchdog.cancel()
+    orderedDelivery.invalidate(); appearanceGate.deferUntilVisible(); cancelAppearanceWait()
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
     // D88: a cockpit that grew out of the icon and is still attached shrinks back into it.
@@ -1229,7 +1312,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     ending = true
     warmPaintEnd?.cancel(); warmPaintEnd = nil; warmPainting = false
     freshnessDriver.retire(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
-    orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); appearanceWatchdog.cancel()
+    orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); cancelAppearanceWait()
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
     freshnessObservers.forEach { center, token in center.removeObserver(token) }
@@ -1274,21 +1357,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   override var canBecomeMain: Bool { true }
 }
 /// The drag area of the expanded cockpit's top strip. Hovering it shows an open hand (closed while
-/// dragging) and a faint grip of dots, drawn here with no art; nothing shows without hover.
+/// dragging). D227 (owner 2026-11-12, G3-99): it draws nothing, no grip dots, on hover or while dragging.
 @MainActor final class CockpitTitleDrag: NSView {
   enum Phase { case began, moved, ended, cancelled }
   var event: ((Phase, CGPoint) -> Void)?
   /// Right-click on the strip reaches the web view's own context menu.
   var contextMenu: ((NSEvent) -> Void)?
-  private(set) var isHovered = false { didSet { if isHovered != oldValue { needsDisplay = true } } }
+  private(set) var isHovered = false
   private(set) var isDragging = false {
-    didSet { if isDragging != oldValue { needsDisplay = true; window?.invalidateCursorRects(for: self) } }
+    didSet { if isDragging != oldValue { window?.invalidateCursorRects(for: self) } }
   }
   /// What the pointer shows over the strip: an open hand, a closed hand while dragging.
   func resetDragState() { isDragging = false }
   var currentCursor: NSCursor { isDragging ? .closedHand : .openHand }
-  /// The grip is visible only while hovered or dragging.
-  var showsGrip: Bool { isHovered || isDragging }
   override var acceptsFirstResponder: Bool { true }
   override func updateTrackingAreas() {
     super.updateTrackingAreas()
@@ -1310,15 +1391,5 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   override func cancelOperation(_ sender: Any?) { isDragging = false; event?(.cancelled, .zero) }
   override func keyDown(with event: NSEvent) {
     if event.keyCode == 53 { isDragging = false; self.event?(.cancelled, .zero) } else { super.keyDown(with: event) }
-  }
-  override func draw(_ dirtyRect: NSRect) {
-    guard showsGrip else { return }
-    NSColor(white: 1, alpha: isDragging ? 0.34 : 0.22).setFill()
-    let dot: CGFloat = 3, gap: CGFloat = 5, columns = 6, rows = 2
-    let width = CGFloat(columns) * dot + CGFloat(columns - 1) * gap, height = CGFloat(rows) * dot + CGFloat(rows - 1) * gap
-    let origin = CGPoint(x: bounds.midX - width / 2, y: bounds.midY - height / 2)
-    for row in 0..<rows { for column in 0..<columns {
-      NSBezierPath(ovalIn: NSRect(x: origin.x + CGFloat(column) * (dot + gap), y: origin.y + CGFloat(row) * (dot + gap), width: dot, height: dot)).fill()
-    } }
   }
 }
