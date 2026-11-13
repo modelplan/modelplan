@@ -60,11 +60,19 @@ for(const scale of [1,2])test.describe(`@${scale}x`,()=>{
   await open(page,s);
   // The closed page draws its slab at the window's top edge (#cockpit margin-top -14 px); open roots start at 0.
   const top=await page.evaluate(()=>Math.round(document.querySelector('#cockpit').getBoundingClientRect().top));
-  const rows=await silhouette(page,s.root+top,scale);
   const lowerTop=await page.evaluate(()=>Math.round(document.querySelector('.ck-shell .hull-lower').getBoundingClientRect().top));
   // No desktop through the canopy, its frame or the walls, from the first painted row to the lower wall.
-  const seeThrough=[];
-  for(let y=0;y<(lowerTop+40)*scale;y++){const r=rows[y];if(r&&r.holes)seeThrough.push(`${(y/scale).toFixed(1)}: ${r.holes} px`);}
+  // The hull art is CSS background PNGs decoded lazily: on a loaded hosted WebKit runner the first screenshot can
+  // land before they paint (whole rows see-through, runs 43401327557 and 43448154939). A real hole stays, so measure
+  // again after a pause, up to 4 times, and fail only if the last measurement still has holes.
+  let rows,seeThrough;
+  for(let attempt=0;attempt<4;attempt++){
+   rows=await silhouette(page,s.root+top,scale);
+   seeThrough=[];
+   for(let y=0;y<(lowerTop+40)*scale;y++){const r=rows[y];if(r&&r.holes)seeThrough.push(`${(y/scale).toFixed(1)}: ${r.holes} px`);}
+   if(!seeThrough.length)break;
+   await page.waitForTimeout(500);
+  }
   expect(seeThrough.slice(0,8),'see-through pixels inside the silhouette').toEqual([]);
   // Below the canopy the hull only widens (the A3 frame's own slight flare above the strip is approved art).
   const strip=await page.evaluate(()=>Math.round(document.querySelector('.ck-head').getBoundingClientRect().top));
