@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
 type adviceText struct {
@@ -91,7 +92,7 @@ func (s Style) who(e advise.Event) string {
 	q := s.qt()
 	src := q.Source[e.Source]
 	if (e.Source == "user" || e.Basis != "") && e.Plan != "" {
-		src = e.Plan // a session linked to a declared plan draws on that plan
+		src = rows.PlanLabel(e.Source, e.Plan) // a session linked to a declared plan draws on that plan
 	}
 	kind := q.Kinds[e.Window]
 	if kind == "" {
@@ -305,7 +306,7 @@ func (s Style) AdviceLine(e advise.Event) string {
 		if e.Count != nil {
 			n = *e.Count
 		}
-		return fmt.Sprintf(t.CardsExpire, e.Plan, n, s.qt().Kinds[e.Window], s.dur(e.InMinutes))
+		return fmt.Sprintf(t.CardsExpire, rows.PlanLabel(e.Source, e.Plan), n, s.qt().Kinds[e.Window], s.dur(e.InMinutes))
 	case advise.PublicReset:
 		msg, ok := t.Public[e.Public.EventType]
 		if !ok {

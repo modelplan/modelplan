@@ -2102,6 +2102,10 @@
             }
           ]
         },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
         "unit": {
           "type": "string"
         }
@@ -2303,6 +2307,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",
@@ -2351,6 +2356,7 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "no_plan",
             "other",
             "readers_off",
             "no_consent",
@@ -3615,6 +3621,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",
@@ -3663,6 +3670,7 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "no_plan",
             "other",
             "readers_off",
             "no_consent",
@@ -4915,6 +4923,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",
@@ -4963,6 +4972,7 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "no_plan",
             "other",
             "readers_off",
             "no_consent",

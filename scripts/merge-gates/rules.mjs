@@ -4,8 +4,10 @@
 // one merge-group commit from the per-PR states plus the group's own proofs. evaluate.mjs feeds them.
 //
 // The rules are a port of the coordinator's landing scripts (tier, trusted-author, verdict, carry, GLM,
-// and design checks). Deliberate differences are marked "Stricter:"; none of them relaxes a gate. There is no
-// stale-base check (owner 2026-11-07): a PR need not contain the latest main, because the queue's own CI on
+// and design checks). Deliberate differences are marked "Stricter:". D243 (owner 2026-11-13, process audit steps 2
+// and 5) made the gate lean: one GPT review verdict, green CI, exact head and the queue decide. Scenario evidence,
+// Scenarios lines, trains, GLMREV, DESIGN and non-GPT verdict blocks are still read but only reported (the status
+// description's "info:" part); device evidence moved to the build gate. There is no stale-base check (owner 2026-11-07): a PR need not contain the latest main, because the queue's own CI on
 // the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
 export const CONTEXT = "modelplan-gates";
@@ -163,8 +165,9 @@ export function carryChain(edges, head, verified = () => false) {
 }
 
 // ---- Verdicts ----
-// GPT reviewer lanes (owner D149): Sol = tier 2 (and tier 1), Terra = tier 1 only.
-export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)"]);
+// GPT reviewer lanes (owner D149): Sol = tier 2 (and tier 1), Terra = tier 1 only. macrevd is the third Sol lane
+// (owner 2026-11-12, until the v1 candidate).
+export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)", "(macrevd)"]);
 export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)"]);
 // "VERDICT: merge|block @ <40 hex> (<lane>)" on its own line, case-insensitive, in trusted comments and
 // reviews. Counts for the head or a carried head; per lane the latest wins.
@@ -182,6 +185,7 @@ export function verdicts(items, head, carried) {
 }
 
 // ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
+// D243: GLMREV and DESIGN no longer gate. The rules below still decide which marker the description reports.
 // While the GLM quota is out, a Claude Sonnet reviewer stands in for GLM under its own label:
 // "DESIGN (sonnet): pass|fail @ <sha>" and "GLMREV (sonnet): OK|ISSUES @ <sha>". A (sonnet) pass/OK counts only
 // inside a time-boxed window (the repository variable GLM_FALLBACK_UNTIL, the GLM reset time) and only when it was
@@ -250,14 +254,14 @@ export function glmVerdict(items, head, fb = null) {
   return r;
 }
 
-// ---- Exact-head scenario evidence (evidence-gate.sh) ----
+// ---- Exact-head scenario evidence (evidence-gate.sh); advisory since D243 ----
 const SCENARIO_LINE = /^\s*\**Scenarios:?\**:?/i;
-const SCENARIO_ID = /^[A-Z][A-Z0-9]{0,3}-[0-9]{2}$/;
+// Two digits, or three without a leading zero: ledger rows passed G3-99 (G3-100 and up were rejected as malformed).
+const SCENARIO_ID = /^[A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})$/;
 
 // The first matching body line is the declaration. It is either "none" (a bracketed note may follow) or spec
 // scenario IDs separated by commas, semicolons or "and", each with an optional bracketed note. Anything else
-// (requirement IDs, free text, an empty line) is malformed: read as "no scenarios" it would switch the evidence
-// gate off, so every PR is held to this, not only ledger PRs.
+// (requirement IDs, free text, an empty line) is malformed and reported as unreadable; it never fails (D243).
 export function parseScenarios(body) {
   const line = lines(body ?? "").find((l) => SCENARIO_LINE.test(l));
   if (line === undefined) return { declared: false, ids: [], malformed: null };
@@ -271,7 +275,7 @@ export function parseScenarios(body) {
   const bad = [...tokens, ...shaped].filter((t) => !SCENARIO_ID.test(t));
   if (bad.length || !tokens.length)
     return { declared: true, ids: [], malformed: `Scenarios line must be spec scenario IDs or none${bad.length ? `, not: ${bad.slice(0, 3).join(" ")}` : ""}` };
-  return { declared: true, ids: [...new Set(rest.match(/\b[A-Z][A-Z0-9]{0,3}-[0-9]{2}\b/g))].sort(), malformed: null };
+  return { declared: true, ids: [...new Set(rest.match(/\b[A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})\b/g))].sort(), malformed: null };
 }
 
 // Lowest sufficient evidence per scenario (verification plan v2). Read from the default branch, never from a PR.
@@ -298,7 +302,7 @@ export function tiersFrom(read) {
 // The gate list is in canonical order and always starts ci,gui,review; design follows when the PR is design-touching
 // (required then, as in evidence-gate.sh), visual when it is visual-touching. The older form with walkthrough still
 // parses. It satisfies exactly the listed IDs (G3 rows and real-Mac tiers included) at that exact head; never carried.
-const AUTO_VERIFIED = /^AUTO-VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}(?:[, ]+[A-Z][A-Z0-9]{0,3}-[0-9]{2})*) @ ([0-9a-f]{40}) gates=([a-z,]+)$/;
+const AUTO_VERIFIED = /^AUTO-VERIFIED: ([A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})(?:[, ]+[A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2}))*) @ ([0-9a-f]{40}) gates=([a-z,]+)$/;
 export const AUTO_VERIFIED_GATES = Object.freeze(["ci,gui,review", "ci,gui,review,design", "ci,gui,review,visual",
   "ci,gui,review,design,visual", "ci,gui,review,design,visual,walkthrough"]);
 
@@ -311,30 +315,28 @@ export function autoVerified(body, head, { designTouching = false } = {}) {
 }
 
 // Only trusted issue comments count. Evidence is tied to the actual head and is never carried across a merge
-// or other commit. As in evidence-gate.sh (D21): a PR naming a ledger row needs a line for every scenario; any other
-// PR needs one for each scenario that is not on a CI tier, so real-Mac tiers, G3 rows and IDs missing from `tiers`
-// all do. A CI-tier scenario needs no line because evaluatePr requires green CI at the head anyway. #661 landed with
-// C-10 (T3) unaccounted for when only ledger PRs were read here.
+// or other commit. As in evidence-gate.sh (D21): every scenario that is not on a CI tier needs a line, so real-Mac
+// tiers, G3 rows and IDs missing from `tiers` all do. A CI-tier scenario needs no line because evaluatePr requires
+// green CI at the head anyway. D243: the result is never FAILURE (a malformed line is PENDING with its reason), and
+// the ledger rule (a "g3-NN" anywhere in title, body or branch forced a Scenarios line) is gone: it fired on
+// incidental mentions and caught nothing.
 export function evidenceState(pr, items, head, tiers = new Map(), { designTouching = false } = {}) {
-  const body = pr.body ?? "";
-  const ledger = /g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n"));
-  const { ids: scenarios, malformed } = parseScenarios(body);
-  if (malformed) return { state: FAILURE, why: malformed };
-  if (!scenarios.length) return ledger ? { state: FAILURE, why: "ledger PR requires a Scenarios line with scenario IDs" }
-    : { state: SUCCESS, why: "not an evidence-tier-1 PR" };
+  const { ids: scenarios, malformed } = parseScenarios(pr.body ?? "");
+  if (malformed) return { state: PENDING, why: malformed };
+  if (!scenarios.length) return { state: SUCCESS, why: "not an evidence-tier-1 PR" };
   const verified = new Set();
   for (const item of items) if (item.kind === "comment") {
     for (const id of autoVerified(item.body, head, { designTouching })) verified.add(id);
     for (const line of lines(item.body)) {
-      const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
+      const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
       if (match && match[2] === head) verified.add(match[1]);
       // Owner 2026-11-07: device evidence runs once after v1 development. An exact-head deferral lets the PR land;
       // #470 stays open until every deferred scenario has real evidence, so this is never a VERIFIED line.
-      const deferred = /^EVIDENCE-DEFERRED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) issue=470$/.exec(line);
+      const deferred = /^EVIDENCE-DEFERRED: ([A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})) @ ([0-9a-f]{40}) issue=470$/.exec(line);
       if (deferred && deferred[2] === head) verified.add(deferred[1]);
     }
   }
-  const onCi = (id) => !ledger && CI_TIER.test(tiers.get(id) ?? "");
+  const onCi = (id) => CI_TIER.test(tiers.get(id) ?? "");
   const missing = scenarios.filter((id) => !verified.has(id) && !onCi(id));
   return missing.length ? { state: PENDING, why: `evidence pending: ${missing.join(", ")}` }
     : { state: SUCCESS, why: "scenario evidence verified" };
@@ -506,52 +508,54 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
     dataSync = true;
   }
   const design = designTouch(files, conf);
-  const evidence = evidenceState(pr, items, head, tiers, { designTouching: design.touching });
-  if (evidence.state === FAILURE) return res(FAILURE, evidence.why);
-  const gap = trainScenarioGap(pr, members);
-  if (gap) return res(FAILURE, gap);
-  if (pr.draft) return res(PENDING, "draft");
-
   const paths = prPaths(files);
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
   const carried = carryChain(carryEdges(items), head, verifiedEdge);
   const fb = { until: glmFallbackUntil, now, used: [] };
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried, glmFallback: fb.used };
 
-  let lanes = verdicts(items, head, carried);
-  // Owner 2026-11-04 tier split: on tier 2 a macrev (Terra) verdict is advice, not a gate.
-  if (tier === 2) lanes = new Map([...lanes].filter(([l]) => l !== "(macrev)"));
-  // Stricter: a trusted block stops every tier, tier 0 included.
+  // One review gate (D243 step 5; amends R1/R4/R13/R14/R16 and the D161/D235 lifts). Tier 2 needs a Sol verdict
+  // (macrev2, macrevb or macrevd); tier 1 a Terra (macrevc, legacy macrev) or Sol one (owner D149). Owner 2026-11-04
+  // tier split: on tier 2 a macrev (Terra) verdict is advice. A block from a counting GPT lane, or an unnamed one, at the
+  // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
+  const allLanes = verdicts(items, head, carried);
+  const gptLanes = tier === 2 ? [...SOL_LANES, "(unnamed)"] : [...SOL_LANES, ...TERRA_LANES, "(unnamed)"];
+  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l)));
+  // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
+  const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
+  if (tier !== 0 && glmInScope(paths)) {
+    const g = glmVerdict(items, head, fb);
+    if (g) notes.push(`GLMREV ${g}`);
+  }
+  if (design.touching) {
+    const d = designVerdict(items, head, carried, fb);
+    if (d) notes.push(`DESIGN ${d}`);
+  }
+  // D243 step 2 (amends D2/D3/D97 at PR level): device evidence moved to the build gate; a missing or unreadable
+  // Scenarios line or evidence line is reported only.
+  const evidence = evidenceState(pr, items, head, tiers, { designTouching: design.touching });
+  if (evidence.state !== SUCCESS) notes.push(evidence.why);
+  const gap = trainScenarioGap(pr, members);
+  if (gap) notes.push(gap);
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, glmFallback: fb.used, notes };
+  const say = (why) => (notes.length ? `${why}; info: ${notes.join("; ")}` : why);
+  if (pr.draft) return res(PENDING, say("draft"), extra);
+
   const blocked = [...lanes].filter(([, v]) => v === "block").map(([l]) => l);
-  if (blocked.length) return res(FAILURE, `VERDICT block ${blocked.join(" ")}`, extra);
+  if (blocked.length) return res(FAILURE, say(`VERDICT block ${blocked.join(" ")}`), extra);
 
   const missing = [];
-  if (evidence.state === PENDING) missing.push(evidence.why);
-  // Owner D149 (2026-11-11): GPT review is back. Tier 2 needs a Sol verdict (macrev2 or macrevb); tier 1 needs a
-  // Terra verdict (macrevc, legacy name macrev) or a Sol one; GLM-only, unnamed or (sonnet) verdicts do not land.
-  // A Sonnet fallback needs its own owner-approved change; the public gate stays strict.
   const merged = (names) => names.some((n) => lanes.get(n) === "merge");
   if (tier === 2 && !merged(SOL_LANES)) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge`);
   if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES])) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge`);
-  if (design.touching) {
-    const d = designVerdict(items, head, carried, fb);
-    if (d === "fail") return res(FAILURE, `DESIGN fail (${design.surfaces.join(",")})`, extra);
-    if (d !== "pass") missing.push("DESIGN pass");
-  }
-  if (tier !== 0 && glmInScope(paths)) {
-    const g = glmVerdict(items, head, fb);
-    if (g === "issues") return res(FAILURE, "GLMREV ISSUES at head", extra);
-    if (g !== "ok") missing.push("GLMREV OK or ACCEPTED");
-  }
   // A PR opened with the workflow token starts no pull_request run, so data-sync.yml dispatches ci.yml and
   // repo-checks.yml on the branch; prRunScope accepts those same-repository runs on the PR's branch. Both are
   // required before an admitted PR can pass.
   const ci = ciState(runs, statuses, { scope: prRunScope(pr), ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
-  if (ci.state === FAILURE) return res(FAILURE, ci.why, extra);
-  if (missing.length) return res(PENDING, `tier ${tier}: needs ${missing.join(", ")}`, extra);
-  if (ci.state === PENDING) return res(PENDING, ci.why, extra);
-  return res(SUCCESS, `tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}${fb.used.length ? ` (via ${fb.used.join(", ")})` : ""}`, extra);
+  if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
+  if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
+  if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
+  return res(SUCCESS, say(`tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`), extra);
 }
 
 // ---- One merge-group commit ----
