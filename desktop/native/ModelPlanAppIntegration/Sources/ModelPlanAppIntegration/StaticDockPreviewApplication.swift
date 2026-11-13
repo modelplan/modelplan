@@ -22,9 +22,7 @@ import ModelPlanCommunityHost
         }
         let delegate = CommunityDelegate(surfaces: surfaces, companion: dock, transport: transport,
                                          statusItemTitle: statusItemTitle) { gate in
-            let support = try FileManager.default.url(for: .applicationSupportDirectory,
-                in: .userDomainMask, appropriateFor: nil, create: false)
-            let store = try SettingsStore(url: settingsURL ?? support.appendingPathComponent("ModelPlan/DockSelfTest/settings-v1.json"))
+            let store = try SettingsStore(url: settingsURL ?? ProfileRoot.current.applicationSupport.appendingPathComponent("ModelPlan/DockSelfTest/settings-v1.json"))
             var context = SettingsPageContext()
             context.capabilities.login = .unavailable
             context.about.appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "self-test"
