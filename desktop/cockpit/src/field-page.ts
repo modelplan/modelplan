@@ -68,7 +68,7 @@ function mount(root:HTMLElement) {
  // Builds a fresh scene host and mounts the reserved scene into it; a newer launch or dispose wins. Disposing a scene
  // forces its context loss, and the scene reports that loss as a failure afterwards: only the current launch may fall back.
  async function launch() {
-  stopAxes();const w=words[language],launch=++launches;
+  stopAxes();const noGl=ht(language==='en'?'en':'zh-CN','host.fieldNoWebGL'),launch=++launches;
   const host=el('div','r1-field p2-field'),canvas=el('div','wb-canvas'),plates=el('div','wb-plates'),voyage=el('div','wb-voyage');
   host.append(canvas,document.createElementNS('http://www.w3.org/2000/svg','svg'),plates,voyage);host.children[1]!.setAttribute('class','wb-leaders');stage.replaceChildren(host);
   const url='../runtime/field-scene/cockpit-scene.bundle.js';
@@ -77,7 +77,7 @@ function mount(root:HTMLElement) {
   if(disposed||launch!==launches)return;
   const flown=fleet();focus=focus&&flown.some(m=>m.id===focus)?focus:flown[0]?.id??null;quiet=reduceMotion||lowPower;
   scene=mountWorkbenchField(host,{models:flown,focus,quiet,showPath:true,language,onDemand:true,noIntro:true,
-   onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{if(disposed||launch!==launches)return;scene=null;fallback(w.noGl);}});
+   onSelect:(id:string)=>{focus=id;refresh();},onFail:()=>{if(disposed||launch!==launches)return;scene=null;fallback(noGl);}});
   if(scene)stopAxes=layoutFieldAxes(host,shape?.span);
   scene.renderFor?.(1400);refresh();
  }
