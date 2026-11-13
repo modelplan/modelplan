@@ -76,11 +76,17 @@ export function comparison(d, ui, args) {
   const note = [!cur ? `<em>${t('mfd.currentUnknownVsRec')}</em>` : '', fastShown ? `<em role="img" aria-label="${esc(t('mfd.fastLine', {s: tier.speed, c: tier.cost}))}">${bolt()}</em>` : ''].filter(Boolean).join('');
   const words=websiteWords(ui.lang),size=fill(ui,'cmp',{w:300,h:60}),title=t('mfd.cmpTitle',{m:m.short});
   const howFits=textW(title)*1.2+textW(words.compare+' ↗')+textW(words.how+' ↗')+36<=size.w;
-  const links=`<span class="cmp-header-links">${secondaryLink(modelUrl(m.id),words.compare)}${howFits?secondaryLink(methodologyUrl('cost-basis'),words.how):''}</span>`;
+  const links=`<span class="cmp-header-links">${secondaryLink(modelUrl(m.publishedId ?? m.id),words.compare)}${howFits?secondaryLink(methodologyUrl('cost-basis'),words.how):''}</span>`;
   const g = ladderGeom(ui), levels = m.e.map(r => r[0]);
-  const ladder = `<div class="cmp-lad" style="--cl:${g.L}px;--cr:${g.R}px">${levels.map(l => `<button class="lad ${l === base && cur ? 'cur' : ''} ${l === trial && (trial !== base || T.fast !== C.fast) ? 'try' : ''} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${l}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${l}</button>`).join('')}</div>`;
+  // CKP-FAD-18 (D151): one quiet line, bottom right, while a trial detent is shown (ui.trialNote false drops it when the
+  // screen is too short to keep the chart).
+  const trialNote = s.trying && ui.trialNote !== false ? `<p class="cmp-trial-note">${esc(t('mfd.cmpTrialNote'))}</p>` : '';
+  // The compact shell has no height for the line, so it collapses to an info mark inside the ladder row (CSS picks one by
+  // the profile); the full text is its accessible name and its tooltip on hover and focus.
+  const trialMark = trialNote ? `<button type="button" class="cmp-trial-i" aria-label="${esc(t('mfd.cmpTrialNote'))}">ⓘ</button>` : '';
+  const ladder = `<div class="cmp-lad" style="--cl:${g.L}px;--cr:${g.R}px">${levels.map(l => `<button class="lad ${l === base && cur ? 'cur' : ''} ${l === trial && (trial !== base || T.fast !== C.fast) ? 'try' : ''} ${l === m.rec ? 'rec' : ''}" data-mfd="try:${l}" aria-label="${esc(t('mfd.ladderAria', {e: l}))}">${l === m.rec ? '★' : ''}${l}</button>`).join('')}${trialMark}</div>`;
   return `<div class="cmp-h"><b class="mfd-title">${esc(title)}</b>${note ? `<span class="cmp-note">${note}</span>` : ''}${links}</div>
-    ${table}<div class="mfd-fill" data-fill="cmp">${chartIfRoom(m, columns, tier, s.trialFast, size, reference, !cur)}</div>${ladder}`;
+    ${table}<div class="mfd-fill" data-fill="cmp">${chartIfRoom(m, columns, tier, s.trialFast, size, reference, !cur)}</div>${ladder}${trialNote}`;
 }
 // The bottom key row while the comparison is shown (round D1): back to the page underneath, fast mode in the trial
 // (both states printed, only for a tool with a fast mode; otherwise a dark key) only. The two keys share the footer width.

@@ -336,6 +336,15 @@ final class BridgeTests: XCTestCase {
       sequence += 1
     }
   }
+  /// CKP-SHELL-39: the empty engine screen's button is one fixed action with no payload.
+  func testOpenSettingsSubscriptionsIsAFixedActionWithNoPayload() throws {
+    let state=CockpitBridgeState(context:try context()),load=try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    let display=try state.display(fixture(),ticket:XCTUnwrap(state.queryTicket))
+    _ = try state.accept(reply(display,"rendered",2),source:source)
+    XCTAssertEqual(try state.accept(reply(load,"action",3,extra:["action":"openSettingsSubscriptions"]),source:source),.action(.openSettingsSubscriptions))
+    XCTAssertThrowsError(try state.accept(reply(load,"action",4,extra:["action":"openSettingsSubscriptions","pane":"about"]),source:source),"no pane or URL crosses")
+  }
   func testEarlyAppearanceReportSurvivesLaterValidActionBeforeAck() throws {
     let state=CockpitBridgeState(context:try context()),load=try ready(state)
     _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
@@ -454,5 +463,34 @@ final class BridgeTests: XCTestCase {
     XCTAssertThrowsError(try state.accept(reply(load, "action", sequence, extra: ["action": "openSettings", "ids": ["a"]]), source: source))
     XCTAssertThrowsError(try FlatReply.parse(#"{"capabilities":["a","b","c","d"]}"#))
     XCTAssertThrowsError(try FlatReply.parse(#"{"other":["a"]}"#))
+  }
+  /// G3-96 (build 14d): CLI v0.5.59 sets `kind` on every reset event and a confirmation time on a confirmed one. The host
+  /// passes them to the page unchanged, so the page's schema must type them: an enum without a type made the page's
+  /// bounded validator reject every display as `data.schema`, and the cockpit never opened while a reset credit was published.
+  func testG396ResetEventKindAndConfirmationReachThePageTypedAsTheSchemaRequires() throws {
+    var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    while !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures").path) { root.deleteLastPathComponent() }
+    // The events are the real projector's (resetevents.CaptureEvents via swiftwire): announced direct reset, announced
+    // reset credit and a confirmed credit, generated, never transcribed here.
+    let data = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))) as? [String: Any])
+    let events = try XCTUnwrap((data["details"] as? [String: Any])?["resetEvents"] as? [[String: Any]])
+    XCTAssertEqual(events.map { $0["kind"] as? String }, ["reset_credit", "reset_credit", "direct_reset"])
+    let wire = try WireDecoder.decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: data))
+    let state = CockpitBridgeState(context: try context())
+    _ = try ready(state)
+    let display = try object(state.display(wire, ticket: XCTUnwrap(state.queryTicket)))
+    let sent = try XCTUnwrap(((display["data"] as? [String: Any])?["details"] as? [String: Any])?["resetEvents"] as? [[String: Any]])
+    XCTAssertEqual(sent.map { $0["kind"] as? String }, events.map { $0["kind"] as? String })
+    XCTAssertEqual(sent.map { $0["confirmedAtBasis"] as? String }, events.map { $0["confirmedAtBasis"] as? String })
+    XCTAssertEqual(sent.map { $0["confirmedAt"] as? String }, events.map { $0["confirmedAt"] as? String })
+    // The page validates against the generated schema; each field the host sends must name its type there.
+    let schema = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("schema/app-cli/app-server.json"))) as? [String: Any])
+    let event = try XCTUnwrap(((schema["$defs"] as? [String: Any])?["ResetEvent"] as? [String: Any])?["properties"] as? [String: [String: Any]])
+    for field in ["kind", "confirmedAtBasis", "status"] {
+      XCTAssertEqual(event[field]?["type"] as? String, "string", "ResetEvent.\(field) is typed for the page validator")
+    }
+    for (field, node) in event where node["type"] == nil && node["$ref"] == nil && node["anyOf"] == nil {
+      XCTFail("ResetEvent.\(field) has no type; the page rejects every display that carries it")
+    }
   }
 }

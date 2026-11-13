@@ -3,7 +3,7 @@
 // Last-seen evidence does not establish an end time or a complete history.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
-import {sessionMember,memberColour,NEUTRAL} from './session-binding.js';
+import {sessionMember,memberColours,NEUTRAL} from './session-binding.js';
 import {shortLabel} from '../study/rocket-r1/short-label.js';
 type Locale='en'|'zh-CN';
 const esc=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -23,7 +23,7 @@ export function mountPrototypeTape(root:HTMLElement,link?:TapeLink){
   // The chip is the session's subscription colour (study tape.js); an unbound session stays neutral.
   // A published model reads by its short name, as on the faders and the HUD; anything else as reported.
   const names=new Map((detail?.publishedModels??[]).map(m=>[m.id,shortLabel(m.name)])),modelName=(id:string)=>names.get(id)??id;
-  const colours=shown.map(s=>{const m=sessionMember(members,s);return m?memberColour(m):NEUTRAL;});
+  const palette=memberColours(members),colours=shown.map(s=>{const m=sessionMember(members,s);return m?palette.get(m.key)??NEUTRAL:NEUTRAL;});
   const rows=shown.map(s=>{
    const rate=s.state==='running'&&s.rate!==null&&Number.isFinite(s.rate)&&s.rate>=0?s.rate:null;
    const running=s.state==='running'?(locale==='en'?'Running':'运行中'):(locale==='en'?'Last seen':'最近读数'),rateLabel=rate===null?'':(locale==='en'?'Session rate ':'会话速率 ')+rate+' t/s';
