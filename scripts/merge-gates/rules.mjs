@@ -256,7 +256,8 @@ export function glmVerdict(items, head, fb = null) {
 
 // ---- Exact-head scenario evidence (evidence-gate.sh); advisory since D243 ----
 const SCENARIO_LINE = /^\s*\**Scenarios:?\**:?/i;
-const SCENARIO_ID = /^[A-Z][A-Z0-9]{0,3}-[0-9]{2}$/;
+// Two digits, or three without a leading zero: ledger rows passed G3-99 (G3-100 and up were rejected as malformed).
+const SCENARIO_ID = /^[A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})$/;
 
 // The first matching body line is the declaration. It is either "none" (a bracketed note may follow) or spec
 // scenario IDs separated by commas, semicolons or "and", each with an optional bracketed note. Anything else
@@ -274,7 +275,7 @@ export function parseScenarios(body) {
   const bad = [...tokens, ...shaped].filter((t) => !SCENARIO_ID.test(t));
   if (bad.length || !tokens.length)
     return { declared: true, ids: [], malformed: `Scenarios line must be spec scenario IDs or none${bad.length ? `, not: ${bad.slice(0, 3).join(" ")}` : ""}` };
-  return { declared: true, ids: [...new Set(rest.match(/\b[A-Z][A-Z0-9]{0,3}-[0-9]{2}\b/g))].sort(), malformed: null };
+  return { declared: true, ids: [...new Set(rest.match(/\b[A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})\b/g))].sort(), malformed: null };
 }
 
 // Lowest sufficient evidence per scenario (verification plan v2). Read from the default branch, never from a PR.
@@ -301,7 +302,7 @@ export function tiersFrom(read) {
 // The gate list is in canonical order and always starts ci,gui,review; design follows when the PR is design-touching
 // (required then, as in evidence-gate.sh), visual when it is visual-touching. The older form with walkthrough still
 // parses. It satisfies exactly the listed IDs (G3 rows and real-Mac tiers included) at that exact head; never carried.
-const AUTO_VERIFIED = /^AUTO-VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}(?:[, ]+[A-Z][A-Z0-9]{0,3}-[0-9]{2})*) @ ([0-9a-f]{40}) gates=([a-z,]+)$/;
+const AUTO_VERIFIED = /^AUTO-VERIFIED: ([A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})(?:[, ]+[A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2}))*) @ ([0-9a-f]{40}) gates=([a-z,]+)$/;
 export const AUTO_VERIFIED_GATES = Object.freeze(["ci,gui,review", "ci,gui,review,design", "ci,gui,review,visual",
   "ci,gui,review,design,visual", "ci,gui,review,design,visual,walkthrough"]);
 
@@ -327,11 +328,11 @@ export function evidenceState(pr, items, head, tiers = new Map(), { designTouchi
   for (const item of items) if (item.kind === "comment") {
     for (const id of autoVerified(item.body, head, { designTouching })) verified.add(id);
     for (const line of lines(item.body)) {
-      const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
+      const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
       if (match && match[2] === head) verified.add(match[1]);
       // Owner 2026-11-07: device evidence runs once after v1 development. An exact-head deferral lets the PR land;
       // #470 stays open until every deferred scenario has real evidence, so this is never a VERIFIED line.
-      const deferred = /^EVIDENCE-DEFERRED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) issue=470$/.exec(line);
+      const deferred = /^EVIDENCE-DEFERRED: ([A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})) @ ([0-9a-f]{40}) issue=470$/.exec(line);
       if (deferred && deferred[2] === head) verified.add(deferred[1]);
     }
   }
