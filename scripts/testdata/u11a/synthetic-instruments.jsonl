@@ -1,0 +1,2 @@
+{"run_id":"synthetic-run","scenario":"B","timestamp":"2026-01-01T00:00:01Z","role":"App","phase":"open","pid":400,"cpu_percent":80,"rss_bytes":800,"energy_impact":6}
+{"run_id":"synthetic-run","scenario":"B","timestamp":"2026-01-01T00:00:02Z","role":"App","phase":"open","pid":400,"cpu_percent":100,"rss_bytes":900,"energy_impact":10}

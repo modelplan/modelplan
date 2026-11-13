@@ -1,0 +1,40 @@
+{
+  "resetCards": {
+    "state": "complete",
+    "count": 1,
+    "earliestExpiresAt": "2026-10-29T12:00:00Z",
+    "items": [
+      {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expiresAt": "2026-10-29T12:00:00Z"
+      }
+    ],
+    "truncated": false,
+    "sources": [
+      {
+        "source": "codex-account",
+        "observedAt": "2026-10-29T12:00:00Z"
+      }
+    ]
+  },
+  "subscriptionRef": "0123456789abcdef",
+  "resetCounts": [
+    {
+      "kind": "tokens",
+      "count": 1,
+      "expiresAt": "2026-10-29T12:00:00.123456789Z"
+    }
+  ],
+  "credits": {
+    "balance": 42.5,
+    "observedAt": "2026-10-29T12:00:00.123456789Z"
+  },
+  "today": [
+    {
+      "source": "synthetic",
+      "observedOutputTokens": 1,
+      "generationTps": 42.5,
+      "bindingBasis": "synthetic"
+    }
+  ]
+}

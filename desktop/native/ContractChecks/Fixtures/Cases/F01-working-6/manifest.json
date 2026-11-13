@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "F01-working-6",
+  "seed": 7,
+  "frozenUTC": "2026-10-20T21:05:00Z",
+  "timeZone": "America/Los_Angeles",
+  "inputs": {
+    "personal.json": "707e102b2eadcd10bff3391a982a467ae731b6f421d601546a75d73a7f0b6b90",
+    "publication.json": "d6dcdd7392fe406b6f77524318b0b89722eaa8f53ecfcd80b0606b91d3d1f073",
+    "expected.json": "868640d43f11840f50571994d67dbe1b909a217b8ecae0a93a0fe993fa4fc923"
+  },
+  "actions": [
+    {
+      "wallOffsetSeconds": 0
+    },
+    {
+      "wallOffsetSeconds": 31
+    },
+    {
+      "wallOffsetSeconds": 61
+    },
+    {
+      "wallOffsetSeconds": -100
+    }
+  ],
+  "visualChecks": {
+    "applicable": false,
+    "reason": "B01-B04 data-only fixtures; no official visual/input acceptance",
+    "locales": [
+      "en",
+      "zh-Hans"
+    ],
+    "plannedBackingScales": [
+      1,
+      2
+    ]
+  }
+}

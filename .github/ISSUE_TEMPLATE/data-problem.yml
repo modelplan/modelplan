@@ -1,0 +1,43 @@
+name: Data problem / 数据问题
+description: A price, quota, model, effort or news item on modelplan.ai looks wrong. 网站上的价格、额度、模型、档位或快报不对。
+title: "[Data] "
+labels: ["data"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping keep the data right. The fields below were filled in by the page you came from; please add what is wrong and a source.
+        感谢纠错。下面几项由你来自的页面自动填好了，请补充哪里不对，并附上来源链接。
+  - type: input
+    id: page
+    attributes:
+      label: Page / 页面
+      description: The modelplan.ai page where you saw it.
+    validations:
+      required: true
+  - type: input
+    id: item
+    attributes:
+      label: Item / 条目
+      description: Plan, model or news item.
+  - type: input
+    id: shown
+    attributes:
+      label: What the site shows / 网站显示的
+  - type: textarea
+    id: correct
+    attributes:
+      label: What is correct / 正确的应该是
+      description: What is wrong, and what it should be.
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Source link / 来源链接
+      description: An official page, announcement or benchmark that shows the correct value.
+  - type: input
+    id: data
+    attributes:
+      label: Data version / 数据版本
+      description: Filled in by the site; leave as is.

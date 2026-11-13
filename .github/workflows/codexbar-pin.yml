@@ -1,0 +1,50 @@
+name: codexbar-pin
+# Weekly: propose the latest CodexBar CLI release for `modelplan codexbar`. The new pin is
+# proposed only when its JSON still parses for every provider the CLI reads (live contract
+# test, no credentials). PRs opened with GITHUB_TOKEN do not start ci: close and reopen it.
+on:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Pin the latest release
+        id: pin
+        run: |
+          out=$(node scripts/pin-codexbar.mjs --latest)
+          echo "$out"
+          echo "changed=$([ "$out" = unchanged ] && echo no || echo yes)" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p 'require("./cli/internal/quota/codexbar-pin.json").version')" >> "$GITHUB_OUTPUT"
+      - name: Its JSON still parses (live, no credentials)
+        if: steps.pin.outputs.changed == 'yes'
+        working-directory: cli
+        env:
+          MODELPLAN_CODEXBAR_LIVE: "1"
+        run: go test ./internal/quota/ -run 'CodexBar' -v -timeout 600s
+      - name: Open a PR
+        if: steps.pin.outputs.changed == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.pin.outputs.version }}
+        run: |
+          b="deps/codexbar-v$V"
+          git ls-remote --exit-code --heads origin "$b" >/dev/null && { echo "branch $b exists"; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$b"
+          git commit -am "Pin CodexBar CLI v$V"
+          git push origin "$b"
+          gh pr create --head "$b" --title "Pin CodexBar CLI v$V" --body "Pins CodexBar CLI v$V (checksums from the release's .sha256 files). The live contract test parsed its JSON for copilot, cursor, kiro, opencodego and zai. Close and reopen this PR to run ci, then tag a CLI release after merging."

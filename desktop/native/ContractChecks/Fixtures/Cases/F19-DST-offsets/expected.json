@@ -1,0 +1,10 @@
+{
+  "subscriptions": 1,
+  "liveRows": 1,
+  "runningStatuses": 1,
+  "firstRemaining": 0,
+  "repeatedHourCount": 2,
+  "absoluteHourDistanceSeconds": 3600,
+  "springLocalDayHours": 23,
+  "fallLocalDayHours": 25
+}

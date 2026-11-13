@@ -1,0 +1,5 @@
+run_id,scenario,timestamp,role,phase,pid,cpu_percent,rss_bytes
+synthetic-native,A,2026-01-01T00:00:00Z,App,before-open,101,,1000000
+synthetic-native,A,2026-01-01T00:00:01Z,App,before-open,101,2,1100000
+synthetic-native,A,2026-01-01T00:00:02Z,App,open,101,4,1200000
+synthetic-native,A,2026-01-01T00:00:03Z,App,open,101,8,1400000

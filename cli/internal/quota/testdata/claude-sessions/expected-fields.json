@@ -1,0 +1,10 @@
+{
+  "owner-confirmed.jsonl": [
+    {"model": "claude-opus-5-5", "effort": "high", "fastMode": false}
+  ],
+  "older-optional.jsonl": [
+    {"model": "claude-opus-5-5", "effort": null, "fastMode": null},
+    {"model": null, "effort": "high", "fastMode": false},
+    {"model": null, "effort": null, "fastMode": null}
+  ]
+}

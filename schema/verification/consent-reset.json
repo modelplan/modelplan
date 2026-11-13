@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/consent-reset.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
+  "title": "consent-reset/1",
+  "description": "Helper wrapper receipt for `consent reset confirmed --json` in the synthetic HOME/TMP. homeSHA256 is the SHA-256 of the synthetic HOME path string; the pair is parsed from the helper JSON {storeEpoch, generation}. The shipped wrapper also records the registered targetPID, the tracked session it reset under (menuObjectID, sessionID), the operation and its bounded outcome/reason; they are optional here because C2.4 does not list them, and the oracle does not decide on them.",
+  "x-file": "consent-reset.json (written by the helper wrapper, never by redirecting helper stdout)",
+  "type": "object",
+  "required": [
+    "schema",
+    "runID",
+    "epoch",
+    "homeSHA256",
+    "helperSHA256",
+    "startMono",
+    "endMono",
+    "exitCode",
+    "storeEpochAfter",
+    "generationAfter"
+  ],
+  "properties": {
+    "schema": {
+      "const": "consent-reset/1"
+    },
+    "runID": {
+      "$ref": "common.json#/$defs/runID"
+    },
+    "epoch": {
+      "$ref": "common.json#/$defs/epoch"
+    },
+    "homeSHA256": {
+      "$ref": "common.json#/$defs/sha256"
+    },
+    "helperSHA256": {
+      "$ref": "common.json#/$defs/sha256"
+    },
+    "startMono": {
+      "$ref": "common.json#/$defs/mono"
+    },
+    "endMono": {
+      "$ref": "common.json#/$defs/mono"
+    },
+    "exitCode": {
+      "type": "integer"
+    },
+    "storeEpochAfter": {
+      "anyOf": [
+        {
+          "$ref": "common.json#/$defs/storeEpoch"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "generationAfter": {
+      "anyOf": [
+        {
+          "$ref": "common.json#/$defs/generation"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "targetPID": {
+      "$ref": "common.json#/$defs/pid"
+    },
+    "menuObjectID": {
+      "$ref": "common.json#/$defs/objectID"
+    },
+    "sessionID": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "operation": {
+      "const": "consent-reset-confirmed"
+    },
+    "outcome": {
+      "enum": [
+        "success",
+        "failed"
+      ]
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "$ref": "common.json#/$defs/scenarioReason"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "if": {
+    "properties": {
+      "exitCode": {
+        "const": 0
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "storeEpochAfter": {
+        "$ref": "common.json#/$defs/storeEpoch"
+      },
+      "generationAfter": {
+        "$ref": "common.json#/$defs/generation"
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "storeEpochAfter": {
+        "type": "null"
+      },
+      "generationAfter": {
+        "type": "null"
+      }
+    }
+  },
+  "x-producer": "desktop/native/verification/U6/consent_reset.py"
+}

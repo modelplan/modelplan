@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "baselineVersion": "u5-synthetic-v1",
+  "fidelity": "hand-built",
+  "approvalRef": null,
+  "covers": [
+    "preference-files",
+    "consent-v1"
+  ],
+  "knownGaps": [
+    "Hand-built synthetic preference baseline, not an owner-approved profile copy.",
+    "No reader/account/history inputs; real readers, Keychain and credentials are out of scope."
+  ],
+  "tools": [],
+  "files": [],
+  "consent": {
+    "state": "v1",
+    "privacy": "automatic",
+    "tools": {
+      "claude": "denied",
+      "codex": "denied",
+      "gemini": "denied"
+    }
+  }
+}

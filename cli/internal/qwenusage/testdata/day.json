@@ -1,0 +1,8 @@
+{
+  "period": "day",
+  "value": "2026-10-22",
+  "generatedAt": "2026-10-23T10:00:00Z",
+  "totals": {"requests": 3, "inputTokens": 1200, "outputTokens": 300, "cachedTokens": 400, "thoughtsTokens": 20, "totalTokens": 1500, "apiDurationMs": 9500},
+  "byModel": [{"key": "qwen3-coder", "model": "qwen3-coder", "requests": 3, "inputTokens": 1200, "outputTokens": 300, "cachedTokens": 400, "thoughtsTokens": 20, "totalTokens": 1500}],
+  "byAuthType": [], "byModelAndAuthType": [], "bySource": []
+}

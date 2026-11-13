@@ -1,0 +1,73 @@
+{
+  "jsonrpc": "2.0",
+  "id": 9007199254740993,
+  "result": {
+    "sessionId": "s-synthetic",
+    "storeEpoch": "e-synthetic",
+    "consentGeneration": 7,
+    "data": {
+      "sequence": 1,
+      "projection": {
+        "rowsVersion": 1,
+        "rows": [
+          {
+            "id": "declared:team",
+            "kind": "declared",
+            "order": 1000,
+            "name": {
+              "en": "team",
+              "zh": "team",
+              "userAuthored": true
+            },
+            "vendorKey": null,
+            "surfaces": [
+              "dock",
+              "menu",
+              "settings"
+            ],
+            "consent": "not_required",
+            "state": "pending",
+            "reason": {
+              "code": "no_manual_reading",
+              "text": {
+                "en": "No manual reading has been entered",
+                "zh": "尚未填写手动读数"
+              }
+            },
+            "nextStep": {
+              "action": "none",
+              "text": {
+                "en": "Add a manual reading in Settings",
+                "zh": "在设置中填写手动读数"
+              }
+            },
+            "accounts": [],
+            "expiresAt": null,
+            "stateAfterExpiry": null
+          }
+        ],
+        "rowsSummary": {
+          "state": "empty",
+          "reason": {
+            "code": "no_dock_rows",
+            "text": {
+              "en": "No Dock reading or available action yet",
+              "zh": "尚无 Dock 读数或可用操作"
+            }
+          },
+          "text": {
+            "en": "No Dock reading or available action yet",
+            "zh": "尚无 Dock 读数或可用操作"
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "Review reader consent in Settings",
+              "zh": "在设置中检查读取授权"
+            }
+          }
+        }
+      }
+    }
+  }
+}

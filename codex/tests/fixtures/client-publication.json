@@ -1,0 +1,5164 @@
+{
+  "manifest": {
+    "schemaVersion": 1,
+    "comparisonVersion": "8a9aec381e7e2f0c887f",
+    "methods": {
+      "index": "unified-v03-estimator-0.1.0-internal",
+      "recommendation": "balanced-coding-absolute-v4"
+    },
+    "components": {
+      "methods": {
+        "schemaVersion": 1,
+        "hash": "48ec6d14a43c6445e5213dd042fb1b956c1f0d12a0a5e7ec2d7504f41a2dadd5",
+        "bytes": 91597
+      },
+      "registry": {
+        "schemaVersion": 1,
+        "hash": "4ee1257f04a0082c7daaa2e2a94a2e24062c0381e03a92db72e6a36f610a8a6a",
+        "bytes": 5882941
+      },
+      "models": {
+        "schemaVersion": 1,
+        "hash": "e17392879b8e2e403a79cd1c27a6414e833749c138e9e64fa3319e8ca84f5d7f",
+        "bytes": 5418030
+      },
+      "plans": {
+        "schemaVersion": 1,
+        "hash": "32351a017cee0a986bed63fa9a1c2381d202ee15bcb7f1d7edf89e94c4e6bc3c",
+        "bytes": 9451026
+      },
+      "rules": {
+        "schemaVersion": 1,
+        "hash": "af3ffd8f37fb4c70fce12d0e7a541cc58d7132577d8ce9fe98f97120f429bd88",
+        "bytes": 18357
+      },
+      "news": {
+        "schemaVersion": 1,
+        "hash": "f52ff966359bbd191016cadfd944ef8c334a637ec6fbc648458b3b20247a5e98",
+        "bytes": 349500
+      },
+      "calendar": {
+        "schemaVersion": 1,
+        "hash": "2fd39ecefe11a01ee759d52bc66b23ace73b7aca75b28931cddc43363f608a67",
+        "bytes": 2409069
+      },
+      "client": {
+        "schemaVersion": 1,
+        "hash": "6a1ef5496d745a189207f7eda3bb06d3f6967d7f382f4bb5a751cd84c9d13a50",
+        "bytes": 112481
+      }
+    },
+    "publicationId": "02dd66162ee6828e005bc374",
+    "publishedAt": "2026-10-11T07:10:44.071Z"
+  },
+  "component": {
+    "schemaVersion": 1,
+    "kind": "client",
+    "dependencies": {
+      "models": "e17392879b8e2e403a79cd1c27a6414e833749c138e9e64fa3319e8ca84f5d7f",
+      "registry": "4ee1257f04a0082c7daaa2e2a94a2e24062c0381e03a92db72e6a36f610a8a6a",
+      "rules": "af3ffd8f37fb4c70fce12d0e7a541cc58d7132577d8ce9fe98f97120f429bd88",
+      "calendar": "2fd39ecefe11a01ee759d52bc66b23ace73b7aca75b28931cddc43363f608a67"
+    },
+    "evidence": [
+      {
+        "source": "artificial-analysis",
+        "snapshotId": "aa-f7e615e7-a01e-4bf4-9ea4-01e994f50506",
+        "observedAt": "2026-10-11T01:20:49.623Z"
+      },
+      {
+        "source": "aa-agent",
+        "snapshotId": "aa-agent-fb765aa9a69446144987",
+        "observedAt": "2026-10-10T05:05:57.477Z"
+      },
+      {
+        "source": "didreset",
+        "snapshotId": "didreset-e94c6e36353b0995eac3",
+        "observedAt": "2026-10-11T01:20:49.652Z"
+      },
+      {
+        "source": "semianalysis-public",
+        "snapshotId": "semianalysis-public-c0f1556d65163cf911c6",
+        "observedAt": "2026-10-07T13:01:48.029Z"
+      },
+      {
+        "source": "current-model-products",
+        "snapshotId": "current-model-products-60010f23b78f67dc0efd",
+        "observedAt": "2026-10-09T13:48:09.431Z"
+      },
+      {
+        "source": "real-api-pricing",
+        "snapshotId": "real-api-pricing-c1da0e8737de00d3f5a2",
+        "observedAt": "2026-10-09T13:14:38.209Z"
+      },
+      {
+        "source": "opencode-go-terms",
+        "snapshotId": "opencode-go-terms-e2be752b7d2528916fea",
+        "observedAt": "2026-10-11T01:20:49.937Z"
+      },
+      {
+        "source": "opencode-zen-terms",
+        "snapshotId": "opencode-zen-terms-15649d4969b1ef82821b",
+        "observedAt": "2026-10-11T01:20:52.616Z"
+      },
+      {
+        "source": "alibaba-cn-coding",
+        "snapshotId": "alibaba-cn-coding-83d936c9575f4123930f",
+        "observedAt": "2026-10-11T01:20:52.616Z"
+      },
+      {
+        "source": "alibaba-int-coding",
+        "snapshotId": "alibaba-int-coding-9e93a3c239d884d94351",
+        "observedAt": "2026-10-11T01:20:52.616Z"
+      },
+      {
+        "source": "kimi-membership",
+        "snapshotId": "kimi-membership-be6e48e8713dde1f5a47",
+        "observedAt": "2026-10-11T01:20:54.499Z"
+      },
+      {
+        "source": "kimi-code-models",
+        "snapshotId": "kimi-code-models-b5cb0d65c0caba554579",
+        "observedAt": "2026-10-11T01:20:54.499Z"
+      },
+      {
+        "source": "minimax-token-intro",
+        "snapshotId": "minimax-token-intro-e91238f24a92ae9de1a1",
+        "observedAt": "2026-10-11T01:20:54.500Z"
+      },
+      {
+        "source": "minimax-token-pricing",
+        "snapshotId": "minimax-token-pricing-9bebea789b9a80dfb6df",
+        "observedAt": "2026-10-11T01:20:55.286Z"
+      },
+      {
+        "source": "minimax-cn-terms",
+        "snapshotId": "minimax-cn-terms-039399beea272d54abee",
+        "observedAt": "2026-10-11T01:20:55.286Z"
+      },
+      {
+        "source": "grok-build-terms",
+        "snapshotId": "grok-build-terms-dde432bf10073a27c806",
+        "observedAt": "2026-10-11T01:20:55.287Z"
+      },
+      {
+        "source": "grok-web-terms",
+        "snapshotId": "grok-web-terms-de137bfff621b2d482fa",
+        "observedAt": "2026-10-11T01:20:56.909Z"
+      },
+      {
+        "source": "volcengine-coding-terms",
+        "snapshotId": "volcengine-coding-terms-d3b67cbb5f4ffbb267a4",
+        "observedAt": "2026-10-11T01:20:56.909Z"
+      },
+      {
+        "source": "minimax-m-plan-intro",
+        "snapshotId": "minimax-m-plan-intro-55177a91dfd93dc752fe",
+        "observedAt": "2026-10-11T01:20:56.910Z"
+      },
+      {
+        "source": "minimax-m-plan-usage",
+        "snapshotId": "minimax-m-plan-usage-1b8478dce475f9a34292",
+        "observedAt": "2026-10-11T01:20:57.240Z"
+      },
+      {
+        "source": "minimax-m-plan-pricing",
+        "snapshotId": "minimax-m-plan-pricing-43e6f170c77310b5c3e0",
+        "observedAt": "2026-10-11T01:20:57.240Z"
+      },
+      {
+        "source": "minimax-cn-m-plan-intro",
+        "snapshotId": "minimax-cn-m-plan-intro-6429948372c11ccd4628",
+        "observedAt": "2026-10-11T01:20:57.241Z"
+      },
+      {
+        "source": "minimax-cn-m-plan-usage",
+        "snapshotId": "minimax-cn-m-plan-usage-beee2b7b74a9f73eac42",
+        "observedAt": "2026-10-11T01:20:57.920Z"
+      },
+      {
+        "source": "minimax-cn-m-plan-pricing",
+        "snapshotId": "minimax-cn-m-plan-pricing-6710562254e049cd42c6",
+        "observedAt": "2026-10-11T01:20:57.920Z"
+      },
+      {
+        "source": "claude-max-api-credits",
+        "snapshotId": "claude-max-api-credits-3afce999317feb64a405",
+        "observedAt": "2026-10-11T01:20:57.921Z"
+      },
+      {
+        "source": "volcengine-personal-coding",
+        "snapshotId": null,
+        "observedAt": null
+      },
+      {
+        "source": "volcengine-enterprise-coding",
+        "snapshotId": null,
+        "observedAt": null
+      },
+      {
+        "source": "livebench",
+        "snapshotId": "livebench-5880b32c61d1a3d4b38a",
+        "observedAt": "2026-10-07T21:32:02.190Z"
+      },
+      {
+        "source": "cursorbench",
+        "snapshotId": "cursorbench-56a0aa785b937ebc257d",
+        "observedAt": "2026-10-07T21:32:02.191Z"
+      },
+      {
+        "source": "coding-model-docs",
+        "snapshotId": "coding-model-docs-fd348ed4a9d6516b3345",
+        "observedAt": "2026-10-11T01:20:59.175Z"
+      },
+      {
+        "source": "bigmodel-public-pricing",
+        "snapshotId": "bigmodel-public-pricing-4a747e478c5fbcaebc66",
+        "observedAt": "2026-10-09T13:14:51.578Z"
+      },
+      {
+        "source": "zai-public-pricing",
+        "snapshotId": "zai-public-pricing-97fd766fab8b5a7cde2a",
+        "observedAt": "2026-09-30T09:12:42.731Z"
+      },
+      {
+        "source": "swebench",
+        "snapshotId": "swebench-544c43b6ab8f046b3bde",
+        "observedAt": "2026-09-26T11:57:50.564Z"
+      },
+      {
+        "source": "aider",
+        "snapshotId": "aider-dd496c35eb51b52b8bfc",
+        "observedAt": "2026-09-26T11:57:51.626Z"
+      },
+      {
+        "source": "livecodebench",
+        "snapshotId": "livecodebench-05e3477cc92d819d65fa",
+        "observedAt": "2026-09-26T11:57:52.253Z"
+      },
+      {
+        "source": "terminalbench",
+        "snapshotId": "terminalbench-13678220dcf73850be7e",
+        "observedAt": "2026-10-07T01:46:30.385Z"
+      },
+      {
+        "source": "modelsdev",
+        "snapshotId": "modelsdev-15c0cbe991b43e01bb49",
+        "observedAt": "2026-10-11T01:21:03.675Z"
+      },
+      {
+        "source": "openrouter",
+        "snapshotId": "openrouter-9c71149c123509e74dab",
+        "observedAt": "2026-10-11T01:21:03.676Z"
+      },
+      {
+        "source": "openrouter-popularity",
+        "snapshotId": "openrouter-popularity-67733467eb9bad3aee1d",
+        "observedAt": "2026-10-11T01:21:03.677Z"
+      },
+      {
+        "source": "openrouter-daily",
+        "snapshotId": "openrouter-daily-1f309706566b836e3eec",
+        "observedAt": "2026-10-11T01:21:04.755Z"
+      },
+      {
+        "source": "bughunt",
+        "snapshotId": "bughunt-b7515364ad211759ee58",
+        "observedAt": "2026-10-09T13:14:55.501Z"
+      },
+      {
+        "source": "resets",
+        "snapshotId": "resets-4df5db708be391cd9f9b",
+        "observedAt": "2026-10-11T01:21:04.756Z"
+      },
+      {
+        "source": "news-models",
+        "snapshotId": "news-models-211f80ac88d76bf04eef",
+        "observedAt": "2026-10-11T01:21:06.460Z"
+      },
+      {
+        "source": "news-products",
+        "snapshotId": "news-products-13600225450b8429c10d",
+        "observedAt": "2026-10-11T01:21:06.460Z"
+      },
+      {
+        "source": "glm-overview",
+        "snapshotId": "glm-overview-58cc06a6f8eb3f64077c",
+        "observedAt": "2026-10-09T20:46:39.074Z"
+      },
+      {
+        "source": "glm-campaign",
+        "snapshotId": "glm-campaign-408d970242e101f300c4",
+        "observedAt": "2026-10-01T22:28:38.803Z"
+      },
+      {
+        "source": "glm-legacy",
+        "snapshotId": "glm-legacy-3ceef8f37dd55bbd7a22",
+        "observedAt": "2026-10-09T13:15:00.964Z"
+      },
+      {
+        "source": "bigmodel-overview",
+        "snapshotId": "bigmodel-overview-9bb37add1f5a5e09f8d4",
+        "observedAt": "2026-10-11T01:21:07.801Z"
+      },
+      {
+        "source": "bigmodel-campaign",
+        "snapshotId": "bigmodel-campaign-d3e51f8c01a26b05a32d",
+        "observedAt": "2026-10-01T22:28:39.309Z"
+      },
+      {
+        "source": "openai-pricing",
+        "snapshotId": "openai-pricing-4b12470bb5c07a16e74f",
+        "observedAt": "2026-10-09T00:14:47.505Z"
+      },
+      {
+        "source": "openai-pro-tiers",
+        "snapshotId": "openai-pro-tiers-4b12470bb5c07a16e74f",
+        "observedAt": "2026-10-09T00:14:47.506Z"
+      },
+      {
+        "source": "claude-pricing",
+        "snapshotId": "claude-pricing-2c1b91af39e838c269bd",
+        "observedAt": "2026-10-11T01:21:08.288Z"
+      },
+      {
+        "source": "zcode-config",
+        "snapshotId": "zcode-config-4dcd2fd3c7c6d286dd96",
+        "observedAt": "2026-10-11T01:21:08.289Z"
+      }
+    ],
+    "data": {
+      "units": {
+        "ability": "websiteAbility",
+        "cost": "usdPerReferenceTask",
+        "time": "taskTimeCrossModel"
+      },
+      "builtAt": "2026-10-11T07:10:44.071Z",
+      "aliasRevision": "2026-10-11.1",
+      "developers": [
+        {
+          "id": "openai",
+          "name": "OpenAI",
+          "color": "#85ccee",
+          "region": null
+        },
+        {
+          "id": "anthropic",
+          "name": "Anthropic",
+          "color": "#dfb792",
+          "region": null
+        },
+        {
+          "id": "zhipuai",
+          "name": "智谱 AI",
+          "color": "#9cc992",
+          "region": null
+        },
+        {
+          "id": "xai",
+          "name": "SpaceXAI",
+          "color": "#9bbff6",
+          "region": null
+        },
+        {
+          "id": "meta",
+          "name": "Meta",
+          "color": "#9bbff6",
+          "region": null
+        },
+        {
+          "id": "alibaba",
+          "name": "Alibaba",
+          "color": "#9bbff6",
+          "region": null
+        },
+        {
+          "id": "google",
+          "name": "Google",
+          "color": "#9bbff6",
+          "region": null
+        },
+        {
+          "id": "kimi",
+          "name": "Kimi",
+          "color": "#9bbff6",
+          "region": null
+        },
+        {
+          "id": "xiaomi",
+          "name": "Xiaomi",
+          "color": "#9bbff6",
+          "region": null
+        },
+        {
+          "id": "deepseek",
+          "name": "DeepSeek",
+          "color": "#9bbff6",
+          "region": null
+        },
+        {
+          "id": "minimax",
+          "name": "MiniMax",
+          "color": "#9bbff6",
+          "region": null
+        },
+        {
+          "id": "tencent",
+          "name": "Tencent",
+          "color": "#9bbff6",
+          "region": null
+        }
+      ],
+      "models": [
+        {
+          "id": "astra",
+          "name": "GPT-6 Astra",
+          "developerId": "openai",
+          "current": true,
+          "recommended": "medium",
+          "harnessIds": {
+            "api": [
+              "gpt-6-astra"
+            ],
+            "claude-code": [],
+            "codex": [
+              "gpt-6-astra"
+            ]
+          },
+          "harnessEvidence": {
+            "checkedAt": "2026-10-11",
+            "sourceUrls": [
+              "https://developers.openai.com/api/docs/models",
+              "https://learn.chatgpt.com/docs/models"
+            ],
+            "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+            "requiredEndpoints": {}
+          },
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 44.957009915750064,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 2.2101114850676424,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.398781851638383,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 51.422135065639196,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 3.403756503909741,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.4466726222039713,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 53.928300121781696,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 3.9690600848837576,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.5006267148589714,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 56.470229066467105,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 4.74738653255544,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.5230799544713244,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 57.03707686071468,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 7.03153319894412,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.6622995140086776,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Codex",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            }
+          ]
+        },
+        {
+          "id": "auto:alibaba:b6b89c36a7e23db5",
+          "name": "Qwen3.8 Max (0902)",
+          "developerId": "alibaba",
+          "current": false,
+          "recommended": null,
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "observed",
+              "label": "Observed",
+              "available": true,
+              "ability": 50.74357502981971,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 15.406644000987308,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            }
+          ]
+        },
+        {
+          "id": "auto:alibaba:d3a69ebbb2a99c05",
+          "name": "Qwen3.8-Flash-Next",
+          "developerId": "alibaba",
+          "current": false,
+          "recommended": null,
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "observed",
+              "label": "Observed",
+              "available": true,
+              "ability": 39.03226831015927,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.0602482938277669,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            }
+          ]
+        },
+        {
+          "id": "auto:anthropic:2a365f1cb3bef456",
+          "name": "Claude Opus 5",
+          "developerId": "anthropic",
+          "current": false,
+          "recommended": "medium",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 37.78738330990806,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 3.338150155480544,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.6980636403954423,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 46.515771763720494,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 5.375673021933461,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.7799184886025012,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 51.42463299297596,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 7.750616607716702,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.905282409771472,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 54.31423004795514,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 10.309359035433017,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 1.0693000092604428,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 55.56045371198864,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 10.895455890768119,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 1.1351675824270606,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            }
+          ]
+        },
+        {
+          "id": "auto:anthropic:ccb37fec2677f068",
+          "name": "Claude Haiku 5.5",
+          "developerId": "anthropic",
+          "current": true,
+          "recommended": "xhigh",
+          "harnessIds": {
+            "api": [
+              "claude-haiku-5-5"
+            ],
+            "claude-code": [
+              "claude-haiku-5-5"
+            ],
+            "codex": []
+          },
+          "harnessEvidence": {
+            "checkedAt": "2026-10-11",
+            "sourceUrls": [
+              "https://platform.claude.com/docs/en/models/overview",
+              "https://code.claude.com/docs/en/model-config"
+            ],
+            "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
+            "requiredEndpoints": {}
+          },
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 18.82389339310293,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.10039409512051578,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.31297112618718403,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 27.180316402324223,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.17924852956561635,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.3778763319619619,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 32.37181274224268,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.298650349471907,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.49946021639050003,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 38.56925850282312,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.4870001792213275,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.7007802176100728,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 41.10445001930166,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.2404082730855759,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 2.358231428500149,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            }
+          ]
+        },
+        {
+          "id": "auto:deepseek:1c2f02f74d295fa3",
+          "name": "DeepSeek V4 Flash 0731",
+          "developerId": "deepseek",
+          "current": false,
+          "recommended": null,
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 27.84798633094201,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.18895286761155353,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.49505260394592276,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Codex",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            }
+          ]
+        },
+        {
+          "id": "auto:deepseek:88d0e920aac0ddac",
+          "name": "DeepSeek V4 Pro 0813",
+          "developerId": "deepseek",
+          "current": false,
+          "recommended": "max",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "non-reasoning",
+              "label": "Non-reasoning",
+              "available": true,
+              "ability": -0.7665688575484637,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.012676701923082,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.9124412604104984,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Codex",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 31.85778557579132,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.5486723746793463,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 1.0909483223088579,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Codex",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            }
+          ]
+        },
+        {
+          "id": "auto:deepseek:b75e488c1a8d0e9d",
+          "name": "DeepSeek V4.1 Flash",
+          "developerId": "deepseek",
+          "current": false,
+          "recommended": "max",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "non-reasoning",
+              "label": "Non-reasoning",
+              "available": true,
+              "ability": 14.848027535165492,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.4178893731986388,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.34400957387756875,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Claude Code / DeepSeek API",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 45.79933815141093,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.5240932893977225,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.5273116900962137,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Claude Code / DeepSeek API",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            }
+          ]
+        },
+        {
+          "id": "auto:google:0bb591b009df2469",
+          "name": "Gemini 3.8 Flash",
+          "developerId": "google",
+          "current": true,
+          "recommended": "high",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 21.489223655745484,
+              "abilityBasis": "abilityWithinModel",
+              "cost": null,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 34.66444371536347,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 2.7942720684716447,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.25560132945871034,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Antigravity SDK v0.1.12",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 37.20512923164941,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 2.8148695525619156,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.3171067448375676,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Antigravity SDK v0.1.12",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            }
+          ]
+        },
+        {
+          "id": "auto:kimi:d59a3fc7d1ed2d19",
+          "name": "Kimi K3",
+          "developerId": "kimi",
+          "current": true,
+          "recommended": "max",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 18.74661202789031,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 3.2653482515173806,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 46.97922644135743,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 5.697481495123365,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            }
+          ]
+        },
+        {
+          "id": "auto:meta:ec63fa545cd577ee",
+          "name": "Muse Spark 1.3",
+          "developerId": "meta",
+          "current": false,
+          "recommended": "max",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 44.7242683668957,
+              "abilityBasis": "abilityWithinModel",
+              "cost": null,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.6018333779631205,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Muse Code / Meta API",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 51.03799157036639,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 3.4655551566546285,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.8074755039755974,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Muse Code / Meta API",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            }
+          ]
+        },
+        {
+          "id": "auto:minimax:9250ce592a868329",
+          "name": "MiniMax-M3",
+          "developerId": "minimax",
+          "current": true,
+          "recommended": null,
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "observed",
+              "label": "Observed",
+              "available": true,
+              "ability": 16.864437733659166,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.4459485060370085,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            }
+          ]
+        },
+        {
+          "id": "auto:tencent:f1330786ec5f15d5",
+          "name": "Hy3",
+          "developerId": "tencent",
+          "current": false,
+          "recommended": null,
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "observed",
+              "label": "Observed",
+              "available": true,
+              "ability": 8.708349125324226,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.20452935920696835,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            }
+          ]
+        },
+        {
+          "id": "auto:xai:208666a1a50e881a",
+          "name": "Grok 4.7",
+          "developerId": "xai",
+          "current": true,
+          "recommended": "high",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 36.767460647906645,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 2.2046181173299657,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.20941537603105448,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Grok Build CLI (ACP)",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 46.67388273733722,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 5.492137229565219,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.3575154392602236,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Grok Build CLI (ACP)",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 47.998816266429706,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 7.360345329626296,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 1.0624365440764336,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Grok Build",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            }
+          ]
+        },
+        {
+          "id": "auto:xai:a58a94661bb3544a",
+          "name": "Grok 4.6",
+          "developerId": "xai",
+          "current": false,
+          "recommended": "medium",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 27.459708706788135,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.1844072510239787,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.1697962508359901,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Grok Build CLI (ACP)",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 40.137056132774745,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 2.538194767491118,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.24997781373076322,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Grok Build CLI (ACP)",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 43.86717354590265,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 4.11811003635029,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.3112931265326485,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Grok Build CLI (ACP)",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 44.27005468959446,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 4.175374927502612,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.4065676895017319,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Grok Build CLI (ACP)",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            }
+          ]
+        },
+        {
+          "id": "auto:xiaomi:5606e136097c03fb",
+          "name": "MiMo-V2.6-Pro",
+          "developerId": "xiaomi",
+          "current": true,
+          "recommended": null,
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "observed",
+              "label": "Observed",
+              "available": true,
+              "ability": 52.625749324050844,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.3794332959104207,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            }
+          ]
+        },
+        {
+          "id": "auto:xiaomi:c0e177b6ccb12bee",
+          "name": "MiMo-V2.6-Flash",
+          "developerId": "xiaomi",
+          "current": true,
+          "recommended": null,
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "observed",
+              "label": "Observed",
+              "available": true,
+              "ability": 35.0587892445602,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.1777525350210979,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            }
+          ]
+        },
+        {
+          "id": "fable",
+          "name": "Claude Fable 5.1",
+          "developerId": "anthropic",
+          "current": true,
+          "recommended": "medium",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 48.909187754146934,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 4.714188333318084,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.5425725875947068,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 52.90288285469296,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 5.610889728698866,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.5988241108851481,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 56.76859819408505,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 7.772799085010947,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.7147377761413247,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 60.103549629218584,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 10.661343380179359,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.7584126430666188,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 60.82519168498102,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 13.341173131427308,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.9221697091845603,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            }
+          ]
+        },
+        {
+          "id": "glm",
+          "name": "GLM-5.3",
+          "developerId": "zhipuai",
+          "current": true,
+          "recommended": "max",
+          "harnessIds": {
+            "api": [
+              "glm-5.3"
+            ],
+            "claude-code": [
+              "glm-5.3[1m]"
+            ],
+            "codex": []
+          },
+          "harnessEvidence": {
+            "checkedAt": "2026-10-11",
+            "sourceUrls": [
+              "https://docs.z.ai/guides/llm/glm-5.3",
+              "https://docs.z.ai/devpack/tool/claude"
+            ],
+            "qualification": "Claude Code identifier requires custom Z.ai endpoint https://api.z.ai/api/anthropic and explicit family-model configuration; never resolve global opus/sonnet aliases to GLM.",
+            "requiredEndpoints": {
+              "claude-code": "https://api.z.ai/api/anthropic"
+            }
+          },
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 29.63189406580789,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.9779847835746034,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.9639439720919701,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 49.39780585473852,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 4.232736673882581,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 1.3810637149750022,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "tb",
+                "cohort": "terminal-bench-4-0-0:1922072f-a433-429a-8929-350d5e1bcf02 / Claude Code",
+                "boundary": "trial_wall",
+                "referenceSeconds": 4388.301096474238
+              }
+            }
+          ]
+        },
+        {
+          "id": "luna",
+          "name": "GPT-6 Luna",
+          "developerId": "openai",
+          "current": true,
+          "recommended": "max",
+          "harnessIds": {
+            "api": [
+              "gpt-6-luna"
+            ],
+            "claude-code": [],
+            "codex": [
+              "gpt-6-luna"
+            ]
+          },
+          "harnessEvidence": {
+            "checkedAt": "2026-10-11",
+            "sourceUrls": [
+              "https://developers.openai.com/api/docs/models",
+              "https://learn.chatgpt.com/docs/models"
+            ],
+            "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+            "requiredEndpoints": {}
+          },
+          "efforts": [
+            {
+              "effort": "none",
+              "label": "None",
+              "available": true,
+              "ability": -4.1682047202747325,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.03218916098939755,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.2848207179140037,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 2.105709593829072,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.012818692429406099,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.18205931339636716,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 18.574734668351557,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.04985047055880153,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.0811248753994175,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 24.703644591051024,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.0826093512117282,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.23016825113323103,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 28.283776823645827,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.12021084900465281,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.537688127647302,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 35.35838972247221,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.16786961741278758,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.9357660046072344,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            }
+          ]
+        },
+        {
+          "id": "opus",
+          "name": "Claude Opus 5.5",
+          "developerId": "anthropic",
+          "current": true,
+          "recommended": "medium",
+          "harnessIds": {
+            "api": [
+              "claude-opus-5-5"
+            ],
+            "claude-code": [
+              "claude-opus-5-5"
+            ],
+            "codex": []
+          },
+          "harnessEvidence": {
+            "checkedAt": "2026-10-11",
+            "sourceUrls": [
+              "https://platform.claude.com/docs/en/models/overview",
+              "https://code.claude.com/docs/en/model-config"
+            ],
+            "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
+            "requiredEndpoints": {}
+          },
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 38.82948090452368,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.2251781463106826,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 55.396530060263636,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 2.90476190241179,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 60.21602170067843,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 3.9822236121895283,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 63.96303492228087,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 5.7836333194615825,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 1.3160775969200857,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 67.53920939987951,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 11.097299949500217,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 1.745071615638415,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            }
+          ]
+        },
+        {
+          "id": "sol-5.6",
+          "name": "GPT-5.6 Sol",
+          "developerId": "openai",
+          "current": true,
+          "recommended": "medium",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "none",
+              "label": "None",
+              "available": true,
+              "ability": 11.741502412027046,
+              "abilityBasis": "abilityWithinModel",
+              "cost": null,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            },
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 22.616287223140304,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.6975343983891584,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.2858985635517845,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 33.86089078134607,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.483179821473022,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.4490167522107294,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 40.23298026308601,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 2.4683609435561222,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.6291894405978078,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 43.635945674178856,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 3.7166438261487285,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 1.1904603808612195,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 49.63725473041189,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 5.7522400355112495,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 2.3875239492549496,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            }
+          ]
+        },
+        {
+          "id": "sol-6.1",
+          "name": "GPT-6.1 Sol",
+          "developerId": "openai",
+          "current": true,
+          "recommended": "medium",
+          "harnessIds": {
+            "api": [
+              "gpt-6.1-sol"
+            ],
+            "claude-code": [],
+            "codex": [
+              "gpt-6.1-sol"
+            ]
+          },
+          "harnessEvidence": {
+            "checkedAt": "2026-10-11",
+            "sourceUrls": [
+              "https://developers.openai.com/api/docs/models",
+              "https://learn.chatgpt.com/docs/models"
+            ],
+            "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+            "requiredEndpoints": {}
+          },
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 42.39185040672775,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.41441306259235217,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.23366970570983542,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Codex",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 51.22466200628702,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.6131606472449949,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.29391722446334434,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Codex",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 53.818529582287006,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.8517969556250454,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.36090360615066197,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Codex",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 56.127361022856846,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.0113087334696724,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.4202973933995819,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Codex",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 55.47529170506144,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.4388777496918637,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.6602171758542897,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Codex",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            }
+          ]
+        },
+        {
+          "id": "sonnet-5.5",
+          "name": "Claude Sonnet 5.5",
+          "developerId": "anthropic",
+          "current": true,
+          "recommended": "high",
+          "harnessIds": {
+            "api": [
+              "claude-sonnet-5-5"
+            ],
+            "claude-code": [
+              "claude-sonnet-5-5"
+            ],
+            "codex": []
+          },
+          "harnessEvidence": {
+            "checkedAt": "2026-10-11",
+            "sourceUrls": [
+              "https://platform.claude.com/docs/en/models/overview",
+              "https://code.claude.com/docs/en/model-config"
+            ],
+            "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
+            "requiredEndpoints": {}
+          },
+          "efforts": [
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 28.138133902021398,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.5471917151553569,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.17186590067060314,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 35.32701621223421,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.7553803132613846,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.2304920491519625,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 46.85184361382959,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.5055129866943628,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.33175920334918,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 56.02809232417181,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 3.2562069921229027,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.7305991696479545,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 64.89134306116546,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 11.379482199074271,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 2.366853281520465,
+              "timeEstimated": false,
+              "timeBasis": {
+                "source": "aa-agent",
+                "cohort": "AA Coding Agent v1.5 / Claude Code",
+                "boundary": "agent_wall",
+                "referenceSeconds": 2216.0078167447414
+              }
+            }
+          ]
+        },
+        {
+          "id": "terra-5.6",
+          "name": "GPT-5.6 Terra",
+          "developerId": "openai",
+          "current": true,
+          "recommended": "high",
+          "harnessIds": {
+            "api": [],
+            "claude-code": [],
+            "codex": []
+          },
+          "harnessEvidence": null,
+          "efforts": [
+            {
+              "effort": "none",
+              "label": "None",
+              "available": true,
+              "ability": 0.5586691598797806,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.39794918497511816,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": null,
+              "timeEstimated": false,
+              "timeBasis": null
+            },
+            {
+              "effort": "low",
+              "label": "Low",
+              "available": true,
+              "ability": 14.570411128044942,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.39941694795830934,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.15715840413722146,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "medium",
+              "label": "Med",
+              "available": true,
+              "ability": 19.49926490689839,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.5120474518150693,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.19054912593816667,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "high",
+              "label": "High",
+              "available": true,
+              "ability": 26.783397984652183,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 0.9005001872718307,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.2650708138050734,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "xhigh",
+              "label": "XHigh",
+              "available": true,
+              "ability": 33.51421410656664,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 1.5592221696812765,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 0.5339148776287244,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            },
+            {
+              "effort": "max",
+              "label": "Max",
+              "available": true,
+              "ability": 42.690313017141264,
+              "abilityBasis": "abilityWithinModel",
+              "cost": 3.4537860371578435,
+              "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+              "time": 1.5064700699170896,
+              "timeEstimated": true,
+              "timeBasis": {
+                "source": "bughunt",
+                "cohort": "Bug Hunt 105 / Codex CLI",
+                "boundary": "reported_run_wall",
+                "referenceSeconds": 4655.859204661198
+              }
+            }
+          ]
+        }
+      ],
+      "lineups": [
+        {
+          "developerId": "openai",
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "method": "lineup-v1",
+          "tie": 1,
+          "baseline": "luna",
+          "frontier": [
+            "luna",
+            "sol-6.1"
+          ],
+          "steps": [
+            {
+              "from": "luna",
+              "to": "sol-6.1",
+              "abilityDelta": 15.866272283814808,
+              "costRatio": 3.6526004925432503
+            }
+          ],
+          "members": [
+            {
+              "id": "astra",
+              "ability": 51.422135065639196,
+              "cost": 3.403756503909741,
+              "costRelative": 20.276191465546628,
+              "tags": [
+                "equivalent_costlier"
+              ],
+              "dominatedBy": {
+                "id": "sol-6.1",
+                "kind": "equivalent"
+              }
+            },
+            {
+              "id": "luna",
+              "ability": 35.35838972247221,
+              "cost": 0.16786961741278758,
+              "costRelative": 1,
+              "tags": [
+                "cheapest"
+              ],
+              "dominatedBy": null
+            },
+            {
+              "id": "sol-5.6",
+              "ability": 33.86089078134607,
+              "cost": 1.483179821473022,
+              "costRelative": 8.835308284678558,
+              "tags": [
+                "dominated"
+              ],
+              "dominatedBy": {
+                "id": "luna",
+                "kind": "weaker"
+              }
+            },
+            {
+              "id": "sol-6.1",
+              "ability": 51.22466200628702,
+              "cost": 0.6131606472449949,
+              "costRelative": 3.6526004925432503,
+              "tags": [
+                "strongest",
+                "best_value"
+              ],
+              "dominatedBy": null
+            },
+            {
+              "id": "terra-5.6",
+              "ability": 26.783397984652183,
+              "cost": 0.9005001872718307,
+              "costRelative": 5.364283311955856,
+              "tags": [
+                "dominated"
+              ],
+              "dominatedBy": {
+                "id": "luna",
+                "kind": "weaker"
+              }
+            }
+          ]
+        },
+        {
+          "developerId": "anthropic",
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "method": "lineup-v1",
+          "tie": 1,
+          "baseline": "auto:anthropic:ccb37fec2677f068",
+          "frontier": [
+            "auto:anthropic:ccb37fec2677f068",
+            "sonnet-5.5",
+            "opus"
+          ],
+          "steps": [
+            {
+              "from": "auto:anthropic:ccb37fec2677f068",
+              "to": "sonnet-5.5",
+              "abilityDelta": 8.282585111006469,
+              "costRatio": 3.0914012990745756
+            },
+            {
+              "from": "sonnet-5.5",
+              "to": "opus",
+              "abilityDelta": 8.54468644643405,
+              "costRatio": 1.9294167025352211
+            }
+          ],
+          "members": [
+            {
+              "id": "auto:anthropic:2a365f1cb3bef456",
+              "ability": 46.515771763720494,
+              "cost": 5.375673021933461,
+              "costRelative": 11.038338898619529,
+              "tags": [
+                "equivalent_costlier"
+              ],
+              "dominatedBy": {
+                "id": "sonnet-5.5",
+                "kind": "equivalent"
+              }
+            },
+            {
+              "id": "auto:anthropic:ccb37fec2677f068",
+              "ability": 38.56925850282312,
+              "cost": 0.4870001792213275,
+              "costRelative": 1,
+              "tags": [
+                "cheapest"
+              ],
+              "dominatedBy": null
+            },
+            {
+              "id": "fable",
+              "ability": 52.90288285469296,
+              "cost": 5.610889728698866,
+              "costRelative": 11.521329905196767,
+              "tags": [
+                "dominated"
+              ],
+              "dominatedBy": {
+                "id": "opus",
+                "kind": "weaker"
+              }
+            },
+            {
+              "id": "opus",
+              "ability": 55.396530060263636,
+              "cost": 2.90476190241179,
+              "costRelative": 5.964601300673566,
+              "tags": [
+                "strongest",
+                "best_value"
+              ],
+              "dominatedBy": null
+            },
+            {
+              "id": "sonnet-5.5",
+              "ability": 46.85184361382959,
+              "cost": 1.5055129866943628,
+              "costRelative": 3.0914012990745756,
+              "tags": [],
+              "dominatedBy": null
+            }
+          ]
+        },
+        {
+          "developerId": "xai",
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "method": "lineup-v1",
+          "tie": 1,
+          "baseline": "auto:xai:a58a94661bb3544a",
+          "frontier": [
+            "auto:xai:a58a94661bb3544a",
+            "auto:xai:208666a1a50e881a"
+          ],
+          "steps": [
+            {
+              "from": "auto:xai:a58a94661bb3544a",
+              "to": "auto:xai:208666a1a50e881a",
+              "abilityDelta": 6.536826604562478,
+              "costRatio": 2.1637966084824645
+            }
+          ],
+          "members": [
+            {
+              "id": "auto:xai:208666a1a50e881a",
+              "ability": 46.67388273733722,
+              "cost": 5.492137229565219,
+              "costRelative": 2.1637966084824645,
+              "tags": [
+                "strongest",
+                "best_value"
+              ],
+              "dominatedBy": null
+            },
+            {
+              "id": "auto:xai:a58a94661bb3544a",
+              "ability": 40.137056132774745,
+              "cost": 2.538194767491118,
+              "costRelative": 1,
+              "tags": [
+                "cheapest"
+              ],
+              "dominatedBy": null
+            }
+          ]
+        },
+        {
+          "developerId": "deepseek",
+          "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+          "method": "lineup-v1",
+          "tie": 1,
+          "baseline": "auto:deepseek:b75e488c1a8d0e9d",
+          "frontier": [
+            "auto:deepseek:b75e488c1a8d0e9d"
+          ],
+          "steps": [],
+          "members": [
+            {
+              "id": "auto:deepseek:88d0e920aac0ddac",
+              "ability": 31.85778557579132,
+              "cost": 0.5486723746793463,
+              "costRelative": 1.0468983018459739,
+              "tags": [
+                "dominated"
+              ],
+              "dominatedBy": {
+                "id": "auto:deepseek:b75e488c1a8d0e9d",
+                "kind": "weaker"
+              }
+            },
+            {
+              "id": "auto:deepseek:b75e488c1a8d0e9d",
+              "ability": 45.79933815141093,
+              "cost": 0.5240932893977225,
+              "costRelative": 1,
+              "tags": [
+                "cheapest",
+                "strongest"
+              ],
+              "dominatedBy": null
+            },
+            {
+              "id": "auto:deepseek:1c2f02f74d295fa3",
+              "status": "incomplete",
+              "tags": [],
+              "dominatedBy": null
+            }
+          ]
+        }
+      ],
+      "resets": [
+        {
+          "id": "reset-2109045392684032299-1-1",
+          "provider": "openai",
+          "scope": null,
+          "status": "upstream-announced",
+          "at": null,
+          "precision": "unknown",
+          "publishedAt": "2026-10-11T06:16:20.000+08:00",
+          "url": "https://aihot.news/codex-reset"
+        },
+        {
+          "id": "banked-2107913674593644711-1-1",
+          "provider": "openai",
+          "scope": "所有付费订阅",
+          "status": "upstream-confirmed",
+          "at": null,
+          "precision": "unknown",
+          "publishedAt": "2026-10-08T03:19:17.000+08:00",
+          "url": "https://aihot.news/codex-reset"
+        },
+        {
+          "id": "reset-2107676072871600470-1-1",
+          "provider": "openai",
+          "scope": null,
+          "status": "upstream-confirmed",
+          "at": null,
+          "precision": "unknown",
+          "publishedAt": "2026-10-07T11:35:09.000+08:00",
+          "url": "https://aihot.news/codex-reset"
+        },
+        {
+          "id": "reset-2106845241357824205-1-1",
+          "provider": "openai",
+          "scope": null,
+          "status": "withdrawn",
+          "at": null,
+          "precision": "unknown",
+          "publishedAt": "2026-10-05T04:33:43.000+08:00",
+          "url": "https://aihot.news/codex-reset"
+        },
+        {
+          "id": "reset-2106239435461579088-1-1",
+          "provider": "openai",
+          "scope": "Pro",
+          "status": "upstream-confirmed",
+          "at": null,
+          "precision": "unknown",
+          "publishedAt": "2026-10-03T12:26:28.000+08:00",
+          "url": "https://aihot.news/codex-reset"
+        },
+        {
+          "id": "didreset-grok-2106083136002310193",
+          "provider": "grok",
+          "scope": "global",
+          "status": "upstream-announced",
+          "at": null,
+          "precision": "unknown",
+          "publishedAt": "2026-10-02T18:05:23.000Z",
+          "url": "https://x.com/bot/status/2106083136002310193"
+        },
+        {
+          "id": "reset-2105843926221660585-1-1",
+          "provider": "openai",
+          "scope": "所有付费订阅",
+          "status": "upstream-confirmed",
+          "at": null,
+          "precision": "unknown",
+          "publishedAt": "2026-10-02T10:14:51.000+08:00",
+          "url": "https://aihot.news/codex-reset"
+        },
+        {
+          "id": "banked-2105173168281506088-1-1",
+          "provider": "openai",
+          "scope": null,
+          "status": "upstream-confirmed",
+          "at": null,
+          "precision": "unknown",
+          "publishedAt": "2026-09-30T13:49:30.000+08:00",
+          "url": "https://aihot.news/codex-reset"
+        },
+        {
+          "id": "didreset-codex-2104992080095564111",
+          "provider": "openai",
+          "scope": "global",
+          "status": "upstream-announced",
+          "at": null,
+          "precision": "unknown",
+          "publishedAt": "2026-09-29T17:00:00.000Z",
+          "url": "https://x.com/thsottiaux/status/2104992080095564111"
+        }
+      ],
+      "windows": [
+        {
+          "id": "21497b6ee85e3baeb17d04ef@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-11T16:00:00.000Z",
+          "endsAt": "2026-10-12T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "3a2887e192e02c9b3af563c3@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-11T16:00:00.000Z",
+          "endsAt": "2026-10-12T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "5b2513a313e446a80de0e238@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-11T16:00:00.000Z",
+          "endsAt": "2026-10-12T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "071dcdb84e965ff58d174402@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-11T16:00:00.000Z",
+          "endsAt": "2026-10-12T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "af6d8866fdc308a6da04aadb@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-11T16:00:00.000Z",
+          "endsAt": "2026-10-12T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e97d15fa0ccc233530565923@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-11T16:00:00.000Z",
+          "endsAt": "2026-10-12T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "19f66ed9d2eed7a7d4e00415@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-12T06:00:00.000Z",
+          "endsAt": "2026-10-12T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "b34bb3f1cb0cb15665da3568@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-12T06:00:00.000Z",
+          "endsAt": "2026-10-12T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e87b7887299ad4fe10d7fc70@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-12T06:00:00.000Z",
+          "endsAt": "2026-10-12T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "7fa8e9069d323b1fcce63ad0@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-12T06:00:00.000Z",
+          "endsAt": "2026-10-12T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "cacbbe428a2edfc6018f4185@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-12T06:00:00.000Z",
+          "endsAt": "2026-10-12T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "db38c8f7cd7c165f5be35e77@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-12T06:00:00.000Z",
+          "endsAt": "2026-10-12T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "6d9595f67c7af9ad90750795@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-12T10:00:00.000Z",
+          "endsAt": "2026-10-12T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "7c04cf81ae0a1a9f8db6fa9a@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-12T10:00:00.000Z",
+          "endsAt": "2026-10-12T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "f8fb017c2ad9cfa899a0ae8a@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-12T10:00:00.000Z",
+          "endsAt": "2026-10-12T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "9de55e3cf46e95b6afa957e1@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-12T10:00:00.000Z",
+          "endsAt": "2026-10-12T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "ad9773a3f3ee26d78a6d8abd@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-12T10:00:00.000Z",
+          "endsAt": "2026-10-12T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "d020c767e120e8d0e696deec@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-12T10:00:00.000Z",
+          "endsAt": "2026-10-12T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "23e59bbea0d872001ab56353@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-12T16:00:00.000Z",
+          "endsAt": "2026-10-13T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "8a2ca73e9eefb4837ca660ba@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-12T16:00:00.000Z",
+          "endsAt": "2026-10-13T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "b62f716dae346a7ab55e8bf2@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-12T16:00:00.000Z",
+          "endsAt": "2026-10-13T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "910be7c0f12e921e3198a48d@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-12T16:00:00.000Z",
+          "endsAt": "2026-10-13T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "a424ee4fb0d5361c535cafc2@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-12T16:00:00.000Z",
+          "endsAt": "2026-10-13T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e9c01cb7c116cd0f90ab34fa@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-12T16:00:00.000Z",
+          "endsAt": "2026-10-13T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "2095c236852964be24b0ad3b@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-13T06:00:00.000Z",
+          "endsAt": "2026-10-13T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "bbef87b37272bb3ee5986df6@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-13T06:00:00.000Z",
+          "endsAt": "2026-10-13T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "e37ee0d528876262161969ff@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-13T06:00:00.000Z",
+          "endsAt": "2026-10-13T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "083b68cef5b79783a0c5c08c@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-13T06:00:00.000Z",
+          "endsAt": "2026-10-13T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "59b62adc2558fbeabee318b4@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-13T06:00:00.000Z",
+          "endsAt": "2026-10-13T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "98b973cf0f6891a8f8a70355@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-13T06:00:00.000Z",
+          "endsAt": "2026-10-13T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "23b7eab08061cc27763031f3@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-13T10:00:00.000Z",
+          "endsAt": "2026-10-13T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "285358c6088bd724813b8c64@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-13T10:00:00.000Z",
+          "endsAt": "2026-10-13T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "f3d17ca791fa7f9fd4c3a152@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-13T10:00:00.000Z",
+          "endsAt": "2026-10-13T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "a124f4a0e594ee5ef8b7ec0f@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-13T10:00:00.000Z",
+          "endsAt": "2026-10-13T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "b22f0e73ebda18b03554dee0@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-13T10:00:00.000Z",
+          "endsAt": "2026-10-13T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "fa817896e2831a6ef33b19fb@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-13T10:00:00.000Z",
+          "endsAt": "2026-10-13T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "cef3a2d009e0b3d848ce81b2@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-13T16:00:00.000Z",
+          "endsAt": "2026-10-14T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "f2ab823c9fc89f7d918fc885@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-13T16:00:00.000Z",
+          "endsAt": "2026-10-14T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "fd423226d3b530df8c53dd04@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-13T16:00:00.000Z",
+          "endsAt": "2026-10-14T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "32771078fc9bd813e765893c@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-13T16:00:00.000Z",
+          "endsAt": "2026-10-14T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "97de38bbf43298a9f6e81977@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-13T16:00:00.000Z",
+          "endsAt": "2026-10-14T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e7cacd014351d1e0a7604a7f@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-13T16:00:00.000Z",
+          "endsAt": "2026-10-14T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "22cfe02b1ec8e4099c0ae5a2@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-14T06:00:00.000Z",
+          "endsAt": "2026-10-14T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "2acd9679a588e6f458bb4790@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-14T06:00:00.000Z",
+          "endsAt": "2026-10-14T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "5e484060e96cee138d6d7706@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-14T06:00:00.000Z",
+          "endsAt": "2026-10-14T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "52fd0d9041e455d0467d5623@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-14T06:00:00.000Z",
+          "endsAt": "2026-10-14T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "a2d36903259710a456d2caf0@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-14T06:00:00.000Z",
+          "endsAt": "2026-10-14T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "aea24f996ef91d18efa9c3e6@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-14T06:00:00.000Z",
+          "endsAt": "2026-10-14T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "081c34d727736e3fde0f7295@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-14T10:00:00.000Z",
+          "endsAt": "2026-10-14T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "20828ac3c7162e667f976dcd@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-14T10:00:00.000Z",
+          "endsAt": "2026-10-14T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "eda2771b758c2cd107e280b4@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-14T10:00:00.000Z",
+          "endsAt": "2026-10-14T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "07638b24b91684871840cdfe@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-14T10:00:00.000Z",
+          "endsAt": "2026-10-14T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "692c66ef3ef568f51c0814cd@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-14T10:00:00.000Z",
+          "endsAt": "2026-10-14T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "fa029b83df52d8c031d69d7b@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-14T10:00:00.000Z",
+          "endsAt": "2026-10-14T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "0de96dfa03cdbdfc5f1b3979@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-14T16:00:00.000Z",
+          "endsAt": "2026-10-15T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "15033bedc4ebfb43729704ed@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-14T16:00:00.000Z",
+          "endsAt": "2026-10-15T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "9e0272f301f9f8b6b89c5592@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-14T16:00:00.000Z",
+          "endsAt": "2026-10-15T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "a7fb6b253890c785c7bac252@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-14T16:00:00.000Z",
+          "endsAt": "2026-10-15T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "bbbf4c657a84b23575d5ee74@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-14T16:00:00.000Z",
+          "endsAt": "2026-10-15T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "f56999dfd2be80371903b393@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-14T16:00:00.000Z",
+          "endsAt": "2026-10-15T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "47da7615b4a2832c97c677e8@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-15T06:00:00.000Z",
+          "endsAt": "2026-10-15T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "c73739683723372bbee07df4@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-15T06:00:00.000Z",
+          "endsAt": "2026-10-15T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "f60d3ead7e1bd4215d854e14@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-15T06:00:00.000Z",
+          "endsAt": "2026-10-15T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "5ba6ff1da78dc83bc992fea6@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-15T06:00:00.000Z",
+          "endsAt": "2026-10-15T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "9cdfe53fe318fcaec349f8c6@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-15T06:00:00.000Z",
+          "endsAt": "2026-10-15T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "c53d5f0c89e577987f523391@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-15T06:00:00.000Z",
+          "endsAt": "2026-10-15T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "545d70d2ff824cc3a1bdbab1@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-15T10:00:00.000Z",
+          "endsAt": "2026-10-15T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "c18397e913ff67dd019bf874@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-15T10:00:00.000Z",
+          "endsAt": "2026-10-15T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "c5662745d9a42c720f4d30b4@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-15T10:00:00.000Z",
+          "endsAt": "2026-10-15T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "3c4e25176bb90a3c75db37c9@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-15T10:00:00.000Z",
+          "endsAt": "2026-10-15T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "936c678f7d1f4cdf7d8cf013@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-15T10:00:00.000Z",
+          "endsAt": "2026-10-15T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "ae0879c94fd524913cb8c5e1@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-15T10:00:00.000Z",
+          "endsAt": "2026-10-15T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "14d4e0effd74a7917c79a8e3@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-15T16:00:00.000Z",
+          "endsAt": "2026-10-16T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "3d4ab3b8d2151ed2cbaae1d3@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-15T16:00:00.000Z",
+          "endsAt": "2026-10-16T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "56af6aee7a05e2d494cec952@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-15T16:00:00.000Z",
+          "endsAt": "2026-10-16T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "1201d4746f429c455f54ad05@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-15T16:00:00.000Z",
+          "endsAt": "2026-10-16T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "61c606ddb7d6c9986ee7bf82@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-15T16:00:00.000Z",
+          "endsAt": "2026-10-16T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "f5c0c3d9c1391479ad30b8ab@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-15T16:00:00.000Z",
+          "endsAt": "2026-10-16T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "3e059a037e0798cc5a94de65@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-16T06:00:00.000Z",
+          "endsAt": "2026-10-16T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "98e4e6520f9dfb9cf7c0d5d6@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-16T06:00:00.000Z",
+          "endsAt": "2026-10-16T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "d353f16289dda2cd74cb1f7e@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-16T06:00:00.000Z",
+          "endsAt": "2026-10-16T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "4cca7a8197adb79f80a19bc3@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-16T06:00:00.000Z",
+          "endsAt": "2026-10-16T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "68d29b7db74e1c1b91b0036c@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-16T06:00:00.000Z",
+          "endsAt": "2026-10-16T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "e4edd7aabc8474d45dc96c1f@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-16T06:00:00.000Z",
+          "endsAt": "2026-10-16T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "25d74dff8c909da683f52723@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-16T10:00:00.000Z",
+          "endsAt": "2026-10-16T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "2b0350bec4779d7eceb468af@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-16T10:00:00.000Z",
+          "endsAt": "2026-10-16T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "5db7b6128cbe128787191b34@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-16T10:00:00.000Z",
+          "endsAt": "2026-10-16T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "6ef6e403eebd9679cb6570d6@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-16T10:00:00.000Z",
+          "endsAt": "2026-10-16T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "bf7e82bc97b11d6e6c3e9b77@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-16T10:00:00.000Z",
+          "endsAt": "2026-10-16T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "ef662ccbb9f67a376571a8dc@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-16T10:00:00.000Z",
+          "endsAt": "2026-10-16T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "1dd2d1775dacfc96478f89ca@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-16T16:00:00.000Z",
+          "endsAt": "2026-10-17T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "265b08613b7df6ae7345e969@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-16T16:00:00.000Z",
+          "endsAt": "2026-10-17T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "8839e0a73439cde340d4fb03@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-16T16:00:00.000Z",
+          "endsAt": "2026-10-17T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "3b21f0c3e66c28ec6731d3ac@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-16T16:00:00.000Z",
+          "endsAt": "2026-10-17T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "9ad74fb5f45c718280b6a4f4@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-16T16:00:00.000Z",
+          "endsAt": "2026-10-17T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "b2b4a55113f2ab85b2b4b9b4@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-16T16:00:00.000Z",
+          "endsAt": "2026-10-17T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "072e942b052ab0cb7b1cf81a@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-17T16:00:00.000Z",
+          "endsAt": "2026-10-18T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "74afe67516b92ed57c5a0ef5@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-17T16:00:00.000Z",
+          "endsAt": "2026-10-18T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "fa3e4787b3ea32ab7569c6c4@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-17T16:00:00.000Z",
+          "endsAt": "2026-10-18T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "8a6ceec9dcf8e3f581b9d54b@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-17T16:00:00.000Z",
+          "endsAt": "2026-10-18T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "b00d79b5fea619fb179bcac0@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-17T16:00:00.000Z",
+          "endsAt": "2026-10-18T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "e8a0c2a53d9808a748abffa5@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-17T16:00:00.000Z",
+          "endsAt": "2026-10-18T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "5155636478f9348401d2229a@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-18T16:00:00.000Z",
+          "endsAt": "2026-10-19T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "8b3d10f4aa288d0420e3db7c@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-18T16:00:00.000Z",
+          "endsAt": "2026-10-19T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "ba62cfb24c14fe86523f8e86@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-18T16:00:00.000Z",
+          "endsAt": "2026-10-19T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "48c17937e91baa04a1a50048@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-18T16:00:00.000Z",
+          "endsAt": "2026-10-19T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "5a2bdec7c1efa4aa21e791b2@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-18T16:00:00.000Z",
+          "endsAt": "2026-10-19T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "f47bef1d50637e661bc7f4c4@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-18T16:00:00.000Z",
+          "endsAt": "2026-10-19T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "0ef7b4052dba6d61f8ca388d@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-19T06:00:00.000Z",
+          "endsAt": "2026-10-19T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "b526880a2e7403b4369777fe@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-19T06:00:00.000Z",
+          "endsAt": "2026-10-19T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "ee0b2ee7738278f9e83c7fd6@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-19T06:00:00.000Z",
+          "endsAt": "2026-10-19T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "5426112381326fbf2af75b92@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-19T06:00:00.000Z",
+          "endsAt": "2026-10-19T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "9bed650b02d60f18c3e09228@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-19T06:00:00.000Z",
+          "endsAt": "2026-10-19T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "ffd54c50a23d7621bd11b22f@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-19T06:00:00.000Z",
+          "endsAt": "2026-10-19T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "322d8515b600c2fc04772463@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-19T10:00:00.000Z",
+          "endsAt": "2026-10-19T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "ebf00cf421f469f3d5a5546f@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-19T10:00:00.000Z",
+          "endsAt": "2026-10-19T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "faf0041b1be34c85ea1f94f0@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-19T10:00:00.000Z",
+          "endsAt": "2026-10-19T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "42a4f27b9272ef9312d44032@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-19T10:00:00.000Z",
+          "endsAt": "2026-10-19T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "95d83297c5dd58bbefcb5afa@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-19T10:00:00.000Z",
+          "endsAt": "2026-10-19T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e7f3d6dedf8230af51ed8470@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-19T10:00:00.000Z",
+          "endsAt": "2026-10-19T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "1421ac7916851bcdddb1a8c0@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-19T16:00:00.000Z",
+          "endsAt": "2026-10-20T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "3d8b5d964c0890ead60c58b8@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-19T16:00:00.000Z",
+          "endsAt": "2026-10-20T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "863c79a09cee623ffd15cdf1@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-19T16:00:00.000Z",
+          "endsAt": "2026-10-20T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "56f01566df4a90d64e533517@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-19T16:00:00.000Z",
+          "endsAt": "2026-10-20T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "716167f83c3ca39295392091@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-19T16:00:00.000Z",
+          "endsAt": "2026-10-20T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "cf0a3040583d3978e19d0cfa@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-19T16:00:00.000Z",
+          "endsAt": "2026-10-20T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "13a76018af313c3d2bb2ee6e@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-20T06:00:00.000Z",
+          "endsAt": "2026-10-20T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "dd9120524e536e3b9c8d3bbe@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-20T06:00:00.000Z",
+          "endsAt": "2026-10-20T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e336004516534334630610bc@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-20T06:00:00.000Z",
+          "endsAt": "2026-10-20T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "2abf7af51e24036028cbf505@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-20T06:00:00.000Z",
+          "endsAt": "2026-10-20T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "88ae4b4eb0998369fb6ac3e4@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-20T06:00:00.000Z",
+          "endsAt": "2026-10-20T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "a33dbb979a1981c68ebc30c0@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-20T06:00:00.000Z",
+          "endsAt": "2026-10-20T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "10ae1bf8dca8cb0815a64eb6@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-20T10:00:00.000Z",
+          "endsAt": "2026-10-20T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "2388faf7fce280181db09496@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-20T10:00:00.000Z",
+          "endsAt": "2026-10-20T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e785d5d988d6ce3fc3d40579@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-20T10:00:00.000Z",
+          "endsAt": "2026-10-20T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "05b3515d9f2428f0aa6cf98d@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-20T10:00:00.000Z",
+          "endsAt": "2026-10-20T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "a4f4ea6a017a6cd66e795441@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-20T10:00:00.000Z",
+          "endsAt": "2026-10-20T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "b587cfa5673520a9c1bbafa7@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-20T10:00:00.000Z",
+          "endsAt": "2026-10-20T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "1951cbd5ff8cc51dab52edec@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-20T16:00:00.000Z",
+          "endsAt": "2026-10-21T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "af1aea0cd2059225d1827d37@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-20T16:00:00.000Z",
+          "endsAt": "2026-10-21T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "b982607f0483fbeaf0eef5ab@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-20T16:00:00.000Z",
+          "endsAt": "2026-10-21T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "84a56f466b4a697ea3a7e46c@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-20T16:00:00.000Z",
+          "endsAt": "2026-10-21T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e24bb9005f48491d2e5dda8b@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-20T16:00:00.000Z",
+          "endsAt": "2026-10-21T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "f9c6e90565872c9fb490fccc@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-20T16:00:00.000Z",
+          "endsAt": "2026-10-21T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "56f89ecbe4d4f58f34d28ed5@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-21T06:00:00.000Z",
+          "endsAt": "2026-10-21T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "c1c419e046ccf9df5dc9aa2b@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-21T06:00:00.000Z",
+          "endsAt": "2026-10-21T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "dbac798c9580185619e4a053@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-21T06:00:00.000Z",
+          "endsAt": "2026-10-21T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "1f14e1280b4663bea5f7b44d@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-21T06:00:00.000Z",
+          "endsAt": "2026-10-21T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "3b858e249239e1c3890b1a0f@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-21T06:00:00.000Z",
+          "endsAt": "2026-10-21T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "6c73dfef170fe7f232787b99@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-21T06:00:00.000Z",
+          "endsAt": "2026-10-21T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "1d33ca7434c923604c3ef2f5@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-21T10:00:00.000Z",
+          "endsAt": "2026-10-21T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "24c3fc53d98ede63fc5cba32@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-21T10:00:00.000Z",
+          "endsAt": "2026-10-21T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "d6077cbd598299a65938bafb@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-21T10:00:00.000Z",
+          "endsAt": "2026-10-21T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "8bba155350d8bfb4eba50c13@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-21T10:00:00.000Z",
+          "endsAt": "2026-10-21T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "b3c4879230129f8302e9612b@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-21T10:00:00.000Z",
+          "endsAt": "2026-10-21T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e296b6884eb95cf391f29ff2@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-21T10:00:00.000Z",
+          "endsAt": "2026-10-21T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "301c5e189528d9efdeaac7e5@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-21T16:00:00.000Z",
+          "endsAt": "2026-10-22T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "9addfcb2d6fced3c7c4cc985@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-21T16:00:00.000Z",
+          "endsAt": "2026-10-22T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "a5d016d052c38c44056118ef@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-21T16:00:00.000Z",
+          "endsAt": "2026-10-22T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "086c2d4a3d310ffa86cd6d47@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-21T16:00:00.000Z",
+          "endsAt": "2026-10-22T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "a72bf7a8f44a5b483c274b4e@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-21T16:00:00.000Z",
+          "endsAt": "2026-10-22T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e10932d92ec5c9fc144ef5a6@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-21T16:00:00.000Z",
+          "endsAt": "2026-10-22T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "1c174ad4f9923e787ab2b1de@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-22T06:00:00.000Z",
+          "endsAt": "2026-10-22T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "68107439c6b018373d8dbe08@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-22T06:00:00.000Z",
+          "endsAt": "2026-10-22T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "d79337f6f58cd4a6d32f7e1a@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-22T06:00:00.000Z",
+          "endsAt": "2026-10-22T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "79743c5aaa3718c5f14a083f@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-22T06:00:00.000Z",
+          "endsAt": "2026-10-22T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "9d2aa7b90327fea77a1124e8@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-22T06:00:00.000Z",
+          "endsAt": "2026-10-22T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "a836eb4e97cdefd2265f8f68@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-22T06:00:00.000Z",
+          "endsAt": "2026-10-22T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "0047aa5f46c42e595170c73f@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-22T10:00:00.000Z",
+          "endsAt": "2026-10-22T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "aed6941ddc015bb44c6dc068@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-22T10:00:00.000Z",
+          "endsAt": "2026-10-22T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "f93b4698c6fc41be033cabfa@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-22T10:00:00.000Z",
+          "endsAt": "2026-10-22T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "352ae13afcd1333a90c74221@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-22T10:00:00.000Z",
+          "endsAt": "2026-10-22T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "80bd27a4cab01b90678f7f98@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-22T10:00:00.000Z",
+          "endsAt": "2026-10-22T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "cf94ca68fd154182979818d2@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-22T10:00:00.000Z",
+          "endsAt": "2026-10-22T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "053694bcc7b03b1f865b0e81@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-22T16:00:00.000Z",
+          "endsAt": "2026-10-23T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "68c3b6b14a692c440c333ca4@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-22T16:00:00.000Z",
+          "endsAt": "2026-10-23T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "e951ad625a7930a8358b8d62@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-22T16:00:00.000Z",
+          "endsAt": "2026-10-23T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "625cdb33ec08d4bb78e358b0@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-22T16:00:00.000Z",
+          "endsAt": "2026-10-23T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "d30c9bba4e2f1aa680b53428@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-22T16:00:00.000Z",
+          "endsAt": "2026-10-23T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "dba667a2871ef3444014ca45@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-22T16:00:00.000Z",
+          "endsAt": "2026-10-23T06:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "9b666e162d9667b5cd8c8be1@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-23T06:00:00.000Z",
+          "endsAt": "2026-10-23T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "ed5386e0bcd6e51f01a24e0b@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-23T06:00:00.000Z",
+          "endsAt": "2026-10-23T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "f7642dc7e45b2a93b1afc6d2@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-23T06:00:00.000Z",
+          "endsAt": "2026-10-23T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "6d3de452de25fe19effcb487@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-23T06:00:00.000Z",
+          "endsAt": "2026-10-23T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "7a1b12e15017f77bfb2a1916@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版工作日高峰",
+            "en": "Legacy weekday peak"
+          },
+          "startsAt": "2026-10-23T06:00:00.000Z",
+          "endsAt": "2026-10-23T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "fcaa363e6dd1496a7d7867b2@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "工作日高峰 · 标准扣减",
+            "en": "Weekday peak · standard deduction"
+          },
+          "startsAt": "2026-10-23T06:00:00.000Z",
+          "endsAt": "2026-10-23T10:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "22a671ac4776e070cafc69ab@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-23T10:00:00.000Z",
+          "endsAt": "2026-10-23T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "7a4d1596c5286661c79b0d1c@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-23T10:00:00.000Z",
+          "endsAt": "2026-10-23T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "a5deaf6eb5a8607e079976c9@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-23T10:00:00.000Z",
+          "endsAt": "2026-10-23T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "28bc05d4ae7115822fb31a94@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-23T10:00:00.000Z",
+          "endsAt": "2026-10-23T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "beed7e6e8ddac6ddb2494741@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-23T10:00:00.000Z",
+          "endsAt": "2026-10-23T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "fc03f2b530c701fde9923c1e@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-23T10:00:00.000Z",
+          "endsAt": "2026-10-23T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "12c7070646f629c63e7add37@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-23T16:00:00.000Z",
+          "endsAt": "2026-10-24T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "32072d72ded40746379c4bb2@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-23T16:00:00.000Z",
+          "endsAt": "2026-10-24T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "6ff3855165415d64356fc157@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-23T16:00:00.000Z",
+          "endsAt": "2026-10-24T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "3278a5dc18cc54e380e353db@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-23T16:00:00.000Z",
+          "endsAt": "2026-10-24T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "93d9fabce81b2b7d35669e52@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-23T16:00:00.000Z",
+          "endsAt": "2026-10-24T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "b71c61b88c1051d0d3f21e55@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-23T16:00:00.000Z",
+          "endsAt": "2026-10-24T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "841cf7c15d5315b42c87f407@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-24T16:00:00.000Z",
+          "endsAt": "2026-10-25T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "af2d257d09f337f35b9ec4a7@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-24T16:00:00.000Z",
+          "endsAt": "2026-10-25T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "e76872aeb1a1b9d07fb69afa@modelplans.ai",
+          "provider": "zhipu",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-24T16:00:00.000Z",
+          "endsAt": "2026-10-25T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.bigmodel.cn/cn/coding-plan/overview"
+        },
+        {
+          "id": "6cd53fb674456879288ef620@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "非高峰 · 50% 扣减",
+            "en": "Off-peak · 50% deduction"
+          },
+          "startsAt": "2026-10-24T16:00:00.000Z",
+          "endsAt": "2026-10-25T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/overview"
+        },
+        {
+          "id": "8aff462ab309e861d0d9ea77@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-24T16:00:00.000Z",
+          "endsAt": "2026-10-25T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        },
+        {
+          "id": "b9827a139f998abc7ff4b228@modelplans.ai",
+          "provider": "zai",
+          "title": {
+            "zh": "旧版非高峰",
+            "en": "Legacy off-peak"
+          },
+          "startsAt": "2026-10-24T16:00:00.000Z",
+          "endsAt": "2026-10-25T16:00:00.000Z",
+          "status": "TENTATIVE",
+          "eligibility": "unknown",
+          "url": "https://docs.z.ai/devpack/notice/usage-revision"
+        }
+      ]
+    }
+  }
+}

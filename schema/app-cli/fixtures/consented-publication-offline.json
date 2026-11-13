@@ -1,0 +1,45 @@
+{
+  "capabilities": {
+    "effortLadders": {
+      "status": "supported"
+    },
+    "lineageSelection": {
+      "reason": "published-selection-only; absent-or-null-flags-are-unknown",
+      "status": "publication-dependent"
+    },
+    "planMetering": {
+      "reason": "published-metering-is-not-proof-of-entitlement",
+      "status": "publication-dependent"
+    },
+    "publicResets": {
+      "status": "publication-dependent"
+    },
+    "scopedWindows": {
+      "status": "publication-dependent"
+    },
+    "speedTiers": {
+      "status": "publication-dependent"
+    },
+    "subscriptionOfferings": {
+      "reason": "harness-aliases-and-metering-do-not-prove-model-entitlement",
+      "status": "unavailable"
+    }
+  },
+  "contractVersion": 1,
+  "lineups": [],
+  "models": [],
+  "multiplierHorizon": null,
+  "multipliers": null,
+  "planMetering": null,
+  "publicationId": "1eaf98c9777c308b6b04c250",
+  "publishedAt": "2020-01-01T00:00:00Z",
+  "resets": [],
+  "schemaVersion": 1,
+  "speedTiers": [],
+  "units": {
+    "ability": "websiteAbility",
+    "cost": "usdPerReferenceTask",
+    "time": "taskTimeCrossModel"
+  },
+  "windows": []
+}

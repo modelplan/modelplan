@@ -1,0 +1,26 @@
+{
+  "command": [
+    "consent",
+    "--json"
+  ],
+  "syntheticHomeOnly": true,
+  "ownerHomeDenied": true,
+  "networkDenied": true,
+  "allReadersOff": true,
+  "capturePlatform": "linux_arm64",
+  "sourceRelease": "https://github.com/modelplan/modelplan/releases/tag/v0.5.49",
+  "sourceCommit": "4011d78d81803d82c7e86a35feebdb2d44cbf364",
+  "sourceArchiveSHA256": "41a34a6bbb9c619145f34d91c01709443e32894350b113a0be813ff3b8c05c43",
+  "rawSourceHelperSHA256": "87e6f635264e600d1113f829e46b095c1fc6298372b59171fefaa31657bca8c4",
+  "outputSHA256": "5535db7bbe40feee67d9b4caabc31de609c64630af26f40904c4aad71b303114",
+  "bytes": 3329,
+  "exit": 0,
+  "isolation": {
+    "filesystem": "Landlock ABI 4: synthetic HOME and the verified executable only",
+    "network": "seccomp EPERM for socket/socketpair, connect, bind, listen, accept and send/receive syscalls",
+    "outsideDirectoryReadDenied": true,
+    "networkSocketDenied": true
+  },
+  "purpose": "complete real released-CLI contract fixture; synthetic metadata only, not an owner observation",
+  "cliVersion": "0.5.49"
+}

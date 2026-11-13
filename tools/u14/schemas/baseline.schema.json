@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "U14 baseline v1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "baselineVersion": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$"
+    },
+    "shapeSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "fidelity": {
+      "type": "string",
+      "enum": [
+        "hand-built",
+        "approved-shape-export"
+      ]
+    },
+    "approvalRef": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "preferenceCase": {
+      "type": "string",
+      "enum": [
+        "coexistence",
+        "corrupt-beta07",
+        "missing-beta07",
+        "corrupt-native",
+        "corrupt-core",
+        "all-corrupt",
+        "fresh",
+        "new-exists",
+        "corrupt-new",
+        "invalid-progress"
+      ]
+    },
+    "covers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "minItems": 0,
+      "maxItems": 1000,
+      "uniqueItems": true
+    },
+    "knownGaps": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "minItems": 1,
+      "maxItems": 1000
+    },
+    "availableCapabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "minItems": 0,
+      "maxItems": 1000,
+      "uniqueItems": true
+    },
+    "migrationOracle": {
+      "type": "object",
+      "properties": {
+        "officialSettingsSource": {
+          "type": "string",
+          "enum": [
+            "beta07",
+            "native",
+            "new",
+            "defaults"
+          ]
+        },
+        "communitySettingsSource": {
+          "type": "string",
+          "enum": [
+            "beta07",
+            "native",
+            "new",
+            "defaults"
+          ]
+        },
+        "coreSource": {
+          "type": "string",
+          "enum": [
+            "core",
+            "new",
+            "defaults"
+          ]
+        }
+      },
+      "required": [
+        "officialSettingsSource",
+        "communitySettingsSource",
+        "coreSource"
+      ],
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 1000
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "baselineVersion",
+    "shapeSha256",
+    "fidelity",
+    "approvalRef",
+    "preferenceCase",
+    "covers",
+    "knownGaps",
+    "availableCapabilities",
+    "migrationOracle",
+    "files"
+  ],
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "properties": {
+        "fidelity": {
+          "const": "hand-built"
+        },
+        "approvalRef": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "properties": {
+        "fidelity": {
+          "const": "approved-shape-export"
+        },
+        "approvalRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,860 @@
+{
+  "revision": "2026-10-01.1",
+  "entries": {
+    "chatgpt_plus": {
+      "productId": "rap:product:chatgpt",
+      "vendor": "ChatGPT",
+      "productName": "ChatGPT",
+      "category": "direct",
+      "tierGroupId": "rap:tier:chatgpt_plus",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "chatgpt_pro_5x": {
+      "productId": "rap:product:chatgpt",
+      "vendor": "ChatGPT",
+      "productName": "ChatGPT",
+      "category": "direct",
+      "tierGroupId": "rap:tier:chatgpt_pro_5x",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "chatgpt_pro_20x": {
+      "productId": "rap:product:chatgpt",
+      "vendor": "ChatGPT",
+      "productName": "ChatGPT",
+      "category": "direct",
+      "tierGroupId": "rap:tier:chatgpt_pro_20x",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "devin_max": {
+      "productId": "rap:product:devin",
+      "vendor": "Devin",
+      "productName": "Devin",
+      "category": "tool",
+      "tierGroupId": "rap:tier:devin_max",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "droid_max": {
+      "productId": "rap:product:droid",
+      "vendor": "Droid",
+      "productName": "Droid",
+      "category": "tool",
+      "tierGroupId": "rap:tier:droid_max",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "droid_pro": {
+      "productId": "rap:product:droid",
+      "vendor": "Droid",
+      "productName": "Droid",
+      "category": "tool",
+      "tierGroupId": "rap:tier:droid_pro",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "google_ai_pro_us": {
+      "productId": "rap:product:google",
+      "vendor": "Google",
+      "productName": "Google AI",
+      "category": "direct",
+      "tierGroupId": "rap:tier:google_ai_pro_us",
+      "scenario": "",
+      "region": "us"
+    },
+    "google_ai_ultra_5x_us": {
+      "productId": "rap:product:google",
+      "vendor": "Google",
+      "productName": "Google AI",
+      "category": "direct",
+      "tierGroupId": "rap:tier:google_ai_ultra_5x_us",
+      "scenario": "",
+      "region": "us"
+    },
+    "google_ai_ultra_20x_us": {
+      "productId": "rap:product:google",
+      "vendor": "Google",
+      "productName": "Google AI",
+      "category": "direct",
+      "tierGroupId": "rap:tier:google_ai_ultra_20x_us",
+      "scenario": "",
+      "region": "us"
+    },
+    "claude_pro": {
+      "productId": "rap:product:claude",
+      "vendor": "Claude",
+      "productName": "Claude",
+      "category": "direct",
+      "tierGroupId": "rap:tier:claude_pro",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "claude_max_20x": {
+      "productId": "rap:product:claude",
+      "vendor": "Claude",
+      "productName": "Claude",
+      "category": "direct",
+      "tierGroupId": "rap:tier:claude_max_20x",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "claude_max_5x": {
+      "productId": "rap:product:claude",
+      "vendor": "Claude",
+      "productName": "Claude",
+      "category": "direct",
+      "tierGroupId": "rap:tier:claude_max_5x",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "supergrok": {
+      "productId": "rap:product:grok",
+      "vendor": "Grok",
+      "productName": "SuperGrok",
+      "category": "direct",
+      "tierGroupId": "rap:tier:supergrok",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "supergrok_plus": {
+      "productId": "rap:product:grok",
+      "vendor": "Grok",
+      "productName": "SuperGrok",
+      "category": "direct",
+      "tierGroupId": "rap:tier:supergrok_plus",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "supergrok_heavy": {
+      "productId": "rap:product:grok",
+      "vendor": "Grok",
+      "productName": "SuperGrok",
+      "category": "direct",
+      "tierGroupId": "rap:tier:supergrok_heavy",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "supergrok_lite": {
+      "productId": "rap:product:grok",
+      "vendor": "Grok",
+      "productName": "SuperGrok",
+      "category": "direct",
+      "tierGroupId": "rap:tier:supergrok_lite",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "cursor_ultra": {
+      "productId": "rap:product:cursor",
+      "vendor": "Cursor",
+      "productName": "Cursor",
+      "category": "tool",
+      "tierGroupId": "rap:tier:cursor_ultra",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "cursor_ultra_fast": {
+      "productId": "rap:product:cursor",
+      "vendor": "Cursor",
+      "productName": "Cursor",
+      "category": "tool",
+      "tierGroupId": "rap:tier:cursor_ultra",
+      "scenario": "fast",
+      "region": "unknown"
+    },
+    "cursor_pro": {
+      "productId": "rap:product:cursor",
+      "vendor": "Cursor",
+      "productName": "Cursor",
+      "category": "tool",
+      "tierGroupId": "rap:tier:cursor_pro",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "cursor_pro_plus": {
+      "productId": "rap:product:cursor",
+      "vendor": "Cursor",
+      "productName": "Cursor",
+      "category": "tool",
+      "tierGroupId": "rap:tier:cursor_pro_plus",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "kimi_allegretto_cn": {
+      "productId": "rap:product:kimi",
+      "vendor": "Kimi",
+      "productName": "Kimi 会员",
+      "category": "direct",
+      "tierGroupId": "rap:tier:kimi_allegretto_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "kimi_moderato_cn": {
+      "productId": "rap:product:kimi",
+      "vendor": "Kimi",
+      "productName": "Kimi 会员",
+      "category": "direct",
+      "tierGroupId": "rap:tier:kimi_moderato_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "kimi_allegro_cn": {
+      "productId": "rap:product:kimi",
+      "vendor": "Kimi",
+      "productName": "Kimi 会员",
+      "category": "direct",
+      "tierGroupId": "rap:tier:kimi_allegro_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "kimi_andante_cn": {
+      "productId": "rap:product:kimi",
+      "vendor": "Kimi",
+      "productName": "Kimi 会员",
+      "category": "direct",
+      "tierGroupId": "rap:tier:kimi_andante_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "glm_coding_lite_cn_new_peak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_lite_cn_new",
+      "scenario": "peak",
+      "region": "cn"
+    },
+    "glm_coding_lite_cn_new_mid": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_lite_cn_new",
+      "scenario": "mid",
+      "region": "cn"
+    },
+    "glm_coding_lite_cn_new_offpeak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_lite_cn_new",
+      "scenario": "offpeak",
+      "region": "cn"
+    },
+    "glm_coding_lite_cn_old_peak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_lite_cn_old",
+      "scenario": "peak",
+      "region": "cn"
+    },
+    "glm_coding_lite_cn_old_mid": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_lite_cn_old",
+      "scenario": "mid",
+      "region": "cn"
+    },
+    "glm_coding_lite_cn_old_offpeak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_lite_cn_old",
+      "scenario": "offpeak",
+      "region": "cn"
+    },
+    "glm_coding_pro_cn_new_peak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_pro_cn_new",
+      "scenario": "peak",
+      "region": "cn"
+    },
+    "glm_coding_pro_cn_new_mid": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_pro_cn_new",
+      "scenario": "mid",
+      "region": "cn"
+    },
+    "glm_coding_pro_cn_new_offpeak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_pro_cn_new",
+      "scenario": "offpeak",
+      "region": "cn"
+    },
+    "glm_coding_pro_cn_old_peak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_pro_cn_old",
+      "scenario": "peak",
+      "region": "cn"
+    },
+    "glm_coding_pro_cn_old_mid": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_pro_cn_old",
+      "scenario": "mid",
+      "region": "cn"
+    },
+    "glm_coding_pro_cn_old_offpeak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_pro_cn_old",
+      "scenario": "offpeak",
+      "region": "cn"
+    },
+    "glm_coding_max_cn_new_peak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_max_cn_new",
+      "scenario": "peak",
+      "region": "cn"
+    },
+    "glm_coding_max_cn_new_mid": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_max_cn_new",
+      "scenario": "mid",
+      "region": "cn"
+    },
+    "glm_coding_max_cn_new_offpeak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_max_cn_new",
+      "scenario": "offpeak",
+      "region": "cn"
+    },
+    "glm_coding_max_cn_old_peak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_max_cn_old",
+      "scenario": "peak",
+      "region": "cn"
+    },
+    "glm_coding_max_cn_old_mid": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_max_cn_old",
+      "scenario": "mid",
+      "region": "cn"
+    },
+    "glm_coding_max_cn_old_offpeak": {
+      "productId": "rap:product:glm",
+      "vendor": "智谱",
+      "productName": "GLM Coding",
+      "category": "direct",
+      "tierGroupId": "rap:tier:glm_coding_max_cn_old",
+      "scenario": "offpeak",
+      "region": "cn"
+    },
+    "minimax_token_plus_cn": {
+      "productId": "rap:product:minimax-token-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_token_plus_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "minimax_token_max_cn": {
+      "productId": "rap:product:minimax-token-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_token_max_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "minimax_token_ultra_cn": {
+      "productId": "rap:product:minimax-token-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_token_ultra_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "minimax_token_plus_global": {
+      "productId": "rap:product:minimax-token-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_token_plus_global",
+      "scenario": "",
+      "region": "international"
+    },
+    "minimax_token_max_global": {
+      "productId": "rap:product:minimax-token-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_token_max_global",
+      "scenario": "",
+      "region": "international"
+    },
+    "minimax_token_ultra_global": {
+      "productId": "rap:product:minimax-token-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_token_ultra_global",
+      "scenario": "",
+      "region": "international"
+    },
+    "aliyun_coding_pro_cn": {
+      "productId": "rap:product:alibaba",
+      "vendor": "阿里",
+      "productName": "Coding Plan",
+      "category": "aggregator",
+      "tierGroupId": "rap:tier:aliyun_coding_pro_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "aliyun_coding_pro_global": {
+      "productId": "rap:product:alibaba",
+      "vendor": "阿里",
+      "productName": "Coding Plan",
+      "category": "aggregator",
+      "tierGroupId": "rap:tier:aliyun_coding_pro_global",
+      "scenario": "",
+      "region": "international"
+    },
+    "opencode_go": {
+      "productId": "rap:product:opencode",
+      "vendor": "OpenCode",
+      "productName": "Go",
+      "category": "aggregator",
+      "tierGroupId": "rap:tier:opencode_go",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "command_code_goat": {
+      "productId": "rap:product:command-code",
+      "vendor": "Command Code",
+      "productName": "GOAT",
+      "category": "aggregator",
+      "tierGroupId": "rap:tier:command_code_goat",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "ollama_pro": {
+      "productId": "rap:product:ollama",
+      "vendor": "Ollama",
+      "productName": "Ollama Cloud",
+      "category": "aggregator",
+      "tierGroupId": "rap:tier:ollama_pro",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "ollama_max": {
+      "productId": "rap:product:ollama",
+      "vendor": "Ollama",
+      "productName": "Ollama Cloud",
+      "category": "aggregator",
+      "tierGroupId": "rap:tier:ollama_max",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "stepfun_mini_cn": {
+      "productId": "rap:product:step",
+      "vendor": "阶跃星辰",
+      "productName": "Step Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:stepfun_mini_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "stepfun_plus_cn": {
+      "productId": "rap:product:step",
+      "vendor": "阶跃星辰",
+      "productName": "Step Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:stepfun_plus_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "stepfun_pro_cn": {
+      "productId": "rap:product:step",
+      "vendor": "阶跃星辰",
+      "productName": "Step Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:stepfun_pro_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "stepfun_max_cn": {
+      "productId": "rap:product:step",
+      "vendor": "阶跃星辰",
+      "productName": "Step Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:stepfun_max_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "mimo_token_lite_day": {
+      "productId": "rap:product:mimo",
+      "vendor": "MiMo",
+      "productName": "MiMo Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:mimo_token_lite",
+      "scenario": "day",
+      "region": "unknown"
+    },
+    "mimo_token_lite_night": {
+      "productId": "rap:product:mimo",
+      "vendor": "MiMo",
+      "productName": "MiMo Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:mimo_token_lite",
+      "scenario": "night",
+      "region": "unknown"
+    },
+    "mimo_token_standard_day": {
+      "productId": "rap:product:mimo",
+      "vendor": "MiMo",
+      "productName": "MiMo Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:mimo_token_standard",
+      "scenario": "day",
+      "region": "unknown"
+    },
+    "mimo_token_standard_night": {
+      "productId": "rap:product:mimo",
+      "vendor": "MiMo",
+      "productName": "MiMo Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:mimo_token_standard",
+      "scenario": "night",
+      "region": "unknown"
+    },
+    "mimo_token_pro_day": {
+      "productId": "rap:product:mimo",
+      "vendor": "MiMo",
+      "productName": "MiMo Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:mimo_token_pro",
+      "scenario": "day",
+      "region": "unknown"
+    },
+    "mimo_token_pro_night": {
+      "productId": "rap:product:mimo",
+      "vendor": "MiMo",
+      "productName": "MiMo Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:mimo_token_pro",
+      "scenario": "night",
+      "region": "unknown"
+    },
+    "mimo_token_max_day": {
+      "productId": "rap:product:mimo",
+      "vendor": "MiMo",
+      "productName": "MiMo Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:mimo_token_max",
+      "scenario": "day",
+      "region": "unknown"
+    },
+    "mimo_token_max_night": {
+      "productId": "rap:product:mimo",
+      "vendor": "MiMo",
+      "productName": "MiMo Token Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:mimo_token_max",
+      "scenario": "night",
+      "region": "unknown"
+    },
+    "minimax_m_plan_go_cn": {
+      "productId": "rap:product:minimax-m-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax M Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_m_plan_go_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "minimax_m_plan_go_cn_annual": {
+      "productId": "rap:product:minimax-m-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax M Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_m_plan_go_cn",
+      "scenario": "annual-payment",
+      "region": "cn"
+    },
+    "minimax_m_plan_explore_cn": {
+      "productId": "rap:product:minimax-m-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax M Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_m_plan_explore_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "minimax_m_plan_explore_cn_annual": {
+      "productId": "rap:product:minimax-m-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax M Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_m_plan_explore_cn",
+      "scenario": "annual-payment",
+      "region": "cn"
+    },
+    "minimax_m_plan_build_cn": {
+      "productId": "rap:product:minimax-m-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax M Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_m_plan_build_cn",
+      "scenario": "",
+      "region": "cn"
+    },
+    "minimax_m_plan_build_cn_annual": {
+      "productId": "rap:product:minimax-m-plan",
+      "vendor": "MiniMax",
+      "productName": "MiniMax M Plan",
+      "category": "direct",
+      "tierGroupId": "rap:tier:minimax_m_plan_build_cn",
+      "scenario": "annual-payment",
+      "region": "cn"
+    },
+    "cursor_ultra_composer_fast": {
+      "productId": "rap:product:cursor",
+      "vendor": "Cursor",
+      "productName": "Cursor",
+      "category": "tool",
+      "tierGroupId": "rap:tier:cursor_ultra",
+      "scenario": "composer_fast",
+      "region": "unknown"
+    },
+    "cursor_pro_composer_fast": {
+      "productId": "rap:product:cursor",
+      "vendor": "Cursor",
+      "productName": "Cursor",
+      "category": "tool",
+      "tierGroupId": "rap:tier:cursor_pro",
+      "scenario": "composer_fast",
+      "region": "unknown"
+    },
+    "cursor_pro_plus_composer_fast": {
+      "productId": "rap:product:cursor",
+      "vendor": "Cursor",
+      "productName": "Cursor",
+      "category": "tool",
+      "tierGroupId": "rap:tier:cursor_pro_plus",
+      "scenario": "composer_fast",
+      "region": "unknown"
+    },
+    "devin_pro": {
+      "productId": "rap:product:devin",
+      "vendor": "Devin",
+      "productName": "Devin",
+      "category": "tool",
+      "tierGroupId": "rap:tier:devin_pro",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "deepseek_v41_flash_offpeak": {
+      "productId": "rap:product:deepseek-api",
+      "vendor": "DeepSeek",
+      "productName": "DeepSeek API",
+      "category": "api",
+      "tierGroupId": "rap:tier:deepseek_v41_flash_offpeak",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "deepseek_v41_flash_peak": {
+      "productId": "rap:product:deepseek-api",
+      "vendor": "DeepSeek",
+      "productName": "DeepSeek API",
+      "category": "api",
+      "tierGroupId": "rap:tier:deepseek_v41_flash_peak",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "deepseek_v4_flash_offpeak": {
+      "productId": "rap:product:deepseek-api",
+      "vendor": "DeepSeek",
+      "productName": "DeepSeek API",
+      "category": "api",
+      "tierGroupId": "rap:tier:deepseek_v4_flash_offpeak",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "deepseek_v4_flash_peak": {
+      "productId": "rap:product:deepseek-api",
+      "vendor": "DeepSeek",
+      "productName": "DeepSeek API",
+      "category": "api",
+      "tierGroupId": "rap:tier:deepseek_v4_flash_peak",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "deepseek_v4_pro_offpeak": {
+      "productId": "rap:product:deepseek-api",
+      "vendor": "DeepSeek",
+      "productName": "DeepSeek API",
+      "category": "api",
+      "tierGroupId": "rap:tier:deepseek_v4_pro_offpeak",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "deepseek_v4_pro_peak": {
+      "productId": "rap:product:deepseek-api",
+      "vendor": "DeepSeek",
+      "productName": "DeepSeek API",
+      "category": "api",
+      "tierGroupId": "rap:tier:deepseek_v4_pro_peak",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "openai_sol_api": {
+      "productId": "rap:product:openai-api",
+      "vendor": "OpenAI",
+      "productName": "OpenAI API",
+      "category": "api",
+      "tierGroupId": "rap:tier:openai_sol_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "xai_grok46_api": {
+      "productId": "rap:product:xai-api",
+      "vendor": "xAI",
+      "productName": "xAI API",
+      "category": "api",
+      "tierGroupId": "rap:tier:xai_grok46_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "xai_grok47_api": {
+      "productId": "rap:product:xai-api",
+      "vendor": "xAI",
+      "productName": "xAI API",
+      "category": "api",
+      "tierGroupId": "rap:tier:xai_grok47_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "mimo_v26_pro_api": {
+      "productId": "rap:product:mimo-api",
+      "vendor": "MiMo",
+      "productName": "MiMo API",
+      "category": "api",
+      "tierGroupId": "rap:tier:mimo_v26_pro_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "mimo_v26_flash_api": {
+      "productId": "rap:product:mimo-api",
+      "vendor": "MiMo",
+      "productName": "MiMo API",
+      "category": "api",
+      "tierGroupId": "rap:tier:mimo_v26_flash_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "mimo_v26_pro_ultraspeed_api": {
+      "productId": "rap:product:mimo-api",
+      "vendor": "MiMo",
+      "productName": "MiMo API",
+      "category": "api",
+      "tierGroupId": "rap:tier:mimo_v26_pro_ultraspeed_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "anthropic_opus5_api": {
+      "productId": "rap:product:anthropic-api",
+      "vendor": "Anthropic",
+      "productName": "Anthropic API",
+      "category": "api",
+      "tierGroupId": "rap:tier:anthropic_opus5_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "anthropic_sonnet5_api": {
+      "productId": "rap:product:anthropic-api",
+      "vendor": "Anthropic",
+      "productName": "Anthropic API",
+      "category": "api",
+      "tierGroupId": "rap:tier:anthropic_sonnet5_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "anthropic_fable5_api": {
+      "productId": "rap:product:anthropic-api",
+      "vendor": "Anthropic",
+      "productName": "Anthropic API",
+      "category": "api",
+      "tierGroupId": "rap:tier:anthropic_fable5_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "anthropic_fable51_api": {
+      "productId": "rap:product:anthropic-api",
+      "vendor": "Anthropic",
+      "productName": "Anthropic API",
+      "category": "api",
+      "tierGroupId": "rap:tier:anthropic_fable51_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "anthropic_opus55_api": {
+      "productId": "rap:product:anthropic-api",
+      "vendor": "Anthropic",
+      "productName": "Anthropic API",
+      "category": "api",
+      "tierGroupId": "rap:tier:anthropic_opus55_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "openai_terra_api": {
+      "productId": "rap:product:openai-api",
+      "vendor": "OpenAI",
+      "productName": "OpenAI API",
+      "category": "api",
+      "tierGroupId": "rap:tier:openai_terra_api",
+      "scenario": "",
+      "region": "unknown"
+    },
+    "openai_luna_api": {
+      "productId": "rap:product:openai-api",
+      "vendor": "OpenAI",
+      "productName": "OpenAI API",
+      "category": "api",
+      "tierGroupId": "rap:tier:openai_luna_api",
+      "scenario": "",
+      "region": "unknown"
+    }
+  }
+}

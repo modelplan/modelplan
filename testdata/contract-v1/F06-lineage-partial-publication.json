@@ -1,0 +1,248 @@
+{
+  "contractVersion": 1,
+  "capabilities": {
+    "effortLadders": {
+      "status": "supported"
+    },
+    "lineageSelection": {
+      "status": "publication-dependent",
+      "reason": "published-selection-only; absent-or-null-flags-are-unknown"
+    },
+    "planMetering": {
+      "status": "publication-dependent",
+      "reason": "published-metering-is-not-proof-of-entitlement"
+    },
+    "publicResets": {
+      "status": "publication-dependent"
+    },
+    "scopedWindows": {
+      "status": "publication-dependent"
+    },
+    "speedTiers": {
+      "status": "publication-dependent"
+    },
+    "subscriptionOfferings": {
+      "status": "unavailable",
+      "reason": "harness-aliases-and-metering-do-not-prove-model-entitlement"
+    }
+  },
+  "schemaVersion": 1,
+  "publicationId": "synthetic-contract-publication",
+  "publishedAt": "2026-10-20T20:00:00Z",
+  "units": {
+    "ability": "websiteAbility",
+    "cost": "usdPerReferenceTask",
+    "time": "taskTimeCrossModel"
+  },
+  "models": [
+    {
+      "defaultSelected": false,
+      "developerId": "synthetic-dev",
+      "efforts": [
+        {
+          "ability": 50,
+          "abilityBasis": "measured",
+          "cost": 2,
+          "costBasisId": "synthetic-reference",
+          "effort": "medium",
+          "label": "Med",
+          "time": 1,
+          "timeBasis": {
+            "boundary": "trial_wall",
+            "cohort": "contract",
+            "referenceSeconds": 10,
+            "source": "synthetic"
+          },
+          "timeEstimated": false
+        },
+        {
+          "ability": 55,
+          "cost": 3,
+          "costBasisId": "synthetic-reference",
+          "effort": "high",
+          "label": "High",
+          "time": null,
+          "timeBasis": null
+        }
+      ],
+      "harnessIds": {
+        "claude-code": [
+          "native-z"
+        ],
+        "codex": [
+          "native-z"
+        ]
+      },
+      "id": "synthetic-z",
+      "lineageId": null,
+      "lineageStatus": null,
+      "name": "Synthetic Z",
+      "recommended": "medium"
+    },
+    {
+      "defaultSelected": null,
+      "developerId": "other-dev",
+      "efforts": [
+        {
+          "ability": null,
+          "abilityBasis": "assumed-highest",
+          "cost": null,
+          "effort": "native",
+          "label": "Native",
+          "time": null
+        }
+      ],
+      "harnessIds": {
+        "codex": [
+          "native-one"
+        ]
+      },
+      "id": "synthetic-one",
+      "lineageId": "synthetic:line",
+      "name": "Synthetic Single",
+      "recommended": "native"
+    }
+  ],
+  "lineups": [
+    {
+      "baseline": "synthetic-z",
+      "costBasisId": "synthetic-reference",
+      "developerId": "synthetic-dev",
+      "frontier": [
+        "synthetic-z"
+      ],
+      "members": [
+        {
+          "ability": 50,
+          "cost": 2,
+          "costRelative": 1,
+          "dominatedBy": null,
+          "id": "synthetic-z",
+          "status": "frontier",
+          "tags": [
+            "strongest",
+            "best_value",
+            "cheapest"
+          ]
+        }
+      ],
+      "method": "lineup-v1",
+      "steps": [],
+      "tie": 1
+    }
+  ],
+  "speedTiers": [
+    {
+      "billing": [
+        {
+          "account": "subscription",
+          "basis": "included-usage",
+          "billsTo": "plan-quota",
+          "ratio": 2
+        }
+      ],
+      "caveats": [
+        "not-task-time"
+      ],
+      "eligibility": {
+        "note": "published scenario, not user entitlement",
+        "plans": [
+          "synthetic-plan"
+        ]
+      },
+      "harness": "codex",
+      "id": "synthetic-fast",
+      "label": "Fast",
+      "models": [
+        {
+          "modelId": "synthetic-z",
+          "speed": {
+            "qualifier": "up-to",
+            "ratio": 2
+          },
+          "vendorModelId": "native-z"
+        }
+      ],
+      "sources": [
+        "https://example.test/fast"
+      ],
+      "tier": "fast",
+      "toggle": "/fast"
+    }
+  ],
+  "resets": [
+    {
+      "eventType": "quota_reset_announced",
+      "id": "synthetic-announced",
+      "post": {
+        "url": "https://example.test/reset"
+      },
+      "provider": "synthetic-provider",
+      "schedule": {
+        "from": "2026-10-21T01:00:00Z",
+        "through": "2026-10-21T03:00:00Z"
+      },
+      "status": "announced"
+    },
+    {
+      "confirmedAt": "2026-10-20T21:00:00Z",
+      "eventType": "quota_reset_completed",
+      "id": "synthetic-confirmed",
+      "post": {
+        "url": "https://example.test/confirmed"
+      },
+      "provider": "synthetic-provider",
+      "status": "confirmed"
+    }
+  ],
+  "windows": [
+    {
+      "clients": [
+        "codex"
+      ],
+      "endsAt": "2026-10-21T02:00:00Z",
+      "id": "synthetic-window",
+      "planIds": [
+        "synthetic-plan"
+      ],
+      "startsAt": "2026-10-21T00:00:00Z",
+      "status": "announced"
+    }
+  ],
+  "multipliers": [
+    {
+      "clients": [
+        "codex"
+      ],
+      "conditions": [
+        "published-scenario"
+      ],
+      "endsAt": "2026-10-21T02:00:00Z",
+      "generations": [],
+      "kind": "offpeak",
+      "minClientVersions": {},
+      "models": [
+        "synthetic-z"
+      ],
+      "multiplier": 0.5,
+      "planIds": [
+        "synthetic-plan"
+      ],
+      "priority": 1,
+      "provider": "synthetic-provider",
+      "region": "synthetic",
+      "requiresQuotaAvailable": true,
+      "ruleId": "synthetic-rule",
+      "startsAt": "2026-10-21T00:00:00Z",
+      "status": "published",
+      "timezone": "UTC",
+      "url": "https://example.test/window"
+    }
+  ],
+  "multiplierHorizon": {
+    "from": "2026-10-20T21:05:00Z",
+    "selection": "highest-priority-no-stacking",
+    "to": "2026-10-22T21:05:00Z"
+  },
+  "planMetering": null
+}

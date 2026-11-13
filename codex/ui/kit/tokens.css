@@ -1,0 +1,69 @@
+/*
+ * Model Plan hangar design tokens.
+ * Source of truth for the Codex plugin UI, Claude Code mods and any other client surface.
+ * The website prototype (preview.guanbear.com/design-full.html) uses the same values.
+ *
+ * Load fonts with:
+ * https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Share+Tech+Mono&family=Noto+Sans+SC:wght@400;500;700&display=swap
+ */
+:root {
+  /* console: dark warm metal, never pure black */
+  --mp-void: #141211;
+  --mp-space: #1c1917;
+  --mp-panel: #221d1a;
+  --mp-panel-2: #171311;
+  --mp-bezel: #3d342d;
+  --mp-line: rgba(255, 255, 255, .08);
+  --mp-line-2: rgba(255, 255, 255, .14);
+
+  /* text on console */
+  --mp-text: #f0e9df;
+  --mp-muted: #b0a49a;
+  --mp-dim: #8a7e76;
+
+  /* amber LCD: every number and chart lives on an LCD */
+  --mp-lcd-bg: radial-gradient(130% 120% at 25% 0%, #2e1a0c, #120a05 70%);
+  --mp-lcd-edge: #4a2c14;
+  --mp-lcd: #ffc98a;              /* primary phosphor */
+  --mp-lcd-2: rgba(255, 201, 138, .55); /* labels, axes */
+  --mp-lcd-hi: #fff3df;           /* values that must pop */
+
+  /* meaning colours */
+  --mp-gold: #f6d38a;             /* ★ recommended effort, best value: only ever means "recommended / best pick" */
+  --mp-gold-2: #d9a94e;
+  --mp-ability: #ffc98a;          /* ability series */
+  --mp-cost: #ff7a4a;             /* cost series */
+  --mp-time: #7fe3ff;             /* time series */
+  --mp-flame: #df604c;            /* brand flame */
+  --mp-flame-2: #f0a35e;
+  --mp-ok: #78ffaa;               /* cheapest */
+  --mp-warn: #ff6a3d;             /* above recommended / dominated */
+
+  /* value flame (homepage rockets): same semantics everywhere */
+  --mp-value-high: #6fc3ff;       /* blue flame: clearly above the cost→ability trend */
+  --mp-value-std: #f0a35e;        /* orange: standard */
+  --mp-value-low: #ff5a2a;        /* orange-red with soot: low value */
+
+  /* developer colours (rocket noses, model dots) */
+  --mp-anthropic: #ff9a6a; --mp-openai: #6aa8ff; --mp-zhipuai: #63d69c; --mp-xai: #b9a7ff; --mp-kimi: #ff8fcf;
+  --mp-google: #ffd166; --mp-meta: #7fd3ff; --mp-alibaba: #ffab5c; --mp-deepseek: #7d93ff; --mp-xiaomi: #ff9a4a;
+  --mp-minimax: #ff6f99; --mp-tencent: #6fe0d2; --mp-other: #b8b0a8;
+
+  /* type */
+  --mp-f-display: "Manrope", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --mp-f-body: "DM Sans", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --mp-f-lcd: "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace;
+  --mp-f-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --mp-r-panel: 18px;
+  --mp-r-lcd: 12px;
+  --mp-r-chip: 6px;
+  --mp-page: var(--mp-void);
+  --mp-page-text: var(--mp-text);
+  --mp-page-muted: var(--mp-muted);
+}
+
+/* Light hosts (e.g. Codex light theme): the console stays dark; only the page around it changes. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { --mp-page: #f4efe8; --mp-page-text: #1c1917; --mp-page-muted: #6b6058; }
+}

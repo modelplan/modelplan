@@ -1,0 +1,26 @@
+{
+  "commands": [
+    [
+      "codex",
+      "plugin",
+      "marketplace",
+      "add",
+      "modelplan/modelplan",
+      "--sparse",
+      ".agents",
+      "--sparse",
+      "codex"
+    ],
+    [
+      "codex",
+      "plugin",
+      "add",
+      "modelplan-codex@modelplan"
+    ]
+  ],
+  "completed": 1,
+  "docs": "https://github.com/modelplan/modelplan/tree/main/codex",
+  "schemaVersion": 1,
+  "status": "failed",
+  "tool": "codex"
+}

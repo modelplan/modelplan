@@ -1,0 +1,252 @@
+// SPDX-License-Identifier: MIT
+import {withinIdBound} from './caution-ack.js';
+import { definitions, type WireCockpitData } from '../generated/wire.js';
+import {websiteFields} from './website-link.js';
+import { conforms, exact, parseMessage, record } from './schema.js';
+import { cockpitMembers } from './members.js';
+import {effectiveRedBelow,type RedBelow} from './threshold.js';
+export const MAX_MESSAGE_BYTES = 1024 * 1024;
+export interface Context { readonly sessionId:string; readonly storeEpoch:string; readonly generation:string; readonly viewRevision:string }
+export interface BridgeSource { readonly origin:string; readonly isMainFrame:boolean }
+export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean; readonly showProjectNames:boolean }
+export type LiveAppearance = Appearance;
+export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string }
+export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'openField'|'openWebsite';
+export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
+export type HostMessage = Header & (
+  {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly ackedCautions?:unknown} |
+  ({readonly type:'appearance'; readonly redBelow?:unknown; readonly showUsedPercent?:boolean} & LiveAppearance) |
+  ({readonly type:'shell'} & ShellState) |
+  {readonly type:'display'; readonly data:WireCockpitData} |
+  {readonly type:'visibility'; readonly visible:boolean; readonly occluded:boolean; readonly key:boolean} |
+  {readonly type:'tick'; readonly nowUnixMs:string; readonly reason:'deadline'|'show'|'wake'|'unlock'|'clockChange'} |
+  {readonly type:'clear'} | {readonly type:'unload'});
+export interface CockpitView {
+  /** G3-56: caution identities the host remembered as acknowledged; sent before `configure`. */
+  restoreAcked?(ids:string[]):void;
+  forgetAcked?():void;
+  configure(appearance:Appearance,redBelow:RedBelow,showUsedPercent?:boolean):void;
+  updateAppearance(appearance:LiveAppearance,now:number,redBelow:RedBelow,showUsedPercent?:boolean):void;
+  shell(state:ShellState):void;
+  render(data:WireCockpitData,now:number):void;
+  clear():void;
+  nextDeadline():number|null;
+  tick(now:number):void;
+  active(active:boolean):void;
+  dispose():void;
+}
+const header=['version','pageId','requestId','sequence','sessionId','storeEpoch','generation','viewRevision'];
+const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v);
+const identity=(v:unknown):v is string=>typeof v==='string'&&v.length>0&&v.length<=128&&!/[\u0000-\u001f\u007f]/.test(v);
+const validAcked=(v:unknown):v is string[]=>Array.isArray(v)&&v.length<=64&&v.every(x=>typeof x==='string'&&x.length>0&&withinIdBound(x)&&!/[\u0000-\u001f\u007f]/.test(x));
+const uint=(v:unknown):v is string=>typeof v==='string'&&/^(0|[1-9][0-9]{0,19})$/.test(v)&&BigInt(v)<=18446744073709551615n;
+const timestamp=(v:unknown):v is string=>typeof v==='string'&&/^(0|[1-9]\d*)$/.test(v)&&v.length<=16&&BigInt(v)<=8640000000000000n;
+const same=(a:Context,b:Context)=>a.sessionId===b.sessionId&&a.storeEpoch===b.storeEpoch&&a.generation===b.generation&&a.viewRevision===b.viewRevision;
+let why='none';
+function validData(value:unknown):value is WireCockpitData {
+  const bad=(code:string):false=>{why=code;return false;};
+  if(!conforms(value,{$ref:'#/$defs/CockpitData'},definitions)) return bad('data.schema');
+  const data=value as WireCockpitData;
+  if(data.projection.rowsVersion!==1) return bad('data.rowsVersion');
+  if(new Set(data.projection.rows.map(row=>row.id)).size!==data.projection.rows.length) return bad('data.rowDuplicate');
+  const ref=(v:string|null)=>v===null||/^[a-f0-9]{16}$/.test(v);
+  for(const row of data.projection.rows) {
+    if(!identity(row.id)) return bad('data.rowId');
+    if((['denied','unset'].includes(row.consent)||row.reason.code==='cleanup_pending')&&row.accounts.length>0) return bad('data.rowAccounts');
+    if(row.accounts.some(a=>!ref(a.subscriptionRef)||!ref(a.accountLocator))) return bad('data.accountRef');
+  }
+  if(new Set(data.subscriptions.map(s=>s.subscriptionRef)).size!==data.subscriptions.length) return bad('data.subDuplicate');
+  if(!data.subscriptions.every(s=>s.accounts.every(a=>identity(a.tool)&&ref(a.account.subscriptionRef)&&ref(a.account.accountLocator)))) return bad('data.subAccount');
+  return true;
+}
+// Code path of the last rejected host message (a fixed constant, never message content).
+const no=(code:string):null=>{why=code;return null;};
+function message(raw:string):HostMessage|null {
+  if(typeof raw!=='string'||raw.length>MAX_MESSAGE_BYTES||new TextEncoder().encode(raw).length>MAX_MESSAGE_BYTES) return no('msg.size');
+  let m:unknown; try {m=parseMessage(raw);} catch {return no('msg.parse');}
+  if(!record(m)||m.version!==2||!uuid(m.pageId)||!uuid(m.requestId)||!uint(m.sequence)||!uuid(m.sessionId)||!identity(m.storeEpoch)||['unavailable','legacy'].includes(m.storeEpoch)||!uint(m.generation)||!uint(m.viewRevision)) return no('msg.header');
+  const keys=(extra:string[]=[],optional:string[]=[])=>exact(m,[...header,'type',...extra,...optional.filter(key=>Object.hasOwn(m,key))]);
+  const validAppearance=(v:unknown):boolean=>exact(v,['theme','locale','reduceMotion','reduceTransparency','showProjectNames'])&&typeof v.showProjectNames==='boolean'&&['day','night'].includes(v.theme as string)&&['en','zh-CN'].includes(v.locale as string)&&typeof v.reduceMotion==='boolean'&&typeof v.reduceTransparency==='boolean';
+  const validScope=(v:unknown):boolean=>{if(typeof v!=='string')return false;if(v==='all'||/^[a-f0-9]{16}$/.test(v))return true;const parts=v.split('#');let last=parts.pop()??'';if(/^\d+$/.test(last)){if(!/^[1-9]\d*$/.test(last)||Number(last)>1024)return false;last=parts.pop()??'';}return identity(parts.join('#'))&&['saved_login_api','runtime_rpc','local_log','api_key_api','local_sqlite','status_line','browser_session','manual','unknown'].includes(last);};
+  const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope'])&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
+  switch(m.type) {
+    case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','ackedCautions'])||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))) return no('load.keys'); break;
+    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent'])||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
+    case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return no('shell.fields'); break;
+    case 'display': if(!keys(['data']))return no('display.keys');if(!validData(m.data))return null; break;
+    case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return no('visibility.fields'); break;
+    case 'tick': if(!keys(['nowUnixMs','reason'])||!timestamp(m.nowUnixMs)||!['deadline','show','wake','unlock','clockChange'].includes(m.reason as string)) return no('tick.fields'); break;
+    case 'clear': case 'unload': if(!keys()) return no('clear.keys'); break;
+    default:return no('msg.type');
+  }
+  return m as unknown as HostMessage;
+}
+function threshold(value:unknown):RedBelow {
+  if(value!==10&&value!==15&&value!==20&&value!==25&&value!==30&&value!==40)console.warn('Cockpit redBelow missing or invalid; using default 25.');
+  return effectiveRedBelow(value);
+}
+export class CockpitBridge {
+  private context:Context|null=null;
+  private sequence=-1n;
+  private domReady=false;
+  private cleared=false;
+  private loadRequestId:string|null=null;
+  private outputSequence=0n;
+  private loaded=false;
+  private ended=false;
+  private visible=false;
+  private occluded=true;
+  private key=false;
+  private hidden=true;
+  private shellState:ShellState|null=null;
+  private scopeMembers=new Set<string>();
+  private hasDisplay=false;
+  private historyTools=new Set<string>();
+  private retiredSessions=new Set<string>();
+  private retiredEpochs=new Set<string>();
+  constructor(private readonly pageId:string,private readonly origin:string,private readonly post:(message:string)=>void,private readonly view:CockpitView,private readonly requestId:()=>string,private readonly clock:()=>number=Date.now) {
+    if(!uuid(pageId)||!(origin==='modelplan-cockpit://bundle'||/^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/.test(origin))) throw TypeError('Invalid cockpit configuration');
+    view.clear(); view.active(false);
+  }
+  get disposed():boolean{return this.ended;}
+  get state():'unloaded'|'loading'|'ready'|'hidden'|'cleared' {
+    if(this.ended||!this.loaded) return 'unloaded';
+    if(!this.domReady) return 'loading';
+    if(this.cleared) return 'cleared';
+    return this.isActive()?'ready':'hidden';
+  }
+  private isVisible():boolean {return this.loaded&&this.domReady&&!this.ended&&!this.hidden&&this.visible&&!this.occluded;}
+  private isActive():boolean {return this.isVisible()&&this.key;}
+  private emit(type:string,requestId:string,extra:Record<string,unknown>={}):void {
+    if(this.context) this.post(JSON.stringify({version:2,pageId:this.pageId,...this.context,sequence:String(++this.outputSequence),type,requestId,...extra}));
+  }
+  private reportDeadline(requestId:string):void {
+    if(!this.isVisible()||!this.hasDisplay||this.cleared||this.ended)return;
+    const deadline=this.view.nextDeadline();
+    if(deadline!==null&&(!Number.isSafeInteger(deadline)||deadline<0||deadline>8640000000000000))throw Error('Invalid deadline');
+    this.emit('nextDeadline',requestId,{deadlineUnixMs:deadline===null?null:String(deadline)});
+  }
+  ready():void {
+    if(this.ended||this.domReady) return;
+    this.domReady=true;
+    if(this.loaded&&this.loadRequestId) {this.emit('ready',this.loadRequestId,{appearanceVersion:2,capabilities:['appearanceUpdates','shellState','shellActions']});this.loadRequestId=null;}
+    this.syncActive();
+  }
+  documentHidden(hidden:boolean):void {if(this.ended)return;this.hidden=hidden; this.syncActive();}
+  clear(raw:string,source:BridgeSource):boolean {
+    // No unvalidated convenience path: clear is the same bounded host message.
+    if(this.ended)return false;
+    const parsed=message(raw);
+    return parsed?.type==='clear'&&this.receive(raw,source);
+  }
+  get lastReject():string{return why;}
+  private no(code:string):false{why=code;return false;}
+  receive(raw:string,source:BridgeSource):boolean {
+    why='none';
+    if(this.ended||!source||source.isMainFrame!==true||source.origin!==this.origin) return this.no('recv.source');
+    const m=message(raw);
+    if(!m) return false;
+    if(m.pageId!==this.pageId) return this.no('recv.page');
+    if(BigInt(m.sequence)<=this.sequence) return this.no('recv.sequence');
+    if(m.type==='load') {
+      if(this.loaded) return this.no('load.again');
+      // First load is also an explicit privacy barrier.
+      this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;
+      this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
+      this.sequence=BigInt(m.sequence); this.loaded=true;this.cleared=false;this.loadRequestId=m.requestId;
+      try {this.view.restoreAcked?.(validAcked(m.ackedCautions)?m.ackedCautions:[]);this.view.configure(m.appearance,threshold(m.redBelow),m.showUsedPercent===true);this.view.shell(m.shell);} catch {this.unload();return this.no('load.view');}
+      this.shellState=m.shell;this.syncActive();
+      if(this.domReady) {this.emit('ready',m.requestId,{appearanceVersion:2,capabilities:['appearanceUpdates','shellState','shellActions']});this.loadRequestId=null;}
+      return true;
+    }
+    if(!this.context) return this.no('recv.noContext');
+    if(m.type==='clear') {
+      const old=this.context;
+      if(BigInt(m.viewRevision)<=BigInt(old.viewRevision)||this.retiredSessions.has(m.sessionId)||this.retiredEpochs.has(m.storeEpoch)||
+        (m.storeEpoch===old.storeEpoch&&BigInt(m.generation)<BigInt(old.generation))) return this.no('clear.barrier');
+      // Epochs are equality-only. Only this explicit host barrier can adopt one.
+      // A generation or epoch change is the store/consent barrier: the page forgets what was acknowledged before it. A
+      // session-only clear keeps it (the owner's pressed cautions must not blink again).
+      if(m.storeEpoch!==old.storeEpoch||m.generation!==old.generation){this.view.forgetAcked?.();this.pendingAck=null;}
+      this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;if(this.shellState)this.shellState={...this.shellState,scope:'all'};this.cleared=true;
+      if(m.sessionId!==old.sessionId) this.retiredSessions.add(old.sessionId);
+      if(m.storeEpoch!==old.storeEpoch) this.retiredEpochs.add(old.storeEpoch);
+      this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
+      this.sequence=BigInt(m.sequence);
+      if(this.retiredSessions.size>128||this.retiredEpochs.size>128) {this.unload();return this.no('clear.retired');}
+      this.emit('cleared',m.requestId); return true;
+    }
+    if(!same(m,this.context)) return this.no('recv.context');
+    switch(m.type) {
+      case 'appearance':
+        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow),m.showUsedPercent===true);} catch {this.unload();return this.no('appearance.view');}
+        this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
+      case 'shell':
+        try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return this.no('shell.view');}
+        this.shellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope};this.sequence=BigInt(m.sequence);return true;
+      case 'display':
+        if(!this.domReady) return this.no('display.notReady');
+        // Render is synchronous, with no queued/private snapshot cache to revive.
+        try {this.view.render(m.data,this.clock());} catch {this.unload();return this.no('display.render');}
+        this.historyTools=new Set(m.data.projection.rows.filter(row=>row.kind==='tool').map(row=>row.id));
+        this.scopeMembers=new Set(cockpitMembers(m.data).map(member=>member.key));
+        this.hasDisplay=true;this.cleared=false;
+        this.syncActive(); this.sequence=BigInt(m.sequence); this.emit('rendered',m.requestId);this.reportDeadline(m.requestId); return true;
+      case 'tick':
+        if(!this.isVisible())return this.no(this.hidden?'tick.documentHidden':'tick.notVisible');
+        if(!this.hasDisplay||this.cleared)return this.no('tick.noDisplay');
+        try {this.view.tick(Number(m.nowUnixMs));} catch {this.unload();return this.no('tick.view');}
+        this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
+      case 'visibility':
+        this.visible=m.visible;this.occluded=m.occluded;this.key=m.key;this.sequence=BigInt(m.sequence);
+        // The host already folds window visibility, miniaturisation and occlusion into this message. A prewarmed page's
+        // own visibilitychange event arrives later and can still report hidden, which made the show tick fail (G3-66).
+        // A host-visible window is therefore not a hidden document; the page's real event still follows and corrects it.
+        if(m.visible&&!m.occluded)this.hidden=false;
+        this.syncActive();return true;
+      case 'unload': this.sequence=BigInt(m.sequence);this.unload();return true;
+      default:return this.no('recv.type');
+    }
+  }
+  /** G3-56: the lamp was pressed; the host keeps the acknowledged identities across restarts. */
+  private pendingAck:string[]|null=null;
+  private syncActive():void {
+    this.view.active(this.isActive());
+    if(this.pendingAck&&this.isActive()) {const ids=this.pendingAck;this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});}
+  }
+  acknowledgeCautions(ids:string[]):boolean {
+    if(!validAcked(ids)) return false;
+    // Not active (for example occluded): keep the latest report and send it when the page is next active.
+    if(!this.isActive()) {this.pendingAck=ids;return false;}
+    this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});return true;
+  }
+  action(action:PageAction,tool?:string):boolean {
+    if(!this.isActive()||!['chooseSetup','openSettings','openSettingsSubscriptions','openHistory','close','detach','putBack','shutterToggle','scopeSelect','openField','openWebsite'].includes(action)) return false;
+    if(['close','detach','putBack','shutterToggle'].includes(action)) {
+      if(!this.shellState)return false;
+      if(action==='detach'&&!this.shellState.attached||action==='putBack'&&this.shellState.attached||action==='shutterToggle'&&this.shellState.forcedClosed)return false;
+    }
+    if(action==='scopeSelect') {
+      if(!this.hasDisplay||!tool||(tool!=='all'&&!this.scopeMembers.has(tool)))return false;
+      this.emit('action',this.requestId(),{action,key:tool});return true;
+    }
+    // D63: a click on a still rocket opens the field focused on it, by the published display name the still and the
+    // publication share. Native resolves the name against the published models and ignores anything else.
+    if(action==='openField'&&tool!==undefined) {
+      if(typeof tool!=='string'||!tool.trim()||tool.length>64)return false;
+      this.emit('action',this.requestId(),{action,key:tool});return true;
+    }
+    if(action==='openWebsite') {
+      const link=tool?websiteFields(tool):null;
+      if(!link)return false;
+      this.emit('action',this.requestId(),{action,...link});return true;
+    }
+    if(action==='openHistory'?(!tool||!this.historyTools.has(tool)):tool!==undefined) return false;
+    this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
+  }
+  unload():void {
+    if(this.ended) return;
+    this.view.clear();this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;this.view.active(false);this.view.dispose();
+    this.pendingAck=null;this.context=null;this.shellState=null;this.loadRequestId=null;this.retiredEpochs.clear();this.retiredSessions.clear();this.ended=true;this.loaded=false;
+  }
+}

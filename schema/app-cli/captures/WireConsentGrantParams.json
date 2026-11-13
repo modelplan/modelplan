@@ -1,0 +1,18 @@
+{
+  "requestId": "synthetic",
+  "expectStoreEpoch": "e-synthetic",
+  "expectGeneration": 7,
+  "consentTextVersion": 1,
+  "allow": [
+    "synthetic"
+  ],
+  "deny": [
+    "synthetic"
+  ],
+  "forget": [
+    "synthetic"
+  ],
+  "keychain": {
+    "codex.runtime_usage": "allow"
+  }
+}

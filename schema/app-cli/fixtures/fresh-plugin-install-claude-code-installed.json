@@ -1,0 +1,22 @@
+{
+  "commands": [
+    [
+      "claude",
+      "plugin",
+      "marketplace",
+      "add",
+      "modelplan/modelplan"
+    ],
+    [
+      "claude",
+      "plugin",
+      "install",
+      "modelplan@modelplan"
+    ]
+  ],
+  "completed": 2,
+  "docs": "https://github.com/modelplan/modelplan/tree/main/claude-code",
+  "schemaVersion": 1,
+  "status": "installed",
+  "tool": "claude-code"
+}

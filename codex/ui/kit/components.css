@@ -1,0 +1,64 @@
+/* console: the dark warm-metal panel everything sits on */
+.mp-console { border-radius: var(--mp-r-panel); padding: 12px; background: linear-gradient(180deg, #2b2622, #1b1714); border: 1px solid #45392f;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 -14px 30px #0009, 0 24px 60px #000a; display: grid; gap: 10px; }
+.mp-plate { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: linear-gradient(180deg, #3a322c, #2a241f);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 2px 6px #0008; font: 700 13px var(--mp-f-display); }
+.mp-plate .screw { width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #8a8078, #3a322c); box-shadow: inset 0 0 0 1px #1a1512; }
+.mp-plate small { margin-left: auto; font: 500 11px var(--mp-f-mono); color: var(--mp-dim); }
+.mp-plate img { width: 22px; height: 22px; }
+.mp-chip { height: 24px; padding: 0 9px; border-radius: 7px; border: 0; font: 600 11.5px var(--mp-f-body); color: var(--mp-text); background: linear-gradient(180deg, #4a4038, #2e2722); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 2px 4px #0008; }
+.mp-chip.on { color: #2a1d0c; background: linear-gradient(180deg, var(--mp-gold), var(--mp-gold-2)); }
+
+/* LCD: numbers and charts only ever appear on an LCD */
+.mp-lcd { position: relative; overflow: hidden; border-radius: var(--mp-r-lcd); padding: 10px 12px; color: var(--mp-lcd); font-family: var(--mp-f-lcd);
+  background: var(--mp-lcd-bg); box-shadow: inset 0 0 0 1px var(--mp-lcd-edge), inset 0 2px 18px #000d, 0 0 0 4px #0f0d0b, 0 0 0 5px var(--mp-bezel); }
+.mp-lcd::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px), linear-gradient(160deg, rgba(255,255,255,.06), transparent 40%); }
+.mp-lcd-h { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; letter-spacing: .12em; color: var(--mp-lcd-2); margin-bottom: 6px; } .mp-lcd-h em { font-style: normal; letter-spacing: 0; }
+
+/* lineup rows ("WHICH ENGINE") */
+.mp-verdict { display: grid; gap: 3px; padding: 7px 9px; margin-bottom: 7px; border-radius: 8px; border: 1px dashed rgba(246,211,138,.3); font: 400 11.5px var(--mp-f-body); color: rgba(255,243,223,.85); }
+.mp-verdict b { font-weight: 600; color: var(--mp-lcd-hi); margin-right: 6px; } .mp-verdict em { font-style: normal; font-family: var(--mp-f-lcd); } .mp-verdict .a { color: var(--mp-ability); } .mp-verdict .c { color: #ff9a6a; } .mp-verdict .sk { color: rgba(255,176,138,.8); }
+.mp-row { display: grid; grid-template-columns: 10px minmax(0,1fr) auto; gap: 3px 8px; align-items: center; padding: 6px 8px; border-radius: 8px; background: rgba(255,201,138,.04); margin-top: 6px; cursor: pointer; }
+.mp-row.on { background: rgba(255,201,138,.11); }
+.mp-row .dot { width: 10px; height: 10px; border-radius: 50%; }
+.mp-row .n { font: 600 12.5px var(--mp-f-display); color: var(--mp-lcd-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .mp-row .n em { font: 400 11px var(--mp-f-lcd); font-style: normal; color: var(--mp-gold); margin-left: 4px; }
+.mp-bars { grid-column: 2 / 4; display: grid; grid-template-columns: 30px 1fr 44px; gap: 2px 8px; align-items: center; font-size: 11px; color: var(--mp-lcd-2); }
+.mp-bars i { height: 6px; border-radius: 2px; display: block; } .mp-bars i.a { background: linear-gradient(90deg, rgba(255,201,138,.35), var(--mp-ability)); box-shadow: 0 0 6px rgba(255,170,90,.5); } .mp-bars i.c { background: linear-gradient(90deg, rgba(255,122,74,.35), var(--mp-cost)); box-shadow: 0 0 6px rgba(255,106,61,.5); }
+.mp-bars b { font-weight: 400; color: var(--mp-lcd-hi); text-align: right; }
+
+/* tags: the only five verdict tags */
+.mp-tags { display: flex; gap: 4px; }
+.mp-tag { font: 600 10.5px var(--mp-f-body); padding: 1px 7px; border-radius: var(--mp-r-chip); white-space: nowrap; }
+.mp-tag.strongest { color: #2a1d0c; background: linear-gradient(180deg, #ffd0b8, #ff9a6a); }
+.mp-tag.best_value { color: #2a1d0c; background: linear-gradient(180deg, var(--mp-gold), var(--mp-gold-2)); }
+.mp-tag.cheapest { color: #a6ffc4; background: rgba(120,255,170,.12); }
+.mp-tag.dominated, .mp-tag.equivalent_costlier { color: #ffb08a; background: rgba(255,106,61,.15); }
+
+/* throttle lever: one detent per native effort; ★ detent is a gold pill with the full effort name */
+.mp-lever { position: relative; height: 170px; width: 128px; touch-action: none; cursor: ns-resize; outline: none; }
+.mp-lever .slot { position: absolute; left: 24px; top: 10px; bottom: 10px; width: 10px; border-radius: 6px; background: #070605; box-shadow: inset 0 2px 5px #000; }
+.mp-lever .zone { position: absolute; left: 24px; top: 10px; width: 10px; border-radius: 6px; background: repeating-linear-gradient(135deg, rgba(255,122,74,.55) 0 3px, transparent 3px 6px); }
+.mp-lever .det { position: absolute; left: 6px; width: 46px; height: 2px; margin-top: -1px; background: linear-gradient(90deg, #6b6058 0 10px, transparent 10px 36px, #6b6058 36px); }
+.mp-lever .det.rc { height: 3px; background: linear-gradient(90deg, var(--mp-gold) 0 12px, transparent 12px 34px, var(--mp-gold) 34px); box-shadow: 0 0 6px rgba(246,211,138,.6); }
+.mp-lever .det small { position: absolute; left: 52px; top: 50%; transform: translateY(-50%); font: 500 10.5px var(--mp-f-mono); color: var(--mp-dim); white-space: nowrap; }
+.mp-lever .det.cur small { color: var(--mp-lcd-hi); }
+.mp-lever .det.rc small { padding: 1px 6px; border-radius: 6px; color: #2a1d0c; font-weight: 700; background: linear-gradient(180deg, var(--mp-gold), var(--mp-gold-2)); box-shadow: 0 0 10px rgba(246,211,138,.45); }
+.mp-lever .knob { position: absolute; left: 3px; width: 52px; height: 22px; transform: translateY(-50%); border-radius: 7px; transition: top .35s cubic-bezier(.2,.8,.2,1);
+  background: linear-gradient(180deg, #f3f4f7, #c4cad6 45%, #8f97a8); box-shadow: 0 6px 12px #000c, inset 0 1px 0 #fff; }
+.mp-lever .knob::before { content: ""; position: absolute; left: 7px; right: 7px; top: 9px; height: 4px; border-radius: 2px; background: var(--c, var(--mp-flame)); box-shadow: 0 0 6px var(--c, var(--mp-flame)); }
+.mp-lever:focus-visible .knob { box-shadow: 0 0 0 2px var(--mp-gold), 0 6px 12px #000c; }
+
+/* LCD tiles: values are relative to the model's own ★ recommended effort (×) unless they say $ */
+.mp-tiles { display: grid; gap: 8px; flex: 1; min-width: 0; }
+.mp-tile { padding: 7px 10px; } .mp-tile .k { font-size: 10px; letter-spacing: .12em; color: var(--mp-lcd-2); } .mp-tile .v { font-size: 24px; line-height: 1.1; text-shadow: 0 0 8px rgba(255,170,90,.5); } .mp-tile .s { font-size: 10.5px; color: var(--mp-lcd-2); }
+.mp-tile.cost .v { color: #ff9a6a; } .mp-tile.time .v { color: var(--mp-time); }
+
+/* annunciators: state lights, amber = info, red = warning */
+.mp-annun { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.mp-annun span { text-align: center; padding: 5px 0; border-radius: 7px; font: 700 10.5px var(--mp-f-body); color: #5a5048; background: linear-gradient(180deg, #221d1a, #15110f); box-shadow: inset 0 0 0 1px var(--mp-bezel); }
+.mp-annun span.on { color: #2a1a00; background: linear-gradient(180deg, #ffe39a, #ffc24d); box-shadow: 0 0 14px rgba(255,200,90,.5); }
+.mp-annun span.on.warn { color: #2b0700; background: linear-gradient(180deg, #ffb08a, #ff6a3d); box-shadow: 0 0 14px rgba(255,106,61,.5); }
+
+/* reset / launch-window log */
+.mp-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 11.5px; }
+.mp-log li { display: grid; grid-template-columns: 74px 1fr; gap: 8px; } .mp-log time { color: var(--mp-lcd-2); } .mp-log span { color: var(--mp-lcd-hi); font-family: var(--mp-f-body); }

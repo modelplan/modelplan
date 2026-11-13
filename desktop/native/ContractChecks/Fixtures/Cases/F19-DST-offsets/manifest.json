@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "F19-DST-offsets",
+  "seed": 7,
+  "frozenUTC": "2026-10-20T21:05:00Z",
+  "timeZone": "America/Los_Angeles",
+  "inputs": {
+    "personal.json": "2f013f5e203bc32e288448c2d8da8c8b3b58b0a4f84d497bd6bd2a5d3e958d95",
+    "publication.json": "d6dcdd7392fe406b6f77524318b0b89722eaa8f53ecfcd80b0606b91d3d1f073",
+    "expected.json": "70e95216a87e07b3602cfd4cd3bd33ca0005dead66603d5c065aa3c85d6efc91"
+  },
+  "actions": [
+    {
+      "wallOffsetSeconds": 0
+    },
+    {
+      "wallOffsetSeconds": 31
+    },
+    {
+      "wallOffsetSeconds": 61
+    },
+    {
+      "wallOffsetSeconds": -100
+    }
+  ],
+  "visualChecks": {
+    "applicable": false,
+    "reason": "B01-B04 data-only fixtures; no official visual/input acceptance",
+    "locales": [
+      "en",
+      "zh-Hans"
+    ],
+    "plannedBackingScales": [
+      1,
+      2
+    ]
+  }
+}

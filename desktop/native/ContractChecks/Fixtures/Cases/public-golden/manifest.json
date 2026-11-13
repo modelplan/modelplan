@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "public-golden",
+  "seed": 7,
+  "frozenUTC": "2026-10-20T21:05:00Z",
+  "timeZone": "America/Los_Angeles",
+  "inputs": {
+    "personal.json": "22285e7443edc80c82e5867e74002c4a24ff1ca3bb035149283ade3a2ec52522",
+    "publication-unavailable.json": "3d2307c16e72247d97bd90f9642d4bbaf2c3ff80129b3ffec0b26dcd05d507a5",
+    "expected.json": "0edfe8b71c48879f92c85dd661058b45e68845bf9f2b6363e8684db222383390"
+  },
+  "actions": [
+    {
+      "wallOffsetSeconds": 0
+    },
+    {
+      "wallOffsetSeconds": 31
+    },
+    {
+      "wallOffsetSeconds": 61
+    },
+    {
+      "wallOffsetSeconds": -100
+    }
+  ],
+  "visualChecks": {
+    "applicable": false,
+    "reason": "B01-B04 data-only fixtures; no official visual/input acceptance",
+    "locales": [
+      "en",
+      "zh-Hans"
+    ],
+    "plannedBackingScales": [
+      1,
+      2
+    ]
+  }
+}

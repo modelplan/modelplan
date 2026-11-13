@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/publication.json",
+  "$comment": "SPDX-License-Identifier: MIT. App\u2013CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "backgroundRefresh": "none",
+    "network": "online synchronously checks/syncs public data with a 30-second context; --offline is cache-only",
+    "credentials": "none",
+    "floor": "10-minute publication check interval; foreground publication skips check delay/jitter but not the interval",
+    "writes": "online may maintain public cache; offline writes nothing",
+    "exitCodes": {
+      "0": "verified public JSON, possibly cached after a sync warning on stderr",
+      "1": "cache location unavailable; stderr with empty stdout",
+      "2": "usage on stderr",
+      "3": "no verified cached publication; stderr with empty stdout"
+    },
+    "displayText": "publication metadata is public evidence, not personal entitlement or a client recommendation engine"
+  },
+  "oneOf": [
+    {
+      "$ref": "../publication-v1.json"
+    },
+    {
+      "type": "string",
+      "const": "",
+      "description": "Nonzero exit with no cached publication."
+    }
+  ]
+}

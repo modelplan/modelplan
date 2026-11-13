@@ -1,0 +1,28 @@
+{
+  "measure": "synthetic",
+  "attribution": "synthetic",
+  "recent7d": {
+    "entities": 1,
+    "totalObservedOutputTokens": 1,
+    "top": [
+      {
+        "name": "synthetic",
+        "observedRequests": 1,
+        "observedOutputTokens": 1,
+        "share": 42.5
+      }
+    ]
+  },
+  "recent30d": {
+    "entities": 1,
+    "totalObservedOutputTokens": 1,
+    "top": [
+      {
+        "name": "synthetic",
+        "observedRequests": 1,
+        "observedOutputTokens": 1,
+        "share": 42.5
+      }
+    ]
+  }
+}

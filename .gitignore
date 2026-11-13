@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+*.log
+.env
+.env.*
+.local/
+__pycache__/
+*.pyc
+
+# Disposable local run output
+/.tmp/
+
+# Cockpit manifest pins, generated at build time from desktop/cockpit/.tmp (check-bundle-pins.py --write)
+/desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift

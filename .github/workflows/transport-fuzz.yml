@@ -1,0 +1,100 @@
+name: Transport fuzz
+on:
+  pull_request:
+    paths:
+      - cli/internal/appserver/**
+      - cli/internal/swiftwire/**
+      - clients/swift/ModelPlanEngineClient/**
+      - clients/swift/ModelPlanWire/**
+      - schema/app-cli/captures/**
+      - scripts/test-transport-fuzz.sh
+      - .github/workflows/transport-fuzz.yml
+  push:
+    branches: [main]
+    paths:
+      - cli/internal/appserver/**
+      - cli/internal/swiftwire/**
+      - clients/swift/ModelPlanEngineClient/**
+      - clients/swift/ModelPlanWire/**
+      - schema/app-cli/captures/**
+      - scripts/test-transport-fuzz.sh
+      - .github/workflows/transport-fuzz.yml
+  # Merge queue (D112): merge_group has no paths filter; queue-scope applies the list above.
+  merge_group:
+    types: [checks_requested]
+permissions:
+  contents: read
+concurrency:
+  group: transport-fuzz-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  # Merge queue only (D112): run the checks below on the group commit ("PR + latest main") when the group
+  # changes a path from the pull_request list, unless the group commit's tree is the PR head's tree (the head
+  # contains the base and its own run tested exactly this). Linux only; no Mac time in the queue.
+  queue-scope:
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: .github
+      - id: scope
+        env:
+          BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_PATHS: ^(cli/internal/appserver/|cli/internal/swiftwire/|clients/swift/ModelPlanEngineClient/|clients/swift/ModelPlanWire/|schema/app-cli/captures/|scripts/test-transport-fuzz\.sh$|\.github/workflows/transport-fuzz\.yml$)
+        run: |
+          set -eu
+          read -r _ p1 p2 extra <<<"$(git rev-list --parents -n 1 HEAD) x"
+          if [ "$p1" = "$BASE" ] && [ "$extra" = x ] && git merge-base --is-ancestor "$BASE" "$p2" \
+            && [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$p2^{tree}")" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "PR head $p2 contains the queue base: reusing its checks"
+          elif git diff --no-renames --name-only -z "$BASE" HEAD | grep -qzE "$QUEUE_PATHS"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "group changes watched paths: running checks on the group commit"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "group changes no watched path"
+          fi
+
+  linux:
+    needs: queue-scope
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Go native fuzz, thirty seconds per target
+        run: bash scripts/test-transport-fuzz.sh 30s
+      - name: Linux Swift mutation and framing fuzz
+        shell: bash
+        env:
+          MODELPLAN_SWIFT_FUZZ_SECONDS: '30'
+        run: |
+          set -euo pipefail
+          swift --version | tee .tmp/transport-fuzz/swift-version.txt
+          swift test --package-path clients/swift/ModelPlanEngineClient --scratch-path .tmp/swift-build --jobs 2 --filter MutationFuzzTests 2>&1 | tee .tmp/transport-fuzz/swift.log
+      - name: Public source policy
+        run: node scripts/check-source-policy.mjs
+      - name: Preserve bounded synthetic fuzz evidence and any crashers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transport-fuzz-${{ github.sha }}
+          retention-days: 14
+          path: |
+            .tmp/transport-fuzz/
+            cli/internal/appserver/testdata/fuzz/
+            cli/internal/appserver/queries/testdata/fuzz/
+      - name: Remove this run's completed scratch
+        if: always()
+        run: rm -rf -- .tmp

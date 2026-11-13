@@ -1,0 +1,19 @@
+{
+  "state": "off",
+  "reason": {
+    "code": "ok",
+    "text": {
+      "en": "synthetic",
+      "zh": "synthetic"
+    }
+  },
+  "nextStep": {
+    "action": "open_settings_consent",
+    "text": {
+      "en": "synthetic",
+      "zh": "synthetic"
+    },
+    "availableAt": "2026-10-29T12:00:00.123456789Z",
+    "disabledReason": "cooldown"
+  }
+}

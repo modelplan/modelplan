@@ -1,0 +1,13 @@
+{
+  "cliVersion": "0.5.43",
+  "command": [
+    "consent",
+    "--json"
+  ],
+  "syntheticHomeOnly": true,
+  "ownerHomeDenied": true,
+  "networkDenied": true,
+  "allReadersOff": true,
+  "toolCount": 1,
+  "recordedStdoutUnmodified": true
+}

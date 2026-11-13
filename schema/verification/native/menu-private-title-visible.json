@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/native/menu-private-title-visible.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
+  "title": "menu-private-title-visible",
+  "description": "The status menu session shows private content: SHA-256 of the title (never the text) and the identities of the exact menu-item objects showing it; the app keeps weak references to those objects.",
+  "type": "object",
+  "required": [
+    "runID",
+    "epoch",
+    "pid",
+    "seq",
+    "mono",
+    "at",
+    "event",
+    "timestamp",
+    "checks"
+  ],
+  "properties": {
+    "runID": {
+      "$ref": "../common.json#/$defs/runID"
+    },
+    "epoch": {
+      "$ref": "../common.json#/$defs/epoch"
+    },
+    "pid": {
+      "$ref": "../common.json#/$defs/pid"
+    },
+    "seq": {
+      "$ref": "../common.json#/$defs/seq"
+    },
+    "mono": {
+      "$ref": "../common.json#/$defs/mono"
+    },
+    "at": {
+      "$ref": "../common.json#/$defs/at"
+    },
+    "event": {
+      "const": "menu-private-title-visible"
+    },
+    "timestamp": {
+      "$ref": "../common.json#/$defs/timestamp"
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "menuObjectID",
+        "sessionID",
+        "titleSHA256",
+        "privateItemIDs"
+      ],
+      "properties": {
+        "menuObjectID": {
+          "$ref": "../common.json#/$defs/objectID"
+        },
+        "sessionID": {
+          "$ref": "../common.json#/$defs/uuid"
+        },
+        "titleSHA256": {
+          "$ref": "../common.json#/$defs/sha256"
+        },
+        "privateItemIDs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "../common.json#/$defs/objectID"
+          }
+        },
+        "instanceID": {
+          "$ref": "../common.json#/$defs/objectID"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

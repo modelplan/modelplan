@@ -1,0 +1,27 @@
+{
+  "session_id": "secret-session",
+  "transcript_path": "/home/u/.claude/projects/x.jsonl",
+  "cwd": "/home/u/private",
+  "model": {
+    "id": "claude-opus-5-5",
+    "display_name": "Opus 5.5"
+  },
+  "version": "2.1.300",
+  "effort": {
+    "level": "high"
+  },
+  "fast_mode": false,
+  "cost": {
+    "total_cost_usd": 1.23
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 39,
+      "resets_at": 1791974520
+    },
+    "seven_day": {
+      "used_percentage": 41,
+      "resets_at": 1792245600
+    }
+  }
+}

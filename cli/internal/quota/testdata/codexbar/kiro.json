@@ -1,0 +1,1 @@
+[{"error":{"code":1,"message":"Kiro usage requires the Kiro CLI. Install it from https:\/\/kiro.dev\/docs\/cli\/ and run 'kiro-cli login' first. Log: \/Users\/someone\/Library\/Logs\/kiro.log, contact someone@example.com","kind":"provider"},"source":"auto","provider":"kiro"}]

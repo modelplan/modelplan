@@ -1,0 +1,15 @@
+--- a/.github/workflows/u10-candidate.yml
++++ b/.github/workflows/u10-candidate.yml
+@@ -94,6 +94,12 @@
+           with open(os.environ['GITHUB_ENV'], 'a') as output:
+               output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
+           PY
++      - name: Build and stage the canonical U11 cockpit when its source is present
++        if: hashFiles('desktop/native/ModelPlanCockpitWeb/prepare-candidate.mjs') != ''
++        run: |
++          npm ci --prefix desktop/cockpit --ignore-scripts
++          npm run build:official --prefix desktop/cockpit
++          node desktop/native/ModelPlanCockpitWeb/prepare-candidate.mjs official
+       - name: Assemble and seal candidate, archive, and generate U14 manifest
+         run: |
+           mkdir -p .tmp/tmp

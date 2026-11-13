@@ -1,0 +1,35 @@
+name: canary
+# Daily: the released clients' code must still read the live modelplan.ai publication.
+# A failure here means the site changed its format before this repo shipped a compatible reader.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: CLI syncs and reads the live publication
+        working-directory: cli
+        env:
+          MODELPLAN_CACHE: ${{ runner.temp }}/modelplan-cache
+        run: |
+          go build -o "$RUNNER_TEMP/modelplan" ./cmd/modelplan
+          "$RUNNER_TEMP/modelplan" sync
+          "$RUNNER_TEMP/modelplan" models --json --offline | python3 -c 'import json,sys; m=json.load(sys.stdin); assert m, "no models"; print(len(m), "models")'
+          "$RUNNER_TEMP/modelplan" effort sol-6.1 --offline --no-color
+      - name: Codex plugin reads the live publication
+        working-directory: codex
+        env:
+          MODELPLAN_CACHE: ${{ runner.temp }}/codex-cache
+        run: npm ci --ignore-scripts && node tests/mcp-smoke.mjs --fresh

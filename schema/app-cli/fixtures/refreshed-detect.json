@@ -1,0 +1,52 @@
+{
+  "catalogueRevision": 1,
+  "catalogueSource": "publication",
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "beta": true,
+      "codexbar": {
+        "audited": false
+      },
+      "detected": true,
+      "detectionStatus": "signals",
+      "displayName": "Claude Code",
+      "minCli": "0.0.0",
+      "preferred": "native",
+      "providerId": "claude",
+      "readerId": "native:claude",
+      "signals": null,
+      "status": "detected"
+    },
+    {
+      "beta": true,
+      "codexbar": {
+        "audited": false
+      },
+      "detected": true,
+      "detectionStatus": "signals",
+      "displayName": "Codex",
+      "minCli": "0.0.0",
+      "preferred": "native",
+      "providerId": "codex",
+      "readerId": "native:codex",
+      "signals": null,
+      "status": "detected"
+    },
+    {
+      "beta": true,
+      "codexbar": {
+        "audited": false
+      },
+      "detected": true,
+      "detectionStatus": "signals",
+      "displayName": "GitHub Copilot",
+      "minCli": "0.0.0",
+      "preferred": "native",
+      "providerId": "copilot",
+      "readerId": "native:copilot",
+      "signals": null,
+      "status": "detected"
+    }
+  ]
+}

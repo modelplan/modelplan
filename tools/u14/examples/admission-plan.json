@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "U2a-admission",
+  "requiredConstructor": "unchanged production app-server constructor; native HTTP client constructor replaced only in a provider overlay",
+  "accountScopes": [
+    "gemini.account_usage.saved_login",
+    "cursor.account_usage.saved_login"
+  ],
+  "localScopes": [
+    "gemini.local_history",
+    "cursor.local_history"
+  ],
+  "assertions": [
+    "One synthetic home shared by the app-server and independent CLI",
+    "Valid synthetic Gemini OAuth and Cursor SQLite inputs; approved O-class scopes start unset and unchecked, with zero calls before per-scope opt-in",
+    "Each scope is separately grantable; each cold read records only its two pinned POST requests, closed bodies and separated credential headers, then produces a quota reading",
+    "Gemini and Cursor local history return positive typed counts with identical value hashes before and after account reads",
+    "MiniMax 401 and 403 each stop after exactly the first request, with a successful legacy reply available",
+    "The independent CLI preserves all three providers budget bytes, app-server cooldown deadlines and raw HTTP call counts"
+  ],
+  "knownUnsupported": [],
+  "componentScenarioIds": [
+    "U2a-post-pins",
+    "U2a-minimax-auth-stop",
+    "U2a-minimax-legacy-control",
+    "U2a-local-history-gemini",
+    "U2a-local-history-cursor",
+    "U3b-refresh-shared-budget"
+  ],
+  "proofLevel": "L1 engine-only on Linux; dedicated test Mac L2 remains not-run"
+}

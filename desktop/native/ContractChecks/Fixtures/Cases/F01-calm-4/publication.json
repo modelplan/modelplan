@@ -1,0 +1,173 @@
+{
+  "units": {
+    "ability": "websiteAbility",
+    "cost": "usdPerReferenceTask",
+    "time": "taskTimeCrossModel"
+  },
+  "models": [
+    {
+      "id": "z-model",
+      "name": "Synthetic Z",
+      "developerId": "z-dev",
+      "recommended": "medium",
+      "harnessIds": {
+        "codex": [
+          "native-z"
+        ]
+      },
+      "efforts": [
+        {
+          "effort": "medium",
+          "label": "Med",
+          "ability": 50,
+          "cost": 2,
+          "time": null
+        },
+        {
+          "effort": "high",
+          "label": "High",
+          "ability": null,
+          "cost": null,
+          "time": null
+        }
+      ]
+    },
+    {
+      "id": "a-model",
+      "name": "Synthetic A",
+      "developerId": "a-dev",
+      "recommended": "high",
+      "harnessIds": {
+        "claude-code": [
+          "native-a"
+        ]
+      },
+      "efforts": [
+        {
+          "effort": "high",
+          "label": "High",
+          "ability": 60,
+          "cost": 3,
+          "time": 1.2
+        }
+      ]
+    }
+  ],
+  "lineups": [
+    {
+      "developerId": "z-dev",
+      "costBasisId": "test",
+      "method": "lineup-v1",
+      "tie": 1,
+      "baseline": "z-model",
+      "frontier": [
+        "z-model"
+      ],
+      "steps": [],
+      "members": [
+        {
+          "id": "z-model",
+          "status": "incomplete",
+          "ability": null,
+          "cost": null,
+          "costRelative": null,
+          "tags": [],
+          "dominatedBy": null
+        }
+      ]
+    },
+    {
+      "developerId": "a-dev",
+      "costBasisId": "test",
+      "method": "lineup-v1",
+      "tie": 1,
+      "baseline": "a-model",
+      "frontier": [
+        "a-model"
+      ],
+      "steps": [],
+      "members": []
+    }
+  ],
+  "speedTiers": [
+    {
+      "id": "z-fast",
+      "harness": "codex",
+      "tier": "fast",
+      "label": "Fast",
+      "toggle": "/fast",
+      "eligibility": {
+        "plans": [
+          "synthetic-plan"
+        ],
+        "note": "published eligibility only"
+      },
+      "models": [
+        {
+          "vendorModelId": "native-z",
+          "modelId": "z-model",
+          "speed": {
+            "ratio": 2,
+            "qualifier": "up-to"
+          }
+        }
+      ],
+      "billing": [
+        {
+          "account": "subscription",
+          "billsTo": "plan-quota",
+          "basis": "included-usage",
+          "ratio": 2.5
+        }
+      ],
+      "caveats": [
+        "not-task-time"
+      ],
+      "sources": [
+        "https://example.test/fast"
+      ]
+    },
+    {
+      "id": "a-fast",
+      "harness": "claude-code",
+      "tier": "fast",
+      "models": [
+        {
+          "vendorModelId": "native-a",
+          "modelId": "a-model",
+          "speed": {
+            "ratio": 1.5,
+            "qualifier": "approximate"
+          }
+        }
+      ],
+      "billing": []
+    },
+    {
+      "id": "unknown",
+      "harness": "codex",
+      "tier": "ultrafast",
+      "models": [
+        {
+          "vendorModelId": "unreviewed",
+          "modelId": null,
+          "speed": {
+            "ratio": null,
+            "qualifier": "unstated"
+          }
+        }
+      ],
+      "billing": [
+        {
+          "account": "subscription",
+          "billsTo": "plan-quota",
+          "basis": "included-usage",
+          "ratio": null
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 1,
+  "publicationId": "synthetic-publication-1",
+  "publishedAt": "2026-10-20T20:00:00Z"
+}

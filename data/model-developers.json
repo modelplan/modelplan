@@ -1,0 +1,18 @@
+{
+  "revision": "2026-10-01.1",
+  "developers": [
+    { "id": "openai", "name": "OpenAI", "shortName": "OpenAI", "mark": "O" },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "shortName": "Claude",
+      "mark": "C"
+    },
+    {
+      "id": "zhipuai",
+      "name": "智谱 AI",
+      "shortName": "智谱 · GLM",
+      "mark": "智"
+    }
+  ]
+}
