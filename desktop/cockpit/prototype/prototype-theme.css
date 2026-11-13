@@ -86,9 +86,9 @@
   --key-led-on:#1f252b;--key-led-glow:none;
 }
 
-/* D131 / COL-2.1-18: the light maker colours (xAI yellow, Cursor rose, Codex green) are about 1.0-1.7:1 on the day metal; on day the
-   identity marks are drawn at 40% of the maker colour toward black (>= 3.4:1 for every table colour). Day values (Set 1):
-   Codex #064133 6.1:1, GLM #162466 7.4:1, xAI #625c1a 3.6:1, Cursor #633f51 4.7:1, GLM alt #384465 5.0:1, xAI alt #3c3805 6.2:1. Night is unchanged.
+/* D131 / COL-2.1-18: the light maker colours (Cursor light grey, Codex blue, Claude peach) are about 1.0-2.0:1 on the day metal; on day the
+   identity marks are drawn at 40% of the maker colour toward black (>= 3.2:1 for every table colour). Day values (D250):
+   Codex #2a4366, GLM #393266, xAI #353b42, Cursor #5f6162 (3.25:1), Claude #663e2a. Night is unchanged.
    Logos and names stay beside every mark, so colour is never alone. */
 :root[data-theme="day"] .ck-eng .ek .bl,
 :root[data-theme="day"] .dk-fad .st-vend b,
