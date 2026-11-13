@@ -296,7 +296,19 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		res.Cancelled = true
 		return res, nil
 	}
-	// Commit, source by source, each under its own consent fence.
+	// Commit, source by source, each under its own consent fence. A source whose grant changed
+	// after its read (revoked, or revoked and granted again) writes nothing; the others go on.
+	skip := func(j *importJob) {
+		j.withdrawn, j.status, j.rows, j.turns = true, StatusNoConsent, nil, 0
+		for i := range res.Sources {
+			if res.Sources[i].Source == j.source {
+				res.Sources[i].Status, res.Sources[i].Turns = StatusNoConsent, 0
+			}
+		}
+	}
+	grantChanged := func(j *importJob) bool {
+		return j.live != nil && !sameEpoch(currentEpoch(j.live(), j.source), j.epoch)
+	}
 	committed := false
 	for _, j := range active {
 		j := j
@@ -308,6 +320,10 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 				res.Cancelled = true
 				return nil
 			}
+			if grantChanged(j) { // under the fence: the live grant is not the one this read was made under
+				skip(j)
+				return nil
+			}
 			return commitImport(cache, j, o.Auto, now, adm, &committed)
 		}
 		var err error
@@ -317,6 +333,10 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 			err = write()
 		}
 		if err != nil {
+			if grantChanged(j) { // the guard refused because consent was withdrawn: not a failure
+				skip(j)
+				continue
+			}
 			return res, err
 		}
 	}

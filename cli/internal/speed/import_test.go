@@ -4,6 +4,7 @@ package speed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -542,5 +543,80 @@ func TestImportRetryWithExtendedDepth(t *testing.T) {
 	}
 	if c := l.Coverage["claude-code"]; len(c.Retry) != 0 {
 		t.Fatalf("retry not cleared: %+v", c)
+	}
+}
+
+// Post-merge sampling 2026-11-12 (#858): the consent fence around a source's commit, as LocalWrite
+// applies it in production (it refuses a source the live consent no longer permits).
+func localWriteGuard(live **consent.Admission) func(string, func() error) error {
+	return func(tool string, write func() error) error {
+		source := "codex"
+		if tool == "claude" {
+			source = "claude-code"
+		}
+		if currentEpoch(**live, source) == nil {
+			return errors.New("local reader not permitted")
+		}
+		return write()
+	}
+}
+
+// Item 1: a source that finished reading, then was revoked and regranted while another source is
+// still importing, must not have its rows written back under the revoked epoch.
+func TestImportDropsASourceRevokedAndRegrantedBetweenReadAndCommit(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	f.codexLog("rollout-a.jsonl", -3)
+	live := both()
+	regrant := func() *consent.Admission {
+		state := consent.Empty()
+		state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+		state.Generation = 3
+		state.Revoked[consent.ScopeClaudeLocalHistory] = 1
+		state.Scopes[consent.ScopeClaudeLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, At: t0}
+		state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, At: t0}
+		a := consent.NewAdmission(state, consent.Automatic)
+		return &a
+	}
+	res, err := Import(context.Background(), f.cache, ImportOptions{Claude: &ImportRoot{Dir: f.claude}, Now: f.now, Admission: both(),
+		Codex: &ImportRoot{Dir: f.home, Background: func(string) bool { live = regrant(); return false }}, // claude is already read
+		Live:  func() consent.Admission { return *live }, Guard: localWriteGuard(&live)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "claude-code"); r != 0 {
+		t.Fatalf("claude rows written under the revoked epoch: %d (%+v)", r, res.Sources)
+	}
+	if _, has := l.Coverage["claude-code"]; has {
+		t.Fatal("claude coverage written under the revoked epoch")
+	}
+}
+
+// Item 2: revoking a source that already finished reading must not abort the other source's import.
+func TestImportRevokeOfAFinishedSourceDoesNotAbortTheOtherSource(t *testing.T) {
+	f := newFixture(t)
+	f.claudeLog("a.jsonl", -3)
+	f.codexLog("rollout-a.jsonl", -3)
+	live := both()
+	res, err := Import(context.Background(), f.cache, ImportOptions{Claude: &ImportRoot{Dir: f.claude}, Now: f.now, Admission: both(),
+		Codex: &ImportRoot{Dir: f.home, Background: func(string) bool { live = admitted(consent.ScopeCodexLocalHistory); return false }},
+		Live:  func() consent.Admission { return *live }, Guard: localWriteGuard(&live)})
+	if err != nil {
+		t.Fatalf("one source's revoke aborted the import: %v", err)
+	}
+	got := map[string]string{}
+	for _, s := range res.Sources {
+		got[s.Source] = s.Status
+	}
+	if got["claude-code"] != StatusNoConsent {
+		t.Fatalf("%+v", res.Sources)
+	}
+	l, _ := LoadImported(f.cache)
+	if r, _ := total(l, "codex"); r != 1 {
+		t.Fatalf("codex import lost: %d", r)
+	}
+	if r, _ := total(l, "claude-code"); r != 0 {
+		t.Fatalf("claude rows written after the revoke: %d", r)
 	}
 }

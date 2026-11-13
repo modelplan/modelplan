@@ -62,6 +62,10 @@ type claudeParser struct {
 	// The importer's cross-file dedupe: request ids already counted from earlier files of the run
 	// (a resumed session copies its messages into a new file), and the ones this file has.
 	prior, mine map[string]bool
+	// The observer's cross-file dedupe: keyed request ids other transcripts counted (requestKey),
+	// and the ones this read counted, in finished turns, to record.
+	elsewhere map[string]bool
+	counted   []string
 }
 
 // idleDone: a turn whose last reply ended it and nothing followed for this long is finished, even
@@ -116,6 +120,9 @@ func (p *claudeParser) line(off, end int64, b []byte) {
 			}
 			p.mine[id] = true
 		}
+		if id := l.RequestID; id != "" && p.elsewhere != nil && p.elsewhere[requestKey(id)] {
+			return // already counted from another transcript
+		}
 		n := len(t.reqs)
 		if n == 0 || t.reqs[n-1].id != l.RequestID || l.RequestID == "" {
 			t.reqs = append(t.reqs, ccRequest{id: l.RequestID, start: t.trigger, cfg: config{l.Message.Model, l.Effort, speedMode(u.Speed)}})
@@ -147,6 +154,13 @@ func (p *claudeParser) close() {
 	p.cur = nil
 	if t == nil || len(t.reqs) == 0 {
 		return
+	}
+	if p.elsewhere != nil {
+		for _, q := range t.reqs {
+			if q.id != "" {
+				p.counted = append(p.counted, requestKey(q.id))
+			}
+		}
 	}
 	p.done = append(p.done, ccAsTurn(t))
 }

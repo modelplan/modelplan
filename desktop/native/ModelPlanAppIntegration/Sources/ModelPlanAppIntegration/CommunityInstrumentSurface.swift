@@ -4,6 +4,7 @@ import ModelPlanAssembly
 import ModelPlanCore
 import ModelPlanShell
 import ModelPlanInstruments
+import ModelPlanCockpitWeb
 import ModelPlanCommunityHost
 import ModelPlanSettings
 
@@ -352,7 +353,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
                                 selection: AssembledModelSelection, compare: Bool) {
         do {
             try composition.field?.update(publication: publicCatalogue, selection: selection,
-                appearance: .init(theme: view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .night : .day,
+                appearance: .init(theme: CockpitDayPolicy.resolveField(dark: view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua) ? .night : .day,
                                   locale: instrumentLanguage == .english ? .english : .chinese),
                 reduceMotion: settings?.effective.reduceMotion ?? true,
                 reduceTransparency: settings?.effective.reduceTransparency ?? true)
