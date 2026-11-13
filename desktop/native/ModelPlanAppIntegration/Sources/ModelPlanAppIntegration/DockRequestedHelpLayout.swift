@@ -47,7 +47,7 @@ struct DockRequestedHelpAnchor: Equatable {
         var column: [String] = []
         for anchor in visible {
             guard let entry = catalogEntries[anchor.region] else { return nil }
-            let fallback = language == .chinese ? "喷口：悬停查看卡片，拖动可排序，⌥ 加方向键移动一位。" : "Nozzle: hover for its card, drag to reorder or use Option arrows to move one place."
+            let fallback = language == .chinese ? "喷口：悬停查看卡片，拖动移动挂件，⌥ 加方向键移动一位。" : "Nozzle: hover for its card, drag to move the widget; Option arrows move one place."
             let caption = anchor.caption ?? (anchor.region == .nozzle && !refreshAvailable ? fallback : nil)
             let text = caption ?? entry.sentence
             let labelID: String
