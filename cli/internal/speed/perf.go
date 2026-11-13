@@ -45,6 +45,7 @@ type PerfLedger struct {
 	admission    consent.Admission
 	project      func(cwd string) (ref, label string) // while observing: names a session's project
 	subscription string                               // while observing: the harness account's reference
+	cleared      Cleared                              // while observing: the clear boundaries (cleared.go)
 }
 
 // Ingest: what the caller knows while the ledger reads new turns. Labels: project labels are on
@@ -166,6 +167,7 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 	}
 	l.project, l.subscription = projector(cache, labels), in.Subscription
 	l.admission = consent.Capture()
+	l.cleared = LoadCleared(cache)
 	changed := false
 	for i := range l.Sessions {
 		if !labels && l.Sessions[i].ProjectLabel != "" {
@@ -189,7 +191,7 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 }
 
 func (l *PerfLedger) scan(path, source, parser string, p parser, now time.Time) bool {
-	done, changed := scanLog(l.Files, path, p, now)
+	done, changed := scanLog(l.Files, path, source, p, now)
 	for _, t := range done {
 		l.add(source, parser, t)
 		l.addSession(fileKey(path), source, t)
@@ -201,7 +203,7 @@ func (l *PerfLedger) scan(path, source, parser string, p parser, now time.Time) 
 const maxSessions = 2000
 
 func (l *PerfLedger) addSession(key, source string, t turn) {
-	if t.at.IsZero() || t.at.Before(l.Since) || t.at.Before(grantStart(l.admission, source)) || len(t.all) == 0 {
+	if t.at.IsZero() || t.at.Before(l.Since) || t.at.Before(l.start(source)) || len(t.all) == 0 {
 		return
 	}
 	epoch := currentEpoch(l.admission, source)
@@ -268,6 +270,15 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	}
 }
 
+// start: the earliest time a live turn of source counts from: its grant, or the tool's last clear.
+func (l *PerfLedger) start(source string) time.Time {
+	at := grantStart(l.admission, source)
+	if f := l.cleared.floor(source); f.After(at) {
+		at = f
+	}
+	return at
+}
+
 // newRef: a random reference, so a session is known here without any id of its own.
 func newRef() string {
 	b := make([]byte, 8)
@@ -276,7 +287,7 @@ func newRef() string {
 }
 
 func (l *PerfLedger) add(source, parser string, t turn) {
-	if t.at.IsZero() || t.at.Before(l.Since) || t.at.Before(grantStart(l.admission, source)) {
+	if t.at.IsZero() || t.at.Before(l.Since) || t.at.Before(l.start(source)) {
 		return // started before the ledger did
 	}
 	l.addTurn(source, parser, t, true)

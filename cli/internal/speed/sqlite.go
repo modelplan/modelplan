@@ -155,6 +155,9 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].rowid < rows[j].rowid })
 	since := l.Since.UnixMilli()
+	if f := l.cleared.floor(source); !f.IsZero() && f.UnixMilli() > since {
+		since = f.UnixMilli() // from before the tool's history was cleared: marked, never counted
+	}
 	look := dbLookback.Milliseconds()
 	var pending []int64
 	liveSeen := map[string]bool{}

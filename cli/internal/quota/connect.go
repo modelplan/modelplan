@@ -404,6 +404,11 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 		return errors.New("readings busy; retry disconnect")
 	}
 	defer unlockLedgers()
+	if history {
+		if err := markHistoryCleared(p.Cache, tool); err != nil {
+			return err
+		}
+	}
 	if identity {
 		if err := forgetScopeIdentity(p.Cache, tool, scopeClass); err != nil {
 			return err
@@ -543,21 +548,36 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 }
 
 // dropToolLedgerState removes the per-tool residue the row filter cannot see: Claude's counted
-// request hashes, Codex's cumulative token totals in the file cursors (only Codex writes one), and
-// the hashed request ids of the tool's agent-database cursors (keyed "<source>:<file key>").
+// request hashes, the tool's log cursors (path hash, offset, last-read date, skip mark and Codex's
+// cumulative totals) and its agent-database cursors (keyed "<source>:<file key>"). A cursor
+// written before cursors carried their source cannot be attributed and goes too. What keeps the
+// cleared history from being counted again is the clear boundary (speed.MarkCleared), written
+// before this runs.
 func dropToolLedgerState(doc map[string]json.RawMessage, tool string) error {
 	if tool == "claude" {
 		delete(doc, "counted")
 	}
-	if tool == "codex" && len(doc["files"]) > 0 && string(doc["files"]) != "null" {
-		var files map[string]map[string]json.RawMessage
+	if len(doc["files"]) > 0 && string(doc["files"]) != "null" {
+		var files map[string]struct {
+			Source string `json:"source"`
+		}
 		if json.Unmarshal(doc["files"], &files) != nil {
 			return errors.New("cached cursors invalid")
 		}
-		for _, cursor := range files {
-			delete(cursor, "total")
+		var kept map[string]json.RawMessage
+		if json.Unmarshal(doc["files"], &kept) != nil {
+			return errors.New("cached cursors invalid")
 		}
-		doc["files"], _ = json.Marshal(files)
+		for key, cursor := range files {
+			source := cursor.Source
+			if source == "claude-code" {
+				source = "claude"
+			}
+			if source == "" || source == tool {
+				delete(kept, key)
+			}
+		}
+		doc["files"], _ = json.Marshal(kept)
 	}
 	if len(doc["stores"]) > 0 && string(doc["stores"]) != "null" {
 		var stores map[string]json.RawMessage
@@ -581,6 +601,13 @@ func dropToolLedgerState(doc map[string]json.RawMessage, tool string) error {
 		doc["stores"], _ = json.Marshal(stores)
 	}
 	return nil
+}
+
+// markHistoryCleared sets the tool's clear boundary before its ledger state is removed, so a
+// failure part way leaves the boundary in place rather than cursors gone without one. The caller
+// holds the ledger locks.
+func markHistoryCleared(cache, tool string) error {
+	return speed.MarkCleared(cache, tool, speed.HasUnattributedCursors(cache), time.Now())
 }
 
 // active: the providers whose selected backend is this one and runs.
