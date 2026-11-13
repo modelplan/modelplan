@@ -157,7 +157,7 @@
           "credits": {
             "balance": 42.5,
             "unit": "synthetic",
-            "currency": "synthetic"
+            "currency": "USD"
           },
           "valueState": "current",
           "observedAt": "2026-10-29T12:00:00.123456789Z",
