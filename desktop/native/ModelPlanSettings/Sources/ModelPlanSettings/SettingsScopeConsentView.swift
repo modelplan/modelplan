@@ -300,7 +300,7 @@ import ModelPlanWire
                          "调用 Kiro 命令行工具查询用量，沿用它已保存的登录。ModelPlan 不读取也不保存 Kiro 的凭据。")
         case "opencodego":
             base = .init("Reads OpenCode's local history, and OpenCode Go usage with the OpenCode Go API key you set (OPENCODE_API_KEY).",
-                         "读取 OpenCode 的本机历史记录；设置了 OpenCode Go 接口密钥（OPENCODE_API_KEY）时，也读取 OpenCode Go 额度。")
+                         "读取 OpenCode 的本机历史记录；设置了 OpenCode Go 的 API 密钥环境变量时，也读取 OpenCode Go 额度。")
         case "zai":
             base = .init("Reads the GLM Coding Plan key you saved in ZCode, and its local history.",
                          "读取你在 ZCode 里保存的 GLM 编程套餐密钥，以及本机历史记录。")
