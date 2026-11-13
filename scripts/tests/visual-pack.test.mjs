@@ -6,10 +6,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
-import { verifyVisualPack } from '../check-visual-pack.mjs';
+import { verifyVisualPack, fieldRocketVehicles } from '../check-visual-pack.mjs';
 
 const license = 'LicenseRef-ModelPlan-Visuals-1.0';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+const webp = Buffer.from('UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==', 'base64');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
 
 function fixture(t) {
@@ -24,7 +25,8 @@ function fixture(t) {
   const policy = { reservedVisuals: { binaries: {} } };
   function add(file, kind, extra = {}) {
     const bytes = kind === 'notice' ? Buffer.from(`<!-- SPDX-License-Identifier: ${license} -->\nModelPlan trademark notice.\n`)
-      : kind === 'field-scene' ? Buffer.from(`/*! SPDX-License-Identifier: ${license} */\nexport {};\n`) : png;
+      : kind === 'field-scene' ? Buffer.from(`/*! SPDX-License-Identifier: ${license} */\nexport {};\n`)
+      : kind === 'field-rocket-atlas' ? webp : png;
     mkdirSync(join(pack, file, '..'), { recursive: true });
     writeFileSync(join(pack, file), bytes);
     const entry = { file, kind, sha256: hash(bytes), bytes: bytes.length, license,
@@ -48,6 +50,7 @@ function fixture(t) {
   }
   add('field-scene/README.md', 'notice');
   add('field-scene/cockpit-scene.bundle.js', 'field-scene');
+  for (const vehicle of fieldRocketVehicles) for (const part of ['512', '256', 'mat']) add(`field-scene/rockets/${vehicle}-${part}.webp`, 'field-rocket-atlas');
   function save() {
     writeFileSync(join(pack, 'manifest.json'), JSON.stringify(manifest));
     writeFileSync(join(root, 'source-policy.json'), JSON.stringify(policy));
@@ -59,6 +62,20 @@ function fixture(t) {
 test('checks every file, licence, baseline, PNG size and policy hash', t => {
   const f = fixture(t);
   assert.equal(verifyVisualPack(f.root).pngCount, 34);
+});
+
+test('D207 checks the launch-field rocket atlases as WebP: dimensions, metadata and the approved set', t => {
+  const f = fixture(t);
+  const atlas = f.manifest.files.find(x => x.kind === 'field-rocket-atlas');
+  atlas.size.width = 2; f.save();
+  assert.throws(() => verifyVisualPack(f.root), /dimensions/);
+  atlas.size.width = 1; f.save(); verifyVisualPack(f.root);
+  const flagged = Buffer.from(webp); flagged.write('EXIF', 12, 'ascii');
+  writeFileSync(join(f.pack, atlas.file), flagged); atlas.sha256 = hash(flagged);
+  f.policy.reservedVisuals.binaries['desktop/official-visuals/runtime/' + atlas.file] = atlas.sha256; f.save();
+  assert.throws(() => verifyVisualPack(f.root), /metadata/);
+  writeFileSync(join(f.pack, 'field-scene/rockets/extra-512.webp'), webp);
+  assert.throws(() => verifyVisualPack(f.root), /outside manifest|metadata/);
 });
 
 test('rejects changed PNG bytes, dimensions and unregistered files', t => {
