@@ -116,6 +116,26 @@ struct StatusNoticePresentation {
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
     private var firstRunFlow: CommunityConnectionFlow?
+    /// First run v1 (owner OK 2026-11-12, D216). Setup is "active" from launch until Done saves it: the guide window is
+    /// up, the menu bar icon says "setting up", and the Quota Widget and the cockpit prewarm wait.
+    /// It starts at the real launch (`beginSetupAtLaunch`), so compositions that never launch the guide are unchanged.
+    var setupActive: Bool { setupLaunched && settings.editor.snapshot?.preferences.onboarding.completed == false }
+    private(set) var setupLaunched = false
+    /// The launch's setup: if the saved mark says setup is not finished, the guide window, the "setting up" menu bar
+    /// state and the held Quota Widget and prewarm all start here, before the reader is asked for anything.
+    func beginSetupAtLaunch() async {
+        guard !terminating, settings.editor.snapshot?.preferences.onboarding.completed == false else { return }
+        setupLaunched = true; renderMenu()
+        await firstRunFlow?.presentSetupAtLaunch()
+    }
+    /// The local presence check that lists tool rows before the reader answers (E2). Tests replace it.
+    public var firstRunPresence: FirstRunPresenceDetector = .live()
+    /// Set by the cockpit factory: starts the cockpit prewarm that the first launch held back (E4).
+    public var releaseCockpitPrewarm: (@MainActor () -> Void)?
+    private var prewarmReleased = false
+    private var setupScanObserver: UUID?
+    /// Done with nothing read yet: the widget appears when the first tool is read, then Find Quota Widget runs once.
+    private(set) var pendingFirstWidget: Bool?
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
@@ -133,7 +153,7 @@ struct StatusNoticePresentation {
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     public var makeFirstRunSurfaceWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)?
     private let activateSettings: @MainActor () -> Void
-    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false && self?.lifecyclePaused == false }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
+    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false && (self?.lifecyclePaused == false || self?.setupActive == true) }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                 createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                 cockpitEntryEnabled: Bool? = nil,
@@ -197,6 +217,7 @@ struct StatusNoticePresentation {
             self.updateMemberRefreshCapability()
             self.updateForecastProducerCapability()
             self.updateSettingsContext(); self.renderMenu(); self.console?.render()
+            self.revealPendingWidgetIfReadable()
             #if MODELPLAN_U6_DRIVE
             if self.composition.provider.dockContent.status == .cleared { self.driveGuard?.recordClear() }
             #endif
@@ -283,8 +304,11 @@ struct StatusNoticePresentation {
         guard !terminating, !lifecyclePaused,
               composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
         _ = composition.dock.sweepRefresh(id)
-        guard !memberRefreshInFlight.contains(id),
-              let member = composition.accountMembers.members.first(where: { $0.id == id && $0.isStable }),
+        // G3-98: a repeated click while this member's refresh runs keeps its number hidden for that result.
+        guard !memberRefreshInFlight.contains(id) else { return }
+        var handedOff = false
+        defer { if !handedOff { composition.dock.resolveRefreshReadout(id) } }
+        guard let member = composition.accountMembers.members.first(where: { $0.id == id && $0.isStable }),
               let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery) else { return }
         guard let adapter = memberRefreshAdapter else { unavailableMemberRefreshes.insert(id); renderMenu(); return }
         let admission = adapter.admission(for: member, delivery: delivery, now: Date())
@@ -295,9 +319,11 @@ struct StatusNoticePresentation {
         }
         unavailableMemberRefreshes.remove(id)
         memberRefreshInFlight.insert(id)
+        handedOff = true
         Task { @MainActor [weak self, weak adapter] in
             guard let self else { return }
-            defer { self.memberRefreshInFlight.remove(id) }
+            var landed = true
+            defer { self.memberRefreshInFlight.remove(id); if !landed { self.composition.dock.resolveRefreshReadout(id) } }
             guard let adapter, !self.terminating, !self.lifecyclePaused,
                   self.composition.client.isCurrent(delivery),
                   self.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }),
@@ -305,9 +331,10 @@ struct StatusNoticePresentation {
                       $0.id == id && $0.isStable && $0.rowID == member.rowID && $0.source == member.source &&
                       $0.account.subscriptionRef == member.account.subscriptionRef && $0.account.accountLocator == member.account.accountLocator
                   }),
-                  adapter.admission(for: member, delivery: delivery, now: Date()) == .ready else { return }
+                  adapter.admission(for: member, delivery: delivery, now: Date()) == .ready else { landed = false; return }
             do { try await adapter.request(member: member, delivery: delivery) }
             catch {
+                landed = false
                 guard !self.terminating, self.composition.client.isCurrent(delivery),
                       self.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
                 self.unavailableMemberRefreshes.insert(id); self.renderMenu()
@@ -440,10 +467,27 @@ struct StatusNoticePresentation {
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
             firstRunFlow = try? CommunityConnectionFlow(application: settings,
-                canPresent: { [weak self] in self?.terminating == false && self?.lifecyclePaused == false },
+                canPresent: { [weak self] in self?.terminating == false && (self?.lifecyclePaused == false || self?.setupActive == true) },
                 showSettings: { [weak self] pane in await self?.settingsHost.present(paneID: pane) },
                 activate: activateSettings, scopeConsentEntry: scopeConsentEntry,
-                makeFirstRun: makeFirstRunSurface, makeFirstRunWithConsent: makeFirstRunSurfaceWithConsent)
+                makeFirstRun: makeFirstRunSurface, makeFirstRunWithConsent: makeFirstRunSurfaceWithConsent,
+                presence: firstRunPresence)
+            firstRunFlow?.onSetupClosed = { [weak self] in
+                // Owner 11-12 (answer 1): not done, nothing saved. The icon stays "setting up"; the held work no longer waits.
+                self?.releasePrewarmOnce(); self?.renderMenu()
+            }
+            let controller = scopeConsentEntry.controller
+            controller.onRetryEngine = { [weak self] in
+                self?.scopeConsentEntry.controller.setFirstRunEngineFailed(false)
+                self?.lifecycleController?.retryPending()
+            }
+            controller.onRetryTool = { [weak self] _ in self?.refreshRows() }
+            if setupScanObserver == nil {
+                setupScanObserver = controller.observe { [weak self] in
+                    guard let self, self.setupActive, self.scopeConsentEntry.controller.firstRunScanSettled else { return }
+                    self.releasePrewarmOnce()
+                }
+            }
         }
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
@@ -486,7 +530,8 @@ struct StatusNoticePresentation {
     }
 
     func allowDockPresentation() {
-        guard !terminating else { return }
+        // Owner 11-12: no Quota Widget until Done; Done reveals it (`.revealDock`).
+        guard !terminating, !setupActive else { return }
         composition.dock.setPresentationAllowed(true)
         interactionBinding?.start()
     }
@@ -509,6 +554,9 @@ struct StatusNoticePresentation {
             }, onGateOpen: { [weak self] in
                 self?.allowDockPresentation()
                 self?.renderMenu()
+            }, onStartFailed: { [weak self] in
+                guard let self, self.setupActive else { return }
+                self.scopeConsentEntry.controller.setFirstRunEngineFailed(true)
             })
         lifecycleController = controller
         controller.setActivityPaused(activityPaused)
@@ -530,7 +578,9 @@ struct StatusNoticePresentation {
         statusHelpRequestID = nil
         spotlight.finish(.withdrawn)
         dockHelp?.suspend()
-        composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
+        composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend()
+        // Owner 11-12: the guide window shown at launch stays through the reader's start, a failed start and a retry.
+        if !(setupActive && firstRunFlow?.isPresentingSetup == true) { firstRunFlow?.suspend() }
         // A retry or engine failure can withdraw rows while the OS gate remains open.
         if dockPresentationGateOpen { allowDockPresentation() }
         renderMenu()
@@ -586,13 +636,16 @@ struct StatusNoticePresentation {
         case .shortcutPreferencesChanged(let openCockpit, let toggleDock):
             registerShortcuts(openCockpit: openCockpit, toggleDock: toggleDock)
         case .firstRunCompleted(let effects, _):
+            releasePrewarmOnce() // setup is over whatever the scan was doing
             for effect in effects {
                 switch effect {
                 case .revealDock:
-                    composition.dock.setPresentationAllowed(true)
                     // D56: once, at the end of first run, show where the widget is. "See what's
                     // here" latches the Help map over the widget instead, which already shows it.
-                    if !effects.contains(.latchOptionHelp) { findQuotaWidget() }
+                    // Owner 11-12 (answer 2): with nothing read yet there is no widget to show; it appears, and is found
+                    // once, when the first tool is read. It never shows "?".
+                    let find = !effects.contains(.latchOptionHelp)
+                    if hasReadings { revealFirstWidget(find: find) } else { pendingFirstWidget = find }
                 case .returnToSettings: Task { [weak self] in await self?.settingsHost.present() }
                 case .openCockpit: showConsole()
                 case .latchOptionHelp: showHelp()
@@ -605,6 +658,24 @@ struct StatusNoticePresentation {
             break
         }
     }
+    var hasReadings: Bool { composition.provider.dockContent.dockRows.contains { !$0.accounts.isEmpty } }
+    private func revealFirstWidget(find: Bool) {
+        pendingFirstWidget = nil
+        allowDockPresentation()
+        if find { findQuotaWidget() }
+    }
+    /// A first reading arrived after a Done with nothing to show.
+    private func revealPendingWidgetIfReadable() {
+        guard let find = pendingFirstWidget, !terminating, hasReadings else { return }
+        revealFirstWidget(find: find)
+    }
+    /// E4: the first launch holds the cockpit prewarm until the scan ends or the window is closed, whichever is first.
+    func releasePrewarmOnce() {
+        guard !prewarmReleased else { return }
+        prewarmReleased = true; releaseCockpitPrewarm?()
+    }
+    /// E6: the menu bar icon, the menu and a second launch bring the guide window back to the front.
+    func reopenSetup() async { await firstRunFlow?.reopenSetup() }
     /// The same restore used by the real launch; it never grants access itself.
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
@@ -643,7 +714,13 @@ struct StatusNoticePresentation {
         #endif
         renderMenu()
         watchStatusItemVisibility()
-        Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
+        Task {
+            await prepare(); guard !terminating else { return }
+            // Owner 11-12 (E1): the guide window comes first, from the local mark; the reader starts behind it.
+            await beginSetupAtLaunch()
+            guard !terminating else { return }
+            startLifecycle(); renderMenu()
+        }
     }
     /// G3-22: a full menu bar hides the item behind the notch (the owner's Mac: occluded at
     /// x=769..801 of 1470). Test seam: nil reads the real status-item window.
@@ -702,7 +779,7 @@ struct StatusNoticePresentation {
         guard hidden != statusItemHidden else { return }
         statusItemHidden = hidden
         var context = settings.editor.context
-        context.statusItemNotice = hidden ? EngineRowsText.statusItemHidden : nil
+        context.statusItemNotice = hidden ? (cockpitEntryEnabled ? EngineRowsText.statusItemHidden : EngineRowsText.statusItemHiddenWithoutCockpit) : nil
         settings.update(context: context)
     }
     var statusButtonForTesting: NSStatusBarButton? { status?.button }
@@ -729,17 +806,21 @@ struct StatusNoticePresentation {
         if event.type == .leftMouseUp {
             guard statusPressPending else { return false }
             statusPressPending = false
-            if onStatusItem { toggleConsole() }
+            if onStatusItem {
+                if setupActive { Task { await reopenSetup() } } else { toggleConsole() }
+            }
             return true
         }
         guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
-              cockpitEntryEnabled, !terminating, !lifecyclePaused else { return false }
+              !terminating, setupActive || (cockpitEntryEnabled && !lifecyclePaused) else { return false }
         statusPressPending = true
         return true
     }
 
     /// D44: opening the running app again from Spotlight or Launchpad opens the cockpit.
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Owner 11-12 (E6): while setup is not finished, opening the app again returns to the guide, not the cockpit.
+        if setupActive { Task { await reopenSetup() }; return false }
         showConsole()
         return false
     }
@@ -781,7 +862,8 @@ struct StatusNoticePresentation {
         let menu = component.menu
         let canRetry = lifecyclePaused && (lifecycleController?.canRetry ?? false)
         let helpError = helpMapUnavailable ? SettingsText("Help unavailable. Try again when the Quota Widget is visible.", "说明暂不可用，请在额度挂件可见时重试。").value(language) : nil
-        let detail = helpError ?? showFeedbackText(language) ?? (lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail)
+        let normalDetail = helpError ?? showFeedbackText(language) ?? (lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail)
+        let detail = setupActive ? FirstRunCopy.menuTip.value(language) : normalDetail
         if composition.provider.dockContent.status == .cleared { LivePrivateMenus.scrub(menu) }
         let english = language == .english
         func label(_ en: String, _ zh: String) -> String { english ? en : zh }
@@ -848,6 +930,11 @@ struct StatusNoticePresentation {
             menuItems.append(.init(title: summary,
                 action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil))
         }
+        // D238: a tool installed after the first run, not yet decided: one line until the user decides.
+        for offer in DetectedToolOffer.offers(content.menuRows, english: english) {
+            menuItems.append(.init(title: offer.title, accessibilityID: "status.detected." + offer.rowID,
+                action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "subscriptions", origin: .userInitiated) } } : nil))
+        }
         menuItems += [
             .init(title: nil),
             .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
@@ -858,6 +945,17 @@ struct StatusNoticePresentation {
             .init(title: EngineRowsText.about.value(language), action: available ? { [weak self] in self?.showAbout() } : nil),
             .init(title: quitTitle, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
+        if setupActive {
+            // Owner 11-12 (E6): while setup is not finished the menu has only the way back, About and Quit.
+            menuItems = [
+                .init(title: FirstRunCopy.menuSettingUp.value(language)),
+                .init(title: FirstRunCopy.menuContinue.value(language), accessibilityID: "status.continueSetup",
+                      action: { [weak self] in Task { @MainActor [weak self] in await self?.reopenSetup() } }),
+                .init(title: nil),
+                .init(title: EngineRowsText.about.value(language), action: { [weak self] in self?.showAbout() }),
+                .init(title: quitTitle, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
+            ]
+        }
         LivePrivateMenus.scrubItems(menu)
         component.replace(with: menuItems)
         liveStatusMenu = menu
@@ -904,7 +1002,10 @@ struct StatusNoticePresentation {
     /// Shared by the native status item and detached presentation checks.
     /// Feedback belongs to the menu/accessibility detail; the title remains the quota value.
     func applyStatusContent(to button: NSButton, detail: String) {
-        let title = composition.menuPresentation.title
+        // Owner 11-12 (E6): while setup is not finished the same icon is dimmed with three small dots; no number.
+        let setUp = setupActive
+        let title = setUp ? "\u{00B7}\u{00B7}\u{00B7}" : composition.menuPresentation.title
+        if button.alphaValue != (setUp ? 0.5 : 1) { button.alphaValue = setUp ? 0.5 : 1 }
         // Never let the item collapse to zero width when the template image is unavailable.
         // Only changed values are written: re-setting the same title or position makes the item re-measure itself.
         let shownTitle = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title

@@ -13,13 +13,18 @@ import (
 // adapters must be silent and return unknown when checking might prompt.
 type Env struct {
 	Home, Path, OS, ClaudeConfigDir, CodexHome string
-	BundlePresent                              func(string) string
-	KeychainPresent                            func(Signal) string
+	// OpenCode Go evidence (D230): XDG_DATA_HOME, OPENCODE_DB, and whether OPENCODE_API_KEY is set
+	// (its value is never kept).
+	DataHome, OpenCodeDB string
+	OpenCodeKeySet       bool
+	BundlePresent        func(string) string
+	KeychainPresent      func(Signal) string
 }
 
 func Local() Env {
 	home, _ := os.UserHomeDir()
-	return Env{Home: home, Path: os.Getenv("PATH"), OS: runtime.GOOS, ClaudeConfigDir: os.Getenv("CLAUDE_CONFIG_DIR"), CodexHome: os.Getenv("CODEX_HOME")}
+	return Env{Home: home, Path: os.Getenv("PATH"), OS: runtime.GOOS, ClaudeConfigDir: os.Getenv("CLAUDE_CONFIG_DIR"), CodexHome: os.Getenv("CODEX_HOME"),
+		DataHome: os.Getenv("XDG_DATA_HOME"), OpenCodeDB: os.Getenv("OPENCODE_DB"), OpenCodeKeySet: os.Getenv("OPENCODE_API_KEY") != ""}
 }
 
 type Tool struct {
@@ -27,6 +32,9 @@ type Tool struct {
 	Detected bool   `json:"detected"`
 	Status   string `json:"status"`
 	NextStep string `json:"nextStep,omitempty"`
+	// Subscription: for a tool whose app and subscription differ (OpenCode / OpenCode Go), whether
+	// the subscription's own evidence was found ("found" / "not-found"); empty otherwise.
+	Subscription string `json:"subscription,omitempty"`
 }
 type Report struct {
 	SchemaVersion     int    `json:"schemaVersion"`
@@ -66,6 +74,9 @@ func Run(c *Catalogue, e Env, version, source string) Report {
 		}
 		if !t.Detected && unknown {
 			t.Status = "unknown"
+		}
+		if t.Detected && entry.ProviderID == "opencodego" {
+			t.Subscription = e.openCodeGoSubscription()
 		}
 		if entry.DetectionStatus == "no-safe-signal" {
 			t.Status = "no-safe-signal"
