@@ -89,6 +89,28 @@ Each red line is defined by an **observable forbidden event**, a **place where i
 
 Look at the official vendor source first. Then compare at least two of these projects that cover the tool, at a pinned commit.
 
+### Reference panel (D239, 2026-11-13)
+
+Reader, detection and metric work follows one of these apps. The per-tool winners, the pinned commits and the full rules are in the maintainers' reference-apps policy (D239); this is the short form.
+
+| App | Licence | We follow it for | Mode | Never take |
+|---|---|---|---|---|
+| CodexBar | MIT | Per-tool reader routes, detection signals, re-read timing, error causes and their sign-in remedy, actions | PORT or MATCH | Token refresh, CLI launches, browser cookies |
+| Pulse | Apache-2.0 | No-renew credential stance, existence-only detection, structured tool seams (Kiro ACP, app-server notifications); Dock shell | PORT or MATCH | Routes it only profiled from fixtures (trust its hand-written ones: Claude, Codex, Cursor, Kiro, GLM, Kimi, MiniMax, Copilot) |
+| TokenMonitor | MIT | Tie-breaker between CodexBar and Pulse; auto-detect of later installs | MATCH | Its key storage and token auto-import |
+| ccusage | MIT | Local usage logs: Claude and Codex JSONL, archived and compressed sessions, dedupe, periods; cost validation | PORT or MATCH | Nothing about quota (it reads local logs only) |
+| Tokei | No licence file | Metric definitions (speed, TTFT, cache hit) and local-file routes, as tie-breaker | MATCH only | Any code |
+
+**How we borrow.**
+
+1. Pick the panel app whose route for this tool wins, at a pinned commit or tag. Our privacy rules (section 2) beat parity whenever the panel disagrees with them.
+2. Choose the mode: **PORT** copies code under MIT or Apache-2.0, keeps the licence header, cites the upstream commit in the file header and records it in `docs/borrowed/` and `desktop/third-party/NOTICES.md`. **MATCH** writes our own code for the same behaviour and cites the source in a comment. **PATTERN** borrows an interface idea only.
+3. Copy no user-facing strings verbatim; match the meaning.
+4. Name the reference in the PR. The merge gate notes (advisory, D243; never a failure) any PR that touches `cli/internal/{quota,detect,localusage,speed,consent}/` or the reader-cause copy table without a body line
+   `Reference: <app>@<commit-or-tag> <path>[; <app>@<commit-or-tag> <path>]` naming a panel app, or `Reference: none (<reason>)`.
+
+### Wider list
+
 | Project | Licence | Language | Notes for us |
 |---|---|---|---|
 | [CodexBar](https://github.com/steipete/CodexBar) | MIT | Swift | Widest provider coverage. In 0.81.0, some providers refresh tokens, launch CLIs or cache credentials, so never copy those paths |
