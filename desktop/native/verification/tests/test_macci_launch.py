@@ -528,6 +528,10 @@ class FullAppSubject(unittest.TestCase):
         self.assertEqual((app['evidence']['subjectKind'], app['evidence']['codeSignature']), ('app-zip', 'adhoc'))
         self.assertTrue((self.dir / 'run' / '.launchservices' / 'subject.zip').exists())  # extracted from the local copy
 
+    def test_owner_test_zip_first_run_launcher_sibling_is_accepted(self):
+        app = self.extract(write_app_zip(self.dir / 'l.zip', extra=[launch.FIRST_RUN_LAUNCHER]), run='launcher')
+        self.assertEqual(app['evidence']['subjectKind'], 'app-zip')
+
     def test_bad_archives_are_refused(self):
         with self.assertRaisesRegex(ValueError, 'archive identity'):
             self.extract(write_app_zip(self.dir / 'pin.zip'), run='pin', pin='0' * 64)
@@ -535,6 +539,8 @@ class FullAppSubject(unittest.TestCase):
             self.extract(write_app_zip(self.dir / 'two.zip', extra=['Other.app/x']), run='two')
         with self.assertRaisesRegex(ValueError, 'exactly one top-level .app'):
             self.extract(write_app_zip(self.dir / 'loose.zip', extra=['README']), run='loose')
+        with self.assertRaisesRegex(ValueError, 'exactly one top-level .app'):
+            self.extract(write_app_zip(self.dir / 'other.zip', extra=['Other.command']), run='other')
         with self.assertRaisesRegex(ValueError, 'symlink leaves the bundle'):
             self.extract(write_app_zip(self.dir / 'link.zip', links=[('Contents/Resources', '/etc')]), run='link')
         with patch.object(launch, 'CODESIGN', [PY, str(self.dir / 'codesign-False.py')]), \

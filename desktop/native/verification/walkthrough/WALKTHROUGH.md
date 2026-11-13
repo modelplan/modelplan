@@ -39,6 +39,12 @@ reads, in a fresh `HOME` (`CFFIXED_USER_HOME` too):
 - `Library/Caches/modelplan/observed/codex-account.json`: a Codex reading, bound to a real `consent grant`
   of `codex.runtime_usage` in that profile, as `DockQuotaWindowsRealServerTests` writes it.
 
+Profile-root mode (D164, PROF-03): pass `--profile-root <absolute folder>` instead of `--home` and `HOME` is not
+redirected. The app and the bundled CLI get `MODELPLAN_PROFILE_ROOT=<folder>` (as the test build's First Run launcher
+sets it), the same files are seeded under `<folder>/engine/config` and `<folder>/engine/cache`, and the probe profile
+is `<folder>-fresh`. The tool refuses to run when the bundled CLI's `--help` does not list `MODELPLAN_PROFILE_ROOT=`
+(the pinned CLI must include the part 1 change first). `test-build-walkthrough.yml` keeps `--home` until that pin lands.
+
 `seed.json` holds the invented values. No credential exists in the profile, so no reader can reach a provider,
 and the runner's Keychain is empty. Never put real readings here.
 

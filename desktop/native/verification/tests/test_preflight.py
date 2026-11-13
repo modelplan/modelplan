@@ -163,6 +163,22 @@ class PreflightTests(unittest.TestCase):
         receipt = self.run_preflight(digest, manifest=manifest(digest, flavour='test', name=name))
         self.assertEqual(self.failed(receipt), [])
 
+    def test_first_run_launcher_is_allowed_beside_the_app_in_the_owner_test_flavour_only(self):
+        name = f'native-app-test-{SHA}'
+        bundles = preflight.RESOURCE_BUNDLES + (preflight.COCKPIT_BUNDLE,)
+        plist = info(ModelPlanCockpitEntryEnabled=True, ModelPlanOwnerTestBuild=True)
+        digest = write_artifact(self.artifacts, name, inner=inner_zip(
+            plist=plist, bundles=bundles, launcher=preflight.FIRST_RUN_LAUNCHER))
+        self.assertEqual(self.failed(self.run_preflight(digest, manifest=manifest(digest, flavour='test', name=name))), [])
+        # Any other loose file, or the launcher under another name, is still refused.
+        for other in ('README', 'ModelPlan First Run.sh', 'Other.command'):
+            digest = write_artifact(self.artifacts, name, inner=inner_zip(plist=plist, bundles=bundles, launcher=other))
+            receipt = self.run_preflight(digest, manifest=manifest(digest, flavour='test', name=name))
+            self.assertIn('PF-05', self.failed(receipt), other)
+        # The unverified (production-like) flavour never ships it.
+        digest = write_artifact(self.artifacts, NAME, inner=inner_zip(launcher=preflight.FIRST_RUN_LAUNCHER))
+        self.assertIn('PF-05', self.failed(self.run_preflight(digest)))
+
     def test_exact_arm64_once_required(self):
         m = manifest(write_artifact(self.artifacts, NAME))
         m['artifacts']['release']['exactArm64'] = True

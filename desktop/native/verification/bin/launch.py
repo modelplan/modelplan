@@ -208,6 +208,7 @@ def make_bundle(c,binary,tmp):
     with (app/'Contents'/'Info.plist').open('xb') as f:plistlib.dump(info,f)
     if sign=='adhoc':subprocess.run([*CODESIGN,'--force','--sign','-',str(app)],check=True,capture_output=True)
     return dict(app=app,exe=exe,evidence=dict(bundle=str(app),bundleIdentifier=ident,bundleUIElement=ui,bundleSign=sign,bundledSHA256=sha256(exe)))
+FIRST_RUN_LAUNCHER='ModelPlan First Run.command' # D164: the owner test zip's one sanctioned sibling of the .app
 def extract_app(c,archive,tmp):
     """Full .app subject: a pinned zip is copied into run scratch, re-hashed, extracted with ditto,
     and must hold exactly one top-level .app whose symlinks stay inside it and whose code signature
@@ -217,7 +218,9 @@ def extract_app(c,archive,tmp):
     if sha256(local)!=c['binarySHA256']:raise ValueError('app archive identity changed')
     out=root/'app';out.mkdir()
     subprocess.run([*UNZIP,str(local),str(out)],check=True,capture_output=True)
-    entries=[p for p in out.iterdir() if p.name!='__MACOSX']
+    for p in out.iterdir():
+        if p.name==FIRST_RUN_LAUNCHER and (p.is_symlink() or not p.is_file()):raise ValueError('first-run launcher must be a regular file')
+    entries=[p for p in out.iterdir() if p.name not in ('__MACOSX',FIRST_RUN_LAUNCHER)]
     if len(entries)!=1 or entries[0].suffix!='.app' or entries[0].is_symlink() or not entries[0].is_dir():
         raise ValueError('app archive must contain exactly one top-level .app')
     app=entries[0];inside=os.path.realpath(app)+'/'

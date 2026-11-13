@@ -67,3 +67,13 @@ The packaged neutral entry is now the upper `ModelPlanCommunityApp` product in `
 | Keychain | only through the credential agent, which the normal entry does not wire | same: no reads or writes |
 
 The app and CLI refuse to start (rather than fall back to the real profile) when the key is present but empty, the root is relative, missing or overlaps the real profile, anything inside it is a symbolic link (the whole tree is walked without following links; neither the app nor the engine creates links there), or when the bundled engine's `--help` does not list `MODELPLAN_PROFILE_ROOT` (an older engine would write the real profile). Tool data (`~/.codex`, `~/.claude`, ZCode…) is still found from `HOME` and read only after first-run consent. Notification permission is per app in macOS and is shared with the real profile. `ProfileRootTests` and `cli/internal/profile` assert that every store resolves under the root and that no source bypasses the resolvers.
+
+## Fresh-profile launcher (owner test packages)
+
+The owner test zip (`desktop.yml` with `owner_test`) holds `ModelPlan Community.app` and, beside it,
+`ModelPlan First Run.command` (source: `tools/test-build/`). Double-click it: it quits ModelPlan, runs
+`mktemp -d`, opens the app with `MODELPLAN_PROFILE_ROOT=<that folder>` as a new instance with window restoration
+off, and deletes the folder (and any leftover helper) when ModelPlan quits, so every launch is a true first run.
+It refuses to run unless the app's Info.plist carries `ModelPlanOwnerTestBuild`; production and unverified zips do not
+contain it, and preflight PF-05 allows it only in the `test` flavour. It needs a bundled CLI that supports the root
+(see above); until then the app refuses to start in that mode rather than touch the real profile.
