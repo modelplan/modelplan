@@ -8,9 +8,10 @@ import '../strings/review49.js';
 const plotted = m => m.e.filter(row => row[1] != null && row[2] > 0);
 const starRow = m => m.e.find(row => row[0] === m.rec) ?? plotted(m).at(-1) ?? null;
 
-/** Every point with no cheaper-or-equal point at least as able: walking up the cost axis, keep each new best. */
+/** Every point with no cheaper-or-equal point at least as able: walking up the cost axis, keep each new best. At one
+ * cost the most able point comes first, so an equally priced but less able one never leads (audit F 3). */
 export function frontierPoints(models) {
-  const points = models.flatMap(m => plotted(m).map(row => ({m, row}))).sort((a, b) => a.row[2] - b.row[2]);
+  const points = models.flatMap(m => plotted(m).map(row => ({m, row}))).sort((a, b) => a.row[2] - b.row[2] || b.row[1] - a.row[1]);
   const front = [];let best = -Infinity;
   for (const p of points) if (p.row[1] > best) { front.push(p); best = p.row[1]; }
   return front;
@@ -45,7 +46,10 @@ export function frontierSvg(models, {w: width, h: height, current = {}, axis = {
   const at = row => `${X(row[2]).toFixed(1)},${Y(row[1]).toFixed(1)}`;
   const front = frontierPoints(models), leaders = new Set(front.map(p => p.m.id));
   const curves = models.map(m => `<polyline class="fc-m ${leaders.has(m.id) ? '' : 'dim'} ${m.id === selected ? 'focus' : ''}" points="${plotted(m).map(at).join(' ')}"/>`).join('');
-  const seen = m => current[m.id] ? m.e.find(row => row[0] === current[m.id]) ?? null : null;
+  // A session reports the wire key ("high"), a row names its label ("High"): the model's labels map one to the other
+  // (audit F 4); a study model without them already reports labels.
+  const isCurrent = (m, row) => !!current[m.id] && row[0] === (m.labels?.[current[m.id]] ?? current[m.id]);
+  const seen = m => m.e.find(row => isCurrent(m, row)) ?? null;
   const marks = models.map(m => {
     const star = starRow(m), dot = seen(m);if (!star) return '';
     return `<path class="fc-star ${leaders.has(m.id) ? '' : 'dim'}" d="${starPath(X(star[2]), Y(star[1]), 4)}"/>${dot ? `<circle class="fc-cur" cx="${X(dot[2]).toFixed(1)}" cy="${Y(dot[1]).toFixed(1)}" r="3"/>` : ''}`;
@@ -53,7 +57,7 @@ export function frontierSvg(models, {w: width, h: height, current = {}, axis = {
   const taken = models.flatMap(m => [starRow(m), seen(m)].filter(Boolean)).map(row => ({x0: X(row[2]) - 4, x1: X(row[2]) + 4, y0: Y(row[1]) - 4, y1: Y(row[1]) + 4}));
   const names = nameLabels(models.flatMap(m => { const star = starRow(m);return star ? [{text: m.short, x: X(star[2]) + 6, y: Y(star[1]) + 4, dim: !leaders.has(m.id)}] : []; }), width, taken);
   const points = all.map(({m, row}) => {
-    const roles = [current[m.id] === row[0] && t('rev49.current'), m.rec === row[0] && t('rev49.recommended')].filter(Boolean).join(' · ') || t('rev49.published');
+    const roles = [isCurrent(m, row) && t('rev49.current'), m.rec === row[0] && t('rev49.recommended')].filter(Boolean).join(' · ') || t('rev49.published');
     const label = t('rev49.point', {m: m.name, e: row[0], a: row[1], c: row[2], s: roles});
     return `<circle class="fc-inspect" cx="${X(row[2]).toFixed(1)}" cy="${Y(row[1]).toFixed(1)}" r="5" fill="transparent" stroke="none" role="img" aria-label="${esc(label)}" data-tip="${esc(label)}"/>`;
   }).join('');

@@ -73,6 +73,20 @@ test('CKP-PORT-04 D86 a published plan model list narrows All to the models that
  await open(page,{published:mixed(),edit:data=>{keepRows(['codex'])(data);data.projection.rows[0].accounts[0].plan={id:'plus'};data.details.planModels=[{planId:'openai-plus',basis:'access',modelIds:['gpt-a']}];}});
  expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['gpt-a']);
 });
+// D98: the models the tool reports for the signed-in account (details.subscriptions[].reportedModels) decide before the
+// published plan list; a subscription the tool reported nothing for keeps the plan list.
+const reported=ids=>data=>{keepRows(['codex'])(data);data.projection.rows[0].accounts[0].plan={id:'plus'};data.details.planModels=[{planId:'openai-plus',basis:'access',modelIds:['gpt-a']}];
+ const ref=data.projection.rows[0].accounts[0].subscriptionRef,sub=data.details.subscriptions.find(s=>s.subscriptionRef===ref);if(!sub)throw Error('fixture has no codex subscription details');if(ids)sub.reportedModels=ids;};
+test('CKP-FAD-25 D98 the tool-reported models decide All before the published plan list, on the HUD and the 模型 page',async({page})=>{
+ await open(page,{published:mixed(),edit:reported(['gpt-b'])});
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['gpt-b']);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ expect(await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models')).toBe('gpt-b');
+});
+test('CKP-FAD-25 D98 without a reported list the published plan list still decides',async({page})=>{
+ await open(page,{published:mixed(),edit:reported(null)});
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['gpt-a']);
+});
 test('CKP-PORT-03 the HUD hides while the shutter is closed',async({page})=>{
  const {send,receive}=await open(page);await expect(page.locator('.hud')).toBeVisible();
  expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);await expect(page.locator('.hud')).toBeHidden();
