@@ -24,9 +24,11 @@ for(const theme of ['night','day'])test(`close key uses the oxblood tokens and a
  for(const [name,value] of Object.entries(info.tokens))expect(value,name).toMatch(/^#[0-9a-f]{6}$/i);
  expect(info.bodyImage).toContain('linear-gradient');expect(info.bodyImage).not.toContain('url(');
  expect(info.bodyShadow).not.toMatch(/\d+px \d+px [1-9]\d+px/);// no bloom: only 1-2 px bevel and edge
- expect(info.bodyW).toBe(info.key.w);expect(info.bodyH).toBe(info.key.h);expect(info.radius).toBe('4px');
+ // painted cap + 1 px edge ring (~31 px) matches the gear's ~30.5 px painted face; never larger than the key box
+ expect(info.bodyW).toBeCloseTo(info.key.w-2.7,1);expect(info.bodyH).toBeCloseTo(info.key.h-2.7,1);expect(info.radius).toBe('4px');
  // same key geometry as the neighbours
- const gear=await page.locator('.ck-head [data-settings]').boundingBox();expect(info.key.w).toBeCloseTo(gear.width,0);expect(info.key.h).toBeCloseTo(gear.height,0);
+ const gear=await page.locator('.ck-head [data-settings]').boundingBox();const close=await key.boundingBox();expect(Math.abs(close.width-gear.width)).toBeLessThanOrEqual(0.5);expect(Math.abs(close.height-gear.height)).toBeLessThanOrEqual(0.5);expect(Math.abs(close.y-gear.y)).toBeLessThanOrEqual(0.5);
+ const detach=await page.locator('.ck-head [data-detach]').boundingBox();expect(Math.abs(close.y-detach.y)).toBeLessThanOrEqual(0.5);expect(Math.abs(close.height-detach.height)).toBeLessThanOrEqual(0.5);expect(Math.abs(close.width-detach.width)).toBeLessThanOrEqual(0.5);
  // pixel check at 4x: the off-white cross pixels' bounding box is centred on the key within 0.5 px
  const rect=await key.boundingBox(),shot=decodePng(await key.screenshot({scale:'device'})),scale=shot.width/Math.ceil(info.key.w+(rect.x%1)),offX=rect.x%1,offY=rect.y%1,edge=3*scale;let x0=1e9,y0=1e9,x1=-1,y1=-1;
  for(let y=Math.ceil(edge);y<shot.height-edge;y++)for(let x=Math.ceil(edge);x<shot.width-edge;x++){const i=(y*shot.width+x)*shot.channels,[r,g,b]=[shot.data[i],shot.data[i+1],shot.data[i+2]];
