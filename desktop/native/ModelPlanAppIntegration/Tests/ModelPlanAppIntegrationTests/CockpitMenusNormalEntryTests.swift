@@ -31,7 +31,7 @@ extension CommunityCockpitEntryTests {
         let saved = CommunityCockpitApplicationFactory.verificationPage
         CommunityCockpitApplicationFactory.verificationPage = { [weak probe] page in probe?.made.append(page) }
         defer { CommunityCockpitApplicationFactory.verificationPage = saved }
-        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+        let settings = try await completedOnboarding(try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"]))
         let entry = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-shell-menus",
             allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: settings,
             createsNativePanels: false, bundleURL: app, cockpitEntryEnabled: true)

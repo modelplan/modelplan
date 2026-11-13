@@ -240,8 +240,24 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private lazy var appearanceWatchdog = CockpitDeadlineReceiptWatchdog(
     arm: { [weak self] delay, fire in self?.armDeadline(delay, fire) ?? {} }, timedOut: { [weak self] _ in
       guard let self, !self.ending, self.visibilityFence.isConfirmedVisible, self.appearanceGate.isDeferred else { return }
+      // G3-97: the retry hooks run only on rendered, nextDeadline and a visibility receipt. A display receipt that
+      // clears another way (a refused or replaced display) leaves the deferred appearance with nothing to wake it,
+      // and failing then rebuilt a sendable page mid-use. Re-check once: if it is sendable now, publish and wait
+      // one more bounded period. A display that stays pending still fails here, as before.
+      if !self.appearanceWaitRetried, self.bridge.ready, !self.bridge.blocked,
+         self.appearanceGate.retry(visible: true, displayPending: self.bridge.hasPendingDisplay) {
+        self.appearanceWaitRetried = true
+        CockpitFailureLog.record("page-resync appearance retry after wait timeout")
+        self.publishAppearance()
+        return
+      }
       self.fail(.appearanceWaitTimeout)
     })
+  /// G3-97: set once the appearance wait timed out on a sendable state and the appearance was republished.
+  private var appearanceWaitRetried = false
+  private func cancelAppearanceWait() {
+    appearanceWatchdog.cancel(); appearanceWaitRetried = false
+  }
   private func watchDeferredAppearance() {
     guard visibilityFence.isConfirmedVisible, appearanceGate.isDeferred, appearanceWatchdog.currentID == nil else { return }
     appearanceWatchdog.wait(for: UUID())
@@ -622,7 +638,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// or complete view disposal. An unknown floor remains blocked after receipt.
   public func clearPrivateViews(adopting context: CockpitEngineContext? = nil) async {
     freshnessDriver.hide(); freshnessDriver.invalidate(); bridge.cancelDeadlineReports(); visibilityFence.invalidate()
-    orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); appearanceWatchdog.cancel()
+    orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); cancelAppearanceWait()
     receiptWatchdog.cancel(); renderWatchdog.cancel(); backlog = BacklogResync()
     visibilityTimeout?.cancel(); visibilityTimeout = nil
     freshnessHasRendered = false; pendingFreshnessReason = nil
@@ -838,7 +854,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private func suspendForHiddenPage() {
     refreshAfterHiddenDisplay = refreshAfterHiddenDisplay || bridge.hasPendingDisplay || backlog.display
     backlog = BacklogResync()
-    appearanceGate.deferUntilVisible(); appearanceWatchdog.cancel(); orderedDelivery.invalidate()
+    appearanceGate.deferUntilVisible(); cancelAppearanceWait(); orderedDelivery.invalidate()
     freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
 
@@ -989,7 +1005,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentAppearance(id) == true }, onAccepted: { [weak self] in
           guard let self else { return }
           guard self.bridge.acknowledgeAppearance(id) else { self.fail(.messageRejected); return }
-          if self.appearanceGate.acknowledge(appearanceVersion) { self.appearanceWatchdog.cancel() }
+          if self.appearanceGate.acknowledge(appearanceVersion) { self.cancelAppearanceWait() }
           if let buffered = self.bridge.takeBufferedDeadline() {
             self.receiptWatchdog.cancel(); self.freshnessDriver.accept(deadline: buffered.value)
           } else if self.receiptWatchdog.currentID != id { self.receiptWatchdog.wait(for: id) }
@@ -1002,7 +1018,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         // A newer untriggered appearance or shell carries the whole state, so it replaces a queued older one.
         send(raw, coalesce: "appearance", onAccepted: { [weak self] in
           guard let self else { return }
-          if self.appearanceGate.acknowledge(appearanceVersion) { self.appearanceWatchdog.cancel() }
+          if self.appearanceGate.acknowledge(appearanceVersion) { self.cancelAppearanceWait() }
         }, dropped: { [weak self] in self?.backlog.appearance = true })
       }
       guard let shell = currentShell else { fail(); return }
@@ -1391,7 +1407,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // Audit A-2: the invalidation drops a display still queued behind an in-flight call. A re-open during the fade
     // confirms visibility on the same page, so it must ask for fresh data then, as a hidden page does.
     refreshAfterHiddenDisplay = refreshAfterHiddenDisplay || bridge.hasPendingDisplay
-    orderedDelivery.invalidate(); appearanceGate.deferUntilVisible(); appearanceWatchdog.cancel()
+    orderedDelivery.invalidate(); appearanceGate.deferUntilVisible(); cancelAppearanceWait()
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
     // CKP-SHELL-33 (D186/D188): an attached cockpit opened from the icon reverses the open: it goes up under the menu
@@ -1555,7 +1571,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     ending = true
     warmPaintEnd?.cancel(); warmPaintEnd = nil; warmPainting = false
     freshnessDriver.retire(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
-    orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); appearanceWatchdog.cancel()
+    orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); cancelAppearanceWait()
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
     freshnessObservers.forEach { center, token in center.removeObserver(token) }

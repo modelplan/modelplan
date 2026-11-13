@@ -448,12 +448,16 @@ func parseGrokBilling(b grokBilling, now time.Time) (*Account, bool) {
 		if !ok {
 			return nil, false
 		}
-		w := Window{Kind: "spend", Limit: "Additional usage", UsedUSD: used, LimitUSD: cap, ObservedAt: now.UTC(), ResetMode: "unknown"}
-		if used != nil && cap != nil && *cap > 0 {
-			pct := 100 * *used / *cap
-			w.UsedPercent = &pct
+		// D228: no cap (or a zero cap) means additional usage is not set up; a window with
+		// nothing to measure would only draw a "--" row on the card.
+		if cap != nil && *cap > 0 {
+			w := Window{Kind: "spend", Limit: "Additional usage", UsedUSD: used, LimitUSD: cap, ObservedAt: now.UTC(), ResetMode: "unknown"}
+			if used != nil {
+				pct := 100 * *used / *cap
+				w.UsedPercent = &pct
+			}
+			a.Windows = append(a.Windows, w)
 		}
-		a.Windows = append(a.Windows, w)
 	}
 	// A valid reset-past capture may retain a separately observed wallet. No
 	// period is rolled over and missing wallets are never interpreted as zero.
