@@ -161,6 +161,9 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	for _, tool := range detection.Tools {
 		id := rows.CanonicalTool(tool.ProviderID)
 		detected[id] = tool.Detected
+		for _, scope := range tool.UndetectedScopes() {
+			detected[scope] = false
+		}
 		_, _, native := quota.NativeReader(id)
 		exists := native || id == "codex" || tool.Preferred == "codexbar" && tool.HelperStatus() == ""
 		in.Catalogue = append(in.Catalogue, rows.CatalogueEntry{ToolID: id, ReaderID: tool.ReaderID, Backend: tool.Preferred, Detected: tool.Detected, ReaderExists: exists, Status: tool.Status})
