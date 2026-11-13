@@ -300,7 +300,7 @@ import ModelPlanWire
                          "调用 Kiro 命令行工具查询用量，沿用它已保存的登录。ModelPlan 不读取也不保存 Kiro 的凭据。")
         case "opencodego":
             base = .init("Reads OpenCode's local history, and OpenCode Go usage with the OpenCode Go API key you set (OPENCODE_API_KEY).",
-                         "读取 OpenCode 的本机历史记录；设置了 OpenCode Go 的 API 密钥环境变量时，也读取 OpenCode Go 额度。")
+                         "读取 OpenCode 的本机历史记录；设置了 OpenCode Go 的接口密钥环境变量时，也读取 OpenCode Go 额度。")
         case "zai":
             base = .init("Reads the GLM Coding Plan key you saved in ZCode, and its local history.",
                          "读取你在 ZCode 里保存的 GLM 编程套餐密钥，以及本机历史记录。")
@@ -423,6 +423,9 @@ import ModelPlanWire
             }
             if !scope.route.isKnown || scope.route == .knownUnknown {
                 label(.init("This reading path is not recognized. Update the app or check the tool connection; Revoke and Forget remain available.", "尚不识别此读取路径。请更新应用或检查工具连接；仍可撤销或忘记已保存权限。"))
+            } else if !scope.retired, !scope.detected, facts.scopes.contains(where: { $0.tool == scope.tool && $0.detected && !$0.retired }) {
+                // The tool is on this Mac but this path has nothing to read (for example no OpenCode Go subscription key).
+                label(.init("Nothing to read on this path: the tool is installed but no key for it was found. Saved permissions can still be revoked or forgotten.", "此读取路径暂无可读内容：已安装该工具，但没有找到对应的密钥；仍可撤销或忘记已保存权限。"))
             } else if scope.retired || !scope.detected {
                 label(.init("This tool is no longer detected. Saved permissions can still be revoked or forgotten.", "未检测到该工具；仍可撤销或忘记已保存权限。"))
             } else if scope.disabledReason != nil {
