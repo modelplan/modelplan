@@ -97,7 +97,7 @@ func Validate(in Input, out Projection) error {
 				return fail("unpermitted values")
 			}
 		}
-		if err := validateOutcome(row.State, row.Reason, row.NextStep, in.Now); err != nil {
+		if err := validateOutcome(row.ID, row.State, row.Reason, row.NextStep, in.Now); err != nil {
 			return err
 		}
 		var expiry *time.Time
@@ -125,7 +125,7 @@ func Validate(in Input, out Projection) error {
 			if row.StateAfterExpiry == nil || row.StateAfterExpiry.State == StateFresh {
 				return fail("missing/conservative latch")
 			}
-			if err := validateOutcome(row.StateAfterExpiry.State, row.StateAfterExpiry.Reason, row.StateAfterExpiry.NextStep, in.Now); err != nil {
+			if err := validateOutcome(row.ID, row.StateAfterExpiry.State, row.StateAfterExpiry.Reason, row.StateAfterExpiry.NextStep, in.Now); err != nil {
 				return err
 			}
 		}
@@ -154,7 +154,7 @@ func Validate(in Input, out Projection) error {
 	return nil
 }
 
-func validateOutcome(state State, reason Reason, step *NextStep, now time.Time) error {
+func validateOutcome(tool string, state State, reason Reason, step *NextStep, now time.Time) error {
 	expected, ok := outcomes[reason.Code]
 	if !ok || expected.State != state || expected.Text != reason.Text {
 		return fmt.Errorf("invalid rows field: state/reason message table")
@@ -177,6 +177,9 @@ func validateOutcome(state State, reason Reason, step *NextStep, now time.Time) 
 	}
 	if step.Text != text {
 		return fmt.Errorf("invalid rows field: action message table")
+	}
+	if !reflect.DeepEqual(step.Hint, toolHint(tool, reason.Code)) {
+		return fmt.Errorf("invalid rows field: tool hint table")
 	}
 	if step.DisabledReason != nil {
 		if step.Action != ActionRefresh {

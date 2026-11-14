@@ -27,6 +27,17 @@ type NextStep struct {
 	Text           Text            `json:"text"`
 	AvailableAt    *time.Time      `json:"availableAt,omitempty" null:"coalesced"`
 	DisabledReason *DisabledReason `json:"disabledReason,omitempty" null:"coalesced"`
+	// Hint is the tool's own sign-in or install command (D232), for a copy control.
+	Hint *Hint `json:"hint,omitempty" null:"forbidden"`
+}
+
+// Hint carries compiled per-tool commands only, never provider text. The app shows the
+// command in monospace with a Copy control; ModelPlan never runs it.
+type Hint struct {
+	SignInCommand  string `json:"signInCommand,omitempty" null:"forbidden" schema:"maxLength=64"`
+	InstallCommand string `json:"installCommand,omitempty" null:"forbidden" schema:"maxLength=128"`
+	InstallURL     string `json:"installUrl,omitempty" null:"forbidden" schema:"pattern=^https://,maxLength=128"`
+	Text           Text   `json:"text"`
 }
 
 type Row struct {

@@ -1,0 +1,9 @@
+{
+  "signInCommand": "codex login",
+  "installCommand": "npm i -g @openai/codex",
+  "installUrl": "https://kiro.dev",
+  "text": {
+    "en": "To sign in, run this in Terminal",
+    "zh": "在终端运行这条命令登录"
+  }
+}

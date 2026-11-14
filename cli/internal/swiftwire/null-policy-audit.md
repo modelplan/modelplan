@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 84 optional/nullable fields reachable from the production
+This inventory covers the 88 optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -106,6 +106,10 @@ containers and failure ID retain their required-key checks.
 | rows.Name.UserAuthored | coalesced | [catalogue.go:85](../rows/catalogue.go#L85), declared-name projection; `RowsName` absent/null both have no authorship marker. |
 | rows.NextStep.AvailableAt | coalesced | [build.go:367](../rows/build.go#L367), `nextStep`; `RowsNextStep` absent/null both have no availability timestamp. |
 | rows.NextStep.DisabledReason | coalesced | Same projection/decoder: absent/null both have no disabled reason. |
+| rows.NextStep.Hint | forbidden | [hints.go](../rows/hints.go), `toolHint` (D232); absent means the tool has no compiled command for this cause, never null. |
+| rows.Hint.SignInCommand | forbidden | Same table; absent means no sign-in command for this cause. |
+| rows.Hint.InstallCommand | forbidden | Same table; absent means no install command (Kiro has a URL only). |
+| rows.Hint.InstallURL | forbidden | Same table; absent means no install page. |
 | rows.Row.VendorKey | coalesced | [build.go:168](../rows/build.go#L168), row construction and expiry latching at lines 288–304; `RowsRow` absent/null both have no vendor key. Row authorization validation remains mandatory. |
 | rows.Row.NextStep | coalesced | Same projection/decoder: absent/null both have no action. |
 | rows.Row.ExpiresAt | coalesced | Same projection/decoder: absent/null both have no expiry. |
