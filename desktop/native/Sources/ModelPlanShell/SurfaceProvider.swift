@@ -57,7 +57,7 @@ public enum NativeSurfaceLanguage {
     func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {
         guard let snapshot else {
             status.stringValue = diagnostics.personal == "not-loaded" ? t("Reading local snapshot…", "正在读取本地快照…") : t("Local data unavailable", "本地数据不可用")
-            detail.stringValue = t("Read-only access only. No reader or permission is enabled here.", "仅只读访问。此处未启用任何读取器或权限。")
+            detail.stringValue = t("Read-only access only. No tool reading or permission is enabled here.", "仅只读访问。此处未启用任何读取器或权限。")
             return
         }
         status.stringValue = snapshot.presentation.actionable ? t("Read-only snapshot", "只读快照") : t("Unavailable or stale", "不可用或已过期")

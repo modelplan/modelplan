@@ -130,7 +130,7 @@ cat > "$app/Contents/Resources/en.lproj/InfoPlist.strings" <<'STRINGS'
 STRINGS
 cat > "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings" <<'STRINGS'
 "CFBundleDisplayName" = "ModelPlan 社区版";
-"NSHumanReadableCopyright" = "MIT 社区软件。仅支持 Apple 芯片。";
+"NSHumanReadableCopyright" = "开源社区软件。仅支持苹果芯片。";
 STRINGS
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"
