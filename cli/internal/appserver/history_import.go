@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 )
@@ -41,6 +42,8 @@ type ImportController struct {
 	// cancelAsked: the user cancelled the current run; no queued follow-up starts after it,
 	// whatever the run's own result (macrevd-967-3). Reset when a run starts.
 	cancelAsked bool
+	// timers: retries waiting for their delay; Close stops them.
+	timers []*time.Timer
 }
 
 func NewImportController(e ImportEngine) *ImportController {
@@ -51,6 +54,10 @@ func NewImportController(e ImportEngine) *ImportController {
 func (c *ImportController) Close() {
 	c.mu.Lock()
 	c.closed = true
+	for _, t := range c.timers {
+		t.Stop()
+	}
+	c.timers = nil
 	cancel := c.cancel
 	c.mu.Unlock()
 	if cancel != nil {
@@ -96,15 +103,27 @@ type OwedRunner interface {
 	RunOwed(ctx context.Context, days int, progress func(done, total int)) ([]wire.HistoryImportSource, error)
 }
 
-// StartOwed starts the owed import in the background when one is owed and none is running.
+// StartOwedAfter checks for an owed import after delay, off the launch or grant path (owner
+// condition: the retry never disturbs). Close stops a retry still waiting.
+func (c *ImportController) StartOwedAfter(delay time.Duration, days int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	c.timers = append(c.timers, time.AfterFunc(delay, func() { c.StartOwed(days) }))
+}
+
+// StartOwed starts the owed import in the background when one is owed and none is running. It is
+// quiet: a failure leaves the reported state as it was (the ledger keeps the attempt).
 func (c *ImportController) StartOwed(days int) {
 	r, ok := c.engine.(OwedRunner)
 	if !ok || !r.Owed() {
 		return
 	}
-	_ = c.startRunOr(days, func(ctx context.Context, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+	_ = c.startRunQuiet(days, func(ctx context.Context, progress func(int, int)) ([]wire.HistoryImportSource, error) {
 		return r.RunOwed(ctx, days, progress)
-	}, func() { c.owedPending = days })
+	}, func() { c.owedPending = days }, true)
 }
 
 func (c *ImportController) startRun(days int, run func(context.Context, func(int, int)) ([]wire.HistoryImportSource, error)) error {
@@ -113,6 +132,11 @@ func (c *ImportController) startRun(days int, run func(context.Context, func(int
 
 // startRunOr is startRun; when an import is running it calls busy (under the lock) instead.
 func (c *ImportController) startRunOr(days int, run func(context.Context, func(int, int)) ([]wire.HistoryImportSource, error), busy func()) error {
+	return c.startRunQuiet(days, run, busy, false)
+}
+
+// startRunQuiet is startRunOr; a quiet run that fails restores the state reported before it.
+func (c *ImportController) startRunQuiet(days int, run func(context.Context, func(int, int)) ([]wire.HistoryImportSource, error), busy func(), quiet bool) error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -125,6 +149,12 @@ func (c *ImportController) startRunOr(days int, run func(context.Context, func(i
 		c.mu.Unlock()
 		return ProtocolError{wire.CodeBusy}
 	}
+	before := struct {
+		phase       wire.HistoryImportPhase
+		days        int
+		done, total int
+		last        []wire.HistoryImportSource
+	}{c.phase, c.days, c.done, c.total, c.last}
 	ctx, cancel := context.WithCancel(context.Background())
 	c.phase, c.days, c.done, c.total, c.last, c.cancel, c.cancelAsked = wire.ImportRunning, days, 0, 0, nil, cancel, false
 	c.wg.Add(1)
@@ -141,6 +171,9 @@ func (c *ImportController) startRunOr(days int, run func(context.Context, func(i
 		switch {
 		case errors.Is(err, context.Canceled):
 			c.phase = wire.ImportCancelled
+		case err != nil && quiet:
+			// An automatic retry never shows a failure; the ledger keeps its attempt.
+			c.phase, c.days, c.done, c.total, c.last = before.phase, before.days, before.done, before.total, before.last
 		case err != nil:
 			c.phase = wire.ImportFailed
 		default:

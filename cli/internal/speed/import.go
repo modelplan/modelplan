@@ -94,9 +94,12 @@ type ImportLedger struct {
 	// Removed: the grant each source's history was imported under when the user removed it
 	// ("Remove imported history"). Under that grant it is not owed again; a revoke and a new
 	// grant are a new epoch and owe it again (macrevd-967-1).
-	Removed  map[string]*GrantEpoch `json:"removed,omitempty"`
-	Coverage map[string]Span        `json:"coverage,omitempty"`
-	Rows     []PerfRow              `json:"rows"`
+	Removed map[string]*GrantEpoch `json:"removed,omitempty"`
+	// Attempts: automatic retries of a source not yet imported, under one grant. They back off
+	// and stop at OwedRetryMax; an import of the source or a new grant clears them.
+	Attempts map[string]ImportAttempt `json:"attempts,omitempty"`
+	Coverage map[string]Span          `json:"coverage,omitempty"`
+	Rows     []PerfRow                `json:"rows"`
 }
 
 // ImportPath is the ledger file.
@@ -121,11 +124,60 @@ func LoadImported(cache string) (l ImportLedger, ok bool) {
 	return l, true
 }
 
-// OwedSources: the history sources the engine still owes an import (G3-112). The first-run import
+// ImportAttempt is one source's automatic retry count, when the next may start, and the grant
+// they were made under.
+type ImportAttempt struct {
+	N     int         `json:"n"`
+	Next  time.Time   `json:"next"`
+	Epoch *GrantEpoch `json:"epoch,omitempty"`
+}
+
+// The owner's condition for the retry (2026-11-14): it never disturbs. A source that keeps failing
+// is retried at most OwedRetryMax times, OwedRetryBase, then twice as long after each attempt.
+const (
+	OwedRetryMax  = 5
+	OwedRetryBase = time.Hour
+)
+
+// OwedSources is OwedSourcesAt now.
+func OwedSources(cache string, a consent.Admission) []string {
+	return OwedSourcesAt(cache, a, time.Now())
+}
+
+// MarkOwedAttempt records an automatic retry of sources: the count under the current grant and
+// the backoff before the next one.
+func MarkOwedAttempt(cache string, sources []string, a consent.Admission, now time.Time) error {
+	unlock, ok := lockWait(cache, "perf.lock")
+	if !ok {
+		return errors.New("readings busy; retry the import")
+	}
+	defer unlock()
+	led, ok := LoadImported(cache)
+	if !ok {
+		return errors.New("imported history unreadable; left as it is")
+	}
+	if led.Attempts == nil {
+		led.Attempts = map[string]ImportAttempt{}
+	}
+	for _, source := range sources {
+		epoch := currentEpoch(a, source)
+		at := led.Attempts[source]
+		if !sameEpoch(at.Epoch, epoch) {
+			at = ImportAttempt{}
+		}
+		at.N++
+		at.Epoch = epoch
+		at.Next = now.UTC().Add(OwedRetryBase << (at.N - 1))
+		led.Attempts[source] = at
+	}
+	return writeImported(cache, led)
+}
+
+// OwedSourcesAt: the history sources the engine still owes an import (G3-112). The first-run import
 // was requested (or ran under an older build), and the source holds a recorded grant (never a
 // default-on scope the user has not answered) but no span under that grant, or a Codex span
 // from before archived threads were read. A fresh profile owes nothing.
-func OwedSources(cache string, a consent.Admission) []string {
+func OwedSourcesAt(cache string, a consent.Admission, now time.Time) []string {
 	if Off() {
 		return nil
 	}
@@ -143,6 +195,9 @@ func OwedSources(cache string, a consent.Admission) []string {
 		}
 		if removed := l.Removed[source]; removed != nil && sameEpoch(removed, epoch) {
 			continue // removed by the user under this grant
+		}
+		if at, tried := l.Attempts[source]; tried && sameEpoch(at.Epoch, epoch) && (at.N >= OwedRetryMax || now.Before(at.Next)) {
+			continue // backing off, or given up under this grant
 		}
 		c, has := l.Coverage[source]
 		if !has || c.From.IsZero() || !sameEpoch(c.Epoch, epoch) || (source == "codex" && !c.Archived) {
@@ -203,6 +258,8 @@ type ImportOptions struct {
 	// Progress, when set, is called with the number of log files read so far and the total to read
 	// (counted before the first read), from the importing goroutine.
 	Progress func(done, total int)
+	// Pause between logs, so an automatic retry stays a light background read (owner condition).
+	Pause time.Duration
 	// Guard runs a source's write under the caller's consent fence (consent.LocalWrite); nil runs
 	// it directly.
 	Guard func(source string, write func() error) error
@@ -227,6 +284,7 @@ type span struct{ lo, hi time.Time }
 func (s span) has(t time.Time) bool { return !t.Before(s.lo) && t.Before(s.hi) }
 
 type importJob struct {
+	pause  time.Duration
 	source string
 	root   *ImportRoot
 	dirs   []string // under the root
@@ -326,7 +384,7 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		}
 		j.ranges = missing(c, jfrom, cutoff)
 		j.pend = c.Retry
-		j.epoch, j.live = currentEpoch(adm, j.source), live
+		j.epoch, j.live, j.pause = currentEpoch(adm, j.source), live, o.Pause
 		active = append(active, j)
 	}
 	// One pass per source: files that may hold turns of a missing range.
@@ -558,6 +616,13 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			}
 			return err
 		}
+		if j.pause > 0 && i > 0 {
+			select { // a light background read: yield between logs
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(j.pause):
+			}
+		}
 		if j.root.Background != nil && j.source == "codex" && j.root.Background(p) {
 			continue
 		}
@@ -787,6 +852,7 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 	c.Retry = retry
 	led.Coverage[j.source] = c
 	delete(led.Removed, j.source) // imported again on purpose
+	delete(led.Attempts, j.source)
 	if auto && led.AutoRan == nil {
 		t := now.UTC().Truncate(time.Second)
 		led.AutoRan = &t

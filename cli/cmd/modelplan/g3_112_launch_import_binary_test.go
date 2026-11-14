@@ -89,7 +89,7 @@ func TestOwedHistoryImportThroughTheRealEngine(t *testing.T) {
 		writeHistoryLogs(t, home)
 		grantHistoryScopes(t, filepath.Join(home, "cache"), []string{consent.ScopeClaudeLocalHistory}, nil)
 		p := startQueryBinary(t, binary)
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(owedLaunchDelay + time.Second) // past the launch retry's delay
 		if st := importStatus(t, p); st.Phase != wire.ImportIdle || st.FirstRunDone {
 			t.Fatalf("a grant recorded before launch started an import: %+v", st)
 		}
@@ -150,7 +150,7 @@ func importStatus(t *testing.T, p *queryBinary) wire.HistoryImportStatus {
 func waitImport(t *testing.T, p *queryBinary, done func(wire.HistoryImportStatus) bool) wire.HistoryImportStatus {
 	t.Helper()
 	var st wire.HistoryImportStatus
-	for i := 0; i < 250; i++ {
+	for i := 0; i < 1000; i++ { // the retry waits owedLaunchDelay / owedGrantDelay first
 		if st = importStatus(t, p); done(st) {
 			return st
 		}

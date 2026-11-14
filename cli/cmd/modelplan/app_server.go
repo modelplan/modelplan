@@ -82,7 +82,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	shared, err := appserver.NewSharedBackend(appserver.SharedConfig{
 		Granted: func() {
 			if importer != nil {
-				importer.StartOwed(speed.ImportDefaultDays)
+				importer.StartOwedAfter(owedGrantDelay, speed.ImportDefaultDays)
 			}
 		},
 		Activity: appActivity(st.Dir),
@@ -114,7 +114,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		}
 		// G3-112: an import still owed (failed, interrupted, withdrawn, or cleared and granted
 		// again) is retried at start and after each committed grant. A fresh profile owes nothing.
-		importer.StartOwed(speed.ImportDefaultDays)
+		importer.StartOwedAfter(owedLaunchDelay, speed.ImportDefaultDays)
 	}
 	closeBackend := func() {}
 	var scheduler *appserver.RefreshScheduler

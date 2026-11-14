@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 )
@@ -150,5 +151,48 @@ func TestRemovedImportIsNotOwedUntilGrantedAgain(t *testing.T) {
 	regranted := consent.NewAdmission(state, consent.Automatic)
 	if got := OwedSources(f.cache, regranted); len(got) != 1 || got[0] != "codex" {
 		t.Fatalf("revoked and granted again: owed %v, want [codex]", got)
+	}
+}
+
+// Owner condition (retry must never disturb): automatic retries of a source back off after each
+// attempt and stop after OwedRetryMax attempts under the same grant; a new grant starts over, and
+// a successful import clears the count.
+func TestOwedRetryBacksOffAndStopsAfterTheCap(t *testing.T) {
+	f := newFixture(t)
+	adm := *admitted(consent.ScopeCodexLocalHistory)
+	if err := MarkAutoRequested(f.cache, f.now); err != nil {
+		t.Fatal(err)
+	}
+	now := f.now
+	for attempt := 1; attempt <= OwedRetryMax; attempt++ {
+		if got := OwedSourcesAt(f.cache, adm, now); len(got) != 1 {
+			t.Fatalf("attempt %d not due: %v", attempt, got)
+		}
+		if err := MarkOwedAttempt(f.cache, []string{"codex"}, adm, now); err != nil {
+			t.Fatal(err)
+		}
+		wait := OwedRetryBase << (attempt - 1)
+		if got := OwedSourcesAt(f.cache, adm, now.Add(wait-time.Minute)); len(got) != 0 {
+			t.Fatalf("attempt %d retried before its %v backoff", attempt, wait)
+		}
+		now = now.Add(wait)
+	}
+	if got := OwedSourcesAt(f.cache, adm, now.Add(1000*time.Hour)); len(got) != 0 {
+		t.Fatalf("retried past the cap: %v", got)
+	}
+	state := consent.Empty()
+	state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+	state.Revoked[consent.ScopeCodexLocalHistory] = 1
+	state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, At: t0}
+	state.Scopes[consent.ScopeClaudeLocalHistory] = consent.Record{Allowed: false, ConsentTextVersion: consent.TextVersion}
+	if got := OwedSourcesAt(f.cache, consent.NewAdmission(state, consent.Automatic), now); len(got) != 1 {
+		t.Fatalf("a new grant did not start the retries over: %v", got)
+	}
+	f.codexLog("rollout-a.jsonl", -3)
+	if _, err := Import(context.Background(), f.cache, ImportOptions{Now: f.now, Codex: &ImportRoot{Dir: f.home}, Admission: &adm}); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := LoadImported(f.cache); len(l.Attempts) != 0 {
+		t.Fatalf("a successful import kept the attempt count: %+v", l.Attempts)
 	}
 }

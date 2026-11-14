@@ -3,6 +3,7 @@ package appserver
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -131,4 +132,47 @@ func TestCancelSuppressesTheQueuedOwedImport(t *testing.T) {
 		t.Fatalf("a run that settled successfully reports %s", st.Phase)
 	}
 	c.Close()
+}
+
+// failingOwed fails every owed run.
+type failingOwed struct{ countingOwed }
+
+func (f *failingOwed) RunOwed(ctx context.Context, days int, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+	f.runs.Add(1)
+	return nil, errors.New("synthetic read failure")
+}
+
+// Owner condition: an automatic retry never shows anything. It waits its delay, and a failure is
+// not reported as the import's state (Settings keeps what it showed before).
+func TestOwedRetryIsDelayedAndFailsQuietly(t *testing.T) {
+	e := &failingOwed{}
+	e.owed.Store(true)
+	c := NewImportController(e)
+	h := HistoryImportHandlers(c)
+	c.StartOwedAfter(80*time.Millisecond, 30)
+	time.Sleep(20 * time.Millisecond)
+	if e.runs.Load() != 0 {
+		t.Fatal("the retry started without its delay")
+	}
+	for i := 0; i < 200 && e.runs.Load() == 0; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if e.runs.Load() != 1 {
+		t.Fatalf("delayed retry ran %d times", e.runs.Load())
+	}
+	if st, _ := call(t, h, "history/import_status", `{}`); st.Phase != wire.ImportIdle {
+		t.Fatalf("a failed automatic retry is visible: %s", st.Phase)
+	}
+	c.Close()
+	// Close also stops a retry still waiting for its delay.
+	e2 := &failingOwed{}
+	e2.owed.Store(true)
+	c2 := NewImportController(e2)
+	c2.StartOwedAfter(30*time.Millisecond, 30)
+	c2.Close()
+	time.Sleep(60 * time.Millisecond)
+	if e2.runs.Load() != 0 {
+		t.Fatal("a retry started after Close")
+	}
 }

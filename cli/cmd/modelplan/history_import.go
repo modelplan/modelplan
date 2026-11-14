@@ -152,9 +152,31 @@ func (e importEngine) Run(ctx context.Context, days int, firstRun bool, progress
 
 // RunOwed imports what the engine still owes (failed, interrupted, withdrawn, or cleared and
 // granted again): only those sources, and only under a recorded grant (G3-112).
+// Each attempt is recorded first (backoff and cap in speed.OwedSourcesAt), and logs are read with
+// a pause between them: the retry is a light background read that never disturbs (owner
+// condition, 2026-11-14). It opens local logs only and launches no tool.
 func (e importEngine) RunOwed(ctx context.Context, days int, progress func(done, total int)) ([]wire.HistoryImportSource, error) {
-	return e.run(ctx, importOptions(e.st, days, true, time.Now(), automaticImport(owedHistoryTools(e.st.Dir))), progress)
+	owed := owedHistoryTools(e.st.Dir)
+	var sources []string
+	for _, source := range []string{"claude-code", "codex"} {
+		if owed[consentToolOf(source)] {
+			sources = append(sources, source)
+		}
+	}
+	if err := speed.MarkOwedAttempt(e.st.Dir, sources, consent.Capture(), time.Now()); err != nil {
+		return nil, err
+	}
+	opts := importOptions(e.st, days, true, time.Now(), automaticImport(owed))
+	opts.Pause = owedImportPause
+	return e.run(ctx, opts, progress)
 }
+
+// The retry's pacing: it waits after launch and after a grant, and yields between logs.
+const (
+	owedLaunchDelay = 10 * time.Second
+	owedGrantDelay  = 2 * time.Second
+	owedImportPause = 20 * time.Millisecond
+)
 
 // Owed: some history source is owed an import (see RunOwed).
 func (e importEngine) Owed() bool { return len(owedHistoryTools(e.st.Dir)) > 0 }
