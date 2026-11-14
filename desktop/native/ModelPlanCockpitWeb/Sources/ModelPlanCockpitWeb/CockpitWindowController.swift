@@ -181,7 +181,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var appearanceGate = CockpitAppearanceGate()
   private var pendingFreshnessReason: CockpitDeadlineReason?
   private struct OutboundMessage { let code: String, raw: String }
-  private lazy var orderedDelivery = CockpitOrderedDelivery<OutboundMessage> { [weak self] message, complete in
+  private lazy var orderedDelivery: CockpitOrderedDelivery<OutboundMessage> = CockpitOrderedDelivery<OutboundMessage> { [weak self] message, complete in
     #if MODELPLAN_TEST_ONLY_SPI
     if let fake = self?.verificationNoWindowDelivery { fake(message.raw, complete); return }
     #endif
@@ -243,7 +243,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       guard let self, !self.ending, self.bridge.awaitsDisplayReceipt(id) else { return }
       self.fail(.deadlineReceiptTimeout)
     })
-  private lazy var appearanceWatchdog = CockpitDeadlineReceiptWatchdog(
+  private lazy var appearanceWatchdog: CockpitDeadlineReceiptWatchdog = CockpitDeadlineReceiptWatchdog(
     arm: { [weak self] delay, fire in self?.armDeadline(delay, fire) ?? {} }, timedOut: { [weak self] _ in
       guard let self, !self.ending, self.visibilityFence.isConfirmedVisible, self.appearanceGate.isDeferred else { return }
       // G3-97: the retry hooks run only on rendered, nextDeadline and a visibility receipt. A display receipt that
