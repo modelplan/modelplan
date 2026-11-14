@@ -20,7 +20,8 @@ const channel=(current,{previews={},trial}={})=>faderModel({faders:[fader(curren
  {bank:0,bankSize:3,selModel:'model0',previews,view:{modelId:'model0',trial:trial??current??undefined,fast:null,from:'fader',key:'model0'}}).channels[0];
 const view={models:[{id:'model0',name:'GPT-6.1 Terra',short:'Terra 6.1',rec:'High',pool:null,e}],speedTiers:{},sessionRanking:[],accounts:[],now:0};
 const ui={lang:'zh',scope:null,fill:{cmp:{w:300,h:60}}};
-const trialHead=html=>html.match(/<th scope="col" data-role="trial" data-light="(\w+)"[^>]*>(.*?)<\/th>/);
+// v8 comparison (CKP-MFD-33): a trial is the blue tick/number on the bars and the blue chart column.
+const tried=html=>/data-role="trial"/.test(html);
 
 test('G3-87: pressing the LCD with current unreported opens the comparison without a trial',()=>{
  setLanguage('zh');
@@ -28,10 +29,8 @@ test('G3-87: pressing the LCD with current unreported opens the comparison witho
  assert.equal(c.trial,null);assert.ok(c.bars.every(b=>!b.trial));
  assert.doesNotMatch(lcdView(c),/试/);
  const html=comparison(view,ui,{modelId:'model0',current:null,currentFast:false});
- const [,light,head]=trialHead(html);
- assert.equal(light,'off');assert.doesNotMatch(head,/★/);assert.match(head,/<b aria-hidden="true">--<\/b>/);
- // No trial marker on the chart; ★ is still marked.
- assert.doesNotMatch(html,/cfg-trial/);assert.match(html,/class="cfg cfg-rec"/);
+ // No trial anywhere (no blue tick, number or column, no lit ladder key); ★ is still marked.
+ assert.equal(tried(html),false);assert.doesNotMatch(html,/pc-band-trial|class="lad[^"]*try/);assert.match(html,/class="pc-star"[^>]*data-role="rec"/);
 });
 
 test('G3-87: pressing the LCD with a reported current opens the comparison without a trial',()=>{
@@ -45,7 +44,7 @@ test('G3-87: moving the fader to another effort is a trial; moving it back onto 
  const moved=channel(null,{previews:{model0:'XHigh'},trial:'XHigh'});
  assert.equal(moved.trial.effort,'XHigh');assert.match(lcdView(moved),/试 XHigh/);
  const html=comparison(view,ui,{modelId:'model0',current:null,trial:'XHigh',currentFast:false});
- assert.equal(trialHead(html)[1],'blue');
+ assert.equal(tried(html),true);assert.match(html,/pc-band-trial"[^>]*data-effort="XHigh"/);
  // Back on ★ (the real cap's position while current is unreported): no trial.
  const back=channel(null,{previews:{model0:'High'},trial:'High'});
  assert.equal(back.trial,null);assert.equal(back.ghostK,null);assert.doesNotMatch(lcdView(back),/试/);

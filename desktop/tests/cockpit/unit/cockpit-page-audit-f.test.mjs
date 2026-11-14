@@ -18,7 +18,8 @@ const e=[['Low',42.38,0.073,0.123],['Med',52.6,0.2,0.2],['High',57.6,0.35,0.3],[
 const fader=(over={})=>({id:'model0',sourceId:'gpt-6.1-terra',name:'GPT-6.1 Terra',short:'Terra 6.1',rec:'High',e,current:'Med',currentFast:false,...over});
 const ui={lang:'en',scope:null,fill:{cmp:{w:300,h:60}}};
 const cmpOf=(f,open)=>{const {model,args}=comparisonInput(f,open,null);return comparison({models:[model],speedTiers:{},sessionRanking:[],accounts:[],now:0},ui,args);};
-const head=(html,role)=>html.match(new RegExp(`<th scope="col" data-role="${role}"[^>]*>.*?<b[^>]*>(.*?)</b></th>`))?.[1];
+// The v8 comparison is share bars and a chart (CKP-MFD-33), not a table: the current and trial columns are bands keyed by effort.
+const head=(html,role)=>html.match(new RegExp(`<rect class="pc-band pc-band-${role}"[^>]*data-effort="([^"]*)"`))?.[1]??'--';
 
 test('audit F 1: positional fader ids follow the published model across a reordering delivery, and drop when it is gone',()=>{
  // A,B,C,D,E with D in a trial at model3; D's session ends and E's stays, so the adapter reorders to A,B,C,E,D.
@@ -36,8 +37,8 @@ test('audit F 2: the comparison measures against the session effort reported now
  // Same comparison, a later delivery: the session reports High.
  const later=cmpOf(fader({current:'High'}),open);
  assert.equal(head(later,'current'),'High');
- // Trial XHigh against current High: ability +3.5 (61.1 − 57.6), not +8.5 against the old Med.
- assert.match(later,/<td data-role="trial"[^>]*><span class="cmp-value"[^>]*>\+3\.5</);
+ // The ability bar's current number is High's share of the top effort (57.6 / 70.3 = 82%), not the old Med's (52.6 / 70.3 = 75%).
+ assert.equal([...later.matchAll(/<text class="pc-num pc-current"[^>]*>(\d+)</g)][0]?.[1],'82');
  // The session ended: current is unreported again, table dashes (CKP-MFD-19).
  assert.equal(head(cmpOf(fader({current:null}),open),'current'),'--');
  assert.equal(comparisonInput(fader({currentFast:true}),open,null).args.currentFast,true);

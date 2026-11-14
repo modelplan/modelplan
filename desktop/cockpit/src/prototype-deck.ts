@@ -238,7 +238,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   compare=refreshComparison(compare!,f);
   const fast=compareSpeedTiers(f,f.tier),{model,args:input}=comparisonInput(f,compare,fast.pool),view={models:[model],speedTiers:fast.speedTiers,sessionRanking:[],accounts:[],now:d.now};
   const args:CompareArgs=input;
-  const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=comparison(view,{...ui,scope:null,trialNote:true,fill:cmpFill?{cmp:cmpFill}:{}},args);};
+  const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=comparison(view,{...ui,scope:null,trialNote:true,compact:root.dataset.layout==='640',starMode:root.dataset.starMode||undefined,laneMode:root.dataset.laneMode||undefined,fill:cmpFill?{cmp:cmpFill}:{}},args);};
   bar.classList.add('dark');for(const {b} of buttons){b.classList.remove('on');b.setAttribute('aria-pressed','false');}
   // CSP (style-src 'self') drops the ladder's inline geometry; apply it through CSSOM after every draw.
   const ladder=()=>{for(const e of page.querySelectorAll<HTMLElement>('.cmp-lad[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}};
@@ -262,6 +262,11 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   footer.onclick=e=>{if(!e.isTrusted)return;const key=(e.target as Element).closest<HTMLElement>('[data-mfd]');if(!key)return;
    if(key.dataset.mfd==='back'){closeCompare();return;}
    const next=compareView.onClick('fast','',ui,view,args);if(next&&compare){compare={...compare,fast:next.trial.fast!};paint();}};
+  // The bars, the chart and the effort keys are linked: the pointer on an effort (data-hover) previews it everywhere; on an
+  // Ability / Cost row (data-hk) it sets that chart line apart. Pure marking: nothing is tried, the page is not redrawn.
+  const hover=(effort:string|null,row:string|null)=>{if(row)page.dataset.hk=row;else delete page.dataset.hk;for(const el of page.querySelectorAll<SVGElement>('.pc-preview,.pc-band-hover'))el.classList.toggle('hot',effort!==null&&el.dataset.effort===effort);};
+  page.onpointerover=e=>{if(e.pointerType==='touch')return;const target=e.target as Element;hover(target.closest<HTMLElement>('[data-hover]')?.dataset.hover??null,target.closest<HTMLElement>('[data-hk]')?.dataset.hk??null);};
+  page.onpointerleave=e=>{if(e.pointerType!=='touch')hover(null,null);};
   page.onclick=e=>{const target=e.target as HTMLElement;if(target.closest('a')){e.preventDefault();return;}const key=target.closest<HTMLElement>('[data-mfd^="try:"]');if(!e.isTrusted||!key||!compare)return;
    const level=(key.dataset.mfd??'').slice(4),c={id:compare.modelId,current:compare.current,base:compare.current??f.rec,currentFast:compare.currentFast};tryEffort(c,level);};
   return true;
