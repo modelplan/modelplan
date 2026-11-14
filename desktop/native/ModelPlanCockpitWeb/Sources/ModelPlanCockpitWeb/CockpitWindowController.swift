@@ -955,6 +955,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if content.bounds.size != size { content.setBoundsSize(size) }
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
+  public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
   public func updateScope(_ key:String) {
     guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
     scope=key; publishAppearance()
@@ -962,7 +963,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size, memberOrder: value.memberOrder)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, showAllModels: value.showAllModels, size: value.size, memberOrder: value.memberOrder)
     window?.level = Self.level(detached: shellSession.detached)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
@@ -1082,7 +1083,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     shutterTask?.cancel(); shutterTask = nil
     layout = fit
     appearance = .init(theme: CockpitDayPolicy.resolve(appearance.theme), locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size, memberOrder: appearance.memberOrder)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, showAllModels: appearance.showAllModels, size: appearance.size, memberOrder: appearance.memberOrder)
     // G3-108: the web view keeps the open canvas on the window's bottom edge and the page keeps the body at one place on
     // it, open or closed. So the page's own relayout, whenever its message lands, never moves the body; only the window
     // frame does, and only where the owner wants it to (attached: the bottom edge, top pinned under the icon;

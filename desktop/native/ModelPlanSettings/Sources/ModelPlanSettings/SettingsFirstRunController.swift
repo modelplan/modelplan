@@ -84,7 +84,7 @@ import AppKit
         guard active, generation == token, !Task.isCancelled else { return }
         if let scopeConsentEntry {
             do {
-                try scopePresentation?.prepare(language: editor.snapshot?.preferences.language ?? .english)
+                try scopePresentation?.prepare(language: editor.snapshot?.preferences.language ?? .fallback)
                 scopeUnavailable = false; errorMessage = nil
                 if scopeObserver == nil { scopeObserver = scopeConsentEntry.controller.observe { [weak self] in self?.refresh() } }
             } catch { scopeUnavailable = true }
@@ -279,7 +279,7 @@ import AppKit
             // first; if they cannot be sent the page stays open with them.
             if let entry = self.scopeConsentEntry, !(await entry.controller.commitFirstRunChoices()) {
                 guard self.active, self.generation == expectedGeneration else { return }
-                self.errorMessage = FirstRunCopy.rejected.value(self.editor.snapshot?.preferences.language ?? .chinese)
+                self.errorMessage = FirstRunCopy.rejected.value(self.editor.snapshot?.preferences.language ?? .fallback)
                 return
             }
             guard self.active, self.generation == expectedGeneration else { return }
@@ -288,7 +288,7 @@ import AppKit
                 if self.generation == expectedGeneration { self.completedByDone = true; self.suspend(); self.close() }
             } catch {
                 guard self.active, self.generation == expectedGeneration else { return }
-                self.errorMessage = FirstRunSaveError.message(error, language: self.editor.snapshot?.preferences.language ?? .chinese)
+                self.errorMessage = FirstRunSaveError.message(error, language: self.editor.snapshot?.preferences.language ?? .fallback)
                 await self.editor.reload(); self.baseRevision = self.editor.snapshot?.revision
             }
         }

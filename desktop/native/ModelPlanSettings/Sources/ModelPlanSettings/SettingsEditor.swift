@@ -5,10 +5,10 @@ import Foundation
 public enum SettingsB20Edit: Equatable, Sendable {
     case theme(SettingsTheme), size(SettingsSize), motion(AccessibilityPreference), transparency(AccessibilityPreference)
     case percentageMode(PercentageMode), showPercentages(Bool), percentagePin(String, PercentagePin)
-    case redBelow(Int), sliverAlert(Bool)
+    case redBelow(Int), sliverAlert(Bool), showAllModels(Bool)
 
     public static let keys: Set<SettingKey> = [
-        .theme, .size, .motion, .transparency, .percentageMode, .showPercentages, .percentagePin, .redBelow, .sliverAlert,
+        .theme, .size, .motion, .transparency, .percentageMode, .showPercentages, .percentagePin, .redBelow, .sliverAlert, .showAllModels,
     ]
 
     public init(key: SettingKey, value: String, subscriptionID: String? = nil) throws {
@@ -25,6 +25,7 @@ public enum SettingsB20Edit: Equatable, Sendable {
             }
         case .redBelow: if let v = Int(value), SettingsPreferences.redBelowChoices.contains(v) { self = .redBelow(v); return }
         case .sliverAlert: if let v = Bool(value) { self = .sliverAlert(v); return }
+        case .showAllModels: if let v = Bool(value) { self = .showAllModels(v); return }
         default: break
         }
         throw SettingsError.invalidPreference
@@ -40,6 +41,7 @@ public enum SettingsB20Edit: Equatable, Sendable {
         case .showPercentages(let v): p.showPercentages = v
         case .redBelow(let v): p.redBelow = v
         case .sliverAlert(let v): p.sliverAlert = v
+        case .showAllModels(let v): p.showAllModels = v
         case .percentagePin(let id, let v):
             var setting = p.subscriptionSettings[id] ?? .init()
             setting.percentagePin = v

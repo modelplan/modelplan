@@ -15,10 +15,10 @@ extension StaticDockPreviewHost: CommunityMenuBarPreferencesProviding {}
 struct CommunityMenuBarProjector: CommunityMenuBarProviding {
     let preferences: @MainActor () -> SettingsPreferences?
     func make(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date) -> CommunityMenuBarPresentation {
-        guard let preferences = preferences() else { return .empty }
-        let inputs = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now).inputs
+        guard let preferences = preferences() else { return .emptyReading(chinese: SettingsLanguage.fallback == .chinese) }
+        let inputs = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now, language: preferences.language).inputs
         let ids = inputs.map(\.id)
-        guard Set(ids).count == ids.count, let order = try? preferences.presentedSubscriptionIDs(ids) else { return .empty }
+        guard Set(ids).count == ids.count, let order = try? preferences.presentedSubscriptionIDs(ids) else { return .emptyReading(chinese: preferences.language == .chinese) }
         let byID = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0) })
         var lowest: (reading: DockInstrumentReading, remaining: Double, used: Bool)?
         for id in order {
@@ -29,7 +29,7 @@ struct CommunityMenuBarProjector: CommunityMenuBarProviding {
                   let remaining = reading.remainingPercent else { continue }
             if lowest.map({ remaining < $0.remaining }) ?? true { lowest = (reading, remaining, input.showUsedPercent) }
         }
-        guard let lowest else { return .empty }
+        guard let lowest else { return .emptyReading(chinese: preferences.language == .chinese) }
         let shown = lowest.used ? 100 - lowest.remaining : lowest.remaining
         let basis = lowest.used
             ? (preferences.language == .english ? "Used" : "已用")

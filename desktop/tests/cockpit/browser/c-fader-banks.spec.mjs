@@ -15,7 +15,7 @@ function fixture(){
  data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:true,models:publication};
  data.details.publishedModels=[...publication,model('more-1','openai'),model('xai-1','xai'),model('more-2','openai'),model('also-used','anthropic'),model('more-3','openai')];
  data.details.sessions=[{sessionRef:'00000000000000a1',source:'codex',subscriptionRef:null,model:'used',effort:'medium',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'running',rate:null},
-  {sessionRef:'00000000000000a2',source:'claude',subscriptionRef:null,model:'also-used',effort:'medium',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'idle',rate:null}];
+  {sessionRef:'00000000000000a2',source:'claude',subscriptionRef:null,model:'also-used',effort:'medium',projectLabel:null,lastObservedAt:new Date(Date.now()-60e3).toISOString(),state:'idle',rate:null}];
  return data;
 }
 async function open(page,data){
@@ -25,6 +25,7 @@ async function open(page,data){
  expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
+ return {send,receive};
 }
 const names=page=>page.locator('.fd-ch:not(.empty) .fd-strip').evaluateAll(list=>list.map(e=>e.getAttribute('aria-label').split(':')[0]));
 
@@ -69,4 +70,32 @@ test('build 14c: a trial on a fader with no live session keeps table dashes and 
  const chart=screen.locator('svg.cmp-chart');await expect(chart).toHaveCount(1);
  expect(await chart.locator('polyline').count()).toBeGreaterThan(0);
  await expect(chart.locator('.cfg-trial')).not.toHaveCount(0);await expect(chart.locator('.cfg-rec')).not.toHaveCount(0);
+});
+
+// D123 / D135 / CKP-FAD-16 through the normal bridge: all-known developers, more than twelve qualifying models.
+function crowded(){
+ const data=visualFixture().data;
+ const own=Array.from({length:16},(_,i)=>model('own-'+String(i+1).padStart(2,'0'),'openai'));
+ data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:true,models:own.slice(0,3)};
+ data.details.publishedModels=[...own,model('xai-1','xai'),model('old-1','openai')];
+ data.details.sessions=[{sessionRef:'00000000000000b1',source:'codex',subscriptionRef:null,model:'own-16',effort:'medium',projectLabel:null,lastObservedAt:new Date(Date.now()-3600e3).toISOString(),state:'idle',rate:null},
+  {sessionRef:'00000000000000b2',source:'codex',subscriptionRef:null,model:'old-1',effort:'medium',projectLabel:null,lastObservedAt:new Date(Date.now()-10*86400e3).toISOString(),state:'idle',rate:null}];
+ return data;
+}
+test('CKP-FAD-16 the row is capped at 12 faders; a model used in the last 7 days stays in, the weakest others drop',async({page})=>{
+ await open(page,crowded());
+ await expect(page.locator('.bank-lcd')).toHaveText('Bank 1/4');
+ expect(await names(page)).toEqual(['Synthetic own-16','Synthetic own-01','Synthetic own-02']);
+ await page.keyboard.press(']');await page.keyboard.press(']');await page.keyboard.press(']');await expect(page.locator('.bank-lcd')).toHaveText('Bank 4/4');
+ expect(await names(page)).toHaveLength(3);
+ const all=[];for(const l of await page.locator('.fd-strip[aria-label]').evaluateAll(l=>l.map(e=>e.getAttribute('aria-label'))))all.push(l);
+ for(const label of all){expect(label).not.toContain('xai-1');expect(label).not.toContain('old-1');}
+});
+test('SET-9-30 show all models lifts the cap and the own-plans filter',async({page})=>{
+ const {send,receive}=await open(page,crowded());
+ await expect(page.locator('.bank-lcd')).toHaveText('Bank 1/4');
+ expect(await receive(send('appearance',{...appearance,redBelow:25,showAllModels:true}))).toBe(true);
+ await expect(page.locator('.bank-lcd')).toHaveText('Bank 1/6');
+ expect(await receive(send('appearance',{...appearance,redBelow:25,showAllModels:false}))).toBe(true);
+ await expect(page.locator('.bank-lcd')).toHaveText('Bank 1/4');
 });

@@ -76,7 +76,7 @@ import ModelPlanCore
         let root = try bundle(), wire = Wire(), desktop = Desktop(), firstRun = Surface(), about = Surface()
         let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: wire)
         let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
+        let app = SettingsApplicationCoordinator(store: try chineseSettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { true }, environment: { .init() }, activate: {}, makeSurface: { _ in about })
         let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend,
             canPresent: { true }, makeFirstRun: { _ in firstRun })
@@ -101,7 +101,7 @@ import ModelPlanCore
         await wire.configure(failReadback: true)
         let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: wire)
         let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
+        let app = SettingsApplicationCoordinator(store: try chineseSettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { false })
         let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
         defer { entry.flow.dispose() }
@@ -144,7 +144,8 @@ import ModelPlanCore
         XCTAssertEqual(context.about.cliState, .unavailable)
         XCTAssertEqual(context.about.cliVersion, "unknown")
         XCTAssertEqual(context.about.version, "1.2.3"); XCTAssertEqual(context.about.macOSVersion, "15.4.3")
-        let rows = try SettingsCatalogue.rows(preferences: .init(), context: context, paneID: "about")
+        var chinese = SettingsPreferences(); chinese.language = .chinese // the oracle below is Chinese; the default is English
+        let rows = try SettingsCatalogue.rows(preferences: chinese, context: context, paneID: "about")
         let status = try XCTUnwrap(rows.first { $0.key == .cliStatus })
         if case .text(let copy) = status.value { XCTAssertTrue(copy.contains("核验")); XCTAssertNotEqual(copy, "unavailable") }
         else { XCTFail("Expected human status") }
@@ -158,7 +159,7 @@ import ModelPlanCore
         let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: wire)
         let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
         let context = CommunityApplicationFactory.makeSettingsContext(bundle: root, availability: port.availability)
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), context: context, apply: { _ in })
+        let app = SettingsApplicationCoordinator(store: try chineseSettingsStore(url: root.appendingPathComponent("settings.json")), context: context, apply: { _ in })
         var factories = 0
         let delegate = CommunityApplicationFactory.makeDelegate(surfaces: CommunityInstrumentSurfaceProvider(), consentBackend: backend) { _ in
             factories += 1
@@ -182,7 +183,7 @@ import ModelPlanCore
         let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: wire)
         let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
         let context = CommunityApplicationFactory.makeSettingsContext(bundle: root, availability: port.availability)
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), context: context, apply: { _ in })
+        let app = SettingsApplicationCoordinator(store: try chineseSettingsStore(url: root.appendingPathComponent("settings.json")), context: context, apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { true }, environment: { .init() }, activate: {}, makeSurface: { _ in about })
         let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend,
             canPresent: { true }, makeFirstRun: { _ in firstRun })
@@ -205,7 +206,7 @@ import ModelPlanCore
         let root = try bundle(), wire = Wire(), desktop = Desktop()
         let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: wire)
         let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
+        let app = SettingsApplicationCoordinator(store: try chineseSettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { false })
         let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
         defer { entry.flow.dispose() }
@@ -235,7 +236,7 @@ import ModelPlanCore
         let gate = ConsentGatedDesktopTransport(readOnly: AdmissionProbe(69), normal: AdmissionProbe(0))
         let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: wire)
         let backend = CommunityConnectionBackend(port: port, desktop: gate)
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
+        let app = SettingsApplicationCoordinator(store: try chineseSettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { false })
         let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
         defer { entry.flow.dispose() }
@@ -261,7 +262,7 @@ import ModelPlanCore
     func testManualInstructionURLIsRenderedSelectableWithoutAHostOrWindow() async throws {
         let root = try bundle()
         let context = CommunityApplicationFactory.makeSettingsContext(bundle: root, availability: .unverified)
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), context: context, apply: { _ in })
+        let app = SettingsApplicationCoordinator(store: try chineseSettingsStore(url: root.appendingPathComponent("settings.json")), context: context, apply: { _ in })
         await app.reload()
         let snapshot = try XCTUnwrap(app.editor.snapshot)
         let item = try XCTUnwrap(try SettingsCatalogue.rows(preferences: snapshot.preferences, context: context, paneID: "about").first { $0.key == .consentHelp })
@@ -283,7 +284,7 @@ import ModelPlanCore
         let root = try bundle(), wire = Wire(), desktop = Desktop()
         let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: wire)
         let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
+        let app = SettingsApplicationCoordinator(store: try chineseSettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { false })
         let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
         defer { entry.flow.dispose() }

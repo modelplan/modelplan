@@ -36,7 +36,7 @@ import ModelPlanWire
     private var observer: UUID?
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
-    public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
+    public init(controller: ScopeConsentController, language: SettingsLanguage = .fallback,
                 buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false,
                 markImage: (@MainActor (String) -> NSImage?)? = nil, compactTools: Bool = false) {
         self.controller = controller; self.language = language;self.buildSigning=buildSigning; self.firstRun = firstRun

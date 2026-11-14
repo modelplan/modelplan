@@ -174,9 +174,28 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(info['CFBundleIdentifier'], 'ai.modelplan.candidate')
         self.assertEqual(info['CFBundleShortVersionString'], json.loads((ROOT / 'desktop/package.json').read_text())['version'])
         self.assertEqual(info['CFBundleVersion'], '123')
+        self.assertEqual(info['CFBundleLocalizations'], ['en', 'zh-Hans'])  # SET-9-38
+        self.assertEqual(info['CFBundleDevelopmentRegion'], 'en')
         for value in ('0', '-1', '1.2', 'abc'):
             with self.assertRaises(ValueError):
                 packaging.configure_product(self.app, self.source, value)
+
+    def test_candidate_name_overrides_the_neutral_localized_display_name(self):
+        # glm-873-1: package-neutral.sh ships per-language InfoPlist.strings, which macOS prefers over Info.plist.
+        strings = {'en': 'ModelPlan Community', 'zh-Hans': 'ModelPlan 社区版'}
+        for language, name in strings.items():
+            folder = self.app / 'Contents/Resources' / (language + '.lproj')
+            folder.mkdir()
+            (folder / 'InfoPlist.strings').write_text(
+                '"CFBundleDisplayName" = "%s";\n"NSHumanReadableCopyright" = "kept";\n' % name, encoding='utf-8')
+        packaging.configure_product(self.app, self.source, '123')
+        expected = {'en': 'ModelPlan Candidate', 'zh-Hans': 'ModelPlan 候选版'}
+        for language, name in expected.items():
+            text = (self.app / 'Contents/Resources' / (language + '.lproj') / 'InfoPlist.strings').read_text(encoding='utf-8')
+            self.assertIn('"CFBundleDisplayName" = "%s";' % name, text)
+            self.assertNotIn('Community', text)
+            self.assertNotIn('社区版', text)
+            self.assertIn('"NSHumanReadableCopyright" = "kept";', text)
 
     def test_final_candidate_check_requires_the_external_credential_pin(self):
         calls = []

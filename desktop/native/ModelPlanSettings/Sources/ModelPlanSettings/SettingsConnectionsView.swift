@@ -22,7 +22,7 @@ import AppKit
     private let editor: SettingsEditor
     private let firstRun: Bool
     private var intent: SettingsConnectionIntent?
-    private var language: SettingsLanguage = .chinese
+    private var language: SettingsLanguage = .fallback
     private var observer: UUID?
     private var buttons: [ConnectionButton] = []
     private var task: Task<Void, Never>?

@@ -55,13 +55,15 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let showProjectNames: Bool
   /// Settings "Percentage mode" = used (SET-9-10): the engine table shows used, text and bars.
   public let showUsedPercent: Bool
+  /// Settings "Show all models" (D135): the fader deck lifts the own-plans filter and the 12-fader cap.
+  public let showAllModels: Bool
   /// Settings "Cockpit size": native window geometry only, never sent to the page.
   public let size: CockpitSize
   /// D244 (owner 2026-11-13): the saved subscription order from Settings › Subscriptions, shared with the
   /// widget. Members it names come first in this order; the rest follow in the engine's order. Empty = default.
   public let memberOrder: [String]
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, size: CockpitSize = .standard, memberOrder: [String] = []) {
-    self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent; self.size = size
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, showAllModels: Bool = false, size: CockpitSize = .standard, memberOrder: [String] = []) {
+    self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent; self.showAllModels = showAllModels; self.size = size
     var seen = Set<String>()
     self.memberOrder = Array(memberOrder.filter { $0 != "all" && CockpitMemberScopes.isValidKey($0) && seen.insert($0).inserted }.prefix(256))
     if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
@@ -109,6 +111,8 @@ public enum CockpitIntent: Equatable, Sendable {
   case scopeSelect(String)
   /// G3-56: the caution identities the owner has acknowledged by pressing the lamp. The coordinator keeps them.
   case cautionAck([String])
+  /// D136: the favourite (long-press pinned) model ids, most recent first. The coordinator keeps them across restarts.
+  case pinnedModels([String])
   case openWebsite(CockpitWebsiteLink)
 }
 /// A typed public page, never a URL from the page: native builds the address from these fields.
@@ -250,6 +254,8 @@ public final class CockpitBridgeState {
   private var authoritative = true
   /// G3-56: set before `load`; the page restores its acknowledged cautions from it.
   public var ackedCautions: [String] = []
+  /// D136: favourite model ids restored from the app's own file; sent on load.
+  public var pinnedModels: [String] = []
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
   private var retiredSessions = Set<UUID>(), retiredEpochs = Set<String>(),
@@ -312,10 +318,11 @@ public final class CockpitBridgeState {
         "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
         "showProjectNames": appearance.showProjectNames,
       ],
-      "shell": shell.fields, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent,
+      "shell": shell.fields, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent, "showAllModels": appearance.showAllModels,
     ]
     // G3-56: sent only when there is something to restore, so a page that has none sees the unchanged contract.
     if CockpitCautionIdentities.valid(ackedCautions), !ackedCautions.isEmpty { extra["ackedCautions"] = ackedCautions }
+    if CockpitCautionIdentities.valid(pinnedModels), Set(pinnedModels).count == pinnedModels.count, !pinnedModels.isEmpty { extra["pinnedModels"] = pinnedModels }
     // D244: likewise the saved member order; absent means the engine's default order.
     if !appearance.memberOrder.isEmpty { extra["memberOrder"] = appearance.memberOrder }
     return try envelope("load", extra: extra, receipt: "ready")
@@ -326,7 +333,7 @@ public final class CockpitBridgeState {
     var extra: [String: Any] = [
       "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
       "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
-      "showProjectNames": appearance.showProjectNames, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent,
+      "showProjectNames": appearance.showProjectNames, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent, "showAllModels": appearance.showAllModels,
     ]
     // D244: absent means the default order, so a reset in Settings reaches an open page too.
     if !appearance.memberOrder.isEmpty { extra["memberOrder"] = appearance.memberOrder }
@@ -532,7 +539,7 @@ public final class CockpitBridgeState {
       // Strict page sequence rejects replays without a lifetime action cap.
       if let earlyDisplay, sequence <= earlyDisplay.sequence { throw CockpitBridgeError.invalidMessage }
       let action = m["action"] as? String
-      let history = action == "openHistory", scope = action == "scopeSelect", website = action == "openWebsite", ack = action == "cautionAck"
+      let history = action == "openHistory", scope = action == "scopeSelect", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
       let focusedField = action == "openField" && m["key"] != nil
       let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack ? ["action","ids"] : ["action"]
       guard Set(m.keys) == base.union(extra), ready, !blocked,
@@ -554,6 +561,9 @@ public final class CockpitBridgeState {
       case "cautionAck":
         guard let ids = m["ids"] as? [String], CockpitCautionIdentities.valid(ids) else { throw CockpitBridgeError.invalidMessage }
         intent = .cautionAck(ids)
+      case "pinnedModels":
+        guard let ids = m["ids"] as? [String], CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { throw CockpitBridgeError.invalidMessage }
+        intent = .pinnedModels(ids)
       case "close": intent = .close
       case "detach": intent = .detach
       case "putBack": intent = .putBack

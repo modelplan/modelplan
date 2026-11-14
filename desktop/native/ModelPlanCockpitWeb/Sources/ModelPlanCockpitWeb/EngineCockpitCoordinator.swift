@@ -24,6 +24,8 @@ import ModelPlanWire
   func updateScope(_ key:String)
   /// G3-56: the acknowledged caution identities to restore; applied before the page loads.
   func setAckedCautions(_ ids:[String])
+  /// D136: the favourite model ids to restore; applied before the page loads.
+  func setPinnedModels(_ ids:[String])
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
   func clearPrivateViews(adopting: CockpitEngineContext?) async
   func discard()
@@ -38,6 +40,7 @@ public extension CockpitPageSurface {
   func updateAppearance(_ appearance: CockpitAppearance) {}
   func updateScope(_ key:String) {}
   func setAckedCautions(_ ids:[String]) {}
+  func setPinnedModels(_ ids:[String]) {}
 }
 extension CockpitWindowController: CockpitPageSurface {}
 
@@ -49,6 +52,12 @@ extension CockpitWindowController: CockpitPageSurface {}
 
 /// G3-56: where the app keeps the caution identities the owner acknowledged, so the lamp stays steady after a restart.
 @MainActor public protocol CockpitCautionMemory: AnyObject {
+  func load() -> [String]
+  func save(_ ids: [String])
+}
+
+/// D136: where the app keeps the favourite (pinned) model ids, so they survive a restart. Public model ids only.
+@MainActor public protocol CockpitPinMemory: AnyObject {
   func load() -> [String]
   func save(_ ids: [String])
 }
@@ -90,6 +99,12 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public private(set) var ackedCautions: [String] = []
   public var cautionMemory: (any CockpitCautionMemory)? {
     didSet { let ids = cautionMemory?.load() ?? []; ackedCautions = CockpitCautionIdentities.valid(ids) ? ids : [] }
+  }
+  /// D136: the favourite model ids. Restored at load and replaced whenever the page reports a long-press. A user
+  /// preference, so a store barrier does not clear them.
+  public private(set) var pinnedModels: [String] = []
+  public var pinMemory: (any CockpitPinMemory)? {
+    didSet { let ids = pinMemory?.load() ?? []; pinnedModels = CockpitCautionIdentities.valid(ids) && Set(ids).count == ids.count ? ids : [] }
   }
   private static func persistable(_ key: String) -> Bool {
     key != "all" && CockpitMemberScopes.isValidKey(key) && !CockpitMemberScopes.isIndexedFallback(key)
@@ -248,6 +263,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func makeWiredPage(_ context: CockpitEngineContext) throws -> any CockpitPageSurface {
     let newPage = try makePage(context)
     newPage.setAckedCautions(ackedCautions)
+    newPage.setPinnedModels(pinnedModels)
     let generation = UUID()
     pageGeneration = generation
     newPage.onReady = { [weak self] in
@@ -366,6 +382,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     if case .cautionAck(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids) else { return }
       ackedCautions=ids; cautionMemory?.save(ids); return
+    }
+    if case .pinnedModels(let ids)=intent {
+      guard CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { return }
+      pinnedModels=ids; pinMemory?.save(ids); return
     }
     if case .scopeSelect(let key)=intent {
       guard delivery != nil,scopeMembers.contains(key) else { return }

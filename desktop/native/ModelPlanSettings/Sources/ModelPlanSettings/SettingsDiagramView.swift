@@ -16,7 +16,7 @@ enum SettingsDiagramWords {
 @MainActor public final class SettingsDiagramView: NSView {
     public private(set) var input: SettingsDiagramInput
     public private(set) var reduceMotion = false
-    public var language: SettingsLanguage = .chinese { didSet { needsDisplay = true } }
+    public var language: SettingsLanguage = .fallback { didSet { needsDisplay = true } }
     private var tracking: NSTrackingArea?
     public override var isFlipped: Bool { true }
     public override var intrinsicContentSize: NSSize { .init(width: 96, height: 40) }

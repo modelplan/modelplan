@@ -18,7 +18,7 @@ import ModelPlanSettings
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let provider = CommunityInstrumentSurfaceProvider()
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("prefs.json"))) { provider.apply($0) }
+        let app = SettingsApplicationCoordinator(store: try chineseSettingsStore(url: directory.appendingPathComponent("prefs.json"))) { provider.apply($0) }
         let scheduler = ContextScheduler()
         let help = await InstrumentHelpComposition.restored(application: app, scheduler: scheduler, uptime: { 0 })
         provider.bindHelp(help)
@@ -27,7 +27,7 @@ import ModelPlanSettings
             "units": ["ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"],
             "models": [["id": "model", "name": "Model", "developerId": "dev", "lineageId": "line", "lineageStatus": "current", "defaultSelected": true]], "lineups": []]
         var assembly = SelectionAssembly()
-        surface.render(selection: assembly.evaluate(feeds: .init(publication: try FeedDecoder.publication(JSONSerialization.data(withJSONObject: wire)), personal: nil, personalUsable: false), scope: .all, now: Date()), publishedAt: nil, now: Date())
+        surface.render(selection: assembly.evaluate(feeds: .init(publication: try FeedDecoder.publication(JSONSerialization.data(withJSONObject: wire)), personal: nil, personalUsable: false), scope: .all, language: .chinese, now: Date()), publishedAt: nil, now: Date())
         surface.resumePresentation()
         return (provider, surface, help, scheduler)
     }
@@ -77,7 +77,7 @@ import ModelPlanSettings
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("context-replacement-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("prefs.json"))) { _ in }
+        let app = SettingsApplicationCoordinator(store: try chineseSettingsStore(url: directory.appendingPathComponent("prefs.json"))) { _ in }
         let replacement = await InstrumentHelpComposition.restored(application: app, scheduler: ContextScheduler(), uptime: { 0 })
         provider.bindHelp(replacement); _ = try show(surface)
         let input = replacement.layer.input

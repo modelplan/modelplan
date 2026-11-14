@@ -26,7 +26,7 @@ test('--official assembles desktop/official-visuals/; the default community buil
   const porthole = JSON.parse(read('runtime/porthole-stills/manifest.json'));
   assert.equal(porthole.files.length, 980);
   assert.equal(porthole.defaultProjectionId, '4ff2bad27654');
-  assert.match(read('runtime/porthole-stills/BADGE-NOTICE.txt'), /no recognisable third-party logos/);
+  assert.match(read('runtime/porthole-stills/BADGE-NOTICE.txt'), /maker liveries[\s\S]*third-party trademarks[\s\S]*Day stills keep plain badges/);
   for (const entry of runtime.files) {
     assert.ok(readFileSync(join(dist, 'runtime', entry.file)).equals(readFileSync(join(official, 'runtime', entry.file))),
       'official runtime bytes differ: ' + entry.file);
