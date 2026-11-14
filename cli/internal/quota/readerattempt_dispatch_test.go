@@ -122,7 +122,7 @@ func TestDoctorReadersLegacyCachedIntervalAndBackoff(t *testing.T) {
 					if id == "kiro" {
 						bin, log := fakeKiro(t, `{"success":false,"message":"synthetic rejection"}`)
 						t.Setenv("MODELPLAN_KIRO", bin)
-						hits = func() int { b, _ := os.ReadFile(log); return len(b) }
+						hits = func() int { return kiroUsageCalls(log) }
 					} else {
 						calls := 0
 						old := nativeClient

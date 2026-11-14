@@ -22,7 +22,7 @@ import (
 // (github.com/qunqin24/Pulse, Apache-2.0, KiroACPClient.swift and KiroUsageService.swift at
 // 8410d08), which validated the route with Kiro CLI 2.22.1.
 
-var kiroReader = &nativeReader{Regions: []string{"local"}, Fetch: fetchKiro}
+var kiroReader = &nativeReader{Regions: []string{"local"}, Fetch: fetchKiro, Collect: collectKiro}
 
 const kiroTimeout = 20 * time.Second
 
@@ -56,14 +56,20 @@ func fetchKiro(ctx context.Context, _ *http.Client, _, _ string, now time.Time) 
 	return parseKiro(raw, now)
 }
 
-// askKiro: initialize (Kiro sets up its sign-in while answering it), then getUsage.
-func askKiro(ctx context.Context, bin string) (json.RawMessage, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*kiroTimeout)
-	defer cancel()
+// kiroConn is one short-lived `kiro-cli acp` process: send writes a request, wait reads replies until the
+// one with that id. close stops the process.
+type kiroConn struct {
+	send  func(any) error
+	wait  func(int) (json.RawMessage, error)
+	close func()
+}
+
+func openKiro(ctx context.Context, bin, dir string) (*kiroConn, error) {
 	cmd, err := toolcli.CommandContext(ctx, bin, "acp", "--agent-engine", "v3", "--auth-method", "cli")
 	if err != nil {
 		return nil, err
 	}
+	cmd.Dir = dir
 	cmd.Stderr = io.Discard
 	in, err := cmd.StdinPipe()
 	if err != nil {
@@ -79,11 +85,11 @@ func askKiro(ctx context.Context, bin string) (json.RawMessage, error) {
 		}
 		return nil, codeError("runtime_missing", "kiro-cli did not start")
 	}
-	defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
-	send := func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
+	c := &kiroConn{close: func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }}
+	c.send = func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
-	wait := func(id int) (json.RawMessage, error) {
+	c.wait = func(id int) (json.RawMessage, error) {
 		malformed := false
 		for sc.Scan() {
 			var m struct {
@@ -113,17 +119,34 @@ func askKiro(ctx context.Context, bin string) (json.RawMessage, error) {
 		}
 		return nil, codeError("schema_changed", "kiro-cli closed")
 	}
-	if err := send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{
+	return c, nil
+}
+
+func (c *kiroConn) initialize() error {
+	if err := c.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{
 		"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]any{"name": "modelplan", "version": "1"}}}); err != nil {
+		return err
+	}
+	_, err := c.wait(1)
+	return err
+}
+
+// askKiro: initialize (Kiro sets up its sign-in while answering it), then getUsage.
+func askKiro(ctx context.Context, bin string) (json.RawMessage, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*kiroTimeout)
+	defer cancel()
+	c, err := openKiro(ctx, bin, "")
+	if err != nil {
 		return nil, err
 	}
-	if _, err := wait(1); err != nil {
+	defer c.close()
+	if err := c.initialize(); err != nil {
 		return nil, err
 	}
-	if err := send(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "_kiro/account/getUsage", "params": map[string]any{}}); err != nil {
+	if err := c.send(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "_kiro/account/getUsage", "params": map[string]any{}}); err != nil {
 		return nil, err
 	}
-	return wait(2)
+	return c.wait(2)
 }
 
 // kiroReason keeps recognized fixed remedies and discards all vendor free text.
