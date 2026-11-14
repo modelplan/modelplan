@@ -14,8 +14,7 @@ enum EngineAppCache {
     }
     static func clearCurrentApp() {
         URLCache.shared.removeAllCachedResponses()
-        guard let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first,
-              let id = Bundle.main.bundleIdentifier else { return }
-        clear(cachesRoot: root, bundleIdentifier: id)
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        clear(cachesRoot: ProfileRoot.current.caches, bundleIdentifier: id)
     }
 }

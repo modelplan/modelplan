@@ -231,6 +231,23 @@ jobs:
           python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --check
           test -z "$(git status --porcelain)"
 
+  cockpit-spi-tests:
+    needs: [queue-scope, pr-ref]
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    # The ModelPlanCockpitWeb test classes (or test methods) behind #if MODELPLAN_TEST_ONLY_SPI are not compiled
+    # by the pinned trusted-mac.yml U11 job, which runs `swift test` without the flag. Compile and run them here on a
+    # hosted Mac, only those classes. test_spi_gated_tests_run.py (native-partition) fails if a gated class is in no workflow.
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.pr && needs.pr-ref.outputs.sha || '' }}
+      - name: SPI-gated cockpit tests
+        run: |
+          swift test --package-path desktop/native/ModelPlanCockpitWeb --scratch-path "$RUNNER_TEMP/cockpit-spi-build" --jobs 2 \
+            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter '(CockpitControllerNoWindowTests|CockpitContextMenuAndReloadTests|CockpitLifecycleAuditTests|CockpitSnapGuideDisplayTests|CockpitCloseFadeAndHostTests|CockpitDeliveryBacklogTests|CoordinatorPrewarmTests)'
+
   app-smoke:
     permissions:
       contents: read

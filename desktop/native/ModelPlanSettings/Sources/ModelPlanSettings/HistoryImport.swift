@@ -133,9 +133,6 @@ public enum HistoryImportText {
     public static let removeButton = SettingsText("Remove imported history", "删除已导入的历史")
     public static let daysLabel = SettingsText("Days back", "回溯天数")
     public static func dayChoice(_ days: Int) -> SettingsText { .init("\(days) days", "\(days) 天") }
-    /// HIST-IMP-03: the one plain line under the first-run consent.
-    public static let firstRunLine = SettingsText("After you continue, ModelPlan imports up to 30 days of past usage from these tools in the background (counts, models and times only). Cancel or remove it in Settings › Data & Privacy.",
-                                                  "继续后，ModelPlan 会在后台从这些工具导入最多 30 天的过往用量（只含次数、模型和时间）。可在 设置 › 数据与隐私 中取消或删除。")
     public static func running(days: Int) -> SettingsText { .init("Importing \(days) days of local history…", "正在导入 \(days) 天的本地历史…") }
     public static let unavailable = SettingsText("Not available until the engine is ready.", "引擎就绪前不可用。")
     public static let failed = SettingsText("The import could not run. Nothing was changed.", "导入未能运行，未做任何改动。")

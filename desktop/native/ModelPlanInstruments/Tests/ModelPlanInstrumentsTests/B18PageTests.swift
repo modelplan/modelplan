@@ -47,6 +47,18 @@ final class B18PageModelTests:XCTestCase {
         XCTAssertEqual(a.projects[1].rows[0].tokens,2000)
         XCTAssertTrue(a.details.allSatisfy{$0.projectName==nil && !$0.help.body.contains("Example")})
     }
+    // G3-100: a session with no project in its own tool says so; a hidden or unnamed project does not.
+    func testSessionWithoutProjectShowsNoProject() {
+        func page(_ id:String?,_ name:String?,show:Bool,_ language:InstrumentLanguage)->DestinationSessionDisplay {
+            let s=InstrumentSession(id:"s",subscriptionID:"a",tool:"Codex",model:"model",effort:"high",projectID:id,projectName:name,startedAt:Fixtures.now.addingTimeInterval(-60),endedAt:nil,lastAt:Fixtures.now,running:true)
+            return DestinationsPageSnapshot(rankings:[],sessions:[s],scope:.all,showProjectNames:show,now:Fixtures.now,calendar:Fixtures.calendar(),language:language).details[0]
+        }
+        XCTAssertEqual(page(nil,nil,show:true,.english).projectName,"No project")
+        XCTAssertEqual(page(nil,nil,show:true,.chinese).projectName,"无项目")
+        XCTAssertNil(page(nil,nil,show:false,.english).projectName)
+        XCTAssertNil(page("ref",nil,show:true,.english).projectName)
+        XCTAssertEqual(page("ref","acme",show:true,.english).projectName,"acme")
+    }
     func testRunningFirstOwnRateAndMissingEndedTimeStayHonest() {
         let p=B18Fixture.destinations()
         XCTAssertEqual(p.timelines[0].rows.count,7);XCTAssertTrue(p.timelines[0].rows.prefix(6).allSatisfy{$0.activity == .working})

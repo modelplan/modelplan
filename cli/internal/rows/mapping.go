@@ -15,6 +15,7 @@ type Outcome struct {
 var outcomes = map[Code]Outcome{
 	CodeOK:                            {State: StateFresh, Code: CodeOK, Action: ActionNone, Text: Text{EN: "Reading available", ZH: "已读到用量"}},
 	CodeEstimated:                     {State: StateFresh, Code: CodeEstimated, Action: ActionNone, Text: Text{EN: "Estimated reading", ZH: "估算读数"}},
+	CodeUsageNotReported:              {State: StateFresh, Code: CodeUsageNotReported, Action: ActionNone, Text: Text{EN: "This plan reports no usage percentage; only the balance is shown", ZH: "该订阅不提供用量百分比，只显示余额"}},
 	CodeStaleReading:                  {State: StateStale, Code: CodeStaleReading, Action: ActionRefresh, Text: Text{EN: "A retained reading is shown", ZH: "正在显示保留的旧读数"}},
 	CodeObservationTimeUnknown:        {State: StateStale, Code: CodeObservationTimeUnknown, Action: ActionRefresh, Text: Text{EN: "The reading time is unknown", ZH: "读取时间未知"}},
 	CodeNotReadYet:                    {State: StatePending, Code: CodeNotReadYet, Action: ActionNone, Text: Text{EN: "Waiting for the first reading", ZH: "等待首次读取"}},
@@ -64,6 +65,7 @@ var outcomes = map[Code]Outcome{
 	CodeRPCError:                      {State: StateFailed, Code: CodeRPCError, Action: ActionRefresh, Text: Text{EN: "The tool background service returned an error", ZH: "工具后台服务返回错误"}},
 	CodeClosed:                        {State: StateFailed, Code: CodeClosed, Action: ActionRefresh, Text: Text{EN: "The tool background service closed unexpectedly", ZH: "工具后台服务意外退出"}},
 	CodeRegionRefused:                 {State: StateNeedsAction, Code: CodeRegionRefused, Action: ActionNone, Text: Text{EN: "This address is a third-party relay; its quota cannot be read", ZH: "这个地址是第三方转发服务，查不到额度"}},
+	CodeNoPlan:                        {State: StateNeedsAction, Code: CodeNoPlan, Action: ActionNone, Text: Text{EN: "This key has no GLM Coding Plan", ZH: "这个密钥没有开通 GLM 编程套餐"}},
 }
 
 // Describe returns only compiled messages. Unknown codes never carry caller text.
@@ -119,6 +121,7 @@ var signalCodes = map[signalKey]Code{
 	{SignalError, "closed"}:                             CodeClosed,
 	{SignalError, "no_key"}:                             CodeKeyMissing,
 	{SignalError, "region_refused"}:                     CodeRegionRefused,
+	{SignalError, "no_plan"}:                            CodeNoPlan,
 	{SignalBlocked, "native-off"}:                       CodePrivacyBlocked,
 	{SignalBlocked, "codexbar-off"}:                     CodePrivacyBlocked,
 	{SignalBlocked, "off"}:                              CodePrivacyBlocked,

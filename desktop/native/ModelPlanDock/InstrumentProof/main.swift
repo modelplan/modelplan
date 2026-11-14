@@ -353,6 +353,39 @@ struct NativeFailure:Error {let message:String}
     }
     try require(motionDriver.activeIDs.isEmpty && motionDriver.rotatingIDs.isEmpty,"failed recipe retires prior motion")
     motionDriver.stop();motionPool.purgeUnleased();effectsView.dispose()
+    // D171 / DOCK-3.8-23: the working ring turns once every 2 s, smoothly, from host time alone.
+    let ringSpin=DockEffectRotation.working
+    try require(ringSpin.period==2 && ringSpin.direction == .clockwise,"D171 working spin is one clockwise turn every 2 s")
+    for t in [0.0,0.5,1.0,1.5,2.0,3.25,1_000_001.75] {
+        try require(abs(ringSpin.angle(hostTime:t)+t.truncatingRemainder(dividingBy:2)*Double.pi)<1e-9,"D171 angle is a closed form of host time, not a per-tick sum")
+    }
+    // 60 Hz samples over many turns: every frame advances the same 6 degrees, so no step or drift.
+    let spinDeltas=(1...600).map{i->Double in
+        let d=ringSpin.angle(hostTime:5_000+Double(i)/60)-ringSpin.angle(hostTime:5_000+Double(i-1)/60)
+        return (d+4*Double.pi).truncatingRemainder(dividingBy:2*Double.pi)
+    }
+    let spinMean=spinDeltas.reduce(0,+)/Double(spinDeltas.count)
+    let spinVariance=spinDeltas.reduce(0){$0+($1-spinMean)*($1-spinMean)}/Double(spinDeltas.count)
+    try require(abs(spinMean-(2*Double.pi-Double.pi/60))<1e-6 && spinVariance<1e-12,"D171 frame-to-frame spin delta is constant")
+    var spinClock:CFTimeInterval=101.3,spinBattery=false
+    let spinPool=EffectResourcePool(),spinDriver=DockWorkingEffects(pool:spinPool,systemReduceMotion:{false},onBattery:{spinBattery},hostTime:{spinClock})
+    func spinPass(_ profile:RenderProfile = .init(scale:1))throws->CALayer {
+        try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:1,locale:"en")
+        try spinDriver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:profile,rotation:ringSpin,provider:{_ in provider})
+        return effectsView.workingLayerParents["work-0"]!.sublayers!.first!
+    }
+    let firstSpinJet=try spinPass()
+    try require(spinDriver.rotationBeginTimes["work-0"]==firstSpinJet.convertTime(100,from:nil),"D171 spin origin is the last whole-period boundary, not the configure time")
+    try require(spinDriver.rotationPeriods["work-0"]==2 && spinDriver.cycleSeconds["work-0"]==1,"D171 spin period is not the one-second flame clock")
+    spinClock=103.9;spinBattery=true
+    let secondSpinJet=try spinPass()
+    try require(spinDriver.rotationBeginTimes["work-0"]==secondSpinJet.convertTime(102,from:nil),"D171 a reconfigure resumes the shown phase instead of snapping to 0")
+    try require(spinDriver.isThrottled && spinDriver.cycleSeconds["work-0"]==2 && spinDriver.rotationPeriods["work-0"]==2,"D171 battery slows only the flame clock, never the spin")
+    _=try spinPass(RenderProfile(scale:1,reduceMotion:true))
+    try require(spinDriver.rotatingIDs.isEmpty && spinDriver.animatingIDs.isEmpty && spinDriver.activeIDs.count==6,"D171 Reduce Motion holds a static working ring")
+    try spinDriver.configure(view:effectsView,skin:effectsSkin,readings:[],profile:.init(scale:1),rotation:ringSpin,provider:{_ in provider})
+    try require(spinDriver.rotatingIDs.isEmpty && spinDriver.activeIDs.isEmpty,"D171 nothing spins when nothing is working")
+    spinDriver.stop();spinPool.purgeUnleased();effectsView.dispose()
     // B07 uses injected display/protection truth and one scheduler. No NSWindow is created.
     let display=DockDisplayArea(id:"screen",frame:CGRect(x:0,y:0,width:1000,height:800),visibleFrame:CGRect(x:0,y:0,width:1000,height:800))
     let edgeLayouts=DockEdgeGeometry.allowedEdges.map{edge in
@@ -518,11 +551,16 @@ struct NativeFailure:Error {let message:String}
     let toOverflow=orderRequests.last!;interactionEnv.preferences=toOverflow.proposed;interactionEnv.overflowIDs.insert("b")
     interaction.orderAccepted(toOverflow.id,preferences:interactionEnv.preferences,catalogue:interactionEnv.catalogue)
     try require(interaction.presentation?.overflowIDs.contains("b")==true && orderAnnouncements.count==2,"accepted off-main move opens overflow before focus/announcement handoff")
-    _=interaction.beginNozzle(id:"a",along:0);interaction.canPreviewOrder={_ in interaction.stop();return true};interaction.moveNozzle(along:25)
-    try require(interaction.presentation?.reorder==nil && !interaction.hasCapture,"preview callback stop cannot reenter an inout gesture or resurrect it")
-    interaction.canPreviewOrder={_ in true};interactionTime=12;interaction.start();_=interaction.beginNozzle(id:"a",along:0)
+    _=interaction.beginNozzle(id:"a",along:0);interaction.moveNozzle(along:25)
+    try require(interaction.presentation?.reorder==nil,"D244: a moved ring press never previews an order")
+    interaction.endNozzle(insideMain:true,overSameSource:true)
+    try require(orderRequests.count==2 && !interaction.hasCapture,"D244: releasing a moved ring press saves no order and is no click")
+    interactionTime=12;_=interaction.beginNozzle(id:"a",along:0)
     interactionEnv.bindingRevision+=1;interaction.refresh();try require(!interaction.hasCapture,"binding change cancels captured old nozzle")
-    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["b","c"],"overflow list retains accepted off-main subscriptions in shared canonical order")
+    // D244 dropped the stop/start that used to reset overflowOpen here, so the list opened by the accepted off-main move is still open.
+    try require(interaction.presentation?.overflowIDs==["b","c"],"overflow list retains accepted off-main subscriptions in shared canonical order")
+    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==[],"toggle closes the open overflow list")
+    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["b","c"],"reopened overflow list keeps the shared canonical order")
     interaction.stop()
     let reorderSurface=DockReorderLayersView(frame:effectsSkin.bounds)
     let firstVisuals=try renderer.reorderVisuals(skin:effectsSkin,readings:Dictionary(uniqueKeysWithValues:working.map{($0.subscriptionID,$0)}),scale:1)

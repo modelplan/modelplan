@@ -13,6 +13,17 @@ import AppKit
     private var scopeUnavailable = false
     public private(set) var errorMessage: String?
     let doneButton = NSButton(), helpButton = NSButton()
+    /// FR-9-11: "Learn more ›" under the FR-9-03 line; the host opens Settings › Data & Privacy.
+    let learnMoreButton = NSButton()
+    public var onLearnMore: (@MainActor () -> Void)?
+    /// Owner 11-12: why Done cannot be pressed yet, always in words (the reader is still starting).
+    let doneReason = NSTextField(wrappingLabelWithString: "")
+    /// E2: the local presence check that lists the tool rows before the reader answers. The app may replace it.
+    public var presence: FirstRunPresenceDetector = .live()
+    /// Owner 11-12 (answer 1): the window was closed before Done. Nothing was saved; the app keeps its
+    /// "setting up" state and brings the page back from the menu bar icon or on the next launch.
+    public var onClosedBeforeDone: (@MainActor () -> Void)?
+    private var completedByDone = false
     let loginButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private(set) var readerButtons: [OptionalReaderID: NSButton] = [:]
     private let titleLabel = NSTextField(labelWithString: "")
@@ -20,6 +31,7 @@ import AppKit
     private let recommendation = NSTextField(wrappingLabelWithString: "")
     private let subscriptions = NSTextField(wrappingLabelWithString: "")
     private let readerStack = NSStackView()
+    private weak var contentStack: NSStackView?
     private lazy var connectionsView = SettingsConnectionsView(editor: editor, firstRun: true)
     private let loginSubtitle = NSTextField(wrappingLabelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
@@ -36,13 +48,16 @@ import AppKit
         self.editor = editor; self.host = host; self.scopeConsentEntry = scopeConsentEntry
         self.scopePresentation = scopeConsentEntry.map { FirstRunConsentPresentation(entry: $0) }
         _ = NSApplication.shared
-        // G3-25: one 570-point column with even margins; the page scrolls when it is taller.
-        let window = NSWindow(contentRect: .init(x: 0, y: 0, width: Self.column + 2 * Self.margin, height: 680),
+        // G3-25: one 570-point column with even margins. FR-9-11: the window height fits the content (it scrolls
+        // only when the screen is shorter than the page).
+        let window = NSWindow(contentRect: .init(x: 0, y: 0, width: Self.column + 2 * Self.margin, height: 560),
                               styleMask: [.titled,.closable,.resizable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false; window.contentMinSize = .init(width: Self.column + 2 * Self.margin, height: 480)
+        window.isReleasedWhenClosed = false; window.contentMinSize = .init(width: Self.column + 2 * Self.margin, height: 300)
         super.init(window: window); window.delegate = self
         build(window); refreshEnabled()
+        scopeConsentEntry?.controller.onLookAgain = { [weak self] in self?.runPresenceCheck() }
     }
+    private func runPresenceCheck() { scopeConsentEntry?.controller.setFirstRunPresence(presence.detect()) }
     static let column: CGFloat = 570, margin: CGFloat = 40
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     deinit {
@@ -59,7 +74,8 @@ import AppKit
         }
     }
     public func prepare() async {
-        active = true; generation &+= 1; let token = generation; errorMessage = nil
+        active = true; generation &+= 1; let token = generation; errorMessage = nil; completedByDone = false
+        runPresenceCheck()
         scopeUnavailable = scopeConsentEntry != nil
         options = nil; baseRevision = nil; touchedLogin = false; touchedReaders = []; pageValid = false
         if observer == nil { observer = editor.observeChanges { [weak self] in self?.refresh() } }
@@ -88,7 +104,11 @@ import AppKit
         scopePresentation?.suspend(); scopeUnavailable = false
         refreshEnabled()
     }
-    public func windowWillClose(_ notification: Notification) { suspend() }
+    public func windowWillClose(_ notification: Notification) {
+        let wasActive = active
+        suspend()
+        if wasActive, !completedByDone { onClosedBeforeDone?() }
+    }
 
     private func build(_ window: NSWindow) {
         let root = NSView(); window.contentView = root
@@ -97,8 +117,14 @@ import AppKit
         let document = FirstRunDocument(); document.translatesAutoresizingMaskIntoConstraints = false; scroll.documentView = document
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false; document.addSubview(stack)
-        titleLabel.font = .systemFont(ofSize: 24, weight: .semibold)
-        privacy.font = .systemFont(ofSize: 14); recommendation.font = .systemFont(ofSize: 13); subscriptions.font = .systemFont(ofSize: 13)
+        // FR-9-11: the privacy promise is the large type; "Set up ModelPlan" is a small line above it.
+        titleLabel.font = .systemFont(ofSize: 13); titleLabel.textColor = .secondaryLabelColor
+        privacy.font = .systemFont(ofSize: 26, weight: .semibold)
+        recommendation.font = .systemFont(ofSize: 14); recommendation.textColor = .secondaryLabelColor
+        subscriptions.font = .systemFont(ofSize: 13)
+        learnMoreButton.isBordered = false; learnMoreButton.alignment = .left
+        learnMoreButton.target = self; learnMoreButton.action = #selector(learnMore)
+        learnMoreButton.setAccessibilityIdentifier("firstRun.learnMore")
         titleLabel.setAccessibilityIdentifier("firstRun.title");privacy.setAccessibilityIdentifier("firstRun.privacy")
         recommendation.setAccessibilityIdentifier("firstRun.publicRecommendation")
         subscriptions.setAccessibilityIdentifier("firstRun.subscriptions")
@@ -112,12 +138,16 @@ import AppKit
         loginButton.setAccessibilityIdentifier("firstRun.login")
         loginSubtitle.font = .systemFont(ofSize: 12); loginSubtitle.textColor = .secondaryLabelColor
         // Wrapping copy wraps at the column width instead of growing past it or clipping a line.
-        for field in [privacy, recommendation, subscriptions, loginSubtitle, status] {
+        for field in [privacy, recommendation, subscriptions, loginSubtitle, status, doneReason] {
             field.preferredMaxLayoutWidth = Self.column; field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
         }
+        // The footer shares its row with the buttons, so this line wraps narrower than the column.
+        loginSubtitle.preferredMaxLayoutWidth = 300
         let login = NSStackView(views: [loginButton,loginSubtitle]); login.orientation = .vertical; login.alignment = .leading; login.spacing = 5
         status.font = .systemFont(ofSize: 12); status.textColor = .systemRed
         status.setAccessibilityIdentifier("firstRun.status")
+        doneReason.font = .systemFont(ofSize: 12); doneReason.textColor = .secondaryLabelColor
+        doneReason.setAccessibilityIdentifier("firstRun.doneReason"); doneReason.isHidden = true
         doneButton.bezelStyle = .rounded; doneButton.target = self; doneButton.action = #selector(done)
         doneButton.keyEquivalent = "\r"; doneButton.setAccessibilityIdentifier("firstRun.done")
         helpButton.isBordered = false; helpButton.target = self; helpButton.action = #selector(seeWhatsHere)
@@ -126,12 +156,19 @@ import AppKit
         let focusOrder=OptionalReaderID.allCases.compactMap{readerButtons[$0]}+[loginButton,doneButton,helpButton]
         for (a,b) in zip(focusOrder,focusOrder.dropFirst()) {a.nextKeyView=b}
         window.initialFirstResponder=focusOrder.first
-        let buttons = NSStackView(views: [doneButton,helpButton]); buttons.spacing = 12
+        // FR-9-11: the footer is one row: the login choice on the left, "See what's here" and Done on the right.
+        let buttons = NSStackView(views: [helpButton,doneButton]); buttons.spacing = 12
+        let footer = NSStackView(); footer.orientation = .horizontal; footer.alignment = .centerY
+        footer.setViews([login], in: .leading); footer.setViews([buttons], in: .trailing)
+        let rule = NSBox(); rule.boxType = .separator
         let firstRunScopes = scopePresentation?.container ?? NSStackView()
-        for view in [titleLabel,privacy,recommendation,subscriptions,firstRunScopes,connectionsView,readerStack,login,status,buttons] {
+        for view in [titleLabel,privacy,recommendation,learnMoreButton,subscriptions,firstRunScopes,connectionsView,readerStack,status,doneReason,rule,footer] {
             stack.addArrangedSubview(view)
-            if view !== buttons { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
+        stack.setCustomSpacing(6, after: titleLabel); stack.setCustomSpacing(10, after: privacy); stack.setCustomSpacing(2, after: recommendation)
+        stack.setCustomSpacing(28, after: learnMoreButton)
+        contentStack = stack
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: root.topAnchor), scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
@@ -153,6 +190,8 @@ import AppKit
             for id in OptionalReaderID.allCases where !touchedReaders.contains(id) { options?.readerConsent[id] = latest.readerConsent[id] }
             if !touchedLogin && touchedReaders.isEmpty { baseRevision = snapshot.revision }
             window?.title = SettingsWords.text("First run", "首次运行", language)
+            learnMoreButton.title = FirstRunCopy.learnMore.value(language)
+            learnMoreButton.attributedTitle = NSAttributedString(string: learnMoreButton.title, attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.linkColor])
             titleLabel.stringValue = SettingsWords.text("Set up ModelPlan", "设置 ModelPlan", language)
             privacy.stringValue = page.privacy.value(language)
             recommendation.stringValue = page.publicRecommendation.value(language)
@@ -178,13 +217,31 @@ import AppKit
             helpButton.isHidden = !page.showsExploration
             if scopeUnavailable { errorMessage = SettingsWords.text("Reading permissions are busy. Close and try again.", "读取权限正在处理，请关闭后重试。", language) }
             status.stringValue = errorMessage ?? ""; status.isHidden = errorMessage == nil
-            let appearance: NSAppearance.Name? = p.theme == .system ? nil : p.theme == .night ? .darkAqua : .aqua
-            if window?.appearance?.name != appearance { window?.appearance = appearance.flatMap(NSAppearance.init(named:)) }
+            switch scopeConsentEntry?.controller.firstRunDoneBlock {
+            case .some(.engineStarting), .some(.engineFailed):
+                doneReason.stringValue = FirstRunCopy.needEngine.value(language); doneReason.isHidden = false
+            default: doneReason.stringValue = ""; doneReason.isHidden = true
+            }
+            // FR-9-11: the first-run window is dark, whatever the theme setting says.
+            if window?.appearance?.name != NSAppearance.Name.darkAqua { window?.appearance = NSAppearance(named: .darkAqua) }
         } catch {
             errorMessage = SettingsWords.text("First run is unavailable. Check the subscription data.", "首次运行页暂不可用，请检查订阅数据。", language)
             status.stringValue = errorMessage!; status.isHidden = false
         }
         refreshEnabled()
+        fitWindowToContent()
+        // Wrapped copy takes its final width on the next layout pass; fit once more after it.
+        DispatchQueue.main.async { [weak self] in self?.fitWindowToContent() }
+    }
+    /// FR-9-11: the window is as tall as the page, up to the screen; a shorter screen scrolls.
+    private func fitWindowToContent() {
+        guard let window, let stack = contentStack, let root = window.contentView else { return }
+        root.layoutSubtreeIfNeeded(); stack.layoutSubtreeIfNeeded()
+        let wanted = stack.fittingSize.height + 56
+        let available = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
+        let height = max(300, min(wanted, available - 80))
+        guard abs(window.contentLayoutRect.height - height) > 1 else { return }
+        window.setContentSize(.init(width: window.contentLayoutRect.width, height: height))
     }
     private func refreshEnabled() {
         let scopeIdle: Bool
@@ -192,9 +249,11 @@ import AppKit
         else { scopeIdle = true }
         let enabled = active && pageValid && !busy && !editor.isSaving && !editor.connections.isBusy && options != nil && !scopeUnavailable && scopeIdle
         loginButton.isEnabled = enabled
+        learnMoreButton.isEnabled = active && onLearnMore != nil
         for button in readerButtons.values { button.isEnabled = enabled && !editor.connections.isAvailable }
         // D61 (3): with readable tools on the page, at least one must be ticked.
-        let chosen = scopeConsentEntry?.controller.firstRunChoiceSatisfied ?? true
+        // Owner 11-12 (answer 3): and Done waits for the reader's handshake, because the choices are saved through it.
+        let chosen = scopeConsentEntry?.controller.firstRunCanFinish ?? true
         doneButton.isEnabled = enabled && chosen
         helpButton.isEnabled = enabled && chosen && !helpButton.isHidden && editor.context.capabilities.helpMapAvailable && editor.onHostRequest != nil
     }
@@ -207,6 +266,7 @@ import AppKit
               readerButtons[id] === sender else { return }
         touchedReaders.insert(id); options?.readerConsent[id] = sender.state == .on
     }
+    @objc private func learnMore() { guard learnMoreButton.isEnabled else { return }; onLearnMore?() }
     @objc private func done() { finish(.done) }
     @objc private func seeWhatsHere() { guard helpButton.isEnabled else { return }; finish(.seeWhatsHere) }
     private func finish(_ action: FirstRunAction) {
@@ -219,14 +279,13 @@ import AppKit
             // first; if they cannot be sent the page stays open with them.
             if let entry = self.scopeConsentEntry, !(await entry.controller.commitFirstRunChoices()) {
                 guard self.active, self.generation == expectedGeneration else { return }
-                self.errorMessage = SettingsWords.text("Your reading choices could not be saved. Check the connection and press Done again.",
-                    "读取选择未能保存。请检查连接后再点“完成”。", self.editor.snapshot?.preferences.language ?? .fallback)
+                self.errorMessage = FirstRunCopy.rejected.value(self.editor.snapshot?.preferences.language ?? .fallback)
                 return
             }
             guard self.active, self.generation == expectedGeneration else { return }
             do {
                 _ = try await self.editor.completeFirstRun(options: options, action: action, host: self.host, expectedRevision: revision)
-                if self.generation == expectedGeneration { self.suspend(); self.close() }
+                if self.generation == expectedGeneration { self.completedByDone = true; self.suspend(); self.close() }
             } catch {
                 guard self.active, self.generation == expectedGeneration else { return }
                 self.errorMessage = FirstRunSaveError.message(error, language: self.editor.snapshot?.preferences.language ?? .fallback)
