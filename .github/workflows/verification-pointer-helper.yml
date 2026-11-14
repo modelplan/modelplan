@@ -8,6 +8,7 @@ on:
       - 'desktop/native/verification/bin/status_menu_drive.swift'
       - 'desktop/native/verification/StatusMenu/**'
       - '.github/workflows/verification-pointer-helper.yml'
+      - '!**/*.md'
   push:
     branches: [main]
     paths:

@@ -218,3 +218,80 @@ export function draftGuardProblems(text) {
   }
   return problems;
 }
+
+// D254 (2026-11-14): hosted macOS gives 5 concurrent jobs, so a pull_request must start macOS jobs only when it
+// changes something they test, and a newer push must cancel the older run of the same PR. Nothing else is ever
+// filtered or cancelled: merge_group, push, schedule and workflow_dispatch keep the full suite. Required checks
+// need no stub: merge-gates counts only the newest run per workflow that exists, plus ci.yml as the anchor, and
+// a skipped job is green (OK_CONCLUSIONS), so a workflow or job a PR does not trigger never blocks it.
+function onEvent(text, event) {
+  const on = topLevelBlock(text, "on");
+  if (!on) return null;
+  const lines = on.split("\n");
+  const start = lines.findIndex((l) => new RegExp(`^  ["']?${event}["']?:`).test(l));
+  if (start === -1) return null;
+  const end = lines.findIndex((l, i) => i > start && /^  \S/.test(l));
+  return lines.slice(start, end === -1 ? lines.length : end).join("\n");
+}
+
+// A job-level scope gate: the job's own `if:` reads a scope job's output (mac / run / notices-mac style),
+// is dispatch-only, or is opt-in by label.
+const JOB_SCOPE_GATE = /needs\.[\w-]+\.outputs\.[\w-]*(?:mac|run)\b|github\.event_name\s*==\s*'workflow_dispatch'|labels\.\*\.name,\s*'gui-ci'/;
+
+function jobIf(lines) {
+  const i = lines.findIndex((l) => /^    if:/.test(l));
+  return i === -1 ? "" : lines[i];
+}
+
+export function macPathGateProblems(text, path = "") {
+  const problems = [];
+  if (path.endsWith("/trusted-mac.yml")) return problems;
+  const pr = onEvent(text, "pull_request");
+  if (pr === null || !runsMacos(text)) return problems;
+  const wfFilter = /^    paths:/m.test(pr) && /!\*\*\/\*\.md/.test(pr);
+  const macJobs = jobBlocks(text).filter((j) => jobRunsMacos(j.lines));
+  if (!wfFilter) {
+    for (const job of macJobs) {
+      if (!JOB_SCOPE_GATE.test(jobIf(job.lines)))
+        problems.push(`macOS job ${job.name} has no path gate on pull_request (a workflow-level pull_request paths list excluding !**/*.md, or an if: reading a scope job's output)`);
+    }
+  } else if (/^  pull_request:/m.test(text) && macJobs.some((j) => /needs\.pr-scope\./.test(jobIf(j.lines)) === false && /workflows\/desktop\.yml/.test(path))) {
+    // desktop.yml keeps a broad workflow-level list for its Linux jobs; its Mac jobs narrow it with pr-scope.
+    for (const job of macJobs) {
+      if (!JOB_SCOPE_GATE.test(jobIf(job.lines)))
+        problems.push(`macOS job ${job.name} has no path gate on pull_request (needs pr-scope)`);
+    }
+  }
+  return problems;
+}
+
+// merge_group, schedule and workflow_dispatch are never path-filtered; the markdown exclusion belongs to
+// pull_request only (push keeps whatever list it had); a PR cancel is pull_request-only wherever a
+// workflow can run for a PR.
+export function nonPrFilterProblems(text) {
+  const problems = [];
+  for (const ev of ["merge_group", "schedule", "workflow_dispatch"]) {
+    const b = onEvent(text, ev);
+    if (b !== null && /^    (paths|paths-ignore|branches|branches-ignore):/m.test(b) && ev !== "schedule")
+      problems.push(`${ev} must not be path- or branch-filtered`);
+  }
+  const push = onEvent(text, "push");
+  if (push !== null && /!\*\*\/\*\.md/.test(push)) problems.push("the markdown exclusion is for pull_request only, never push");
+  return problems;
+}
+
+export function prCancelProblems(text) {
+  const problems = [];
+  const on = topLevelBlock(text, "on");
+  if (!on || onEvent(text, "pull_request") === null) return problems;
+  const conc = topLevelBlock(text, "concurrency");
+  if (!conc) return problems;
+  const groupLine = conc.split("\n").find((l) => /^\s+group:/.test(l)) ?? "";
+  const cancelLine = conc.split("\n").find((l) => /^\s+cancel-in-progress:/.test(l)) ?? "";
+  if (/cancel-in-progress:\s*true\s*$/.test(cancelLine)) problems.push("cancel-in-progress: true would also cancel merge_group, push and schedule runs");
+  if (/cancel-in-progress/.test(cancelLine) && !/github\.event_name\s*==\s*'pull_request'/.test(cancelLine) && !/cancel-in-progress:\s*false/.test(cancelLine))
+    problems.push("cancel-in-progress must be pull_request-only");
+  if (/cancel-in-progress:\s*\$\{\{/.test(cancelLine) && /github\.sha/.test(groupLine) )
+    problems.push("a non-PR run must not share a group by commit sha (a merge_group and the push to main carry the same sha)");
+  return problems;
+}

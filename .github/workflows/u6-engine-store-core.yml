@@ -10,6 +10,7 @@ on:
       - clients/swift/ModelPlanWire/**
       - schema/app-cli/captures/**
       - .github/workflows/u6-engine-store-core.yml
+      - '!**/*.md'
   push:
     branches: [main]
     paths:

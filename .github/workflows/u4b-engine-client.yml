@@ -12,6 +12,7 @@ on:
       - cli/internal/consent/**
       - cli/internal/quota/**
       - .github/workflows/u4b-engine-client.yml
+      - '!**/*.md'
   push:
     branches: [main]
     paths:

@@ -12,6 +12,7 @@ on:
       - desktop/third-party/**
       - desktop/package.json
       - .github/workflows/u10-candidate.yml
+      - '!**/*.md'
   push:
     branches: [main]
     paths:

@@ -18,6 +18,7 @@ on:
       - tools/u14/**
       - desktop/native/**
       - .github/workflows/u14-macos.yml
+      - '!**/*.md'
 permissions:
   contents: read
 concurrency:
