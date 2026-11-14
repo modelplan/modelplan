@@ -50,6 +50,10 @@ type DBCursor struct {
 	Unread   bool  `json:"unread,omitempty"`
 	Below    int64 `json:"below,omitempty"`
 	Eligible int64 `json:"eligible,omitempty"`
+	// File: once the tool's history was cleared, the identity of the database file (device, inode,
+	// birth time where the system has it; see fileID). Another file at the path is a replacement:
+	// the post-clear reads start over from the clear's watermark. It names the file, nothing in it.
+	File string `json:"file,omitempty"`
 }
 
 const (
@@ -150,6 +154,11 @@ func rowIDs(db *sql.DB, query string, args ...any) ([]int64, error) {
 	return out, rows.Err()
 }
 
+// fileIDOf: a file identity from its device, inode and birth time (unix ns; 0: unknown).
+func fileIDOf(dev, ino uint64, birth int64) string {
+	return strconv.FormatUint(dev, 10) + ":" + strconv.FormatUint(ino, 10) + ":" + strconv.FormatInt(birth, 10)
+}
+
 func hashID(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:8])
@@ -170,6 +179,9 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor, postClear string, now 
 	if sig == "" || (sig == c.Sig && len(c.Pending) == 0 && !c.More) || now.Sub(c.Checked) < dbEvery {
 		return false
 	}
+	// The file's identity is read before the database is opened: a file swapped in between is
+	// then a replacement next time and read again, never taken for the file that was read.
+	file := fileID(path)
 	db, err := openRO(path)
 	if err != nil {
 		return false
@@ -182,7 +194,16 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor, postClear string, now 
 	// atClear: the row at RowID is from before the tool's clear, so the reads went on past it and
 	// the rows below it without reading them; the post-clear rows among those are read apart below.
 	atClear := false
-	if _, had := l.Stores[key]; !had {
+	_, had := l.Stores[key]
+	// After a clear, another database file at the path (another identity: a replacement, whatever
+	// its rows) starts the post-clear reads over, as a first read after the clear would: only Mark
+	// and Seen (the post-clear requests counted, by their hashed ids) are kept, so those are not
+	// counted again; the old file's row numbers, pending rows and lower progress mean nothing in
+	// the new file. The same file changed in place (appends, WAL) keeps its cursor.
+	if had && cleared > 0 && file != "" && c.File != "" && file != c.File {
+		c, had = DBCursor{Mark: c.Mark, Seen: c.Seen}, false
+	}
+	if !had {
 		// The tool's history was cleared through row N of its database: read on past it, so the
 		// rows from before the clear are not read again. When this database's row N is missing
 		// or is post-clear, it is not the database that was cleared (replaced since): it is read
@@ -236,8 +257,9 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor, postClear string, now 
 	// pre-clear one. They are read once, in row order, a batch per scan: Below is how far, and the
 	// reads past RowID wait until all are read (More meanwhile), so the two reads never overlap.
 	// Once all are read, Eligible keeps their count; a later scan that counts a different number
-	// (the database was replaced again under the same pre-clear row) reads them again from the
-	// start, and requests already counted are known by Seen.
+	// reads them again from the start, and requests already counted are known by Seen. A
+	// replacement by another file is noticed by its identity (above), whatever the count; the count
+	// covers the same file changed in place and systems without a file identity.
 	var below []dbRow
 	held := false
 	if atClear {
@@ -366,6 +388,10 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor, postClear string, now 
 				c.Eligible = -1 // unknown: the next scan reads the post-clear rows below again
 			}
 		}
+	}
+	c.File = ""
+	if cleared > 0 {
+		c.File = file
 	}
 	c.Pending, c.Sig, c.Day, c.Checked, c.More = pending, sig, day(now), now.UTC().Truncate(time.Second), more
 	l.Stores[key] = c
