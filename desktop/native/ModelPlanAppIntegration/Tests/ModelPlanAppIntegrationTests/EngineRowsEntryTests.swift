@@ -308,6 +308,30 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertTrue((expired.menuStatusLines ?? []).joined().contains("Engine expiry reason"))
     }
 
+    /// SET-9-42: a reader that failed before any account or reading exists has no Dock member, yet its own
+    /// Settings row must still carry the cause (reason and fix entry) through the normal rows-to-Settings path.
+    func testAccountlessFailedReaderKeepsItsCauseOnItsSettingsRow() async throws {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        rows[0]["surfaces"] = ["menu", "settings"]; rows[0]["state"] = "failed"
+        rows[0]["accounts"] = [[String: Any]]()
+        rows[0]["reason"] = ["code": "not_signed_in", "text": ["en": "Not signed in", "zh": "未登录"]]
+        rows[0].removeValue(forKey: "expiresAt"); rows[0].removeValue(forKey: "stateAfterExpiry")
+        projection["rows"] = rows; root["projection"] = projection
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        let store = EngineStore(), source = EngineDockMenuProvider(store: store)
+        let adapter = EngineDockContentProvider(source: source)
+        let fake = RowsEntryClient(store: store, rows: fixture); _ = try await fake.start()
+        let content = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date()))
+        XCTAssertTrue(content.snapshot.inputs.isEmpty, "no Dock member exists for an accountless failure")
+        let entry = try XCTUnwrap(content.snapshot.subscriptions.first { $0.id == "codex" }, "the failed tool keeps its Settings row")
+        XCTAssertEqual(entry.causeCode, "not_signed_in")
+        XCTAssertNotEqual(entry.source, .fresh)
+        XCTAssertNotNil(ReaderCauseTable.entry(code: try XCTUnwrap(entry.causeCode), tool: entry.vendor, toolName: entry.name.english))
+    }
+
     func testNormalSettingsContextUsesBundleNoticesAndAcceptedEngineReadiness() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u6-about-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }

@@ -1,0 +1,1 @@
+A reader that fails before any account or reading exists (not signed in, waiting for permission, app server closed or errored) now shows its cause and a fix on that tool's own row in Settings > Tools, instead of the row disappearing.
