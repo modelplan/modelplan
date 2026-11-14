@@ -24,6 +24,26 @@ def widget(grip_y, ring_ys):
     return {"role": "AXWindow", "frame": [0.0, 100.0, 90.0, 300.0], "children": children}
 
 
+class DragStripTests(unittest.TestCase):
+    """G3-43: the drag starts inside the app's title drag region, whatever the window scale and shape."""
+    def start(self, frame):
+        window = {"role": "AXWindow", "title": "ModelPlan Cockpit", "frame": frame, "children": []}
+        host = FakeHost(tree={"windows": [window]})
+        walk = w.Walkthrough.__new__(w.Walkthrough)
+        walk.host = host
+        walk.need = lambda target: window
+        walk.op_dragStrip({"window": "x", "by": [-320, 40]})
+        return next(call for call in host.calls if call[0] == "down")[1:]
+
+    def test_point_is_inside_the_drag_region_at_any_scale(self):
+        for scale, root in ((1.0, 877), (0.85, 877), (0.75, 877), (1.0, 691), (1.0, 627), (1.0, 609), (0.8, 609)):
+            x0, y0 = 300.0, 120.0
+            x, y = self.start([x0, y0, 636 * scale, (root + 34) * scale])
+            strip_top = {877: 225, 691: 45, 627: 57, 609: 45}[root]  # 609 is the compact shutter-closed root: strip top 45
+            self.assertGreaterEqual((x - x0) / scale, 24); self.assertLessEqual((x - x0) / scale, 24 + 216)
+            self.assertGreaterEqual((y - y0) / scale, strip_top - 3); self.assertLessEqual((y - y0) / scale, strip_top + 29)
+
+
 class FakeHost:
     def __init__(self, tree=None, windows=(), stats=None):
         self.tree, self.windows, self.calls, self.clock = tree or {}, list(windows), [], 0.0
@@ -76,6 +96,24 @@ class Targets(unittest.TestCase):
         self.assertEqual(w.resolve(self.TREE, "label:Close")["id"], "a")
         self.assertEqual(w.resolve(self.TREE, "status-item")["frame"], [700, 0, 60, 24])
         self.assertEqual(w.resolve(self.TREE, "window-of:ax:a")["role"], "AXWindow")
+
+    def test_label_prefix_and_contains(self):
+        self.assertEqual(w.resolve(self.TREE, "label^:Clo")["id"], "a")
+        self.assertEqual(w.resolve(self.TREE, "label~:los")["id"], "a")
+        self.assertIsNone(w.resolve(self.TREE, "label^:los"))
+
+    def test_prefix_and_contains_also_match_the_title(self):
+        tree = {"windows": [{"role": "AXWindow", "frame": [0, 0, 100, 100], "children": [
+            {"id": "all", "label": "All · Shortcut key 0", "title": "Shortcut key 0", "frame": [1, 2, 3, 4]}]}]}
+        for target in ("label:Shortcut key 0", "label^:Shortcut", "label~:key 0", "label^:All", "label~:Shortcut key 0"):
+            self.assertEqual(w.resolve(tree, target)["id"], "all", target)
+
+    def test_click_first_takes_the_first_target_on_screen_and_fails_when_none_is(self):
+        run = w.Walkthrough(FakeHost(tree=self.TREE), "App.app", "out", [], {}, (1000, 800))
+        run.op_clickFirst({"targets": ["label:Nope", "label:Close"]})
+        self.assertEqual(run.host.calls[-1][0], "click")
+        with self.assertRaises(w.WalkthroughError):
+            run.op_clickFirst({"targets": ["label:Nope"]})
 
     def test_a_closed_menu_item_exists_but_is_not_on_screen(self):
         self.assertIsNone(w.resolve(self.TREE, "ax:closed"))
@@ -194,6 +232,15 @@ class Steps(unittest.TestCase):
         self.assertIn(("capture_window", 9), host.calls)
         self.assertEqual(record["window"]["bounds"], [100, 100, 300, 300])
         self.assertTrue((self.out / record["window"]["file"]).exists())
+
+    def test_comparison_steps_do_not_run_when_the_strip_press_fails(self):
+        steps = {s["id"]: s for s in json.loads((ROOT / "steps.json").read_text())["steps"]}
+        for later in ("j-compare-back", "j-esc-compare"):
+            self.assertEqual(steps[later]["requires"], ["j-press-strip"])
+        press = dict(steps["j-press-strip"], requires=[])
+        records = walker(FakeHost(), self.out, [press, dict(steps["j-compare-back"], requires=["j-press-strip"])]).walk_steps()
+        self.assertEqual(records[0]["status"], "fail")
+        self.assertEqual((records[1]["status"], records[1]["reason"]), ("not-run", "needs j-press-strip"))
 
     def test_a_failed_action_is_still_photographed_and_blocks_dependents(self):
         steps = [{"id": "a", "title": "t", "expected": "e", "actions": [{"op": "click", "target": "ax:gone"}]},

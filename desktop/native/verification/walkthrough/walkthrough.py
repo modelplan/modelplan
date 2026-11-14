@@ -59,6 +59,8 @@ def matcher(target):
         "ax": lambda n: n.get("id") == value,
         "ax^": lambda n: str(n.get("id", "")).startswith(value),
         "label": lambda n: value in (n.get("label"), n.get("title")),
+        "label^": lambda n: any(str(n.get(k) or "").startswith(value) for k in ("label", "title")),
+        "label~": lambda n: any(value in str(n.get(k) or "") for k in ("label", "title")),
         "value": lambda n: n.get("value") == value,
         "dom^": lambda n: str(n.get("dom", "")).startswith(value),
         "role": lambda n: n.get("role") == value,
@@ -276,6 +278,16 @@ class Walkthrough:
         verb = "rightclick" if action.get("button") == "right" else "click"
         self.host.helper(verb, *centre(self.need(action["target"])["frame"]))
 
+    def op_clickFirst(self, action):
+        """Click the first of several targets that is on screen; the step fails when none is."""
+        tree = self.tree()
+        for target in action["targets"]:
+            node = resolve(tree, target)
+            if node is not None:
+                self.host.helper("click", *centre(node["frame"]))
+                return
+        raise WalkthroughError("none of the targets is on screen: " + ", ".join(action["targets"]))
+
     def op_hover(self, action):
         self.host.helper("move", *centre(self.need(action["target"])["frame"]), 0.5)
         self.host.sleep(action.get("seconds", 1))
@@ -302,10 +314,18 @@ class Walkthrough:
         self.host.helper("click", *centre(ring["frame"]))
 
     def op_dragStrip(self, action):
-        """Drag the cockpit by its title strip: left of the strip buttons, at their height."""
+        """Drag the cockpit by the middle of its title-strip drag region (G3-43).
+
+        The region is the app's `titleDragFrame`: page x 24..240 and, from the top of the page, the strip top
+        (225 full open, 45 full closed, 57 short) minus 3 down to plus 29. It scales with the window, so the point
+        comes from the reported window frame (page width 636, root 877/691/627/609 plus the 34 px base reserve), never
+        from another control that merely shares a label.
+        """
         window = self.need(action["window"])["frame"]
-        button = self.need(action["strip"])["frame"]
-        start = (window[0] + window[2] * action.get("x", 0.12), centre(button)[1])
+        scale = window[2] / 636.0
+        root = round(window[3] / scale) - 34
+        strip_top = {877: 225, 691: 45, 627: 57, 609: 45}.get(min((877, 691, 627, 609), key=lambda r: abs(r - root)), 225)
+        start = (window[0] + 132 * scale, window[1] + (strip_top + 13) * scale)
         self.host.helper("down", *start)
         self.host.helper("held", start[0] + action["by"][0], start[1] + action["by"][1], action.get("seconds", 1.0))
         self.host.helper("up")
