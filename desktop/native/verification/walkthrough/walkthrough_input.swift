@@ -113,13 +113,18 @@ func find(_ element: AXUIElement, attribute name: String, equals wanted: String,
     }
     return nil
 }
-func press(pid: Int32, by key: String, value: String) -> Bool {
+func press(pid: Int32, by key: String, value: String, within scope: String? = nil) -> Bool {
     var left = 6000
     let app = application(pid)
-    let name = key == "title" ? kAXTitleAttribute : kAXIdentifierAttribute
+    let name = key == "title" ? kAXTitleAttribute : key == "subrole" ? kAXSubroleAttribute : kAXIdentifierAttribute
     var roots = (attribute(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
     if let extras = attribute(app, "AXExtrasMenuBar") { roots.append(extras as! AXUIElement) }
     for root in roots {
+        // A scope is the identifier of one control inside the window to press in: other windows are not searched.
+        if let scope = scope {
+            var probe = 6000
+            if find(root, attribute: kAXIdentifierAttribute, equals: scope, depth: 0, left: &probe) == nil { continue }
+        }
         if let hit = find(root, attribute: name, equals: value, depth: 0, left: &left) {
             return AXUIElementPerformAction(hit, kAXPressAction as CFString) == .success
         }
@@ -224,7 +229,8 @@ case ("windows", 2): emit(windows(pid: Int32(number(arguments[1]))))
 case ("tree", 2): emit(tree(pid: Int32(number(arguments[1]))))
 case ("modes", 1): emit(modes())
 case ("setmode", 3): emit(["set": setMode(width: Int(number(arguments[1])), height: Int(number(arguments[2])))])
-case ("press", 4): emit(["pressed": press(pid: Int32(number(arguments[1])), by: arguments[2], value: arguments[3])])
+case ("press", 4), ("press", 5):
+    emit(["pressed": press(pid: Int32(number(arguments[1])), by: arguments[2], value: arguments[3], within: arguments.count > 4 ? arguments[4] : nil)])
 case ("stats", 2): emit(stats(path: arguments[1]))
 case ("diff", 3): emit(difference(arguments[1], arguments[2]))
 case ("hit", 3): emit(hit(x: number(arguments[1]), y: number(arguments[2])))

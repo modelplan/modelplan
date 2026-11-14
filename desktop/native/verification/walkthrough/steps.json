@@ -463,8 +463,10 @@
           "seconds": 1
         },
         {
-          "op": "click",
-          "target": "subrole:AXCloseButton"
+          "op": "press",
+          "by": "subrole",
+          "value": "AXCloseButton",
+          "within": "settings.sidebar"
         },
         {
           "op": "wait",
@@ -1223,7 +1225,7 @@
       "actions": [
         {
           "op": "click",
-          "target": "label:Open the 3D view"
+          "target": "label:Open the 3D launch field · Or click anywhere on the field"
         },
         {
           "op": "wait",
@@ -1254,7 +1256,7 @@
       "actions": [
         {
           "op": "clickIn",
-          "target": "label:Open the 3D view",
+          "target": "label:Open the 3D launch field · Or click anywhere on the field",
           "at": [
             0.8,
             0.3
@@ -1292,7 +1294,7 @@
       "actions": [
         {
           "op": "clickIn",
-          "target": "label:Open the 3D view",
+          "target": "label:Open the 3D launch field · Or click anywhere on the field",
           "at": [
             0.17,
             0.48
