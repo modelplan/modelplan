@@ -127,3 +127,28 @@ func TestOwedSourcesFollowRequestGrantAndCoverage(t *testing.T) {
 		t.Fatalf("an ungranted source is owed: %v", got)
 	}
 }
+
+// macrevd-967-1: history the user removed ("Remove imported history") stays removed: it is not
+// owed again under the same grant; only a revoke and a new grant (a new grant epoch) owe it again.
+func TestRemovedImportIsNotOwedUntilGrantedAgain(t *testing.T) {
+	f := newFixture(t)
+	f.codexLog("rollout-a.jsonl", -3)
+	if _, err := Import(context.Background(), f.cache, ImportOptions{Now: f.now, Codex: &ImportRoot{Dir: f.home}, Admission: both(), Auto: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveImported(f.cache); err != nil {
+		t.Fatal(err)
+	}
+	if got := OwedSources(f.cache, *both()); len(got) != 1 || got[0] != "claude-code" {
+		t.Fatalf("after remove owed %v, want only the never-imported claude-code", got)
+	}
+	state := consent.Empty()
+	state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+	state.Revoked[consent.ScopeCodexLocalHistory] = 1
+	state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, At: t0}
+	state.Scopes[consent.ScopeClaudeLocalHistory] = consent.Record{Allowed: false, ConsentTextVersion: consent.TextVersion}
+	regranted := consent.NewAdmission(state, consent.Automatic)
+	if got := OwedSources(f.cache, regranted); len(got) != 1 || got[0] != "codex" {
+		t.Fatalf("revoked and granted again: owed %v, want [codex]", got)
+	}
+}

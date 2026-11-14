@@ -3,7 +3,9 @@ package appserver
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 )
@@ -50,4 +52,50 @@ func TestStartOwedWithNothingOwedStaysIdle(t *testing.T) {
 	if st, _ := call(t, HistoryImportHandlers(c), "history/import_status", `{}`); st.Phase != wire.ImportIdle {
 		t.Fatalf("%+v", st)
 	}
+}
+
+// countingOwed runs every owed import to completion at once and counts the runs.
+type countingOwed struct {
+	block chan struct{} // the ordinary run waits on it
+	owed  atomic.Bool
+	runs  atomic.Int32
+}
+
+func (c *countingOwed) Run(ctx context.Context, days int, firstRun bool, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+	<-c.block
+	return []wire.HistoryImportSource{}, nil
+}
+func (c *countingOwed) State() wire.HistoryImportStatus {
+	return wire.HistoryImportStatus{Coverage: []wire.HistoryImportCoverage{}}
+}
+func (c *countingOwed) Remove() error { return nil }
+func (c *countingOwed) Owed() bool    { return c.owed.Load() }
+func (c *countingOwed) RunOwed(ctx context.Context, days int, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+	c.runs.Add(1)
+	c.owed.Store(false)
+	return []wire.HistoryImportSource{}, nil
+}
+
+// macrevd-967-2: a grant that makes an import owed while another import runs is not lost: the
+// owed import starts when the running one ends.
+func TestOwedImportAskedWhileBusyRunsAfterwards(t *testing.T) {
+	e := &countingOwed{block: make(chan struct{})}
+	c := NewImportController(e)
+	h := HistoryImportHandlers(c)
+	if _, err := call(t, h, "history/import_start", `{"days":30,"firstRun":false}`); err != nil {
+		t.Fatal(err)
+	}
+	e.owed.Store(true)
+	c.StartOwed(30) // busy: must be remembered
+	if e.runs.Load() != 0 {
+		t.Fatal("owed run started while busy")
+	}
+	close(e.block)
+	for i := 0; i < 400 && e.runs.Load() == 0; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if e.runs.Load() != 1 {
+		t.Fatalf("owed import asked while busy ran %d times, want 1", e.runs.Load())
+	}
+	c.Close()
 }

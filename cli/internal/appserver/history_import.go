@@ -34,6 +34,10 @@ type ImportController struct {
 	revision int
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
+	// owedPending: days of an owed import asked for while another ran; it starts when that one
+	// ends (macrevd-967-2). closed: Close was called; nothing new starts.
+	owedPending int
+	closed      bool
 }
 
 func NewImportController(e ImportEngine) *ImportController {
@@ -43,6 +47,7 @@ func NewImportController(e ImportEngine) *ImportController {
 // Close cancels a running import and waits for it.
 func (c *ImportController) Close() {
 	c.mu.Lock()
+	c.closed = true
 	cancel := c.cancel
 	c.mu.Unlock()
 	if cancel != nil {
@@ -94,14 +99,26 @@ func (c *ImportController) StartOwed(days int) {
 	if !ok || !r.Owed() {
 		return
 	}
-	_ = c.startRun(days, func(ctx context.Context, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+	_ = c.startRunOr(days, func(ctx context.Context, progress func(int, int)) ([]wire.HistoryImportSource, error) {
 		return r.RunOwed(ctx, days, progress)
-	})
+	}, func() { c.owedPending = days })
 }
 
 func (c *ImportController) startRun(days int, run func(context.Context, func(int, int)) ([]wire.HistoryImportSource, error)) error {
+	return c.startRunOr(days, run, nil)
+}
+
+// startRunOr is startRun; when an import is running it calls busy (under the lock) instead.
+func (c *ImportController) startRunOr(days int, run func(context.Context, func(int, int)) ([]wire.HistoryImportSource, error), busy func()) error {
 	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return ProtocolError{wire.CodeBusy}
+	}
 	if c.phase == wire.ImportRunning {
+		if busy != nil {
+			busy()
+		}
 		c.mu.Unlock()
 		return ProtocolError{wire.CodeBusy}
 	}
@@ -118,7 +135,6 @@ func (c *ImportController) startRun(days int, run func(context.Context, func(int
 			c.mu.Unlock()
 		})
 		c.mu.Lock()
-		defer c.mu.Unlock()
 		switch {
 		case errors.Is(err, context.Canceled):
 			c.phase = wire.ImportCancelled
@@ -128,6 +144,17 @@ func (c *ImportController) startRun(days int, run func(context.Context, func(int
 			c.phase, c.last = wire.ImportDone, res
 		}
 		c.revision++
+		// An owed import asked for meanwhile starts now (a cancel leaves it for the next launch
+		// or grant; the ledger still owes it).
+		again := c.owedPending
+		c.owedPending = 0
+		if errors.Is(err, context.Canceled) || c.closed {
+			again = 0
+		}
+		c.mu.Unlock()
+		if again > 0 {
+			c.StartOwed(again)
+		}
 	}()
 	return nil
 }

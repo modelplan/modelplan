@@ -90,9 +90,13 @@ type ImportLedger struct {
 	AutoRan *time.Time `json:"autoRan,omitempty"`
 	// AutoRequested: when a first-run import was last asked for. With no AutoRan it is owed: the
 	// run failed, was interrupted or found no grant, and the engine retries it at launch (G3-112).
-	AutoRequested *time.Time      `json:"autoRequested,omitempty"`
-	Coverage      map[string]Span `json:"coverage,omitempty"`
-	Rows          []PerfRow       `json:"rows"`
+	AutoRequested *time.Time `json:"autoRequested,omitempty"`
+	// Removed: the grant each source's history was imported under when the user removed it
+	// ("Remove imported history"). Under that grant it is not owed again; a revoke and a new
+	// grant are a new epoch and owe it again (macrevd-967-1).
+	Removed  map[string]*GrantEpoch `json:"removed,omitempty"`
+	Coverage map[string]Span        `json:"coverage,omitempty"`
+	Rows     []PerfRow              `json:"rows"`
 }
 
 // ImportPath is the ledger file.
@@ -136,6 +140,9 @@ func OwedSources(cache string, a consent.Admission) []string {
 		epoch := currentEpoch(a, source)
 		if !decided || !r.Allowed || epoch == nil {
 			continue
+		}
+		if removed := l.Removed[source]; removed != nil && sameEpoch(removed, epoch) {
+			continue // removed by the user under this grant
 		}
 		c, has := l.Coverage[source]
 		if !has || c.From.IsZero() || !sameEpoch(c.Epoch, epoch) || (source == "codex" && !c.Archived) {
@@ -779,6 +786,7 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 	}
 	c.Retry = retry
 	led.Coverage[j.source] = c
+	delete(led.Removed, j.source) // imported again on purpose
 	if auto && led.AutoRan == nil {
 		t := now.UTC().Truncate(time.Second)
 		led.AutoRan = &t
@@ -838,7 +846,16 @@ func RemoveImported(cache string) error {
 		}
 		return nil
 	}
-	return writeImported(cache, ImportLedger{SchemaVersion: 1, AutoRan: led.AutoRan, Rows: []PerfRow{}})
+	removed := led.Removed
+	for source, c := range led.Coverage {
+		if c.Epoch != nil {
+			if removed == nil {
+				removed = map[string]*GrantEpoch{}
+			}
+			removed[source] = c.Epoch
+		}
+	}
+	return writeImported(cache, ImportLedger{SchemaVersion: 1, AutoRan: led.AutoRan, AutoRequested: led.AutoRequested, Removed: removed, Rows: []PerfRow{}})
 }
 
 // merge adds a row's sums into the ledger's row of the same configuration.
