@@ -397,6 +397,14 @@ public struct FirstRunReading: Sendable, Equatable {
             return attempt
         }
     }
+    /// D87 slice 5: the engine's accepted row facts (consent, state, reason code) per tool id.
+    public var toolRowFacts: [String: ToolRowFacts] {
+        var ids = Set(rowCodes.keys).union(rowStates.keys)
+        if let rowConsent { ids.formUnion(rowConsent.keys) }
+        var result: [String: ToolRowFacts] = [:]
+        for id in ids { result[id] = ToolRowFacts(consent: rowConsent?[id], state: rowStates[id], code: rowCodes[id]?.rawValue) }
+        return result
+    }
     /// Not committed: refused before dispatch, not sent, or answered by the engine with an error.
     private static func attempt(after error: Error) -> ScopeConsentAttempt {
         if let error = error as? EngineClientError {

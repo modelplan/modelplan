@@ -16,6 +16,8 @@ import ModelPlanWire
     /// G3-45: vendor marks for the first-run tool list; the app supplies its checked marks.
     public var markImage: (@MainActor (String) -> NSImage?)? { didSet { view.setMarkImage(markImage) } }
     public enum PresentationError:Error { case mutationInProgress }
+    /// D90: the engine seam for the optional manual key. Setting it shows the key area in Settings.
+    public var readerKeys: ReaderKeyBackend? { didSet { view.readerKeys = readerKeys } }
 
     public init(client: any EngineClient, ready: @escaping @MainActor () -> Bool,
                 makeGrant: (@MainActor (ScopeConsentIntent) throws -> WireConsentGrantParams)? = nil,

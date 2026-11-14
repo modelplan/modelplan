@@ -36,6 +36,11 @@ import ModelPlanWire
     private var observer: UUID?
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
+    private var keySection: ReaderKeySection?
+    /// D90: the optional manual key area. Set by the app when the engine supports it.
+    public var readerKeys: ReaderKeyBackend? {
+        didSet { if keySection != nil { keySection?.dismiss(); keySection = nil }; render() }
+    }
     public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
                 buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false,
                 markImage: (@MainActor (String) -> NSImage?)? = nil, compactTools: Bool = false) {
@@ -56,7 +61,7 @@ import ModelPlanWire
     /// Follow the shared Settings editor language without changing any draft.
     public func apply(language: SettingsLanguage) {
         guard self.language != language else { return }
-        self.language = language; render()
+        self.language = language; keySection?.apply(language: language); render()
     }
     /// Retire this presentation before detaching it from the accepted-event sink.
     public func retirePresentation() {
@@ -66,6 +71,7 @@ import ModelPlanWire
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
         }
         buttons = []
+        keySection?.dismiss()
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
@@ -358,13 +364,45 @@ import ModelPlanWire
             line(SettingsText("Not installed. ModelPlan reads it once it is installed on this Mac and you turn it on here.",
                               "未安装。安装到这台 Mac 后，可在这里打开，ModelPlan 才会读取。"), id: prefix + "status." + id, color: .systemOrange)
         }
+        // D90: in Settings a detected key-only tool carries the optional key entry on its own row.
+        let keyEntry: ReaderKeyEntryView? = {
+            guard settings, tool.detected, let provider = ReaderKeyProvider(rawValue: id), let backend = readerKeys else { return nil }
+            let section = keySection ?? ReaderKeySection(backend: backend, language: language)
+            section.onPresenceChange = { [weak self] in self?.render() }
+            keySection = section
+            return section.inlineEntry(for: provider)
+        }()
+        var keyMissingShown = false
         if let block = tool.block {
             line(Self.blockLine(block, tool: id), id: prefix + "status." + id, color: .systemOrange)
-        } else if tool.detected, tool.keyMissing, let missing = Self.keyMissingLine(tool) {
-            line(missing, id: prefix + "status." + id, color: .systemOrange)
+        } else if tool.detected, tool.keyMissing, let missing = Self.keyMissingLine(tool, keyEntry: keyEntry != nil) {
+            line(missing, id: prefix + "status." + id, color: .systemOrange); keyMissingShown = true
         } else if tool.detected, !tool.canRead {
             // Only browser-session or unrecognised paths: never describe a read that will not happen.
             line(Self.unreadableLine, id: prefix + "status." + id)
+        }
+        if let provider = ReaderKeyProvider(rawValue: id), tool.detected {
+            if let keyEntry {
+                // D90 / SET-9-41: a detected key-only tool that is not being read says why and offers the one
+                // optional key entry right here; detected sign-ins and environment keys are still used first.
+                // A saved key with reading off is not "no key found" (GLMREV Q2): say reading is off instead.
+                if !controller.isToolReading(id) {
+                    if keyEntry.entry.status.present {
+                        line(Self.keySavedReadingOffLine(id), id: prefix + "nokey." + id, color: .systemOrange)
+                    } else if !keyMissingShown {
+                        line(Self.noKeyLine(provider), id: prefix + "nokey." + id, color: .systemOrange)
+                    }
+                }
+                column.addArrangedSubview(keyEntry)
+            } else if !settings {
+                line(Self.firstRunKeyLine, id: prefix + "keylater." + id)
+            }
+        }
+        // D87 slice 8: what the tool still needs, from the same table as the Subscriptions rows.
+        if !settings, tool.detected, tool.block == nil {
+            let pre = SubscriptionRowModel.prerequisite(tool: tool, name: Self.toolName(id).english,
+                                                        facts: controller.toolRowFacts[id], keyEntryAvailable: readerKeys != nil)
+            line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
         }
         let row = NSStackView(views: [box, mark, column]); row.orientation = .horizontal; row.alignment = .top; row.spacing = 10
         row.setAccessibilityIdentifier(prefix + "row." + id)
@@ -415,8 +453,17 @@ import ModelPlanWire
     /// #910-2: detection also counts the OpenCode Go sign-in OpenCode saved itself, but the reader takes the key
     /// only from OPENCODE_API_KEY (D230: the saved key is checked for existence, never read). So a found
     /// subscription with the engine's key_missing row still says why no quota is shown.
-    static func keyMissingLine(_ tool: FirstRunTool) -> SettingsText? {
+    /// D90: with the optional key entry on the row (Settings), the line also points to it.
+    static func keyMissingLine(_ tool: FirstRunTool, keyEntry: Bool = false) -> SettingsText? {
         guard tool.tool == "opencodego" else { return nil }
+        if keyEntry {
+            if hasOpenCodeGoSubscription(tool) {
+                return .init("An OpenCode Go sign-in was found, but ModelPlan does not read it, so no OpenCode Go quota is shown. Set the key in OPENCODE_API_KEY, or add it below, to show it. OpenCode's local history is still read.",
+                             "找到了 OpenCode Go 登录，但 ModelPlan 不读取它，因此不显示 OpenCode Go 额度；把密钥设置到 OPENCODE_API_KEY 环境变量或在下面添加后才会显示。仍会读取 OpenCode 的本机历史记录。")
+            }
+            return .init("No OpenCode Go subscription key was found, so no OpenCode Go quota is shown. Add a key below to show it. OpenCode's local history is still read.",
+                         "没有找到 OpenCode Go 订阅密钥，因此不显示 OpenCode Go 额度；在下面添加密钥后才会显示。仍会读取 OpenCode 的本机历史记录。")
+        }
         if hasOpenCodeGoSubscription(tool) {
             return .init("An OpenCode Go sign-in was found, but ModelPlan does not read it yet, so no OpenCode Go quota is shown. Set the key in OPENCODE_API_KEY to show it. OpenCode's local history is still read.",
                          "找到了 OpenCode Go 登录，但 ModelPlan 暂不读取它，因此不显示 OpenCode Go 额度；把密钥设置到 OPENCODE_API_KEY 环境变量后才会显示。仍会读取 OpenCode 的本机历史记录。")
@@ -467,6 +514,23 @@ import ModelPlanWire
         let keychain = tool.promptsKeychain ? mayAskKeychain : noKeychain
         return .init(base.english + keychain.english, base.chinese + keychain.chinese)
     }
+    /// Honest status for a detected key-only tool that is not being read: no key was found.
+    static func noKeyLine(_ provider: ReaderKeyProvider) -> SettingsText {
+        switch provider {
+        case .zai: return .init("No GLM key found, so it is not read yet. Sign in to ZCode, or add a key below.",
+                                "没有找到 GLM 密钥，所以暂未读取。请在 ZCode 里登录，或在下面添加密钥。")
+        case .opencodego: return .init("No OpenCode Go key found, so it is not read yet. Set OPENCODE_API_KEY, or add a key below.",
+                                       "没有找到 OpenCode Go 密钥，所以暂未读取。请设置 OPENCODE_API_KEY 环境变量，或在下面添加密钥。")
+        }
+    }
+    /// A key is saved but the tool's reading is off (switched off, or the grant after Save failed).
+    static func keySavedReadingOffLine(_ tool: String) -> SettingsText {
+        let name = toolName(tool)
+        return .init("A key is saved, but reading " + name.english + " is off. Turn it on to read it.",
+                     "已保存密钥，但 " + name.chinese + " 的读取已关闭。打开后才会读取。")
+    }
+    static let firstRunKeyLine = SettingsText("If no key is found on this Mac, you can add one later in Settings › Subscriptions.",
+                                              "如果本机上没有找到密钥，之后可在 设置 › 订阅 中添加。")
     static func blockLine(_ block: ScopeToolBlock, tool: String) -> SettingsText {
         let name = toolName(tool)
         switch block {
@@ -536,6 +600,13 @@ import ModelPlanWire
                 case .unknown: label(.init("The plugin result is not recognized. Check the target tool.", "无法识别插件结果，请在目标工具中检查。"))
                 }
             }
+        }
+        if !firstRun, !compactTools, let backend = readerKeys {
+            gap()
+            let section = keySection ?? ReaderKeySection(backend: backend, language: language)
+            keySection = section
+            addArrangedSubview(section)
+            section.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
         }
         gap()
         guard let facts = controller.facts else {

@@ -13,7 +13,7 @@ final class ReaderCauseTableTests: XCTestCase {
             ("rpc_error", "codex", "Codex", "Codex's background service returned an error", "Codex 后台服务出错", "It retries on its own; reopen the tool if it keeps failing", "会自动重试；若持续失败请重新打开该工具", .guidance),
             ("closed", nil, nil, "The tool's background service closed unexpectedly", "工具后台服务意外退出", "It retries on its own; reopen the tool if it keeps failing", "会自动重试；若持续失败请重新打开该工具", .guidance),
             ("keychain_unset", "claude", "Claude Code", "Keychain access needed", "需要允许读取钥匙串", "Allow Keychain reading in Settings", "在设置允许读取钥匙串", .openSettings),
-            ("key_missing", "zai", "GLM", "Sign in to the GLM Coding Plan in ZCode", "在 ZCode 里登录 GLM 编程套餐", "Open ZCode and sign in", "打开 ZCode 并登录", .guidance),
+            ("key_missing", "zai", "GLM", "No GLM key found on this Mac", "本机没有找到 GLM 密钥", "Sign in to ZCode, or add a key in Settings", "在 ZCode 里登录，或在设置里添加密钥", .openSettings),
             ("region_refused", "zai", "GLM", "This address is a third-party relay, so its quota can't be read", "这个地址是第三方转发服务，查不到额度", "Use the official address to read its quota", "改用官方地址才能读取额度", .guidance),
             ("no_plan", "zai", "GLM", "This key has no GLM Coding Plan", "这个密钥没有开通 GLM 编程套餐", "Use a key with a GLM Coding Plan, or subscribe to one", "换用已开通 GLM 编程套餐的密钥，或开通套餐", .guidance),
             ("consent_required", nil, nil, "Reading permission needed", "需要读取授权", "Review permission in Settings", "在设置检查授权", .openSettings),
@@ -60,7 +60,7 @@ final class ReaderCauseTableTests: XCTestCase {
     func testLedgerNamesAreAliasesAndNoKeyDependsOnTheTool() throws {
         XCTAssertEqual(ReaderCauseTable.entry(code: "keychain_needed"), ReaderCauseTable.entry(code: "keychain_unset"))
         XCTAssertEqual(ReaderCauseTable.entry(code: "consent_needed"), ReaderCauseTable.entry(code: "consent_required"))
-        XCTAssertEqual(ReaderCauseTable.entry(code: "no_key", tool: "zai")?.reason.chinese, "在 ZCode 里登录 GLM 编程套餐")
+        XCTAssertEqual(ReaderCauseTable.entry(code: "no_key", tool: "zai")?.reason.chinese, "本机没有找到 GLM 密钥")
         XCTAssertEqual(ReaderCauseTable.entry(code: "no_key", tool: "opencode")?.reason.chinese, "需要配置密钥")
         XCTAssertEqual(ReaderCauseTable.entry(code: "tool_not_found")?.reason.chinese, "找不到工具命令")
     }
