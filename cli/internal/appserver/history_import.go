@@ -38,6 +38,9 @@ type ImportController struct {
 	// ends (macrevd-967-2). closed: Close was called; nothing new starts.
 	owedPending int
 	closed      bool
+	// cancelAsked: the user cancelled the current run; no queued follow-up starts after it,
+	// whatever the run's own result (macrevd-967-3). Reset when a run starts.
+	cancelAsked bool
 }
 
 func NewImportController(e ImportEngine) *ImportController {
@@ -123,7 +126,7 @@ func (c *ImportController) startRunOr(days int, run func(context.Context, func(i
 		return ProtocolError{wire.CodeBusy}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c.phase, c.days, c.done, c.total, c.last, c.cancel = wire.ImportRunning, days, 0, 0, nil, cancel
+	c.phase, c.days, c.done, c.total, c.last, c.cancel, c.cancelAsked = wire.ImportRunning, days, 0, 0, nil, cancel, false
 	c.wg.Add(1)
 	c.mu.Unlock()
 	go func() {
@@ -148,7 +151,7 @@ func (c *ImportController) startRunOr(days int, run func(context.Context, func(i
 		// or grant; the ledger still owes it).
 		again := c.owedPending
 		c.owedPending = 0
-		if errors.Is(err, context.Canceled) || c.closed {
+		if errors.Is(err, context.Canceled) || c.closed || c.cancelAsked {
 			again = 0
 		}
 		c.mu.Unlock()
@@ -189,6 +192,9 @@ func HistoryImportHandlers(c *ImportController) map[string]Handler {
 			c.mu.Lock()
 			cancel := c.cancel
 			running := c.phase == wire.ImportRunning
+			if running {
+				c.cancelAsked = true // recorded with the run, before its result settles
+			}
 			c.mu.Unlock()
 			if running && cancel != nil {
 				cancel()

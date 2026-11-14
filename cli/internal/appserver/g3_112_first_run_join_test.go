@@ -99,3 +99,36 @@ func TestOwedImportAskedWhileBusyRunsAfterwards(t *testing.T) {
 	}
 	c.Close()
 }
+
+// settlesOK finishes successfully once cancelled (its commit already happened), and counts owed runs.
+type settlesOK struct{ countingOwed }
+
+func (s *settlesOK) Run(ctx context.Context, days int, firstRun bool, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+	<-ctx.Done()
+	return []wire.HistoryImportSource{}, nil
+}
+
+// macrevd-967-3: after the user pressed Cancel, no queued automatic import starts, even when the
+// cancelled run itself settles successfully; that run's result stays successful.
+func TestCancelSuppressesTheQueuedOwedImport(t *testing.T) {
+	e := &settlesOK{}
+	c := NewImportController(e)
+	h := HistoryImportHandlers(c)
+	if _, err := call(t, h, "history/import_start", `{"days":30,"firstRun":false}`); err != nil {
+		t.Fatal(err)
+	}
+	e.owed.Store(true)
+	c.StartOwed(30) // queued behind the running import
+	st, err := call(t, h, "history/import_cancel", `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := e.runs.Load(); n != 0 {
+		t.Fatalf("queued owed import started after Cancel (%d runs)", n)
+	}
+	if st.Phase != wire.ImportDone {
+		t.Fatalf("a run that settled successfully reports %s", st.Phase)
+	}
+	c.Close()
+}
