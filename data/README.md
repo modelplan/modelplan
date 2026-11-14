@@ -14,6 +14,7 @@ The reviewed data behind [modelplan.ai](https://modelplan.ai): coding plan tiers
 | [`client-harness-aliases.json`](client-harness-aliases.json) | Model names as Claude Code, Codex and other clients report them | CC-BY-SA-4.0 |
 | [`model-developers.json`](model-developers.json) | Model developers | CC-BY-SA-4.0 |
 | [`model-identities.json`](model-identities.json) | Reviewed model identities and names | CC-BY-SA-4.0 |
+| [`plan-reader-aliases.json`](plan-reader-aliases.json) | Plan names as coding-tool readers report them, mapped to catalogue plans | CC-BY-SA-4.0 |
 | [`real-api-pricing/LICENSE`](real-api-pricing/LICENSE) | Real API Pricing license | MIT |
 | [`real-api-pricing/README.md`](real-api-pricing/README.md) | Real API Pricing seed (third party, MIT) | MIT |
 | [`real-api-pricing/mapping.json`](real-api-pricing/mapping.json) | Real API Pricing display grouping | MIT |
