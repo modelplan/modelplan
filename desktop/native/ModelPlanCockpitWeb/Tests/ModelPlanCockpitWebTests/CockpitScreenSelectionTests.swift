@@ -34,6 +34,7 @@ import XCTest
                                        shellSession: session ?? CockpitShellSession(), anchor: { icon }, openPoint: { click })
     let displays = [a, b]
     page.screens = { displays }
+    page.separateSpaces = { true } // the macOS default: every display has its own menu bar
     return page
   }
   private func assertInside(_ frame: CGRect, _ usable: CGRect, _ message: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -54,7 +55,8 @@ import XCTest
     let page = try page(click: clickOnB)
     let (usable, anchor) = try XCTUnwrap(page.environment())
     XCTAssertEqual(usable, b.visibleFrame, "the cockpit lays out on B")
-    XCTAssertEqual(anchor, CockpitShellLayout.hiddenIconAnchor(usable: b.visibleFrame), "B has no icon: top right of B, below its menu bar")
+    // D204: B's own menu bar shows the icon at the same distance from its top-right corner as A's.
+    XCTAssertEqual(anchor, CGRect(x: 3660, y: 1407, width: 28, height: 24), "under the icon on B's menu bar")
     let placed = try XCTUnwrap(page.placement())
     assertInside(placed.frame, b.visibleFrame, "attached open from B")
   }

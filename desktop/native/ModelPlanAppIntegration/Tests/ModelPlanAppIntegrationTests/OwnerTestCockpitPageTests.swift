@@ -219,7 +219,8 @@ extension CommunityCockpitEntryTests {
         XCTAssertFalse(window.isOpaque, "the panel is not opaque")
         XCTAssertEqual(window.backgroundColor?.alphaComponent ?? 1, 0, "the panel background is clear")
         XCTAssertFalse(window.hasShadow, "no window shadow around the hull, as in the study")
-        XCTAssertEqual(web.value(forKey: "drawsBackground") as? Bool, false, "the web view paints no backing")
+        XCTAssertFalse(web.isOpaque, "the web view paints no backing")
+        XCTAssertEqual(web.value(forKey: "drawsBackground") as? Bool, false, "WebKit draws no backing of its own")
         XCTAssertEqual(web.underPageBackgroundColor.alphaComponent, 0, "nothing under the page")
         // The web view's own rendering of the window: corners and the reserve beside the bells are transparent.
         let image = try await web.takeSnapshot(configuration: nil)
@@ -382,7 +383,7 @@ extension CommunityCockpitEntryTests {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-53-" + UUID().uuidString).resolvingSymlinksInPath()
             defer { try? FileManager.default.removeItem(at: root) }
             let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
-            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+            let settings = try await completedOnboarding(try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"]))
             let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
             let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
             let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
@@ -413,7 +414,9 @@ extension CommunityCockpitEntryTests {
             let scale = page.verificationLayout?.scale ?? 1
             var target = before
             func click() throws {
-                let content = try XCTUnwrap(window.contentView), h = content.bounds.height
+                // G3-108: the page is top-anchored in the web view, which keeps the open canvas on the window's bottom
+                // edge; closed, the window leaves out the band above the slab, so page y counts from the web view's top.
+                let content = try XCTUnwrap(window.contentView), h = web.frame.maxY
                 let p = content.convert(CGPoint(x: (target["x"] as! Double) * scale, y: h - (target["y"] as! Double) * scale), to: nil)
                 for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                     window.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
@@ -436,6 +439,8 @@ extension CommunityCockpitEntryTests {
                 XCTAssertEqual(drawn?["pressed"] as? String, String(closed), "\(name): the page shows the shutter \(closed ? "closed" : "open")")
                 XCTAssertEqual(drawn?["root"] as? Double ?? 0, Double(expectedRoot), accuracy: 0.5, "\(name): the page root follows")
                 if let drawn { target = drawn }
+                // G3-108: the shutter's window motion (250 ms) settles before the next click.
+                try await Task.sleep(for: .milliseconds(400))
             }
         }
     }
@@ -530,7 +535,7 @@ extension CommunityCockpitEntryTests {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("g365-" + UUID().uuidString).resolvingSymlinksInPath()
             defer { try? FileManager.default.removeItem(at: root) }
             let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
-            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+            let settings = try await completedOnboarding(try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"]))
             let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
             let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
             let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))

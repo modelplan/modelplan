@@ -132,6 +132,8 @@ type Plan struct {
 type Credits struct {
 	Balance *float64 `json:"balance" null:"coalesced"`
 	Unit    string   `json:"unit"`
+	// Currency is the ISO 4217 code of a money balance, when the reader reports one.
+	Currency string `json:"currency,omitempty" null:"forbidden" schema:"pattern=^[A-Z]{3}$"`
 }
 
 type Failure struct {

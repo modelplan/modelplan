@@ -123,7 +123,7 @@ func TestRealGoCapturesAndMutationCoverage(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !bytes.Equal(stored, data) {
-			t.Fatalf("capture drift: %s", name)
+			t.Fatalf("captures stale: %s differs from the real Go producer output; run: cd cli && go run ./internal/swiftwire/cmd --write", name)
 		}
 	}
 	var index captureIndex
