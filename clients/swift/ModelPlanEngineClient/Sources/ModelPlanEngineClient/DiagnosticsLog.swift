@@ -102,30 +102,52 @@ public enum DiagnosticsRedactor {
     }
 }
 
-/// What the engine helper's stderr may leave on disk: only the shape of a Go crash. A panic or fatal-error message
-/// is kept (redacted, at most 512 bytes); goroutine headers, stack frames, file:line locations, signal and register
-/// lines are kept (redacted). Any other line (which could hold reader output, prompts or account values in a form
-/// no pattern anticipates) is replaced by its length.
+/// What the engine helper's stderr may leave on disk: only the structure of a Go crash, never free text.
+/// - `panic:` / `fatal error:` lines keep their kind, a leading Go error type when it is a qualified identifier
+///   (`runtime.Error`, `*errors.errorString`, `main.MyErr`), the fixed `runtime error` prefix and a trailing
+///   `[recovered]`; the message itself becomes `<message redacted, N bytes>`.
+/// - goroutine headers, stack frames and `created by` lines (function names from our binary), tab-indented
+///   file:line locations, and runtime signal, register and exit-status lines are kept (redacted).
+/// - Every other line is replaced by its length.
 public enum EngineStderrProjection {
-    public static let messageLimit = 512
-    private static let message = try? NSRegularExpression(pattern: #"^(?:panic|fatal error): "#)
+    private static let kind = try? NSRegularExpression(pattern: #"^(panic|fatal error): ?(.*)$"#)
+    /// A Go type is kept only where the runtime prints one: `(*pkg.T) 0x…` for a pointer value, or `pkg.T{…}` /
+    /// `pkg.T(…)` for a struct or converted value. A dotted word in free text (`user.secret leaked`) is not a type.
+    private static let goType = try? NSRegularExpression(pattern: #"^(?:\((\*?[A-Za-z_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z_][A-Za-z0-9_]*)\) |(\*?[A-Za-z_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z_][A-Za-z0-9_]*)(?=[{(]))"#)
+    /// Fixed runtime prefixes that are not user text.
+    private static let fixedPrefixes = ["runtime error: ", "interface conversion: ", "assignment to entry in nil map",
+                                        "send on closed channel", "close of closed channel", "close of nil channel",
+                                        "all goroutines are asleep - deadlock!", "concurrent map writes",
+                                        "concurrent map read and map write", "stack overflow", "out of memory"]
     private static let trace: [NSRegularExpression] = [
-        #"^goroutine \d+(?: [a-z]+=(?:0x[0-9a-f]+|\d+))* \[[^\]\n]{0,80}\]:$"#,
-        #"^\t.{1,400}\.(?:go|s|c):\d+(?: \+0x[0-9a-fA-F]+)?$"#,
+        #"^goroutine \d+(?: [a-z]+=(?:0x[0-9a-f]+|\d+))* \[[a-z ,0-9]{1,80}\]:$"#,
+        #"^\t[A-Za-z0-9_./~@+-]{1,400}\.(?:go|s|c):\d+(?: \+0x[0-9a-fA-F]+)?$"#,
         #"^(?:created by )?[A-Za-z0-9_.\-/*()\[\]]{1,300}\([0-9a-fA-Fx?{}., ]{0,200}\)(?: in goroutine \d+)?$"#,
         #"^created by [A-Za-z0-9_.\-/*()\[\]]{1,300}(?: in goroutine \d+)?$"#,
-        #"^\[signal [^\]\n]{1,200}\]$"#,
+        #"^\[signal [A-Z0-9]+: [a-z ]{1,60}(?: code=0x[0-9a-f]+)?(?: addr=0x[0-9a-f]+)?(?: pc=0x[0-9a-f]+)?\]$"#,
         #"^(?:SIG[A-Z]+: [a-z ]{1,60}|PC=0x[0-9a-f]+ m=\d+ sigcode=\d+(?: addr=0x[0-9a-f]+)?|runtime stack:|exit status \d+|\.\.\.additional frames elided\.\.\.|[a-z0-9]{2,6}\s+0x[0-9a-f]+)$"#,
     ].compactMap { try? NSRegularExpression(pattern: $0) }
 
     public static func project(_ line: String) -> String {
         if line.trimmingCharacters(in: .whitespaces).isEmpty { return "" }
-        let range = NSRange(location: 0, length: (line as NSString).length)
-        if message?.firstMatch(in: line, range: range) != nil {
-            let redacted = DiagnosticsRedactor.redact(line)
-            guard redacted.utf8.count > messageLimit else { return redacted }
-            return String(decoding: Data(redacted.utf8.prefix(messageLimit)), as: UTF8.self) + " [cut]"
+        let ns = line as NSString
+        if let match = kind?.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
+            let label = ns.substring(with: match.range(at: 1))
+            var message = ns.substring(with: match.range(at: 2))
+            var parts = [label + ":"]
+            let recovered = message.hasSuffix(" [recovered]")
+            if recovered { message = String(message.dropLast(" [recovered]".count)) }
+            if let fixed = fixedPrefixes.first(where: { message.hasPrefix($0) }) {
+                parts.append(fixed.trimmingCharacters(in: .whitespaces)); message = String(message.dropFirst(fixed.count))
+            } else if let type = goType?.firstMatch(in: message, range: NSRange(location: 0, length: (message as NSString).length)) {
+                let group = type.range(at: 1).location != NSNotFound ? 1 : 2
+                parts.append("type=" + (message as NSString).substring(with: type.range(at: group)))
+            }
+            if !message.isEmpty { parts.append("<message redacted, \(message.utf8.count) bytes>") }
+            if recovered { parts.append("[recovered]") }
+            return parts.joined(separator: " ")
         }
+        let range = NSRange(location: 0, length: ns.length)
         if trace.contains(where: { $0.firstMatch(in: line, range: range) != nil }) { return DiagnosticsRedactor.redact(line) }
         return "[line omitted: \(line.utf8.count) bytes]"
     }

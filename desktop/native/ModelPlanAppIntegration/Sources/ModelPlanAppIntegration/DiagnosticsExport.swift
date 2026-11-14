@@ -95,7 +95,9 @@ public enum DiagnosticsBundle {
 
         var seen = Set<String>()
         for url in inputs.logFiles where seen.insert(url.lastPathComponent).inserted {
-            if let text = readText(url) { try put(text, logsFolder + "/" + url.lastPathComponent) }
+            guard let text = readText(url) else { continue }
+            // engine.log is projected again on the way out, so a file written by an older build holds no free text.
+            try put(url.lastPathComponent.hasPrefix("engine") ? projectEngineLog(text) : text, logsFolder + "/" + url.lastPathComponent)
         }
 
         let cutoff = inputs.now.addingTimeInterval(-inputs.crashReportMaxAge)
@@ -151,12 +153,24 @@ public enum DiagnosticsBundle {
         return files
     }
 
+    /// Each `<timestamp> pid=N <stderr line>` keeps only its crash structure (`EngineStderrProjection`); the
+    /// app's own `--- started` / `--- exited` lines and anything not in that form pass through the redactor only.
+    static func projectEngineLog(_ text: String) -> String {
+        text.split(separator: "\n", omittingEmptySubsequences: false).map { raw -> String in
+            let line = String(raw)
+            guard let pid = line.range(of: #"^\S+ pid=-?\d+ "#, options: .regularExpression) else { return line }
+            let payload = String(line[pid.upperBound...])
+            if payload.hasPrefix("--- ") { return line }
+            return String(line[..<pid.upperBound]) + EngineStderrProjection.project(payload)
+        }.joined(separator: "\n")
+    }
+
     static func readme(generated: String) -> String {
         """
         ModelPlan diagnostics (generated \(generated))
 
         \(versionsName)       app, engine and macOS versions; reader ids and error codes
-        \(logsFolder)/              ModelPlan.log (app events) and engine.log (engine helper output, start and exit), with rotated copies
+        \(logsFolder)/              ModelPlan.log (app events) and engine.log (engine start, exit, and only the structure of a crash: panic kind, goroutines, stack frames, file:line; every other engine line and every panic message is replaced by its length), with rotated copies
         \(crashFolder)/     ModelPlan crash reports from the last 14 days, if any
         \(doctorName)  `modelplan doctor readers --json`: reader states and fixed error codes
 

@@ -40,6 +40,10 @@ final class DiagnosticsBundleTests: XCTestCase {
                   logs.appendingPathComponent("ModelPlan.log"))
         try write("2026-11-13T09:00:00.000-08:00 info [engine] connection ready\n", logs.appendingPathComponent("ModelPlan.1.log"))
         try write("2026-11-14T20:14:13.400-08:00 pid=4242 panic: synthetic failure token=sk-ant-api03-SYNTHETICsecretvalue0001\n"
+                  + "2026-11-14T20:14:13.400-08:00 pid=4242 panic: synthetic private words\n"
+                  + "2026-11-14T20:14:13.400-08:00 pid=4242 fatal error: synthetic private words\n"
+                  + "2026-11-14T20:14:13.400-08:00 pid=4242 goroutine 1 [running]:\n"
+                  + "2026-11-14T20:14:13.400-08:00 pid=4242 main.main()\n"
                   + "2026-11-14T20:14:13.401-08:00 pid=4242 \t/Users/synthetic-person/src/main.go:5 +0x1d\n"
                   + "2026-11-14T20:14:13.402-08:00 pid=4242 {'reply': 'synthetic reply words'}\n"
                   + "2026-11-14T20:14:13.402-08:00 pid=4242 --- exited reason=exit status=2\n",
@@ -93,7 +97,13 @@ final class DiagnosticsBundleTests: XCTestCase {
         for secret in secrets { XCTAssertFalse(text.contains(secret), "\(secret) reached the bundle") }
         // The diagnostic substance survives redaction.
         XCTAssertTrue(text.contains("page-failure failure=appearanceWaitTimeout"))
-        XCTAssertTrue(text.contains("panic: synthetic failure token=" + DiagnosticsRedactor.marker))
+        // engine.log keeps the crash structure, never a panic message (macrev2-963-1).
+        XCTAssertTrue(text.contains("pid=4242 panic: <message redacted, 61 bytes>"))
+        XCTAssertTrue(text.contains("pid=4242 panic: <message redacted, 23 bytes>"))
+        XCTAssertTrue(text.contains("pid=4242 fatal error: <message redacted, 23 bytes>"))
+        XCTAssertTrue(text.contains("pid=4242 goroutine 1 [running]:"))
+        XCTAssertTrue(text.contains("pid=4242 main.main()"))
+        XCTAssertFalse(text.contains("synthetic failure"))
         XCTAssertTrue(text.contains("/Users/~/src/main.go:5 +0x1d"))
         XCTAssertTrue(text.contains("--- exited reason=exit status=2"))
         let doctor = try String(contentsOf: staged.appendingPathComponent("doctor-readers.json"), encoding: .utf8)

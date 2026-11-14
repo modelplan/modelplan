@@ -103,7 +103,8 @@ The child's stderr is drained and discarded unless a diagnostics log is
 configured (`EngineClientConfiguration.engineLog`, or
 `DiagnosticsLog.shared.configure(directory:)` in the app). Then the child's start,
 its exit status or signal, and the Go-crash shape of its stderr go to a rotating
-`engine.log`: panic/fatal-error messages (at most 512 bytes), goroutine headers,
+`engine.log`: the panic/fatal-error kind (plus a runtime-printed Go type or fixed
+runtime prefix; the message itself becomes its length), goroutine headers,
 frames, file:line, signal and register lines. Every other stderr line is replaced
 by its length, and every kept line passes `DiagnosticsRedactor` (keys, tokens,
 cookies, emails, home-folder names, and whole values under credential, account or

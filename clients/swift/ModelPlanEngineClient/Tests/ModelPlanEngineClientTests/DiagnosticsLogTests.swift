@@ -184,8 +184,7 @@ final class DiagnosticsLogTests: XCTestCase {
         XCTAssertEqual(EngineStderrProjection.project("\t/Users/synthetic-person/src/main.go:5 +0x1d"), "\t/Users/~/src/main.go:5 +0x1d")
         XCTAssertEqual(EngineStderrProjection.project(#"{"prompt":["x"]}"#), "[line omitted: 16 bytes]")
         XCTAssertEqual(EngineStderrProjection.project("reader said synthetic-free-text"), "[line omitted: 31 bytes]")
-        XCTAssertEqual(EngineStderrProjection.project("panic: " + String(repeating: "z", count: 2000)).utf8.count,
-                       EngineStderrProjection.messageLimit + " [cut]".utf8.count)
+        XCTAssertEqual(EngineStderrProjection.project("panic: " + String(repeating: "z", count: 2000)), "panic: <message redacted, 2000 bytes>")
     }
 
     private func fakeHelper(_ body: String) throws -> URL {
@@ -218,7 +217,8 @@ final class DiagnosticsLogTests: XCTestCase {
         """)
         let log = RotatingLogFile(url: try folder().appendingPathComponent("engine.log"))
         let written = try run(helper, log: log)
-        XCTAssertTrue(written.contains("panic: synthetic failure token=" + DiagnosticsRedactor.marker), written)
+        XCTAssertTrue(written.contains("panic: <message redacted, 61 bytes>"), written)
+        XCTAssertFalse(written.contains("synthetic failure"), written)
         XCTAssertTrue(written.contains("goroutine 1 [running]:"), written)
         XCTAssertTrue(written.contains("/Users/~/src/main.go:5 +0x1d"), written)
         XCTAssertTrue(written.contains("--- started"), written)
@@ -241,7 +241,7 @@ final class DiagnosticsLogTests: XCTestCase {
             XCTAssertFalse(written.contains(leaked), "\(leaked) reached engine.log:\n\(written)")
         }
         XCTAssertTrue(written.contains("[line omitted: "), written)
-        XCTAssertTrue(written.contains("panic: user=[redacted]"), written)
+        XCTAssertTrue(written.contains("panic: <message redacted, "), written)
         XCTAssertTrue(written.contains("--- exited reason=exit status=2"), written)
     }
 
@@ -263,9 +263,40 @@ final class DiagnosticsLogTests: XCTestCase {
                        "synthetic-panic-array", "synthetic-past-the-limit", "synthetic-panic-past-the-limit", "fffff"] {
             XCTAssertFalse(written.contains(leaked), "\(leaked) reached engine.log:\n\(written)")
         }
-        XCTAssertTrue(written.contains(#"panic: {"prompt":"[redacted]"}"#), written)
-        XCTAssertTrue(written.contains("panic: prompt: [redacted]"), written)
+        XCTAssertEqual(written.components(separatedBy: "panic: <message redacted, ").count - 1, 2, written)
         XCTAssertTrue(written.contains("--- exited reason=exit status=2"), written)
+    }
+
+    /// macrev2-963-1 (third pass): a panic or fatal-error message is free text and never reaches disk; only its kind,
+    /// a runtime-printed Go type or fixed runtime prefix, and its length do. The stack's frames and file:line stay.
+    func testPanicAndFatalErrorMessagesAreReducedToTheirKind() throws {
+        XCTAssertEqual(EngineStderrProjection.project("panic: synthetic private words"), "panic: <message redacted, 23 bytes>")
+        XCTAssertEqual(EngineStderrProjection.project("fatal error: synthetic private words"), "fatal error: <message redacted, 23 bytes>")
+        XCTAssertEqual(EngineStderrProjection.project("panic: user.secret leaked"), "panic: <message redacted, 18 bytes>",
+                       "a dotted word in free text is not a type")
+        XCTAssertEqual(EngineStderrProjection.project("panic: (*errors.errorString) 0xc000012345"),
+                       "panic: type=*errors.errorString <message redacted, 34 bytes>")
+        XCTAssertEqual(EngineStderrProjection.project(#"panic: main.MyErr{Msg:"synthetic private words"}"#),
+                       "panic: type=main.MyErr <message redacted, 41 bytes>")
+        XCTAssertEqual(EngineStderrProjection.project("panic: runtime error: index out of range [3] with length 3"),
+                       "panic: runtime error: <message redacted, 36 bytes>")
+        XCTAssertEqual(EngineStderrProjection.project("fatal error: concurrent map writes"), "fatal error: concurrent map writes")
+        XCTAssertEqual(EngineStderrProjection.project("panic: github.com/x/y.T{} [recovered]"),
+                       "panic: type=github.com/x/y.T <message redacted, 18 bytes> [recovered]")
+
+        let helper = try fakeHelper("""
+        printf '%b\\n' 'panic: synthetic private words' '' 'goroutine 1 [running]:' 'main.handle(0xc000012345, {0x1043, 0x5})' '\t/build/cli/internal/appserver/server.go:812 +0x1d' 'main.main()' '\t/build/cli/cmd/modelplan/main.go:203 +0x25' 'created by main.main in goroutine 1' >&2
+        printf '%s\\n' 'fatal error: synthetic private words' >&2
+        exit 2
+        """)
+        let log = RotatingLogFile(url: try folder().appendingPathComponent("engine.log"))
+        let written = try run(helper, log: log)
+        XCTAssertFalse(written.contains("synthetic private words"), written)
+        for kept in ["panic: <message redacted, 23 bytes>", "fatal error: <message redacted, 23 bytes>", "goroutine 1 [running]:",
+                     "main.handle(0xc000012345, {0x1043, 0x5})", "\t/build/cli/internal/appserver/server.go:812 +0x1d", "main.main()",
+                     "\t/build/cli/cmd/modelplan/main.go:203 +0x25", "created by main.main in goroutine 1"] {
+            XCTAssertTrue(written.contains(kept), "\(kept) missing:\n\(written)")
+        }
     }
 
     func testHelperKilledBySignalIsRecorded() throws {
