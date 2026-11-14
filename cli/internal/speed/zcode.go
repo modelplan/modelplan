@@ -69,7 +69,7 @@ func ObserveZCode(cache, home string, in Ingest, now time.Time) error {
 		return nil
 	}
 	return observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return l.scanDB(path, "zcode", ParserZCode, zcodeAnchor, now, readZCode)
+		return l.scanDB(path, "zcode", ParserZCode, zcodeAnchor, zcodePostClear, now, readZCode)
 	})
 }
 
@@ -109,3 +109,7 @@ func inRowIDs(col string, ids []int64) string {
 
 // zcodeAnchor: a request's own id and start, which a replaced database does not repeat.
 const zcodeAnchor = `SELECT CAST(id AS TEXT) || '|' || COALESCE(started_at, 0) FROM model_usage WHERE rowid = ?`
+
+// zcodePostClear: the requests up to a row that started at or after a time, by the start
+// readZCode reads (a missing or non-numeric start is 0).
+const zcodePostClear = `FROM model_usage WHERE rowid <= ? AND CAST(COALESCE(started_at, 0) AS INTEGER) >= ?`

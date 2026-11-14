@@ -404,6 +404,13 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 		return errors.New("readings busy; retry disconnect")
 	}
 	defer unlockLedgers()
+	var legacy map[string]string
+	if history {
+		if err := markHistoryCleared(p.Cache, tool); err != nil {
+			return err
+		}
+		legacy = speed.LegacyCursorSources(p.Cache, ledgerLogRoots(p))
+	}
 	if identity {
 		if err := forgetScopeIdentity(p.Cache, tool, scopeClass); err != nil {
 			return err
@@ -443,7 +450,7 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 		if scopeClass == consent.Bridge && name == "native.json" || scopeClass == consent.Credential && (name == "native.json" || name == "codexbar.json") {
 			continue
 		}
-		if err := filterCachedSource(filepath.Join(observed, name), name, tool, history); err != nil {
+		if err := filterCachedSource(filepath.Join(observed, name), name, tool, history, legacy); err != nil {
 			return err
 		}
 	}
@@ -452,10 +459,12 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 
 // filterCachedSource is shared by disconnect and local-history scope cleanup.
 // The caller owns the relevant reader/ledger locks. Each replacement is atomic.
-func filterCachedSource(path, name, tool string, history bool) error {
-	return filterCachedSourceWithWriter(path, name, tool, history, writeAtomic)
+// legacy attributes source-less log cursors (speed.LegacyCursorSources), taken once before any
+// ledger is rewritten.
+func filterCachedSource(path, name, tool string, history bool, legacy map[string]string) error {
+	return filterCachedSourceWithWriter(path, name, tool, history, legacy, writeAtomic)
 }
-func filterCachedSourceWithWriter(path, name, tool string, history bool, replace func(string, []byte) error) error {
+func filterCachedSourceWithWriter(path, name, tool string, history bool, legacy map[string]string, replace func(string, []byte) error) error {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -517,6 +526,11 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 		}
 		doc[key], _ = json.Marshal(kept)
 	}
+	if history && (name == "speed.json" || name == "perf.json") {
+		if err := dropToolLedgerState(doc, tool, legacy); err != nil {
+			return err
+		}
+	}
 	// The importer's per-source coverage (dates and grant) goes with that source's imported rows.
 	if name == "imported.json" && history && doc["coverage"] != nil && string(doc["coverage"]) != "null" {
 		var coverage map[string]json.RawMessage
@@ -535,6 +549,107 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, replace
 		return err
 	}
 	return nil
+}
+
+// dropToolLedgerState removes the per-tool residue the row filter cannot see: Claude's counted
+// request hashes, the tool's log cursors (path hash, offset, last-read date, skip mark and Codex's
+// cumulative totals) and its agent-database cursors (keyed "<source>:<file key>"). A cursor an
+// earlier build wrote without a source is attributed by legacy (speed.LegacyCursorSources: by the
+// tool log folder its log lies in, else by what the ledgers hold of its key) and keeps that
+// source. One that cannot be attributed goes too: it may be the cleared tool's, and its key, offset
+// and date would then be that tool's history. Another tool's log it could belong to is in none of
+// that tool's log folders and has no counted turn on record. What keeps the cleared history from
+// being counted again is the clear boundary (speed.MarkCleared), written before this runs.
+func dropToolLedgerState(doc map[string]json.RawMessage, tool string, legacy map[string]string) error {
+	if tool == "claude" {
+		delete(doc, "counted")
+	}
+	if len(doc["files"]) > 0 && string(doc["files"]) != "null" {
+		var files map[string]struct {
+			Source string `json:"source"`
+		}
+		if json.Unmarshal(doc["files"], &files) != nil {
+			return errors.New("cached cursors invalid")
+		}
+		var kept map[string]map[string]json.RawMessage
+		if json.Unmarshal(doc["files"], &kept) != nil {
+			return errors.New("cached cursors invalid")
+		}
+		for key, cursor := range files {
+			source := cursor.Source
+			if source == "" && legacy[key] != "" {
+				source = legacy[key]
+				if kept[key] == nil {
+					kept[key] = map[string]json.RawMessage{}
+				}
+				kept[key]["source"], _ = json.Marshal(source)
+			}
+			if source == "claude-code" {
+				source = "claude"
+			}
+			if source == "" || source == tool {
+				delete(kept, key)
+			}
+		}
+		doc["files"], _ = json.Marshal(kept)
+	}
+	if len(doc["stores"]) > 0 && string(doc["stores"]) != "null" {
+		var stores map[string]json.RawMessage
+		if json.Unmarshal(doc["stores"], &stores) != nil {
+			return errors.New("cached stores invalid")
+		}
+		for key := range stores {
+			source, _, _ := strings.Cut(key, ":")
+			switch source {
+			case "claude-code":
+				source = "claude"
+			case "zcode":
+				source = "zai"
+			case "opencode":
+				source = "opencodego"
+			}
+			if source == tool {
+				delete(stores, key)
+			}
+		}
+		doc["stores"], _ = json.Marshal(stores)
+	}
+	return nil
+}
+
+// ledgerLogRoots: the log folders of the tools whose logs the ledgers keep cursors for, to
+// attribute legacy cursors by where their logs are.
+func ledgerLogRoots(p Paths) []speed.LogRoot {
+	claude := os.Getenv("CLAUDE_CONFIG_DIR")
+	if claude == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			claude = filepath.Join(home, ".claude")
+		}
+	}
+	codex := p.CodexHome
+	if codex == "" {
+		codex = CodexHome()
+	}
+	var roots []speed.LogRoot
+	if filepath.IsAbs(claude) {
+		roots = append(roots, speed.LogRoot{Dir: filepath.Join(claude, "projects"), Source: "claude-code"})
+	}
+	if filepath.IsAbs(codex) {
+		roots = append(roots, speed.LogRoot{Dir: filepath.Join(codex, "sessions"), Source: "codex"})
+	}
+	return roots
+}
+
+// markHistoryCleared sets the tool's clear boundary (and, for a database tool, the row its
+// database was cleared through) before its ledger state is removed, so a
+// failure part way leaves the boundary in place rather than cursors gone without one. The caller
+// holds the ledger locks.
+func markHistoryCleared(cache, tool string) error {
+	if err := speed.MarkCleared(cache, tool, time.Now()); err != nil {
+		return err
+	}
+	home, _ := os.UserHomeDir()
+	return speed.MarkClearedDB(cache, home, tool)
 }
 
 // active: the providers whose selected backend is this one and runs.
