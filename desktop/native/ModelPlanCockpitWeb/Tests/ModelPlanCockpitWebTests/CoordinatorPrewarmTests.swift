@@ -47,6 +47,7 @@ private actor CountingClient: EngineClient {
   private(set) var prewarmed = false, opened = 0, discarded = false
   /// CKP-SHELL-33: the rack-first open shows the page only after the rack's visible part is out; the test confirms it.
   var holdShown = false
+  var entersWithRack: Bool { holdShown && opened > 0 }
   private(set) var displays = 0, displayedWhileHidden = 0
   private var sequence = 0
   init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
@@ -260,6 +261,39 @@ final class CoordinatorPrewarmTests: XCTestCase {
     XCTAssertEqual(requests, 2, "the query asked at the click is not asked again")
     await coordinator.consume(try reply(session))
     XCTAssertEqual(warm.displays, 2, "the fresh reply replaces it when it lands")
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// G3-42: a plain fade open does not query at the click; the query follows the shown page's last reply, so a fresh
+  /// reply cannot land before the page is confirmed visible and hold back its first show.
+  @MainActor func testAFadeOpenQueriesAfterTheLastReplyIsShown() async throws {
+    var pages: [WarmProbe] = [], steps: [String] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    #if MODELPLAN_TEST_ONLY_SPI
+    coordinator.verificationTrace = { steps.append($0) }
+    #endif
+    coordinator.prewarmDelay = .zero
+    coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { pages.count == 1 }
+    await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+
+    coordinator.open()
+    XCTAssertEqual(warm.displays, 1, "the last reply shows as the page is confirmed visible")
+    await settle { await client.requests == 2 }
+    let requests = await client.requests
+    XCTAssertEqual(requests, 2, "the shown page asks for fresh data once")
+    #if MODELPLAN_TEST_ONLY_SPI
+    XCTAssertFalse(steps.contains("open.refresh"), "\(steps)")
+    let shown = try XCTUnwrap(steps.firstIndex(of: "display.last"), "\(steps)")
+    XCTAssertLessThan(shown, try XCTUnwrap(steps.lastIndex(of: "query.start"), "\(steps)"), "\(steps)")
+    #endif
     await client.complete(); await coordinator.joinCurrentQueryForVerification()
     await coordinator.shutdown(); await client.complete()
   }

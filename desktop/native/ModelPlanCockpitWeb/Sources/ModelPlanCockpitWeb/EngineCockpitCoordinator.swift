@@ -16,6 +16,8 @@ import ModelPlanWire
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
   /// G3-80: the cockpit window's frame while it is on screen; the enlarged field opens on its display.
   var cockpitFrame: CGRect? { get }
+  /// CKP-SHELL-33: the open just made runs the rack-first entrance, so the page is shown only once the rack is out.
+  var entersWithRack: Bool { get }
   /// CKP-SHELL-20: build and load the page without showing it or taking focus.
   func prewarm()
   func open()
@@ -35,6 +37,7 @@ public extension CockpitPageSurface {
   var onShellChanged: (() -> Void)? { get { nil } set {} }
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
   var cockpitFrame: CGRect? { nil }
+  var entersWithRack: Bool { false }
   func prewarm() {}
   func requestClose() { discard() }
   func updateAppearance(_ appearance: CockpitAppearance) {}
@@ -242,9 +245,11 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         page.updateScope(selectedScope)
       }
       page.open()
-      // CKP-SHELL-33 (owner, D186): ask for fresh data at the click, not when the page is first confirmed visible, so the
-      // reply can land while the rack extends; the page shows the last reply meanwhile and never waits for this one.
-      if self.page === page, request == nil { trace("open.refresh"); refresh() }
+      // CKP-SHELL-33 (owner, D186): a rack-first open asks for fresh data at the click, not when the page is first
+      // confirmed visible, so the reply can land while the rack extends; the page shows the last reply meanwhile and
+      // never waits for this one. A plain fade open keeps G3-42's order (last reply shown, then the fresh query): a query
+      // started at that click can land before the page is confirmed visible and hold back its first show (G3-42).
+      if self.page === page, page.entersWithRack, request == nil { trace("open.refresh"); refresh() }
       if self.page === page { onOpened?() }
       return
     }

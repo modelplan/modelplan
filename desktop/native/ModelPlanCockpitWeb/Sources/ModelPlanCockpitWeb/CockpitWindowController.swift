@@ -514,6 +514,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     bringToFront(panel)
     lastVisibility = nil; visibilityChanged()
   }
+  /// CKP-SHELL-33: true while the rack-first entrance of this open runs (the page is shown once the rack is out).
+  public var entersWithRack: Bool { entering }
   /// D204: whether the user can see the cockpit: shown and not closing, ordered in, not minimised, on the active Space
   /// and not fully covered (a partly covered window is visible), with the app not hidden. An open of an attached
   /// cockpit the user cannot see lays it out again under the icon of the display asked on before it comes in front.
