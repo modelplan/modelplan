@@ -4,6 +4,23 @@ import ModelPlanCockpitWeb
 import ModelPlanInstruments
 import ModelPlanSettings
 
+/// The Help overlay panel. It is nonactivating, and while a requested map is up it may become key,
+/// so Esc reaches this process even when macOS refuses to activate the accessory (LSUIElement) app.
+/// It stays non-key for hints and explanations, so pressing a hint never takes the user's keyboard.
+@MainActor final class HelpOverlayPanel: NSPanel {
+    var acceptsKey = false
+    var onEscape: (@MainActor () -> Void)?
+    override var canBecomeKey: Bool { acceptsKey }
+    override var canBecomeMain: Bool { false }
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == 53, let onEscape { onEscape(); return }
+        super.sendEvent(event)
+    }
+    override func cancelOperation(_ sender: Any?) {
+        if let onEscape { onEscape() } else { super.cancelOperation(sender) }
+    }
+}
+
 /// Hosts the existing Help layer in a card-sized nonactivating panel. Hint
 /// admission, dwell, persistence and the sole ledger remain with HintExecutionHost.
 @MainActor final class DockHelpPresenter: HintOverlayPresenting {
@@ -19,12 +36,17 @@ import ModelPlanSettings
     private let accessibility: @MainActor () -> (motion: Bool, transparency: Bool)
     private let copy: @MainActor (FirstUseHintKind, InstrumentLanguage) -> Copy?
     private let dismiss: @MainActor (UUID) -> Void
-    /// Brings this app forward when a requested map opens, so Esc and outside clicks reach the
-    /// local monitor below (a nonactivating panel in an inactive app sees neither).
+    /// Asks to bring this app forward when a requested map opens. macOS may refuse this for an
+    /// accessory app (14f walkthrough), so dismissal never depends on it: the map panel is made key
+    /// without activation and a global pointer monitor sees clicks in other apps.
     private let activate: @MainActor () -> Void
+    /// Installs a pointer-down monitor for other apps' windows; returns its remover. Mouse events need
+    /// no system permission (unlike global key monitors).
+    private let outsidePointerMonitor: @MainActor (@escaping @MainActor () -> Void) -> (@MainActor () -> Void)
     private let layer: HelpUILayerView
-    private var panel: NSPanel?
+    private var panel: HelpOverlayPanel?
     private var eventMonitor: Any?
+    private var removeOutsidePointerMonitor: (@MainActor () -> Void)?
     private var deactivateObserver: NSObjectProtocol?
     /// The app that was frontmost before a map activated this one; restored when the map closes.
     private var previousApp: NSRunningApplication?
@@ -44,11 +66,13 @@ import ModelPlanSettings
          copy: @escaping @MainActor (FirstUseHintKind, InstrumentLanguage) -> Copy?,
          dismiss: @escaping @MainActor (UUID) -> Void,
          activate: @escaping @MainActor () -> Void = { if !NSApp.isActive { NSApplication.shared.activate() } },
+         outsidePointerMonitor: @escaping @MainActor (@escaping @MainActor () -> Void) -> (@MainActor () -> Void) = DockHelpPresenter.globalPointerMonitor,
          layer: HelpUILayerView) {
         self.currentSurface = currentSurface; self.isCurrent = isCurrent
         self.blockers = blockers; self.windowPolicy = windowPolicy
         self.language = language; self.accessibility = accessibility
         self.copy = copy; self.dismiss = dismiss; self.activate = activate
+        self.outsidePointerMonitor = outsidePointerMonitor
         self.layer = layer
     }
 
@@ -208,8 +232,20 @@ import ModelPlanSettings
         deactivateObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { dismissMap(nil) }
         }
-        // After the observer exists: activating must not read as the app losing focus. Esc and a click
-        // outside the map are local events only while the app is active.
+        // Without app activation the local monitor sees neither Esc nor clicks in other apps. The
+        // nonactivating panel becomes key on its own, so Esc arrives here; a click in another app
+        // reaches the global monitor. Clicks on this app's windows (the widget again) stay local.
+        let current: @MainActor () -> Bool = { [weak self, weak window] in
+            guard let self, let window else { return false }
+            return window.isVisible && !self.retired && self.generation == token
+                && self.currentSurfaceValue == surface && self.isCurrent(surface)
+        }
+        window.onEscape = { if current() { dismissMap(.escape) } }
+        removeOutsidePointerMonitor = outsidePointerMonitor { if current() { dismissMap(.pointer) } }
+        window.acceptsKey = true
+        window.makeKey()
+        // After the observer exists: activating must not read as the app losing focus. Activation is a
+        // courtesy; if macOS grants it, the local monitor above answers first.
         if !NSApp.isActive, previousApp == nil {
             let front = NSWorkspace.shared.frontmostApplication
             if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
@@ -291,16 +327,30 @@ import ModelPlanSettings
         panel?.orderOut(nil); panel?.close(); panel = nil; layer.dispose()
     }
 
+    /// Removes every input path of the current hint or map: the local monitor, the global pointer
+    /// monitor and the map panel's key focus and Esc handler.
     private func removeEventMonitor() {
         if let eventMonitor { NSEvent.removeMonitor(eventMonitor); self.eventMonitor = nil }
+        if let removeOutsidePointerMonitor { removeOutsidePointerMonitor(); self.removeOutsidePointerMonitor = nil }
+        panel?.onEscape = nil; panel?.acceptsKey = false
     }
+
+    static func globalPointerMonitor(_ handler: @escaping @MainActor () -> Void) -> @MainActor () -> Void {
+        let token = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { _ in
+            Task { @MainActor in handler() }
+        }
+        return { if let token { NSEvent.removeMonitor(token) } }
+    }
+
+    /// The overlay panel (checks only).
+    var panelForChecks: HelpOverlayPanel? { panel }
     private func removeDeactivateObserver() {
         if let deactivateObserver { NotificationCenter.default.removeObserver(deactivateObserver); self.deactivateObserver = nil }
     }
 
     static let overlayLevel = CockpitWindowController.aboveCockpitLevel
-    private func makePanel() -> NSPanel {
-        let window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    private func makePanel() -> HelpOverlayPanel {
+        let window = HelpOverlayPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         // D49: Help can be asked for while the cockpit is open, so it draws above it.
         window.isFloatingPanel = true; window.level = Self.overlayLevel; window.isOpaque = false
         window.backgroundColor = .clear; window.hasShadow = false; window.hidesOnDeactivate = false
