@@ -1,0 +1,1 @@
+The first cockpit open after launch shows the last result at once again. The fresh query used to start at the same moment and compete with the page's first render, so that first open waited for the query (up to about 1.5 s); now the query starts once the last result is drawn (G3-42).

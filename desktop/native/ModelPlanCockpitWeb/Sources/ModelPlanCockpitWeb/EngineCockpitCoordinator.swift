@@ -10,6 +10,10 @@ import ModelPlanWire
   var onClosed: (() -> Void)? { get set }
   /// CKP-SHELL-20: once per open, when the page is first confirmed visible.
   var onShown: (() -> Void)? { get set }
+  /// G3-42: the page admitted the rendered receipt of a display it was sent.
+  var onDataRendered: (() -> Void)? { get set }
+  /// G3-42: whether this page reports `onDataRendered`. Only such a page holds the fresh query for its first render.
+  var reportsDataRendered: Bool { get }
   /// D88: the attachment or the settled open changed (detach, put back, drop, entrance end).
   var onShellChanged: (() -> Void)? { get set }
   /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
@@ -32,6 +36,8 @@ import ModelPlanWire
 }
 public extension CockpitPageSurface {
   var onShown: (() -> Void)? { get { nil } set {} }
+  var onDataRendered: (() -> Void)? { get { nil } set {} }
+  var reportsDataRendered: Bool { false }
   var onShellChanged: (() -> Void)? { get { nil } set {} }
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
   var cockpitFrame: CGRect? { nil }
@@ -157,6 +163,12 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var warmBuilds = 0
   private var warmBuiltAt: TimeInterval?
   private var freshLogged = true
+  /// G3-42: at a show, the last reply is drawn before the fresh query starts. On the first open of a launch the
+  /// page's first visible render competed with the engine's query for the CPU; the last reply's receipt then came
+  /// only after the fresh reply had replaced it, so the click waited for the query (636 to 1574 ms on hosted
+  /// runners, against 20 to 50 ms on later opens). The query waits for that render, at most this long.
+  public var lastRenderGrace: Duration = .seconds(1)
+  private var lastRenderHold: (token: UUID, task: Task<Void, Never>)?
   #if MODELPLAN_TEST_ONLY_SPI
   /// Names each step of a prewarm and an open, in order, for timing tests. Never engine data.
   public var verificationTrace: ((String) -> Void)?
@@ -277,9 +289,15 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       guard let self, self.pageGeneration == generation, self.presented else { return }
       CockpitTimingLog.record("open shown clickMs=\(CockpitTimingLog.sinceClick())")
       self.trace("page.shown")
-      self.showLastReply()
+      let showedLast = self.showLastReply()
       // A query already running was asked after this page loaded; its reply is fresh.
-      if self.request == nil { self.refresh() }
+      guard self.request == nil else { return }
+      // G3-42: the last reply is drawn first; the fresh query starts once the page has rendered it.
+      if showedLast, self.page?.reportsDataRendered == true { self.holdQueryForLastRender() } else { self.refresh() }
+    }
+    newPage.onDataRendered = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.releaseHeldQuery("after-last")
     }
     newPage.onShellChanged = { [weak self] in
       guard let self, self.pageGeneration == generation, self.presented else { return }
@@ -306,15 +324,35 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     return newPage
   }
   /// The last reply for this exact delivery, on a page confirmed visible. Never retagged to a newer context.
-  private func showLastReply() {
+  @discardableResult private func showLastReply() -> Bool {
     guard let page, let ticket = page.queryTicket, let delivery, let last = lastReply, last.delivery == delivery,
-      let context = try? Self.bridgeContext(delivery), ticket.context == context else { return }
+      let context = try? Self.bridgeContext(delivery), ticket.context == context else { return false }
     scopeMembers = CockpitMemberScopes.keys(last.data)
     if CockpitMemberScopes.isIndexedFallback(selectedScope) || !scopeMembers.contains(selectedScope) { selectedScope = "all" }
     CockpitTimingLog.record("open display=last clickMs=\(CockpitTimingLog.sinceClick())")
     trace("display.last")
     page.display(last.data, ticket: ticket)
     page.updateScope(selectedScope)
+    return true
+  }
+  /// G3-42: hold the fresh query of this show until the page renders the last reply, or the grace ends.
+  private func holdQueryForLastRender() {
+    lastRenderHold?.task.cancel()
+    let token = UUID(), grace = lastRenderGrace
+    trace("query.held")
+    let task = Task { @MainActor [weak self] in
+      do { try await Task.sleep(for: grace) } catch { return }
+      guard let self, self.lastRenderHold?.token == token else { return }
+      self.releaseHeldQuery("after-grace")
+    }
+    lastRenderHold = (token, task)
+  }
+  private func releaseHeldQuery(_ reason: String) {
+    guard let hold = lastRenderHold else { return }
+    hold.task.cancel(); lastRenderHold = nil
+    CockpitTimingLog.record("open query=\(reason) clickMs=\(CockpitTimingLog.sinceClick())")
+    trace("query.released")
+    refresh()
   }
   private func schedulePrewarm() {
     guard prewarmEnabled, !memoryPressured, warmFailures < 3, page == nil, prewarmTask == nil,
@@ -417,6 +455,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     schedulePrewarm()
   }
   private func cancelQuery() {
+    lastRenderHold?.task.cancel(); lastRenderHold = nil
     request?.cancel()
     request = nil
     requestToken = nil
@@ -431,6 +470,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       refreshAgain = true
       return
     }
+    // Another reason to ask (a row change, a page that asks again) ends a hold; the query starts now.
+    lastRenderHold?.task.cancel(); lastRenderHold = nil
     let token = UUID()
     requestToken = token
     requestTicket = ticket
