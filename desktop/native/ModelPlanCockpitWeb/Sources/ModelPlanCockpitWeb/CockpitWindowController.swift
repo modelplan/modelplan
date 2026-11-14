@@ -155,7 +155,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// G3-108: a later toggle's motion owns `shutterMoving`; an earlier motion's completion leaves it alone.
   private var shutterGeneration = 0
   /// G3-108: a detached close lowers the top edge once the page has closed its porthole.
-  private var shutterTask: Task<Void, Never>?
+  private var shutterTask: Task<Void, Never>? {
+    didSet { if shutterTask == nil { (window as? CockpitPanel)?.pendingTopDrop = 0 } }
+  }
   var shutterPending: Bool { shutterTask != nil }
   private var dragStart: (point: CGPoint, frame: CGRect, detached: Bool)?
   private var dragRegion: CockpitTitleDrag?
@@ -1115,6 +1117,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         window.setFrame(settled, display: true)
         window.contentView?.setBoundsSize(settled.size)
       }
+      (window as? CockpitPanel)?.pendingTopDrop = current.height - frame.height
     } else if animated {
       shutterMoving = false
       NSAnimationContext.runAnimationGroup { context in
@@ -1148,6 +1151,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private func dispatchHelpMap() {
     guard !ending, bridge.ready, let web else { return }
     web.callAsyncJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Alt'}))", arguments: [:], in: nil, in: .page, completionHandler: nil)
+  }
+  /// G3-108: a close or discard while a detached close still waits for the page's porthole finishes it at once: the
+  /// top edge comes down, the body stays. Cancelling it left an open-sized window at the body's place, so the remembered
+  /// origin described a window that did not fit there and the reopen was clamped down by the porthole band.
+  private func settlePendingShutter() {
+    guard let task = shutterTask else { return }
+    task.cancel(); shutterTask = nil
+    guard let window, let size = layout?.frame.size, window.frame.size != size else { return }
+    window.setFrame(CGRect(origin: window.frame.origin, size: size), display: true)
+    window.contentView?.setBoundsSize(size)
   }
   func toggleShutter() {
     guard layout?.forcedClosed != true else { return }
@@ -1334,7 +1347,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
     // D88: a cockpit that grew out of the icon and is still attached shrinks back into it.
-    shutterTask?.cancel(); shutterTask = nil; shutterMoving = false
+    settlePendingShutter(); shutterMoving = false
     let shrink = grewFromIcon && !appearance.reduceMotion ? Self.entranceStart(.growFromIcon, reduceMotion: false, detached: shellSession.detached, icon: anchor()) : nil
     #if MODELPLAN_TEST_ONLY_SPI
     verificationCloseStarted?(appearance.reduceMotion ? 0 : shrink != nil ? Self.growDuration : 0.12)
@@ -1382,7 +1395,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     verificationDidDiscard?()
     #endif
     closeTask?.cancel(); closeTask = nil; cancelDrag()
-    shutterTask?.cancel(); shutterTask = nil; shutterMoving = false
+    settlePendingShutter(); shutterMoving = false
     if shellSession.detached, let window { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }; outsideMonitor = nil
     if let localMonitor { NSEvent.removeMonitor(localMonitor) }; localMonitor = nil
@@ -1417,6 +1430,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
 @MainActor private final class CockpitPanel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { true }
+  /// G3-108: while a detached close waits for the page's porthole, the window is still open-sized but its top edge is
+  /// about to come down by this much. A move in that wait (a drag, a programmatic origin) is judged as the closed
+  /// cockpit: AppKit's constraint otherwise pulled the open-sized window down under the menu bar, so the body moved by
+  /// up to the porthole band and the remembered origin (and the reopen) came back lower than where it was put.
+  var pendingTopDrop: CGFloat = 0
+  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+    guard pendingTopDrop > 0, frameRect.height > pendingTopDrop else { return super.constrainFrameRect(frameRect, to: screen) }
+    var closed = frameRect; closed.size.height -= pendingTopDrop
+    return CGRect(origin: super.constrainFrameRect(closed, to: screen).origin, size: frameRect.size)
+  }
 }
 /// The drag area of the expanded cockpit's top strip. Hovering it shows an open hand (closed while
 /// dragging). D227 (owner 2026-11-12, G3-99): it draws nothing, no grip dots, on hover or while dragging.
