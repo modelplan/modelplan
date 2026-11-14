@@ -410,7 +410,9 @@ struct StatusNoticePresentation {
         if loginServiceAdapter == nil, let bundle = Bundle(url: appBundleURL),
            bundle.bundleURL.standardizedFileURL == appBundleURL.standardizedFileURL,
            bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL {
-            loginServiceAdapter = CommunityLoginServiceAdapter(item: PulseLoginItem(bundle: bundle))
+            // D164: a fresh profile shows the login item as unavailable and never touches the real one.
+            loginServiceAdapter = CommunityLoginServiceAdapter(item: ProfileRoot.current.allowsLoginItem
+                ? PulseLoginItem(bundle: bundle) : ProfileRoot.unavailableLoginItem())
         }
         if notificationAuthorizationService == nil, let bundle = Bundle(url: appBundleURL),
            bundle.bundleURL.standardizedFileURL == appBundleURL.standardizedFileURL,
@@ -702,9 +704,9 @@ struct StatusNoticePresentation {
            dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         #if MODELPLAN_DOCK_NATIVE_JOURNEY
-        installStatusItem(autosaveName: EngineRowsEntry.nativeJourneyProfile == nil ? "ModelPlanCommunity.StatusItem" : nil)
+        installStatusItem(autosaveName: EngineRowsEntry.nativeJourneyProfile == nil ? ProfileRoot.current.statusItemAutosaveName : nil)
         #else
-        installStatusItem(autosaveName: "ModelPlanCommunity.StatusItem")
+        installStatusItem(autosaveName: ProfileRoot.current.statusItemAutosaveName)
         #endif
         #if MODELPLAN_U6_DRIVE
         driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
@@ -929,6 +931,11 @@ struct StatusNoticePresentation {
         for summary in ProviderDiagnosticSummary.lines(diagnosticFacts, english: english) {
             menuItems.append(.init(title: summary,
                 action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil))
+        }
+        // D238: a tool installed after the first run, not yet decided: one line until the user decides.
+        for offer in DetectedToolOffer.offers(content.menuRows, english: english) {
+            menuItems.append(.init(title: offer.title, accessibilityID: "status.detected." + offer.rowID,
+                action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "subscriptions", origin: .userInitiated) } } : nil))
         }
         menuItems += [
             .init(title: nil),

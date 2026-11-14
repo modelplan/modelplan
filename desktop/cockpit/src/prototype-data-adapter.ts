@@ -54,3 +54,11 @@ export function displayWindow(account:WireAccount,window:WireWindow,now:number):
 export function scopedWindow(window:WireWindow):boolean {
  return (window.modelScope?.models?.length??0)>0 || window.poolKey!=='main';
 }
+
+// G3-109: a money balance in its reported ISO 4217 currency ("$12.34"); a money balance without a valid code is a
+// plain two-decimal number. Null for anything that is not a finite money balance.
+export function moneyText(credits:WireAccount['credits'],locale:'en'|'zh-CN'):string|null {
+ const value=credits?.balance;if(!credits||credits.unit!=='money'||typeof value!=='number'||!Number.isFinite(value))return null;
+ if(credits.currency&&/^[A-Z]{3}$/.test(credits.currency)){try{return new Intl.NumberFormat(locale,{style:'currency',currency:credits.currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(value);}catch{/* an unknown code falls through */}}
+ return new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(value);
+}

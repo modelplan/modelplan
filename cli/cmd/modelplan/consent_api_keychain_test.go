@@ -71,7 +71,7 @@ func TestConsentAPIRejectsKeychainChoicesForUnusedRoutesAtomically(t *testing.T)
 				if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0700); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0700); err != nil {
+				if err := os.MkdirAll(filepath.Join(home, ".gemini", "tmp"), 0700); err != nil {
 					t.Fatal(err)
 				}
 				id := provider

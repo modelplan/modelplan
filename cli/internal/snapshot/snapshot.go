@@ -22,6 +22,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
 	"github.com/modelplan/modelplan/cli/internal/render"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -244,6 +245,13 @@ func Build(in Input) Snapshot {
 	}
 	if s.Accounts == nil {
 		s.Accounts = []quota.Account{}
+	} else {
+		// The desktop shows each account's plan text as is, so Codex's Pro tier ids become their
+		// names here; the report keeps the ids its history and advice are keyed on.
+		s.Accounts = append(make([]quota.Account, 0, len(s.Accounts)), s.Accounts...)
+		for i := range s.Accounts {
+			s.Accounts[i].Plan = rows.PlanLabel(s.Accounts[i].Source, s.Accounts[i].Plan)
+		}
 	}
 	if s.Sources == nil {
 		s.Sources = []quota.SourceStatus{}

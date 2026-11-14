@@ -24,6 +24,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/profile"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
@@ -135,7 +136,8 @@ Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
      MODELPLAN_READERS=passive|off (restrict shared reader permissions),
      MODELPLAN_EFFORT_SUGGESTION=on (opt in to local weekly effort suggestions; default off),
      MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history, speed measurement or tokens per day), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
-     MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
+     MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run),
+     MODELPLAN_PROFILE_ROOT=<absolute dir> (keep all ModelPlan config and cache under dir: a fresh profile)
 `
 
 type common struct {
@@ -204,6 +206,11 @@ func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 var startDetached = detach.Start
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// A fresh-profile root that is not absolute is refused before any store is touched.
+	if err := profile.Check(); err != nil {
+		fmt.Fprintln(stderr, err)
+		return exitUsage
+	}
 	if len(args) > 0 && args[0] == "app-server" {
 		return appServerCmd(args[1:], stdin, stdout, stderr)
 	}
@@ -1295,7 +1302,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly, withHisto
 		// A second change publishes only the user's own declarations. No tool
 		// account, connection, history, session or advice survives a discarded build.
 		home, _ := os.UserHomeDir()
-		report := quota.ReadDeclared(quota.Paths{LocalFile: filepath.Join(home, ".config", "modelplan", "local.json")}, now)
+		report := quota.ReadDeclared(quota.Paths{LocalFile: profile.ConfigFile(home, "local.json")}, now)
 		report.ConsentGeneration = admission.Generation()
 		report.ConsentStoreEpoch = admission.Fence().StoreEpoch
 		report.Sources = append(report.Sources, quota.SourceStatus{Source: "readers", Status: "off", Reason: "consent-changed"})

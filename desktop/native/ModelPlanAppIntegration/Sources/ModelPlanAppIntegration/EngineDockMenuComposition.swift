@@ -219,8 +219,7 @@ public struct EngineMenuRefreshResult {
         if let isolatedLedger {
             base = isolatedLedger.deletingLastPathComponent()
         } else if live {
-            guard let appSupport=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first else { return }
-            base=appSupport.appendingPathComponent("ModelPlan",isDirectory:true)
+            base=ProfileRoot.current.modelPlanSupport
         } else { base=FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-s4-"+UUID().uuidString,isDirectory:true);resetScratch=base }
         do {
             let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:isolatedLedger ?? base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live && isolatedLedger == nil)
