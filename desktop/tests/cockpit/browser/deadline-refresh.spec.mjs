@@ -11,7 +11,7 @@ function dataFor(details=false){
 }
 async function open(page,data){
  await page.addInitScript(()=>{window.__messages=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__messages.push(JSON.parse(raw));}}}};});
- await page.clock.install({time:new Date(start)});await page.clock.pauseAt(new Date(start));await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ await page.clock.install({time:new Date(Date.parse(start)-60000)});await page.clock.pauseAt(new Date(start));await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit?.receive(raw)??false,raw),tick=(time,reason='deadline',extra={})=>receive(send('tick',{nowUnixMs:String(Date.parse(time)),reason,...extra}));
  expect(await receive(send('load',{appearance,shell}))).toBe(true);expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);expect(await receive(send('display',{data}))).toBe(true);return {send,receive,tick};
 }

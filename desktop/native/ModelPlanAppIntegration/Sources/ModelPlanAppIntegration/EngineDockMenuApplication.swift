@@ -410,7 +410,9 @@ struct StatusNoticePresentation {
         if loginServiceAdapter == nil, let bundle = Bundle(url: appBundleURL),
            bundle.bundleURL.standardizedFileURL == appBundleURL.standardizedFileURL,
            bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL {
-            loginServiceAdapter = CommunityLoginServiceAdapter(item: PulseLoginItem(bundle: bundle))
+            // D164: a fresh profile shows the login item as unavailable and never touches the real one.
+            loginServiceAdapter = CommunityLoginServiceAdapter(item: ProfileRoot.current.allowsLoginItem
+                ? PulseLoginItem(bundle: bundle) : ProfileRoot.unavailableLoginItem())
         }
         if notificationAuthorizationService == nil, let bundle = Bundle(url: appBundleURL),
            bundle.bundleURL.standardizedFileURL == appBundleURL.standardizedFileURL,
@@ -702,9 +704,9 @@ struct StatusNoticePresentation {
            dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         #if MODELPLAN_DOCK_NATIVE_JOURNEY
-        installStatusItem(autosaveName: EngineRowsEntry.nativeJourneyProfile == nil ? "ModelPlanCommunity.StatusItem" : nil)
+        installStatusItem(autosaveName: EngineRowsEntry.nativeJourneyProfile == nil ? ProfileRoot.current.statusItemAutosaveName : nil)
         #else
-        installStatusItem(autosaveName: "ModelPlanCommunity.StatusItem")
+        installStatusItem(autosaveName: ProfileRoot.current.statusItemAutosaveName)
         #endif
         #if MODELPLAN_U6_DRIVE
         driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
@@ -987,6 +989,7 @@ struct StatusNoticePresentation {
         noticeIndicator.apply(notice, firstAppearanceAnimation: pulse, reducedMotion: composition.latestSettings?.effective.reduceMotion ?? true)
     }
     static let statusFallbackTitle = "MP"
+    static func statusAccessibilityLabel(title: String) -> String { title.isEmpty ? "ModelPlan" : "ModelPlan \(title)" }
     static func configureStatusButton(_ button:NSButton,image:NSImage?,barThickness:CGFloat) {
         let side=min(16,max(0,barThickness.isFinite ? barThickness : 0))
         // Every menu render calls this; a button that already shows the image at this size is left alone, so a
@@ -1015,6 +1018,12 @@ struct StatusNoticePresentation {
             let position: NSControl.ImagePosition = title.isEmpty ? .imageOnly : .imageLeading
             if button.imagePosition != position { button.imagePosition = position }
         }
+        // A11Y: an icon-only status item has no text, so AX clients (VoiceOver, the MacCI verification agent) found no
+        // labelled button under AXExtrasMenuBar. Label it "ModelPlan" plus the remaining quota and keep the button role.
+        let label = Self.statusAccessibilityLabel(title: title)
+        if button.accessibilityLabel() != label { button.setAccessibilityLabel(label) }
+        button.setAccessibilityElement(true); button.setAccessibilityRole(.button)
+        button.setAccessibilityIdentifier("status.item")
         statusTooltip = detail
         let tooltip = statusTooltipHidden ? nil : detail
         if button.toolTip != tooltip { button.toolTip = tooltip }
