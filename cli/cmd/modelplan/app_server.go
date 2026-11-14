@@ -107,7 +107,8 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		for method, h := range appserver.HistoryImportHandlers(importer) {
 			handlers[method] = h
 		}
-		// G3-112: an owed first-run import (failed, never started or re-armed by a reset) runs at start.
+		// G3-112: a requested first-run import that did not complete (failed, interrupted or no grant
+		// yet) is retried at start. A fresh profile owes nothing: first-run consent starts the first one.
 		if firstRunImportPending(st.Dir, consent.Capture()) {
 			importer.StartFirstRun(speed.ImportDefaultDays)
 		}

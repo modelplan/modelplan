@@ -548,6 +548,7 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, legacy 
 	// past again (the importer skips sources without a grant, so the others are not read twice).
 	if name == "imported.json" && history {
 		delete(doc, "autoRan")
+		delete(doc, "autoRequested")
 	}
 	b, _ = json.Marshal(doc)
 	if err := replace(path, append(b, '\n')); err != nil {

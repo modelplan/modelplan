@@ -3,9 +3,11 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 // G3-112: the engine starts the first-run import itself when it is still owed (it failed, never
@@ -31,6 +33,12 @@ func TestFirstRunImportPendingNeedsMarkerAndGrant(t *testing.T) {
 	cstate, _ = consent.Current()
 	allow := consent.Grant{RequestID: "allow", ExpectStoreEpoch: cstate.StoreEpoch, ExpectGeneration: cstate.Generation, ConsentTextVersion: consent.TextVersion, Allow: []string{consent.ScopeCodexLocalHistory}}
 	if _, err := consent.ApplyGrant(consent.Path(), allow, hooks); err != nil {
+		t.Fatal(err)
+	}
+	if firstRunImportPending(cache, consent.Capture()) {
+		t.Fatal("a launch with a grant but no unfinished first-run request started an import")
+	}
+	if err := speed.MarkAutoRequested(cache, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if !firstRunImportPending(cache, consent.Capture()) {

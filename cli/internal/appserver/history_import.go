@@ -66,9 +66,18 @@ func (c *ImportController) status() wire.HistoryImportStatus {
 }
 
 func (c *ImportController) start(p wire.HistoryImportStartParams) error {
+	// A first-run start joins a running import (the engine may have started an owed one at
+	// launch) and changes nothing once the first run is done, so the finished run's report
+	// stays (G3-112). The engine itself would answer such a run with nothing to do.
+	if p.FirstRun && c.engine.State().FirstRunDone {
+		return nil
+	}
 	c.mu.Lock()
 	if c.phase == wire.ImportRunning {
 		c.mu.Unlock()
+		if p.FirstRun {
+			return nil
+		}
 		return ProtocolError{wire.CodeBusy}
 	}
 	ctx, cancel := context.WithCancel(context.Background())

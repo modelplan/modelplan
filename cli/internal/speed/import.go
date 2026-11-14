@@ -84,9 +84,12 @@ type ImportLedger struct {
 	SchemaVersion int `json:"schemaVersion"`
 	// AutoRan: when the first-run import ran (also when it skipped every source), so it is not
 	// repeated; the Settings action stays available.
-	AutoRan  *time.Time      `json:"autoRan,omitempty"`
-	Coverage map[string]Span `json:"coverage,omitempty"`
-	Rows     []PerfRow       `json:"rows"`
+	AutoRan *time.Time `json:"autoRan,omitempty"`
+	// AutoRequested: when a first-run import was last asked for. With no AutoRan it is owed: the
+	// run failed, was interrupted or found no grant, and the engine retries it at launch (G3-112).
+	AutoRequested *time.Time      `json:"autoRequested,omitempty"`
+	Coverage      map[string]Span `json:"coverage,omitempty"`
+	Rows          []PerfRow       `json:"rows"`
 }
 
 // ImportPath is the ledger file.
@@ -109,6 +112,32 @@ func LoadImported(cache string) (l ImportLedger, ok bool) {
 		l.Rows = []PerfRow{}
 	}
 	return l, true
+}
+
+// AutoImportOwed: a first-run import was requested and has not completed, and recording is on.
+// A fresh profile owes nothing: only the first-run consent starts the first import.
+func AutoImportOwed(cache string) bool {
+	if Off() {
+		return false
+	}
+	l, ok := LoadImported(cache)
+	return ok && l.AutoRan == nil && l.AutoRequested != nil
+}
+
+// MarkAutoRequested records that the first-run import was asked for (kept until it completes).
+func MarkAutoRequested(cache string, now time.Time) error {
+	unlock, ok := lockWait(cache, "perf.lock")
+	if !ok {
+		return errors.New("readings busy; retry the import")
+	}
+	defer unlock()
+	led, ok := LoadImported(cache)
+	if !ok || led.AutoRan != nil {
+		return nil
+	}
+	t := now.UTC().Truncate(time.Second)
+	led.AutoRequested = &t
+	return writeImported(cache, led)
 }
 
 // NeedsAutoImport: the first-run import has not run yet and recording is on.

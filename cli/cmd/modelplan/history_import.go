@@ -38,6 +38,12 @@ func historyImportCmd(stdout, stderr io.Writer, st *store.Store, c common, doImp
 		}
 		return 0
 	}
+	if firstRun {
+		if err := speed.MarkAutoRequested(st.Dir, time.Now()); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitErr
+		}
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	opts := importOptions(st, days, firstRun, time.Now())
@@ -85,11 +91,11 @@ func importOptions(st *store.Store, days int, firstRun bool, now time.Time) spee
 	return opts
 }
 
-// firstRunImportPending: the first-run import is still owed (it failed, never started, or a reset
-// re-armed it) and a recorded Claude Code or Codex history grant is in force (G3-112). The engine then starts
+// firstRunImportPending: a requested first-run import is still owed (it failed, was interrupted
+// or found no grant) and a recorded Claude Code or Codex history grant is in force (G3-112). The engine then starts
 // it itself; the run skips every source without a grant.
 func firstRunImportPending(cache string, a consent.Admission) bool {
-	if !speed.NeedsAutoImport(cache) {
+	if !speed.AutoImportOwed(cache) {
 		return false
 	}
 	// Only a recorded grant counts: before the user has answered first run, a default-on scope must
@@ -109,6 +115,11 @@ type importEngine struct{ st *store.Store }
 func (e importEngine) Run(ctx context.Context, days int, firstRun bool, progress func(done, total int)) ([]wire.HistoryImportSource, error) {
 	if firstRun && !speed.NeedsAutoImport(e.st.Dir) {
 		return []wire.HistoryImportSource{}, nil
+	}
+	if firstRun {
+		if err := speed.MarkAutoRequested(e.st.Dir, time.Now()); err != nil {
+			return nil, err
+		}
 	}
 	opts := importOptions(e.st, days, firstRun, time.Now())
 	opts.Progress = progress

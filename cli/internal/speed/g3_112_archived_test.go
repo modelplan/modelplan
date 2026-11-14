@@ -2,6 +2,7 @@
 package speed
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,5 +32,26 @@ func TestImportReadsCodexArchivedSessions(t *testing.T) {
 	l, _ = LoadImported(f.cache)
 	if r, _ := total(l, "codex"); r != 3 {
 		t.Fatalf("re-import after archiving counted %d, want 3", r)
+	}
+}
+
+// G3-112: an import is owed for a retry only after a first-run import was requested and did not
+// complete; a fresh profile owes nothing, so launching never starts a read by itself.
+func TestAutoImportOwedOnlyAfterAnUnfinishedRequest(t *testing.T) {
+	f := newFixture(t)
+	if AutoImportOwed(f.cache) {
+		t.Fatal("fresh profile owes an import")
+	}
+	if err := MarkAutoRequested(f.cache, f.now); err != nil {
+		t.Fatal(err)
+	}
+	if !AutoImportOwed(f.cache) {
+		t.Fatal("requested, unfinished first run is not owed")
+	}
+	if _, err := Import(context.Background(), f.cache, ImportOptions{Now: f.now, Codex: &ImportRoot{Dir: f.home}, Admission: both(), Auto: true}); err != nil {
+		t.Fatal(err)
+	}
+	if AutoImportOwed(f.cache) {
+		t.Fatal("completed first run still owed")
 	}
 }
