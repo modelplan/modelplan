@@ -202,3 +202,55 @@ func TestD240UpgradeRepairRunsOnce(t *testing.T) {
 	}
 	f.assertCopilotRuntimeClosed()
 }
+
+// #971 review (glm-971-1): the repair grant can fail or go stale (a concurrent consent change,
+// an unwritable store). Until it commits, the automatic scheduler must not admit the scopes the
+// v0.5.60 grant left open, and once it can commit the scheduler's own attempt records them off.
+func TestD240AutomaticRefreshWaitsForTheRepair(t *testing.T) {
+	f := newUpgradeFixture(t)
+	f.v060Store()
+	dir := filepath.Dir(consent.Path())
+	for _, lock := range []string{".lock", ".readers.lock"} { // the locks still work
+		if err := os.WriteFile(consent.Path()+lock, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(dir, 0500); err != nil { // every consent write now fails
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+	b := f.running()
+	f.view(b) // the view's repair attempt fails
+	if !consent.Capture().State().AllowsScope(consent.ScopeCopilotRuntimeUsage, consent.Automatic) {
+		t.Fatal("fixture: the repair committed although the store is read-only")
+	}
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: b, Paths: f.paths, Run: quota.ExecuteScopeRefresh, Changed: b.Notify})
+	defer scheduler.Close()
+	scheduler.StartAutomatic()
+	signalAutomatic(scheduler)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(f.spawned); err == nil {
+			t.Fatal("copilot --headless was spawned while the repair had not committed")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	signalAutomatic(scheduler)
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		if r, ok := consent.Capture().State().Scopes[consent.ScopeCopilotRuntimeUsage]; ok && !r.Allowed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the scheduler did not retry the repair once the store was writable")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, err := os.Stat(f.spawned); err == nil {
+		t.Fatal("copilot --headless was spawned around the repair")
+	}
+	f.assertCopilotRuntimeClosed()
+}

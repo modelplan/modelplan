@@ -162,7 +162,8 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 // tool's saved login, its runtime or a network call stays opt-in (offered in the menu, D238):
 // the same grant records those scopes as off when they would otherwise pass while undecided
 // (#924), because the local-log grant's tool record would admit their readers.
-// A failed or stale attempt is retried on the next view.
+// A failed or stale attempt is retried on the next view; until then buildView keeps the
+// scopes it would close out of the refreshable list.
 func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
 	if b.config.LaterInstalled == nil || b.config.ReadOnly {
 		return
@@ -309,6 +310,13 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	scopes := []string{}
 	diagnostics := []wire.ScopeDiag{}
 	state := admission.State()
+	// Until the D240 upgrade repair commits (a stale or failed grant is retried on the next
+	// view), the runtime/account scopes that CLI v0.5.60's grant left open stay out of the
+	// refreshable list, so neither the automatic scheduler nor a request admits them (#971).
+	unrepaired := map[string]bool{}
+	for _, id := range consent.AutoLaterClosedScopes(state, consent.LaterLocalLogScopes(state, later)) {
+		unrepaired[id] = true
+	}
 	for _, fact := range admission.ScopeFacts(detected) {
 		if id, pending := quota.PolicyPending(fact.Tool); pending && id == fact.Scope {
 			reason := "policy_pending"
@@ -331,7 +339,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 			scope.Disabled = &reason
 		}
 		facts.Scopes = append(facts.Scopes, scope)
-		if state.AllowsScope(fact.Scope, admission.Mode()) && scope.Disabled == nil && !scope.CleanupPending {
+		if state.AllowsScope(fact.Scope, admission.Mode()) && scope.Disabled == nil && !scope.CleanupPending && !unrepaired[fact.Scope] {
 			scopes = append(scopes, fact.Scope)
 		}
 		diag := wire.ScopeDiag{Scope: fact.Scope, State: rows.StatePending, Code: rows.CodeNotReadYet}
