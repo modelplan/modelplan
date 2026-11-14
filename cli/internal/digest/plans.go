@@ -106,6 +106,34 @@ func validMetering(m *PlanMetering) bool {
 	return true
 }
 
+// PlanModels (client-v1.4) lists, per published plan, the published models its subscriber can use.
+// It comes from the reviewed plan/model access table, or from the plan's own matched page listings
+// when the plan has no reviewed rows. A plan without an entry is unknown, never "no models".
+type PlanModels struct {
+	Plans []PlanModelList `json:"plans"`
+}
+
+type PlanModelList struct {
+	PlanID     string   `json:"planId"`
+	Generation string   `json:"generation"` // "" when the plan has none
+	Basis      string   `json:"basis"`      // "access" or "listing"
+	ModelIDs   []string `json:"modelIds"`
+}
+
+func validPlanModels(m *PlanModels) bool {
+	for _, p := range m.Plans {
+		if p.PlanID == "" || (p.Basis != "access" && p.Basis != "listing") || len(p.ModelIDs) == 0 {
+			return false
+		}
+		for _, id := range p.ModelIDs {
+			if id == "" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // Endpoint is the scheme, host and path of a base URL, lower-cased host, without credentials,
 // query or a trailing slash; "" when it is not an http(s) URL. Only this form is recorded.
 func Endpoint(raw string) string {

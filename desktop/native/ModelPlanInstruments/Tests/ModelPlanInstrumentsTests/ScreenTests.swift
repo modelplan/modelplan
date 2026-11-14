@@ -124,6 +124,6 @@ final class ScreenTests: XCTestCase {
         XCTAssertEqual(EffortPagePresentation(models: models, selection: all, scope: .all, publication: publication, publicationUsable: true).models.map(\.id), ["z", "old", "a"])
         XCTAssertEqual(EffortPagePresentation(models: models, selection: single, scope: .subscription("s"), publication: publication, publicationUsable: true).models.map(\.id), ["a"])
         XCTAssertTrue(EffortPagePresentation(models: models, selection: all, scope: .all, publication: publication, publicationUsable: false).models.isEmpty)
-        XCTAssertEqual(MainScreenPage.allCases.map { $0.title(.chinese) }, ["总览", "订阅", "档位", "去向"])
+        XCTAssertEqual(MainScreenPage.allCases.map { $0.title(.chinese) }, ["总览", "订阅", "模型", "去向"])
     }
 }

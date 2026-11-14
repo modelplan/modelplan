@@ -173,6 +173,34 @@ func allCockpitModels(d *digest.Digest) []wire.CockpitPublicationModel {
 	return out
 }
 
+// cockpitPlanModels copies the published plan model lists, keeping only models in the published list
+// above and plans that still have one. Nothing is inferred; an older publication yields none.
+func cockpitPlanModels(d *digest.Digest, published []wire.CockpitPublicationModel) []wire.CockpitPlanModels {
+	if d == nil || d.Source != digest.ComponentClient || d.PlanModels == nil {
+		return nil
+	}
+	known := map[string]bool{}
+	for _, m := range published {
+		known[m.ID] = true
+	}
+	var out []wire.CockpitPlanModels
+	for _, p := range d.PlanModels.Plans {
+		if len(out) == 128 || p.PlanID == "" || len(p.PlanID) > 128 || len(p.Generation) > 128 || (p.Basis != "access" && p.Basis != "listing") {
+			continue
+		}
+		ids := []string{}
+		for _, id := range p.ModelIDs {
+			if known[id] && len(ids) < 256 {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) > 0 {
+			out = append(out, wire.CockpitPlanModels{PlanID: p.PlanID, Generation: p.Generation, Basis: p.Basis, ModelIDs: ids})
+		}
+	}
+	return out
+}
+
 // selectCockpitPublication puts the models in use first, then keeps the verified models array's
 // publication order; it does not calculate a cross-vendor score or a synthetic ranking.
 func selectCockpitPublication(d *digest.Digest, projection rows.Projection, inUse map[string]bool) *wire.CockpitPublication {

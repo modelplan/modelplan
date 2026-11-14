@@ -9,8 +9,8 @@ public enum MainScreenPage: CaseIterable, Hashable, Sendable {
         case (.overview, .english): return "Overview"
         case (.subscriptions, .chinese): return "订阅"
         case (.subscriptions, .english): return "Subscriptions"
-        case (.effort, .chinese): return "档位"
-        case (.effort, .english): return "Effort"
+        case (.effort, .chinese): return "模型"
+        case (.effort, .english): return "Models"
         case (.destinations, .chinese): return "去向"
         case (.destinations, .english): return "Destinations"
         }

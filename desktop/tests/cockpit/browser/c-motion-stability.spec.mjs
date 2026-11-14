@@ -31,7 +31,7 @@ test('MOT-2.3-09 state, input and appearance changes leave the frame and reading
  await page.locator('.eng-keys button').nth(1).hover();await held('hover on a key');
  await page.mouse.move(2,2);
  await page.keyboard.down('Alt');await held('help map down');await page.keyboard.up('Alt');await held('help map up');
- for(const name of ['Subscription','Effort','Breakdown','Overview']){await page.getByRole('button',{name,exact:true}).click();await held(`page ${name}`);}
+ for(const name of ['Subscription','Models','Breakdown','Overview']){await page.getByRole('button',{name,exact:true}).click();await held(`page ${name}`);}
  for(const change of [{reduceMotion:true},{reduceTransparency:true},{theme:'day'},{locale:'zh-CN'}]){
   expect(await receive(send('appearance',{...appearance,...change}))).toBe(true);await held(JSON.stringify(change));
   expect(await receive(send('appearance',appearance))).toBe(true);await held('appearance restored');
