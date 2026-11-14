@@ -5,9 +5,9 @@ import XCTest
 @testable import ModelPlanCockpitWeb
 
 /// D88 (owner, 2026-11-09): the cockpit belongs to the menu bar icon by default. Attached: a drag of the title
-/// strip also detaches, an outside click closes it, and an open from the icon grows out of the icon and
-/// shrinks back on close. Detached: an outside click keeps it, and the put-back key (or a drop near the icon)
-/// puts it back. The real panel and controller on the real screen, placed under a menu-bar-sized anchor; the
+/// strip also detaches and an outside click closes it; an open from the icon is the launch rack's (CKP-SHELL-33,
+/// covered in CockpitLaunchRackEntryTests). Detached: an outside click keeps it, and the put-back key (or a drop near
+/// the icon) puts it back. The real panel and controller on the real screen, placed under a menu-bar-sized anchor; the
 /// page is a synthetic document, so the strip keys' messages are covered by the bridge contract and the page
 /// tests, and here the controller receives the intents they map to. Window server: GUI leg.
 @MainActor final class CockpitD88AttachmentTests: XCTestCase {
@@ -53,7 +53,7 @@ import XCTest
   private func titles(_ page: CockpitWindowController) -> [String] { page.contextMenu()?.items.map(\.title) ?? [] }
   private func outside(_ fixture: Fixture) -> CGPoint { .init(x: fixture.usable.minX + 2, y: fixture.usable.minY + 2) }
 
-  /// Attached: centred under the icon, the right-click menu is the app's own (Detach, never Reload), the key
+  /// Attached: under the icon (its left shoulder, CKP-SHELL-33), the right-click menu is the app's own (Detach, never Reload), the key
   /// anchors the one-time hint, and a click outside closes it the way a menu closes.
   func testD88AttachedOffersDetachAndAnOutsideClickClosesIt() throws {
     let fixture = try make(reduceMotion: true)
@@ -62,8 +62,6 @@ import XCTest
     let home = try XCTUnwrap(fixture.home)
     XCTAssertTrue(fixture.page.isAttached)
     XCTAssertEqual(window.frame, home)
-    XCTAssertEqual(window.frame.midX, min(max(fixture.icon.midX, fixture.usable.minX + home.width / 2), fixture.usable.maxX - home.width / 2), accuracy: 0.5,
-                   "centred under the icon")
     XCTAssertEqual(titles(fixture.page), ["Detach"])
     let anchor = try XCTUnwrap(fixture.page.attachmentHintAnchor, "the detach key anchors the one-time hint")
     XCTAssertTrue(anchor.attached); XCTAssertTrue(window.frame.contains(anchor.frame))
@@ -97,8 +95,8 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
-  /// Detached by the key: an outside click keeps the window, and the put-back key returns it under the icon.
-  /// The one right-click item does the same.
+  /// Detached by the key: it moves out of the catch zone to a place fully on screen (D187), an outside click keeps the
+  /// window, and the put-back key returns it under the icon. The one right-click item does the same.
   func testD88DetachKeyThenPutBackKey() throws {
     let fixture = try make(reduceMotion: true)
     defer { fixture.page.discard() }
@@ -106,7 +104,8 @@ import XCTest
     let start = window.frame, home = try XCTUnwrap(fixture.home)
     fixture.page.setAttached(false) // the detach key's intent
     XCTAssertFalse(fixture.page.isAttached)
-    XCTAssertEqual(window.frame, start, "detaching keeps the window where it is")
+    XCTAssertGreaterThan(hypot(window.frame.minX - start.minX, window.frame.maxY - start.maxY), 40, "out of the catch zone")
+    XCTAssertTrue(fixture.usable.contains(window.frame), "fully on screen")
     XCTAssertEqual(titles(fixture.page), ["Put back"])
     window.setFrame(start.offsetBy(dx: 0, dy: -100), display: true)
     fixture.page.outsidePress(outside(fixture), eventType: .leftMouseDown)
@@ -126,65 +125,13 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
-  /// An open from the icon starts at the icon and settles under it; the close shrinks back into it.
-  func testD88IconOpenGrowsOutOfTheIconAndCloseShrinksBack() async throws {
-    let fixture = try make(reduceMotion: false)
-    defer { fixture.page.discard() }
-    var changes = 0
-    fixture.page.onShellChanged = { changes += 1 }
-    let window = try openPage(fixture, entrance: .growFromIcon)
-    let home = try XCTUnwrap(fixture.home)
-    XCTAssertEqual(fixture.session.nextEntrance, .fade, "the entrance is consumed by its open")
-    XCTAssertLessThan(window.frame.width, home.width, "it starts at the icon")
-    XCTAssertNil(fixture.page.attachmentHintAnchor, "no hint while it grows")
-    XCTAssertEqual(changes, 0)
-    try await Task.sleep(for: .milliseconds(600))
-    XCTAssertEqual(window.frame, home, "it settles under the icon")
-    XCTAssertEqual(changes, 1, "the settled open is reported once, for the hint")
-    XCTAssertNotNil(fixture.page.attachmentHintAnchor)
-    fixture.page.requestClose()
-    // Main 0af627e5: one sample at 100 ms read the full width. Sample until the window is gone instead, so a late
-    // first animation step on a loaded runner cannot fail it, while a frame held at full size still does.
-    var narrowest = CGFloat.infinity
-    let deadline = ContinuousClock.now + .seconds(2)
-    while let closing = fixture.page.window, ContinuousClock.now < deadline {
-      narrowest = min(narrowest, closing.frame.width)
-      try await Task.sleep(for: .milliseconds(5))
-    }
-    XCTAssertLessThan(narrowest, home.width, "the close shrinks back into the icon")
-    XCTAssertNil(fixture.page.window)
-    XCTAssertEqual(failures, [])
-  }
-
-  /// A relayout during the shrink (a screen-parameter change) must not snap the closing window back to full size.
-  func testD88ScreenChangeDuringTheShrinkKeepsShrinking() async throws {
-    let fixture = try make(reduceMotion: false)
-    defer { fixture.page.discard() }
-    _ = try openPage(fixture, entrance: .growFromIcon)
-    let home = try XCTUnwrap(fixture.home)
-    try await Task.sleep(for: .milliseconds(600))
-    fixture.page.requestClose()
-    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApplication.shared)
-    var widths: [CGFloat] = []
-    let deadline = ContinuousClock.now + .seconds(2)
-    while let closing = fixture.page.window, ContinuousClock.now < deadline {
-      widths.append(closing.frame.width)
-      try await Task.sleep(for: .milliseconds(5))
-    }
-    XCTAssertLessThan(widths.min() ?? 0, home.width, "the close still shrinks")
-    XCTAssertFalse(widths.dropFirst(widths.firstIndex { $0 < home.width } ?? widths.count).contains(home.width),
-                   "and is not set back to the layout frame mid-shrink")
-    XCTAssertNil(fixture.page.window)
-    XCTAssertEqual(failures, [])
-  }
-
-  /// A re-open during the shrink must stop it and present at the layout frame, not at the icon rect.
+  /// A re-open during the rack's reverse close must stop it and present at the layout frame, not where the close took it.
   func testD88ReopenDuringTheShrinkPresentsAtTheLayoutFrame() async throws {
     let fixture = try make(reduceMotion: false)
     defer { fixture.page.discard() }
-    let window = try openPage(fixture, entrance: .growFromIcon)
+    let window = try openPage(fixture, entrance: .fromIcon)
     let home = try XCTUnwrap(fixture.home)
-    try await Task.sleep(for: .milliseconds(600))
+    try await Task.sleep(for: .milliseconds(800))
     fixture.page.requestClose()
     try await Task.sleep(for: .milliseconds(80))
     fixture.page.open()
@@ -194,12 +141,12 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
-  /// Reduce Motion opens at once at full size, and the widget ignition keeps its own fade instead of the grow.
+  /// Reduce Motion opens at once at full size, and the widget ignition keeps its own fade instead of the rack-first open.
   func testD88GrowIsSkippedUnderReduceMotionAndForTheIgnition() async throws {
     let reduced = try make(reduceMotion: true)
     defer { reduced.page.discard() }
-    let still = try openPage(reduced, entrance: .growFromIcon)
-    XCTAssertEqual(still.frame, try XCTUnwrap(reduced.home), "Reduce Motion: no grow")
+    let still = try openPage(reduced, entrance: .fromIcon)
+    XCTAssertEqual(still.frame, try XCTUnwrap(reduced.home), "Reduce Motion: no rack-first open")
     XCTAssertEqual(still.alphaValue, 1, "and no fade")
     reduced.page.requestClose()
     XCTAssertNil(reduced.page.window, "and the close is instant")
@@ -211,14 +158,7 @@ import XCTest
     XCTAssertEqual(faded.frame, home, "the ignition entrance never starts at the icon")
     ignition.page.requestClose()
     try await Task.sleep(for: .milliseconds(60))
-    XCTAssertEqual(ignition.page.window?.frame ?? home, home, "and its close does not shrink into the icon")
-
-    let icon = reduced.icon
-    XCTAssertNil(CockpitWindowController.entranceStart(.growFromIcon, reduceMotion: true, detached: false, icon: icon))
-    XCTAssertNil(CockpitWindowController.entranceStart(.fade, reduceMotion: false, detached: false, icon: icon))
-    XCTAssertNil(CockpitWindowController.entranceStart(.growFromIcon, reduceMotion: false, detached: true, icon: icon))
-    XCTAssertNil(CockpitWindowController.entranceStart(.growFromIcon, reduceMotion: false, detached: false, icon: nil))
-    XCTAssertEqual(CockpitWindowController.entranceStart(.growFromIcon, reduceMotion: false, detached: false, icon: icon), icon)
+    XCTAssertEqual(ignition.page.window?.frame ?? home, home, "and its close does not move it under the menu bar")
   }
 
   /// G3-55 stays: WebKit's own items never show, and the app's menu (with Detach / Put back on top) comes from the controller.

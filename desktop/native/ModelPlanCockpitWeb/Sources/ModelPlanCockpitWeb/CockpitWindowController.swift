@@ -36,9 +36,10 @@ enum CockpitSchemeResponse {
   }
 }
 
-/// D88: how an open enters. The menu bar icon grows the attached cockpit out of the icon; every other entry
-/// (the widget ignition, a shortcut, a menu item) keeps the plain fade.
-public enum CockpitEntrance: Equatable, Sendable { case fade, growFromIcon }
+/// How an open enters. CKP-SHELL-33 (D186/D188, replaces D88's grow): from the menu bar icon the launch rack's
+/// visible part extends first and the attached cockpit then comes out from under the menu bar; every other entry (the
+/// widget ignition, a shortcut, a menu item) keeps the plain fade, with the rack simply there when attached.
+public enum CockpitEntrance: Equatable, Sendable { case fade, fromIcon }
 
 /// D88: where the one-time detach / put-back hint points, in screen coordinates.
 public struct CockpitAttachmentHintAnchor: Equatable {
@@ -114,11 +115,6 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public static func level(detached: Bool) -> NSWindow.Level { detached ? .normal : panelLevel }
   /// Windows the open cockpit brings up (the enlarged field, the Help overlay) sit above it.
   public static let aboveCockpitLevel = NSWindow.Level(rawValue: panelLevel.rawValue + 1)
-  /// The drag snap guide's level beside an attached cockpit; on every show it takes the cockpit's current level
-  /// (`.normal` while detached, G3-102) so it can be ordered just below the cockpit.
-  public static let snapGuideLevel = panelLevel
-  /// D88: the icon grow on open and the shrink on close, ease-out, instant with Reduce Motion.
-  static let growDuration: TimeInterval = 0.2
   /// G3-108 (owner, build 14e): the shutter reads as the porthole closing or opening, 250 ms, the same time as the
   /// page's own porthole motion (cockpit.css `cockpit-shutter`); Reduce Motion is instant (CKP-MOT-03).
   public static let shutterDuration: TimeInterval = 0.25
@@ -161,11 +157,25 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   var shutterPending: Bool { shutterTask != nil }
   private var dragStart: (point: CGPoint, frame: CGRect, detached: Bool)?
   private var dragRegion: CockpitTitleDrag?
-  private var snapGuide: NSPanel?
-  /// D88: this open grew out of the menu bar icon, so an attached close shrinks back into it.
-  private var grewFromIcon = false
-  /// D88: true while the grow animation runs; the hint anchor waits for its end.
+  /// CKP-SHELL-33: the drag has been outside the catch zone since it tore off, and the rack is now reaching for it.
+  private var dragArmed = false, dragCatching = false
+  /// CKP-SHELL-33: this open came from the menu bar icon, so an attached close reverses the rack-first open.
+  private var openedFromIcon = false
+  /// True while the open's entrance runs; the hint anchor waits for its end.
   private var entering = false
+  /// CKP-SHELL-33: the launch rack under the attached cockpit, and its motion (see the Launch rack section).
+  private lazy var rack = CockpitLaunchRack(art: CockpitRackArt.load(bundle))
+  private var rackExtension: CGFloat = 0, rackTarget: CGFloat = 0
+  private var rackPace: TimeInterval = CockpitLaunchRackTiming.fullTravel
+  private var rackTimer: Timer?
+  private var rackClock: TimeInterval = 0
+  private var rackSettledWaiters: [@MainActor () -> Void] = []
+  private struct Motion { let start: TimeInterval; let duration: TimeInterval; let step: @MainActor (CGFloat) -> Void; let done: @MainActor () -> Void }
+  private var motion: Motion?
+  /// The nozzles are lit (the page's amber bell glow).
+  private var ignited = false
+  /// The rack stays hidden inside the attached frame while the open's slide or the close runs.
+  private var rackHidesInHome = false
   private let menuTarget = CockpitMenuTarget()
   public let bridge: CockpitBridgeState
   private var web: WKWebView?
@@ -370,7 +380,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationDidDiscard: (() -> Void)?
     public var verificationOutsidePress: ((NSEvent.EventType,Bool)->Void)?
     public var verificationCloseOrigin: ((String)->Void)?
-    /// D88: "grow", "fade" or "instant" for each first show; "shrink", "fade" or "instant" for each close.
+    /// "rack", "fade" or "instant" for each first show; "rack", "fade" or "instant" for each close (CKP-SHELL-33).
     public var verificationEntrance: ((String)->Void)?
     public var verificationContextMenu: NSMenu? { contextMenu() }
     public var verificationPlacement: (usable: CGRect, anchor: CGRect)? {
@@ -380,11 +390,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRootHeight: CGFloat? { layout?.rootHeight }
     public var verificationLayout: CockpitShellLayout? { layout }
     public var verificationDragRegion: NSView? { dragRegion }
-    /// The drag's snap guide as last shown: its frame and whether it showed ready (solid line).
-    public var verificationSnapGuide: (frame: CGRect, ready: Bool)? {
-      guard let guide = snapGuide, let shape = guide.contentView?.layer as? CAShapeLayer else { return nil }
-      return (guide.frame, shape.lineDashPattern == nil)
+    /// CKP-SHELL-33: the launch rack as last drawn (extension 0-1, where it is heading, its panel when on screen),
+    /// whether the nozzles are lit, and whether a motion (open, landing, flight) is running.
+    public var verificationRack: (ext: CGFloat, target: CGFloat, panel: CGRect?, ignited: Bool, moving: Bool) {
+      (rackExtension, rackTarget, rack.panel?.isVisible == true ? rack.panel?.frame : nil, ignited, motion != nil)
     }
+    /// Every ignition change sent to the page, in order.
+    public var verificationIgnition: ((Bool) -> Void)?
+    /// The landing a key detach chose (D187).
+    public var verificationLanding: ((CockpitDetachLanding.Plan) -> Void)?
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
@@ -428,27 +442,42 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       applyLayout()
       installOutsideMonitors()
       let target = panel.frame
-      let start = Self.entranceStart(entrance, reduceMotion: appearance.reduceMotion, detached: shellSession.detached, icon: anchor())
-      grewFromIcon = start != nil
+      let rackFirst = Self.opensRackFirst(entrance, reduceMotion: appearance.reduceMotion, detached: shellSession.detached, icon: rackIcon())
+      openedFromIcon = entrance == .fromIcon
       occlusionReported = false
-      if let start {
-        // D88: grow out of the icon. The content keeps its 636 pt bounds, so it scales with the frame.
-        entering = true
+      if rackFirst {
+        // CKP-SHELL-33 (D186/D188): the page is prepared from the click (ordered in at alpha 0, so it loads, takes its
+        // visibility and asks for data) while the rack's visible part extends; then the cockpit comes out from under the
+        // menu bar with whatever it has (the last reply until the fresh one lands), never waiting for data.
+        entering = true; rackHidesInHome = true
         panel.alphaValue = 0
-        panel.setFrame(start, display: false)
+        panel.setFrame(target.offsetBy(dx: 0, dy: CockpitLaunchRackTiming.openRise), display: false)
         panel.makeKeyAndOrderFront(nil)
-        NSAnimationContext.runAnimationGroup({ context in
-          context.duration = Self.growDuration; context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-          panel.animator().setFrame(target, display: true); panel.animator().alphaValue = 1
-        }, completionHandler: { [weak self] in
-          Task { @MainActor in
-            guard let self, self.entering else { return }
-            self.entering = false
-            if self.closeTask == nil, !self.ending, !self.shellSession.detached, let frame = self.layout?.frame { self.window?.setFrame(frame, display: true) }
+        rackExtension = 0; rackTarget = 0
+        runMotion(CockpitLaunchRackTiming.rackOpen, step: { [weak self] t in
+          guard let self else { return }
+          self.rackExtension = t / 3; self.rackTarget = self.rackExtension
+        }, done: { [weak self] in
+          guard let self, self.window != nil else { return }
+          self.runMotion(CockpitLaunchRackTiming.cockpitOpen, step: { [weak self] t in
+            guard let self, let panel = self.window, let home = self.layout?.frame else { return }
+            let eased = 1 - pow(1 - t, 3)
+            self.rackExtension = 1.0 / 3 + 2.0 / 3 * t; self.rackTarget = self.rackExtension
+            panel.alphaValue = min(1, t * 2.2)
+            panel.setFrame(home.offsetBy(dx: 0, dy: CockpitLaunchRackTiming.openRise * (1 - eased)), display: true)
+          }, done: { [weak self] in
+            guard let self, let panel = self.window else { return }
+            self.entering = false; self.rackHidesInHome = false
+            self.rackExtension = 1; self.rackTarget = 1
+            panel.alphaValue = 1
+            if let frame = self.layout?.frame { panel.setFrame(frame, display: true) }
             self.onShellChanged?()
-          }
+          })
         })
       } else {
+        // The rack is simply there when the attached cockpit hangs under the icon.
+        rackExtension = rackIcon() != nil && !shellSession.detached ? 1 : 0; rackTarget = rackExtension
+        refreshRack()
         panel.alphaValue = appearance.reduceMotion ? 1 : 0
         panel.makeKeyAndOrderFront(nil)
         if !appearance.reduceMotion {
@@ -456,24 +485,27 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         }
       }
       #if MODELPLAN_TEST_ONLY_SPI
-        verificationEntrance?(start != nil ? "grow" : appearance.reduceMotion ? "instant" : "fade")
+        verificationEntrance?(rackFirst ? "rack" : appearance.reduceMotion ? "instant" : "fade")
       #endif
-      if start == nil { onShellChanged?() }
+      if !rackFirst { onShellChanged?() }
       lastVisibility = nil; visibilityChanged()
       #if MODELPLAN_TEST_ONLY_SPI
         if let web { verificationDidOpen?(web, panel) }
       #endif
       return
     }
+    // A second open during the rack-first entrance lets it finish.
+    if entering, !wasClosing { panel.makeKeyAndOrderFront(nil); return }
     if wasClosing {
-      // Re-opened during the D88 shrink: stop the running shrink/fade animation (a zero-length group replaces it) and
-      // present at the layout frame instead of leaving the window at the icon rect.
-      entering = false
+      // Re-opened during the close: stop the running close motion or fade (a zero-length group replaces it) and
+      // present at the layout frame with the rack out, instead of leaving the window where the close had taken it.
+      entering = false; rackHidesInHome = false; motion = nil
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0
         panel.animator().alphaValue = 1
         panel.animator().setFrame(panel.frame, display: false)
       }
+      rackExtension = rackIcon() != nil && !shellSession.detached ? 1 : 0; rackTarget = rackExtension
       applyLayout()
     }
     // D204: an open brings the cockpit in front (a detached one where it is); an unseen attached one is laid out again.
@@ -931,7 +963,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// macrev2-845-1: a detached cockpit that lands on another display without a drag (the system moved it) is fitted
   /// to that display, as a drop is.
   public func windowDidChangeScreen(_ notification: Notification) {
-    guard let window, shown, shellSession.detached, dragStart == nil, !entering, closeTask == nil, !ending else { return }
+    guard let window, shown, shellSession.detached, dragStart == nil, !entering, motion == nil, closeTask == nil, !ending else { return }
     fitToDropDisplay(window)
   }
   /// The detached cockpit's current place becomes its remembered origin, and the layout (zoom, profile, forced shutter)
@@ -1049,14 +1081,24 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let icon = onScreen ?? CockpitShellLayout.hiddenIconAnchor(usable: screen.visibleFrame)
     return (screen.visibleFrame, icon)
   }
-  /// Where Put back takes the cockpit: the attached fit on the display an attached open uses. The drag's snap guide,
-  /// its snap distance and the put back all use this one frame; a detached layout's own frame can be another display's
-  /// (post-merge sample 11-11: after a drop on another display the guide promised that display, the snap went home).
-  func attachedHome() -> CGRect? {
+  /// Where Put back takes the cockpit: the attached fit on the display an attached open uses. The catch zone, the
+  /// rack and the put back all use this one frame; a detached layout's own frame can be another display's
+  /// (post-merge sample 11-11: after a drop on another display the put back must still go home).
+  func attachedHome() -> CGRect? { attachedFit()?.fit.frame }
+  /// The attached fit, the usable frame and the icon rect it was fitted to (`compact` forces the short version).
+  func attachedFit(compact: Bool = false) -> (fit: CockpitShellLayout, usable: CGRect, icon: CGRect)? {
     let detached = shellSession.detached
     shellSession.detached = false; defer { shellSession.detached = detached }
-    guard let (usable, icon) = environment() else { return nil }
-    return CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable))?.frame
+    guard let (usable, icon) = environment(),
+          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size,
+                                           screenWidth: screenWidth(usable), forceCompact: compact) else { return nil }
+    return (fit, usable, icon)
+  }
+  /// CKP-SHELL-33: the menu bar icon the rack hangs from, only while it is a real icon on the attached cockpit's display.
+  func rackIcon() -> CGRect? {
+    guard let (_, _, icon) = attachedFit(), let requested = anchor(), icon == requested, icon.width > 0, icon.height > 0,
+          [icon.minX, icon.minY, icon.width, icon.height].allSatisfy(\.isFinite) else { return nil }
+    return icon
   }
   /// D66: Auto judges the full width of the screen the cockpit opens on, whatever the Dock takes.
   private func screenWidth(_ usable: CGRect) -> CGFloat {
@@ -1067,7 +1109,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// the display `environment()` chose (the click's).
   func placement() -> (fit: CockpitShellLayout, frame: CGRect)? {
     guard let (usable, icon) = environment(),
-          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable)) else { return nil }
+          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed, size: appearance.size, screenWidth: screenWidth(usable),
+                                           forceCompact: shellSession.detached && shellSession.compactWhileDetached) else { return nil }
     guard shellSession.detached else { return (fit, fit.frame) }
     #if MODELPLAN_TEST_ONLY_SPI
     if verificationPlacement != nil { return (fit, fit.clamping(origin: detachedOrigin ?? fit.frame.origin, usable: usable)) }
@@ -1133,6 +1176,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     web?.pageZoom = fit.scale
     dragRegion?.frame = fit.scaledTitleDragFrame
     publishAppearance()
+    if motion == nil { refreshRack() }
   }
   /// Context menu "Reset position": a dragged-out cockpit goes back under the menu bar icon.
   public func resetPosition() { setAttached(true) }
@@ -1165,24 +1209,108 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   func toggleShutter() {
     guard layout?.forcedClosed != true else { return }
+    // CKP-SHELL-33: a key detach's landing or a put back's flight ends first, in its final state (as another key press
+    // ends it), so its 60 Hz driver never moves the window under the shutter's own motion.
+    if !entering { finishEntrance() }
     // G3-108: detached, the body stays where it is now (a close after an open that had to come down keeps that place).
     if shellSession.detached, let window, !entering, dragStart == nil { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     shellSession.shutterClosed.toggle(); applyLayout(shutter: true)
   }
   public var isAttached: Bool { !shellSession.detached }
-  /// D88: the detach key (attached) or the put-back key (detached) in the same strip slot; dropping a drag
-  /// near home also puts the cockpit back. Detaching keeps the window where it is.
+  /// The detach key (attached) or the put-back key (detached) in the same strip slot, and the right-click item.
+  /// CKP-SHELL-33 (D181/D187): a detach burns the nozzles briefly and moves the cockpit out of the catch zone to the
+  /// first spot fully on screen while the rack retracts into the icon; a put back lights the nozzles at the press, flies
+  /// home, the rack extends and catches it, and the nozzles go out once it is latched.
   func setAttached(_ attached: Bool) {
     guard let window, shellSession.detached == attached else { return }
-    if !attached {
-      shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
-    } else {
-      shellSession.detached = false
-      // Audit A-3: the animated put back commits the destination display's layout (profile, zoom, drag strip) too;
-      // only the window frame moves over time. G3-102: with no fitting display the frame stays, but the level and
-      // the page's shell state still follow the session below.
-      if placement() != nil { applyLayout(animated: !appearance.reduceMotion) }
+    finishEntrance()
+    if !attached { keyDetach(window) } else { keyPutBack(window) }
+  }
+  private func keyDetach(_ window: NSWindow) {
+    let home = window.frame
+    let current = attachedFit()
+    let compact = current.flatMap { $0.fit.profile == .full ? attachedFit(compact: true)?.fit.frame : nil }
+    let visible = current?.usable ?? window.screen?.visibleFrame ?? home
+    let plan = CockpitDetachLanding.plan(home: home, compactHome: compact, visible: visible)
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationLanding?(plan)
+    #endif
+    shellSession.detached = true
+    if plan.compact, let compact {
+      // D187: no room for the full cockpit; it switches to the short version at home, then moves.
+      shellSession.compactWhileDetached = true
+      shellSession.remember(compact.origin, arrangement: arrangement)
+      applyLayout()
     }
+    shellSession.remember(plan.frame.origin, arrangement: arrangement)
+    updateAppearance(appearance)
+    guard !appearance.reduceMotion else {
+      window.setFrame(plan.frame, display: true)
+      rackExtension = 0; rackTarget = 0; refreshRack()
+      onShellChanged?(); return
+    }
+    let start = window.frame
+    ignite(true)
+    retractRack()
+    runMotion(CockpitLaunchRackTiming.keyDetachBurn, step: { [weak self] t in
+      let e = CockpitRackMast.easeInOut(t)
+      self?.window?.setFrame(Self.lerp(start, plan.frame, e), display: true)
+    }, done: { [weak self] in
+      guard let self else { return }
+      self.window?.setFrame(plan.frame, display: true)
+      self.ignite(false)
+      self.onShellChanged?()
+    })
+  }
+  private func keyPutBack(_ window: NSWindow) {
+    shellSession.compactWhileDetached = false
+    // G3-102: with no fitting display the frame stays, but the level and the page's shell state still follow the session.
+    guard let home = attachedHome() else { latch(); return }
+    if window.frame.size != home.size || layout?.frame.size != home.size {
+      // Audit A-3: the put back commits the attached layout (profile, zoom, drag strip) at once, at the attached size
+      // where the cockpit is now (top edge kept); only the window frame then flies home.
+      let start = CGRect(x: window.frame.minX, y: window.frame.maxY - home.height, width: home.width, height: home.height)
+      shellSession.detached = false; applyLayout(); shellSession.detached = true
+      window.setFrame(start, display: true)
+      shellSession.remember(start.origin, arrangement: arrangement)
+      updateAppearance(appearance)
+    }
+    guard !appearance.reduceMotion else { latch(); return }
+    ignite(true); flying = true
+    let p0 = window.frame.origin, d = home.origin, zone = CockpitLaunchRackTiming.catchZone
+    let distance = hypot(p0.x - d.x, p0.y - d.y)
+    if distance < zone {
+      extendRack()
+      runMotion(max(0.01, 0.36 * Double(distance / zone)), step: { [weak self] t in
+        let e = 1 - pow(1 - t, 3)
+        self?.window?.setFrameOrigin(CGPoint(x: p0.x + (d.x - p0.x) * e, y: p0.y + (d.y - p0.y) * e))
+      }, done: { [weak self] in self?.window?.setFrame(home, display: true); self?.whenRackSettled { self?.latch() } })
+      return
+    }
+    // One continuous flight whose last part runs straight up the rack: the control point sits under home. The rack
+    // starts to extend once the cockpit is inside the catch zone.
+    let c = CGPoint(x: d.x, y: min(d.y - zone, p0.y))
+    let length = hypot(c.x - p0.x, c.y - p0.y) + hypot(d.x - c.x, d.y - c.y)
+    runMotion(CockpitLaunchRackTiming.flight(length: length), step: { [weak self] t in
+      guard let self else { return }
+      let k = 1 - pow(1 - t, 3), u = 1 - k
+      let x = u * u * p0.x + 2 * u * k * c.x + k * k * d.x, y = u * u * p0.y + 2 * u * k * c.y + k * k * d.y
+      self.window?.setFrameOrigin(CGPoint(x: x, y: min(d.y, y)))
+      if hypot(x - d.x, min(d.y, y) - d.y) < zone, self.rackTarget != 1 { self.extendRack() }
+    }, done: { [weak self] in
+      guard let self else { return }
+      self.window?.setFrame(home, display: true)
+      self.extendRack()
+      self.whenRackSettled { [weak self] in self?.latch() }
+    })
+  }
+  /// The cockpit is caught: attached again under the icon, nozzles out.
+  private func latch() {
+    flying = false
+    shellSession.detached = false; shellSession.compactWhileDetached = false
+    rackExtension = rackIcon() != nil ? 1 : 0; rackTarget = rackExtension
+    ignite(false)
+    if placement() != nil { applyLayout() }
     updateAppearance(appearance)
     onShellChanged?()
   }
@@ -1202,7 +1330,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// D88: the detach / put-back key on screen, once the open has settled and no drag is moving the window.
   public var attachmentHintAnchor: CockpitAttachmentHintAnchor? {
-    guard let window, shown, !ending, !entering, closeTask == nil, dragStart == nil, window.isVisible,
+    guard let window, shown, !ending, !entering, motion == nil, closeTask == nil, dragStart == nil, window.isVisible,
           window.alphaValue > 0, let layout, let content = window.contentView else { return nil }
     let height = layout.pageSize.height, size = Self.attachmentKeySize
     // The page lays out in CSS px and renders at `layout.scale`, top-anchored in the whole-point window.
@@ -1214,46 +1342,73 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
     return .init(attached: !shellSession.detached, frame: frame, sharing: window.sharingType, collection: window.collectionBehavior)
   }
-  /// D88: the grow start, or nil for a plain entrance: only an attached open from the icon, with motion.
-  static func entranceStart(_ entrance: CockpitEntrance, reduceMotion: Bool, detached: Bool, icon: CGRect?) -> CGRect? {
-    guard entrance == .growFromIcon, !reduceMotion, !detached, let icon, !icon.isNull, !icon.isInfinite,
-          icon.width > 0, icon.height > 0, [icon.minX, icon.minY, icon.width, icon.height].allSatisfy(\.isFinite) else { return nil }
-    return icon
+  /// CKP-SHELL-33 (D186): only an attached open from the icon, with motion and a real icon to hang the rack from,
+  /// extends the rack first.
+  nonisolated static func opensRackFirst(_ entrance: CockpitEntrance, reduceMotion: Bool, detached: Bool, icon: CGRect?) -> Bool {
+    entrance == .fromIcon && !reduceMotion && !detached && icon != nil
   }
   func titleDrag(_ phase: CockpitTitleDrag.Phase, point: CGPoint) {
     guard let window else { return }
     switch phase {
     case .began:
-      // A drag during the grow starts from the settled frame.
-      if entering, let frame = layout?.frame { entering = false; window.setFrame(frame, display: false) }
+      // A drag during the entrance or a landing starts from the settled frame.
+      finishEntrance()
+      if motion != nil { return }
       dragStart = (point, window.frame, shellSession.detached)
+      dragArmed = false; dragCatching = false
     case .moved:
       guard let start = dragStart else { return }
       let dx = point.x - start.point.x, dy = point.y - start.point.y
       guard shellSession.detached || hypot(dx, dy) * window.backingScaleFactor > 12 else { return }
       let newlyDetached = !shellSession.detached
       shellSession.detached = true
-      if newlyDetached { updateAppearance(appearance) }
+      if newlyDetached {
+        // Tear-off (CKP-SHELL-33): the rack retracts straight up into the icon.
+        shellSession.compactWhileDetached = false
+        updateAppearance(appearance); retractRack()
+      }
       // Build 14c (G3-79): the window stays inside the display under the pointer, so it can go to any display.
       window.setFrame(dragFrame(start: start.frame, from: start.point, to: point), display: true)
-      if let home = attachedHome() {
-        let ready = hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40
-        showSnapGuide(home, ready: ready)
+      // D178/D187: no snap guide. Inside the catch zone, once the drag has been outside it, the rack extends to meet the
+      // cockpit and the nozzles light; leaving the zone retracts it and puts them out.
+      let inZone = inCatchZone(window.frame)
+      if !inZone { dragArmed = true }
+      let catching = inZone && dragArmed
+      if catching != dragCatching {
+        dragCatching = catching
+        if catching { extendRack(); ignite(true) } else { retractRack(); ignite(false) }
       }
+      refreshRack()
     case .ended:
-      snapGuide?.orderOut(nil)
       restorePageFocus()
       guard dragStart != nil else { return }; dragStart = nil
       guard shellSession.detached else { return }
-      if let home = attachedHome(),
-         hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40 {
-        setAttached(true)
+      if inCatchZone(window.frame), let home = attachedHome() {
+        // The catch zone acts on the release only: straight home along the rack, then latched.
+        dragCatching = false
+        guard !appearance.reduceMotion else { latch(); return }
+        let start = window.frame
+        extendRack(); ignite(true); flying = true
+        runMotion(CockpitLaunchRackTiming.rideHome, step: { [weak self] t in
+          let e = 1 - pow(1 - t, 3)
+          let frame = Self.lerp(start, home, e)
+          self?.window?.setFrameOrigin(CGPoint(x: frame.minX, y: min(home.minY, frame.minY)))
+        }, done: { [weak self] in
+          self?.window?.setFrame(home, display: true)
+          self?.whenRackSettled { [weak self] in self?.latch() }
+        })
       } else {
+        if dragCatching { dragCatching = false; retractRack(); ignite(false) }
         // macrev2-845-1: a drop on a shorter display refits there; the drag kept the old size, which can overhang it.
         fitToDropDisplay(window); onShellChanged?()
       }
     case .cancelled: cancelDrag(); restorePageFocus()
     }
+  }
+  /// D181: within 40 pt of the attached place (its top-left corner), measured on the release.
+  func inCatchZone(_ frame: CGRect) -> Bool {
+    guard let home = attachedHome() else { return false }
+    return hypot(frame.minX - home.minX, frame.maxY - home.maxY) <= CockpitLaunchRackTiming.catchZone
   }
   /// Audit A-4: the strip takes first responder on mouse-down; once the drag ends or is cancelled the page gets the
   /// keyboard back (Esc and the page's keys), as the field panel does after its own drag.
@@ -1270,30 +1425,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     return CockpitScreenSelection.dragFrame(start: start, from: from, to: point, screens: screens(), fallback: environment()?.0)
   }
-  private func showSnapGuide(_ frame: CGRect, ready: Bool) {
-    guard let window else { return }
-    if snapGuide == nil {
-      let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-      panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = false
-      panel.ignoresMouseEvents = true; panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
-      let view = NSView(frame: .init(origin: .zero, size: frame.size)); view.wantsLayer = true
-      view.layer = CAShapeLayer(); panel.contentView = view; panel.level = window.level; snapGuide = panel
-    }
-    snapGuide?.setFrame(frame, display: false)
-    if let shape = snapGuide?.contentView?.layer as? CAShapeLayer {
-      shape.path = CGPath(rect: CGRect(origin: .zero, size: frame.size).insetBy(dx: 1, dy: 1), transform: nil)
-      shape.strokeColor = NSColor.gray.cgColor; shape.fillColor = NSColor.clear.cgColor
-      shape.lineWidth = 1; shape.lineDashPattern = ready ? nil : [6, 4]
-    }
-    snapGuide?.level = window.level
-    snapGuide?.order(.below, relativeTo: window.windowNumber)
-  }
   private func cancelDrag() {
     dragRegion?.resetDragState()
-    snapGuide?.orderOut(nil)
     guard let start = dragStart else { return }; dragStart = nil
     let changed = shellSession.detached != start.detached
     shellSession.detached = start.detached; window?.setFrame(start.frame, display: true)
+    dragCatching = false; ignite(false)
+    if start.detached { retractRack() } else if rackIcon() != nil { extendRack() }
     updateAppearance(appearance)
     if changed { onShellChanged?() }
   }
@@ -1347,29 +1485,151 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     orderedDelivery.invalidate(); appearanceGate.deferUntilVisible(); cancelAppearanceWait()
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
-    // D88: a cockpit that grew out of the icon and is still attached shrinks back into it.
     settlePendingShutter(); shutterMoving = false
-    let shrink = grewFromIcon && !appearance.reduceMotion ? Self.entranceStart(.growFromIcon, reduceMotion: false, detached: shellSession.detached, icon: anchor()) : nil
+    // CKP-SHELL-33 (D186/D188): an attached cockpit opened from the icon reverses the open: it goes up under the menu
+    // bar while the hidden rack shortens behind it, then the rack's visible part retracts into the icon.
+    let reverse = openedFromIcon && !appearance.reduceMotion && !shellSession.detached && rackIcon() != nil && window != nil
+    let reverseDuration = CockpitLaunchRackTiming.cockpitOpen + CockpitLaunchRackTiming.rackOpen
     #if MODELPLAN_TEST_ONLY_SPI
-    verificationCloseStarted?(appearance.reduceMotion ? 0 : shrink != nil ? Self.growDuration : 0.12)
-    verificationEntrance?(appearance.reduceMotion ? "instant" : shrink != nil ? "shrink" : "fade")
+    verificationCloseStarted?(appearance.reduceMotion ? 0 : reverse ? reverseDuration : 0.12)
+    verificationEntrance?(appearance.reduceMotion ? "instant" : reverse ? "rack" : "fade")
     #endif
     guard !appearance.reduceMotion, let window else { discard(); return }
-    entering = false
-    let duration = shrink != nil ? Self.growDuration : 0.12
-    NSAnimationContext.runAnimationGroup { context in
-      context.duration = duration
-      if let shrink {
-        context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        window.animator().setFrame(shrink, display: true)
+    finishEntrance()
+    let duration = reverse ? reverseDuration : 0.12
+    if reverse, let home = layout?.frame {
+      rackHidesInHome = true
+      runMotion(CockpitLaunchRackTiming.cockpitOpen, step: { [weak self] t in
+        guard let self, let window = self.window else { return }
+        window.alphaValue = 1 - min(1, t * 1.2)
+        window.setFrame(home.offsetBy(dx: 0, dy: CockpitLaunchRackTiming.openRise * t * t * t), display: true)
+        self.rackExtension = 1 - 2.0 / 3 * t; self.rackTarget = self.rackExtension
+      }, done: { [weak self] in
+        guard let self else { return }
+        self.window?.alphaValue = 0
+        self.runMotion(CockpitLaunchRackTiming.rackOpen, step: { [weak self] t in
+          guard let self else { return }
+          self.rackExtension = (1 - t) / 3; self.rackTarget = self.rackExtension
+        }, done: { [weak self] in self?.rackExtension = 0; self?.rackTarget = 0; self?.refreshRack() })
+      })
+    } else {
+      NSAnimationContext.runAnimationGroup { context in
+        context.duration = duration
+        window.animator().alphaValue = 0
       }
-      window.animator().alphaValue = 0
     }
     closeTask = Task { @MainActor [weak self] in
-      do { try await Task.sleep(for: .milliseconds(Int(duration * 1_000))) } catch { return }
+      // The rack's last frame lands on the driver's next tick; a reversed close waits one more beat for it.
+      do { try await Task.sleep(for: .milliseconds(Int(duration * 1_000) + (reverse ? 40 : 0))) } catch { return }
       self?.discard()
     }
   }
+  // MARK: Launch rack (CKP-SHELL-33)
+
+  /// One 60 Hz driver moves the rack toward its target at the full-travel pace and runs the current motion (open, close,
+  /// landing, flight); it stops itself when both are done.
+  private func runMotion(_ duration: TimeInterval, step: @escaping @MainActor (CGFloat) -> Void, done: @escaping @MainActor () -> Void) {
+    motion = Motion(start: CACurrentMediaTime(), duration: max(0.001, duration), step: step, done: done)
+    step(0); startRackTimer()
+  }
+  private func startRackTimer() {
+    refreshRack()
+    guard rackTimer == nil else { return }
+    rackClock = CACurrentMediaTime()
+    let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.rackTick() } }
+    RunLoop.main.add(timer, forMode: .common)
+    rackTimer = timer
+  }
+  private func rackTick() {
+    let now = CACurrentMediaTime(), dt = now - rackClock
+    rackClock = now
+    if rackExtension != rackTarget {
+      let step = CGFloat(dt / rackPace)
+      rackExtension = rackExtension < rackTarget ? min(rackTarget, rackExtension + step) : max(rackTarget, rackExtension - step)
+    }
+    if let current = motion {
+      let t = CGFloat(min(1, (now - current.start) / current.duration))
+      current.step(t)
+      if t >= 1, motion?.start == current.start { motion = nil; current.done() }
+    }
+    refreshRack()
+    if rackExtension == rackTarget, !rackSettledWaiters.isEmpty {
+      let waiters = rackSettledWaiters; rackSettledWaiters = []
+      waiters.forEach { $0() }
+    }
+    if motion == nil, rackExtension == rackTarget, rackSettledWaiters.isEmpty { rackTimer?.invalidate(); rackTimer = nil }
+  }
+  private func extendRack() {
+    guard rackIcon() != nil else { rackTarget = 0; return }
+    rackPace = CockpitLaunchRackTiming.fullTravel; rackTarget = 1
+    if appearance.reduceMotion { rackExtension = 1 }
+    startRackTimer()
+  }
+  private func retractRack() {
+    rackPace = CockpitLaunchRackTiming.fullTravel; rackTarget = 0
+    if appearance.reduceMotion { rackExtension = 0 }
+    startRackTimer()
+  }
+  private func whenRackSettled(_ body: @escaping @MainActor () -> Void) {
+    if rackExtension == rackTarget { body(); return }
+    rackSettledWaiters.append(body); startRackTimer()
+  }
+  /// A put back is flying (key, menu or a drag released in the catch zone) and latches at its end.
+  private var flying = false
+  /// Ends a running entrance, landing or flight at once, in its final state (a drag, a close or another key press).
+  private func finishEntrance() {
+    guard entering || motion != nil || flying || !rackSettledWaiters.isEmpty else { return }
+    motion = nil; rackSettledWaiters = []
+    if flying { flying = false; latch(); return }
+    if entering {
+      entering = false; rackHidesInHome = false
+      window?.alphaValue = 1
+      rackExtension = rackIcon() != nil && !shellSession.detached ? 1 : 0; rackTarget = rackExtension
+      if !shellSession.detached, let frame = layout?.frame { window?.setFrame(frame, display: true) }
+      refreshRack(); return
+    }
+    // A key detach's landing: it stays where it is now (a drag or the user may have moved it), rack in, nozzles out.
+    rackExtension = 0; rackTarget = 0; ignite(false)
+    if let window { shellSession.remember(window.frame.origin, arrangement: arrangement) }
+    refreshRack()
+  }
+  private func stopRack() {
+    motion = nil; rackSettledWaiters = []; flying = false
+    rackTimer?.invalidate(); rackTimer = nil
+    ignite(false)
+    rack.close()
+  }
+  /// Places and draws the rack for the current state: hidden inside the cockpit below its shoulder line (the attached
+  /// frame while the open or close runs), so nothing of it shows through the window (D175).
+  private func refreshRack() {
+    guard let window, !ending else { return }
+    var hidden: CGRect?
+    if let layout {
+      let frame = rackHidesInHome ? layout.frame : window.frame
+      let drop = CockpitShellLayout.shoulderDrop(layout.profile) * layout.scale
+      hidden = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: max(0, frame.height - drop))
+    }
+    // A prewarmed (never shown) page has no rack on screen.
+    rack.update(icon: rackExtension > 0 && shown ? rackIcon() : nil, cockpit: window, hidden: hidden, extended: rackExtension,
+                moving: rackExtension != rackTarget || motion != nil)
+  }
+  /// The nozzles: the page's amber glow on every base bell (D178/D186). Not under Reduce Motion.
+  private func ignite(_ on: Bool) {
+    let value = on && !appearance.reduceMotion
+    guard value != ignited else { return }
+    ignited = value
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationIgnition?(value)
+    #endif
+    guard bridge.ready, !bridge.blocked, !ending, let raw = try? bridge.setIgnition(value) else { return }
+    // A page that cannot paint the glow keeps working; the glow is decoration.
+    send(raw, onRejected: { true })
+  }
+  static func lerp(_ a: CGRect, _ b: CGRect, _ t: CGFloat) -> CGRect {
+    CGRect(x: a.minX + (b.minX - a.minX) * t, y: a.minY + (b.minY - a.minY) * t,
+           width: a.width + (b.width - a.width) * t, height: a.height + (b.height - a.height) * t)
+  }
+
   /// `error` names what a local step threw (its case and, for encoding, the field path), never its text.
   private func fail(_ failure: CockpitWindowFailure = .localEncoding, error: Error? = nil,
                     at site: StaticString = #function, line: UInt = #line) {
@@ -1396,12 +1656,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     verificationDidDiscard?()
     #endif
     closeTask?.cancel(); closeTask = nil; cancelDrag()
+    stopRack()
     settlePendingShutter(); shutterMoving = false
     if shellSession.detached, let window { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }; outsideMonitor = nil
     if let localMonitor { NSEvent.removeMonitor(localMonitor) }; localMonitor = nil
     dragRegion?.event = nil; dragRegion = nil
-    snapGuide?.close(); snapGuide = nil
     if let raw = bridge.unload(), let web {
       web.callAsyncJavaScript(
         "window.modelPlanCockpit?.receive(raw)", arguments: ["raw": raw], in: nil, in: .page,

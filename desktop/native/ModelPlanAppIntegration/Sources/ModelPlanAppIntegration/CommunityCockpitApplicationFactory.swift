@@ -478,8 +478,8 @@ struct CockpitUnavailableNotice {
     var attachmentHintAnchor: CockpitAttachmentHintAnchor? { wantsVisible ? owner.coordinator?.attachmentHintAnchor : nil }
     func show() { show(fromStatusItem: false) }
     func show(fromStatusItem: Bool) {
-        // D88: only the menu bar icon grows the cockpit out of itself; the ignition keeps its own entrance.
-        entrance = fromStatusItem ? .growFromIcon : .fade
+        // CKP-SHELL-33 (D186): the menu bar icon opens rack-first; the ignition keeps its own fade.
+        entrance = fromStatusItem ? .fromIcon : .fade
         wantsVisible=true
         retryTask?.cancel(); retryTask=nil; attempt += 1
         noticeTask?.cancel(); noticeTask=nil; rebuilding=false; rebuilds=0; retriedOpen=false; noticePath=""; failureClosesPage=false // a new click starts its own grace period
