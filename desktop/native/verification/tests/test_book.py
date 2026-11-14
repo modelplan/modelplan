@@ -34,15 +34,15 @@ class Bookings(unittest.TestCase):
         self.now = 1000
         self.ledger = book.Ledger(self.path, clock=lambda: self.now)
 
-    def request(self, lane='M2'):
-        return self.ledger.request(lane, 'U11a', ['cold', 'repeat'])['id']
+    def request(self, lane='M2', host='dev-mac'):
+        return self.ledger.request(lane, 'U11a', ['cold', 'repeat'], host='dev-mac')['id']
 
     def cli(self, *args):
         return [sys.executable, str(BIN / 'book.py'), '--ledger', str(self.path), *args]
 
     def test_concurrent_requests_and_reads_are_serialized_fifo(self):
         children = [subprocess.Popen(self.cli('request', '--lane', f'lane-{i}', '--unit', 'U11a',
-                                            '--scenario', 'cold'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                            '--scenario', 'cold', '--host', 'dev-mac'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     for i in range(16)]
         reader = subprocess.Popen(self.cli('status'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         outputs = []
@@ -63,7 +63,7 @@ class Bookings(unittest.TestCase):
     def test_only_one_concurrent_start_wins(self):
         ident = self.request()
         children = [subprocess.Popen(self.cli('start', '--id', ident, '--lane', 'M2',
-                                             '--run-id', f'run-{i}', '--epoch', 'epoch'),
+                                             '--run-id', f'run-{i}', '--epoch', 'epoch', '--host', 'dev-mac'),
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE) for i in range(4)]
         for child in children:
             child.communicate(timeout=15)
@@ -74,11 +74,11 @@ class Bookings(unittest.TestCase):
         first, second = self.request(), self.request('M3')
         for ident, lane in ((second, 'M3'), (first, 'M3')):
             with self.assertRaisesRegex(ValueError, 'only the queued head'):
-                self.ledger.start(ident, lane, 'run', 'epoch')
+                self.ledger.start(ident, lane, 'run', 'epoch', host='dev-mac')
         self.assertEqual(self.ledger.status()['events'], 2)
-        self.ledger.start(first, 'M2', 'run', 'epoch')
+        self.ledger.start(first, 'M2', 'run', 'epoch', host='dev-mac')
         with self.assertRaises(ValueError):
-            self.ledger.start(second, 'M3', 'other', 'epoch')
+            self.ledger.start(second, 'M3', 'other', 'epoch', host='dev-mac')
 
     def test_requesting_lane_withdraws_queued_head_or_non_head(self):
         first, second, third = self.request(), self.request('M3'), self.request('M4')
@@ -90,7 +90,7 @@ class Bookings(unittest.TestCase):
         self.assertEqual([b['state'] for b in state['history']], ['withdrawn', 'withdrawn'])
         self.assertEqual(state['history'][0]['withdrawnBy'], 'M2')
         self.assertNotIn('cleaned', state['history'][0])
-        self.ledger.start(third, 'M4', 'run', 'epoch')
+        self.ledger.start(third, 'M4', 'run', 'epoch', host='dev-mac')
 
     def test_coordinator_withdraws_abandoned_head_with_reason(self):
         first, second = self.request(), self.request('M3')
@@ -108,11 +108,11 @@ class Bookings(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.ledger.withdraw(ident, **(dict(reason='cancel') | fields))
         self.assertEqual(self.ledger.status()['events'], 1)
-        self.ledger.start(ident, 'M2', 'run', 'epoch')
+        self.ledger.start(ident, 'M2', 'run', 'epoch', host='dev-mac')
         for fields in (dict(lane='M2'), dict(coordinator=True)):
             with self.assertRaises(ValueError):
                 self.ledger.withdraw(ident, reason='cancel', **fields)
-        self.ledger.finish(ident, 'M2', 'run', 'epoch', cleaned=True)
+        self.ledger.finish(ident, 'M2', 'run', 'epoch', cleaned=True, host='dev-mac')
         with self.assertRaises(ValueError):
             self.ledger.withdraw(ident, coordinator=True, reason='already finished')
         with self.assertRaises(ValueError):
@@ -177,42 +177,42 @@ class Bookings(unittest.TestCase):
 
     def test_finish_requires_owner_and_explicit_cleanup(self):
         first, second = self.request(), self.request('M3')
-        self.ledger.start(first, 'M2', 'run', 'epoch')
+        self.ledger.start(first, 'M2', 'run', 'epoch', host='dev-mac')
         for args in ((first, 'M2', 'wrong', 'epoch'), (second, 'M3', 'run', 'epoch')):
             with self.assertRaises(ValueError):
-                self.ledger.finish(*args, cleaned=True)
+                self.ledger.finish(*args, cleaned=True, host='dev-mac')
         with self.assertRaisesRegex(ValueError, 'cleanup confirmation'):
-            self.ledger.finish(first, 'M2', 'run', 'epoch')
-        receipt = self.ledger.finish(first, 'M2', 'run', 'epoch', cleaned=True)
+            self.ledger.finish(first, 'M2', 'run', 'epoch', host='dev-mac')
+        receipt = self.ledger.finish(first, 'M2', 'run', 'epoch', cleaned=True, host='dev-mac')
         self.assertEqual(receipt['receipt'], 'end + cleaned')
         self.assertTrue(self.ledger.status()['history'][0]['cleaned'])
         self.assertEqual(self.ledger.status()['head']['id'], second)
 
     def test_expiry_waits_for_duration_plus_grace_and_never_claims_cleanup(self):
         first, second = self.request(), self.request('M3')
-        self.ledger.start(first, 'M2', 'run', 'epoch')
+        self.ledger.start(first, 'M2', 'run', 'epoch', host='dev-mac')
         self.now += book.MAX_SECONDS + book.GRACE_SECONDS - 1
         self.assertEqual(self.ledger.expire()['event'], 'no-expiry')
         with self.assertRaises(ValueError):
-            self.ledger.start(second, 'M3', 'other', 'epoch')
+            self.ledger.start(second, 'M3', 'other', 'epoch', host='dev-mac')
         self.now += 1
         self.assertTrue(self.ledger.status()['expiryEligible'])
         self.assertEqual(self.ledger.status()['head']['id'], first)  # explicit expiry only
         self.assertEqual(self.ledger.expire()['event'], 'expire')
         self.assertIsNone(self.ledger.status()['history'][0]['cleaned'])
-        self.ledger.start(second, 'M3', 'other', 'epoch')
+        self.ledger.start(second, 'M3', 'other', 'epoch', host='dev-mac')
         with self.assertRaises(ValueError):
-            self.ledger.finish(first, 'M2', 'run', 'epoch', cleaned=True)
+            self.ledger.finish(first, 'M2', 'run', 'epoch', cleaned=True, host='dev-mac')
         self.assertEqual(self.ledger.expire()['event'], 'no-expiry')
         self.assertEqual(self.ledger.status()['head']['id'], second)
 
     def test_invalid_inputs_never_create_ledger(self):
         for seconds in (0, -1, 1201, True, float('nan')):
             with self.assertRaises(ValueError):
-                self.ledger.request('M2', 'U11a', ['cold'], seconds)
+                self.ledger.request('M2', 'U11a', ['cold'], seconds, host='dev-mac')
         for scenarios in ([], ['cold', 'cold'], [''], ['bad\nline'], 'cold', [None]):
             with self.assertRaises(ValueError):
-                self.ledger.request('M2', 'U11a', scenarios)
+                self.ledger.request('M2', 'U11a', scenarios, host='dev-mac')
         self.assertFalse(self.path.exists())
 
     def test_mkdir_serializes_when_smb_flock_is_unsupported(self):
@@ -241,11 +241,11 @@ class Bookings(unittest.TestCase):
         with patch.object(socket, 'gethostname', return_value='synthetic-host-identity') as hostname:
             ident = self.request()
             self.ledger.status()
-            self.ledger.start(ident, 'M2', 'run', 'epoch')
+            self.ledger.start(ident, 'M2', 'run', 'epoch', host='dev-mac')
             self.ledger.admit(dict(id=ident, lane='M2', unit='U11a', scenario='cold'),
                               dict(runID='run', epoch='epoch', notBefore=self.now,
                                    expiresAt=self.now + 60), 60)
-            self.ledger.finish(ident, 'M2', 'run', 'epoch', cleaned=True)
+            self.ledger.finish(ident, 'M2', 'run', 'epoch', cleaned=True, host='dev-mac')
             self.ledger.expire()
             book.Ledger(self.path, clock=clock).status()
             hostname.assert_not_called()
@@ -269,7 +269,7 @@ class Bookings(unittest.TestCase):
     def active_contract(self):
         self.now = time.time() - 1
         ident = self.request()
-        self.ledger.start(ident, 'M2', 'run', 'epoch')
+        self.ledger.start(ident, 'M2', 'run', 'epoch', host='dev-mac')
         lease = dict(runID='run', epoch='epoch', notBefore=self.now, expiresAt=self.now + 1200,
                      guardianHeartbeatAt=time.time(), ownerPreempted=False, exclusive=True, guardian=True)
         release = lease | dict(m1Released=True, approval='https://example.test/coordinator#issuecomment-1')
@@ -456,7 +456,7 @@ class Bookings(unittest.TestCase):
         (attempt.scratch / 'home').mkdir(); (attempt.scratch / 'tmp').mkdir()
         attempt.lease.write_text(json.dumps(c['lease']))
         attempt.entry = 'http://127.0.0.1/synthetic'
-        self.ledger.finish(c['booking']['id'], 'M2', 'run', 'epoch', cleaned=True)
+        self.ledger.finish(c['booking']['id'], 'M2', 'run', 'epoch', cleaned=True, host='dev-mac')
         with patch.object(drive.subprocess, 'Popen') as popen:
             with self.assertRaisesRegex(ValueError, 'head booking'):
                 attempt.launch('preflight')
@@ -488,3 +488,58 @@ class Bookings(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_cross_host_bookings_do_not_block_each_other(self):
+        dev = self.request()
+        v1 = self.request(host='macci')
+        self.assertEqual(self.ledger.status('dev-mac')['head']['id'], dev)
+        self.assertEqual(self.ledger.status('macci')['head']['id'], v1)
+        lease = self.ledger.start(v1, 'V1', 'run', 'epoch', host='macci')
+        self.assertEqual(lease['runID'], 'run')
+        self.assertEqual(self.ledger.status('dev-mac')['head']['id'], dev)
+        self.ledger.start(dev, 'M2', 'run', 'epoch', host='dev-mac')
+
+    def test_same_host_bookings_stay_exclusive(self):
+        self.request()
+        second = self.request()
+        with self.assertRaisesRegex(ValueError, 'only the queued head of this host'):
+            self.ledger.start(second, 'M2', 'run', 'epoch', host='dev-mac')
+
+    def test_start_and_finish_refuse_another_hosts_queue(self):
+        dev = self.request()
+        v1 = self.request(host='macci')
+        self.ledger.start(v1, 'V1', 'run', 'epoch', host='macci')
+        with self.assertRaisesRegex(ValueError, 'only the queued head of this host'):
+            self.ledger.start(dev, 'M2', 'run', 'epoch', host='macci')
+        with self.assertRaisesRegex(ValueError, 'only the queued head of this host'):
+            self.ledger.finish(dev, 'M2', 'run', 'epoch', host='macci', cleaned=True)
+        self.ledger.finish(v1, 'V1', 'run', 'epoch', host='macci', cleaned=True)
+
+    def test_expiry_is_per_host(self):
+        dev = self.request()
+        v1 = self.request(host='macci')
+        self.ledger.start(dev, 'M2', 'run', 'epoch', host='dev-mac')
+        self.ledger.start(v1, 'V1', 'run', 'epoch', host='macci')
+        self.now += book.MAX_SECONDS + book.GRACE_SECONDS - 1
+        self.assertEqual(self.ledger.expire()['event'], 'no-expiry')
+        self.now += 1
+        expired = self.ledger.expire()
+        self.assertEqual(expired['event'], 'expire')
+        self.assertEqual(expired['id'], dev)
+        self.assertEqual(self.ledger.status('macci')['head']['id'], v1)
+        self.assertEqual(self.ledger.expire()['event'], 'expire')
+        self.assertEqual(self.ledger.status('macci')['head'], None)
+
+    def test_replay_defaults_legacy_ledgers_to_the_dev_mac_queue(self):
+        request = dict(version=1, seq=1, at=self.now, event='request', id='legacy',
+                       lane='M2', unit='U11a', scenarios=['cold'], maxSeconds=600)
+        replayed = book.Ledger.replay([request])
+        self.assertEqual(replayed['legacy']['host'], 'dev-mac')
+        with self.assertRaises(ValueError):
+            book.Ledger.replay([request | dict(host='not-a-host')])
+
+    def test_request_cli_requires_host(self):
+        result = subprocess.run(self.cli('request', '--lane', 'M2', '--unit', 'U11a', '--scenario', 'cold'),
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('host', json.loads(result.stderr)['error'])

@@ -86,7 +86,7 @@ def issue(ledger, ident, lease, output, *, lane, approval=None, host='dev-mac', 
             raise ValueError('MacCI releases carry the coordinator GO, not an approval URL')
         coordinator_go(go)
     with ledger.locked(lane=lane) as (_, _, bookings, now):
-        head = ledger.head(bookings)
+        head = ledger.head(bookings, host)
         if not isinstance(lease, dict) or head is None:
             raise ValueError('release requires the started head booking')
         ledger.owner(head, ident, head['lane'], lease.get('runID'), lease.get('epoch'))
