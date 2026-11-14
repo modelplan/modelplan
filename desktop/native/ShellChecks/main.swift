@@ -38,7 +38,9 @@ actor EmptyCLI: CLITransport {
         workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
         check(!gate.canPresent && store.idle, "observer teardown restarted work")
 
-        let surface = NeutralSurfaceProvider().makeOverview()
+        // The neutral surface follows the macOS preferred-language list (#873); pin English so the English label
+        // checks below do not depend on the runner's language.
+        let surface = NeutralSurfaceProvider(preferredLanguages: ["en"]).makeOverview()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 210), styleMask: [.titled], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: .aqua)
         window.contentView = surface.view
