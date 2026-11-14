@@ -71,4 +71,61 @@ import ModelPlanSettings
         XCTAssertEqual(third, [.pointer], "one click outside closes the Help map once")
         XCTAssertEqual(second, [.escape], "no earlier monitor answered the click")
     }
+
+    /// Build 14f walkthrough (run 43598335618): after Help from the status menu macOS refused to activate the
+    /// accessory app (Finder kept the menu bar), so the local monitor saw neither Esc nor clicks and the map stayed
+    /// up although it says "Press Esc or click to dismiss help". With activation refused, the map panel itself
+    /// takes keyboard focus without activating the app, and a click in another app reaches a global monitor.
+    func testRequestedMapDismissesWithEscAndOutsideClickWhenActivationIsRefused() throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let anchor = CGRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY, width: 40, height: 40)
+        let recipe = NeutralHelpUIRecipeProvider()
+        let anchors: [DockRequestedHelpAnchor] = [.init(id: "ring", region: .rings, rect: CGRect(x: 100, y: 100, width: 40, height: 40), visible: true)]
+        var surface = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false, anchors: [:])
+        surface.mapAnchors = [.init(id: "ring", region: .rings, rect: anchor, visible: true)]
+        let layer = HelpUILayerView(recipeProvider: recipe)
+        var outside: [@MainActor () -> Void] = []
+        var removed = 0
+        let presenter = DockHelpPresenter(currentSurface: { surface }, isCurrent: { _ in true }, blockers: { _ in [] },
+            windowPolicy: { _ in (.readOnly, []) }, language: { .english }, accessibility: { (true, true) },
+            copy: { _, _ in nil }, dismiss: { _ in }, activate: { /* macOS refused: the app stays inactive */ },
+            outsidePointerMonitor: { handler in outside.append(handler); return { removed += 1 } }, layer: layer)
+        addTeardownBlock { @MainActor in presenter.dispose() }
+        func open(_ dismiss: @escaping @MainActor (HelpUIDismissReason?) -> Void) throws {
+            let viewport = try XCTUnwrap(presenter.prepareMap(surface: surface))
+            let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: surface.layoutID, viewport: viewport.size,
+                language: .english, anchors: anchors, blocked: [], recipe: recipe))
+            layer.update(input)
+            XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: dismiss))
+        }
+        let esc = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+        var first: [HelpUIDismissReason?] = []
+        try open { first.append($0) }
+        let panel = try XCTUnwrap(presenter.panelForChecks)
+        XCTAssertTrue(panel.styleMask.contains(.nonactivatingPanel), "taking focus never activates the app")
+        XCTAssertTrue(panel.canBecomeKey, "the map panel takes keyboard focus without app activation")
+        XCTAssertFalse(panel.canBecomeMain)
+        // Esc as the window server delivers it to a key panel of an inactive app: straight to the window,
+        // never through NSApplication.sendEvent and its local monitors.
+        panel.sendEvent(esc)
+        XCTAssertEqual(first, [.escape], "Esc closes the map without app activation")
+        presenter.endMap()
+        XCTAssertFalse(panel.canBecomeKey, "a closed map gives up keyboard focus")
+        XCTAssertEqual(removed, outside.count, "every outside-click monitor is removed with its map")
+        // A click in another app, on a fresh map: only the newest monitor answers, once.
+        var second: [HelpUIDismissReason?] = []
+        try open { second.append($0) }
+        let monitor = try XCTUnwrap(outside.last)
+        XCTAssertEqual(removed, outside.count - 1)
+        monitor()
+        XCTAssertEqual(second, [.pointer], "a click outside the app closes the map")
+        outside.dropLast().forEach { $0() }
+        XCTAssertEqual(first, [.escape], "a closed map's monitor does nothing")
+        presenter.endMap()
+        monitor()
+        XCTAssertEqual(second, [.pointer], "a click after the map closed does nothing")
+        // Hints never take the keyboard.
+        XCTAssertFalse(panel.canBecomeKey)
+    }
 }
