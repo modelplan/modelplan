@@ -408,6 +408,11 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		if errors.Is(err, context.DeadlineExceeded) {
 			reason = "timeout"
 		}
+		// D232: with another model provider (Bedrock or custom) Codex has no ChatGPT plan
+		// limits to report; say so instead of a generic service error. Read-only config check.
+		if reason == "rpc_error" && codexUsesCustomProvider(CodexHome()) {
+			reason = "codex_custom_provider"
+		}
 		code := reason
 		safeErr := codeError(reason, reason)
 		if errors.Is(err, toolcli.ErrRuntimeMissing) {

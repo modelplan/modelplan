@@ -8,6 +8,7 @@ public struct SettingsText: Equatable, Sendable {
 }
 public enum SettingKey: String, CaseIterable, Sendable {
     case theme, size, motion, transparency, percentageMode, showPercentages, percentagePin, redBelow, sliverAlert
+    case showAllModels
     case showDock, autoHide, reveal, magnification, fullscreen, captureHiding, activeDisplay, order
     case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints, cockpitSize
     case notificationConsent, forecast, reset, official, expiring, stale
@@ -243,6 +244,7 @@ public enum SettingsCatalogue {
         .init(.percentagePin,"Percentage window","百分比窗口","Select the tightest, 5-hour or weekly window per subscription.","为每个订阅选择最紧的、5小时或每周窗口。"),
         .init(.redBelow,"Critical threshold","变红阈值","Red at remaining quota ≤ the threshold, even when displaying used quota.","剩余额度 ≤ 阈值时变红，即使显示已用额度也一样。"),
         .init(.sliverAlert,"Sliver alert color","细条提示色","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
+        .init(.showAllModels,"Show all models","显示全部模型","Off: the cockpit shows your own plans' models, up to 12. On: every published model.","关闭：驾驶舱只显示你自己订阅的模型，最多 12 个；开启：显示所有已发布的模型。"),
         .init(.showDock,"Show Quota Widget","显示额度挂件","Same as Show Quota Widget in the menu bar icon's menu. When off, turn it back on there.","与菜单栏图标菜单里的「显示额度挂件」相同；关闭后可在那里重新打开。"),
         .init(.autoHide,"Auto-collapse when the pointer leaves","鼠标离开后自动收起","Shrinks to a strip on the edge; rest the pointer there to expand it. Same as Auto-Collapse in the Quota Widget menu.","缩成贴边细条，鼠标靠近稍停即可展开；与额度挂件右键菜单里的「自动收起」相同。"),
         .init(.reveal,"Reveal dwell","展开停留时间","Wait before revealing the edge Quota Widget.","在边缘停留后展开。"),
@@ -261,7 +263,7 @@ public enum SettingsCatalogue {
         .init(.menuDisplay,"Menu-bar display","菜单栏显示","Icon, tightest percentage or two windows.","图标、最紧的百分比或并列两个窗口。"),
         .init(.openShortcut,"Open cockpit shortcut","打开驾驶舱快捷键","Global registration can fail; local matching remains available.","全局注册可能失败；应用内匹配仍可用。"),
         .init(.dockShortcut,"Find Quota Widget shortcut","找到额度挂件快捷键","Shows where the Quota Widget is. Text editing and composition do not trigger shortcuts.","显示额度挂件的位置；文本编辑与输入法组合期间不触发。"),
-        .init(.language,"Language","语言","Choose Chinese or English.","选择中文或英文。"),
+        .init(.language,"Language","语言","Follow the system language, or choose Chinese or English.","跟随系统语言，或选择中文或英文。"),
         .init(.opening,"Cockpit opening","打开驾驶舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
         .init(.cockpitSize,"Cockpit size","驾驶舱大小","Auto uses 85 % on laptop screens and 100 % on larger displays. On a screen too short for the size, the whole cockpit is drawn smaller to fit.","自动：笔记本屏幕用 85%，更大的显示器用 100%。屏幕放不下时，整个驾驶舱会再缩小以适配。"),
         .init(.countdown,"Countdown beat","倒数节奏","Three beats follow the 200 ms hold boundary.","按住200毫秒后开始三拍倒数。"),
@@ -397,6 +399,7 @@ public enum SettingsCatalogue {
         case .percentagePin: return perSub(options: PercentagePin.allCases.map(\.rawValue)) { (p.subscriptionSettings[$0.id]?.percentagePin ?? .auto).rawValue }
         case .redBelow: return .choice(String(p.effectiveRedBelow), options: SettingsPreferences.redBelowChoices.map(String.init))
         case .sliverAlert: return .toggle(p.sliverAlert)
+        case .showAllModels: return .toggle(p.showAllModels)
         case .showDock: return .toggle(p.showDock)
         case .autoHide: return .toggle(p.autoHide)
         case .reveal: return .choice(String(p.revealMilliseconds), options: [100,150,300].map(String.init))
@@ -410,7 +413,8 @@ public enum SettingsCatalogue {
         case .menuDisplay: return choices(p.menuDisplay)
         case .openShortcut: return .text(shortcut(p.openShortcut))
         case .dockShortcut: return .text(shortcut(p.dockShortcut))
-        case .language: return choices(p.language)
+        case .language: return .choice(p.followsSystemLanguage ? SettingsLanguage.followSystemValue : p.language.rawValue,
+                                       options: [SettingsLanguage.followSystemValue] + SettingsLanguage.allCases.map(\.rawValue))
         case .opening: return choices(p.opening)
         case .cockpitSize: return choices(p.cockpitSize)
         case .countdown: return .choice(String(p.beatMilliseconds), options: [150,200,250].map(String.init))

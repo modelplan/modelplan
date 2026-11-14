@@ -2374,6 +2374,8 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "codex_custom_provider",
+            "team_unsupported",
             "no_plan",
             "other",
             "readers_off",
@@ -2438,6 +2440,31 @@
         "storeEpoch",
         "consentGeneration",
         "data"
+      ],
+      "type": "object"
+    },
+    "Hint": {
+      "additionalProperties": false,
+      "properties": {
+        "installCommand": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "installUrl": {
+          "maxLength": 128,
+          "pattern": "^https://",
+          "type": "string"
+        },
+        "signInCommand": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "text": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "required": [
+        "text"
       ],
       "type": "object"
     },
@@ -3020,6 +3047,16 @@
                 "offline"
               ],
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Hint"
             },
             {
               "type": "null"
@@ -3688,6 +3725,8 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "codex_custom_provider",
+            "team_unsupported",
             "no_plan",
             "other",
             "readers_off",
@@ -4990,6 +5029,8 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "codex_custom_provider",
+            "team_unsupported",
             "no_plan",
             "other",
             "readers_off",

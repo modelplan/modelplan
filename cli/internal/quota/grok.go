@@ -290,10 +290,19 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 	}
 	var billing grokBilling
 	state, retry, code := grokBillingGet(ctx, c, auth, &billing, r.Now)
+	// D232 (CodexBar GrokWebBillingFetcher.swift and GrokAuth.isTeamPrincipal at 7447bc7):
+	// a team login's usage is not on the personal billing surface. An auth refusal keeps
+	// its own code; any other failed or empty reading for a team principal says so.
+	team := strings.EqualFold(strings.TrimSpace(auth.PrincipalType), "team")
 	if state != "" {
 		out := fail(state, "Grok Build usage temporarily unavailable")
 		if state == "expired" || state == "denied" {
 			out.Entry.NextStep = "Open Grok Build to refresh"
+		}
+		if team && grokTeamUnsupported(code) {
+			out.Entry.Status, out.Entry.ErrorCode, out.Entry.Notice, out.Entry.NextStep = "unavailable", "team_unsupported", "Grok team usage is not available from this billing surface", ""
+			out.RetryAfter = retry
+			return out
 		}
 		out.Invalidate = changed
 		out.Entry.ErrorCode = code
@@ -301,6 +310,9 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 		return out
 	}
 	a, ok := parseGrokBilling(billing, r.Now)
+	if team && (!ok || (len(a.Windows) == 0 && a.Credits == nil)) {
+		return readerOutcome{Entry: readerEntry{Status: "unavailable", ErrorCode: "team_unsupported", Notice: "Grok team usage is not available from this billing surface"}, Invalidate: changed}
+	}
 	if !ok {
 		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Grok Build billing format is not supported yet"}, Invalidate: changed}
 	}
@@ -318,6 +330,12 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 		notice = "Shared-pool link unverified"
 	}
 	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Notice: notice, Metadata: readerMetadata{CredentialKey: credentialKey, AccountKey: accountKey, VerifiedAt: r.Now.UTC(), Plan: a.Plan}}}
+}
+
+// grokTeamUnsupported: the billing call refused the request itself (a 4xx other than the
+// auth codes and rate limiting, or a missing path) rather than failing in transit.
+func grokTeamUnsupported(code string) bool {
+	return code == "other" || code == "schema_changed"
 }
 
 type grokCent struct {

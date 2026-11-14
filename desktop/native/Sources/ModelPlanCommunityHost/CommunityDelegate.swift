@@ -21,6 +21,8 @@ import ModelPlanShell
     private var settingsItem: NSMenuItem?
     private var settingsConfigured = false
     private var overview: (any NativeOverviewSurface)?
+    private var closeWindowItem: NSMenuItem?, appQuitItem: NSMenuItem?, statusShowItem: NSMenuItem?
+    private var intelItem: NSMenuItem?, statusQuitItem: NSMenuItem?
     private var window: NSWindow?
     private var runtime: CommunityRuntime?
     private var probe: RuntimeProbe?
@@ -72,7 +74,7 @@ import ModelPlanShell
             Task { await integration.restorePreferences() }
         } catch {
             // Preserve malformed/unavailable preferences; do not create a replacement store or expose paths.
-            let item = NSMenuItem(title: "Settings could not open — quit and reopen ModelPlan / 设置未能打开，请退出并重新打开 ModelPlan", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: hostText("Settings could not open — quit and reopen ModelPlan", "设置未能打开，请退出并重新打开 ModelPlan"), action: nil, keyEquivalent: "")
             item.isEnabled = false; settingsItem = item
         }
         return settingsItem
@@ -114,9 +116,9 @@ import ModelPlanShell
         let root = NSMenu(), applicationItem = NSMenuItem(title: "ModelPlan", action: nil, keyEquivalent: "")
         let submenu = NSMenu()
         if let copy = settingsItem.copy() as? NSMenuItem { submenu.addItem(copy) }
-        submenu.addItem(withTitle: "Close Window / 关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        closeWindowItem = submenu.addItem(withTitle: hostText("Close Window", "关闭窗口"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         submenu.addItem(.separator())
-        submenu.addItem(withTitle: "Quit / 退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appQuitItem = submenu.addItem(withTitle: hostText("Quit", "退出"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         applicationItem.submenu = submenu; root.addItem(applicationItem)
         return root
     }
@@ -156,13 +158,14 @@ import ModelPlanShell
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
         menu.addItem(menuBarReadingItem); menu.addItem(.separator())
-        let show = menu.addItem(withTitle: "Status…", action: #selector(showStatus), keyEquivalent: "")
+        let show = menu.addItem(withTitle: hostText("Status…", "状态…"), action: #selector(showStatus), keyEquivalent: "")
         show.target = self
-        menu.addItem(withTitle: "Intel untested; 3D may stutter", action: nil, keyEquivalent: "")
+        intelItem = menu.addItem(withTitle: hostText("Intel untested; 3D may stutter", "Intel 未测试，3D 效果可能卡顿"), action: nil, keyEquivalent: "")
+        statusShowItem = show
         menu.addItem(.separator())
         if let settingsItem = configureSettings(runtime.lifecycle) { menu.addItem(settingsItem) }
         if let remediation = settings as? any CommunityUsageRemediation { menu.addItem(remediation.usageAccessMenuItem) }
-        menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        statusQuitItem = menu.addItem(withTitle: hostText("Quit", "退出"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu; status = item
         if let settingsItem { NSApplication.shared.mainMenu = applicationMenu(settingsItem: settingsItem) }
         configureCompanion(runtime.lifecycle)
@@ -198,7 +201,7 @@ import ModelPlanShell
             let size = (surface as? any CommunityInstrumentSurface)?.preferredContentSize ?? CGSize(width:440,height:210)
             let panel = NSWindow(contentRect:NSRect(origin:.zero,size:size),
                 styleMask:[.titled,.closable],backing:.buffered,defer:false)
-            panel.title = "ModelPlan Community"; panel.contentView = surface.view
+            panel.title = hostText("ModelPlan Community", "ModelPlan 社区版"); panel.contentView = surface.view
             panel.isReleasedWhenClosed = false; panel.delegate = self; panel.center(); window = panel
         }
         render(); runtime.store.refresh()
@@ -209,8 +212,24 @@ import ModelPlanShell
         (overview as? any CommunityInstrumentSurface)?.resumePresentation()
         updateFeedVisibility()
     }
+    /// The chosen language (Settings), else the open overview's, else the macOS list (SET-9-38).
+    private var hostPrefersChinese: Bool {
+        if let reporting = settings as? any CommunityLanguageReporting { return reporting.prefersChinese }
+        if let consumer = overview as? any CommunityInstrumentSurface { return consumer.instrumentLanguage == .chinese }
+        return CommunityHostLanguage.prefersChinese()
+    }
+    func hostText(_ english: String, _ chinese: String) -> String {
+        CommunityHostLanguage.text(english, chinese, chinese: hostPrefersChinese)
+    }
+    private func refreshHostText() {
+        closeWindowItem?.title = hostText("Close Window", "关闭窗口"); appQuitItem?.title = hostText("Quit", "退出")
+        statusShowItem?.title = hostText("Status…", "状态…"); statusQuitItem?.title = hostText("Quit", "退出")
+        intelItem?.title = hostText("Intel untested; 3D may stutter", "Intel 未测试，3D 效果可能卡顿")
+        window?.title = hostText("ModelPlan Community", "ModelPlan 社区版")
+    }
     private func render() {
         guard let runtime, !terminating else { return }
+        refreshHostText()
         let snapshot = runtime.store.view(), diagnostics = runtime.store.diagnostics
         updateMenuBar(snapshot: snapshot, diagnostics: diagnostics, now: Date())
         (settings as? any CommunityUsageRemediation)?.updateUsageState(snapshot: snapshot, diagnostics: diagnostics, now: Date())
@@ -224,7 +243,7 @@ import ModelPlanShell
     }
     /// Shared by the real status button and in-memory construction checks; never creates an item/window.
     func updateMenuBar(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date, button: NSButton? = nil) {
-        let next = menuBarProvider?.make(snapshot: snapshot, diagnostics: diagnostics, now: now) ?? .empty
+        let next = menuBarProvider?.make(snapshot: snapshot, diagnostics: diagnostics, now: now) ?? .emptyReading(chinese: hostPrefersChinese)
         menuBarPresentation = next; menuBarReadingItem.title = next.detail
         guard let button = button ?? status?.button else { return }
         statusItemImage?.isTemplate = true

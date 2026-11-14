@@ -847,7 +847,7 @@ struct StatusNoticePresentation {
 
     func renderMenu() {
         guard !terminating else { return }
-        let language = composition.latestSettings?.effective.language ?? .english
+        let language = composition.latestSettings?.effective.language ?? .fallback
         let component: DockStatusMenu
         if let current = statusMenuComponent { component = current }
         else {

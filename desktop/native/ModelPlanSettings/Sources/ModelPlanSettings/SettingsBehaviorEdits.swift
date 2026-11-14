@@ -8,6 +8,8 @@ public enum SettingsB21Edit: Sendable {
     case dockPlacement(displayID: String, edge: SettingsDockEdge, alongFraction: Double)
     case fullscreen(Bool), activeDisplay(Bool), dockEdge(SettingsDockEdge)
     case login(Bool), automaticUpdates(Bool), menuDisplay(MenuDisplay), language(SettingsLanguage)
+    /// "Follow System": carries the language the macOS list resolves to now; the app re-resolves it at each launch.
+    case followSystemLanguage(resolved: SettingsLanguage)
     case shortcut(ShortcutAction, ShortcutChord), opening(OpeningPreference), countdown(Int), cockpitSize(SettingsCockpitSize)
     case moveSubscription(String, to: Int, expectedOrder: [String]), resetOrder
     case visible(String, Bool), alias(AliasDraft), readerConsent(OptionalReaderID, Bool), resetHints
@@ -31,7 +33,9 @@ public enum SettingsB21Edit: Sendable {
         case .login: if let v = Bool(value) { self = .login(v); return }
         case .automaticUpdates: if let v = Bool(value) { self = .automaticUpdates(v); return }
         case .menuDisplay: if let v = MenuDisplay(rawValue: value) { self = .menuDisplay(v); return }
-        case .language: if let v = SettingsLanguage(rawValue: value) { self = .language(v); return }
+        case .language:
+            if value == SettingsLanguage.followSystemValue { self = .followSystemLanguage(resolved: SettingsLanguage.resolve(preferredLanguages: Locale.preferredLanguages)); return }
+            if let v = SettingsLanguage(rawValue: value) { self = .language(v); return }
         case .opening: if let v = OpeningPreference(rawValue: value) { self = .opening(v); return }
         case .countdown: if let v = Int(value), [150,200,250].contains(v) { self = .countdown(v); return }
         case .cockpitSize: if let v = SettingsCockpitSize(rawValue: value) { self = .cockpitSize(v); return }
@@ -67,7 +71,8 @@ public enum SettingsB21Edit: Sendable {
         case .login(let v): p.openAtLogin = v
         case .automaticUpdates(let v): p.automaticUpdates = v
         case .menuDisplay(let v): p.menuDisplay = v
-        case .language(let v): p.language = v
+        case .language(let v): p.language = v; p.followsSystemLanguage = false
+        case .followSystemLanguage(let resolved): p.followsSystemLanguage = true; p.language = resolved
         case .opening(let v): p.opening = v
         case .countdown(let v): p.beatMilliseconds = v
         case .cockpitSize(let v): p.cockpitSize = v
