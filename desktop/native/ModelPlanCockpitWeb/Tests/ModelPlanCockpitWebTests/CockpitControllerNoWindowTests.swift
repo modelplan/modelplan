@@ -232,6 +232,57 @@ import ModelPlanWire
     XCTAssertEqual(sent.count, 1, "No appearance is sent while the display receipt is pending")
     XCTAssertNil(page.window)
   }
+  /// G3-116 (build 14f): a page open for minutes gets an engine reply about every second and each render takes about a
+  /// second, so at any moment a newer display is usually pending. The appearance wait then timed out on a page that
+  /// was rendered, visible and working (`ready=true visible=true rendered=true displayPending=true`), failed it and
+  /// rebuilt it three times (the flicker), then showed the unavailable notice. A page that made progress during the
+  /// wait keeps waiting, and the appearance goes out with the next rendered receipt.
+  func testAppearanceWaitKeepsABusyRenderedPageWhoseDisplayIsStillPending() throws {
+    let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
+    var timers: [(UInt64, @MainActor () -> Void)] = [], failures: [CockpitWindowFailure] = []
+    page.verificationNoWindowClock = { 1_000 }
+    page.verificationNoWindowArm = { delay, fire in timers.append((delay, fire)); return {} }
+    page.verificationNoWindowDelivery = { raw, complete in sent.append((raw, complete)) }
+    page.onFailure = { failures.append($0) }
+    try prepare(page)
+    // The page has been open for a while: a display rendered, its show tick reported a deadline.
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    let first = try XCTUnwrap(sent.first).0; sent[0].1(.accepted)
+    page.verificationReceive(try reply(first, type: "rendered", sequence: 2), source: source)
+    XCTAssertEqual(sent.count, 2); let showTick = sent[1].0; sent[1].1(.accepted)
+    page.verificationReceive(try reply(showTick, type: "nextDeadline", sequence: 3, extra: ["deadlineUnixMs": "1500"]), source: source)
+    // The next engine reply is on its way to the page when an appearance change arrives.
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    XCTAssertEqual(sent.count, 3)
+    let count = timers.count
+    page.updateAppearance(.init(theme: .night, locale: .zhCN, profile: .full))
+    XCTAssertEqual(timers.count, count + 1, "The deferred appearance starts a bounded wait")
+    XCTAssertEqual(sent.count, 3, "Appearance waits for the pending display receipt")
+    let appearanceTimeout = try XCTUnwrap(timers.last).1
+    // During the wait the page works through its queue: that display completes and a newer reply replaces it, so
+    // a display is pending again when the wait ends.
+    sent[2].1(.accepted)
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    XCTAssertEqual(sent.count, 4); let latest = sent[3].0
+    XCTAssertTrue(page.bridge.hasPendingDisplay)
+    let armed = timers.count
+    appearanceTimeout()
+    XCTAssertEqual(failures, [], "A rendered, visible page that made progress is not failed and rebuilt")
+    XCTAssertFalse(page.bridge.disposed)
+    XCTAssertEqual(timers.count, armed + 1, "It waits one more bounded period")
+    // The latest display renders; the deferred appearance goes out with that receipt.
+    sent[3].1(.accepted)
+    page.verificationReceive(try reply(latest, type: "rendered", sequence: 4), source: source)
+    let appearanceIndex = try XCTUnwrap(sent.firstIndex { message in
+      (try? JSONSerialization.jsonObject(with: Data(message.0.utf8)) as? [String: Any])?["type"] as? String == "appearance"
+    }, "The appearance is published once the display receipt clears")
+    let appearance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(sent[appearanceIndex].0.utf8)) as? [String: Any])
+    XCTAssertEqual(appearance["locale"] as? String, "zh-CN")
+    var index = appearanceIndex
+    while index < sent.count { sent[index].1(.accepted); index += 1 }
+    XCTAssertEqual(failures, [])
+    XCTAssertFalse(page.bridge.disposed); XCTAssertNil(page.window); page.discard()
+  }
   func testQueuedAppearanceSupersededByDeadlineIsResentAfterTick() throws {
     let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
     var now: UInt64 = 1_000, timers: [(UInt64, @MainActor () -> Void)] = []

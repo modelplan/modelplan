@@ -18,6 +18,13 @@ import ModelPlanShell
     private var generation: UInt64 = 0
     private var expected: EngineDeliveryContext?, fresh: EngineDeliveryContext?
     private var startTask: Task<Void, Never>?, stopTask: Task<Void, Never>?
+    /// G3-116: the engine stopped on its own (crash limit, cleanup failure) and waits for an explicit retry.
+    private(set) var engineStopped = false
+    private static let log = Logger(subsystem: "org.modelplan.community", category: "lifecycle")
+    /// The error's case name only, never associated values.
+    private static func errorName(_ error: Error) -> String {
+        String(String(describing: error).prefix { $0.isLetter || $0.isNumber || $0 == "." }.prefix(48))
+    }
 
     init(composition: EngineDockMenuComposition, onPause: @escaping @MainActor () -> Void,
          onReady: @escaping @MainActor () -> Void, onStartFailed: (@MainActor () -> Void)? = nil) {
@@ -41,7 +48,16 @@ import ModelPlanShell
             await prior?.value
             guard let self, self.desired, self.generation == token, !Task.isCancelled else { return }
             do {
-                let context = try await (useRetry ? self.composition.client.retry() : self.composition.client.start())
+                let context: EngineDeliveryContext
+                do { context = try await (useRetry ? self.composition.client.retry() : self.composition.client.start()) }
+                catch EngineClientError.notReady where !useRetry {
+                    // G3-116: after the engine crashed past its restart budget the client takes only an explicit
+                    // retry, so every later wake or unlock failed here at once and the widget kept "?" until quit.
+                    // A resume is that explicit moment: retry once.
+                    guard self.desired, self.generation == token, !Task.isCancelled else { return }
+                    Self.log.error("Engine start needs a retry; retrying")
+                    context = try await self.composition.client.retry()
+                }
                 guard self.desired, self.generation == token, !Task.isCancelled else { return }
                 self.expected = context
                 _ = try await self.composition.client.subscribeRows(timeout: nil)
@@ -52,7 +68,7 @@ import ModelPlanShell
                 self.subscriptionReady = true; self.publishIfFresh()
             } catch {
                 guard self.desired, self.generation == token, !Task.isCancelled else { return }
-                Logger(subsystem: "org.modelplan.community", category: "lifecycle").error("Engine restart or consent failed")
+                Self.log.error("Engine restart or consent failed error=\(Self.errorName(error), privacy: .public)")
                 self.subscriptionReady = false; self.delivered = false; self.onPause(); self.onStartFailed?()
             }
         }
@@ -71,6 +87,15 @@ import ModelPlanShell
         switch event {
         case .rowsChanged(let reply, _): fresh = reply.delivery
         case .response(_, .rows(let reply, _)): fresh = reply.delivery
+        // G3-116: the engine's own restarts and stops were not logged anywhere, so a lost delivery could not be told
+        // apart from a cockpit fault. Reasons and counters only.
+        case .connection(.restarting(let attempt, _)):
+            Self.log.error("Engine connection lost; restart attempt=\(attempt, privacy: .public)")
+        case .connection(.stopped(let reason)) where reason != .requested:
+            Self.log.error("Engine stopped reason=\(String(describing: reason), privacy: .public)")
+            // Nothing restarts it on its own now: let Refresh (retryPending) and the next resume retry it.
+            engineStopped = true; delivered = false
+        case .connection(.ready): engineStopped = false
         default: break
         }
     }
@@ -101,6 +126,8 @@ import ModelPlanShell
     }
     func start() { events.start() }
     var canRetry: Bool { gate.canPresent }
+    /// G3-116: the engine stopped on its own; Refresh retries it as it does a paused one.
+    var engineStopped: Bool { worker.engineStopped }
     func retryPending() { guard gate.canPresent else { return }; worker.retryPending() }
     func setActivityPaused(_ paused: Bool) { gate.set(.activity, blocked: paused) }
     func stop() async { events.stop(); await gate.stop() }
