@@ -13,8 +13,8 @@ import {inflateSync} from 'node:zlib';
 const shapes=[
  {tier:'tall',closed:false,canvas:939,plate:890,upper:[244,270],cone:514,lower:338,phase:253},
  {tier:'compact',closed:false,canvas:669,plate:640,upper:[56,264],cone:320,lower:262,phase:65},
- {tier:'tall',closed:true,canvas:725,plate:890,upper:[30,270],cone:300,lower:338,phase:39},
- {tier:'compact',closed:true,canvas:643,plate:640,upper:[30,264],cone:294,lower:262,phase:39},
+ {tier:'tall',closed:true,canvas:939,plate:890,upper:[30,270],cone:300,lower:338,phase:39},
+ {tier:'compact',closed:true,canvas:669,plate:640,upper:[30,264],cone:294,lower:262,phase:39},
 ];
 async function open(page,s){
  await page.setViewportSize({width:636,height:s.canvas});
@@ -63,7 +63,8 @@ for(const s of shapes)test(`B13 ${s.tier}${s.closed?' closed':''}: study hull wa
  expect(bad.filter(p=>/^\/(assets\/(hull\/|logo)|runtime\/canopy-c01\/)/.test(p))).toEqual([]);
 
  // Silhouette: the canopy frame and upper walls stand 8 px inside the 636 px lower body.
- const root=s.closed?(s.tier==='tall'?691:609):(s.tier==='tall'?905:635),top=s.closed?-14:0,rows=await silhouette(page,root+top);
+ // G3-108: the closed root stands on the open root's floor, 214 (tall) / 26 (compact) px down the open canvas.
+ const root=s.closed?(s.tier==='tall'?691:609):(s.tier==='tall'?905:635),top=s.closed?(s.tier==='tall'?214:26):0,rows=await silhouette(page,root+top);
  const at=y=>rows[y+top];
  if(!s.closed){
   const foot=s.plate===890?228:48;
@@ -76,16 +77,18 @@ for(const s of shapes)test(`B13 ${s.tier}${s.closed?' closed':''}: study hull wa
  expect(frame[1]-frame[0],'porthole frame narrower than the lower body').toBeLessThan(body[1]-body[0]);
 });
 
-// Collapsed (owner build 13): the study's 16 px slab meets the 620 px upper walls, and the page draws it at the
-// window's top edge: the study's 14 px band above the slab would only widen the gap under the menu bar.
-for(const tier of ['tall','compact'])test(`B13 ${tier} closed: the slab is the window's top edge and lines up with the upper walls`,async({page})=>{
+// Collapsed (owner build 13): the study's 16 px slab meets the 620 px upper walls and is the closed window's top edge.
+// G3-108: the page keeps the open canvas, the closed root stands on its floor, and the native window leaves out the band
+// above the slab (strip - 25 px); the slab reaches 1 px under the walls so no seam shows on a scaled page.
+for(const [tier,top] of [['tall',214],['compact',26]])test(`B13 ${tier} closed: the slab is the window's top edge and lines up with the upper walls`,async({page})=>{
  await open(page,shapes.find(s=>s.tier===tier&&s.closed));
  const v=await page.evaluate(()=>{const ck=document.querySelector('#cockpit').getBoundingClientRect(),c=document.querySelector('.ck-shell .hull-crown').getBoundingClientRect(),w=document.querySelector('.ck-shell .hull-upper').getBoundingClientRect();
   return {ckTop:ck.top,slab:[c.left,c.top,c.width,c.height],slabInRoot:c.top-ck.top,walls:[w.left+8,w.width-16]};});
- expect(v).toEqual({ckTop:-14,slab:[8,0,620,16],slabInRoot:14,walls:[8,620]});
- const rows=await silhouette(page,40);
- expect(rows[10],'slab below its 8 px cuts').toEqual([8,627]);
- expect(rows[17],'wall under the slab').toEqual([8,627]);
+ expect(v).toEqual({ckTop:top,slab:[8,top+14,620,17],slabInRoot:14,walls:[8,620]});
+ const rows=await silhouette(page,top+60);
+ expect(rows[top+10],'nothing above the slab').toEqual([-1,-1]);
+ expect(rows[top+24],'slab below its 8 px cuts').toEqual([8,627]);
+ expect(rows[top+31],'wall under the slab').toEqual([8,627]);
 });
 
 // Strip logo (owner, repeatedly): the study's rocket mark beside the live "ModelPlan" wordmark, Plan in red.
@@ -100,10 +103,10 @@ test('B13 strip shows the study rocket mark and the live ModelPlan wordmark',asy
 });
 
 // glm-842-1 (G3-43 / CKP-SHELL-04): the native title-drag region is placed from the strip's window-relative top
-// (CockpitShellLayout.titleDragFrame: 253 tall, 65 compact, 25 closed). The closed page draws its slab at the window's
-// top edge, so its strip is at 25, not the study's 39; the two sides must not drift apart again.
+// (CockpitShellLayout.titleDragFrame: 253 tall, 65 compact, open or closed: G3-108 keeps the strip at its open place on
+// the open canvas); the two sides must not drift apart again.
 for(const s of shapes)test(`B13 ${s.tier}${s.closed?' closed':''}: the strip's window-relative top matches the native drag region`,async({page})=>{
  await open(page,s);
  const top=await page.evaluate(()=>Math.round(document.querySelector('.ck-head').getBoundingClientRect().top));
- expect(top).toBe(s.closed?25:(s.tier==='tall'?253:65));
+ expect(top).toBe(s.tier==='tall'?253:65);
 });

@@ -20,7 +20,7 @@ final class BridgeTests: XCTestCase {
     -> String
   {
     var value = try object(outgoing)
-    for key in ["data", "appearance", "shell", "visible", "occluded", "key", "nowUnixMs", "reason", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "visible", "occluded", "key", "nowUnixMs", "reason", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "memberOrder"] { value[key] = nil }
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }
@@ -336,6 +336,31 @@ final class BridgeTests: XCTestCase {
       sequence += 1
     }
   }
+  /// CKP-SHELL-39: the empty engine screen's button is one fixed action with no payload.
+  func testOpenSettingsSubscriptionsIsAFixedActionWithNoPayload() throws {
+    let state=CockpitBridgeState(context:try context()),load=try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    let display=try state.display(fixture(),ticket:XCTUnwrap(state.queryTicket))
+    _ = try state.accept(reply(display,"rendered",2),source:source)
+    XCTAssertEqual(try state.accept(reply(load,"action",3,extra:["action":"openSettingsSubscriptions"]),source:source),.action(.openSettingsSubscriptions))
+    XCTAssertThrowsError(try state.accept(reply(load,"action",4,extra:["action":"openSettingsSubscriptions","pane":"about"]),source:source),"no pane or URL crosses")
+  }
+  /// D244 / G3-111: the saved subscription order reaches the page on load and on every appearance update, so the
+  /// cockpit's tabs and columns follow it; none saved sends no order (the engine order), and only member keys cross.
+  func testSavedMemberOrderReachesThePageOnLoadAndAppearance() throws {
+    let saved = ["bbbbbbbbbbbbbbbb", "codex#saved_login_api", "aaaaaaaaaaaaaaaa"]
+    let state = CockpitBridgeState(context: try context())
+    let load = try state.load(.init(theme: .night, locale: .en, profile: .full, memberOrder: saved + ["all", "not a key", "bbbbbbbbbbbbbbbb"]),
+      shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+    XCTAssertEqual(try object(load)["memberOrder"] as? [String], saved, "member keys only, once each, in the saved order")
+    XCTAssertEqual(try state.accept(reply(load, "ready", 1), source: source), .ready)
+    let reordered = try state.setAppearance(.init(theme: .night, locale: .en, profile: .full, memberOrder: ["aaaaaaaaaaaaaaaa"]))
+    XCTAssertEqual(try object(reordered)["memberOrder"] as? [String], ["aaaaaaaaaaaaaaaa"])
+    let reset = try state.setAppearance(.init(theme: .night, locale: .en, profile: .full))
+    XCTAssertNil(try object(reset)["memberOrder"], "no saved order: the page keeps the engine order")
+    let plain = CockpitBridgeState(context: try context())
+    XCTAssertNil(try object(try ready(plain))["memberOrder"])
+  }
   func testEarlyAppearanceReportSurvivesLaterValidActionBeforeAck() throws {
     let state=CockpitBridgeState(context:try context()),load=try ready(state)
     _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
@@ -461,24 +486,19 @@ final class BridgeTests: XCTestCase {
   func testG396ResetEventKindAndConfirmationReachThePageTypedAsTheSchemaRequires() throws {
     var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     while !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures").path) { root.deleteLastPathComponent() }
-    var data = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))) as? [String: Any])
-    var details = try XCTUnwrap(data["details"] as? [String: Any])
-    var announced = try XCTUnwrap((details["resetEvents"] as? [[String: Any]])?.first)
-    XCTAssertEqual(announced["kind"] as? String, "direct_reset", "the real Go capture carries kind like the producer")
-    announced["id"] = "banked-1"; announced["kind"] = "reset_credit"
-    var confirmed = announced
-    confirmed["id"] = "confirmed-1"; confirmed["status"] = "confirmed"; confirmed["confirms"] = "banked-1"
-    confirmed["confirmedAt"] = "2026-10-29T13:00:00Z"; confirmed["confirmedAtBasis"] = "firstSeen"
-    details["resetEvents"] = [announced, confirmed]
-    data["details"] = details
+    // The events are the real projector's (resetevents.CaptureEvents via swiftwire): announced direct reset, announced
+    // reset credit and a confirmed credit, generated, never transcribed here.
+    let data = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))) as? [String: Any])
+    let events = try XCTUnwrap((data["details"] as? [String: Any])?["resetEvents"] as? [[String: Any]])
+    XCTAssertEqual(events.map { $0["kind"] as? String }, ["reset_credit", "reset_credit", "direct_reset"])
     let wire = try WireDecoder.decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: data))
     let state = CockpitBridgeState(context: try context())
     _ = try ready(state)
     let display = try object(state.display(wire, ticket: XCTUnwrap(state.queryTicket)))
     let sent = try XCTUnwrap(((display["data"] as? [String: Any])?["details"] as? [String: Any])?["resetEvents"] as? [[String: Any]])
-    XCTAssertEqual(sent.map { $0["kind"] as? String }, ["reset_credit", "reset_credit"])
-    XCTAssertEqual(sent.map { $0["confirmedAtBasis"] as? String }, [nil, "firstSeen"])
-    XCTAssertEqual(sent.last?["confirmedAt"] as? String, "2026-10-29T13:00:00Z")
+    XCTAssertEqual(sent.map { $0["kind"] as? String }, events.map { $0["kind"] as? String })
+    XCTAssertEqual(sent.map { $0["confirmedAtBasis"] as? String }, events.map { $0["confirmedAtBasis"] as? String })
+    XCTAssertEqual(sent.map { $0["confirmedAt"] as? String }, events.map { $0["confirmedAt"] as? String })
     // The page validates against the generated schema; each field the host sends must name its type there.
     let schema = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("schema/app-cli/app-server.json"))) as? [String: Any])
     let event = try XCTUnwrap(((schema["$defs"] as? [String: Any])?["ResetEvent"] as? [String: Any])?["properties"] as? [String: [String: Any]])

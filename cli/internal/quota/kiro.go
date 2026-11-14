@@ -211,7 +211,7 @@ func finiteF(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 func kiroMessageCode(message string) string {
 	switch kiroReason(message) {
 	case "Kiro CLI is signed out (kiro-cli login)":
-		return "unsupported_login"
+		return "not_signed_in"
 	case "Kiro CLI is too old for its usage call; update it":
 		return "schema_changed"
 	default:

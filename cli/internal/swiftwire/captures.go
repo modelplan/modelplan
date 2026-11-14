@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
+	"github.com/modelplan/modelplan/cli/internal/resetevents"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"reflect"
 	"sort"
@@ -79,9 +80,16 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 	if t == reflect.TypeFor[rows.ResetSchedule]() {
 		return reflect.ValueOf(rows.ResetSchedule{Precision: "window", From: now.Add(time.Hour), Through: now.Add(3 * time.Hour)}), nil
 	}
-	if t == reflect.TypeFor[rows.ResetEvent]() {
-		// G3-96: the producer sets kind on every event it emits (resetevents.kindOf), so the capture carries it too.
-		return reflect.ValueOf(rows.ResetEvent{Version: 1, ID: "synthetic-reset", Provider: "openai", RowID: "codex", Status: "announced", Kind: "direct_reset", PublishedAt: now, ExpiresAt: now.Add(48 * time.Hour), Source: rows.ResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567", Links: []rows.ResetLink{{Type: "aihot", URL: "https://aihot.news/codex-reset"}}}}), nil
+	// Reset events come from the real projector (resetevents.CaptureEvents), never typed by hand (G3-96).
+	if t == reflect.TypeFor[[]rows.ResetEvent]() || t == reflect.TypeFor[rows.ResetEvent]() {
+		events, err := resetevents.CaptureEvents(now)
+		if err != nil || len(events) == 0 {
+			return reflect.Value{}, fmt.Errorf("reset event capture: %v (%d events)", err, len(events))
+		}
+		if t == reflect.TypeFor[rows.ResetEvent]() {
+			return reflect.ValueOf(events[0]), nil
+		}
+		return reflect.ValueOf(events), nil
 	}
 
 	if t == reflect.TypeFor[wire.RefreshMember]() {
@@ -155,6 +163,8 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 				s = "claude"
 			case "Kind":
 				s = "tokens"
+			case "Currency":
+				s = "USD" // ISO 4217 pattern ^[A-Z]{3}$
 			}
 		}
 		v.SetString(s)

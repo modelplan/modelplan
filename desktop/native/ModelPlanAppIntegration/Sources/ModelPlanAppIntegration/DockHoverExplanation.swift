@@ -13,8 +13,8 @@ enum DockHoverExplanation {
                 // Only promise a refresh click when the engine negotiated member refresh.
                 let base = catalog.explanation(.nozzle)
                 return HelpExplanation(title: base.title, body: language == .chinese
-                    ? "悬停查看额度卡片，沿额度挂件拖动喷口可调整订阅顺序；也可用 ⌥ 加方向键移动一位。"
-                    : "Hover for the quota card or drag along the Quota Widget to reorder; Option arrows move one place.")
+                    ? "悬停查看额度卡片，拖动喷口可移动整个额度挂件；也可用 ⌥ 加方向键移动一位。"
+                    : "Hover for the quota card or drag to move the whole Quota Widget; Option arrows move one place.")
             }
             topic = .nozzle
         }

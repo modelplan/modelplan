@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver"
@@ -69,6 +70,8 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	}
 	rawPaths := func(a consent.Admission) quota.Paths { return quota.ProductionPathsWithAdmission(st.Dir, version, a) }
 	detectTools := func() detect.Report { return detection(st) }
+	// D238: tool ids only; a read-only engine keeps the ledger in memory.
+	seen := detect.NewSeenLedger(filepath.Join(st.Dir, "detected-tools.json"), options.ReadOnly)
 	if sources.Detect != nil {
 		detectTools = sources.Detect(detectTools)
 	}
@@ -82,7 +85,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			}
 		},
 		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.Load(st); return d, err },
-		Detect:           detectTools, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
+		Detect:           detectTools, LaterInstalled: seen.Observe, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
 		Cleanup: func(scope string, forget bool) error {
 			return quota.EraseScope(quota.ProductionPaths(st.Dir, version), scope, forget)
 		},

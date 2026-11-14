@@ -118,6 +118,7 @@ register('mfd', {
   sameRec: ['line', '试 = ★', 'Try = ★'],
   sameAll: ['line', '试 = 当前 = ★', 'Try = Current = ★'],
   currentRec: ['line', '当前 = ★', 'Current = ★'],
+  cmpTrialNote: ['text', '试算，不会改工具设置', 'Trial only — your tool settings stay unchanged'],
   cmpTitle: ['line', '比较 · {m}', 'Compare · {m}'],
   cmpChartAria: ['aria', '{m} 横轴为已发布档位：{efforts}。标准速度的能力为亮中性色 1.5 像素实线，成本为中灰 1 像素实线，耗时为 1 像素点线；右端标注指标。纵轴为 log₂，×0.5 到 ×1 与 ×1 到 ×2 等距；当前或试为快速时，叠加同色虚线快速成本与耗时，闪电标明快速。均相对当前实际配置，当前为 ×1，推荐为标准速度。纵轴固定包含全部档位及快速配置；切换试档或快速不移动已有曲线。白色竖标为当前、金色为推荐、蓝色为试；缺失指标断开', '{m}: published efforts on x: {efforts}. Log2 ratio axis: ×0.5 to ×1 and ×1 to ×2 have equal spacing. Standard ability is bright neutral 1.5 px solid, cost mid-grey 1 px solid, time 1 px dotted, with metric names at their right endpoints; same-colour dashed Fast cost/time overlays when current or trial is Fast, identified by lightning glyphs. Ratios use the actual CURRENT configuration as ×1; recommendation is Standard. The fixed domain includes all efforts at both speeds, so trial or Fast changes never move existing lines. White/current, gold/recommendation and blue/trial markers; gaps for missing metrics'],
   cmpChartRecAria: ['aria', '{m} 当前档位未报告；横轴为已发布档位：{efforts}，比值相对 ★ 推荐档位（标准速度，★ 为 ×1）。能力、成本、耗时各一条线；金色竖标为推荐、蓝色为试；缺失指标断开', '{m}: current effort is unreported; published efforts on x: {efforts}, ratios against the ★ recommendation at Standard speed (★ = ×1). One line each for ability, cost and time; gold/recommendation and blue/trial markers; gaps for missing metrics'],
@@ -140,4 +141,8 @@ register('mfd', {
   effort: ['lcd', '档位', 'Effort'],
   unreported: ['lcd', '档位未报告', 'No effort'],
   follows: ['lcd', '★ 跟随推荐', '★ Follows'], // round D1: ◉ is gone; gold ★ is the one recommended marker
+  // G3-109: the Overview of a subscription that reports a balance but no usage percentage (D228).
+  balance: ['lcd', '余额', 'Balance'],
+  balanceOnly: ['text', '只报告余额，不报告用量百分比', 'Reports a balance, no usage percentage'],
+  balanceOnlyX: ['text', 'X 订阅只报告余额，不报告用量百分比', 'X Subscription reports a balance, no usage %'],
 });

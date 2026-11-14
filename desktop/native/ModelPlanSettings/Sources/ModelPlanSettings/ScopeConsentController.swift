@@ -31,11 +31,25 @@ public struct FirstRunTool: Sendable, Equatable {
     public let promptsKeychain: Bool
     /// False only for a supported tool this Mac does not have (Settings lists it with the reason; first run does not).
     public var detected: Bool = true
+    /// G3-105: the engine's row says the tool's account key is missing (OpenCode is installed, but no
+    /// OpenCode Go key is set). Its local history can still be read, so this is not a block.
+    public var keyMissing: Bool = false
     public var canRead: Bool { detected && block == nil && !scopes.isEmpty }
+}
+/// D61: one quota window of a tool as the first-run page reads it out.
+public enum FirstRunReadingKind: Sendable, Equatable { case fiveHour, weekly }
+public struct FirstRunReading: Sendable, Equatable {
+    public let kind: FirstRunReadingKind
+    /// Whole percent left, 0...100.
+    public let percent: Int
+    public init(kind: FirstRunReadingKind, percent: Int) { self.kind = kind; self.percent = percent }
 }
 /// Transient UI choices over already-accepted facts. No persistence or protocol acceptance logic.
 @MainActor public final class ScopeConsentController {
     public private(set) var facts: WireConsentFacts?
+    /// True from a privacy clear that dropped accepted facts until replacement facts arrive. First-run
+    /// Done must not complete in that window: the user's choices were discarded and never sent.
+    public private(set) var factsClearedSinceAccepted = false
     public private(set) var rowsSummary: RowsRowsSummary?
     public private(set) var selectedIDs = Set<String>()
     public private(set) var phase: ScopeConsentPhase = .idle
@@ -63,14 +77,29 @@ public struct FirstRunTool: Sendable, Equatable {
     private var firstRunGrantRequestID: String?
     private var rowCodes: [String: RowsCode] = [:]
     private var rowStates: [String: RowsState] = [:]
+    private var rowReadings: [String: [FirstRunReading]] = [:]
     private var observers: [UUID: @MainActor () -> Void] = [:]
+    /// Owner 11-12 (first run v1): the scan the page shows while the reader starts and reads. The clock is
+    /// injectable so tests move time without waiting.
+    public var clock: @MainActor () -> Date = { Date() }
+    fileprivate var firstRunPresence: [String]?
+    fileprivate var firstRunDraftStartedAt: Date?
+    fileprivate var firstRunEngineReadyAt: Date?
+    fileprivate var firstRunEngineFailedFlag = false
+    /// The page's "Try again" for a reader that did not start; the app wires it to the lifecycle retry.
+    public var onRetryEngine: (@MainActor () -> Void)?
+    /// "Look again" on the empty page: the host runs the local presence check once more.
+    public var onLookAgain: (@MainActor () -> Void)?
+    /// "Try again" on one row that did not answer in time: the host asks the reader to read that tool.
+    public var onRetryTool: (@MainActor (String) -> Void)?
+    fileprivate var firstRunToolRetryAt: [String: Date] = [:]
     public init(commands: any ScopeConsentCommands, copyReport: (@MainActor (String) throws -> Void)? = nil) {
         self.commands = commands; self.copyReport = copyReport
     }
     /// Presentation policy only; no grant, persistence, inspection or assumed restore.
     public func beginFirstRunDraft() -> Bool {
         guard case .idle=phase else { return false }
-        firstRunExplicitSelection=true;selectedIDs=[];firstRunToolChoices=[:];changed();return true
+        firstRunExplicitSelection=true;selectedIDs=[];firstRunToolChoices=[:];firstRunDraftStartedAt = clock();changed();return true
     }
     public func endFirstRunDraft() { firstRunExplicitSelection=false }
     public var canRequestPlugin: Bool { commands.isReady && pluginToken == nil }
@@ -160,7 +189,10 @@ public struct FirstRunTool: Sendable, Equatable {
         acceptedFactsCallbackToken = UUID()
         let previous = facts
         let unchanged = sameVisibleFacts(previous, value)
+        factsClearedSinceAccepted = false
         facts = value // Every value here was already accepted by M0; none is protocol-filtered here.
+        if firstRunEngineReadyAt == nil { firstRunEngineReadyAt = clock() }
+        firstRunEngineFailedFlag = false
         if !unchanged {
             visibleDraftBasisToken = UUID()
             selectedIDs.formIntersection(Set(value.scopes.map(\.scope)))
@@ -225,13 +257,35 @@ public struct FirstRunTool: Sendable, Equatable {
         rowConsent = consents
         rowCodes = Dictionary(value.projection.rows.map { ($0.id, $0.reason.code) }, uniquingKeysWith: { first, _ in first })
         rowStates = Dictionary(value.projection.rows.map { ($0.id, $0.state) }, uniquingKeysWith: { first, _ in first })
+        var readings: [String: [FirstRunReading]] = [:]
+        for row in value.projection.rows where row.kind == .tool {
+            // The plan-wide windows the engine currently reads; the tightest one per period.
+            var fiveHour: Double?, weekly: Double?
+            for account in row.accounts where account.valueState == .current {
+                for window in account.windows where window.current && window.modelScope == nil {
+                    guard let left = window.remainingPercent else { continue }
+                    switch window.role {
+                    case .session: fiveHour = min(fiveHour ?? left, left)
+                    case .weekly: weekly = min(weekly ?? left, left)
+                    default: break
+                    }
+                }
+            }
+            var list: [FirstRunReading] = []
+            if let fiveHour { list.append(.init(kind: .fiveHour, percent: Int(max(0, min(100, fiveHour)).rounded()))) }
+            if let weekly { list.append(.init(kind: .weekly, percent: Int(max(0, min(100, weekly)).rounded()))) }
+            if !list.isEmpty { readings[row.id] = list }
+        }
+        rowReadings = readings
         changed()
     }
     public func clearAcceptedPrivateState() {
         lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []
         activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil;diagnosticsPresentation=nil; notice = .none
+        firstRunEngineReadyAt = nil; firstRunToolRetryAt = [:]
+        if facts != nil { factsClearedSinceAccepted = true }
         facts = nil; rowsSummary = nil; claudeRowState = nil; rowConsent = nil; keychainLater = false; selectedIDs = []; phase = .idle
-        firstRunToolChoices = [:]; rowCodes = [:]; rowStates = [:]; changed()
+        firstRunToolChoices = [:]; rowCodes = [:]; rowStates = [:]; rowReadings = [:]; changed()
     }
     /// D41: Claude Code's saved-login path, when it is here and usable.
     private var claudeSavedLogin: WireConsentScope? {
@@ -354,6 +408,10 @@ public struct FirstRunTool: Sendable, Equatable {
         }
         return error is ScopeConsentCommandFailure || error is EngineConsentGrantError ? .rejected : .sent
     }
+    /// D61: the 5h and weekly values the engine reads for this tool now; empty until a reading exists.
+    public func firstRunReadings(forTool tool: String) -> [FirstRunReading] { rowReadings[tool] ?? [] }
+    /// D41: the first-run page offers Allow and Later on the Claude Code row while the Keychain question is open.
+    public var firstRunKeychainChoiceOpen: Bool { asksForKeychainOnFirstRun && isFirstRunToolChosen("claude") }
     /// G3-38 / G3-45: why a detected tool cannot be read, when the engine's rows say so.
     public func block(forTool tool: String) -> ScopeToolBlock? {
         switch rowCodes[tool] {
@@ -376,7 +434,7 @@ public struct FirstRunTool: Sendable, Equatable {
                 $0.route.isKnown && $0.route != .knownUnknown && $0.route != .browserSession && $0.disabledReason == nil && !$0.cleanupPending
             }
             return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool),
-                                promptsKeychain: standard.contains { $0.keychain != nil })
+                                promptsKeychain: standard.contains { $0.keychain != nil }, keyMissing: rowCodes[tool] == .keyMissing)
         }
     }
     /// G3-59: Settings lists every tool first run would list (same rows, engine order), then each supported
@@ -402,12 +460,21 @@ public struct FirstRunTool: Sendable, Equatable {
         return entry.scopes.allSatisfy { isReading($0) }
     }
     /// Settings: turn a whole tool on or off with one confirmed choice (the same grant the first-run Done sends).
+    /// #910-1: Off refuses every saved or default-on path of the tool, not only the paths detected now. A path
+    /// that is undetected at this moment (an OpenCode Go key that is absent) would otherwise resume reading
+    /// against the user's Off once it is detected again. On still allows only the paths shown on the row.
     @discardableResult public func requestToolChoice(_ tool: String, on: Bool) -> ScopeConsentConfirmation? {
         guard canMutate, let facts, let entry = firstRunTools.first(where: { $0.tool == tool && $0.canRead }) else { return nil }
         var allow: [String] = [], deny: [String] = []
-        for id in entry.scopes {
-            guard let scope = facts.scopes.first(where: { $0.scope == id }) else { continue }
-            if on { if scope.state != .allowed { allow.append(id) } } else if scope.state != .denied { deny.append(id) }
+        if on {
+            for id in entry.scopes {
+                guard let scope = facts.scopes.first(where: { $0.scope == id }) else { continue }
+                if scope.state != .allowed { allow.append(id) }
+            }
+        } else {
+            for scope in facts.scopes where scope.tool == tool && !scope.retired && scope.state != .denied {
+                if entry.scopes.contains(scope.scope) || scope.state == .allowed || isOnByDefault(scope.scope) { deny.append(scope.scope) }
+            }
         }
         guard !allow.isEmpty || !deny.isEmpty else { return nil }
         let value = ScopeConsentConfirmation(id: UUID(), intent: .init(mutation: .choose(allow: allow, deny: deny, keychain: [])))
@@ -419,6 +486,7 @@ public struct FirstRunTool: Sendable, Equatable {
     }
     /// D61 (3): when any tool can be read, at least one must be ticked before Done.
     public var firstRunChoiceSatisfied: Bool {
+        guard !factsClearedSinceAccepted else { return false } // choices were reset with the facts: wait for new ones
         let readable = firstRunTools.filter(\.canRead)
         return readable.isEmpty || readable.contains { isFirstRunToolChosen($0.tool) }
     }
@@ -450,6 +518,7 @@ public struct FirstRunTool: Sendable, Equatable {
     /// Done's one consent request (owner 10-27: one first-run consent). Returns false when the request
     /// was not sent or the engine rejected it, so the page stays open with the user's choices.
     public func commitFirstRunChoices() async -> Bool {
+        guard !factsClearedSinceAccepted else { return false }
         guard facts != nil else { return true }
         guard firstRunChoiceSatisfied else { return false }
         guard let intent = firstRunChoiceIntent() else { return true }
@@ -484,4 +553,117 @@ public struct FirstRunTool: Sendable, Equatable {
         changed()
     }
 
+}
+
+// MARK: - First-run scan (owner 11-12, D216)
+
+/// The reader's state as the first-run page shows it. `waiting` and `slow` carry the seconds waited.
+public enum FirstRunEngineState: Equatable, Sendable { case starting, waiting(Int), slow(Int), ready, failed }
+/// One tool row of the scan. `reading` and `slowReading` carry the seconds waited; every other case is a result.
+public enum FirstRunToolStatus: Equatable, Sendable {
+    case finding, waitingForEngine, reading(Int), slowReading(Int)
+    case read, readAfterDone, signInNeeded, unsupportedLogin, couldNotRead, notRead, notReadable
+    /// False while the row is still waiting for something; true for every result (a timeout counts: it never blocks).
+    public var isSettled: Bool {
+        switch self {
+        case .finding, .waitingForEngine, .reading, .slowReading: return false
+        default: return true
+        }
+    }
+}
+/// Why Done cannot be pressed yet (owner 11-12 answer 3: the reason is always shown).
+public enum FirstRunDoneBlock: Equatable, Sendable { case engineStarting, engineFailed, chooseOne }
+
+extension ScopeConsentController {
+    /// Seconds a reader may take for one tool before its row says "couldn't read" (E3).
+    public static let firstRunToolTimeout = 15
+    /// The reader should answer the handshake within this many seconds (E3); past it the page says how long it has waited.
+    public static let firstRunHandshakeTarget = 3
+    /// After this long the page says the reader is much slower than usual.
+    public static let firstRunSlowEngine = 15
+    /// A single tool starts saying how long it has been reading after this many seconds.
+    public static let firstRunSlowTool = 5
+
+    private func secondsSince(_ date: Date?) -> Int {
+        guard let date else { return 0 }
+        return max(0, Int(clock().timeIntervalSince(date)))
+    }
+    /// The local check of which tools are here (E2); it only lists rows early, the reader's rows decide (SET-9-37).
+    public func setFirstRunPresence(_ ids: [String]) { firstRunPresence = ids; changed() }
+    public var firstRunPresenceDone: Bool { firstRunPresence != nil }
+    public func setFirstRunEngineFailed(_ failed: Bool) {
+        guard firstRunEngineFailedFlag != failed else { return }
+        firstRunEngineFailedFlag = failed
+        if !failed { firstRunDraftStartedAt = clock() }
+        changed()
+    }
+    /// One clock step for the page's timers; the view calls it every second while the scan runs.
+    public func firstRunTick() { changed() }
+    public var firstRunEngine: FirstRunEngineState {
+        if firstRunEngineFailedFlag { return .failed }
+        if facts != nil { return .ready }
+        let waited = secondsSince(firstRunDraftStartedAt)
+        if waited >= Self.firstRunSlowEngine { return .slow(waited) }
+        return waited >= Self.firstRunHandshakeTarget ? .waiting(waited) : .starting
+    }
+    /// The rows the page lists: the reader's own once they exist, the local presence check before that.
+    public var firstRunListTools: [FirstRunTool] {
+        if facts != nil { return firstRunTools }
+        return (firstRunPresence ?? []).map { FirstRunTool(tool: $0, scopes: [], routes: [], block: nil, promptsKeychain: false) }
+    }
+    /// Supported tools this Mac does not have, for the "Not on this Mac" line; empty until the local check ran.
+    public var firstRunNotFound: [String] {
+        guard firstRunPresence != nil || facts != nil else { return [] }
+        let here = Set(firstRunListTools.map(\.tool))
+        return FirstRunPresenceCatalogue.tools.map(\.id).filter { !here.contains($0) }
+    }
+    public func firstRunToolStatus(_ tool: String) -> FirstRunToolStatus {
+        guard facts != nil else { return firstRunPresence?.contains(tool) == true ? .waitingForEngine : .finding }
+        guard let entry = firstRunTools.first(where: { $0.tool == tool }) else { return .notReadable }
+        if entry.block == .unsupportedLogin { return .unsupportedLogin }
+        if entry.block == .notSignedIn { return .signInNeeded }
+        if !entry.canRead { return .notReadable }
+        if !isFirstRunToolChosen(tool) { return .notRead }
+        if rowReadings[tool]?.isEmpty == false || rowStates[tool] == .fresh || rowStates[tool] == .stale { return .read }
+        if entry.promptsKeychain { return .readAfterDone }
+        if rowStates[tool] == .failed { return .couldNotRead }
+        // Once the reader's rows are in, a tool is still being read only while its own row says pending; a row in any other
+        // state (needs consent, empty, ...) or no row at all is an answer, not something to wait for.
+        if rowConsent != nil, rowStates[tool] != .pending { return .read }
+        let waited = secondsSince(firstRunToolRetryAt[tool] ?? firstRunEngineReadyAt)
+        if waited >= Self.firstRunToolTimeout { return .couldNotRead }
+        return waited >= Self.firstRunSlowTool ? .slowReading(waited) : .reading(waited)
+    }
+    /// The honest count: rows with a result over rows listed.
+    public var firstRunProgress: (done: Int, total: Int) {
+        let tools = firstRunListTools
+        return (tools.filter { firstRunToolStatus($0.tool).isSettled }.count, tools.count)
+    }
+    /// True once the local check ran and every listed row has a result (or the reader failed to start).
+    public var firstRunScanSettled: Bool {
+        guard firstRunPresence != nil else { return false }
+        if firstRunEngineFailedFlag { return true }
+        guard facts != nil else { return false }
+        let progress = firstRunProgress
+        return progress.done == progress.total
+    }
+    public var firstRunDoneBlock: FirstRunDoneBlock? {
+        switch firstRunEngine {
+        case .ready: return firstRunChoiceSatisfied ? nil : .chooseOne
+        case .failed: return .engineFailed
+        default: return .engineStarting
+        }
+    }
+    /// Done stays disabled until the reader answered the handshake: the choices are saved through it (FR-9-10).
+    public var firstRunCanFinish: Bool { firstRunDoneBlock == nil }
+    public func retryFirstRunEngine() { onRetryEngine?() }
+    public func lookAgainForTools() { onLookAgain?() }
+    /// One row's "Try again": its 15 seconds start over; the reader is asked to read it.
+    public func retryFirstRunTool(_ tool: String) {
+        firstRunToolRetryAt[tool] = clock(); onRetryTool?(tool); changed()
+    }
+    /// Test seam: put an engine row's state and readings in place without building a wire snapshot.
+    func setRowForTesting(_ tool: String, state: RowsState, readings: [FirstRunReading] = []) {
+        rowStates[tool] = state; rowReadings[tool] = readings.isEmpty ? nil : readings; changed()
+    }
 }
