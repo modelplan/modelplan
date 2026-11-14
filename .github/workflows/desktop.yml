@@ -11,6 +11,9 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
     types: [checks_requested]
+  # D169: the whole GUI share once a night on main (skipped when a nightly at main's head already passed or is running).
+  schedule:
+    - cron: "23 9 * * *"
   workflow_dispatch:
     inputs:
       mac_ci_probe:
@@ -28,6 +31,10 @@ on:
         default: false
       gui:
         description: Run the GUI-native job on the single GUI test machine (the coordinator's dispatch queue owns its order)
+        type: boolean
+        default: false
+      gui_full:
+        description: "D169: run the whole GUI share instead of the classes related to this branch's changes"
         type: boolean
         default: false
       gui_pool:
@@ -98,15 +105,17 @@ jobs:
   # Merge queue only: the queue is what tests "PR + latest main", because a PR no longer has to merge
   # main first. merge_group has no paths filter, so this job applies the pull_request list above: a
   # group that adds nothing under those paths, or whose tree is the PR head's tree (the head already
-  # contains the base and its own run tested exactly this), skips the jobs below. The GUI leg never
-  # runs here. trusted-mac.yml has no merge_group route to the owner's Mac pool, so native-headless
-  # uses a hosted Mac here.
+  # contains the base and its own run tested exactly this), skips the jobs below. D169: the GUI leg
+  # runs here in full whenever the group changes a desktop path, even when the tree is the PR head's,
+  # because a PR's own GUI run covers only the classes related to its change. trusted-mac.yml routes
+  # the queue's GUI legs to the owner's GUI Mac; native-headless still uses a hosted Mac here.
   queue-scope:
     if: ${{ github.event_name == 'merge_group' }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
       run: ${{ steps.scope.outputs.run }}
+      gui: ${{ steps.scope.outputs.gui }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -119,6 +128,11 @@ jobs:
           QUEUE_PATHS: ^(desktop/|codex/ui/|codex/lib/|codex/cli-pin\.json$|cli/internal/snapshot/|cli/internal/digest/|cli/internal/desktopcontract/|cli/internal/contracttest/|schema/|testdata/contract-v1/|\.github/workflows/desktop\.yml$)
         run: |
           set -eu
+          if git diff --no-renames --name-only -z "$BASE" HEAD | grep -qzE "$QUEUE_PATHS"; then
+            echo "gui=true" >> "$GITHUB_OUTPUT"; echo "group changes desktop paths: the full GUI share runs on the group commit"
+          else
+            echo "gui=false" >> "$GITHUB_OUTPUT"
+          fi
           read -r _ p1 p2 extra <<<"$(git rev-list --parents -n 1 HEAD) x"
           if [ "$p1" = "$BASE" ] && [ "$extra" = x ] && git merge-base --is-ancestor "$BASE" "$p2" \
             && [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$p2^{tree}")" ]; then
@@ -131,7 +145,7 @@ jobs:
 
   app:
     needs: [queue-scope, pr-ref]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -158,7 +172,7 @@ jobs:
           cmp app/dist/app.css app/style.css
   shell:
     needs: [queue-scope, pr-ref]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # The Rust shell on Linux (a supported Tauri target): format, unit tests, a debug build.
     runs-on: ubuntu-latest
     defaults:
@@ -187,7 +201,7 @@ jobs:
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
   native-partition:
     needs: [queue-scope, pr-ref]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # Static rules for the GUI/headless split of the native XCTest suite, on Linux, before any Mac
     # job: a class may run on the ordinary Mac runner only if its source uses no window server.
     runs-on: ubuntu-latest
@@ -201,7 +215,7 @@ jobs:
 
   cockpit-pins:
     needs: [queue-scope, pr-ref]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # Cockpit admission pins are never committed (D69): they are generated from the canonical build wherever the
     # App is compiled (package-neutral.sh, U11 native). On every PR head, main push and merge-queue group, build
     # both editions twice from this tree, require byte-identical output, check the reserved-visuals register, and
@@ -253,7 +267,7 @@ jobs:
       contents: read
       actions: read
     needs: [queue-scope, pr-ref]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -342,63 +356,124 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
+  # D169: which GUI share the GUI legs below run, and whether they run at all. They run only on a
+  # gui=true dispatch (the coordinator's ci-dispatch sends at most one at a time, highest priority
+  # first), in the merge queue when the group changes a desktop path, and on the nightly schedule;
+  # pull_request events never start them (native-headless and app-smoke cover every ready PR head).
+  # A branch dispatch runs only the classes related to the branch's changes (gui_test_selection.py,
+  # against its merge base with main); trusted-mac.yml itself forces the full share for every other
+  # run, so the merge queue and the nightly always test everything before and after main moves.
+  gui-scope:
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && ((github.event_name == 'workflow_dispatch' && inputs.gui) || (github.event_name == 'merge_group' && needs.queue-scope.outputs.gui == 'true') || github.event_name == 'schedule') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+      classes: ${{ steps.scope.outputs.classes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          GUI_FULL: ${{ inputs.gui_full && 'true' || 'false' }}
+        run: |
+          set -eu
+          classes=full
+          run=true
+          if [ "$EVENT" = schedule ]; then
+            # Nothing new on main since a green nightly, or another nightly at the same commit is still queued or
+            # running: do not take the GUI Mac for the same commit twice. An unreadable answer runs the nightly.
+            held=$(gh api "repos/$REPO/actions/workflows/desktop.yml/runs?event=schedule&head_sha=$GITHUB_SHA&per_page=50" \
+              --jq '[.workflow_runs[] | select((.id | tostring) != env.GITHUB_RUN_ID)
+                | select(.conclusion == "success" or .status != "completed")] | length') || held=0
+            [ "$held" = 0 ] || { run=false; echo "a nightly at $GITHUB_SHA already passed or is still running"; }
+          elif [ "$EVENT" = workflow_dispatch ] && [ "$GUI_FULL" != true ] && [[ $REF == refs/heads/* ]] \
+            && [ "$REF" != refs/heads/main ] && [[ $REF != refs/heads/release* ]]; then
+            changed="$RUNNER_TEMP/d169-gui-changed.txt"
+            if git fetch -q --no-tags origin main && base=$(git merge-base FETCH_HEAD HEAD) \
+              && git diff --no-renames --name-only "$base" HEAD > "$changed"; then
+              # Any selector failure falls back to the full share.
+              classes=$(python3 desktop/native/tools/ci/gui_test_selection.py select --changed "$changed") || classes=full
+            else
+              echo "no merge base with main: full GUI share"
+            fi
+          fi
+          [[ $classes =~ ^(full|none|[A-Za-z_][A-Za-z0-9_]*(,[A-Za-z_][A-Za-z0-9_]*)*)$ ]] || classes=full
+          echo "run=$run" >> "$GITHUB_OUTPUT"; echo "classes=$classes" >> "$GITHUB_OUTPUT"
+          echo "GUI legs: run=$run, selection: $classes" | tee -a "$GITHUB_STEP_SUMMARY"
+
   native:
     name: native (${{ matrix.os }})
     # The GUI-native job occupies the ONE GUI test machine (runner label modelplan-mac-gui), and GitHub
     # schedules that machine FIFO with everything else, so urgent runs (owner test builds, ledger fixes)
-    # waited behind routine ones. It now runs ONLY when this workflow is dispatched with gui=true (the
-    # coordinator's ci-dispatch sends at most one such run at a time, highest priority first) or on a
-    # non-draft PR that carries the gui-ci label; pushes and ordinary pull_request events skip it.
-    # native-headless and the hosted app-smoke job still cover every push and ready PR head.
-    if: ${{ (!inputs.mac_ci_probe && ((github.event_name == 'workflow_dispatch' && inputs.gui) || (github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'gui-ci')))) && !(inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    # waited behind routine ones. When it runs is decided by gui-scope above. pull_request events never
+    # start a GUI leg; the draft clause is redundant and kept for scripts/workflow-policy.mjs.
+    needs: gui-scope
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && !(inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
     strategy:
       fail-fast: false
       matrix:
         os:
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@01340deab2a433e748ac1d1c13bde553bde7065c
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8dde3641516fad80bd75f924616b0472777a2f0c
     with:
       task: native
       os: ${{ matrix.os }}
+      gui_classes: ${{ needs.gui-scope.outputs.classes }}
 
   native-hosted:
     name: native-hosted (${{ matrix.os }})
     # The GUI leg minus the ownerGui classes on hosted macos-15 (owner D62, 11-08), which has a real WindowServer
     # session, so several PRs' GUI legs run in parallel instead of queueing for the one GUI Mac. Selected by
     # MAC_CI_GUI_POOL=hosted or a gui_pool=hosted dispatch; same triggers as the job above.
-    if: ${{ (!inputs.mac_ci_probe && ((github.event_name == 'workflow_dispatch' && inputs.gui) || (github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'gui-ci')))) && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    needs: gui-scope
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
     strategy:
       fail-fast: false
       matrix:
         os:
         - macos-15
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@01340deab2a433e748ac1d1c13bde553bde7065c
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8dde3641516fad80bd75f924616b0472777a2f0c
     with:
       task: native-hosted-gui
       os: ${{ matrix.os }}
+      gui_classes: ${{ needs.gui-scope.outputs.classes }}
 
   native-owner-gui:
     name: native-owner-gui (macos-latest)
     # The ownerGui classes of native-test-partition.json (they cannot finish on a hosted Mac) on the owner's GUI Mac,
     # paired with native-hosted above: together they are exactly the GUI leg.
-    if: ${{ (!inputs.mac_ci_probe && ((github.event_name == 'workflow_dispatch' && inputs.gui) || (github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'gui-ci')))) && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@01340deab2a433e748ac1d1c13bde553bde7065c
+    needs: gui-scope
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8dde3641516fad80bd75f924616b0472777a2f0c
     with:
       task: native-owner-gui
       os: macos-latest
+      gui_classes: ${{ needs.gui-scope.outputs.classes }}
 
   native-headless:
     name: native-headless (macos-latest)
     needs: queue-scope
-    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@01340deab2a433e748ac1d1c13bde553bde7065c
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && github.event_name != 'schedule' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8dde3641516fad80bd75f924616b0472777a2f0c
     with:
       task: native-headless
       os: macos-latest
 
   runner-probe:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mac_ci_probe && github.actor_id == '11829005' }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@01340deab2a433e748ac1d1c13bde553bde7065c
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8dde3641516fad80bd75f924616b0472777a2f0c
     with:
       task: ${{ inputs.mac_ci_probe_mode == 'gui' && 'gui-probe' || 'probe' }}
       os: macos-latest
