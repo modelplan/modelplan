@@ -216,6 +216,7 @@ struct StatusNoticePresentation {
             if self.composition.provider.dockContent.status == .cleared { self.unavailableMemberRefreshes.removeAll() }
             self.updateMemberRefreshCapability()
             self.updateForecastProducerCapability()
+            self.updateReaderKeyCapability()
             self.updateSettingsContext(); self.renderMenu(); self.console?.render()
             self.revealPendingWidgetIfReadable()
             #if MODELPLAN_U6_DRIVE
@@ -242,6 +243,24 @@ struct StatusNoticePresentation {
             let supported = await self.composition.client.supportsCapability("memberRefreshV1")
             guard !self.terminating, self.composition.client.isCurrent(delivery), self.memberRefreshAdapter == nil else { return }
             if supported { self.memberRefreshAdapter = AppServerMemberRefreshAdapter(client: self.composition.client, store: self.composition.store) }
+        }
+    }
+    /// D90: the manual key area shows only while the connected engine negotiated `reader_key`.
+    private var readerKeyBackend: AppServerReaderKeyBackend?
+    private func updateReaderKeyCapability() {
+        guard let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery) else {
+            if readerKeyBackend != nil { readerKeyBackend = nil; scopeBinding.entry.readerKeys = nil }
+            return
+        }
+        guard readerKeyBackend == nil else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let supported = await self.composition.client.supportsCapability("reader_key")
+            guard supported, !self.terminating, self.composition.client.isCurrent(delivery), self.readerKeyBackend == nil else { return }
+            let binding = self.scopeBinding
+            let backend = AppServerReaderKeyBackend(client: self.composition.client, store: self.composition.store, allow: { scope in await binding.allow(scope: scope) })
+            self.readerKeyBackend = backend
+            binding.entry.readerKeys = backend
         }
     }
     /// SET-9-29: capabilities are fixed per engine session, so each session asks once. The
@@ -433,7 +452,21 @@ struct StatusNoticePresentation {
         context.capabilities.loginNotInApplications = loginServiceAdapter?.observedNotInApplications ?? false
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
-        composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
+        // D87 slice 9: the Keychain card still asks for Keychain access; any other cause opens its Subscriptions row.
+        composition.dock.cardActionRequested = { [weak self] id in
+            guard let self else { return }
+            let vendor = self.settings.editor.context.subscriptions.first { $0.id == id }?.vendor
+            if self.scopeConsentEntry.controller.needsKeychainAccess, vendor == nil || vendor == "claude" {
+                Task { await self.scopeConsentEntry.controller.allowKeychain() }
+            } else {
+                Task {
+                    await self.settingsHost.present(paneID: "subscriptions", origin: .userInitiated)
+                    self.scopeConsentEntry.view.revealSubscriptionRow(id)
+                }
+            }
+        }
+        // D87 slice 6: a row's "Retry" asks the engine for one foreground refresh, the same request as the menu's.
+        scopeConsentEntry.view.rowActions.retry = { [weak self] _ in Task { await self?.composition.refresh() } }
         context.loginServiceObserved = true
         context.notificationServiceObserved = true
         // The choice stays visible; a service macOS refuses gets an honest reason and the fallback row.

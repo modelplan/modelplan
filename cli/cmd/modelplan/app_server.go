@@ -100,6 +100,9 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		return nil, func() {}, err
 	}
 	handlers["publication/get"] = publication
+	for method, h := range appserver.ReaderKeyHandlers(appserver.ReaderKeyConfig{Dir: st.Dir, ReadOnly: options.ReadOnly, Offline: options.Offline}) {
+		handlers[method] = h
+	}
 	var importer *appserver.ImportController
 	if !options.ReadOnly {
 		importer = appserver.NewImportController(importEngine{st: st})

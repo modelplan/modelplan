@@ -31,6 +31,7 @@ func fetchOpenCodeGo(ctx context.Context, c *http.Client, region, key string, no
 	}
 	if key = strings.TrimSpace(key); key == "" {
 		e.Error = "no API key in the environment"
+		e.ErrorCode = "no_key"
 		return e
 	}
 	var r map[string]any

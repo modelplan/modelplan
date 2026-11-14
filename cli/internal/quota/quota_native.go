@@ -326,7 +326,14 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		} else if n.Collect != nil {
 			e = n.Collect(readerCtx, nativeClient, p.Cache, now)
 		} else {
+			// D230: for OpenCode Go only OPENCODE_API_KEY is a detected key; OpenCode's own saved
+			// login is checked for existence by detection and never read here.
 			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
+		}
+		if mk, ok := loadManualKey(p.Cache, x.Provider); ok && e.Status != "ok" && manualKeyFallback(ReaderErrorCode(e.ErrorCode)) {
+			// D90 / SET-9-41: auto-detect first; a key the user entered is used only when no detected
+			// source gave a usable key. It goes only to the compiled official host of its region.
+			e, key = fetchManualKey(ctx, nativeClient, x.Provider, mk, now), mk.Key
 		}
 		if e.Status == "ok" {
 			e.ErrorCode = ""

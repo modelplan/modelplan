@@ -36,6 +36,24 @@ import ModelPlanWire
     private var observer: UUID?
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
+    private var keySection: ReaderKeySection?
+    /// D87 slice 6/7: the Subscriptions rows. Nil context keeps the plain per-tool list (first run, direct drives).
+    private var rowsContext: SubscriptionRowsContext?
+    private var rowsSignature: String?
+    private var rowsView: SubscriptionRowsView?
+    private var notInstalledExpanded = false
+    private var fixNotices: [String: SettingsText] = [:]
+    private var highlightedRowID: String?
+    /// Key-only tools whose "Add key" fix was pressed: their key entry stays open on the row.
+    private var keyEntryOpen: Set<String> = []
+    /// Providers whose entry is already on a row in the current render (one view can sit in one place).
+    private var mountedKeyEntries: Set<ReaderKeyProvider> = []
+    /// What the app can do for a row: visibility, order and the two fixes that need the engine.
+    public var rowActions = SubscriptionRowActions()
+    /// D90: the optional manual key area. Set by the app when the engine supports it.
+    public var readerKeys: ReaderKeyBackend? {
+        didSet { if keySection != nil { keySection?.dismiss(); keySection = nil }; render() }
+    }
     public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
                 buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false,
                 markImage: (@MainActor (String) -> NSImage?)? = nil, compactTools: Bool = false) {
@@ -48,6 +66,22 @@ import ModelPlanWire
     }
     /// The app supplies its checked marks after the view exists; draw them as soon as they arrive.
     public func setMarkImage(_ value: (@MainActor (String) -> NSImage?)?) { markImage = value; render() }
+    /// The host pushes the subscriptions, their shared order and hidden set whenever they change.
+    public func setSubscriptionRows(_ context: SubscriptionRowsContext?) {
+        guard compactTools, context?.signature != rowsSignature else { return }
+        rowsSignature = context?.signature; rowsContext = context; render()
+    }
+    /// D87 slice 9: a widget card's reason links here. Mark the subscription's row for a few seconds and scroll to it.
+    public func revealSubscriptionRow(_ id: String) {
+        guard compactTools else { return }
+        highlightedRowID = id; render()
+        layoutSubtreeIfNeeded(); rowsView?.scrollToRow(id)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self, self.highlightedRowID == id else { return }
+            self.highlightedRowID = nil; self.render()
+        }
+    }
     /// Show or hide the per-path rows of the compact Settings page.
     public func setPathDetailsExpanded(_ expanded: Bool) {
         guard pathDetailsExpanded != expanded else { return }
@@ -56,7 +90,7 @@ import ModelPlanWire
     /// Follow the shared Settings editor language without changing any draft.
     public func apply(language: SettingsLanguage) {
         guard self.language != language else { return }
-        self.language = language; render()
+        self.language = language; keySection?.apply(language: language); render()
     }
     /// Retire this presentation before detaching it from the accepted-event sink.
     public func retirePresentation() {
@@ -66,6 +100,8 @@ import ModelPlanWire
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
         }
         buttons = []
+        rowsView?.retire(); rowsView = nil
+        keySection?.dismiss()
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
@@ -358,13 +394,42 @@ import ModelPlanWire
             line(SettingsText("Not installed. ModelPlan reads it once it is installed on this Mac and you turn it on here.",
                               "未安装。安装到这台 Mac 后，可在这里打开，ModelPlan 才会读取。"), id: prefix + "status." + id, color: .systemOrange)
         }
+        // D90: in Settings a detected key-only tool carries the optional key entry on its own row.
+        let keyEntry: ReaderKeyEntryView? = {
+            guard settings, tool.detected, let provider = ReaderKeyProvider(rawValue: id), let section = readerKeySection() else { return nil }
+            return section.inlineEntry(for: provider)
+        }()
+        var keyMissingShown = false
         if let block = tool.block {
             line(Self.blockLine(block, tool: id), id: prefix + "status." + id, color: .systemOrange)
-        } else if tool.detected, tool.keyMissing, let missing = Self.keyMissingLine(tool) {
-            line(missing, id: prefix + "status." + id, color: .systemOrange)
+        } else if tool.detected, tool.keyMissing, let missing = Self.keyMissingLine(tool, keyEntry: keyEntry != nil) {
+            line(missing, id: prefix + "status." + id, color: .systemOrange); keyMissingShown = true
         } else if tool.detected, !tool.canRead {
             // Only browser-session or unrecognised paths: never describe a read that will not happen.
             line(Self.unreadableLine, id: prefix + "status." + id)
+        }
+        if let provider = ReaderKeyProvider(rawValue: id), tool.detected {
+            if let keyEntry {
+                // D90 / SET-9-41: a detected key-only tool that is not being read says why and offers the one
+                // optional key entry right here; detected sign-ins and environment keys are still used first.
+                // A saved key with reading off is not "no key found" (GLMREV Q2): say reading is off instead.
+                if !controller.isToolReading(id) {
+                    if keyEntry.entry.status.present {
+                        line(Self.keySavedReadingOffLine(id), id: prefix + "nokey." + id, color: .systemOrange)
+                    } else if !keyMissingShown {
+                        line(Self.noKeyLine(provider), id: prefix + "nokey." + id, color: .systemOrange)
+                    }
+                }
+                column.addArrangedSubview(keyEntry)
+            } else if !settings {
+                line(Self.firstRunKeyLine, id: prefix + "keylater." + id)
+            }
+        }
+        // D87 slice 8: what the tool still needs, from the same table as the Subscriptions rows.
+        if !settings, tool.detected, tool.block == nil {
+            let pre = SubscriptionRowModel.prerequisite(tool: tool, name: Self.toolName(id).english,
+                                                        facts: controller.toolRowFacts[id], keyEntryAvailable: readerKeys != nil)
+            line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
         }
         let row = NSStackView(views: [box, mark, column]); row.orientation = .horizontal; row.alignment = .top; row.spacing = 10
         row.setAccessibilityIdentifier(prefix + "row." + id)
@@ -415,8 +480,17 @@ import ModelPlanWire
     /// #910-2: detection also counts the OpenCode Go sign-in OpenCode saved itself, but the reader takes the key
     /// only from OPENCODE_API_KEY (D230: the saved key is checked for existence, never read). So a found
     /// subscription with the engine's key_missing row still says why no quota is shown.
-    static func keyMissingLine(_ tool: FirstRunTool) -> SettingsText? {
+    /// D90: with the optional key entry on the row (Settings), the line also points to it.
+    static func keyMissingLine(_ tool: FirstRunTool, keyEntry: Bool = false) -> SettingsText? {
         guard tool.tool == "opencodego" else { return nil }
+        if keyEntry {
+            if hasOpenCodeGoSubscription(tool) {
+                return .init("An OpenCode Go sign-in was found, but ModelPlan does not read it, so no OpenCode Go quota is shown. Set the key in OPENCODE_API_KEY, or add it below, to show it. OpenCode's local history is still read.",
+                             "找到了 OpenCode Go 登录，但 ModelPlan 不读取它，因此不显示 OpenCode Go 额度；把密钥设置到 OPENCODE_API_KEY 环境变量或在下面添加后才会显示。仍会读取 OpenCode 的本机历史记录。")
+            }
+            return .init("No OpenCode Go subscription key was found, so no OpenCode Go quota is shown. Add a key below to show it. OpenCode's local history is still read.",
+                         "没有找到 OpenCode Go 订阅密钥，因此不显示 OpenCode Go 额度；在下面添加密钥后才会显示。仍会读取 OpenCode 的本机历史记录。")
+        }
         if hasOpenCodeGoSubscription(tool) {
             return .init("An OpenCode Go sign-in was found, but ModelPlan does not read it yet, so no OpenCode Go quota is shown. Set the key in OPENCODE_API_KEY to show it. OpenCode's local history is still read.",
                          "找到了 OpenCode Go 登录，但 ModelPlan 暂不读取它，因此不显示 OpenCode Go 额度；把密钥设置到 OPENCODE_API_KEY 环境变量后才会显示。仍会读取 OpenCode 的本机历史记录。")
@@ -467,6 +541,23 @@ import ModelPlanWire
         let keychain = tool.promptsKeychain ? mayAskKeychain : noKeychain
         return .init(base.english + keychain.english, base.chinese + keychain.chinese)
     }
+    /// Honest status for a detected key-only tool that is not being read: no key was found.
+    static func noKeyLine(_ provider: ReaderKeyProvider) -> SettingsText {
+        switch provider {
+        case .zai: return .init("No GLM key found, so it is not read yet. Sign in to ZCode, or add a key below.",
+                                "没有找到 GLM 密钥，所以暂未读取。请在 ZCode 里登录，或在下面添加密钥。")
+        case .opencodego: return .init("No OpenCode Go key found, so it is not read yet. Set OPENCODE_API_KEY, or add a key below.",
+                                       "没有找到 OpenCode Go 密钥，所以暂未读取。请设置 OPENCODE_API_KEY 环境变量，或在下面添加密钥。")
+        }
+    }
+    /// A key is saved but the tool's reading is off (switched off, or the grant after Save failed).
+    static func keySavedReadingOffLine(_ tool: String) -> SettingsText {
+        let name = toolName(tool)
+        return .init("A key is saved, but reading " + name.english + " is off. Turn it on to read it.",
+                     "已保存密钥，但 " + name.chinese + " 的读取已关闭。打开后才会读取。")
+    }
+    static let firstRunKeyLine = SettingsText("If no key is found on this Mac, you can add one later in Settings › Subscriptions.",
+                                              "如果本机上没有找到密钥，之后可在 设置 › 订阅 中添加。")
     static func blockLine(_ block: ScopeToolBlock, tool: String) -> SettingsText {
         let name = toolName(tool)
         switch block {
@@ -487,9 +578,12 @@ import ModelPlanWire
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
         }
         buttons = []
+        rowsView?.retire(); rowsView = nil
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         wrappingLabels = []
         if firstRun { renderFirstRunChooser(); return }
+        let rowsMode = compactTools && rowsContext != nil
+        if rowsMode, let context = rowsContext { renderSubscriptionRows(context); gap() }
         label(.init("Reading permissions", "读取权限"), heading: true)
         label(Self.activityDisclosure, secondary: true)
         if controller.needsKeychainAccess {
@@ -537,6 +631,13 @@ import ModelPlanWire
                 }
             }
         }
+        if !firstRun, !compactTools, let backend = readerKeys {
+            gap()
+            let section = keySection ?? ReaderKeySection(backend: backend, language: language)
+            keySection = section
+            addArrangedSubview(section)
+            section.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        }
         gap()
         guard let facts = controller.facts else {
             label(.init("Permission details are not ready. Check the engine connection.", "权限信息尚未就绪，请检查引擎连接。")); return
@@ -553,11 +654,13 @@ import ModelPlanWire
             label(.init("No saved or detected reading paths are available. Choose Check current permissions after connecting the engine.", "暂无已保存或已检测的读取路径，连接引擎后可点“检查当前权限”。"))
         }
         if compactTools {
-            for (index, tool) in controller.settingsTools.enumerated() {
-                if index > 0 { separator() }
-                toolRow(tool, settings: true)
+            if !rowsMode {
+                for (index, tool) in controller.settingsTools.enumerated() {
+                    if index > 0 { separator() }
+                    toolRow(tool, settings: true)
+                }
+                gap()
             }
-            gap()
             if !facts.scopes.isEmpty { line([synchronousButton(pathDetailsExpanded ? .init("Hide reading paths", "收起读取路径") : .init("Show reading paths and saved permissions", "展开读取路径与已保存权限"),
                                     id: "scope.details.toggle") { [weak self] in
                 guard let self else { return }; self.setPathDetailsExpanded(!self.pathDetailsExpanded)
@@ -617,6 +720,10 @@ import ModelPlanWire
             line([synchronousButton(.init("Select all available paths", "全选可授权路径"), id: "scope.selectAll", enabled: controller.canMutate) { [weak self] in self?.controller.selectAll() },
                   synchronousButton(.init("Allow selected paths…", "授权所选路径…"), id: "scope.allowSelected", enabled: controller.canRequestAllow) { [weak self] in self?.controller.requestAllow() }])
         }
+        if !rowsMode { renderConfirmation(facts) }
+    }
+    /// The existing confirmation for a pending change (Add, a tool choice, revoke, forget).
+    private func renderConfirmation(_ facts: WireConsentFacts) {
         if case .confirmation(let confirmation) = controller.phase {
             let ids = Set(confirmation.intent.allowIDs + confirmation.intent.denyIDs + confirmation.intent.forgetIDs)
             if compactTools, case .choose = confirmation.intent.mutation {
@@ -635,5 +742,138 @@ import ModelPlanWire
             line([button(.init("Confirm", "确认"), id: "scope.confirm") { [weak self] in await self?.controller.confirm(confirmation.id) },
                   synchronousButton(.init("Cancel", "取消"), id: "scope.cancel") { [weak self] in self?.controller.cancelConfirmation() }])
         }
+    }
+    /// The one optional key area (created once and reused, so a re-render never clears what is being typed).
+    private func readerKeySection() -> ReaderKeySection? {
+        guard let backend = readerKeys else { return nil }
+        let section = keySection ?? ReaderKeySection(backend: backend, language: language)
+        section.onPresenceChange = { [weak self] in self?.render() }
+        keySection = section
+        return section
+    }
+    /// D90 / SET-9-41 in the rows layout (macrev2-804-1): a key-only tool's row carries its key entry once
+    /// "Add key" was pressed, or while a key is saved (so Test and Remove stay reachable). One row per provider.
+    private func rowKeyEntry(_ row: SubscriptionRow) -> NSView? {
+        guard row.section != .notInstalled, let provider = ReaderKeyProvider(rawValue: row.tool), !mountedKeyEntries.contains(provider),
+              let section = readerKeySection() else { return nil }
+        let entry = section.inlineEntry(for: provider)
+        guard keyEntryOpen.contains(row.tool) || entry.entry.status.present else { return nil }
+        mountedKeyEntries.insert(provider)
+        return entry
+    }
+    /// D87 slice 6/7: build the row model from the host's context and the controller's accepted facts, and show it.
+    private func renderSubscriptionRows(_ context: SubscriptionRowsContext) {
+        if let facts = controller.facts { renderConfirmation(facts) }
+        let model = SubscriptionRowModel.build(
+            subscriptions: context.subscriptions, orderedIDs: context.orderedIDs, hiddenIDs: context.hiddenIDs,
+            tools: controller.settingsTools, facts: controller.toolRowFacts, isReading: { [controller] in controller.isToolReading($0) },
+            keyEntryAvailable: readerKeys != nil, name: { Self.toolName($0) })
+        mountedKeyEntries = []
+        var handlers = SubscriptionRowsView.Handlers()
+        handlers.setVisible = { [weak self] id, visible in self?.rowActions.setVisible?(id, visible) }
+        handlers.move = { [weak self] id, delta in self?.rowActions.move?(id, delta) }
+        handlers.resetOrder = { [weak self] in self?.rowActions.resetOrder?() }
+        handlers.fix = { [weak self] row in self?.performFix(row) }
+        handlers.add = { [weak self] tool in _ = self?.controller.requestToolChoice(tool, on: true) }
+        handlers.toggleNotInstalled = { [weak self] in
+            guard let self else { return }; self.notInstalledExpanded.toggle(); self.render()
+        }
+        let view = SubscriptionRowsView(.init(
+            model: model, language: language, mark: { [weak self] in self?.markView($0) ?? NSView() }, toolName: { Self.toolName($0) },
+            lockedReason: { id in context.subscriptions.first { $0.id == id }?.persistenceDisabledReason },
+            canMutate: controller.canMutate, canSave: context.canSave, canResetOrder: context.canResetOrder && rowActions.resetOrder != nil,
+            fixAvailable: { [weak self] row in self?.canPerformFix(row) ?? false },
+            notInstalledExpanded: notInstalledExpanded, notices: fixNotices, handlers: handlers, highlightedID: highlightedRowID,
+            keyEntry: { [weak self] row in self?.rowKeyEntry(row) }))
+        rowsView = view
+        addArrangedSubview(view)
+        view.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+    }
+    private func canPerformFix(_ row: SubscriptionRow) -> Bool {
+        guard let fix = row.fix else { return false }
+        switch fix.target {
+        case .allowKeychain: return controller.canMutate
+        case .retry: return rowActions.retry != nil
+        case .addKey: return readerKeys != nil && ReaderKeyProvider(rawValue: row.tool) != nil
+        case .installTool, .installNode, .explain: return SubscriptionFixLauncher.url(for: fix.target, tool: row.tool) != nil
+        case .openTool: return true
+        case .openSettings: return true
+        }
+    }
+    /// One press, one fix. Every target is either handled here, by the host, or shown disabled.
+    private func performFix(_ row: SubscriptionRow) {
+        guard let fix = row.fix, canPerformFix(row) else { return }
+        fixNotices[row.id] = nil
+        switch fix.target {
+        case .allowKeychain: Task { await controller.allowKeychain() }
+        case .retry: rowActions.retry?(row.tool)
+        case .addKey:
+            // Open the entry on this row, then put the cursor in its field.
+            keyEntryOpen.insert(row.tool); render()
+            if let provider = ReaderKeyProvider(rawValue: row.tool), let entry = readerKeySection()?.inlineEntry(for: provider) { entry.focusField() }
+        case .installTool, .installNode, .explain:
+            if let url = SubscriptionFixLauncher.url(for: fix.target, tool: row.tool) { NSWorkspace.shared.open(url) }
+        case .openTool:
+            if !SubscriptionFixLauncher.openApplication(for: row.tool) {
+                fixNotices[row.id] = .init("Could not find the app on this Mac.", "在这台 Mac 上找不到这个应用。"); render()
+            }
+        case .openSettings: pathDetailsExpanded = true; render()
+        }
+    }
+}
+
+/// The subscriptions, their shared order and the hidden set, as the Settings window knows them.
+public struct SubscriptionRowsContext {
+    public let subscriptions: [SettingsSubscription]
+    public let orderedIDs: [String]
+    public let hiddenIDs: Set<String>
+    /// False while another change is still saving.
+    public let canSave: Bool
+    /// A saved order exists, so "Reset order" has something to do.
+    public let canResetOrder: Bool
+    public init(subscriptions: [SettingsSubscription], orderedIDs: [String], hiddenIDs: Set<String>, canSave: Bool, canResetOrder: Bool = false) {
+        self.subscriptions = subscriptions; self.orderedIDs = orderedIDs; self.hiddenIDs = hiddenIDs; self.canSave = canSave; self.canResetOrder = canResetOrder
+    }
+    var signature: String {
+        subscriptions.map { [$0.id, $0.name.english, $0.plan, $0.vendor, $0.tool, $0.source.rawValue, $0.causeCode ?? "", $0.isUnstable ? "u" : "s"].joined(separator: "\u{1F}") }
+            .joined(separator: "\u{1E}") + "|" + orderedIDs.joined(separator: ",") + "|" + hiddenIDs.sorted().joined(separator: ",") + "|" + (canSave ? "1" : "0") + (canResetOrder ? "r" : "")
+    }
+}
+
+/// What the host does for the rows. A nil closure shows that action disabled.
+public struct SubscriptionRowActions {
+    public var setVisible: (@MainActor (String, Bool) -> Void)?
+    /// A subscription id and -1 (up) or +1 (down).
+    public var move: (@MainActor (String, Int) -> Void)?
+    public var retry: (@MainActor (String) -> Void)?
+    public var resetOrder: (@MainActor () -> Void)?
+    public init() {}
+}
+
+/// Opening a tool or a help page for a fix action. Nothing here reads or writes a credential.
+@MainActor enum SubscriptionFixLauncher {
+    static func url(for target: RowFixTarget, tool: String) -> URL? {
+        switch target {
+        case .installNode: return URL(string: "https://nodejs.org/en/download")
+        case .installTool:
+            switch tool {
+            case "kiro": return URL(string: "https://kiro.dev/cli/")
+            case "codex": return URL(string: "https://developers.openai.com/codex/cli")
+            default: return nil
+            }
+        case .explain: return tool == "kiro" ? URL(string: "https://kiro.dev/docs/cli/") : SettingsAbout.consentHelpURL
+        default: return nil
+        }
+    }
+    private static let appNames = ["zai": "ZCode", "opencodego": "OpenCode", "opencode": "OpenCode", "claude": "Claude", "codex": "Codex",
+                                   "cursor": "Cursor", "kimi": "Kimi", "grok": "Grok", "gemini": "Gemini"]
+    static func openApplication(for tool: String) -> Bool {
+        guard let name = appNames[tool] else { return false }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        for folder in ["/Applications", home + "/Applications"] {
+            let path = folder + "/" + name + ".app"
+            if FileManager.default.fileExists(atPath: path) { return NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+        }
+        return false
     }
 }

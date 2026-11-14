@@ -14,6 +14,7 @@ private actor G345Engine: EngineClient {
     let store: EngineStore, facts: WireConsentFacts?, rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "g345", floor: .init(storeEpoch: "g345", generation: 1), revision: 1)
     var grants: [WireConsentGrantParams] = []
+    var refreshes = 0
     /// What the engine shows once a tool is allowed: the rows then include that tool (nil: rows never change).
     let rowsAfterAllow: WireRowsSnapshot?
     init(store: EngineStore, facts: WireConsentFacts?, rows: WireRowsSnapshot, rowsAfterAllow: WireRowsSnapshot? = nil) {
@@ -25,6 +26,7 @@ private actor G345Engine: EngineClient {
         return context
     }
     func recorded() -> [WireConsentGrantParams] { grants }
+    func refreshCount() -> Int { refreshes }
     func retry() async throws -> EngineDeliveryContext { try await start() }
     func stop() async {}
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion {
@@ -39,7 +41,7 @@ private actor G345Engine: EngineClient {
         }
         return .init(requestID: .string(request.requestId))
     }
-    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { refreshes += 1; throw EngineClientError.unsupportedCapability }
     func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
@@ -294,6 +296,108 @@ private actor G345Engine: EngineClient {
         XCTAssertEqual(grants.first?.allow, ["cursor.account_usage.saved_login", "cursor.local_history"])
         for _ in 0..<300 where app.composition.provider.dockContent.dockRows.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(app.composition.provider.dockContent.dockRows.map(\.id), ["codex", "cursor"], "the tool appears in the Dock without a relaunch")
+    }
+
+    /// D87 slice 8: every detected tool that can be read shows one prerequisite line; a tool that is not read says why instead.
+    func testFirstRunShowsOnePrerequisiteLinePerReadableTool() async throws {
+        let (app, _) = try await launch(locale: "en-US")
+        let window = try await firstRun(app)
+        for tool in ["codex", "cursor"] {
+            XCTAssertEqual(try text("scope.firstRun.prereq." + tool, in: window), "Ready: nothing else is needed.", tool)
+        }
+        for tool in ["claude", "zai"] {
+            XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.firstRun.prereq." + tool },
+                         "\(tool) is blocked: its status line already says why")
+        }
+    }
+
+    /// D87 slices 6 and 7 through the real entry: one row per subscription with its status line, one fix action, a
+    /// display-only visibility switch and up/down; detected tools that are not added get an Add button that asks
+    /// for the existing confirmation and sends the existing grant; a collapsed list shows what is not installed.
+    func testSubscriptionRowsAddDetectedToolsAndKeepVisibilityDisplayOnly() async throws {
+        let (app, engine) = try await launch(locale: "en-US")
+        let settings = app.scopeConsentEntry.view, controller = app.scopeConsentEntry.controller
+        settings.apply(language: .english)
+        var visibility: [(String, Bool)] = [], moves: [(String, Int)] = [], resets = 0
+        settings.rowActions.resetOrder = { resets += 1 }
+        settings.rowActions.setVisible = { id, visible in visibility.append((id, visible)) }
+        settings.rowActions.move = { id, delta in moves.append((id, delta)) }
+        settings.setSubscriptionRows(SubscriptionRowsContext(
+            subscriptions: [SettingsSubscription(id: "codex", name: .init("Codex", "Codex"), plan: "Pro", vendor: "codex", source: .fresh),
+                            SettingsSubscription(id: "grok1", name: .init("Grok", "Grok"), vendor: "grok", source: .unavailable, causeCode: "timeout")],
+            orderedIDs: ["codex", "grok1"], hiddenIDs: ["grok1"], canSave: true, canResetOrder: true))
+        func button(_ id: String) throws -> NSButton { try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == id } as? NSButton, "Missing \(id)") }
+        func label(_ id: String) throws -> String { try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == id } as? NSTextField, "Missing \(id)").stringValue }
+        XCTAssertEqual(try label("subscriptions.status.codex"), "Reading works")
+        XCTAssertEqual(try label("subscriptions.plan.codex"), "Pro")
+        XCTAssertEqual(try label("subscriptions.status.grok1"), "The reading timed out; it will retry on its own", "one reason from the shared table")
+        XCTAssertEqual(try button("subscriptions.fix.grok1").title, "Retry now", "and one fix action")
+        XCTAssertNil(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.fix.codex" }, "a working row has no fix")
+        // Visibility is a display switch; order is up and down over the shared order.
+        XCTAssertEqual(try button("subscriptions.visible.codex").state, .on); XCTAssertEqual(try button("subscriptions.visible.grok1").state, .off)
+        XCTAssertFalse(try button("subscriptions.up.codex").isEnabled); XCTAssertTrue(try button("subscriptions.down.codex").isEnabled)
+        XCTAssertTrue(try button("subscriptions.up.grok1").isEnabled); XCTAssertFalse(try button("subscriptions.down.grok1").isEnabled)
+        try button("subscriptions.visible.grok1").performClick(nil)
+        try button("subscriptions.down.codex").performClick(nil)
+        XCTAssertEqual(visibility.map { "\($0.0):\($0.1)" }, ["grok1:true"])
+        XCTAssertEqual(moves.map { "\($0.0):\($0.1)" }, ["codex:1"])
+        // D89: the grip sits next to up and down, and "Reset order" sits below the list.
+        for id in ["codex", "grok1"] { _ = try button("subscriptions.drag." + id) }
+        try button("subscriptions.resetOrder").performClick(nil)
+        XCTAssertEqual(resets, 1)
+        if case .idle = controller.phase {} else { XCTFail("visibility and order never ask for or change reading consent") }
+        let grantsBefore = await engine.recorded(); XCTAssertTrue(grantsBefore.isEmpty)
+        // Detected, not added: Cursor can be added; signed-out Claude Code and ZCode (account login) cannot yet.
+        XCTAssertTrue(try button("subscriptions.add.cursor").isEnabled)
+        XCTAssertFalse(try button("subscriptions.add.claude").isEnabled)
+        XCTAssertFalse(try button("subscriptions.add.zai").isEnabled)
+        XCTAssertEqual(try button("subscriptions.fix.claude").title, "Open Claude Code")
+        XCTAssertNil(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.add.codex" }, "an added subscription is not offered again")
+        // The supported tool this Mac does not have is collapsed until asked for.
+        XCTAssertNil(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.status.gemini" })
+        try button("subscriptions.notInstalled.toggle").performClick(nil)
+        XCTAssertEqual(try label("subscriptions.status.gemini"), "Not installed on this Mac")
+        XCTAssertNil(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.add.gemini" }, "no action on a tool that is not installed")
+        // Add is the existing consent: confirmation first, then the existing grant.
+        try button("subscriptions.add.cursor").performClick(nil)
+        guard case .confirmation(let confirmation) = controller.phase else { return XCTFail("Add asks to confirm") }
+        XCTAssertEqual(confirmation.intent.allowIDs, ["cursor.account_usage.saved_login", "cursor.local_history"])
+        XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "scope.confirm" }, "the confirmation is shown with the rows")
+        let notYetGranted = await engine.recorded(); XCTAssertTrue(notYetGranted.isEmpty)
+        await controller.confirm(confirmation.id)
+        let grants = await engine.recorded()
+        XCTAssertEqual(grants.first?.allow, ["cursor.account_usage.saved_login", "cursor.local_history"])
+    }
+
+    /// D89: a row's Retry reaches the engine as one refresh request, through the real entry.
+    func testRetryOnARowAsksTheEngineToRefresh() async throws {
+        let (app, engine) = try await launch(locale: "en-US")
+        let settings = app.scopeConsentEntry.view
+        settings.apply(language: .english)
+        settings.setSubscriptionRows(SubscriptionRowsContext(
+            subscriptions: [SettingsSubscription(id: "grok1", name: .init("Grok", "Grok"), vendor: "grok", source: .unavailable, causeCode: "timeout")],
+            orderedIDs: ["grok1"], hiddenIDs: [], canSave: true))
+        let retry = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.fix.grok1" } as? NSButton, "Retry is offered")
+        XCTAssertEqual(retry.title, "Retry now"); XCTAssertTrue(retry.isEnabled)
+        let before = await engine.refreshCount()
+        retry.performClick(nil)
+        var after = before
+        for _ in 0..<300 where after == before { try await Task.sleep(for: .milliseconds(10)); after = await engine.refreshCount() }
+        XCTAssertEqual(after, before + 1, "one press, one engine refresh")
+    }
+
+    /// D89: with no engine path setting, a missing Codex command shows a hint and the install page, never a path chooser.
+    func testMissingCodexShowsAnInstallHintNotAPathChooser() async throws {
+        let (app, _) = try await launch(locale: "en-US")
+        let settings = app.scopeConsentEntry.view
+        settings.apply(language: .english)
+        settings.setSubscriptionRows(SubscriptionRowsContext(
+            subscriptions: [SettingsSubscription(id: "codex", name: .init("Codex", "Codex"), vendor: "codex", source: .unavailable, causeCode: "not_found")],
+            orderedIDs: ["codex"], hiddenIDs: [], canSave: true))
+        let status = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.status.codex" } as? NSTextField)
+        XCTAssertEqual(status.stringValue, "Install the Codex CLI, or make sure Codex runs from a terminal")
+        let fix = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.fix.codex" } as? NSButton)
+        XCTAssertEqual(fix.title, "Open install page"); XCTAssertTrue(fix.isEnabled, "the link is live, not a disabled button")
     }
 
     func testFirstRunListsDetectedToolsAndDoneSendsTheChoices() async throws {

@@ -8,3 +8,7 @@ import "log/slog"
 func (CredentialResult) String() string       { return "CredentialResult{redacted}" }
 func (CredentialResult) GoString() string     { return "CredentialResult{redacted}" }
 func (CredentialResult) LogValue() slog.Value { return slog.StringValue("CredentialResult{redacted}") }
+
+func (ReaderKeyParams) String() string       { return "ReaderKeyParams{redacted}" }
+func (ReaderKeyParams) GoString() string     { return "ReaderKeyParams{redacted}" }
+func (ReaderKeyParams) LogValue() slog.Value { return slog.StringValue("ReaderKeyParams{redacted}") }
