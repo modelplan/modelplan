@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: f9d5bdfceac19b7a46a008efe4d8040950c8ffad6e835929c51ee9093ee9c2ba
+// Schema SHA-256: e95bb9a057403fcbc6d0d499f78fe4a8e022be9fc56ce412031a3969b5d062e1
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -328,7 +328,7 @@ export type WireExpiryState = {
 
 export type WireFailure = {
   readonly "at": string;
-  readonly "code": "ok" | "estimated" | "usage_not_reported" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+  readonly "code": "ok" | "estimated" | "usage_not_reported" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "no_plan" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
 };
 
 export type WireModelScope = {
@@ -372,7 +372,7 @@ export type WireProposedResetSource = {
 };
 
 export type WireReason = {
-  readonly "code": "ok" | "estimated" | "usage_not_reported" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+  readonly "code": "ok" | "estimated" | "usage_not_reported" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "no_plan" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
   readonly "text": WireText;
 };
 
@@ -2268,6 +2268,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "rpc_error",
           "closed",
           "region_refused",
+          "no_plan",
           "other",
           "readers_off",
           "no_consent",
@@ -2540,6 +2541,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "rpc_error",
           "closed",
           "region_refused",
+          "no_plan",
           "other",
           "readers_off",
           "no_consent",

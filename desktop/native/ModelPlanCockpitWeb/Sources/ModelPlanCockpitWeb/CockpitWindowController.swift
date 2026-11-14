@@ -942,7 +942,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size, memberOrder: value.memberOrder)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       // Audit A-6: only a shown cockpit goes to full opacity; a prewarmed page (warm-painting at alpha 0) stays hidden.
@@ -1060,7 +1060,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard closeTask == nil, let window, let (fit, frame) = placement() else { return }
     layout = fit
     appearance = .init(theme: CockpitDayPolicy.resolve(appearance.theme), locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size, memberOrder: appearance.memberOrder)
     if animated {
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0.25; context.timingFunction = CAMediaTimingFunction(name: .easeOut)
