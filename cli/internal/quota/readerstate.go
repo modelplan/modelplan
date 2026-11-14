@@ -93,6 +93,9 @@ type readerEntry struct {
 	NextStep            string         `json:"nextStep,omitempty"`
 	// ReportedModels (D99): model slugs the tool lists for this account, read with the quota read; slugs only.
 	ReportedModels []string `json:"reportedModels,omitempty"`
+	// LoginStamp: the tool's sign-in file (size and change time, never its content) when this
+	// profile was last read, so a new sign-in can end a failure back-off (G3-103).
+	LoginStamp string `json:"loginStamp,omitempty"`
 }
 type readerState struct {
 	// Kept separately so reserving an attempt does not change legacy Sources
@@ -109,7 +112,11 @@ type readerState struct {
 	// LocalBackoff: the latest read stopped at the credential, before any provider request.
 	// A later credential outcome overlays the entry, so this is kept apart from it, and a
 	// cache without it keeps its deadline: only recorded proof waives a back-off.
-	LocalBackoff bool          `json:"localBackoff,omitempty"`
+	LocalBackoff bool `json:"localBackoff,omitempty"`
+	// EarlyFloorAt (G3-103): the earliest an early re-read after a new sign-in or grant may go,
+	// recorded with each failure: the five-minute floor and any provider Retry-After. Only the
+	// failure back-off is shortened. A cache without it keeps its deadline.
+	EarlyFloorAt time.Time     `json:"earlyFloorAt,omitempty"`
 	NextProfile  int           `json:"nextProfile"`
 	Entries      []readerEntry `json:"entries"`
 }
@@ -215,7 +222,121 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 		return false
 	}
 	s, err := loadReaderState(p.Cache, provider)
-	return err == nil && !now.Before(s.NextAttemptAt) && readerAttemptDue(p.Cache, provider, now) && nativeReaders[provider].budgetDue(p.Cache, now) && xSubscriptionDue(p.Cache, provider, now)
+	if err != nil {
+		return false
+	}
+	g, _ := readerAllowed(p, provider)
+	early := s.retryEarly(p, provider, g, now)
+	return (early || !now.Before(s.NextAttemptAt) && readerAttemptDue(p.Cache, provider, now)) && nativeReaders[provider].budgetDue(p.Cache, now) && xSubscriptionDue(p.Cache, provider, now)
+}
+
+// retryEarly (G3-103): after failed reads the back-off grows to an hour, and a user who signs in
+// to the tool again or turns its reading back on would wait that long. Either change allows
+// the next read at the provider's five-minute floor. A rate limit, a Keychain outcome or a busy
+// reader keeps its back-off, and the floor still holds.
+func (s *readerState) retryEarly(p Paths, provider string, g ReaderGrant, now time.Time) bool {
+	next, ok := s.earlyNext(p.Cache, provider)
+	return ok && !now.Before(next) && s.earlyEligible(p, provider, g)
+}
+
+// earlyNext is when an early re-read may go: the recorded floor and Retry-After, and the
+// reader-attempt reservation unless that reservation is this reader's own failure deadline.
+// Shared gates (Kimi budget, the X subscription) are checked separately by every caller.
+func (s *readerState) earlyNext(cache, provider string) (time.Time, bool) {
+	if s.EarlyFloorAt.IsZero() {
+		return time.Time{}, false
+	}
+	next := s.EarlyFloorAt
+	if floor := s.AttemptedAt.Add(5 * time.Minute); floor.After(next) {
+		next = floor
+	}
+	gate, err := loadReaderAttempt(cache, provider)
+	if err != nil {
+		return time.Time{}, false
+	}
+	if !gate.Equal(s.NextAttemptAt) && gate.After(next) {
+		next = gate
+	}
+	return next.UTC(), true
+}
+
+// earlyEligible is retryEarly without the five-minute floor, so the desktop scheduler can plan
+// the read at the floor instead of at the failure deadline (G3-103, #911).
+func (s *readerState) earlyEligible(p Paths, provider string, g ReaderGrant) bool {
+	if s.Failures == 0 || s.AttemptedAt.IsZero() {
+		return false
+	}
+	for _, e := range s.Entries {
+		if e.LastFailure != nil && (e.LastFailure.Code == "http_429" || e.LastFailure.Code == "reader_busy" || strings.HasPrefix(e.LastFailure.Code, "keychain_")) {
+			return false
+		}
+	}
+	if s.GrantKey != "" && g.Generation != "" && s.GrantKey != readerHash(p.Cache, provider+":grant", g.Generation) {
+		return true
+	}
+	profiles := g.Profiles
+	if len(profiles) == 0 {
+		if n := nativeReaders[provider]; n != nil && n.Profiles != nil {
+			profiles = n.Profiles()
+		}
+	}
+	if len(profiles) > 16 {
+		return false
+	}
+	for _, profile := range profiles {
+		key := readerHash(p.Cache, provider+":profile", profile.Root+"\x00"+profile.AccountFile)
+		for _, e := range s.Entries {
+			if key != "" && e.ProfileKey == key && e.LoginStamp != "" && e.LastFailure != nil && signInFailure(e.LastFailure.Code) && loginStamp(provider, profile) != e.LoginStamp {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// signInFailure: failures a new sign-in can fix.
+func signInFailure(code string) bool {
+	switch code {
+	case "expired", "expired_login", "login_expired", "denied", "file_missing", "file_unreadable", "parse_error", "unsupported_login", "not_signed_in", "http_401", "http_403":
+		return true
+	}
+	return false
+}
+
+// loginStamp describes the profile's sign-in files by size and change time only; it never opens
+// them. The files are the profile's account file and the reader's own credential files (#911),
+// which are not part of the profile key. One file gives the same stamp as before.
+func loginStamp(provider string, profile ReaderProfile) string {
+	var files []string
+	if profile.AccountFile != "" {
+		files = append(files, profile.AccountFile)
+	}
+	if n := nativeReaders[provider]; n != nil && n.LoginFiles != nil {
+		files = append(files, n.LoginFiles(profile)...)
+	}
+	stamps := make([]string, 0, len(files))
+	for _, file := range files {
+		stamp := fileStamp(file)
+		if stamp == "" {
+			return ""
+		}
+		stamps = append(stamps, stamp)
+	}
+	return strings.Join(stamps, ";")
+}
+
+func fileStamp(file string) string {
+	if file == "" || !filepath.IsAbs(file) {
+		return ""
+	}
+	info, err := os.Lstat(file)
+	if os.IsNotExist(err) {
+		return "absent"
+	}
+	if err != nil {
+		return ""
+	}
+	return strconv.FormatInt(info.Size(), 10) + ":" + strconv.FormatInt(info.ModTime().UnixNano(), 10)
 }
 
 // refreshManaged reserves one provider-wide read before any tool/credential I/O.
@@ -247,7 +368,9 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 	if err != nil {
 		return err
 	}
-	if !localBackoffSpent && (now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now)) {
+	due := !now.Before(s.NextAttemptAt) && readerAttemptDue(p.Cache, provider, now)
+	early := !due && !localBackoffSpent && s.retryEarly(p, provider, g, now)
+	if !due && !early && !localBackoffSpent {
 		return nil
 	}
 	n := nativeReaders[provider]
@@ -296,8 +419,17 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 			break
 		}
 	}
+	failureDeadline := s.NextAttemptAt
 	s.AttemptedAt, s.NextAttemptAt = now.UTC(), now.Add(5*time.Minute).UTC()
-	if err := reserveReaderAttempt(p.Cache, provider, s.NextAttemptAt); err != nil {
+	reserve := reserveReaderAttempt
+	if early {
+		// The read ends the failure back-off early, so its reservation replaces the failure
+		// deadline; otherwise a recovered reader would wait for the old deadline (#911).
+		reserve = func(cache, provider string, next time.Time) error {
+			return replaceReaderAttempt(cache, provider, failureDeadline, next)
+		}
+	}
+	if err := reserve(p.Cache, provider, s.NextAttemptAt); err != nil {
 		return err
 	}
 	if err := reserveXSubscription(p.Cache, provider, now); err != nil {
@@ -324,6 +456,7 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 	}
 	call, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
+	login := loginStamp(provider, profile)
 	out := n.Managed(call, nativeClient, readerContext{Paths: p, Grant: g, Profile: profile, ProfileKey: profileKey, Previous: previous, Now: now})
 	if g.StillValid != nil && !g.StillValid() {
 		return errors.New("reader consent changed")
@@ -339,6 +472,7 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 	}
 	e.ProfileKey = profileKey
 	e.AttemptedAt = now.UTC()
+	e.LoginStamp = login
 	e.LoginChanged, e.GenerationChanged = out.Invalidate, generationChanged || contains(s.GenerationDiscards, profileKey)
 	if e.Status != "ok" {
 		e.LastFailure = &readerFailure{Code: readerAttemptCode(e), At: now.UTC()}
@@ -387,12 +521,28 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 	if out.RetryAfter.After(s.NextAttemptAt) {
 		s.NextAttemptAt = out.RetryAfter.UTC()
 	}
+	s.EarlyFloorAt = time.Time{}
+	if e.Status != "ok" {
+		s.EarlyFloorAt = now.Add(5 * time.Minute).UTC()
+		if out.RetryAfter.After(s.EarlyFloorAt) {
+			s.EarlyFloorAt = out.RetryAfter.UTC()
+		}
+	}
 	if entryIndex < 0 {
 		s.Entries = append(s.Entries, e)
 	} else {
 		s.Entries[entryIndex] = e
 	}
-	if err := n.finishBudget(p.Cache, s.NextAttemptAt); err != nil {
+	budgetNext := s.NextAttemptAt
+	if e.Status != "ok" {
+		// The failure back-off stays in this state, where a new sign-in or grant can end it. A
+		// shared budget (Kimi) keeps only the floor and any Retry-After (#911).
+		budgetNext = now.Add(5 * time.Minute).UTC()
+		if out.RetryAfter.After(budgetNext) {
+			budgetNext = out.RetryAfter.UTC()
+		}
+	}
+	if err := n.finishBudget(p.Cache, budgetNext); err != nil {
 		return err
 	}
 	if err := reserveReaderAttempt(p.Cache, provider, s.NextAttemptAt); err != nil {
@@ -553,7 +703,16 @@ func AppendManagedRows(in *rows.Input, p Paths) {
 // Cursor/Grok reads. This observes exactly the persisted gates without changing
 // them; an unreadable gate cannot advertise an available refresh time.
 func managedReaderNext(cache, provider string, next time.Time) (time.Time, bool) {
-	paths := []string{readerAttemptPath(cache, provider)}
+	return readerGatesNext(cache, provider, next, true)
+}
+
+// readerGatesNext without the reader-attempt file gives only the shared five-minute gates, which
+// an early retry after a new sign-in or grant must still wait for (G3-103).
+func readerGatesNext(cache, provider string, next time.Time, attempt bool) (time.Time, bool) {
+	var paths []string
+	if attempt {
+		paths = append(paths, readerAttemptPath(cache, provider))
+	}
 	switch provider {
 	case "kimi":
 		paths = append(paths, kimiBudgetPath(cache))
@@ -619,7 +778,7 @@ func managedRowsAccount(provider, key string, a *Account, cache string, now time
 	}
 	out.ResetCards = a.ResetCards
 	if c := a.Credits; c != nil {
-		out.Credits = &rows.CreditsInput{Balance: c.Balance, Unit: c.Unit}
+		out.Credits = &rows.CreditsInput{Balance: c.Balance, Unit: c.Unit, Currency: c.Currency}
 	}
 	for _, w := range a.Windows {
 		if (provider == "claude" || provider == "gemini") && !w.ScopeKnown {

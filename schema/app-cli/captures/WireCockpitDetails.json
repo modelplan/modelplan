@@ -81,6 +81,7 @@
       "model": "synthetic",
       "effort": "synthetic",
       "projectLabel": "synthetic",
+      "projectState": "named",
       "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
       "state": "synthetic",
       "rate": 42.5,
@@ -207,6 +208,7 @@
       "model": "synthetic",
       "effort": "synthetic",
       "projectLabel": "synthetic",
+      "projectState": "named",
       "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
     }
   ],

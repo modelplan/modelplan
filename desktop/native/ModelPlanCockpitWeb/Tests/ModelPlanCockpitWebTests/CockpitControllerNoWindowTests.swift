@@ -154,6 +154,84 @@ import ModelPlanWire
     XCTAssertEqual(failures, [.appearanceWaitTimeout], "Continuous replacements must fail in bounded time")
     XCTAssertNil(page.window)
   }
+  /// G3-97: the display receipt can clear without a rendered, nextDeadline or visibility event (here a refused
+  /// replacement display is abandoned). The appearance wait then re-checks once and publishes instead of failing.
+  func testAppearanceWaitTimeoutPublishesWhenDisplayClearedWithoutRetryHook() throws {
+    let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
+    var timers: [(UInt64, @MainActor () -> Void)] = [], failures: [CockpitWindowFailure] = []
+    page.verificationNoWindowClock = { 1_000 }
+    page.verificationNoWindowArm = { delay, fire in timers.append((delay, fire)); return {} }
+    page.verificationNoWindowDelivery = { raw, complete in sent.append((raw, complete)) }
+    page.onFailure = { failures.append($0) }
+    try prepare(page)
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    XCTAssertEqual(sent.count, 1); sent[0].1(.accepted) // WebKit completion; the rendered receipt never comes.
+    let count = timers.count
+    page.updateAppearance(.init(theme: .night, locale: .zhCN, profile: .full))
+    XCTAssertEqual(sent.count, 1, "Appearance waits for the pending display receipt")
+    XCTAssertEqual(timers.count, count + 1, "The deferred appearance starts a bounded wait")
+    let appearanceTimeout = try XCTUnwrap(timers.last).1
+    page.verificationRefuseSubmissions = 1
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    XCTAssertFalse(page.bridge.hasPendingDisplay, "The abandoned replacement clears the display receipt without a retry hook")
+    XCTAssertEqual(sent.count, 1)
+    let armed = timers.count
+    appearanceTimeout()
+    XCTAssertEqual(failures, [], "A sendable state at the timeout must not fail the page")
+    XCTAssertFalse(page.bridge.disposed, "The page is not torn down and rebuilt")
+    XCTAssertEqual(timers.count, armed + 1, "The republished appearance re-arms one bounded wait")
+    XCTAssertEqual(sent.count, 2)
+    let appearance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(sent[1].0.utf8)) as? [String: Any])
+    XCTAssertEqual(appearance["type"] as? String, "appearance"); XCTAssertEqual(appearance["locale"] as? String, "zh-CN")
+    sent[1].1(.accepted)
+    var index = 2
+    while index < sent.count { sent[index].1(.accepted); index += 1 }
+    XCTAssertEqual(failures, [])
+    XCTAssertFalse(page.bridge.disposed); XCTAssertNil(page.window); page.discard()
+  }
+  /// G3-97: the re-check runs once. A republished appearance that is still not acknowledged fails at the next timeout,
+  /// and a display that stays pending fails at the first one (see the continuous-replacement test).
+  func testAppearanceWaitRetriesOnlyOnceThenFails() throws {
+    let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
+    var timers: [(UInt64, @MainActor () -> Void)] = [], failures: [CockpitWindowFailure] = []
+    page.verificationNoWindowClock = { 1_000 }
+    page.verificationNoWindowArm = { delay, fire in timers.append((delay, fire)); return {} }
+    page.verificationNoWindowDelivery = { raw, complete in sent.append((raw, complete)) }
+    page.onFailure = { failures.append($0) }
+    try prepare(page)
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    page.updateAppearance(.init(theme: .night, locale: .zhCN, profile: .full))
+    let firstTimeout = try XCTUnwrap(timers.last).1
+    page.verificationRefuseSubmissions = 1
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    XCTAssertFalse(page.bridge.hasPendingDisplay)
+    let armed = timers.count
+    firstTimeout() // Sendable: republished, but it queues behind the first display, which never completes.
+    XCTAssertEqual(failures, [])
+    XCTAssertEqual(timers.count, armed + 1)
+    let secondTimeout = try XCTUnwrap(timers.last).1
+    secondTimeout()
+    XCTAssertEqual(failures, [.appearanceWaitTimeout], "The second wait fails in bounded time")
+    XCTAssertTrue(page.bridge.disposed); XCTAssertNil(page.window)
+  }
+  func testAppearanceWaitTimeoutStillFailsWhileDisplayPending() throws {
+    let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
+    var timers: [(UInt64, @MainActor () -> Void)] = [], failures: [CockpitWindowFailure] = []
+    page.verificationNoWindowClock = { 1_000 }
+    page.verificationNoWindowArm = { delay, fire in timers.append((delay, fire)); return {} }
+    page.verificationNoWindowDelivery = { raw, complete in sent.append((raw, complete)) }
+    page.onFailure = { failures.append($0) }
+    try prepare(page)
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    sent[0].1(.accepted)
+    page.updateAppearance(.init(theme: .night, locale: .zhCN, profile: .full))
+    let timeout = try XCTUnwrap(timers.last).1
+    XCTAssertTrue(page.bridge.hasPendingDisplay)
+    timeout()
+    XCTAssertEqual(failures, [.appearanceWaitTimeout], "A display receipt that stays pending still fails as before")
+    XCTAssertEqual(sent.count, 1, "No appearance is sent while the display receipt is pending")
+    XCTAssertNil(page.window)
+  }
   func testQueuedAppearanceSupersededByDeadlineIsResentAfterTick() throws {
     let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
     var now: UInt64 = 1_000, timers: [(UInt64, @MainActor () -> Void)] = []

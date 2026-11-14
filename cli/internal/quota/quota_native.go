@@ -46,6 +46,9 @@ type nativeReader struct {
 	Managed  func(context.Context, *http.Client, readerContext) readerOutcome
 	Profiles func() []ReaderProfile
 	Budget   *nativeReadBudget
+	// LoginFiles: the profile's sign-in files besides its AccountFile, stamped (never opened) so
+	// a new sign-in can end a failure back-off (G3-103). They are not part of the profile key.
+	LoginFiles func(ReaderProfile) []string
 }
 
 // Shared by saved-login and existing explicitly configured key routes. Callers
