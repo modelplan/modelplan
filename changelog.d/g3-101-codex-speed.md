@@ -1,1 +1,0 @@
-Codex's output speed (t/s) shows again on the widget card and in the cockpit. Codex writes each reply's usage twice, and when a tool call ran in between, the reader took the second copy for a new reply with no timing, so most replies had no speed and today's rate stayed hidden.
