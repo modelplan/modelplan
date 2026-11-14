@@ -264,6 +264,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       // made no progress at all for the whole wait is failed and rebuilt (which only made it flicker: the rebuilt
       // page is just as busy).
       if self.bridge.ready, !self.bridge.blocked, self.pageProgress != self.appearanceWaitProgress {
+        // glm-959-1: replies that keep arriving before the latest render receipt would hold the change back forever.
+        // After the ceiling (10 s in all) the change goes to the current page directly, without a deadline
+        // correlation, so the pending display keeps its own; the page is still never rebuilt while it progresses.
+        if self.appearanceWaitExtensions >= Self.maxAppearanceWaitExtensions {
+          CockpitFailureLog.record("page-resync appearance applied behind pending display")
+          self.publishAppearance(behindPendingDisplay: true)
+          if self.appearanceGate.isDeferred, self.appearanceWatchdog.currentID == nil { self.watchDeferredAppearance() }
+          return
+        }
+        self.appearanceWaitExtensions += 1
         CockpitFailureLog.record("page-resync appearance wait extended displayPending=\(self.bridge.hasPendingDisplay)")
         self.appearanceWaitProgress = self.pageProgress
         self.appearanceWatchdog.wait(for: UUID())
@@ -278,8 +288,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var pageReceipts: UInt64 = 0
   private var pageProgress: UInt64 { orderedDelivery.acceptedCount &+ pageReceipts }
   private var appearanceWaitProgress: UInt64 = 0
+  /// glm-959-1: extra 2 s periods granted to a progressing page; after them the change is applied directly.
+  private var appearanceWaitExtensions = 0
+  static let maxAppearanceWaitExtensions = 4
   private func cancelAppearanceWait() {
-    appearanceWatchdog.cancel(); appearanceWaitRetried = false
+    appearanceWatchdog.cancel(); appearanceWaitRetried = false; appearanceWaitExtensions = 0
   }
   private func watchDeferredAppearance() {
     guard visibilityFence.isConfirmedVisible, appearanceGate.isDeferred, appearanceWatchdog.currentID == nil else { return }
@@ -1000,16 +1013,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     return layout?.shellState(attached: !shellSession.detached, scope: scope)
   }
-  private func publishAppearance() {
+  /// `behindPendingDisplay` (glm-959-1): send while a display receipt is still pending, as an uncorrelated change
+  /// that derives no deadline, so the pending display's own deadline correlation is untouched.
+  private func publishAppearance(behindPendingDisplay: Bool = false) {
     guard bridge.ready, !bridge.blocked, !ending else { return }
-    let canSend = appearanceGate.request(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay)
+    let requested = appearanceGate.request(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay)
+    let canSend = requested || (behindPendingDisplay && visibilityFence.isConfirmedVisible)
     let appearanceVersion = appearanceGate.version
     watchDeferredAppearance()
     guard canSend else { return }
     do {
-      let eligible = visibilityFence.isConfirmedVisible && freshnessHasRendered
+      let eligible = !behindPendingDisplay && visibilityFence.isConfirmedVisible && freshnessHasRendered
       let raw = try bridge.setAppearance(appearance, deadlineEligible: eligible)
-      if let id = bridge.currentAppearanceTrigger {
+      if !behindPendingDisplay, let id = bridge.currentAppearanceTrigger {
         // Keep the previously admitted deadline until this repaint reports a replacement.
         receiptWatchdog.wait(for: id)
         send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentAppearance(id) == true }, onAccepted: { [weak self] in
