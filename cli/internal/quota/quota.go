@@ -178,6 +178,9 @@ func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Cr
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
 	ResetCards *rows.ResetCards `json:"-"`
+	// ReportedModels (D98): model ids the tool itself lists for this account (Codex model/list), native ids as
+	// the harness names them. Internal: it reaches the cockpit wire mapped to published ids, not this JSON.
+	ReportedModels []string `json:"-"`
 	Beta       bool             `json:"beta,omitempty"` // reader has not completed real-account verification
 	Source     string           `json:"source"`         // claude-code | codex | user | codexbar:<provider>
 	Plan       string           `json:"plan,omitempty"`

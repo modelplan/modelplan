@@ -316,3 +316,20 @@ func TestCockpitPlanModelsCopyOnlyPublishedPlanLists(t *testing.T) {
 		t.Fatal("a publication without planModels must yield none")
 	}
 }
+
+func TestReportedModelsMapThroughPublishedHarnessAliases(t *testing.T) {
+	d := &digest.Digest{Source: digest.ComponentClient, Models: []digest.Model{
+		{ID: "astra", HarnessIDs: map[string][]string{"codex": {"native-astra", "native-astra-old"}}},
+		{ID: "sol", HarnessIDs: map[string][]string{"codex": {"native-sol"}}},
+		{ID: "opus", HarnessIDs: map[string][]string{"claude-code": {"native-astra"}}},
+		{ID: "unpublished", HarnessIDs: map[string][]string{"codex": {"native-x"}}},
+	}}
+	published := []wire.CockpitPublicationModel{{ID: "astra"}, {ID: "sol"}, {ID: "opus"}}
+	got := reportedPublishedModels(d, "codex", []string{"native-astra-old", "native-x", "native-unknown"}, published)
+	if !reflect.DeepEqual(got, []string{"astra"}) {
+		t.Fatalf("got %v: only a codex alias of a published model maps; unknown ids are dropped, not guessed", got)
+	}
+	if reportedPublishedModels(d, "codex", []string{"native-unknown"}, published) != nil || reportedPublishedModels(nil, "codex", []string{"native-sol"}, published) != nil {
+		t.Fatal("nothing maps: nothing reported")
+	}
+}

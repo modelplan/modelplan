@@ -371,8 +371,8 @@ func TestRealBinaryRefreshSharedBudgetAndDeferrals(t *testing.T) {
 			}
 			methods = append(methods, request.Method)
 		}
-		if !reflect.DeepEqual(methods, []string{"initialize", "initialized", "account/rateLimits/read", "account/read"}) {
-			t.Fatalf("logical read escaped its two-request set: %v", methods)
+		if !reflect.DeepEqual(methods, []string{"initialize", "initialized", "account/rateLimits/read", "account/read", "model/list"}) {
+			t.Fatalf("logical read escaped its approved request set: %v", methods)
 		}
 		if stderr.Len() != 0 {
 			t.Fatalf("unexpected stderr: %s", stderr.String())
