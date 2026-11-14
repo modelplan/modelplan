@@ -24,6 +24,22 @@ public enum OpeningPreference: String, Codable, CaseIterable, Sendable { case ho
 /// ones); a screen too short for the choice draws it smaller.
 public enum SettingsCockpitSize: String, Codable, CaseIterable, Sendable { case automatic, percent80 = "80", percent85 = "85", percent90 = "90", percent100 = "100" }
 public enum SettingsLanguage: String, Codable, CaseIterable, Sendable { case chinese = "zh-CN", english = "en" }
+extension SettingsLanguage {
+    /// The one fallback every path uses when no supported language is known (SET-9-39).
+    public static let fallback: SettingsLanguage = .english
+    /// The Settings choice value that means "follow the macOS list".
+    public static let followSystemValue = "system"
+    /// Walks the whole macOS preferred-language list: the first zh* or en* entry wins (Traditional Chinese
+    /// zh-Hant, zh-TW and zh-HK map to the Chinese UI); a list with neither falls back to `fallback`.
+    public static func resolve(preferredLanguages: [String]) -> SettingsLanguage {
+        for raw in preferredLanguages {
+            let tag = raw.lowercased().replacingOccurrences(of: "_", with: "-")
+            if tag == "zh" || tag.hasPrefix("zh-") { return .chinese }
+            if tag == "en" || tag.hasPrefix("en-") { return .english }
+        }
+        return fallback
+    }
+}
 public enum NotificationKind: String, Codable, CaseIterable, Sendable { case forecast, reset, official, expiring, stale }
 public struct NotificationPreferences: Codable, Equatable, Sendable {
     /// Per-kind choices do not grant consent. The separate opt-in defaults off.
@@ -103,7 +119,10 @@ public struct SettingsPreferences: Codable, Sendable {
     public var menuDisplay: MenuDisplay = .tightest
     public var openShortcut = ShortcutChord.unassigned
     public var dockShortcut = ShortcutChord.unassigned
-    public var language: SettingsLanguage = .chinese
+    public var language: SettingsLanguage = .fallback
+    /// "Follow System": the app re-resolves `language` from the macOS list at each launch. A missing field in an
+    /// existing document keeps that document's stored language (false).
+    public var followsSystemLanguage = false
     public var opening: OpeningPreference = .hold
     public var cockpitSize: SettingsCockpitSize = .automatic
     public var beatMilliseconds = 250
@@ -118,7 +137,7 @@ public struct SettingsPreferences: Codable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case theme, size, motion, transparency, percentageMode, showPercentages, redBelow, sliverAlert, showAllModels
         case showDock, autoHide, revealMilliseconds, magnification, showOverFullscreen, followActiveDisplay
-        case openAtLogin, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, beatMilliseconds, showProjectNames, cockpitSize
+        case openAtLogin, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, followsSystemLanguage, opening, beatMilliseconds, showProjectNames, cockpitSize
         case notifications, subscriptions, subscriptionSettings, onboarding, dockEdge, dockDisplayID, dockAlongFraction, readerConsent, helpHints
     }
     /// Missing v1 choices adopt defaults; malformed preferences fail closed. Progress recovery is flow-owned.
@@ -140,6 +159,7 @@ public struct SettingsPreferences: Codable, Sendable {
         automaticUpdates = try value(.automaticUpdates, automaticUpdates)
         menuDisplay = try value(.menuDisplay, menuDisplay); openShortcut = try value(.openShortcut, openShortcut)
         dockShortcut = try value(.dockShortcut, dockShortcut); language = try value(.language, language)
+        followsSystemLanguage = try value(.followsSystemLanguage, followsSystemLanguage)
         opening = try value(.opening, opening); cockpitSize = try value(.cockpitSize, cockpitSize); beatMilliseconds = try value(.beatMilliseconds, beatMilliseconds)
         showProjectNames = try value(.showProjectNames, showProjectNames); notifications = try value(.notifications, notifications)
         subscriptions = try value(.subscriptions, subscriptions); subscriptionSettings = try value(.subscriptionSettings, subscriptionSettings)
@@ -230,11 +250,15 @@ public actor SettingsStore {
     /// corrupt targets never trigger legacy migration or automatic replacement.
     public init(foundationAt applicationSupport: URL, product: FoundationSettingsMigration.ProductIdentity,
                 rowIDMap: [String: String] = [:], defaultLanguage: SettingsLanguage? = nil,
+                preferredLanguages: [String]? = nil,
                 onboardingDefinition: OnboardingDefinition = .task65) throws {
         let location = try FoundationPreferenceLocation(applicationSupport: applicationSupport, product: product)
         let opened = try FoundationPreferenceFile.open(location, rowIDMap: rowIDMap, defaultLanguage: defaultLanguage)
         self.url = location.target; self.onboardingDefinition = onboardingDefinition
         self.current = opened.document.settings; self.foundationBacking = opened
+        if let preferredLanguages, current.followsSystemLanguage {
+            current.language = SettingsLanguage.resolve(preferredLanguages: preferredLanguages)
+        }
         current.onboarding.reconcile(in: onboardingDefinition)
     }
     public func foundationStatus() -> FoundationPreferenceStatus? {

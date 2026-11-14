@@ -98,7 +98,7 @@ private actor InstrumentSettingsTransport: CLITransport {
         var assembly = SelectionAssembly()
         surface.render(publication: publication)
         surface.render(selection: assembly.evaluate(feeds: .init(publication: publication, personal: nil, personalUsable: false),
-            scope: .all, now: now), publishedAt: now, now: now)
+            scope: .all, language: .english, now: now), publishedAt: now, now: now)
     }
     func testNormalEntryMountsCockpitAndPickerRatherThanLeavingOptInNil() async throws {
         let provider = CommunityApplicationFactory.makeSurfaces()
@@ -324,7 +324,7 @@ private actor InstrumentSettingsTransport: CLITransport {
     func testEmptyEngineAddSubscriptionReachesTheSameRetainedSettingsPane() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = try SettingsStore(url: directory.appendingPathComponent("settings.json"))
+        let store = try chineseSettingsStore(url: directory.appendingPathComponent("settings.json"))
         _ = try await store.update { preferences in
             for _ in OnboardingDefinition.task65.steps { preferences.onboarding.next() }
         }

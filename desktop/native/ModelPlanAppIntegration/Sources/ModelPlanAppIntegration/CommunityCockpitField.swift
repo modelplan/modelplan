@@ -80,6 +80,12 @@ import ModelPlanField
     private var catalogue: FieldPickerCatalogue?
     private var reduceMotion = true, reduceTransparency = true
     private var disposed = false, presented = false, closing = false
+    /// The chosen language; every string below renders in this one language only (SET-9-38).
+    private var locale: FieldLocale = .english
+    private func text(_ english: String, _ chinese: String) -> String { locale == .english ? english : chinese }
+    private func applyLocaleText() {
+        enlarge.title = text("Enlarge", "放大"); closeButton.title = text("Close", "关闭")
+    }
     init(shell: CockpitShellSurface, supply: CommunityCockpitSupply, preferences: PreferenceFile?, window: any CommunityFieldWindow) {
         self.shell = shell; self.supply = supply; self.preferences = preferences; self.window = window
         picker = FieldFleetPickerView(comparisonContent: comparison)
@@ -91,12 +97,12 @@ import ModelPlanField
             return supply.containsFieldPoint(point, scope)
         }
         normal.orientation = .vertical; normal.alignment = .leading
-        enlarge.title = "Enlarge / 放大"; enlarge.target = self; enlarge.action = #selector(openAction); enlarge.isEnabled = false
+        applyLocaleText(); enlarge.target = self; enlarge.action = #selector(openAction); enlarge.isEnabled = false
         enlarge.setAccessibilityIdentifier("cockpit.field.enlarge")
         normal.addArrangedSubview(enlarge); normal.addArrangedSubview(status)
         shell.setContent(normal, for: .window)
         enlarged.orientation = .vertical; enlarged.alignment = .leading
-        closeButton.title = "Close / 关闭"; closeButton.target = self; closeButton.action = #selector(closeAction)
+        closeButton.target = self; closeButton.action = #selector(closeAction)
         enlarged.addArrangedSubview(closeButton); enlarged.addArrangedSubview(fieldStatus); enlarged.addArrangedSubview(picker)
         picker.translatesAutoresizingMaskIntoConstraints = false
         picker.widthAnchor.constraint(equalTo: enlarged.widthAnchor).isActive = true
@@ -105,6 +111,7 @@ import ModelPlanField
                        reduceMotion: Bool = true, reduceTransparency: Bool = true) throws {
         guard !disposed else { return }
         self.reduceMotion = reduceMotion; self.reduceTransparency = reduceTransparency
+        locale = appearance.locale; applyLocaleText()
         guard let publication else {
             try closeIfNeeded(); catalogue = nil; currentScope = nil; enlarge.isEnabled = false
             status.stringValue = appearance.locale == .english ? "Public catalogue unavailable" : "公开目录暂不可用"; return
@@ -159,7 +166,7 @@ import ModelPlanField
     @objc private func closeAction() { do { try close() } catch { showFailure(error) } }
     private func showFailure(_ error: Error) {
         lastError = error
-        status.stringValue = "Field unavailable; close and retry. / 比较视野暂不可用，请关闭后重试。"
+        status.stringValue = text("Field unavailable; close and retry.", "比较视野暂不可用，请关闭后重试。")
         fieldStatus.stringValue = status.stringValue
     }
     public func fieldPickerInput() throws -> FieldPickerHostInput {

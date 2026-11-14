@@ -10,7 +10,7 @@ import ModelPlanSettings
 
 @MainActor final class CommunityInstrumentSurfaceTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
-    private func selection(_ ids: [String] = ["first", "second"], language: InstrumentLanguage = .chinese,
+    private func selection(_ ids: [String] = ["first", "second"], language: InstrumentLanguage = .english,
                            revision: String? = "r") throws -> AssembledModelSelection {
         var object: [String: Any] = ["schemaVersion": 1, "publicationId": "p",
             "units": ["ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"],
@@ -42,7 +42,7 @@ import ModelPlanSettings
         let packet = assembly.evaluate(feeds: .init(
             publication: try FeedDecoder.publication(JSONSerialization.data(withJSONObject: wire)),
             personal: try FeedDecoder.personal(JSONSerialization.data(withJSONObject: personal)), personalUsable: true),
-            scope: .all, now: now)
+            scope: .all, language: .english, now: now)
         XCTAssertFalse(packet.publicDefaultFallback)
         XCTAssertTrue(packet.instruments?.matchesExact(packet.instruments?.publication, scope: .all) == true)
         return packet
@@ -75,13 +75,13 @@ import ModelPlanSettings
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("community-instruments-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("prefs.json")), apply: apply)
+        return SettingsApplicationCoordinator(store: try chineseSettingsStore(url: directory.appendingPathComponent("prefs.json")), apply: apply)
     }
     func testActualProviderUsesExistingNativeViewAndPausesRasterWhileHidden() throws {
         let provider = CommunityInstrumentSurfaceProvider()
         let surface = try XCTUnwrap(provider.makeOverview() as? CommunityInstrumentView)
         XCTAssertTrue(provider.makeOverview() === surface)
-        XCTAssertEqual(surface.modelPicker.accessibilityLabel(), "选择模型")
+        XCTAssertEqual(surface.modelPicker.accessibilityLabel(), "Choose a model")
         surface.render(selection: try selection(), publishedAt: now.addingTimeInterval(-120), now: now)
         XCTAssertEqual(surface.mainScreen.surfaceRenders, 0)
         surface.resumePresentation()
@@ -124,7 +124,7 @@ import ModelPlanSettings
         let surface = CommunityInstrumentView()
         surface.render(selection: try selection(), publishedAt: now, now: now); surface.resumePresentation()
         var assembly = SelectionAssembly()
-        let empty = assembly.evaluate(feeds: .init(publication: nil, personal: nil, personalUsable: false), scope: .all, now: now)
+        let empty = assembly.evaluate(feeds: .init(publication: nil, personal: nil, personalUsable: false), scope: .all, language: .english, now: now)
         surface.render(selection: empty, publishedAt: nil, now: now)
         XCTAssertTrue(surface.orderedModelIDs.isEmpty); XCTAssertFalse(surface.modelPicker.isEnabled)
         XCTAssertTrue(surface.mainScreen.controller.pages.flatMap(\.lines).contains(empty.emptyStateMessage))

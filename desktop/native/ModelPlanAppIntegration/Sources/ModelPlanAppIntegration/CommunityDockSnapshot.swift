@@ -24,7 +24,8 @@ public struct CommunityDockSnapshot: Sendable {
     }
 
     public init(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date,
-                readerFacts: [CommunityReaderFacts]? = nil, canonicalConsent: ConsentPreview? = nil) {
+                readerFacts: [CommunityReaderFacts]? = nil, canonicalConsent: ConsentPreview? = nil,
+                language: SettingsLanguage? = nil) {
         let reasons = CommunityReaderReason.project(snapshot: snapshot, diagnostics: diagnostics, now: now, facts: readerFacts ?? [])
         readerDiagnostics = reasons.readers; emptyDiagnostic = reasons.empty
         guard let snapshot else {
@@ -90,7 +91,7 @@ public struct CommunityDockSnapshot: Sendable {
                 vendor: sources.joined(separator: " / "), toolNames: sources,
                 source: input.dataState == .fresh ? .fresh : input.dataState == .stale ? .stale : .unavailable))
         }
-        let extra = CommunityUnboundDockRows.make(snapshot, diagnostics: diagnostics, now: now, canonicalConsent: canonicalConsent)
+        let extra = CommunityUnboundDockRows.make(snapshot, diagnostics: diagnostics, now: now, canonicalConsent: canonicalConsent, language: language)
         let membershipIDs = Set(adapted.map(\.id))
         let freshMemberships = Set(adapted.filter { $0.dataState == .fresh }.map(\.id))
         let statuses = Dictionary(uniqueKeysWithValues: extra.filter { !freshMemberships.contains($0.input.id) }.map { ($0.input.id, $0) })
