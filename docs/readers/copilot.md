@@ -45,6 +45,9 @@ The reference links above are source-reported behavior/pitfalls, not new inciden
 | Compatibility handshake | Same RPC | Same process | ping, only after connect returns method-not-found | Content-Length (framing only) |
 | Data 1 | Same RPC | Same process | auth.getStatus | Content-Length (framing only) |
 | Data 2 | Same RPC | Same process | account.getQuota | Content-Length (framing only) |
+| Data 3 (D99) | Same RPC | Same process | models.list, only after account.getQuota answered | Content-Length (framing only) |
+
+`models.list` returns the models Copilot lists for the signed-in user; only the ids are kept, best effort, capped at 3 seconds, and its failure never affects the quota read. It is the only method added to the allowlist.
 
 Every listed RPC has exactly empty params. `connect` may fall back to `ping` only for method-not-found; an authentication/server error is terminal. The returned protocol must be 3, auth must be an authenticated user, and only then is quota requested.
 

@@ -333,3 +333,21 @@ func TestReportedModelsMapThroughPublishedHarnessAliases(t *testing.T) {
 		t.Fatal("nothing maps: nothing reported")
 	}
 }
+
+func TestReportedModelsMapUnderEachToolKey(t *testing.T) {
+	if reportedHarnessKey("native:gemini") != "gemini" || reportedHarnessKey("claude-code") != "claude-code" || reportedHarnessKey("codex") != "codex" {
+		t.Fatal("tool key")
+	}
+	d := &digest.Digest{Source: digest.ComponentClient, Models: []digest.Model{
+		{ID: "flash", HarnessIDs: map[string][]string{"gemini": {"gemini-2.5-flash"}, "copilot": {}}},
+		{ID: "gpt", HarnessIDs: map[string][]string{"copilot": {"gpt-5.1"}}},
+	}}
+	published := []wire.CockpitPublicationModel{{ID: "flash"}, {ID: "gpt"}}
+	if got := reportedPublishedModels(d, reportedHarnessKey("native:gemini"), []string{"gemini-2.5-flash", "gpt-5.1"}, published); !reflect.DeepEqual(got, []string{"flash"}) {
+		t.Fatalf("got %v: an id maps only under its own tool key", got)
+	}
+	// No harnessIds published for the tool yet: nothing maps, the plan list stays.
+	if reportedPublishedModels(d, reportedHarnessKey("native:grok"), []string{"grok-build-1"}, published) != nil {
+		t.Fatal("unmapped ids must be dropped")
+	}
+}

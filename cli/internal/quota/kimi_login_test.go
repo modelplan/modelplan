@@ -41,6 +41,10 @@ func kimiLoginTestPaths(t *testing.T) (Paths, string) {
 func kimiLoginServer(t *testing.T, token string, mode *string, hits *int) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/coding/v1/models" {
+			kimiModelsHandler(w, r) // D99: not a usage request; see reportedmodels_test.go
+			return
+		}
 		*hits++
 		if r.Method != "GET" || r.URL.Path != "/coding/v1/usages" || r.Header.Get("Authorization") != "Bearer "+token || r.Header.Get("Cookie") != "" || r.Header.Get("X-Msh-Platform") != "kimi_code_cli" || r.Header.Get("X-Msh-Device-Id") != "synthetic-device-001" || !strings.Contains(r.Header.Get("X-Msh-Device-Name"), "ModelPlan") {
 			t.Error("incorrect saved-login request")
