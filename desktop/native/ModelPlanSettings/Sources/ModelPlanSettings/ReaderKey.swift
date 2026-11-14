@@ -132,6 +132,13 @@ public struct ReaderKeyReply: Equatable, Sendable {
         if let saved = current.region { region = saved }
         onChange?()
     }
+    /// After a new reading: take the engine's current answer for the saved key (present, region, whether
+    /// another key was also found). What is typed, the picker and any message stay as they are.
+    public func refreshStatus() async {
+        let current = await backend.status(provider)
+        guard current != status else { return }
+        status = current; onChange?()
+    }
     public func test() async {
         guard canTest else { return }
         let key: String? = trimmed.isEmpty ? nil : trimmed

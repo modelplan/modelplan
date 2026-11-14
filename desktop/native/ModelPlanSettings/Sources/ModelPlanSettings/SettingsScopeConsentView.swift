@@ -37,6 +37,8 @@ import ModelPlanWire
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
     private var keySection: ReaderKeySection?
+    /// The accepted rows the key entries last refreshed their status for.
+    private var keyStatusRowsRevision = 0
     /// D90: the optional manual key area. Set by the app when the engine supports it.
     public var readerKeys: ReaderKeyBackend? {
         didSet { if keySection != nil { keySection?.dismiss(); keySection = nil }; render() }
@@ -547,6 +549,9 @@ import ModelPlanWire
         buttons = []
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         wrappingLabels = []
+        if let keySection, controller.rowsRevision != keyStatusRowsRevision {
+            keyStatusRowsRevision = controller.rowsRevision; keySection.refreshStatus()
+        }
         if firstRun { renderFirstRunChooser(); return }
         label(.init("Reading permissions", "读取权限"), heading: true)
         label(Self.activityDisclosure, secondary: true)

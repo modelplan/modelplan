@@ -10,7 +10,7 @@ private let fakeKey = "fake-test-key-0001"
     struct Call: Equatable { let verb: String; let key: String?; let region: ReaderKeyRegion? }
     private(set) var calls: [Call] = []
     private(set) var allowed: [ReaderKeyProvider] = []
-    private var stored: ReaderKeyStatus
+    var stored: ReaderKeyStatus
     var testOutcome: ReaderKeyOutcome = .ok
     var allowResult = true
     init(stored: ReaderKeyStatus = .init(present: false, region: nil)) { self.stored = stored }
@@ -184,6 +184,24 @@ private let fakeKey = "fake-test-key-0001"
                 XCTAssertTrue(line?.isHidden ?? true)
             }
         }
+    }
+    /// macrevd-795-1: a reading after Save changes the engine's answer; the reused entry picks it up and keeps
+    /// what is being typed.
+    func testRefreshAfterAReadingUpdatesTheOtherKeyLineAndKeepsTheTypedText() async {
+        let backend = FakeKeyBackend(stored: .init(present: true, region: .global, otherKeyFound: false))
+        let section = ReaderKeySection(backend: backend, language: .english)
+        let view = section.inlineEntry(for: .zai)
+        await view.entry.load()
+        let line = { self.find(view, "readerkey.zai.otherkey", as: NSTextField.self) }
+        XCTAssertTrue(line()?.isHidden ?? true)
+        type(view, "fake-half-typed")
+        backend.stored = .init(present: true, region: .global, otherKeyFound: true)
+        await view.entry.refreshStatus()
+        XCTAssertEqual(line()?.isHidden, false)
+        XCTAssertEqual(find(view, "readerkey.zai.field", as: NSSecureTextField.self)?.stringValue, "fake-half-typed")
+        backend.stored = .init(present: true, region: .global, otherKeyFound: false)
+        await view.entry.refreshStatus()
+        XCTAssertTrue(line()?.isHidden ?? true)
     }
     func testDismissClearsTheTypedKey() {
         let view = made(.zai, FakeKeyBackend())

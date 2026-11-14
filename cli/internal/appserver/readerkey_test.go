@@ -4,6 +4,9 @@ package appserver
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -108,25 +111,41 @@ func TestReaderKeyStatusReportsPresenceWithoutAKey(t *testing.T) {
 	}
 }
 
-// Owner decision 2026-11-14: status says when the entered key is in use and a different key was also detected
-// (the flag on the last GLM reading), so Settings can show it on the row; no key is in the result.
-func TestReaderKeyStatusReportsAnotherDetectedKey(t *testing.T) {
+// Owner decision 2026-11-14 / macrevd-795-1: set and status answer for the key saved now. With a detected
+// key's reference from the latest reading, saving a different key reports otherKeyFound in the set reply
+// itself; saving the detected key or removing reports false. No key is in any result.
+func TestReaderKeySetReportsAnotherDetectedKeyForTheKeyJustSaved(t *testing.T) {
+	t.Setenv("MODELPLAN_IDENTITY", "")
 	dir := t.TempDir()
-	h := ReaderKeyHandlers(ReaderKeyConfig{Dir: dir})
-	callReaderKey(t, h, "readerkey/set", `{"provider":"zai","region":"china","key":"`+readerKeyFake+`"}`)
-	if r, _, _ := callReaderKey(t, h, "readerkey/status", `{"provider":"zai","region":"none","key":""}`); r.OtherKeyFound {
-		t.Fatal("no reading yet, no flag")
-	}
+	const detected = "fake-detected-key-0006"
+	// The identity map as a reading leaves it: an installation key and the detected key's keyed hash -> ref.
 	if err := os.MkdirAll(dir+"/observed", 0o700); err != nil {
 		t.Fatal(err)
 	}
-	snap := `{"schemaVersion":1,"providers":[{"provider":"zai","status":"ok","otherKeyFound":true,"observedAt":"2026-11-14T00:00:00Z"}]}`
+	installKey := bytes.Repeat([]byte{7}, 32)
+	mac := hmac.New(sha256.New, installKey)
+	mac.Write([]byte("api-key:zai\x00" + detected))
+	const ref = "0123456789abcdef"
+	ids := fmt.Sprintf(`{"schemaVersion":1,"key":"%s","refs":{"%s":{"ref":"%s","basis":"api-key:zai","lastAt":"2026-11-14T00:00:00Z"}}}`,
+		hex.EncodeToString(installKey), hex.EncodeToString(mac.Sum(nil)), ref)
+	if err := os.WriteFile(dir+"/observed/subscriptions.json", []byte(ids), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snap := `{"schemaVersion":1,"providers":[{"provider":"zai","status":"ok","detectedKeyRef":"` + ref + `","observedAt":"2026-11-14T00:00:00Z"}]}`
 	if err := os.WriteFile(dir+"/observed/native.json", []byte(snap), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r, out, _ := callReaderKey(t, h, "readerkey/status", `{"provider":"zai","region":"none","key":""}`)
-	if !r.OtherKeyFound || !strings.Contains(out, `"otherKeyFound":true`) || strings.Contains(out, readerKeyFake) {
-		t.Fatalf("status = %s", out)
+	h := ReaderKeyHandlers(ReaderKeyConfig{Dir: dir})
+	r, out, _ := callReaderKey(t, h, "readerkey/set", `{"provider":"zai","region":"china","key":"`+readerKeyFake+`"}`)
+	if !r.OtherKeyFound || strings.Contains(out, readerKeyFake) {
+		t.Fatalf("set A while B is detected = %s", out)
+	}
+	if r, _, _ := callReaderKey(t, h, "readerkey/set", `{"provider":"zai","region":"china","key":"`+detected+`"}`); r.OtherKeyFound {
+		t.Fatal("the detected key itself: no line")
+	}
+	callReaderKey(t, h, "readerkey/set", `{"provider":"zai","region":"china","key":"`+readerKeyFake+`"}`)
+	if r, _, _ := callReaderKey(t, h, "readerkey/remove", `{"provider":"zai","region":"none","key":""}`); r.OtherKeyFound {
+		t.Fatal("removed: no line")
 	}
 	if r, _, _ := callReaderKey(t, h, "readerkey/status", `{"provider":"opencodego","region":"none","key":""}`); r.OtherKeyFound {
 		t.Fatal("another provider is not flagged")

@@ -226,7 +226,7 @@ func refreshWith(t *testing.T, p Paths, provider string) (Report, string) {
 }
 
 // D90, owner decision 2026-11-14: the entered key wins over a detected one and is the only key sent. One row;
-// when a different key is also detected the cached entry carries OtherKeyFound (a flag, never the key);
+// when a different key is also detected ManualKeyOtherKeyFound says so (a boolean, never the key);
 // the same key detected and entered is simply one row without the flag.
 func TestEnteredKeyWinsAndADifferentDetectedKeyIsFlagged(t *testing.T) {
 	for _, c := range []struct {
@@ -296,6 +296,67 @@ func TestEnteredKeyWinsAndADifferentDetectedKeyIsFlagged(t *testing.T) {
 	}
 	if a := ks2.seen(); len(a) != 1 || a[0] != "Bearer "+fakeOtherKey {
 		t.Fatalf("detected key after removal: %v", a)
+	}
+}
+
+// macrevd-795-1: the "another key" answer follows the key saved now, not a flag from an older reading.
+// Detected B read first; save A -> shown at once; save B (the detected key) -> gone at once; a reading with A
+// and then B detected again keeps it right; remove -> gone; the detected key going away -> gone at the next reading.
+func TestOtherKeyFoundFollowsTheSavedKey(t *testing.T) {
+	isolateHome(t)
+	ks := &keyServer{body: zaiOKBody}
+	useClient(t, ks.serve(t), "api.z.ai", "open.bigmodel.cn")
+	p := nativePaths(t)
+	t.Setenv("Z_AI_API_KEY", fakeOtherKey) // detected B
+	now := time.Now()
+	refreshWith(t, p, "zai")
+	if ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("no entered key, no line")
+	}
+	if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil { // A
+		t.Fatal(err)
+	}
+	if !ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("A saved while B is detected: the line shows at once")
+	}
+	if err := SetManualKey(p.Cache, "zai", fakeOtherKey, "global"); err != nil { // the detected key itself
+		t.Fatal(err)
+	}
+	if ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("the saved key is the detected one: no line, without waiting for a reading")
+	}
+	if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RefreshNative(context.Background(), p, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if !ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("after a reading with A, B is still detected")
+	}
+	t.Setenv("Z_AI_API_KEY", "")
+	if err := RefreshNative(context.Background(), p, now.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("no detected key any more: no line")
+	}
+	t.Setenv("Z_AI_API_KEY", fakeOtherKey)
+	if err := RefreshNative(context.Background(), p, now.Add(3*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveManualKey(p.Cache, "zai"); err != nil {
+		t.Fatal(err)
+	}
+	if ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("removed: no line")
+	}
+	b, _ := os.ReadFile(nativePath(p.Cache))
+	m, _ := os.ReadFile(subscriptionsPath(p.Cache))
+	for _, key := range []string{fakeZaiKey, fakeOtherKey} {
+		if strings.Contains(string(b)+string(m), key) {
+			t.Fatal("a key reached the cache or the identity map")
+		}
 	}
 }
 

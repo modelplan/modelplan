@@ -323,15 +323,8 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		readerCtx := productionReaderContext(ctx, p, x.Provider)
 		if mk, ok := loadManualKey(p.Cache, x.Provider); ok {
 			// D90, owner decision 2026-11-14: a key the user entered wins over any detected key and is
-			// the only one used; it goes only to the compiled official host of its region. One row: when
-			// a different key is also detected (GLM), the entry says so (OtherKeyFound) for Settings.
-			// The detected key is only compared on this Mac, never sent or kept.
+			// the only one used; it goes only to the compiled official host of its region.
 			e, key = fetchManualKey(ctx, nativeClient, x.Provider, mk, now), mk.Key
-			if x.Provider == "zai" {
-				if other := detectedZaiKey(p, x); other != "" && other != mk.Key {
-					e.OtherKeyFound = true
-				}
-			}
 		} else if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
 			e = collectZaiConfig(readerCtx, nativeClient, p.Cache, now)
 		} else if n.Collect != nil {
@@ -356,6 +349,12 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		if x.Provider == "copilot" {
 			e.Source = "runtime"
+		}
+		if x.Provider == "zai" && !IdentityOff() {
+			// One row (owner 2026-11-14): Settings says when the entered key differs from a detected one.
+			// Only the detected key's local reference is kept (the keyed-hash identity map, as for every
+			// subscription); the key itself is read on this Mac, never sent, logged or stored.
+			e.DetectedKeyRef = assignSubscription(p.Cache, zaiKeyBasis, detectedZaiKey(p, x), now)
 		}
 		if e.Status == "ok" && key != "" && !IdentityOff() {
 			e.SubscriptionRef = assignSubscription(p.Cache, nativeIdentityBasis(x), key, now) // a key is one subscription

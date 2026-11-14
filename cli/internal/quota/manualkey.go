@@ -260,20 +260,31 @@ func detectedZaiKey(p Paths, x Selection) string {
 	return strings.TrimSpace(os.Getenv(x.KeyEnv))
 }
 
-// ManualKeyOtherKeyFound: the last reading of provider used the entered key while a different key was
-// also detected (the flag on the cached entry). Nothing about either key is returned.
+// zaiKeyBasis: the identity basis of a GLM key, shared by every GLM source (nativeIdentityBasis, ZaiConfig).
+const zaiKeyBasis = "api-key:zai"
+
+// ManualKeyOtherKeyFound (owner decision 2026-11-14): a key is entered for provider and the GLM key detected
+// at the latest reading is a different key. It is worked out on every call from the key saved now (its
+// keyed-hash reference, looked up without writing anything) and the detected key's reference, so it follows
+// Save, Remove and a change of the detected key at the next reading. Only a boolean leaves this function.
+// With MODELPLAN_IDENTITY=off no reference exists and the line is not shown.
 func ManualKeyOtherKeyFound(dir, provider string) bool {
-	if !ManualKeyPresent(dir, provider) {
+	if provider != "zai" || IdentityOff() {
 		return false
 	}
+	mk, ok := loadManualKey(dir, provider)
+	if !ok {
+		return false
+	}
+	detected := ""
 	if s := loadNative(dir); s != nil {
 		for _, e := range s.Providers {
 			if e.Provider == provider {
-				return e.OtherKeyFound
+				detected = e.DetectedKeyRef
 			}
 		}
 	}
-	return false
+	return detected != "" && lookupSubscription(dir, zaiKeyBasis, mk.Key) != detected
 }
 
 // manualKeyOutcome turns a reader entry into one outcome word.

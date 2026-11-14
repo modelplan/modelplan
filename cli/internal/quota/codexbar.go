@@ -383,11 +383,11 @@ type codexbarEntry struct {
 	Status      string                `json:"status"`           // ok | estimated | error
 	Error       string                `json:"error,omitempty"`
 	Plan        string                `json:"plan,omitempty"`
-	// OtherKeyFound (D90, owner 2026-11-14): the reading used the key the user entered, and a different
-	// key was also detected on this Mac. A flag only; the detected key is never kept.
-	OtherKeyFound bool      `json:"otherKeyFound,omitempty"`
-	ObservedAt    time.Time `json:"observedAt"`
-	Windows       []Window  `json:"windows,omitempty"`
+	// DetectedKeyRef (D90, owner 2026-11-14): the local reference (identity.go) of the GLM key detected on
+	// this Mac at this reading, "" when none. Compared with the entered key's reference; never a key.
+	DetectedKeyRef string    `json:"detectedKeyRef,omitempty"`
+	ObservedAt     time.Time `json:"observedAt"`
+	Windows        []Window  `json:"windows,omitempty"`
 	// SubscriptionRef: the account's reference (identity.go), from CodexBar's account id or, for a
 	// native reader, the API key; neither is kept.
 	SubscriptionRef string `json:"subscriptionRef,omitempty"`

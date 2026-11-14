@@ -249,7 +249,10 @@ public struct FirstRunReading: Sendable, Equatable {
         guard diagnosticsToken == token else { return }
         diagnosticsToken = nil; changed()
     }
+    /// Counts accepted row snapshots (each is a new reading), so Settings can refresh what depends on one.
+    public private(set) var rowsRevision = 0
     public func receiveAcceptedRows(_ value: WireRowsSnapshot) {
+        rowsRevision &+= 1
         rowsSummary = value.projection.rowsSummary
         claudeRowState = value.projection.rows.first { $0.id == "claude" }?.state
         var consents: [String: RowsConsent] = [:]

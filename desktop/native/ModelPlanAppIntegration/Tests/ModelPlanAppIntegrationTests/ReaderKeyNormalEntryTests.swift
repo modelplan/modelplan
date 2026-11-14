@@ -23,6 +23,9 @@ private actor KeyEngine: EngineClient {
     private(set) var keyCalls: [KeyCall] = []
     private(set) var grants: [[String]] = []
     private var saved = false
+    private var savedKey = ""
+    /// The GLM key the engine's latest reading detected (nil: none). Only compared, as the real engine does.
+    private var detectedKey: String?
     private var savedRegion: WireReaderKeyRegion = .none
     var testOutcome: WireReaderKeyOutcome = .ok
     init(store: EngineStore, facts: WireConsentFacts, rows: WireRowsSnapshot, rowsWithZai: WireRowsSnapshot) {
@@ -43,6 +46,11 @@ private actor KeyEngine: EngineClient {
     func retry() async throws -> EngineDeliveryContext { try await start() }
     func recordedKeyCalls() -> [KeyCall] { keyCalls }
     func recordedGrants() -> [[String]] { grants }
+    /// A reading that detected `key`: the engine publishes new rows (an accepted refresh).
+    func reading(detected key: String?) async throws {
+        detectedKey = key
+        await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rowsWithZai), delivery: context), invalidRowCount: 0))
+    }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("rows")) }
     func consent(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("facts")) }
     func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion {
@@ -57,12 +65,13 @@ private actor KeyEngine: EngineClient {
         var outcome: WireReaderKeyOutcome
         switch method {
         case .test: outcome = testOutcome
-        case .set: saved = true; savedRegion = params.region; outcome = .saved
-        case .remove: saved = false; savedRegion = .none; outcome = .removed
+        case .set: saved = true; savedKey = params.key; savedRegion = params.region; outcome = .saved
+        case .remove: saved = false; savedKey = ""; savedRegion = .none; outcome = .removed
         case .status: outcome = .ok
         }
         let id = WireRequestID.string("key-\(keyCalls.count)")
-        let result = try WireReaderKeyResult(schemaVersion: 1, provider: params.provider, region: saved ? savedRegion : .none, present: saved, otherKeyFound: false, outcome: outcome)
+        let result = try WireReaderKeyResult(schemaVersion: 1, provider: params.provider, region: saved ? savedRegion : .none, present: saved,
+                                             otherKeyFound: saved && detectedKey != nil && detectedKey != savedKey, outcome: outcome)
         await store.consume(.response(requestID: id, .readerKey(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: result), delivery: context))))
         return .init(requestID: id)
     }
@@ -148,6 +157,22 @@ private actor KeyEngine: EngineClient {
         let grants = await engineValue.recordedGrants()
         XCTAssertEqual(grants, [[zaiScope]], "saving turns on exactly that provider's reading scope")
         XCTAssertEqual(find(view, "readerkey.zai.field", as: NSSecureTextField.self)?.stringValue, "", "the key does not stay on screen")
+
+        // Owner decision 2026-11-14 / macrevd-795-1: a reading then detects a different GLM key; the saved key
+        // still wins (one row) and the open entry says another key was also found.
+        let other = { self.find(view, "readerkey.zai.otherkey", as: NSTextField.self) }
+        XCTAssertTrue(other()?.isHidden ?? true, "no detected key yet")
+        try await engineValue.reading(detected: "fake-detected-key-0007")
+        for _ in 0..<300 { if other()?.isHidden == false { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(other()?.stringValue, ReaderKeyStatus.otherKeyLine.english, "the line appears after the reading, on the reused entry")
+        XCTAssertEqual(other()?.isHidden, false)
+        // Saving the detected key itself: same key, one row, no line.
+        let again = try XCTUnwrap(find(view, "readerkey.zai.field", as: NSSecureTextField.self))
+        again.stringValue = "fake-detected-key-0007"
+        again.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: again))
+        try XCTUnwrap(find(view, "readerkey.zai.save", as: ConnectionButton.self)).invoke?()
+        for _ in 0..<300 { if other()?.isHidden ?? true { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(other()?.isHidden ?? true, "the same key detected and entered shows no line")
         await app.composition.stop()
     }
 }

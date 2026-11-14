@@ -136,6 +136,11 @@ import AppKit
         let model = view.entry; Task { @MainActor in await model.load() }
         return view
     }
+    /// macrev2/macrevd-795-1: after each accepted reading the inline entries ask the engine again, so the
+    /// "another key" line follows a detected key that appeared, changed or went away.
+    func refreshStatus() {
+        for view in inlineEntries.values { let model = view.entry; Task { @MainActor in await model.refreshStatus() } }
+    }
     func dismiss() { for entry in entries { entry.entry.dismiss() }; for entry in inlineEntries.values { entry.entry.dismiss() } }
     private func refresh() {
         heading.stringValue = language == .english ? "Add a key (optional)" : "添加密钥（可选）"
