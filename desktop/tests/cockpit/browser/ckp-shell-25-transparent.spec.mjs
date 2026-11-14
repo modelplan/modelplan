@@ -9,7 +9,9 @@ import {firstPixel} from '../png-pixel.mjs';
 // the native window shows (the window and web view are clear).
 for(const [tier,canvas] of [['tall',939],['compact',669]])for(const closed of [false,true])
 test(`CKP-SHELL-25 ${tier}${closed?' closed':''}: nothing is painted outside the hull silhouette`,async({page})=>{
- const root=closed?(tier==='tall'?691:609):(tier==='tall'?905:635),height=root+34;
+ // G3-108: the page canvas is always the open root's; the closed root stands on its floor, `top` px down, and the band
+ // above it is what the closed native window leaves out.
+ const root=closed?(tier==='tall'?691:609):(tier==='tall'?905:635),top=closed?(tier==='tall'?214:26):0,height=canvas;
  await page.setViewportSize({width:636,height});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
@@ -21,7 +23,8 @@ test(`CKP-SHELL-25 ${tier}${closed?' closed':''}: nothing is painted outside the
  // D68 r3 silhouette (measured): the canopy narrows toward the top, the walls fill the width from the canopy foot to
  // the aft plate, and the base reserve is clear except for the bells.
  const wallTop=closed?30:(tier==='tall'?244:56);
- for(const x of [0,1,634,635]){outside.push([x,2],[x,root+3],[x,height-3]);if(wallTop>=48)outside.push([x,Math.round(wallTop/2)]);}
+ for(const x of [0,1,634,635]){outside.push([x,top+2],[x,top+root+3],[x,height-3]);if(wallTop>=48)outside.push([x,top+Math.round(wallTop/2)]);}
+ if(closed)for(const x of [100,318,540])outside.push([x,2],[x,top+2]);
  for(const [x,y] of outside){
   const [,,,alpha]=firstPixel(await page.screenshot({clip:{x,y,width:1,height:1},omitBackground:true}));
   expect(alpha,`alpha at ${x},${y}`).toBe(0);

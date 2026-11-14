@@ -31,6 +31,9 @@ public struct FirstRunTool: Sendable, Equatable {
     public let promptsKeychain: Bool
     /// False only for a supported tool this Mac does not have (Settings lists it with the reason; first run does not).
     public var detected: Bool = true
+    /// G3-105: the engine's row says the tool's account key is missing (OpenCode is installed, but no
+    /// OpenCode Go key is set). Its local history can still be read, so this is not a block.
+    public var keyMissing: Bool = false
     public var canRead: Bool { detected && block == nil && !scopes.isEmpty }
 }
 /// D61: one quota window of a tool as the first-run page reads it out.
@@ -431,7 +434,7 @@ public struct FirstRunReading: Sendable, Equatable {
                 $0.route.isKnown && $0.route != .knownUnknown && $0.route != .browserSession && $0.disabledReason == nil && !$0.cleanupPending
             }
             return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool),
-                                promptsKeychain: standard.contains { $0.keychain != nil })
+                                promptsKeychain: standard.contains { $0.keychain != nil }, keyMissing: rowCodes[tool] == .keyMissing)
         }
     }
     /// G3-59: Settings lists every tool first run would list (same rows, engine order), then each supported
@@ -457,12 +460,21 @@ public struct FirstRunReading: Sendable, Equatable {
         return entry.scopes.allSatisfy { isReading($0) }
     }
     /// Settings: turn a whole tool on or off with one confirmed choice (the same grant the first-run Done sends).
+    /// #910-1: Off refuses every saved or default-on path of the tool, not only the paths detected now. A path
+    /// that is undetected at this moment (an OpenCode Go key that is absent) would otherwise resume reading
+    /// against the user's Off once it is detected again. On still allows only the paths shown on the row.
     @discardableResult public func requestToolChoice(_ tool: String, on: Bool) -> ScopeConsentConfirmation? {
         guard canMutate, let facts, let entry = firstRunTools.first(where: { $0.tool == tool && $0.canRead }) else { return nil }
         var allow: [String] = [], deny: [String] = []
-        for id in entry.scopes {
-            guard let scope = facts.scopes.first(where: { $0.scope == id }) else { continue }
-            if on { if scope.state != .allowed { allow.append(id) } } else if scope.state != .denied { deny.append(id) }
+        if on {
+            for id in entry.scopes {
+                guard let scope = facts.scopes.first(where: { $0.scope == id }) else { continue }
+                if scope.state != .allowed { allow.append(id) }
+            }
+        } else {
+            for scope in facts.scopes where scope.tool == tool && !scope.retired && scope.state != .denied {
+                if entry.scopes.contains(scope.scope) || scope.state == .allowed || isOnByDefault(scope.scope) { deny.append(scope.scope) }
+            }
         }
         guard !allow.isEmpty || !deny.isEmpty else { return nil }
         let value = ScopeConsentConfirmation(id: UUID(), intent: .init(mutation: .choose(allow: allow, deny: deny, keychain: [])))

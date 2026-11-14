@@ -21,6 +21,8 @@ import AppKit
     var isBackgroundMoving:Bool{get}
     func backgroundCanDrag(local:CGPoint)->Bool
     func beginBackgroundMove(local:CGPoint,global:CGPoint)->Bool
+    /// D244: a ring press that has moved past the click threshold carries the whole widget from where it was pressed.
+    func beginCarry(global:CGPoint)->Bool
     func updateBackgroundMove(global:CGPoint)
     func endBackgroundMove(global:CGPoint)
     func cancelBackgroundMove()
