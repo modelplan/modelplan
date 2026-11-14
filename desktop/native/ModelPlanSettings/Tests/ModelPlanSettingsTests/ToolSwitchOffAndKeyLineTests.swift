@@ -63,7 +63,7 @@ import ModelPlanWire
             ("opencodego.account_usage.api_key", "opencodego", "api_key_api", "allowed", false, true),
         ]))
         XCTAssertEqual(controller.firstRunTools.first { $0.tool == "opencodego" }?.scopes, ["opencodego.local_history"], "the key path is undetected now")
-        XCTAssertEqual(try denyIDs(controller, off: "opencodego"), ["opencodego.local_history", "opencodego.account_usage.api_key"])
+        XCTAssertEqual(try denyIDs(controller, off: "opencodego"), ["opencodego.account_usage.api_key", "opencodego.local_history"], "deny ids are sorted (ScopeConsentIntent.denyIDs)")
     }
 
     /// Finding 2, every tool: a saved allow or a default-on path that is undetected now is refused with the tool;
@@ -78,7 +78,7 @@ import ModelPlanWire
             ("gemini.local_history", "gemini", "local_log", "allowed", true, true),
         ]))
         XCTAssertEqual(try denyIDs(controller, off: "cursor"),
-                       ["cursor.local_history", "cursor.account_usage.saved_login", "cursor.account_usage.api_key"])
+                       ["cursor.account_usage.api_key", "cursor.account_usage.saved_login", "cursor.local_history"], "deny ids are sorted")
         controller.cancelConfirmation()
         // Switching on still allows only the paths the row shows.
         controller.receiveAcceptedFacts(try facts([
