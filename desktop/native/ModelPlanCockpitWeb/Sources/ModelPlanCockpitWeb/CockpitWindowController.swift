@@ -1142,6 +1142,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard !ending, bridge.ready, let web else { return }
     web.callAsyncJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Alt'}))", arguments: [:], in: nil, in: .page, completionHandler: nil)
   }
+  /// G3-108: a close or discard while a detached close still waits for the page's porthole finishes it at once: the
+  /// top edge comes down, the body stays. Cancelling it left an open-sized window at the body's place, so the remembered
+  /// origin described a window that did not fit there and the reopen was clamped down by the porthole band.
+  private func settlePendingShutter() {
+    guard let task = shutterTask else { return }
+    task.cancel(); shutterTask = nil
+    guard let window, let size = layout?.frame.size, window.frame.size != size else { return }
+    window.setFrame(CGRect(origin: window.frame.origin, size: size), display: true)
+    window.contentView?.setBoundsSize(size)
+  }
   func toggleShutter() {
     guard layout?.forcedClosed != true else { return }
     // G3-108: detached, the body stays where it is now (a close after an open that had to come down keeps that place).
@@ -1326,7 +1336,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
     // D88: a cockpit that grew out of the icon and is still attached shrinks back into it.
-    shutterTask?.cancel(); shutterTask = nil; shutterMoving = false
+    settlePendingShutter(); shutterMoving = false
     let shrink = grewFromIcon && !appearance.reduceMotion ? Self.entranceStart(.growFromIcon, reduceMotion: false, detached: shellSession.detached, icon: anchor()) : nil
     #if MODELPLAN_TEST_ONLY_SPI
     verificationCloseStarted?(appearance.reduceMotion ? 0 : shrink != nil ? Self.growDuration : 0.12)
@@ -1374,7 +1384,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     verificationDidDiscard?()
     #endif
     closeTask?.cancel(); closeTask = nil; cancelDrag()
-    shutterTask?.cancel(); shutterTask = nil; shutterMoving = false
+    settlePendingShutter(); shutterMoving = false
     if shellSession.detached, let window { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }; outsideMonitor = nil
     if let localMonitor { NSEvent.removeMonitor(localMonitor) }; localMonitor = nil
