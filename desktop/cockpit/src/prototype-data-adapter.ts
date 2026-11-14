@@ -22,8 +22,10 @@ export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitD
 export const cockpitDetails=(data:WireCockpitData)=>data.details;
 // Settings "Project names" off: labels are dropped before any surface or accessibility text sees them.
 export function withoutProjectNames(data:WireCockpitData):WireCockpitData {
- const details=data.details?{...data.details,sessions:data.details.sessions.map(s=>s.projectLabel===null?s:{...s,projectLabel:null}),
-  ...(data.details.recentSessions?{recentSessions:data.details.recentSessions.map(s=>s.projectLabel===null?s:{...s,projectLabel:null})}:{})}:data.details;
+ // A project whose name the page hides is still a project: its state becomes hidden, a session with none stays none.
+ const unname=<T extends {projectLabel:string|null;projectState?:'named'|'unnamed'|'hidden'|'none'}>(s:T):T=>s.projectLabel===null?s:{...s,projectLabel:null,...(s.projectState&&s.projectState!=='none'?{projectState:'hidden' as const}:{})};
+ const details=data.details?{...data.details,sessions:data.details.sessions.map(unname),
+  ...(data.details.recentSessions?{recentSessions:data.details.recentSessions.map(unname)}:{})}:data.details;
  const hide=<T extends {label:string|null}>(rows:readonly T[])=>rows.map(p=>p.label===null?p:{...p,label:null});
  const history=data.history?{...data.history,projects:{recent7d:hide(data.history.projects.recent7d),recent30d:hide(data.history.projects.recent30d)}}:data.history;
  return {...data,details,history};

@@ -38,10 +38,17 @@ func OpenCodeDB(home string) string {
 }
 
 func readOpenCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
-	dir, join := "''", ""
+	dir, join, pid, pname := "''", "", "''", "''"
 	for _, t := range []string{"session_v2", "session"} {
 		if hasColumns(db, t, "id", "directory") {
 			join, dir = " LEFT JOIN "+t+" s ON s.id = m.session_id", "COALESCE(s.directory, '')"
+			if hasColumns(db, t, "project_id") {
+				pid = "COALESCE(s.project_id, '')"
+				if hasColumns(db, "project", "id", "worktree") {
+					join += " LEFT JOIN project p ON p.id = s.project_id"
+					pname = "COALESCE(NULLIF(" + projectNameExpr(db) + ", ''), p.worktree, '')"
+				}
+			}
 			break
 		}
 	}
@@ -53,7 +60,7 @@ func readOpenCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
 		CAST(COALESCE(json_extract(m.data, '$.time.completed'), 0) AS INTEGER),
 		CAST(COALESCE(json_extract(m.data, '$.tokens.output'), 0) AS INTEGER) + CAST(COALESCE(json_extract(m.data, '$.tokens.reasoning'), 0) AS INTEGER),
 		COALESCE(json_extract(m.data, '$.tokens'), ''),
-		` + dir + `,
+		` + dir + `, ` + pid + `, ` + pname + `,
         json_extract(m.data, '$.tokens.input'), json_extract(m.data, '$.tokens.cache.read'), json_extract(m.data, '$.tokens.cache.write')
         FROM session_message m` + join + ` WHERE m.type = 'assistant' AND (m.rowid > ?` + inRowIDs("m.rowid", pending) + `) ORDER BY m.rowid LIMIT ` + itoa64(dbBatch)
 	rows, err := db.Query(q, after)
@@ -66,7 +73,7 @@ func readOpenCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
 		var r dbRow
 		var id, tokens string
 		var input, read, write sql.NullInt64
-		if rows.Scan(&r.rowid, &id, &r.session, &r.model, &r.start, &r.end, &r.out, &tokens, &r.cwd, &input, &read, &write) != nil {
+		if rows.Scan(&r.rowid, &id, &r.session, &r.model, &r.start, &r.end, &r.out, &tokens, &r.cwd, &r.np.ID, &r.np.Name, &input, &read, &write) != nil {
 			continue
 		}
 		r.TokenKinds = TokenKinds{InputTokens: nullCount(input), CacheReadTokens: nullCount(read), CacheWriteTokens: nullCount(write)}
@@ -96,3 +103,11 @@ const openCodeAnchor = `SELECT COALESCE(json_extract(data, '$.id'), '') || '|' |
 // openCodePostClear: the assistant messages up to a row created at or after a time, by the start
 // readOpenCode reads (a missing or non-numeric creation time is 0).
 const openCodePostClear = `FROM session_message WHERE type = 'assistant' AND rowid <= ? AND CAST(COALESCE(json_extract(data, '$.time.created'), 0) AS INTEGER) >= ?`
+
+// projectNameExpr: OpenCode's project name column when the table has one.
+func projectNameExpr(db *sql.DB) string {
+	if hasColumns(db, "project", "name") {
+		return "p.name"
+	}
+	return "''"
+}
