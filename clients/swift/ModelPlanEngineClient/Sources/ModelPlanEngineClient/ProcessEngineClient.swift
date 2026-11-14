@@ -48,6 +48,8 @@ struct ClientDelivery {
 /// App-side protocol client. UI state and Security.framework remain with its consumers.
 public actor ProcessEngineClient: EngineClient {
     nonisolated let deliveryAuthority = DeliveryAuthority()
+    /// Tells this client's lines apart in the app log (the cockpit and the rows each run their own engine child).
+    nonisolated let logTag = String(UUID().uuidString.prefix(8)).lowercased()
     let configuration: EngineClientConfiguration
     let consumer: any EngineClientEventConsumer
     let credentialAgent: (any CredentialAgent)?
@@ -449,7 +451,20 @@ public actor ProcessEngineClient: EngineClient {
     }
     public func subscribeRows(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("rows/subscribe", WireEmpty(), timeout: timeout) }
     public func consent(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("consent/get", WireEmpty(), timeout: timeout) }
-    public func grant(_ value: WireConsentGrantParams, userAction: EngineUserAction? = nil, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("consent/grant", value, timeout: timeout, grant: value, userAction: userAction) }
+    public func grant(_ value: WireConsentGrantParams, userAction: EngineUserAction? = nil, timeout: Duration? = nil) async throws -> EngineRequestCompletion {
+        // Scope ids only: no account, key or keychain value.
+        func ids(_ list: [String]?) -> String { "[" + (list ?? []).map(DiagnosticsLog.safeID).joined(separator: ",") + "]" }
+        let scopes = "allow=\(ids(value.allow)) deny=\(ids(value.deny)) forget=\(ids(value.forget)) client=\(logTag)"
+        DiagnosticsLog.shared.notice("consent", "grant requested " + scopes)
+        do {
+            let completion = try await request("consent/grant", value, timeout: timeout, grant: value, userAction: userAction)
+            DiagnosticsLog.shared.notice("consent", "grant accepted " + scopes)
+            return completion
+        } catch {
+            DiagnosticsLog.shared.notice("consent", "grant failed error=\(DiagnosticsLog.errorName(error)) " + scopes)
+            throw error
+        }
+    }
     public func refresh(_ value: WireRefreshRequestParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("refresh/request", value, timeout: timeout) }
     public func refresh(_ value: WireRefreshRequestParams, timeout: Duration? = nil,
                         prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion {

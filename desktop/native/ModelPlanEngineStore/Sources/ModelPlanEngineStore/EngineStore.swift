@@ -31,6 +31,7 @@ public typealias EngineStoreFeatureFailure = ModelPlanEngineStoreCore.EngineStor
     private var core = EngineStoreCore()
     public var snapshot: EngineStoreSnapshot { core.snapshot }
     private var sinks: [UUID: WeakSink] = [:]
+    private var readerLog = ReaderStateLog()
     private var refreshObservers: [UUID:(WireRequestID,[WireRefreshScheduled])->Void] = [:]
 
     public func observeRefreshReplies(_ observer:@escaping (WireRequestID,[WireRefreshScheduled])->Void) -> UUID {
@@ -54,6 +55,11 @@ public typealias EngineStoreFeatureFailure = ModelPlanEngineStoreCore.EngineStor
         // No suspension or RPC: the UI/cache barrier is acknowledged only
         // after Core reset, synchronous sink clearing, and empty-state fanout.
         let effect = core.apply(event)
+        switch event {
+        case .rowsChanged, .clearPrivateViews:
+            for line in readerLog.changes(core.snapshot.rows) { DiagnosticsLog.shared.info("readers", line) }
+        default: break
+        }
         if case .response(let requestID,.refresh(let reply))=event {
             for observer in Array(refreshObservers.values) { observer(requestID,reply.envelope.data) }
         }
@@ -69,5 +75,25 @@ public typealias EngineStoreFeatureFailure = ModelPlanEngineStoreCore.EngineStor
     private func liveSinks() -> [any EngineStoreSink] {
         sinks = sinks.filter { $0.value.value != nil }
         return sinks.values.compactMap(\.value)
+    }
+}
+
+/// One app-log line per tool reader whose state or cause changes: tool id, state and cause code only. Declared
+/// rows (whose ids the user chose) and account values are never logged.
+struct ReaderStateLog {
+    private var last: [String: String] = [:]
+    mutating func changes(_ rows: WireRowsSnapshot?) -> [String] {
+        guard let rows else { last = [:]; return [] } // the clear itself is logged by the engine client
+        var next: [String: String] = [:], lines: [String] = []
+        for row in rows.projection.rows where row.kind == .tool && !row.invalid {
+            let tool = DiagnosticsLog.safeID(row.id)
+            let value = "state=" + DiagnosticsLog.safeID(row.state.rawValue) + " cause=" + DiagnosticsLog.safeID(row.reason.code.rawValue)
+            if next[tool] != nil { continue }
+            next[tool] = value
+            if last[tool] != value { lines.append("reader " + tool + " " + value + (last[tool].map { " was " + $0 } ?? "")) }
+        }
+        for tool in last.keys.sorted() where next[tool] == nil { lines.append("reader " + tool + " gone") }
+        last = next
+        return lines
     }
 }

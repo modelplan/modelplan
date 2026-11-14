@@ -483,6 +483,7 @@ struct CockpitUnavailableNotice {
         wantsVisible=true
         retryTask?.cancel(); retryTask=nil; attempt += 1
         noticeTask?.cancel(); noticeTask=nil; rebuilding=false; rebuilds=0; retriedOpen=false; noticePath=""; failureClosesPage=false // a new click starts its own grace period
+        DiagnosticsLog.shared.info("cockpit", "open requested source=\(fromStatusItem ? "status-item" : "other") pending=\(showTask != nil)")
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
         CockpitTimingLog.markClick()
@@ -507,11 +508,13 @@ struct CockpitUnavailableNotice {
     var onShowingChanged: (() -> Void)?
     /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
     func requestClose() {
+        DiagnosticsLog.shared.info("cockpit", "close requested pageOpened=\(pageOpened)")
         noticeTask?.cancel(); noticeTask=nil; retryTask?.cancel(); retryTask=nil
         if pageOpened { owner.coordinator?.requestClose() } else { hide() }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
+        if wantsVisible || pageOpened { DiagnosticsLog.shared.info("cockpit", "closed pageOpened=\(pageOpened) rebuilding=\(rebuilding)") }
         wantsVisible = false
         noticeTask?.cancel(); noticeTask=nil; retryTask?.cancel(); retryTask=nil
         onShowingChanged?()
@@ -558,6 +561,7 @@ struct CockpitUnavailableNotice {
             rebuilds += 1
             if rebuilds > Self.maxRebuilds { noticeTask?.cancel(); noticeTask=nil; presentNotice(history:false,initiatedInForeground:initiatedInForeground); return }
             rebuilding=true // the coordinator's close that follows must not retire the presentation
+            DiagnosticsLog.shared.notice("cockpit", "rebuild n=\(rebuilds) cause=\(path)")
         }
         guard noticeTask == nil else { return }
         scheduleOpenRetry(path:path)

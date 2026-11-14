@@ -145,6 +145,10 @@ struct StatusNoticePresentation {
     public var openPublicURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Injection point for the cache action; the normal entry clears the app's own folder.
     public var clearAppCache: () -> Void = { EngineAppCache.clearCurrentApp() }
+    /// Settings → Diagnostics → Export diagnostics…. The normal entry (a real .app) shows what is included, a save
+    /// panel, and writes the zip; nil hides the row (v1 shows no dead control). Tests inject a recorder.
+    public var exportDiagnostics: (@MainActor (SettingsLanguage, SettingsAbout) -> Void)?
+    private let engineConfiguration: EngineClientConfiguration
     /// Injection point for global shortcuts; the normal entry supplies the system registrar.
     var shortcutRegistrar: (any EngineShortcutRegistering)?
     private let notificationConsumer = SettingsNotificationConsumer()
@@ -166,6 +170,7 @@ struct StatusNoticePresentation {
                 activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) {
         let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient)
         self.composition = composition
+        self.engineConfiguration = configuration
         self.scopeBinding = EngineScopeConsentBinding(composition: composition)
         self.foundationStore = settingsStore
         self.appBundleURL = bundleURL
@@ -424,6 +429,16 @@ struct StatusNoticePresentation {
            bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL, bundle.bundleURL.pathExtension == "app" {
             shortcutRegistrar = CarbonShortcutRegistrar()
         }
+        if exportDiagnostics == nil, let bundle = Bundle(url: appBundleURL),
+           bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL, bundle.bundleURL.pathExtension == "app" {
+            let helper = engineConfiguration.executableURL, environment = engineConfiguration.allowedEnvironment
+            exportDiagnostics = { language, about in
+                let summary = about.diagnosticText
+                DiagnosticsExportFlow.present(language: language) {
+                    DiagnosticsBundleInputs.live(helper: helper, helperEnvironment: environment, summary: summary)
+                }
+            }
+        }
         let observedAuthorization = await notificationAuthorizationService?.authorization() ?? .unavailable
         guard !terminating else { return }
         notificationConsumer.observeAuthorization(observedAuthorization)
@@ -436,6 +451,7 @@ struct StatusNoticePresentation {
         composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
         context.loginServiceObserved = true
         context.notificationServiceObserved = true
+        context.capabilities.diagnosticsExportAvailable = exportDiagnostics != nil
         // The choice stays visible; a service macOS refuses gets an honest reason and the fallback row.
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
         else if context.capabilities.loginNotInApplications { context.unavailableControls[.login] = .init("ModelPlan isn't in the Applications folder (for example opened from Downloads), so it can't be a login item.", "ModelPlan 不在“应用程序”文件夹里（例如从“下载”直接打开），所以不能设为登录项。") }
@@ -635,6 +651,9 @@ struct StatusNoticePresentation {
         case .openPublicLink(let link): openPublicURL(link.url)
         case .openSystemSettings(let pane): openSystemSettings(pane.url)
         case .action(.clearAppCache): clearAppCache()
+        case .exportDiagnostics:
+            guard let exportDiagnostics, let preferences = settings.editor.snapshot?.preferences else { return }
+            exportDiagnostics(preferences.language, settings.editor.context.about)
         case .shortcutPreferencesChanged(let openCockpit, let toggleDock):
             registerShortcuts(openCockpit: openCockpit, toggleDock: toggleDock)
         case .firstRunCompleted(let effects, _):

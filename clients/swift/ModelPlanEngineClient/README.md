@@ -97,7 +97,16 @@ cancellation sends bounded `$/cancel` notifications. Ordinary requests, query
 reservations, data/control queues, writes and consumer callbacks are bounded.
 Rows may coalesce after header observation; required control overflow closes the
 session. A malformed feature result fails that feature without clearing healthy
-rows. Raw frames/stderr/tokens are never included in events, errors or logs.
+rows. Raw frames/stderr/tokens are never included in events or errors.
+
+The child's stderr is drained and discarded unless a diagnostics log is
+configured (`EngineClientConfiguration.engineLog`, or
+`DiagnosticsLog.shared.configure(directory:)` in the app). Then each stderr line,
+the child's start and its exit status or signal go to a rotating `engine.log`,
+every line passed through `DiagnosticsRedactor` (keys, tokens, cookies, emails and
+home-folder names are replaced), so a Go panic trace survives the process. The
+client also logs connection states and consent grant requests (scope ids only)
+to the app log. Nothing is uploaded.
 
 Initialize errors and deadlines complete every pending start with a terminal
 failure and retire the child through supervision, even if the peer stays alive.

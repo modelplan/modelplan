@@ -25,6 +25,7 @@ import ModelPlanShell
         attachment = composition.store.attach(self)
     }
     func suspend() {
+        if desired { DiagnosticsLog.shared.info("lifecycle", "engine suspend") }
         if !desired, stopTask != nil { onPause(); return }
         generation &+= 1; desired = false; subscriptionReady = false; delivered = false
         expected = nil; fresh = nil; startTask?.cancel(); onPause()
@@ -33,6 +34,7 @@ import ModelPlanShell
     }
     func resume() {
         guard !desired else { return }
+        DiagnosticsLog.shared.info("lifecycle", "engine resume retry=\(manualRetry)")
         desired = true; generation &+= 1; let token = generation
         let useRetry = manualRetry; manualRetry = false
         subscriptionReady = false; delivered = false; expected = nil; fresh = nil
@@ -97,7 +99,10 @@ import ModelPlanShell
         self.worker = worker; self.gate = gate
         self.events = SystemEvents(gate: gate, workspace: workspace, local: local, distributed: lockEvents, displayIDs: displayIDs,
                                    onConsole: onConsole, displaysAsleep: displaysAsleep)
-        gate.onPresentationChange = { allowed in if allowed { onGateOpen() } else { onPause() } }
+        gate.onPresentationChange = { allowed in
+            DiagnosticsLog.shared.info("lifecycle", "presentation allowed=\(allowed)")
+            if allowed { onGateOpen() } else { onPause() }
+        }
     }
     func start() { events.start() }
     var canRetry: Bool { gate.canPresent }

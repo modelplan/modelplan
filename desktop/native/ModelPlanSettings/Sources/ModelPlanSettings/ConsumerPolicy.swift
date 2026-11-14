@@ -179,6 +179,8 @@ public struct SettingsCapabilities: Sendable {
     public var loginNotInApplications = false
     public var appCacheClearAvailable = false
     public var updateServiceAvailable = false
+    /// True when the host can write a diagnostics file (Settings → Diagnostics → Export diagnostics…).
+    public var diagnosticsExportAvailable = false
     /// True only while the engine reports its forecast producer (F1). Injected from the
     /// engine's negotiated capability, never persisted or inferred from the saved kinds.
     public var forecastProducerAvailable = false
