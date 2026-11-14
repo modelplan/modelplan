@@ -83,6 +83,9 @@ jobs:
       - name: "source-policy: mac-scope tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/mac-scope.test.mjs
+      - name: "source-policy: which Mac jobs run for which paths"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/mac-jobs-by-path.test.mjs
       - name: "source-policy: merge-gates tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/merge-gates.test.mjs
