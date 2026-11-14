@@ -56,6 +56,9 @@ type Span struct {
 	// Retry: logs inside the span that could not be read. The span still counts as covered, but
 	// each of these files is read again, alone, on the next import (HIST-IMP-12).
 	Retry []RetryFile `json:"retry,omitempty"`
+	// Archived: the Codex span also covers archived threads (archived_sessions). An older span
+	// without it is imported again from both folders, replacing its rows (glm-967-2).
+	Archived bool `json:"archived,omitempty"`
 }
 
 // RetryFile is one log whose read failed and the turn spans it still owes.
@@ -114,14 +117,32 @@ func LoadImported(cache string) (l ImportLedger, ok bool) {
 	return l, true
 }
 
-// AutoImportOwed: a first-run import was requested and has not completed, and recording is on.
-// A fresh profile owes nothing: only the first-run consent starts the first import.
-func AutoImportOwed(cache string) bool {
+// OwedSources: the history sources the engine still owes an import (G3-112). The first-run import
+// was requested (or ran under an older build), and the source holds a recorded grant (never a
+// default-on scope the user has not answered) but no span under that grant, or a Codex span
+// from before archived threads were read. A fresh profile owes nothing.
+func OwedSources(cache string, a consent.Admission) []string {
 	if Off() {
-		return false
+		return nil
 	}
 	l, ok := LoadImported(cache)
-	return ok && l.AutoRan == nil && l.AutoRequested != nil
+	if !ok || (l.AutoRequested == nil && l.AutoRan == nil) {
+		return nil
+	}
+	state := a.State()
+	var owed []string
+	for _, source := range []string{"claude-code", "codex"} {
+		r, decided := state.Scopes[sourceScope(source)]
+		epoch := currentEpoch(a, source)
+		if !decided || !r.Allowed || epoch == nil {
+			continue
+		}
+		c, has := l.Coverage[source]
+		if !has || c.From.IsZero() || !sameEpoch(c.Epoch, epoch) || (source == "codex" && !c.Archived) {
+			owed = append(owed, source)
+		}
+	}
+	return owed
 }
 
 // MarkAutoRequested records that the first-run import was asked for (kept until it completes).
@@ -202,7 +223,9 @@ type importJob struct {
 	source string
 	root   *ImportRoot
 	dirs   []string // under the root
-	prefix string   // file name prefix, "" for any
+	// reread: the source's older span is replaced, rows included, by this run's (glm-967-2).
+	reread bool
+	prefix string // file name prefix, "" for any
 	newP   func() parser
 	parser string
 	ranges []span
@@ -281,8 +304,16 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		if !sameEpoch(c.Epoch, currentEpoch(adm, j.source)) {
 			c = Span{}
 		}
-		j.cleared = clr.tool(j.source)
 		jfrom := from
+		if j.source == "codex" && !c.From.IsZero() && !c.Archived {
+			// Written before archived threads were read: import the whole span again from both
+			// folders and replace its rows, so each turn counts once wherever its log now lies.
+			if c.From.Before(jfrom) {
+				jfrom = c.From
+			}
+			c, j.reread = Span{}, true
+		}
+		j.cleared = clr.tool(j.source)
 		if j.cleared.After(jfrom) {
 			jfrom = j.cleared // a cleared history is not imported again
 		}
@@ -399,7 +430,13 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 	}
 	// G3-112: a first-run import that could read no source (no history grant yet) stays pending, so
 	// it runs when a grant arrives; once a source was admitted the first run is done.
-	if !committed && o.Auto && len(active) > 0 {
+	// glm-967-4: only a source that finished under its grant completes it; a run whose every
+	// source was withdrawn before its commit stays owed.
+	finished := false
+	for _, j := range active {
+		finished = finished || !j.withdrawn
+	}
+	if !committed && o.Auto && finished {
 		return res, markAutoRan(cache, now)
 	}
 	return res, nil
@@ -689,7 +726,7 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		led.Coverage = map[string]Span{}
 	}
 	c := led.Coverage[j.source]
-	if !sameEpoch(c.Epoch, epoch) { // an older grant's rows and span are not ours to extend
+	if !sameEpoch(c.Epoch, epoch) || j.reread { // an older grant's (or a re-read span's) rows are replaced
 		kept := led.Rows[:0]
 		for _, r := range led.Rows {
 			if r.Source != j.source {
@@ -715,6 +752,7 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		}
 	}
 	c.Epoch = epoch
+	c.Archived = j.source == "codex"
 	// Every pending log was tried this run: the ones that read are done, the ones that failed
 	// again (and new failures) are in j.failed.
 	tried := map[string]bool{}

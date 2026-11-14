@@ -78,7 +78,13 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	}
 	broker := &appserver.CredentialBroker{PathsFor: rawPaths, Offline: options.Offline, ReadOnly: options.ReadOnly}
 	paths := broker.Paths
+	var importer *appserver.ImportController
 	shared, err := appserver.NewSharedBackend(appserver.SharedConfig{
+		Granted: func() {
+			if importer != nil {
+				importer.StartOwed(speed.ImportDefaultDays)
+			}
+		},
 		Activity: appActivity(st.Dir),
 		Reported: func(report quota.Report, now time.Time) {
 			if !options.ReadOnly {
@@ -101,17 +107,14 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		return nil, func() {}, err
 	}
 	handlers["publication/get"] = publication
-	var importer *appserver.ImportController
 	if !options.ReadOnly {
 		importer = appserver.NewImportController(importEngine{st: st})
 		for method, h := range appserver.HistoryImportHandlers(importer) {
 			handlers[method] = h
 		}
-		// G3-112: a requested first-run import that did not complete (failed, interrupted or no grant
-		// yet) is retried at start. A fresh profile owes nothing: first-run consent starts the first one.
-		if firstRunImportPending(st.Dir, consent.Capture()) {
-			importer.StartFirstRun(speed.ImportDefaultDays)
-		}
+		// G3-112: an import still owed (failed, interrupted, withdrawn, or cleared and granted
+		// again) is retried at start and after each committed grant. A fresh profile owes nothing.
+		importer.StartOwed(speed.ImportDefaultDays)
 	}
 	closeBackend := func() {}
 	var scheduler *appserver.RefreshScheduler

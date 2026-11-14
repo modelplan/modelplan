@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
-	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
+	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
-// G3-112: the engine starts the first-run import itself when it is still owed (it failed, never
-// started, or a reset re-armed it) and a Claude Code or Codex history grant is in force.
-func TestFirstRunImportPendingNeedsMarkerAndGrant(t *testing.T) {
+// glm-967-1: automatic imports (first run, launch or grant retry) read only tools whose history
+// scope the user answered with an allow; a default-on scope nobody answered is never read. The
+// explicit Import keeps the consent in force.
+func TestAutomaticImportReadsOnlyRecordedGrants(t *testing.T) {
 	consentFixtureHome(t)
 	t.Setenv("MODELPLAN_HISTORY", "")
 	cache := t.TempDir()
@@ -20,32 +21,29 @@ func TestFirstRunImportPendingNeedsMarkerAndGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deny := consent.Grant{RequestID: "deny", ExpectStoreEpoch: cstate.StoreEpoch, ExpectGeneration: cstate.Generation, ConsentTextVersion: consent.TextVersion, Deny: []string{consent.ScopeClaudeLocalHistory, consent.ScopeCodexLocalHistory}}
-	hooks := consent.GrantHooks{Admit: func(consent.ScopeDefinition) (consent.Record, error) { return consent.Record{}, nil }, Cleanup: func(scope string, forget bool) error {
-		return quota.EraseScope(quota.Paths{Cache: cache}, scope, forget)
-	}}
-	if _, err := consent.ApplyGrant(consent.Path(), deny, hooks); err != nil {
+	hooks := consent.GrantHooks{Admit: func(consent.ScopeDefinition) (consent.Record, error) { return consent.Record{}, nil }, Cleanup: func(string, bool) error { return nil }}
+	if _, err := consent.ApplyGrant(consent.Path(), consent.Grant{RequestID: "codex", ExpectStoreEpoch: cstate.StoreEpoch, ExpectGeneration: cstate.Generation, ConsentTextVersion: consent.TextVersion, Allow: []string{consent.ScopeCodexLocalHistory}}, hooks); err != nil {
 		t.Fatal(err)
 	}
-	if firstRunImportPending(cache, consent.Capture()) {
-		t.Fatal("pending without any history grant")
+	st := &store.Store{Dir: cache}
+	auto := importOptions(st, 30, true, time.Now(), automaticImport(nil))
+	if auto.Claude != nil || auto.Codex == nil {
+		t.Fatalf("automatic import roots: claude=%v codex=%v", auto.Claude != nil, auto.Codex != nil)
 	}
-	cstate, _ = consent.Current()
-	allow := consent.Grant{RequestID: "allow", ExpectStoreEpoch: cstate.StoreEpoch, ExpectGeneration: cstate.Generation, ConsentTextVersion: consent.TextVersion, Allow: []string{consent.ScopeCodexLocalHistory}}
-	if _, err := consent.ApplyGrant(consent.Path(), allow, hooks); err != nil {
-		t.Fatal(err)
-	}
-	if firstRunImportPending(cache, consent.Capture()) {
-		t.Fatal("a launch with a grant but no unfinished first-run request started an import")
+	// Owed only after a requested first run, and only for the recorded, uncovered source.
+	if got := owedHistoryTools(cache); len(got) != 0 {
+		t.Fatalf("fresh profile owes %v", got)
 	}
 	if err := speed.MarkAutoRequested(cache, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if !firstRunImportPending(cache, consent.Capture()) {
-		t.Fatal("owed import with a Codex grant not started")
+	if got := owedHistoryTools(cache); len(got) != 1 || !got["codex"] {
+		t.Fatalf("owed %v, want codex only", got)
 	}
-	t.Setenv("MODELPLAN_HISTORY", "off")
-	if firstRunImportPending(cache, consent.Capture()) {
-		t.Fatal("pending while history is off")
+	if !consent.Allowed("claude", consent.Local) {
+		t.Skip("claude history is not default-on here; the boundary above still holds")
+	}
+	if manual := importOptions(st, 30, false, time.Now(), manualImport); manual.Claude == nil {
+		t.Fatal("explicit import lost the consent in force")
 	}
 }

@@ -36,9 +36,12 @@ type SharedConfig struct {
 	Detect           func() detect.Report
 	// LaterInstalled records each detection report and returns the tools detected now that
 	// were absent when this Mac's engine first looked (D238). Optional.
-	LaterInstalled    func(detect.Report) map[string]bool
-	Paths             func(consent.Admission) quota.Paths
-	Cleanup           func(string, bool) error
+	LaterInstalled func(detect.Report) map[string]bool
+	Paths          func(consent.Admission) quota.Paths
+	Cleanup        func(string, bool) error
+	// Granted runs after each committed, not replayed, consent change (optional); the history
+	// import retry hangs off it (G3-112).
+	Granted           func()
 	Offline, ReadOnly bool
 }
 
@@ -434,6 +437,9 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	}
 	if !b.config.Offline && receipt.Committed && !receipt.Replayed && keychain[consent.ScopeClaudeAccountUsageSavedLogin] == "allow" {
 		result.Credentials = []CredentialNeed{{Provider: "claude", Scope: consent.ScopeClaudeAccountUsageSavedLogin, Interactive: true}}
+	}
+	if receipt.Committed && !receipt.Replayed && b.config.Granted != nil {
+		b.config.Granted()
 	}
 	b.notify()
 	return result, nil

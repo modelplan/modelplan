@@ -45,9 +45,9 @@ func TestDoctorListsCodexAndClaudeHistoryImport(t *testing.T) {
 	}
 }
 
-// G3-112: a reset (revoke or forget of a tool's local history) re-arms the first-run import, so the
-// next grant imports the past again instead of answering "already ran".
-func TestHistoryScopeCleanupReArmsTheFirstRunImport(t *testing.T) {
+// glm-967-3: clearing one tool's history keeps the shared first-run markers, so the other tool is
+// not imported again, and the cleared tool is owed an import as soon as it is granted again.
+func TestHistoryScopeCleanupLeavesTheClearedSourceOwed(t *testing.T) {
 	for _, forget := range []bool{false, true} {
 		t.Run(map[bool]string{false: "revoke", true: "forget"}[forget], func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
@@ -56,18 +56,29 @@ func TestHistoryScopeCleanupReArmsTheFirstRunImport(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(cache, "observed"), 0700); err != nil {
 				t.Fatal(err)
 			}
-			b := []byte(`{"schemaVersion":1,"autoRan":"2026-11-14T15:29:54Z","coverage":{},"rows":[{"source":"codex","day":"2026-10-02"}]}`)
+			state := consent.Empty()
+			state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+			for _, scope := range []string{consent.ScopeClaudeLocalHistory, consent.ScopeCodexLocalHistory} {
+				state.Scopes[scope] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion}
+			}
+			adm := consent.NewAdmission(state, consent.Automatic)
+			epoch := `{"storeEpoch":"0123456789abcdef0123456789abcdef","revokedGeneration":0}`
+			span := `{"from":"2026-10-15T00:00:00Z","through":"2026-11-14T00:00:00Z","epoch":` + epoch
+			b := []byte(`{"schemaVersion":1,"autoRan":"2026-11-14T15:29:54Z","coverage":{"codex":` + span + `,"archived":true},"claude-code":` + span + `}},"rows":[{"source":"codex","day":"2026-10-02"}]}`)
 			if err := os.WriteFile(speed.ImportPath(cache), b, 0600); err != nil {
 				t.Fatal(err)
 			}
-			if speed.NeedsAutoImport(cache) {
-				t.Fatal("fixture: import already pending")
+			if got := speed.OwedSources(cache, adm); len(got) != 0 {
+				t.Fatalf("fixture: owed %v", got)
 			}
 			if err := EraseScope(Paths{Cache: cache}, consent.ScopeCodexLocalHistory, forget); err != nil {
 				t.Fatal(err)
 			}
-			if !speed.NeedsAutoImport(cache) {
-				t.Fatal("cleanup kept the first-run marker; the next grant would not import the past")
+			if speed.NeedsAutoImport(cache) {
+				t.Fatal("clearing one tool re-armed the shared first-run import")
+			}
+			if got := speed.OwedSources(cache, adm); len(got) != 1 || got[0] != "codex" {
+				t.Fatalf("re-granted codex owed %v, want [codex]", got)
 			}
 		})
 	}

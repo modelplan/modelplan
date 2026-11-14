@@ -72,22 +72,47 @@ func (c *ImportController) start(p wire.HistoryImportStartParams) error {
 	if p.FirstRun && c.engine.State().FirstRunDone {
 		return nil
 	}
+	err := c.startRun(p.Days, func(ctx context.Context, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+		return c.engine.Run(ctx, p.Days, p.FirstRun, progress)
+	})
+	if err != nil && p.FirstRun {
+		return nil // joins the running import
+	}
+	return err
+}
+
+// OwedRunner is the optional engine side of the launch and grant retry (G3-112).
+type OwedRunner interface {
+	// Owed reports, from the ledger and the consent in force, whether an import is owed.
+	Owed() bool
+	RunOwed(ctx context.Context, days int, progress func(done, total int)) ([]wire.HistoryImportSource, error)
+}
+
+// StartOwed starts the owed import in the background when one is owed and none is running.
+func (c *ImportController) StartOwed(days int) {
+	r, ok := c.engine.(OwedRunner)
+	if !ok || !r.Owed() {
+		return
+	}
+	_ = c.startRun(days, func(ctx context.Context, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+		return r.RunOwed(ctx, days, progress)
+	})
+}
+
+func (c *ImportController) startRun(days int, run func(context.Context, func(int, int)) ([]wire.HistoryImportSource, error)) error {
 	c.mu.Lock()
 	if c.phase == wire.ImportRunning {
 		c.mu.Unlock()
-		if p.FirstRun {
-			return nil
-		}
 		return ProtocolError{wire.CodeBusy}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c.phase, c.days, c.done, c.total, c.last, c.cancel = wire.ImportRunning, p.Days, 0, 0, nil, cancel
+	c.phase, c.days, c.done, c.total, c.last, c.cancel = wire.ImportRunning, days, 0, 0, nil, cancel
 	c.wg.Add(1)
 	c.mu.Unlock()
 	go func() {
 		defer c.wg.Done()
 		defer cancel()
-		res, err := c.engine.Run(ctx, p.Days, p.FirstRun, func(done, total int) {
+		res, err := run(ctx, func(done, total int) {
 			c.mu.Lock()
 			c.done, c.total = done, total
 			c.mu.Unlock()
@@ -105,11 +130,6 @@ func (c *ImportController) start(p wire.HistoryImportStartParams) error {
 		c.revision++
 	}()
 	return nil
-}
-
-// StartFirstRun starts the first-run import in the background unless one is running (G3-112).
-func (c *ImportController) StartFirstRun(days int) {
-	_ = c.start(wire.HistoryImportStartParams{Days: days, FirstRun: true})
 }
 
 // HistoryImportHandlers: history/import_start answers at once with the running status;

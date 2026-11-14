@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 // G3-112: Codex moves archived threads to <CODEX_HOME>/archived_sessions (flat rollout files). The
@@ -35,23 +37,93 @@ func TestImportReadsCodexArchivedSessions(t *testing.T) {
 	}
 }
 
-// G3-112: an import is owed for a retry only after a first-run import was requested and did not
-// complete; a fresh profile owes nothing, so launching never starts a read by itself.
-func TestAutoImportOwedOnlyAfterAnUnfinishedRequest(t *testing.T) {
+// glm-967-2: coverage written before archived threads were read does not hide them. An older
+// codex span (no archived mark) is imported again from both folders, each turn exactly once.
+func TestImportReReadsArchivedThreadsUnderOlderCoverage(t *testing.T) {
 	f := newFixture(t)
-	if AutoImportOwed(f.cache) {
-		t.Fatal("fresh profile owes an import")
+	f.codexLog("rollout-live.jsonl", -2)
+	f.run(30, both())
+	l, _ := LoadImported(f.cache)
+	c := l.Coverage["codex"]
+	c.Archived = false // as an older build wrote it
+	l.Coverage["codex"] = c
+	if err := writeImported(f.cache, l); err != nil {
+		t.Fatal(err)
+	}
+	p := f.codexLog("rollout-old.jsonl", -6, -5)
+	archived := filepath.Join(f.home, "archived_sessions", filepath.Base(p))
+	os.MkdirAll(filepath.Dir(archived), 0o700)
+	if err := os.Rename(p, archived); err != nil {
+		t.Fatal(err)
+	}
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "codex"); r != 3 {
+		t.Fatalf("codex requests after upgrade %d, want 3 (each turn once)", r)
+	}
+	if !l.Coverage["codex"].Archived {
+		t.Fatal("re-read coverage not marked as covering archived threads")
+	}
+	f.run(30, both())
+	l, _ = LoadImported(f.cache)
+	if r, _ := total(l, "codex"); r != 3 {
+		t.Fatalf("third import counted %d", r)
+	}
+}
+
+// glm-967-4: an automatic run whose every admitted source was withdrawn before its commit has not
+// completed the first run; it stays owed.
+func TestAutoImportWithdrawnBeforeCommitStaysOwed(t *testing.T) {
+	f := newFixture(t)
+	f.codexLog("rollout-a.jsonl", -3)
+	live := admitted(consent.ScopeCodexLocalHistory)
+	withdrawn := func() *consent.Admission {
+		state := consent.Empty()
+		state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+		state.Generation = 3
+		state.Revoked[consent.ScopeCodexLocalHistory] = 1
+		state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed: false, ConsentTextVersion: consent.TextVersion, At: t0}
+		state.Scopes[consent.ScopeClaudeLocalHistory] = consent.Record{Allowed: false, ConsentTextVersion: consent.TextVersion, At: t0}
+		a := consent.NewAdmission(state, consent.Automatic)
+		return &a
 	}
 	if err := MarkAutoRequested(f.cache, f.now); err != nil {
 		t.Fatal(err)
 	}
-	if !AutoImportOwed(f.cache) {
-		t.Fatal("requested, unfinished first run is not owed")
-	}
-	if _, err := Import(context.Background(), f.cache, ImportOptions{Now: f.now, Codex: &ImportRoot{Dir: f.home}, Admission: both(), Auto: true}); err != nil {
+	_, err := Import(context.Background(), f.cache, ImportOptions{Now: f.now, Admission: admitted(consent.ScopeCodexLocalHistory), Auto: true,
+		Codex: &ImportRoot{Dir: f.home, Background: func(string) bool { live = withdrawn(); return false }},
+		Live:  func() consent.Admission { return *live }, Guard: localWriteGuard(&live)})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if AutoImportOwed(f.cache) {
-		t.Fatal("completed first run still owed")
+	if !NeedsAutoImport(f.cache) {
+		t.Fatal("a run whose only source was withdrawn marked the first run done")
+	}
+	if got := OwedSources(f.cache, *admitted(consent.ScopeCodexLocalHistory)); len(got) != 1 || got[0] != "codex" {
+		t.Fatalf("re-granted codex not owed: %v", got)
+	}
+}
+
+// G3-112: a source is owed a retry once the first-run import was requested (or ran under an older
+// build) and that source holds a grant but no current coverage; a fresh profile owes nothing.
+func TestOwedSourcesFollowRequestGrantAndCoverage(t *testing.T) {
+	f := newFixture(t)
+	f.codexLog("rollout-a.jsonl", -3)
+	adm := *both()
+	if got := OwedSources(f.cache, adm); len(got) != 0 {
+		t.Fatalf("fresh profile owes %v", got)
+	}
+	if err := MarkAutoRequested(f.cache, f.now); err != nil {
+		t.Fatal(err)
+	}
+	if got := OwedSources(f.cache, adm); len(got) != 2 {
+		t.Fatalf("requested, nothing covered: %v", got)
+	}
+	f.run(30, both())
+	if got := OwedSources(f.cache, adm); len(got) != 0 {
+		t.Fatalf("covered sources still owed: %v", got)
+	}
+	if got := OwedSources(f.cache, *admitted(consent.ScopeCodexLocalHistory)); len(got) != 0 {
+		t.Fatalf("an ungranted source is owed: %v", got)
 	}
 }
