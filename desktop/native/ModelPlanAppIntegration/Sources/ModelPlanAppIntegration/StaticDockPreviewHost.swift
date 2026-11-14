@@ -645,38 +645,71 @@ struct DockHelpInteraction: Equatable {
         let active = permitted && !retired && !rendering && preferences.showDock &&
             appearance != nil && view.interactionProjectionAvailable && model != nil
         var inside: Bool?
+        var hover = interactionHoveredID
         if let place, let pointer = env.pointer,
            let display = env.displays.first(where: { $0.id == place.displayID }) {
-            var painted = place.globalHoverRects
+            // G3-120 (Pulse pointerMoved): the ring under the pointer is read from the same sample that
+            // decides leaving. A widget that opens under a resting pointer has no tracking event to report
+            // the ring, and a missed exit must not leave a stale ring holding the card. With a window the
+            // sample is authoritative; a detached synthetic host falls back to its reported hover while
+            // the pointer is on the widget.
+            if expanded, let local = Self.interactionLocal(pointer, view: view, frame: place.frame) {
+                let sampled = view.ringUnitID(atLocal: local).flatMap { catalogue.contains($0) ? $0 : nil }
+                hover = sampled ?? (view.window == nil && place.frame.contains(pointer) ? interactionHoveredID : nil)
+            }
+            var painted = place.globalHoverRects, wake = place.wakeFrame
+            var outerEdge = DockEdgeGeometry.canWake(at: pointer, placement: place, displays: env.displays)
+            // G3-120: an open card is held by its own ring, the card and the band between them, not by
+            // the whole widget body (which held it open for as long as the pointer rested anywhere on it).
+            if let open = cardID, !card.isHidden, let ringLocal = view.interactionAnchor(open),
+               let ring = Self.interactionGlobal(ringLocal.union(view.cardRingAnchor(open) ?? ringLocal),
+                                                 view: view, frame: place.frame, expanded: expanded) {
+                painted = [env.cardFrame.map { ring.union($0) } ?? ring]
+                wake = .null; outerEdge = false
+            }
             if overflowPanel?.isVisible == true, let frame = overflowPanel?.frame { painted.append(frame) }
-            let region = DockPresenceArea(painted: painted, wake: place.wakeFrame, card: env.cardFrame,
-                display: display.usableFrame, edge: orientation,
-                outerEdge: DockEdgeGeometry.canWake(at: pointer, placement: place, displays: env.displays))
+            let region = DockPresenceArea(painted: painted, wake: wake, card: env.cardFrame,
+                display: display.usableFrame, edge: orientation, outerEdge: outerEdge)
                 .region(at: pointer, policy: visibilityPolicy)
             switch region { case .inside, .wake: inside = true; case .outside: inside = false; default: inside = nil }
             var trackedFrame: CGRect?
-            if let id = interactionHoveredID, let anchor = view.interactionAnchor(id) {
-                if let window = view.window {
-                    trackedFrame = window.convertToScreen(view.convert(anchor, to: nil))
-                } else if expanded, view.bounds.size == place.frame.size {
-                    // Detached synthetic hosts use the same registered local geometry.
-                    trackedFrame = CGRect(x: place.frame.minX + anchor.minX - view.bounds.minX,
-                        y: place.frame.maxY - anchor.maxY + view.bounds.minY, width: anchor.width, height: anchor.height)
-                }
+            if let id = hover, let anchor = view.interactionAnchor(id) {
+                trackedFrame = Self.interactionGlobal(anchor, view: view, frame: place.frame, expanded: expanded)
             }
             inside = Self.cardPointerEvidence(sampled: inside, pointer: pointer, trackedRow: trackedFrame)
+            // A ring under the pointer holds (the card switches to it); a held widget press or carry
+            // never closes the card (G3-114: the card follows its ring while the widget is carried).
+            if hover != nil || edge.isBackgroundPressed || interactionController?.hasCapture == true { inside = true }
         }
+        let pressedOutside = env.presence.mouseButtonDown && inside == false
         let focusedID = view.keyboardTargetID.flatMap { catalogue.contains($0) ? $0 : nil }
         if cardHasKeyboardFocus || focusedID != nil { inside = true }
         let safePreferences = memberSafePreferences
         let visible = Set((try? safePreferences.presentedSubscriptionIDs(catalogue)) ?? [])
         var contents: [String: DockCardContent] = [:]
         for id in catalogue where visible.contains(id) { contents[id] = interactionCardContent(id) }
-        return DockInteractionEnvironment(catalogue: catalogue, preferences: safePreferences.subscriptions,
+        let value = DockInteractionEnvironment(catalogue: catalogue, preferences: safePreferences.subscriptions,
             targets: view.interactionTargets(edge: orientation), overflowIDs: view.interactionOverflowIDs,
-            bindingRevision: inputGeneration, hoverEventRevision: interactionHoverRevision, hoveredID: focusedID ?? interactionHoveredID, insideShared: inside,
+            bindingRevision: inputGeneration, hoverEventRevision: interactionHoverRevision, hoveredID: focusedID ?? hover, insideShared: inside,
             parentOwnsHide: true, parentExpanded: expanded && active, menuActuallyOpen: menuOpen,
             active: active, reducedMotion: application?.effective.reduceMotion ?? true, edge: orientation, contents: contents)
+        var result = value; result.pressedOutside = pressedOutside && !(cardHasKeyboardFocus || focusedID != nil)
+        return result
+    }
+
+    /// View-local point for a global pointer: through the window, or through the placement frame for a
+    /// detached synthetic host whose view has the placement's size.
+    static func interactionLocal(_ pointer: CGPoint, view: NSView, frame: CGRect) -> CGPoint? {
+        if let window = view.window { return view.convert(window.convertPoint(fromScreen: pointer), from: nil) }
+        guard view.bounds.size == frame.size else { return nil }
+        return CGPoint(x: pointer.x - frame.minX + view.bounds.minX, y: frame.maxY - pointer.y + view.bounds.minY)
+    }
+    static func interactionGlobal(_ local: CGRect, view: NSView, frame: CGRect, expanded: Bool) -> CGRect? {
+        if let window = view.window { return window.convertToScreen(view.convert(local, to: nil)) }
+        // Detached synthetic hosts use the same registered local geometry.
+        guard expanded, view.bounds.size == frame.size else { return nil }
+        return CGRect(x: frame.minX + local.minX - view.bounds.minX, y: frame.maxY - local.maxY + view.bounds.minY,
+                      width: local.width, height: local.height)
     }
 
     private func updateNozzleMagnification() {

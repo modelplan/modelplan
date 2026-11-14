@@ -12,7 +12,15 @@ public enum DockCardFocus {
         isKeyWindow && isDescendant && isFocusableControl && isCurrent
     }
 }
-/// The card keeps its own bounded leave grace while sharing the widget/card corridor.
+/// G3-120: the ring card's timing model (Pulse behaviour, own code; qunqin24/Pulse
+/// `FloatingUsagePanelContent.select/pointerMoved/scheduleHide`, `PanelIntent.notchDwell`).
+/// - Open: the pointer rests on one ring for `entryDwell` (250 ms); a pass that leaves sooner opens nothing.
+/// - Switch: with a card open, reaching another ring shows that ring's card at once. One card at a time.
+/// - Hold: the card's own ring, the card, and the band between them (`insideShared`). The rest of the
+///   widget body does not hold a card open.
+/// - Close: the pointer outside the hold for `independentLeaveGrace` (250 ms); any inside sample in
+///   that window cancels it. A press outside the hold (`pressedOutside`) closes at once.
+/// - Never closed by the grace: an open widget menu, or a held widget carry (the host reports inside).
 public struct DockCardInteraction:Sendable {
     public static let entryDwell:TimeInterval=0.250,independentLeaveGrace:TimeInterval=0.250
     public private(set) var visibility:DockCardVisibility = .hidden
@@ -20,7 +28,7 @@ public struct DockCardInteraction:Sendable {
     private var hovered:String?,pending:String?,enterAt:TimeInterval?,leaveAt:TimeInterval?,lastTime:TimeInterval?
     private var catalogue=Set<String>()
     public init(){}
-    public mutating func step(catalogue:[String],hoveredID:String?,insideShared:Bool?,parentOwnsHide:Bool,parentExpanded:Bool,menuActuallyOpen:Bool,at now:TimeInterval)throws{
+    public mutating func step(catalogue:[String],hoveredID:String?,insideShared:Bool?,parentOwnsHide:Bool,parentExpanded:Bool,menuActuallyOpen:Bool,pressedOutside:Bool=false,at now:TimeInterval)throws{
         try time(now)
         guard !catalogue.contains(""),Set(catalogue).count==catalogue.count else{throw DockLogicError.invalidCatalogue}
         self.catalogue=Set(catalogue)
@@ -36,6 +44,10 @@ public struct DockCardInteraction:Sendable {
         if !parentExpanded{pending=nil;enterAt=nil;visibility = .hidden}
         if let pending,let enterAt,now>=enterAt,parentExpanded{
             visibility = .hover(pending);self.pending=nil;self.enterAt=nil
+        }
+        // A press outside the hold is an outside click: close now, no grace (G3-120).
+        if pressedOutside,insideShared == false,!menuActuallyOpen,visibility != .hidden{
+            visibility = .hidden;leaveAt=nil;hovered=nil;pending=nil;enterAt=nil
         }
         // A single outside sample starts the leave grace; renewed inside evidence cancels it.
         if visibility == .hidden || insideShared != false || menuActuallyOpen{leaveAt=nil}

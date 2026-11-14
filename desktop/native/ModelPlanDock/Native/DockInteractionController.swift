@@ -4,6 +4,8 @@ import AppKit
 public struct DockInteractionEnvironment:Sendable {
     public var catalogue:[String],preferences:DockSubscriptionPreferences,targets:[DockReorderTarget],overflowIDs:Set<String>,bindingRevision:UInt64,hoverEventRevision:UInt64
     public var hoveredID:String?,insideShared:Bool?,parentOwnsHide:Bool,parentExpanded:Bool,menuActuallyOpen:Bool,active:Bool,reducedMotion:Bool
+    /// A mouse button is down outside the card's hold and no widget press is held (G3-120: closes at once).
+    public var pressedOutside:Bool=false
     public var edge:DockEdge,contents:[String:DockCardContent]
     public init(catalogue:[String],preferences:DockSubscriptionPreferences,targets:[DockReorderTarget],overflowIDs:Set<String>=[],bindingRevision:UInt64=0,hoverEventRevision:UInt64=0,hoveredID:String?=nil,insideShared:Bool?=nil,parentOwnsHide:Bool=true,parentExpanded:Bool=true,menuActuallyOpen:Bool=false,active:Bool=true,reducedMotion:Bool=false,edge:DockEdge = .right,contents:[String:DockCardContent]=[:]){
         self.catalogue=catalogue;self.preferences=preferences;self.targets=targets;self.overflowIDs=overflowIDs;self.bindingRevision=bindingRevision;self.hoverEventRevision=hoverEventRevision
@@ -68,7 +70,7 @@ public struct DockInteractionPresentation:Equatable,Sendable {
             if let retiredHover, env.hoveredID != retiredHover.id || env.hoverEventRevision != retiredHover.event { self.retiredHover = nil }
             let hover = retiredHover == nil && gesture.preview == nil ? env.hoveredID : nil
             let previousCard = cards.visibility.subscriptionID
-            try cards.step(catalogue:env.catalogue,hoveredID:hover,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,at:currentTime())
+            try cards.step(catalogue:env.catalogue,hoveredID:hover,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,pressedOutside:env.pressedOutside,at:currentTime())
             if previousCard != nil, cards.visibility.subscriptionID == nil, env.insideShared == false, let id = env.hoveredID {
                 retiredHover = (id, env.hoverEventRevision)
             }
