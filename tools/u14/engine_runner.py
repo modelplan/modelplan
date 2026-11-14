@@ -59,7 +59,12 @@ def tighten(binary, home, **actions):
 
 
 def plain_smoke(binary, home):
-    with EngineProcess(binary, home, 'u14-plain') as engine:
+    engine = EngineProcess(binary, home, 'u14-plain')
+    # Same race as the 'empty' case in empty_states: the synthetic Codex exits at once, so a background
+    # first read can end before rows/subscribe and turn the row failed/closed instead of pending (G3-38).
+    engine.environment['MODELPLAN_NATIVE'] = 'off'
+    engine.environment['MODELPLAN_CODEX_ACCOUNT'] = 'off'
+    with engine:
         hello = engine.initialize()
         require({'consent', 'rows', 'diagnostics', 'history', 'refresh', 'publication', 'plugin_install'} <=
                 set(hello['data']['capabilities']), 'production-handlers-not-linked')
