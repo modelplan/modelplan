@@ -493,6 +493,7 @@ import ModelPlanSettings
                 var settings = 0, console = 0
                 host.showSettings = { settings += 1 }; host.showConsole = { console += 1 }
                 await coordinator.reload()
+                _ = try await coordinator.editor.commit(.language(.chinese))  // explicit: the default now follows the macOS list
                 var ready = StoreDiagnostics(); ready.personal = nil
                 host.updateDockConsent(readback)
                 host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
@@ -572,7 +573,7 @@ import ModelPlanSettings
             var opens = 0; host.showConsole = { opens += 1 }
             let coordinator = SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("settings.json")), context: context) { host.apply($0) }
             await coordinator.reload()
-            if !hide { _ = try await coordinator.editor.commit(.language(.english)) }
+            _ = try await coordinator.editor.commit(.language(hide ? .chinese : .english))  // explicit: the default now follows the macOS list
             var ready = StoreDiagnostics(); ready.personal = nil
             host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
             try presentSyntheticHostCard(host, id: "a")
