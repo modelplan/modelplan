@@ -31,8 +31,8 @@ const pr = (over = {}) => ({
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
-const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, p = pr() } = {}) =>
-  R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, conf });
+const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, prove, p = pr() } = {}) =>
+  R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, proveMainMerges: prove, conf });
 // D243 (owner 2026-11-13): scenario evidence, Scenarios lines, trains, GLMREV, DESIGN and non-GPT verdict blocks are
 // advisory. They never change the PR state; the status description names them after "info:". advisory() reads the
 // evidence part back out of a result: PENDING when the description reports missing or unreadable evidence.
@@ -194,6 +194,62 @@ test("carry: verified edges only, followed back from the head, at most 6 hops", 
   assert.equal(evalPr({ ...carried, verified: () => true }).state, R.SUCCESS);
   assert.equal(evalPr(carried).state, R.PENDING, "an unproven carry line does not carry");
   assert.equal(R.carryEdges(R.feed([], [review(`VERDICT-CARRY: ${OLD} -> ${H}`)])).length, 0, "edges come from comments only");
+});
+
+// D243 G6 (owner 2026-11-14): a merge VERDICT carries across main merges without a VERDICT-CARRY comment.
+const MID = "d".repeat(40);
+const proved = (between = [H]) => (o, n) => ({ ok: true, why: "main merges only, diff unchanged", between });
+const unproved = () => ({ ok: false, why: "the PR's own diff changed", between: [] });
+
+test("auto-carry: a merge VERDICT carries over a proven clean main merge and says so in the description", () => {
+  const seen = [];
+  const r = evalPr({ comments: [comment(v("merge", OLD, "macrevc"))], prove: (o, n) => { seen.push([o, n]); return proved()(o, n); } });
+  assert.deepEqual(seen, [[OLD, H]], "the reviewed head is proved against the current head");
+  assert.equal(r.state, R.SUCCESS);
+  assert.match(r.why, /^tier 1: gates pass; verdict carried from bbbbbbbb \(main merges only, diff unchanged\)/);
+  assert.equal(r.autoCarried, OLD);
+  assert.ok(R.description(r.why).includes("verdict carried from bbbbbbbb (main merges only, diff unchanged)"));
+  // Waiting for CI after a carry still names the carry.
+  const waiting = evalPr({ comments: [comment(v("merge", OLD, "macrevc"))], prove: proved(), runs: [run(".github/workflows/ci.yml", null, 1, "in_progress")] });
+  assert.equal(waiting.state, R.PENDING);
+  assert.match(waiting.why, /verdict carried from bbbbbbbb/);
+  // Two main merges in a row carry the same way.
+  assert.equal(evalPr({ comments: [comment(v("merge", OLD, "macrevc"))], prove: proved([H, MID]) }).state, R.SUCCESS);
+});
+
+test("auto-carry: no carry when the proof fails (own hunks changed, a non-merge commit, not on main)", () => {
+  const r = evalPr({ comments: [comment(v("merge", OLD, "macrevc"))], prove: unproved });
+  assert.equal(r.state, R.PENDING);
+  assert.doesNotMatch(r.why, /carried/);
+  assert.equal(evalPr({ comments: [comment(v("merge", OLD, "macrevc"))] }).state, R.PENDING, "no proof function, no carry");
+});
+
+test("auto-carry: no carry after a VERDICT at a later head, and a carried block still blocks", () => {
+  // A review posted at a head after the reviewed one (here a block at MID) stops the carry from OLD.
+  const later = [comment(v("merge", OLD, "macrevc")), comment(v("block", MID, "macrevc"))];
+  assert.equal(evalPr({ comments: later, prove: proved([H, MID]) }).state, R.PENDING);
+  // Only the newest reviewed head is a candidate: an older merge never skips over a newer review.
+  const seen = [];
+  evalPr({ comments: later, prove: (o, n) => { seen.push(o); return proved([H, MID])(o, n); } });
+  assert.deepEqual(seen, [MID]);
+  assert.equal(evalPr({ comments: later, prove: (o) => (o === MID ? unproved() : proved([H, MID])()) }).state, R.PENDING, "no fallback to OLD");
+  // A block at the reviewed head carries with it.
+  const blocked = evalPr({ comments: [comment(v("merge", OLD, "macrevc")), comment(v("block", OLD, "macrevc"))], prove: proved() });
+  assert.equal(blocked.state, R.FAILURE);
+  assert.match(blocked.why, /VERDICT block \(macrevc\)/);
+  // A fresh verdict at the current head still counts alongside a carried one.
+  assert.equal(evalPr({ comments: [comment(v("merge", OLD, "macrevc")), comment(v("block", H, "macrev2"))], prove: proved() }).state, R.FAILURE);
+});
+
+test("auto-carry: tier rules apply to the carried verdict; tier 2 needs a Sol lane", () => {
+  const t2 = [file("clients/swift/Wire.swift")];
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", OLD, "macrevc"))], prove: proved() }).state, R.PENDING, "Terra is advice on tier 2");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", OLD, "glm"))], prove: proved() }).state, R.PENDING, "GLM never counts");
+  for (const lane of ["macrev2", "macrevb", "macrevd"]) {
+    const r = evalPr({ files: t2, comments: [comment(v("merge", OLD, lane))], prove: proved() });
+    assert.equal(r.state, R.SUCCESS, lane);
+    assert.match(r.why, /^tier 2: gates pass; verdict carried from bbbbbbbb/);
+  }
 });
 
 test("design marker: paths, pin-only bundle updates, DESIGN lines only in design-conformance reviews (advisory, D243)", () => {
@@ -651,6 +707,62 @@ test("carry proof: object-identical contribution over a clean main merge, fail c
     r.g("checkout", "-q", "-b", "side", "main~2"); r.put("c.txt", "side\n"); r.g("commit", "-qam", "side");
     r.g("checkout", "-q", "-b", "pr4", reviewed); r.g("merge", "-q", "--no-edit", "side");
     assert.equal(G.verifyCarry(r.dir, reviewed, r.sha(), MAINREF).why, "second parent is not on main");
+  } finally { r.done(); }
+});
+
+test("auto-carry proof: main merges only and an identical own diff; own-hunk changes, extra commits and side merges fail", () => {
+  const r = repo();
+  try {
+    const lines = (n, edit = {}) => Array.from({ length: n }, (_, i) => edit[i] ?? `line ${i}`).join("\n") + "\n";
+    r.put("big.txt", lines(40)); r.g("add", "big.txt"); r.g("commit", "-qm", "big"); r.g("update-ref", MAINREF, "HEAD");
+    r.g("checkout", "-qb", "pr");
+    r.put("a.txt", "a2\n"); r.put("big.txt", lines(40, { 5: "pr edit" })); r.g("commit", "-qam", "pr change");
+    const reviewed = r.sha();
+    // Main moves: another file and a far-away hunk of a file the PR also edits.
+    r.g("checkout", "-q", "main");
+    r.put("b.txt", "b2\n"); r.put("big.txt", lines(40, { 35: "main edit" })); r.g("commit", "-qam", "main change"); r.g("update-ref", MAINREF, "HEAD");
+    r.g("checkout", "-q", "pr"); r.g("merge", "-q", "--no-edit", "main");
+    const m1 = r.sha();
+    const ok = G.verifyMainMerges(r.dir, reviewed, m1, MAINREF);
+    assert.deepEqual(ok, { ok: true, why: "main merges only, diff unchanged", between: [m1] });
+    // A second main merge on top still carries from the reviewed head, listing both merges.
+    r.g("checkout", "-q", "main"); r.put("c.txt", "c2\n"); r.g("commit", "-qam", "main again"); r.g("update-ref", MAINREF, "HEAD");
+    r.g("checkout", "-q", "pr"); r.g("merge", "-q", "--no-edit", "main");
+    const m2 = r.sha();
+    assert.deepEqual(G.verifyMainMerges(r.dir, reviewed, m2, MAINREF).between, [m2, m1]);
+
+    // The merge resolution changes the PR's own hunk: no carry.
+    r.g("checkout", "-q", "-b", "pr2", reviewed);
+    r.g("merge", "-q", "--no-commit", "main"); r.put("big.txt", lines(40, { 5: "pr edit, resolved differently", 35: "main edit" })); r.g("add", "big.txt"); r.g("commit", "-qm", "merge");
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).why, "the PR's own diff changed");
+    // A generated file regenerated in the merge counts as the PR's own diff too.
+    r.g("checkout", "-q", "-b", "pr2b", reviewed);
+    r.g("merge", "-q", "--no-commit", "main"); r.put("a.txt", "a2 regenerated\n"); r.g("add", "a.txt"); r.g("commit", "-qm", "merge");
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).ok, false);
+    // A mode-only change hidden in the merge is caught.
+    r.g("checkout", "-q", "-b", "pr2c", reviewed);
+    r.g("merge", "-q", "--no-commit", "main"); chmodSync(join(r.dir, "a.txt"), 0o755); r.g("add", "a.txt"); r.g("commit", "-qm", "merge");
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).ok, false);
+
+    // A non-merge commit after the reviewed head: no carry, even when it is followed by a clean main merge.
+    r.g("checkout", "-q", "-b", "pr3", m1);
+    r.put("d.txt", "new\n"); r.g("add", "d.txt"); r.g("commit", "-qm", "extra");
+    assert.match(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).why, /is not a merge of main/);
+    r.g("merge", "-q", "--no-edit", "main");
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).ok, false);
+    // An empty non-merge commit is still a non-merge commit.
+    r.g("checkout", "-q", "-b", "pr3b", m1); r.g("commit", "-q", "--allow-empty", "-m", "empty");
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).ok, false);
+
+    // A merge of a branch that is not on main: no carry.
+    r.g("checkout", "-q", "-b", "side", "main~1"); r.put("e.txt", "side\n"); r.g("add", "e.txt"); r.g("commit", "-qm", "side");
+    r.g("checkout", "-q", "-b", "pr4", reviewed); r.g("merge", "-q", "--no-edit", "side");
+    assert.match(G.verifyMainMerges(r.dir, reviewed, r.sha(), MAINREF).why, /second parent is not on main/);
+
+    // Not a descendant, the same commit, or an unknown commit: no carry.
+    assert.equal(G.verifyMainMerges(r.dir, m1, reviewed, MAINREF).ok, false);
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, reviewed, MAINREF).ok, false);
+    assert.equal(G.verifyMainMerges(r.dir, reviewed, "f".repeat(40), MAINREF).ok, false);
   } finally { r.done(); }
 });
 

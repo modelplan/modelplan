@@ -184,6 +184,29 @@ export function verdicts(items, head, carried) {
   return lanes;
 }
 
+// ---- Auto-carry (D243 G6, owner 2026-11-14) ----
+// A PR that only merged main keeps its review without a VERDICT-CARRY comment. The candidate is the head named by
+// the most recently posted VERDICT line (any lane, merge or block) that is not the current head. It carries when
+// prove(old, head) (evaluate.mjs: git.verifyMainMerges) shows only main merges since it and an identical own diff,
+// and no VERDICT line names a commit between it and the head. Only the newest candidate is tried, so a later review
+// of another head is never skipped over. The carried head's verdicts then count under the same tier rules; a block
+// carries too. Returns { from, why } or null.
+export function autoCarry(items, head, prove = () => ({ ok: false })) {
+  const named = [];
+  for (const x of items)
+    for (const l of lines(x.body)) {
+      const m = /^VERDICT: (?:merge|block) @ ([0-9a-f]{40})\b/i.exec(l);
+      if (m) named.push(m[1].toLowerCase());
+    }
+  const old = named.filter((s) => s !== head).at(-1);
+  if (!old) return null;
+  const proof = prove(old, head);
+  if (!proof?.ok) return null;
+  const after = new Set((proof.between ?? []).filter((s) => s !== head));
+  if (named.some((s) => after.has(s))) return null;
+  return { from: old, why: `verdict carried from ${old.slice(0, 8)} (main merges only, diff unchanged)` };
+}
+
 // ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
 // D243: GLMREV and DESIGN no longer gate. The rules below still decide which marker the description reports.
 // While the GLM quota is out, a Claude Sonnet reviewer stands in for GLM under its own label:
@@ -490,10 +513,10 @@ export function dataSyncProblem({ pr, files, items, sync }) {
 
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
-// verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
+// verifiedEdge(old, new): carry proof; proveMainMerges(old, new): auto-carry proof (autoCarry); conf: parsed design-paths.conf; members: a train's member PRs;
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -511,7 +534,9 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   const paths = prPaths(files);
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
-  const carried = carryChain(carryEdges(items), head, verifiedEdge);
+  const chain = carryChain(carryEdges(items), head, verifiedEdge);
+  const auto = chain.length ? null : autoCarry(items, head, proveMainMerges);
+  const carried = auto ? [auto.from] : chain;
   const fb = { until: glmFallbackUntil, now, used: [] };
 
   // One review gate (D243 step 5; amends R1/R4/R13/R14/R16 and the D161/D235 lifts). Tier 2 needs a Sol verdict
@@ -537,8 +562,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (evidence.state !== SUCCESS) notes.push(evidence.why);
   const gap = trainScenarioGap(pr, members);
   if (gap) notes.push(gap);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried, glmFallback: fb.used, notes };
-  const say = (why) => (notes.length ? `${why}; info: ${notes.join("; ")}` : why);
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, ...(auto ? { autoCarried: auto.from } : {}), glmFallback: fb.used, notes };
+  const say = (why) => [why, ...(auto ? [auto.why] : []), ...(notes.length ? [`info: ${notes.join("; ")}`] : [])].join("; ");
   if (pr.draft) return res(PENDING, say("draft"), extra);
 
   const blocked = [...lanes].filter(([, v]) => v === "block").map(([l]) => l);
@@ -555,7 +580,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
   if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
-  return res(SUCCESS, say(`tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`), extra);
+  return res(SUCCESS, say(`tier ${tier}: gates pass${chain.length ? ` (carried ${chain.length})` : ""}`), extra);
 }
 
 // ---- One merge-group commit ----
