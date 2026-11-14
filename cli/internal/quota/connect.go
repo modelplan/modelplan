@@ -198,17 +198,10 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 			by["zai"] = Selection{Provider: "zai", Backend: BackendNative, Origin: "zcode-config"}
 		}
 	}
-	// D90: a pasted key, and for OpenCode Go OpenCode's own saved login, make the provider a
-	// selection too. Consent still decides below whether it is read.
+	// D90: a pasted key makes the provider a selection too. Consent still decides below whether it is read.
 	for _, provider := range []string{"zai", "opencodego"} {
-		if _, configured := by[provider]; configured {
-			continue
-		}
-		switch {
-		case ManualKeyPresent(p.Cache, provider):
+		if _, configured := by[provider]; !configured && ManualKeyPresent(p.Cache, provider) {
 			by[provider] = Selection{Provider: provider, Backend: BackendNative, Origin: "manual-key"}
-		case provider == "opencodego" && OpenCodeLoginPresent():
-			by[provider] = Selection{Provider: provider, Backend: BackendNative, Origin: "opencode-login"}
 		}
 	}
 	out := make([]Selection, 0, len(by))
@@ -258,7 +251,7 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 			}
 			if x.KeyEnv != "" {
 				// Only whether a source is there; the value stays where it is.
-				x.KeySet = os.Getenv(x.KeyEnv) != "" || ManualKeyPresent(p.Cache, x.Provider) || (x.Provider == "opencodego" && OpenCodeLoginPresent())
+				x.KeySet = os.Getenv(x.KeyEnv) != "" || ManualKeyPresent(p.Cache, x.Provider)
 			}
 			switch {
 			case nativeOff():

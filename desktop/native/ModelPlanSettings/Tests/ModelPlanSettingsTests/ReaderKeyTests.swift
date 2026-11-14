@@ -152,6 +152,24 @@ private let fakeKey = "fake-test-key-0001"
         XCTAssertEqual(SettingsScopeConsentView.noKeyLine(.zai).english.contains("add a key"), true)
         XCTAssertFalse(SettingsScopeConsentView.firstRunKeyLine.chinese.isEmpty)
     }
+    /// LBL-2.2-07 / SET-9-38 (DESIGN @6fa8c82e): the Chinese field has no English word; the Settings privacy
+    /// value says where an entered key goes (SET-9-41 "privacy copy says so", GLMREV 803 Q2/Q6).
+    func testChineseFieldHasNoEnglishAndPrivacyValueNamesWhereAKeyGoes() {
+        let zh = made(.zai, FakeKeyBackend(), language: .chinese)
+        let field = find(zh, "readerkey.zai.field", as: NSSecureTextField.self)!
+        XCTAssertEqual(field.placeholderString, "粘贴你的密钥")
+        XCTAssertEqual(field.accessibilityLabel(), "密钥")
+        XCTAssertNil(field.placeholderString?.range(of: "[A-Za-z]", options: .regularExpression))
+        XCTAssertTrue(SettingsAbout.privacy.english.contains("a key you enter is sent only to its provider's official host"), SettingsAbout.privacy.english)
+        XCTAssertTrue(SettingsAbout.privacy.chinese.contains("你输入的密钥只发送到对应服务商的官方主机"), SettingsAbout.privacy.chinese)
+    }
+    /// D90 / D230: OpenCode's saved login is never read, so the OpenCode Go no-key line names the two real sources.
+    func testOpenCodeGoNoKeyLineNamesTheEnvironmentAndTheEntry() {
+        let line = SettingsScopeConsentView.noKeyLine(.opencodego)
+        XCTAssertTrue(line.english.contains("OPENCODE_API_KEY") && line.english.contains("add a key below"), line.english)
+        XCTAssertFalse(line.english.contains("Sign in to OpenCode"), line.english)
+        XCTAssertFalse(line.chinese.contains("登录"), line.chinese)
+    }
     func testDismissClearsTheTypedKey() {
         let view = made(.zai, FakeKeyBackend())
         type(view, fakeKey)

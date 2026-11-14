@@ -105,7 +105,7 @@ public struct SettingsAbout: Sendable {
     }
     public static let consentHelpURL = URL(string: "https://github.com/modelplan/modelplan/blob/main/docs/cli-consent.md")!
     public static let feedbackURL = URL(string: "https://github.com/modelplan/modelplan/issues/new/choose")!
-    public static let privacy = SettingsText("No local data is uploaded. Only public data is downloaded.", "不上传任何本机数据，只下载公开数据。")
+    public static let privacy = SettingsText("No local data is uploaded. Only public data is downloaded; a key you enter is sent only to its provider's official host.", "不上传任何本机数据，只下载公开数据；你输入的密钥只发送到对应服务商的官方主机。")
     public static let intelNote = SettingsText("Intel untested; 3D may stutter.", "Intel 未测试，3D 效果可能卡顿。")
     public static let trademarkNotice = SettingsText(
         "ModelPlan and Model Plan identify the official project. Software licenses do not grant endorsement or permission to impersonate it. Official visuals have a separate reserved license; the root MIT license does not cover them. Third-party marks belong to their respective owners.",
