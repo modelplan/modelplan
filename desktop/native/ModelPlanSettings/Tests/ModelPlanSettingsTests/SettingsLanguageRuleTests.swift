@@ -79,6 +79,61 @@ import XCTest
         let round = try JSONDecoder().decode(SettingsPreferences.self, from: JSONEncoder().encode(SettingsPreferences()))
         XCTAssertFalse(round.followsSystemLanguage)
     }
+    /// Sampling #873: before Follow System the default was Chinese, and the sparse writer left `language` out for every
+    /// Chinese user. Upgrading must keep Chinese (not English, not Follow System), and every save now writes the key.
+    func testUpgradedSparseFileWithoutLanguageStaysChineseAndSavesWriteTheKey() async throws {
+        let root = try directory()
+        let location = try FoundationPreferenceLocation(applicationSupport: root, product: .community)
+        try FileManager.default.createDirectory(at: location.directory, withIntermediateDirectories: true)
+        try Data(#"{"schemaVersion":1,"sparse":true,"settings":{"theme":"night"},"core":{"favouriteModelIDs":[]}}"#.utf8).write(to: location.target)
+        func open() throws -> SettingsStore {
+            try SettingsStore(foundationAt: root, product: .community, defaultLanguage: .english, preferredLanguages: ["en-US"])
+        }
+        func saved() throws -> [String: Any] {
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: location.target)) as? [String: Any])
+            return try XCTUnwrap(object["settings"] as? [String: Any])
+        }
+        var store = try open()
+        var preferences = await store.snapshot().preferences
+        XCTAssertEqual(preferences.language, .chinese, "a pre-#873 file without the key was a Chinese choice")
+        XCTAssertFalse(preferences.followsSystemLanguage, "the upgrade does not switch to Follow System")
+        XCTAssertEqual(preferences.theme, .night)
+        // An unrelated save writes the language too, so the file no longer depends on the old default.
+        _ = try await store.update { $0.theme = .day }
+        XCTAssertEqual(try saved()["language"] as? String, "zh-CN")
+        XCTAssertEqual(try saved()["followsSystemLanguage"] as? Bool, false)
+        _ = try await store.update { $0.language = .english }
+        XCTAssertEqual(try saved()["language"] as? String, "en", "English, now the default, is still written")
+        store = try open()
+        preferences = await store.snapshot().preferences
+        XCTAssertEqual(preferences.language, .english); XCTAssertFalse(preferences.followsSystemLanguage)
+        // The legacy single-file store reads and writes the same way.
+        let url = try file()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"schemaVersion":1,"sparse":true,"preferences":{"theme":"night"}}"#.utf8).write(to: url)
+        let legacy = try SettingsStore(url: url)
+        let legacyLanguage = await legacy.snapshot().preferences.language
+        XCTAssertEqual(legacyLanguage, .chinese)
+        _ = try await legacy.update { $0.theme = .day }
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        XCTAssertEqual((envelope["preferences"] as? [String: Any])?["language"] as? String, "zh-CN")
+    }
+    /// Sampling #873: a fresh install keeps #873's default (follow the macOS list) and writes both keys.
+    func testFreshInstallStillFollowsTheSystemAndWritesTheLanguage() async throws {
+        let root = try directory()
+        let store = try SettingsStore(foundationAt: root, product: .community, defaultLanguage: .english, preferredLanguages: ["en-US"])
+        let created = await store.snapshot().preferences
+        XCTAssertEqual(created.language, .english); XCTAssertTrue(created.followsSystemLanguage)
+        let location = try FoundationPreferenceLocation(applicationSupport: root, product: .community)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: location.target)) as? [String: Any])
+        let settings = try XCTUnwrap(object["settings"] as? [String: Any])
+        XCTAssertEqual(settings["language"] as? String, "en"); XCTAssertEqual(settings["followsSystemLanguage"] as? Bool, true)
+        // A file from a build after #873 that followed the system and left English out reads as English.
+        let decoded = try JSONDecoder().decode(SettingsPreferences.self, from: Data(#"{"followsSystemLanguage":true}"#.utf8))
+        XCTAssertEqual(decoded.language, .english); XCTAssertTrue(decoded.followsSystemLanguage)
+        XCTAssertEqual(try JSONDecoder().decode(SettingsPreferences.self, from: Data("{}".utf8)).language, .chinese)
+        XCTAssertEqual(SettingsPreferences().language, .english, "a brand-new value keeps the English fallback")
+    }
     private func directory() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-language-rule-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
