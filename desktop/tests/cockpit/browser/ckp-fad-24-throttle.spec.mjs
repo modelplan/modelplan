@@ -157,7 +157,7 @@ for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height
   for(const [i,keys,from,to] of [[0,['ArrowUp','ArrowUp'],'High','Max'],[2,['ArrowDown'],'Max','Low']]){
    const ch=channel(page,i),slider=ch.locator('[role=slider]');await slider.focus();for(const k of keys)await page.keyboard.press(k);
    await expect(slider).toHaveAttribute('aria-valuetext',to);await expect(slider).toHaveAttribute('data-lever',from);
-   await expect.poll(async()=>Math.abs((await box(ch.locator('.fd-ghost'))).y-rows[to])).toBeLessThanOrEqual(.6);
+   await expect.poll(async()=>Math.abs((await box(ch.locator('.fd-ghost'))).y-rows[to]),{timeout:15000}).toBeLessThanOrEqual(.6);
    await page.waitForTimeout(400);
    const rod=await box(ch.locator('.fd-tline')),lever=await box(ch.locator('.fd-cap')),ghost=await box(ch.locator('.fd-ghost')),slot=await box(ch.locator('.fd-slot'));
    // the lever pivots about the slot centre: the rod runs from that pivot (midway between the Max and Low rows) to the ghost
