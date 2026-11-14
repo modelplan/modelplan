@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
-import { ALLOWED_ROUTES, GUI_LEND_GUARD, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, GUI_LEND_GUARD, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, prCancelProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
 
 test("trusted Mac route is confined to the reviewed reusable workflow path", () => {
@@ -308,10 +308,61 @@ test("desktop.yml pr=<N> dispatch builds refs/pull/<N>/merge in every job it own
   assert.match(resolver, /grep -qx "\$head"/, "the merge must contain the PR's current head");
   for (const name of ["app", "shell", "native-partition", "cockpit-pins", "app-smoke"]) {
     const body = job(name);
-    assert.match(body, /needs: \[queue-scope, pr-ref\]/, `${name} needs pr-ref`);
+    assert.match(body, /needs: \[queue-scope, pr-ref(?:, pr-scope)?\]/, `${name} needs pr-ref`);
     assert.match(body, /if: \$\{\{ !cancelled\(\) && \(!inputs\.pr \|\| needs\.pr-ref\.result == 'success'\) && /, `${name} never falls back to the dispatched ref`);
     assert.match(body, /- uses: actions\/checkout@v4\n        with:\n(?:          .*\n)*?          ref: \$\{\{ inputs\.pr && needs\.pr-ref\.outputs\.sha \|\| /, `${name} checks out the merge`);
   }
   // trusted-mac.yml is SHA-pinned and takes no ref: its callers stay unchanged and test the dispatched commit.
   for (const name of ["native", "native-hosted", "native-owner-gui", "native-headless"]) assert.doesNotMatch(job(name), /pr-ref|inputs\.pr/, name);
+});
+
+const WF_DIR = new URL("../../.github/workflows/", import.meta.url);
+const workflows = () => fs.readdirSync(WF_DIR).filter((f) => /\.ya?ml$/.test(f)).map((f) => [f, fs.readFileSync(new URL(f, WF_DIR), "utf8")]);
+
+test("D254: every macOS PR leg has a path gate (workflow-level list excluding markdown, or a scope-output if)", () => {
+  for (const [f, text] of workflows()) assert.deepEqual(macPathGateProblems(text, `.github/workflows/${f}`), [], f);
+  const pr = "on:\n  pull_request:\n  push:\n  workflow_dispatch:\n";
+  const job = (iff) => `jobs:\n  a:\n${iff}    runs-on: macos-latest\n`;
+  assert.ok(macPathGateProblems(pr + job("")).some((p) => p.includes("macOS job a")), "ungated job");
+  assert.ok(macPathGateProblems(pr + job("    if: github.event_name != 'pull_request' || !github.event.pull_request.draft\n")).length > 0, "draft guard is not a path gate");
+  assert.deepEqual(macPathGateProblems(pr + job("    if: ${{ github.event_name != 'pull_request' || needs.checks.outputs.mac == 'true' }}\n")), []);
+  assert.deepEqual(macPathGateProblems("on:\n  pull_request:\n    paths:\n      - 'a/**'\n      - '!**/*.md'\n  push:\n" + job("")), []);
+  assert.ok(macPathGateProblems("on:\n  pull_request:\n    paths:\n      - 'a/**'\n  push:\n" + job("")).length > 0, "paths list without the markdown exclusion");
+  assert.deepEqual(macPathGateProblems("on:\n  workflow_dispatch:\n" + job("")), []);
+});
+
+test("D254: desktop.yml Mac jobs are narrowed by pr-scope; the GUI leg stays label/dispatch only", () => {
+  const text = fs.readFileSync(new URL("desktop.yml", WF_DIR), "utf8");
+  for (const name of ["cockpit-spi-tests", "app-smoke", "native-headless"]) {
+    const block = text.slice(text.indexOf(`\n  ${name}:\n`)).split(/\n  [a-z][\w-]*:\n/)[1] ?? "";
+    assert.match(block, /needs\.pr-scope\.outputs\.mac == 'true'/, name);
+    assert.match(block, /github\.event_name != 'pull_request' \|\|/, `${name} keeps merge_group, push and dispatch unfiltered`);
+  }
+});
+
+test("D254: merge_group, push, schedule and dispatch are never path-filtered or cancelled", () => {
+  for (const [f, text] of workflows()) {
+    assert.deepEqual(nonPrFilterProblems(text), [], f);
+    assert.deepEqual(prCancelProblems(text), [], f);
+    const conc = text.match(/^concurrency:\n(?:[ \t]+.*\n)+/m)?.[0] ?? "";
+    if (/^\s+cancel-in-progress:\s*\$\{\{.*pull_request/m.test(conc)) assert.doesNotMatch(conc, /github\.sha/, f);
+  }
+  assert.ok(prCancelProblems("on:\n  pull_request:\nconcurrency:\n  group: g-${{ github.event.pull_request.number || github.sha }}\n  cancel-in-progress: true\n").length > 0);
+  assert.ok(nonPrFilterProblems("on:\n  merge_group:\n    paths: [a]\n").length > 0);
+  assert.ok(nonPrFilterProblems("on:\n  push:\n    paths: ['a', '!**/*.md']\n").length > 0);
+});
+
+test("D254: the PR-triggered Mac workflows carry the PR-only cancel and the shared-Mac legs call the pinned trusted-mac", () => {
+  for (const f of ["desktop.yml", "u6-engine-store-core.yml", "u11-cockpit.yml", "official-visuals.yml", "transport-fuzz.yml", "u11a-aggregate.yml", "u14-harness.yml"]) {
+    const text = fs.readFileSync(new URL(f, WF_DIR), "utf8");
+    assert.match(text, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request'/, f);
+  }
+});
+
+test("D254: trusted-mac.yml is untouched (its SHA is pinned by callers and the runner group)", () => {
+  const r = spawnSync("git", ["diff", "--quiet", "origin/main", "--", ".github/workflows/trusted-mac.yml"], { encoding: "utf8" });
+  // Outside a checkout with origin/main the diff cannot run; a status of 128 is not a failure of this rule.
+  assert.notEqual(r.status, 1, "trusted-mac.yml differs from origin/main");
+  const callers = workflows().flatMap(([, t]) => [...t.matchAll(/workflows\/trusted-mac\.yml@([0-9a-f]{40})/g)].map((m) => m[1]));
+  assert.ok(callers.length > 0 && callers.every((s) => /^[0-9a-f]{40}$/.test(s)), "every caller pins trusted-mac.yml by full SHA");
 });

@@ -9,6 +9,7 @@ on:
       - scripts/test-consent-engine.py
       - cli/**
       - .github/workflows/u14-engine-drive.yml
+      - '!**/*.md'
   push:
     branches: [main]
     paths:

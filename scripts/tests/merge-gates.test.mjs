@@ -727,18 +727,18 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
   // merge_group has no paths filter: queue-scope must decide with the same list as pull_request, or a
   // group could skip a Mac check its PR run would have needed. native-headless must wait for that decision.
   const desktop = readFileSync(join(root, ".github/workflows/desktop.yml"), "utf8");
-  const prPathList = JSON.parse(/^  pull_request:\n    paths: (\[.*\])$/m.exec(desktop)[1]);
+  const prPathList = JSON.parse(/^  pull_request:\n    paths: (\[.*\])$/m.exec(desktop)[1]).filter((p) => !p.startsWith("!"));
   const scope = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(desktop)[1]);
   for (const p of prPathList) assert.match(p.replace(/\*\*$/, "x"), scope, `queue-scope misses ${p}`);
   assert.doesNotMatch("docs/mac-ci.md", scope);
-  assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: queue-scope/);
+  assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: (queue-scope|\[queue-scope, pr-scope\])/);
   // D112: every other queue workflow is Linux-only and decides with its own pull_request path list.
   for (const path of R.QUEUE_WORKFLOWS.filter((p) => !/\/(ci|desktop)\.yml$/.test(p))) {
     const text = readFileSync(join(root, path), "utf8");
     assert.doesNotMatch(text, /macos|trusted-mac\.yml/i, `${path}: no Mac time in the merge queue`);
     const block = /^  pull_request:\n    paths:\n((?:      - .*\n)+)/m.exec(text);
     assert.ok(block, `${path}: pull_request paths list`);
-    const list = block[1].trim().split("\n").map((l) => l.replace(/^\s*- /, "").replace(/^['"]|['"]$/g, ""));
+    const list = block[1].trim().split("\n").map((l) => l.replace(/^\s*- /, "").replace(/^['"]|['"]$/g, "")).filter((p) => !p.startsWith("!"));
     const re = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(text)[1]);
     for (const p of list) assert.match(p.replace(/\*\*$/, "x"), re, `${path}: queue-scope misses ${p}`);
     assert.doesNotMatch("docs/unrelated.md", re, `${path}: queue-scope is too wide`);

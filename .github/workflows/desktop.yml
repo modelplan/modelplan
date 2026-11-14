@@ -7,7 +7,7 @@ on:
     branches: [main]
     paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml"]
   pull_request:
-    paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml"]
+    paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml", "!**/*.md"]
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
     types: [checks_requested]
@@ -129,6 +129,34 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"; echo "group changes no desktop path"
           fi
 
+  # Pull requests only (D254): the macOS jobs below run on a PR only when it changes something they build or
+  # test. The workflow-level paths list stays broad (it also feeds the Linux jobs), so this narrows it for
+  # the scarce hosted Macs: docs, markdown, the Tauri app and other Linux-only desktop changes skip them.
+  # merge_group, push, schedule and workflow_dispatch never read this job and keep the full suite.
+  pr-scope:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      mac: ${{ steps.scope.outputs.mac }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github
+      - id: scope
+        env:
+          MAC_PATHS: ^(desktop/(native|cockpit|official-visuals|third-party)/|desktop/package(-lock)?\.json$|clients/swift/|codex/cli-pin\.json$|schema/app-cli/|testdata/contract-v1/|cli/go\.(mod|sum)$|cli/internal/(snapshot|digest|desktopcontract|contracttest)/|(^|/)Package\.(swift|resolved)$|\.github/workflows/(desktop|trusted-mac)\.yml$)
+        run: |
+          set -eu
+          # A pull_request checkout is the merge commit, so its first parent is the base. Markdown never needs a Mac.
+          if git diff --no-renames --name-only -z HEAD^1 HEAD | grep -zvE '\.md$' | grep -qzE "$MAC_PATHS"; then
+            echo "mac=true" >> "$GITHUB_OUTPUT"; echo "PR changes paths the macOS jobs test"
+          else
+            echo "mac=false" >> "$GITHUB_OUTPUT"; echo "PR changes no path the macOS jobs test: macOS jobs skipped"
+          fi
+
   app:
     needs: [queue-scope, pr-ref]
     if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
@@ -232,8 +260,8 @@ jobs:
           test -z "$(git status --porcelain)"
 
   cockpit-spi-tests:
-    needs: [queue-scope, pr-ref]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    needs: [queue-scope, pr-ref, pr-scope]
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') }}
     # The ModelPlanCockpitWeb test classes (or test methods) behind #if MODELPLAN_TEST_ONLY_SPI are not compiled
     # by the pinned trusted-mac.yml U11 job, which runs `swift test` without the flag. Compile and run them here on a
     # hosted Mac, only those classes. test_spi_gated_tests_run.py (native-partition) fails if a gated class is in no workflow.
@@ -252,8 +280,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-    needs: [queue-scope, pr-ref]
-    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    needs: [queue-scope, pr-ref, pr-scope]
+    if: ${{ !cancelled() && (!inputs.pr || needs.pr-ref.result == 'success') && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') }}
     # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -389,8 +417,8 @@ jobs:
 
   native-headless:
     name: native-headless (macos-latest)
-    needs: queue-scope
-    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    needs: [queue-scope, pr-scope]
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') && (github.event_name != 'pull_request' || needs.pr-scope.outputs.mac == 'true') }}
     uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@01340deab2a433e748ac1d1c13bde553bde7065c
     with:
       task: native-headless

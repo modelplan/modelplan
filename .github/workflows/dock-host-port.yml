@@ -6,6 +6,7 @@ on:
       - 'desktop/native/ModelPlanAppIntegration/**'
       - 'desktop/native/ModelPlanDock/**'
       - '.github/workflows/dock-host-port.yml'
+      - '!**/*.md'
   push:
     branches: [main]
     paths:

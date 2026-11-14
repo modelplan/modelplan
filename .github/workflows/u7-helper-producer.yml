@@ -6,6 +6,7 @@ on:
       - desktop/native/ModelPlanCredentialAgent/tools/**
       - clients/swift/ModelPlanWire/**
       - .github/workflows/u7-helper-producer.yml
+      - '!**/*.md'
   push:
     branches: [main]
     paths:
