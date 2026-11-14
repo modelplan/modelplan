@@ -50,6 +50,28 @@ function verifiedEdge(oldSha, newSha) {
   return carryCache.get(k);
 }
 
+// D243 G6 auto-carry proof (git.verifyMainMerges). The checkout has full history of main (fetch-depth 0, blobless);
+// main is refetched once before the first proof; PR commits are fetched by sha and blobs on demand, so no
+// shallow-history limit applies.
+const mainMergeCache = new Map();
+let mainFresh = false;
+function proveMainMerges(oldSha, newSha) {
+  const k = `${oldSha}>${newSha}`;
+  if (!mainMergeCache.has(k)) {
+    let r;
+    try {
+      // Refresh main once, so a main commit merged after the job's checkout is still found on main.
+      if (!mainFresh) { G.git(cwd, ["fetch", "-q", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/main:${MAIN}`]); mainFresh = true; }
+      r = G.verifyMainMerges(cwd, oldSha, newSha, MAIN);
+    } catch (e) {
+      r = { ok: false, why: `git error: ${String(e?.message || e).split("\n")[0]}`, between: [] };
+    }
+    log({ autoCarry: k, ok: r.ok, why: r.why });
+    mainMergeCache.set(k, r);
+  }
+  return mainMergeCache.get(k);
+}
+
 // A train's members, read only for a train: the extra calls would otherwise run on every evaluation. A number in
 // Supersedes that is not a PR is skipped; any other read error stops the evaluation, so the gate never passes on
 // a partial member list.
@@ -89,7 +111,7 @@ async function prResult(number) {
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
   const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now });
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now });
   return { pr, result };
 }
 
