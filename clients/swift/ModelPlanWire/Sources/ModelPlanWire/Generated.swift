@@ -5236,19 +5236,22 @@ public struct WireReaderKeyResult: Codable, Sendable {
     public let `provider`: WireReaderKeyProvider
     public let `region`: WireReaderKeyRegion
     public let `present`: Bool
+    public let `otherKeyFound`: Bool
     public let `outcome`: WireReaderKeyOutcome
     private enum CodingKeys: String, CodingKey {
         case `schemaVersion`
         case `provider`
         case `region`
         case `present`
+        case `otherKeyFound`
         case `outcome`
     }
-    public init(`schemaVersion`: Int, `provider`: WireReaderKeyProvider, `region`: WireReaderKeyRegion, `present`: Bool, `outcome`: WireReaderKeyOutcome) throws {
+    public init(`schemaVersion`: Int, `provider`: WireReaderKeyProvider, `region`: WireReaderKeyRegion, `present`: Bool, `otherKeyFound`: Bool, `outcome`: WireReaderKeyOutcome) throws {
         self.`schemaVersion` = `schemaVersion`
         self.`provider` = `provider`
         self.`region` = `region`
         self.`present` = `present`
+        self.`otherKeyFound` = `otherKeyFound`
         self.`outcome` = `outcome`
         try validate()
     }
@@ -5258,6 +5261,7 @@ public struct WireReaderKeyResult: Codable, Sendable {
         self.`provider` = try c.decode(WireReaderKeyProvider.self, forKey: .`provider`)
         self.`region` = try c.decode(WireReaderKeyRegion.self, forKey: .`region`)
         self.`present` = try c.decode(Bool.self, forKey: .`present`)
+        self.`otherKeyFound` = try c.decode(Bool.self, forKey: .`otherKeyFound`)
         self.`outcome` = try c.decode(WireReaderKeyOutcome.self, forKey: .`outcome`)
         try validate()
     }
@@ -5268,6 +5272,7 @@ public struct WireReaderKeyResult: Codable, Sendable {
         try c.encode(`provider`, forKey: .`provider`)
         try c.encode(`region`, forKey: .`region`)
         try c.encode(`present`, forKey: .`present`)
+        try c.encode(`otherKeyFound`, forKey: .`otherKeyFound`)
         try c.encode(`outcome`, forKey: .`outcome`)
     }
     private func validate() throws {

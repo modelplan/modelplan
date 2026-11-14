@@ -71,7 +71,14 @@ public enum ReaderKeyOutcome: Equatable, Sendable {
 public struct ReaderKeyStatus: Equatable, Sendable {
     public let present: Bool
     public let region: ReaderKeyRegion?
-    public init(present: Bool, region: ReaderKeyRegion?) { self.present = present; self.region = region }
+    /// Owner decision 2026-11-14: the entered key is in use and a different key was also detected.
+    public let otherKeyFound: Bool
+    public init(present: Bool, region: ReaderKeyRegion?, otherKeyFound: Bool = false) {
+        self.present = present; self.region = region; self.otherKeyFound = otherKeyFound
+    }
+    /// The short line on the row when another key was also found (one row; the entered key wins).
+    public static let otherKeyLine = SettingsText("Another key was also found; using the key you entered.",
+                                                  "还检测到另一个密钥，当前使用你手动填写的密钥。")
 }
 
 public struct ReaderKeyReply: Equatable, Sendable {

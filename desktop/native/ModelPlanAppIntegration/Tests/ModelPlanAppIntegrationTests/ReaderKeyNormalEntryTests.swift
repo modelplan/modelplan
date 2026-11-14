@@ -62,7 +62,7 @@ private actor KeyEngine: EngineClient {
         case .status: outcome = .ok
         }
         let id = WireRequestID.string("key-\(keyCalls.count)")
-        let result = try WireReaderKeyResult(schemaVersion: 1, provider: params.provider, region: saved ? savedRegion : .none, present: saved, outcome: outcome)
+        let result = try WireReaderKeyResult(schemaVersion: 1, provider: params.provider, region: saved ? savedRegion : .none, present: saved, otherKeyFound: false, outcome: outcome)
         await store.consume(.response(requestID: id, .readerKey(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: result), delivery: context))))
         return .init(requestID: id)
     }

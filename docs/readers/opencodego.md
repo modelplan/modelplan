@@ -18,8 +18,8 @@ The usage object’s required rolling five-hour meter and supported weekly/month
 
 | Path | Carrier | Auth | Endpoint status | Side effects | Red-line check |
 | --- | --- | --- | --- | --- | --- |
-| Explicit ModelPlan key (OPENCODE_API_KEY or the selected variable) | H | K | Undocumented compatibility usage GET | One request | Chosen, first source |
-| Key you enter in the app (manual key) | H | K | Same GET | One more request, only when no detected key works | Chosen, second source (D90) |
+| Key you enter in the app (manual key) | H | K | Undocumented compatibility usage GET | One request | Chosen, first source (D90, owner 2026-11-14) |
+| Explicit ModelPlan key (OPENCODE_API_KEY or the selected variable) | H | K | Same GET | One request, only when no key is entered | Chosen, second source |
 | Borrow OpenCode auth store | L → H | K / other saved auth | Different source capability | Reads another tool’s credential store | Not selected (D230: existence check only) |
 | Console session/billing/history | S → H | C | Undocumented console paths | Browser/session and multi-request capability | Excluded |
 | Local OpenCode history | S | none | Local | Token history only | Separate capability; not account quota |
@@ -48,7 +48,7 @@ All listed URLs use HTTPS. GET bodies are empty. URL queries are forbidden. Head
 
 ### Authentication source and refresh
 
-In order: (1) OPENCODE_API_KEY or the ModelPlan-selected environment variable; (2) only when that gives no usable key (missing or refused), the key the user entered in Settings, kept in a 0600 file in the app support directory and sent only to opencode.ai. The existing OpenCode Go key consent scope covers both; saving a key in the app (an explicit user action) also grants it. OpenCode’s own key store is never read: detection only checks that an `opencode-go` entry exists (D230). No browser cookie, device flow, workspace-header search or another provider’s key is read. The key goes only to the compiled opencode.ai host and is never logged, cached or shown.
+In order (owner decision 2026-11-14): (1) the key the user entered in Settings, kept in a 0600 file in the app support directory and sent only to opencode.ai; (2) only when none is entered, OPENCODE_API_KEY or the ModelPlan-selected environment variable. The existing OpenCode Go key consent scope covers both; saving a key in the app (an explicit user action) also grants it. OpenCode’s own key store is never read: detection only checks that an `opencode-go` entry exists (D230). No browser cookie, device flow, workspace-header search or another provider’s key is read. The key goes only to the compiled opencode.ai host and is never logged, cached or shown.
 
 Refresh behavior: None. A key from the environment is not renewed or persisted by ModelPlan (only a key the user enters is stored, as above), no browser sign-in is started and no inference/billing/history request is used to test it.
 

@@ -108,6 +108,31 @@ func TestReaderKeyStatusReportsPresenceWithoutAKey(t *testing.T) {
 	}
 }
 
+// Owner decision 2026-11-14: status says when the entered key is in use and a different key was also detected
+// (the flag on the last GLM reading), so Settings can show it on the row; no key is in the result.
+func TestReaderKeyStatusReportsAnotherDetectedKey(t *testing.T) {
+	dir := t.TempDir()
+	h := ReaderKeyHandlers(ReaderKeyConfig{Dir: dir})
+	callReaderKey(t, h, "readerkey/set", `{"provider":"zai","region":"china","key":"`+readerKeyFake+`"}`)
+	if r, _, _ := callReaderKey(t, h, "readerkey/status", `{"provider":"zai","region":"none","key":""}`); r.OtherKeyFound {
+		t.Fatal("no reading yet, no flag")
+	}
+	if err := os.MkdirAll(dir+"/observed", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	snap := `{"schemaVersion":1,"providers":[{"provider":"zai","status":"ok","otherKeyFound":true,"observedAt":"2026-11-14T00:00:00Z"}]}`
+	if err := os.WriteFile(dir+"/observed/native.json", []byte(snap), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, out, _ := callReaderKey(t, h, "readerkey/status", `{"provider":"zai","region":"none","key":""}`)
+	if !r.OtherKeyFound || !strings.Contains(out, `"otherKeyFound":true`) || strings.Contains(out, readerKeyFake) {
+		t.Fatalf("status = %s", out)
+	}
+	if r, _, _ := callReaderKey(t, h, "readerkey/status", `{"provider":"opencodego","region":"none","key":""}`); r.OtherKeyFound {
+		t.Fatal("another provider is not flagged")
+	}
+}
+
 func TestReaderKeySetAndRemoveRefuseAnUnsafeKeyFile(t *testing.T) {
 	dir := t.TempDir()
 	if err := quota.SetManualKey(dir, "opencodego", "fake-other-provider-key-1", ""); err != nil {

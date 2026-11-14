@@ -384,7 +384,7 @@ import ModelPlanWire
         if let provider = ReaderKeyProvider(rawValue: id), tool.detected {
             if let keyEntry {
                 // D90 / SET-9-41: a detected key-only tool that is not being read says why and offers the one
-                // optional key entry right here; detected sign-ins and environment keys are still used first.
+                // optional key entry right here; an entered key wins over a detected one (owner 2026-11-14).
                 // A saved key with reading off is not "no key found" (GLMREV Q2): say reading is off instead.
                 if !controller.isToolReading(id) {
                     if keyEntry.entry.status.present {

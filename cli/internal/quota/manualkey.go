@@ -247,12 +247,31 @@ func fetchManualKey(ctx context.Context, c *http.Client, provider string, k Manu
 	return codexbarEntry{Status: "error", ErrorCode: "other", ObservedAt: now.UTC()}
 }
 
-// manualKeyFallback: the detected sources' outcomes after which a key the user entered is tried. Only a missing,
-// unreadable, relay or refused detected key; a working key, a lapsed plan, an outage or a rate limit is final.
-func manualKeyFallback(code string) bool {
-	switch code {
-	case "no_key", "file_missing", "file_unreadable", "parse_error", "not_signed_in", "not_found", "region_refused", "unsupported_login", "http_401":
-		return true
+// detectedZaiKey: the key the detected GLM source would use (the consented configuration file, else
+// Z_AI_API_KEY), read on this Mac only to compare with the entered key. "" when there is none.
+func detectedZaiKey(p Paths, x Selection) string {
+	if g, ok := p.ReaderAccessGrant("zai"); ok && g.ConfigSource != nil {
+		_, key, state, _ := zaiConfiguredKeyCode(*g.ConfigSource)
+		if state != "" {
+			return ""
+		}
+		return strings.TrimSpace(key)
+	}
+	return strings.TrimSpace(os.Getenv(x.KeyEnv))
+}
+
+// ManualKeyOtherKeyFound: the last reading of provider used the entered key while a different key was
+// also detected (the flag on the cached entry). Nothing about either key is returned.
+func ManualKeyOtherKeyFound(dir, provider string) bool {
+	if !ManualKeyPresent(dir, provider) {
+		return false
+	}
+	if s := loadNative(dir); s != nil {
+		for _, e := range s.Providers {
+			if e.Provider == provider {
+				return e.OtherKeyFound
+			}
+		}
 	}
 	return false
 }

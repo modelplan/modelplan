@@ -3665,6 +3665,9 @@
     "ReaderKeyResult": {
       "additionalProperties": false,
       "properties": {
+        "otherKeyFound": {
+          "type": "boolean"
+        },
         "outcome": {
           "enum": [
             "saved",
@@ -3709,6 +3712,7 @@
         "provider",
         "region",
         "present",
+        "otherKeyFound",
         "outcome"
       ],
       "type": "object"
