@@ -62,6 +62,8 @@ import AppKit
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 
+    /// Bring the field into view and put the cursor in it (the row's "Add key" fix).
+    func focusField() { field.scrollToVisible(field.bounds); window?.makeFirstResponder(field) }
     func apply(language: SettingsLanguage) { self.language = language; field.setAccessibilityLabel(SettingsWords.text("API key", "密钥", language)); refresh() }
 
     func controlTextDidChange(_ notification: Notification) {

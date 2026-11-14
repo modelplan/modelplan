@@ -32,6 +32,18 @@ import AppKit
         var handlers: Handlers
         /// A row the host wants the user to see (a widget card's reason links here).
         var highlightedID: String?
+        /// D90 / SET-9-41: the optional key entry the host mounts under a key-only tool's row (nil: none).
+        var keyEntry: (SubscriptionRow) -> NSView? = { _ in nil }
+    }
+    /// macrev2-804-4: the added rows that can be reordered, in display order. The host commits a move against the
+    /// order of verified subscriptions only, so up, down and drop distances are counted in this same list.
+    static func movableOrder(_ model: SubscriptionRowModel, locked: (String) -> Bool) -> [String] {
+        model.added.filter { !$0.isPending && !locked($0.id) }.map(\.id)
+    }
+    /// The distance from `source` to `target` in `order`; nil when either cannot move or they are the same row.
+    static func moveDelta(source: String, target: String, in order: [String]) -> Int? {
+        guard let from = order.firstIndex(of: source), let to = order.firstIndex(of: target), from != to else { return nil }
+        return to - from
     }
 
     private(set) var buttons: [ConnectionButton] = []
@@ -135,6 +147,7 @@ import AppKit
         status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         column.addArrangedSubview(status); wrappingLabels.append(status)
         status.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+        if let entry = configuration.keyEntry(row) { column.addArrangedSubview(entry) }
         if let notice = configuration.notices[row.id] {
             let field = NSTextField(wrappingLabelWithString: text(notice))
             field.font = .systemFont(ofSize: 11); field.textColor = .systemOrange; field.setAccessibilityIdentifier(prefix + "notice." + row.id)
@@ -181,8 +194,10 @@ import AppKit
         visibility.setAccessibilityLabel(language == .english ? "Show \(row.name.english) in the Quota Widget and Cockpit" : "在额度挂件和驾驶舱显示 \(row.name.chinese)")
         visibility.toolTip = language == .english ? "Show in the Quota Widget and cockpit (display only)" : "在额度挂件和驾驶舱显示（仅影响显示）"
         trailing.append(visibility)
-        let up = button(.init("↑", "↑"), id: "subscriptions.up." + row.id, enabled: editable && row.canMoveUp) { [handlers = configuration.handlers] in handlers.move(row.id, -1) }
-        let down = button(.init("↓", "↓"), id: "subscriptions.down." + row.id, enabled: editable && row.canMoveDown) { [handlers = configuration.handlers] in handlers.move(row.id, 1) }
+        let movable = Self.movableOrder(configuration.model) { configuration.lockedReason($0) != nil }
+        let index = movable.firstIndex(of: row.id)
+        let up = button(.init("↑", "↑"), id: "subscriptions.up." + row.id, enabled: editable && (index.map { $0 > 0 } ?? false)) { [handlers = configuration.handlers] in handlers.move(row.id, -1) }
+        let down = button(.init("↓", "↓"), id: "subscriptions.down." + row.id, enabled: editable && (index.map { $0 < movable.count - 1 } ?? false)) { [handlers = configuration.handlers] in handlers.move(row.id, 1) }
         up.setAccessibilityLabel(language == .english ? "Move \(row.name.english) up" : "上移 \(row.name.chinese)")
         down.setAccessibilityLabel(language == .english ? "Move \(row.name.english) down" : "下移 \(row.name.chinese)")
         let handle = SubscriptionDragHandle()
@@ -192,11 +207,10 @@ import AppKit
         trailing.append(contentsOf: [handle, up, down])
         let column = rowShell(row, prefix: "subscriptions.", trailing: trailing)
         if let line = column.superview as? SubscriptionDropRow {
-            let positions = Dictionary(configuration.model.added.compactMap { r in r.position.map { (r.id, $0) } }, uniquingKeysWith: { first, _ in first })
             let move = configuration.handlers.move
             line.onDrop = { source, target in
-                guard editable, let from = positions[source], let to = positions[target], from != to else { return }
-                move(source, to - from)
+                guard editable, let delta = Self.moveDelta(source: source, target: target, in: movable) else { return }
+                move(source, delta)
             }
         }
     }

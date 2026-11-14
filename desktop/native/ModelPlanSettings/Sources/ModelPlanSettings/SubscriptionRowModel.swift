@@ -100,6 +100,9 @@ public struct SubscriptionRowModel: Equatable, Sendable {
         }
         if let code = actionableCode(facts?.code), !isKeychain(code),
            let entry = ReaderCauseTable.rowEntry(code: code, tool: tool.tool, toolName: name, keyEntryAvailable: keyEntryAvailable) {
+            // #954 (G3-105): OpenCode Go's missing key keeps its own line (a found sign-in is not read, D230; the key
+            // goes in OPENCODE_API_KEY); the row's fix still offers the manual key entry when there is one.
+            if ReaderCauseTable.canonical(code) == "key_missing", let line = SettingsScopeConsentView.keyMissingLine(tool) { return (line, true) }
             return (entry.reason, true)
         }
         if tool.promptsKeychain {

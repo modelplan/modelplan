@@ -44,6 +44,10 @@ import ModelPlanWire
     private var notInstalledExpanded = false
     private var fixNotices: [String: SettingsText] = [:]
     private var highlightedRowID: String?
+    /// Key-only tools whose "Add key" fix was pressed: their key entry stays open on the row.
+    private var keyEntryOpen: Set<String> = []
+    /// Providers whose entry is already on a row in the current render (one view can sit in one place).
+    private var mountedKeyEntries: Set<ReaderKeyProvider> = []
     /// What the app can do for a row: visibility, order and the two fixes that need the engine.
     public var rowActions = SubscriptionRowActions()
     /// D90: the optional manual key area. Set by the app when the engine supports it.
@@ -392,10 +396,7 @@ import ModelPlanWire
         }
         // D90: in Settings a detected key-only tool carries the optional key entry on its own row.
         let keyEntry: ReaderKeyEntryView? = {
-            guard settings, tool.detected, let provider = ReaderKeyProvider(rawValue: id), let backend = readerKeys else { return nil }
-            let section = keySection ?? ReaderKeySection(backend: backend, language: language)
-            section.onPresenceChange = { [weak self] in self?.render() }
-            keySection = section
+            guard settings, tool.detected, let provider = ReaderKeyProvider(rawValue: id), let section = readerKeySection() else { return nil }
             return section.inlineEntry(for: provider)
         }()
         var keyMissingShown = false
@@ -742,6 +743,24 @@ import ModelPlanWire
                   synchronousButton(.init("Cancel", "取消"), id: "scope.cancel") { [weak self] in self?.controller.cancelConfirmation() }])
         }
     }
+    /// The one optional key area (created once and reused, so a re-render never clears what is being typed).
+    private func readerKeySection() -> ReaderKeySection? {
+        guard let backend = readerKeys else { return nil }
+        let section = keySection ?? ReaderKeySection(backend: backend, language: language)
+        section.onPresenceChange = { [weak self] in self?.render() }
+        keySection = section
+        return section
+    }
+    /// D90 / SET-9-41 in the rows layout (macrev2-804-1): a key-only tool's row carries its key entry once
+    /// "Add key" was pressed, or while a key is saved (so Test and Remove stay reachable). One row per provider.
+    private func rowKeyEntry(_ row: SubscriptionRow) -> NSView? {
+        guard row.section != .notInstalled, let provider = ReaderKeyProvider(rawValue: row.tool), !mountedKeyEntries.contains(provider),
+              let section = readerKeySection() else { return nil }
+        let entry = section.inlineEntry(for: provider)
+        guard keyEntryOpen.contains(row.tool) || entry.entry.status.present else { return nil }
+        mountedKeyEntries.insert(provider)
+        return entry
+    }
     /// D87 slice 6/7: build the row model from the host's context and the controller's accepted facts, and show it.
     private func renderSubscriptionRows(_ context: SubscriptionRowsContext) {
         if let facts = controller.facts { renderConfirmation(facts) }
@@ -749,6 +768,7 @@ import ModelPlanWire
             subscriptions: context.subscriptions, orderedIDs: context.orderedIDs, hiddenIDs: context.hiddenIDs,
             tools: controller.settingsTools, facts: controller.toolRowFacts, isReading: { [controller] in controller.isToolReading($0) },
             keyEntryAvailable: readerKeys != nil, name: { Self.toolName($0) })
+        mountedKeyEntries = []
         var handlers = SubscriptionRowsView.Handlers()
         handlers.setVisible = { [weak self] id, visible in self?.rowActions.setVisible?(id, visible) }
         handlers.move = { [weak self] id, delta in self?.rowActions.move?(id, delta) }
@@ -763,7 +783,8 @@ import ModelPlanWire
             lockedReason: { id in context.subscriptions.first { $0.id == id }?.persistenceDisabledReason },
             canMutate: controller.canMutate, canSave: context.canSave, canResetOrder: context.canResetOrder && rowActions.resetOrder != nil,
             fixAvailable: { [weak self] row in self?.canPerformFix(row) ?? false },
-            notInstalledExpanded: notInstalledExpanded, notices: fixNotices, handlers: handlers, highlightedID: highlightedRowID))
+            notInstalledExpanded: notInstalledExpanded, notices: fixNotices, handlers: handlers, highlightedID: highlightedRowID,
+            keyEntry: { [weak self] row in self?.rowKeyEntry(row) }))
         rowsView = view
         addArrangedSubview(view)
         view.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
@@ -773,7 +794,7 @@ import ModelPlanWire
         switch fix.target {
         case .allowKeychain: return controller.canMutate
         case .retry: return rowActions.retry != nil
-        case .addKey: return readerKeys != nil
+        case .addKey: return readerKeys != nil && ReaderKeyProvider(rawValue: row.tool) != nil
         case .installTool, .installNode, .explain: return SubscriptionFixLauncher.url(for: fix.target, tool: row.tool) != nil
         case .openTool: return true
         case .openSettings: return true
@@ -786,7 +807,10 @@ import ModelPlanWire
         switch fix.target {
         case .allowKeychain: Task { await controller.allowKeychain() }
         case .retry: rowActions.retry?(row.tool)
-        case .addKey: if let section = keySection { section.scrollToVisible(section.bounds) }
+        case .addKey:
+            // Open the entry on this row, then put the cursor in its field.
+            keyEntryOpen.insert(row.tool); render()
+            if let provider = ReaderKeyProvider(rawValue: row.tool), let entry = readerKeySection()?.inlineEntry(for: provider) { entry.focusField() }
         case .installTool, .installNode, .explain:
             if let url = SubscriptionFixLauncher.url(for: fix.target, tool: row.tool) { NSWorkspace.shared.open(url) }
         case .openTool:
@@ -811,7 +835,7 @@ public struct SubscriptionRowsContext {
         self.subscriptions = subscriptions; self.orderedIDs = orderedIDs; self.hiddenIDs = hiddenIDs; self.canSave = canSave; self.canResetOrder = canResetOrder
     }
     var signature: String {
-        subscriptions.map { [$0.id, $0.name.english, $0.plan, $0.vendor, $0.source.rawValue, $0.causeCode ?? "", $0.isUnstable ? "u" : "s"].joined(separator: "\u{1F}") }
+        subscriptions.map { [$0.id, $0.name.english, $0.plan, $0.vendor, $0.tool, $0.source.rawValue, $0.causeCode ?? "", $0.isUnstable ? "u" : "s"].joined(separator: "\u{1F}") }
             .joined(separator: "\u{1E}") + "|" + orderedIDs.joined(separator: ",") + "|" + hiddenIDs.sorted().joined(separator: ",") + "|" + (canSave ? "1" : "0") + (canResetOrder ? "r" : "")
     }
 }
