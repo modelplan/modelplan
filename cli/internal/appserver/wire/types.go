@@ -310,6 +310,25 @@ type PluginInstallParams struct {
 	Offline bool       `json:"offline,omitempty" null:"coalesced"`
 }
 
+// ReaderKeyParams is the input of readerkey/set, readerkey/test and readerkey/remove (D90). Key is
+// the only secret on the wire besides credentials/result: empty means "the stored key" for test and
+// is ignored by remove; set needs it. Region is "none" for providers without a choice. The key is
+// never echoed: see ReaderKeyParams.String and LogValue.
+type ReaderKeyParams struct {
+	Provider ReaderKeyProvider `json:"provider"`
+	Region   ReaderKeyRegion   `json:"region"`
+	Key      string            `json:"key" schema:"maxLength=4096"`
+}
+
+// ReaderKeyResult is the output of the three readerkey/* methods. It never carries the key.
+type ReaderKeyResult struct {
+	SchemaVersion int               `json:"schemaVersion" schema:"minimum=1,maximum=1"`
+	Provider      ReaderKeyProvider `json:"provider"`
+	Region        ReaderKeyRegion   `json:"region"`
+	Present       bool              `json:"present"`
+	Outcome       ReaderKeyOutcome  `json:"outcome"`
+}
+
 // HistoryImportStartParams starts the local usage-history import (metadata only, from the
 // harness logs on this machine). Days is 7, 30 or 90 (1..371 accepted); FirstRun marks the import
 // that follows the first-run consent, which runs once.
