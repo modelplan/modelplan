@@ -59,6 +59,7 @@ def matcher(target):
         "ax": lambda n: n.get("id") == value,
         "ax^": lambda n: str(n.get("id", "")).startswith(value),
         "label": lambda n: value in (n.get("label"), n.get("title")),
+        "title^": lambda n: str(n.get("title", "")).startswith(value),
         "value": lambda n: n.get("value") == value,
         "dom^": lambda n: str(n.get("dom", "")).startswith(value),
         "role": lambda n: n.get("role") == value,

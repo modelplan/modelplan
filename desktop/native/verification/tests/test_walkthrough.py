@@ -218,6 +218,20 @@ class Steps(unittest.TestCase):
         self.assertIn("label:" + label, text)
         self.assertNotIn("label:Open the 3D view", text)
 
+    def test_help_is_chosen_with_a_real_click_so_the_app_may_take_focus_for_escape(self):
+        # An accessibility press is not user input, so the app's activation is refused and Escape goes to Finder.
+        step = next(s for s in self.STEPS if s["id"] == "help-map")
+        self.assertIn({"op": "click", "target": "ax:status.help"}, step["actions"])
+        self.assertFalse([a for a in step["actions"] if a.get("op") == "press"])
+
+    def test_the_hud_row_is_clicked_by_its_title_not_inside_the_field_key(self):
+        step = next(s for s in self.STEPS if s["id"] == "hud-select")
+        self.assertEqual(step["actions"][0], {"op": "click", "target": "title^:1 "})
+        row = {"title": "1 Astra \u2605Med", "frame": [1372, 142, 168, 12]}
+        key = {"title": "Open the 3D launch field \u00b7 Or click anywhere on the field", "frame": [1834, 97, 22, 22]}
+        tree = {"windows": [{"frame": [0, 0, 9, 9], "children": [key, row]}]}
+        self.assertIs(w.resolve(tree, "title^:1 "), row)
+
     def test_the_first_reading_is_timed_from_the_hook_not_from_launch(self):
         tree = {"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "dock.subscription.0", "frame": [1, 1, 2, 2]}]}]}
         host = FakeHost(tree)
