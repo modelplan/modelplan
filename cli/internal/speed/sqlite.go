@@ -176,12 +176,15 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor, postClear string, now 
 	key := source + ":" + fileKey(path)
 	c := l.Stores[key]
 	sig := dbSig(path)
-	if sig == "" || (sig == c.Sig && len(c.Pending) == 0 && !c.More) || now.Sub(c.Checked) < dbEvery {
+	// The file's identity is read before the signature gate and before the database is opened.
+	// Another file at the path (another identity) is always read, even with the same sizes and
+	// times: a replacement can keep both. A file swapped in after this is then a replacement next
+	// time and read again, never taken for the file that was read.
+	file := fileID(path)
+	sameFile := c.File == "" || file == "" || file == c.File
+	if sig == "" || (sig == c.Sig && sameFile && len(c.Pending) == 0 && !c.More) || now.Sub(c.Checked) < dbEvery {
 		return false
 	}
-	// The file's identity is read before the database is opened: a file swapped in between is
-	// then a replacement next time and read again, never taken for the file that was read.
-	file := fileID(path)
 	db, err := openRO(path)
 	if err != nil {
 		return false

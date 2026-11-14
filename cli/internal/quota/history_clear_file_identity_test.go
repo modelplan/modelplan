@@ -195,3 +195,56 @@ func TestHistoryClearInPlaceAppendSameFileCountsOnce(t *testing.T) {
 		t.Fatalf("want the cursor anchored at the post-clear row 6004: rowID=%d anchor=%q more=%t unread=%t", c.RowID, c.Anchor, c.More, c.Unread)
 	}
 }
+
+// The database is replaced by another file with the same size and the same modification time as
+// the one read (os.Chtimes back to its time), so the size/time signature is unchanged. The file
+// identity is not: the new file is read, and each of its post-clear requests counts once.
+func TestHistoryClearReplacementKeepingSizeAndMtimeIsRead(t *testing.T) {
+	for _, how := range []string{"rename", "recreate"} {
+		t.Run(how, func(t *testing.T) {
+			testenv.IsolateHome(t)
+			t.Setenv("MODELPLAN_HISTORY", "")
+			cache, home := t.TempDir(), t.TempDir()
+			now := time.Now().UTC()
+			boundary, db := clearZCodeThenReplace(t, cache, home, 10, now)
+			if _, err := db.Exec(`UPDATE model_usage SET started_at = ?, completed_at = ?, output_tokens = 3 WHERE rowid IN (2, 5)`,
+				boundary.Add(time.Second).UnixMilli(), boundary.Add(2*time.Second).UnixMilli()); err != nil {
+				t.Fatal(err)
+			}
+			db.Close()
+			observeZCode(t, cache, home, boundary.Add(time.Minute))
+			if _, _, n, out := ledgerTotals(t, cache, "zcode"); n != 2 || out != 6 {
+				t.Fatalf("setup: first replacement %d/%d, want 2/6", n, out)
+			}
+			path := filepath.Join(home, "db.sqlite")
+			before, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			swapZCodeDB(t, path, how, "synthetic-same-signature", 10, now.Add(-90*time.Second),
+				`UPDATE model_usage SET started_at = ?, completed_at = ?, output_tokens = 7 WHERE rowid IN (2, 5)`,
+				boundary.Add(3*time.Second).UnixMilli(), boundary.Add(4*time.Second).UnixMilli())
+			if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil {
+				t.Fatal(err)
+			}
+			after, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
+				t.Fatalf("setup: size/mtime differ: %d@%s vs %d@%s", after.Size(), after.ModTime(), before.Size(), before.ModTime())
+			}
+			for _, p := range []string{path + "-wal"} {
+				if _, err := os.Stat(p); err == nil {
+					t.Fatalf("setup: %s exists and would change the signature", p)
+				}
+			}
+			for i := 2; i <= 5; i++ {
+				observeZCode(t, cache, home, boundary.Add(time.Duration(i)*time.Minute))
+			}
+			if _, _, n, out := ledgerTotals(t, cache, "zcode"); n != 4 || out != 20 {
+				t.Fatalf("the replacement with the same size and mtime counts each post-clear request once: got %d/%d, want 4/20", n, out)
+			}
+		})
+	}
+}
