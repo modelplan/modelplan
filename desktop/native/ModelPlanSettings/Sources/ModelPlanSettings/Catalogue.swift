@@ -48,15 +48,19 @@ public struct SettingsSubscription: Sendable {
     public let isUnstable: Bool
     /// The engine's fixed failure code for this subscription's source, if it failed (D87); text comes from ReaderCauseTable.
     public let causeCode: String?
+    /// The engine's tool id for this subscription's row (`codex`, `zai`, `opencodego`, ...). `vendor` is the
+    /// row's vendor key (`openai`, `glm`, `opencode`, ...) and is not a tool id (macrev2-803-2).
+    public let tool: String
     public var persistenceDisabledReason: SettingsText? {
         isUnstable ? .init("Unverified account — changes can't be saved yet", "未验证账号，暂不能保存设置") : nil
     }
     public init(id: String, name: SettingsText, plan: String = "", vendor: String = "",
                 modelNames: [String] = [], toolNames: [String] = [], source: SubscriptionSourceState = .unavailable,
-                isUnstable: Bool = false, causeCode: String? = nil) {
+                isUnstable: Bool = false, causeCode: String? = nil, tool: String = "") {
         self.id = id; self.name = name; self.plan = plan; self.vendor = vendor
         self.modelNames = modelNames; self.toolNames = toolNames; self.source = source; self.isUnstable = isUnstable
         self.causeCode = causeCode
+        self.tool = tool.isEmpty ? SubscriptionRowModel.toolID(vendor: vendor) : tool
     }
 }
 public enum CLIReadState: String, Sendable { case ready, unavailable, denied, stale }

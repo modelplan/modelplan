@@ -252,11 +252,11 @@ public struct FirstRunReading: Sendable, Equatable {
     public func receiveAcceptedRows(_ value: WireRowsSnapshot) {
         rowsSummary = value.projection.rowsSummary
         claudeRowState = value.projection.rows.first { $0.id == "claude" }?.state
-        rowCodes = Dictionary(value.projection.rows.map { ($0.id, $0.reason.code) }, uniquingKeysWith: { first, _ in first })
-        rowStates = Dictionary(value.projection.rows.map { ($0.id, $0.state) }, uniquingKeysWith: { first, _ in first })
         var consents: [String: RowsConsent] = [:]
         for row in value.projection.rows where row.kind == .tool { consents[row.id] = row.consent }
         rowConsent = consents
+        rowCodes = Dictionary(value.projection.rows.map { ($0.id, $0.reason.code) }, uniquingKeysWith: { first, _ in first })
+        rowStates = Dictionary(value.projection.rows.map { ($0.id, $0.state) }, uniquingKeysWith: { first, _ in first })
         var readings: [String: [FirstRunReading]] = [:]
         for row in value.projection.rows where row.kind == .tool {
             // The plan-wide windows the engine currently reads; the tightest one per period.
