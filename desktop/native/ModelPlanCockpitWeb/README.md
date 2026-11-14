@@ -81,6 +81,12 @@ unlisted, changed or symlinked content. Caps: 4096 files, 8 MiB/file, 64 MiB tot
 argument transport, strict reply field sets, duplicate/nesting rejection, a
 1 MiB cap and canonical decimal UInt64 strings. No private WebKit selector is in
 this product's release build; optional verification hooks are compile gated.
+The one allowed exception is the string-key `drawsBackground` write on the
+`WKWebView` (owner decision D237, in `CockpitWindowController` and
+`CockpitFieldPanel`): WebKit exposes no public way to make the page view
+transparent, and the cockpit's floating look needs it. The release guard flags
+every other string-key `setValue(_:forKey:)`/`value(forKey:)` unless it is on
+`cli/internal/releaseguard/kvc-allowlist.json`, which names the decision.
 
 The first actual preflight found no installed page API at navigation completion. The local scheme handler
 initially supplied a plain URLResponse; WebKit requires an HTTP response with

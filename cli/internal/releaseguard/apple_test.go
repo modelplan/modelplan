@@ -27,7 +27,13 @@ func TestAppleSPI(t *testing.T) {
 		{"go-kvc-raw-string", "Bad.go", "package bad; func bad(){ obj.ValueForKey(`_privatePID`) }", 1},
 		{"swift-raw-string", "Bad.swift", `view.value(forKey: #"_privatePID"#)`, 1},
 		{"objc-c-selector", "Bad.m", `sel_registerName("_privatePID")`, 1},
-		{"public-kvc", "Good.swift", `view.value(forKey: "title")`, 0},
+		{"public-kvc", "Bad.swift", `view.value(forKey: "title")`, 1},
+		{"non-underscore-set", "Bad.swift", `webView.setValue(false, forKey: "drawsBackground")`, 1},
+		{"non-underscore-objc", "Bad.m", `[view setValue:@NO forKey:@"drawsBackground"];`, 1},
+		{"allow-listed-field-panel", "desktop/native/ModelPlanCockpitWeb/Sources/ModelPlanCockpitWeb/CockpitFieldPanel.swift", `view.setValue(false, forKey: "drawsBackground")`, 0},
+		{"allow-listed-window", "desktop/native/ModelPlanCockpitWeb/Sources/ModelPlanCockpitWeb/CockpitWindowController.swift", `web.setValue(false, forKey: "drawsBackground")`, 0},
+		{"allow-list-is-per-file", "desktop/native/Other/Other.swift", `web.setValue(false, forKey: "drawsBackground")`, 1},
+		{"allow-list-is-per-key", "desktop/native/ModelPlanCockpitWeb/Sources/ModelPlanCockpitWeb/CockpitFieldPanel.swift", `view.setValue(false, forKey: "otherKey")`, 1},
 		{"comment", "Good.swift", `// view._webProcessIdentifier`, 0},
 		{"block-comment", "Good.swift", `/* view._webProcessIdentifier */ let ok = true`, 0},
 		{"test-flag", "Test.swift", "#if MODELPLAN_TEST_ONLY_SPI\nview._webProcessIdentifier\n#endif", 0},
@@ -103,5 +109,17 @@ func TestAppleReviewFixturesThroughTree(t *testing.T) {
 				t.Fatalf("got %v, %v; want %d findings", hits, err, fixture.Hits)
 			}
 		})
+	}
+}
+
+func TestKVCAllowlistNamesDecision(t *testing.T) {
+	entries := kvcAllowlist()
+	if len(entries) == 0 {
+		t.Fatal("allow-list is empty")
+	}
+	for _, e := range entries {
+		if e.Path == "" || e.Key == "" || e.Decision == "" {
+			t.Fatalf("allow-list entry needs path, key and owner decision: %+v", e)
+		}
 	}
 }

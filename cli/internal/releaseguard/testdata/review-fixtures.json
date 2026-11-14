@@ -47,7 +47,7 @@
       "name": "swift-nested-public",
       "path": "Probe.swift",
       "source": "view.setValue(makeValue(), forKey: \"title\")\n",
-      "hits": 0
+      "hits": 1
     },
     {
       "name": "objc-defined-elif",
@@ -74,10 +74,10 @@
       "hits": 0
     },
     {
-      "name": "nested-non-kvc-key-is-public",
+      "name": "nested-non-kvc-key-is-still-flagged",
       "path": "Probe.swift",
       "source": "view.setValue(makeValue(forKey: \"_argument\"), forKey: \"title\")\n",
-      "hits": 0
+      "hits": 1
     },
     {
       "name": "grouped-getter",
@@ -101,7 +101,7 @@
       "name": "grouped-public",
       "path": "Probe.swift",
       "source": "view.setValue(makeValue(), forKey: ((\"title\")))\n",
-      "hits": 0
+      "hits": 1
     },
     {
       "name": "grouped-test-only",
