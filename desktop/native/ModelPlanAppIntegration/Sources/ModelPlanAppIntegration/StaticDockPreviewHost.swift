@@ -392,10 +392,12 @@ struct DockHelpInteraction: Equatable {
     var suppressJourneyOrderIn = false
     #endif
 
-    #if DEBUG
     /// The carry sets the closed hand (DockInstrumentView.pointerDragged); a release or cancel routed through the
     /// panel never reaches the view's pointerUp, so the panel route restores the arrow itself (#960 sampling, P3).
+    /// Always present: release code calls it; only the test override is DEBUG-only.
     var restorePanelMoveCursor: () -> Void = { NSCursor.arrow.set() }
+
+    #if DEBUG
     var detachedCardForChecks: DockCardView? { !createsNativePanels && !card.isHidden ? card : nil }
     #endif
     func refreshPresence() { displayFollower.sample(); edge.refresh() }
