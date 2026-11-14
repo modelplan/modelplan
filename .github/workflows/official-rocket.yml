@@ -1,0 +1,31 @@
+name: Official rocket pack
+# v1.1 native entrance (D106, D109): the reserved-licence rocket pack loads in RealityKit with every anchor the
+# entrance uses, both finishes share one model, and the loader refuses altered bytes. Hosted macOS only.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'desktop/official-visuals/rocket-3d/**'
+      - 'desktop/native/ModelPlanEntrance/Sources/ModelPlanEntrance/**'
+      - '.github/workflows/official-rocket.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/official-visuals/rocket-3d/**'
+      - 'desktop/native/ModelPlanEntrance/Sources/ModelPlanEntrance/**'
+      - '.github/workflows/official-rocket.yml'
+permissions:
+  contents: read
+concurrency:
+  group: official-rocket-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pack:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pack tests (hashes, shared geometry, RealityKit load of both finishes)
+        run: swift test --package-path desktop/official-visuals/rocket-3d --jobs 2

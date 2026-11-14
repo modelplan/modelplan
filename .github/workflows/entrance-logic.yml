@@ -1,0 +1,33 @@
+name: Entrance logic
+# v1.1 native entrance (D106): the Foundation-only frame logic (timeline, tail layout, camera rail, goldens from
+# the approved web reference) on a GitHub-hosted Linux runner, so draft pushes are checked without any Mac.
+# The RealityKit render checks stay in the macOS native job (desktop.yml gui=true).
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'desktop/native/ModelPlanEntrance/**'
+      - '.github/workflows/entrance-logic.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/native/ModelPlanEntrance/**'
+      - '.github/workflows/entrance-logic.yml'
+permissions:
+  contents: read
+concurrency:
+  group: entrance-logic-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    container: swift:6.0-noble
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the entrance checks
+        run: |
+          swift --version
+          swift build --package-path desktop/native --product ModelPlanEntranceChecks --jobs 2
+          swift run --package-path desktop/native --skip-build ModelPlanEntranceChecks
