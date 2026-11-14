@@ -20,7 +20,7 @@ final class BridgeTests: XCTestCase {
     -> String
   {
     var value = try object(outgoing)
-    for key in ["data", "appearance", "shell", "visible", "occluded", "key", "nowUnixMs", "reason", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "visible", "occluded", "key", "nowUnixMs", "reason", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "memberOrder"] { value[key] = nil }
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }
@@ -335,6 +335,31 @@ final class BridgeTests: XCTestCase {
       XCTAssertThrowsError(try state.accept(reply(load,"action",sequence,extra:extra.merging(["action":"openWebsite"]){$1}),source:source),"\(extra)")
       sequence += 1
     }
+  }
+  /// CKP-SHELL-39: the empty engine screen's button is one fixed action with no payload.
+  func testOpenSettingsSubscriptionsIsAFixedActionWithNoPayload() throws {
+    let state=CockpitBridgeState(context:try context()),load=try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    let display=try state.display(fixture(),ticket:XCTUnwrap(state.queryTicket))
+    _ = try state.accept(reply(display,"rendered",2),source:source)
+    XCTAssertEqual(try state.accept(reply(load,"action",3,extra:["action":"openSettingsSubscriptions"]),source:source),.action(.openSettingsSubscriptions))
+    XCTAssertThrowsError(try state.accept(reply(load,"action",4,extra:["action":"openSettingsSubscriptions","pane":"about"]),source:source),"no pane or URL crosses")
+  }
+  /// D244 / G3-111: the saved subscription order reaches the page on load and on every appearance update, so the
+  /// cockpit's tabs and columns follow it; none saved sends no order (the engine order), and only member keys cross.
+  func testSavedMemberOrderReachesThePageOnLoadAndAppearance() throws {
+    let saved = ["bbbbbbbbbbbbbbbb", "codex#saved_login_api", "aaaaaaaaaaaaaaaa"]
+    let state = CockpitBridgeState(context: try context())
+    let load = try state.load(.init(theme: .night, locale: .en, profile: .full, memberOrder: saved + ["all", "not a key", "bbbbbbbbbbbbbbbb"]),
+      shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+    XCTAssertEqual(try object(load)["memberOrder"] as? [String], saved, "member keys only, once each, in the saved order")
+    XCTAssertEqual(try state.accept(reply(load, "ready", 1), source: source), .ready)
+    let reordered = try state.setAppearance(.init(theme: .night, locale: .en, profile: .full, memberOrder: ["aaaaaaaaaaaaaaaa"]))
+    XCTAssertEqual(try object(reordered)["memberOrder"] as? [String], ["aaaaaaaaaaaaaaaa"])
+    let reset = try state.setAppearance(.init(theme: .night, locale: .en, profile: .full))
+    XCTAssertNil(try object(reset)["memberOrder"], "no saved order: the page keeps the engine order")
+    let plain = CockpitBridgeState(context: try context())
+    XCTAssertNil(try object(try ready(plain))["memberOrder"])
   }
   func testEarlyAppearanceReportSurvivesLaterValidActionBeforeAck() throws {
     let state=CockpitBridgeState(context:try context()),load=try ready(state)

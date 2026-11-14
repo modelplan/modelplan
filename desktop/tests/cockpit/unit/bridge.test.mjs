@@ -87,6 +87,10 @@ test('D63 openField may name the clicked rocket by its published display name, n
   for(const bad of ['',' ','x'.repeat(65),42])assert.equal(f.bridge.action('openField',bad),false,String(bad));
   assert.equal(f.bridge.action('openField','Synthetic 5.5'),true);last=f.events.at(-1);assert.equal(last.action,'openField');assert.equal(last.key,'Synthetic 5.5');
 });
+test('openSettingsSubscriptions is one fixed action with no payload (CKP-SHELL-39)',()=>{
+  const f=fixture();assert.equal(f.bridge.action('openSettingsSubscriptions'),true);
+  const last=f.events.at(-1);assert.equal(last.action,'openSettingsSubscriptions');assert.equal(last.key,undefined);assert.equal(last.tool,undefined);
+});
 test('only fixed actions are emitted, history is limited to currently displayed rows',()=>{
   const f=fixture();assert.equal(f.bridge.action('openURL'),false);assert.equal(f.bridge.action('chooseSetup','x'),false);
   assert.equal(f.bridge.action('openHistory','unknown'),false);assert.equal(f.bridge.action('openSettings'),true);
@@ -289,7 +293,7 @@ test('showAllModels (D135) is an optional boolean on load and appearance; off by
  const logs=[],original=console.warn;console.warn=(...args)=>logs.push(args);
  try{
   for(const [input,expected] of [[true,true],[false,false],[undefined,false]]){
-   const seen=[],view={clear(){},configure(_a,_n,_u,all){seen.push(all);},updateAppearance(_a,_now,_n,_u,all){seen.push(all);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+   const seen=[],view={clear(){},configure(_a,_n,_u,_o,all){seen.push(all);},updateAppearance(_a,_now,_n,_u,_o,all){seen.push(all);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
    const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
    const extra=input===undefined?{}:{showAllModels:input};
    assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,...extra}),source),true);

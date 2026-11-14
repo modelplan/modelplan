@@ -16,6 +16,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/profile"
 )
 
 // ProductionPaths is the single CLI/App/hooks constructor. It reads ModelPlan
@@ -42,9 +43,9 @@ func CodexHome() string {
 func ProductionPathsWithAdmission(cache, version string, admission consent.Admission) Paths {
 	home, _ := os.UserHomeDir()
 	p := Paths{Admission: &admission, CLIVersion: version, Cache: cache, CodexHome: CodexHome(),
-		LocalFile:       filepath.Join(home, ".config", "modelplan", "local.json"),
-		CodexBarFile:    filepath.Join(home, ".config", "modelplan", "codexbar.json"),
-		ConnectionsFile: filepath.Join(home, ".config", "modelplan", "connections.json"),
+		LocalFile:       profile.ConfigFile(home, "local.json"),
+		CodexBarFile:    profile.ConfigFile(home, "codexbar.json"),
+		ConnectionsFile: profile.ConfigFile(home, "connections.json"),
 		CodexThread:     os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID"),
 		ReaderAccess: &ReaderAccess{Grants: map[string]ReaderGrant{}}}
 	state, mode := admission.State(), admission.Mode()

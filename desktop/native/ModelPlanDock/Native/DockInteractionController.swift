@@ -18,7 +18,6 @@ public struct DockInteractionPresentation:Equatable,Sendable {
     public var onPresent:((DockInteractionPresentation)->Void)?,onOrderRequest:((DockOrderRequest)->Void)?,onOrderAnnouncement:((String,Int,Int)->Void)?
     public var onActivate:((String)->Void)?
     public var onOverflowDragHelp:((String)->Void)?,onFailure:((Error)->Void)?
-    public var canPreviewOrder:([String])->Bool={_ in true}
     private var retiredHover: (id: String, event: UInt64)?
     private var cards=DockCardInteraction(),gesture=DockNozzleInteraction(),overflowOpen=false,gestureRevision:UInt64?
     private let clock:()->TimeInterval,read:()->DockInteractionEnvironment,scheduler:any DockEdgeScheduling
@@ -99,7 +98,7 @@ public struct DockInteractionPresentation:Equatable,Sendable {
         do{
             let token=generation,env=read();guard running,generation==token,env.active,env.parentExpanded,gestureRevision==env.bindingRevision else{cancelNozzle();return}
             let hadHelp=gesture.overflowHelpNeeded
-            var next=gesture;try next.move(along:along,reducedMotion:env.reducedMotion,canPreview:canPreviewOrder)
+            var next=gesture;try next.move(along:along,reducedMotion:env.reducedMotion,canPreview:{_ in false})  // D244: a moved ring press is a widget carry or nothing; never an order preview
             guard running,generation==token else{return};gesture=next
             if gesture.preview != nil{cards.dismiss()}
             if !hadHelp,gesture.overflowHelpNeeded,let source=gesture.source{onOverflowDragHelp?(source)}

@@ -38,7 +38,9 @@ public struct DestinationsPageSnapshot:Equatable,Sendable {
             if line.working {time=(zh ? "运行中 · ":"Running · ")+format.duration(minutes:start.map{now.timeIntervalSince($0)/60})}
             else if let end {time=(zh ? "已结束 · ":"Ended · ")+format.age(end,now:now)}
             else {time=(zh ? "状态未知 · 最后读数 ":"Unknown state · Last seen ")+(line.age ?? "--")}
-            let project=showProjectNames ? line.projectName:nil
+            // A session with no project in its own tool (no reference) says so; a project whose name is
+            // hidden or unknown stays unnamed.
+            let project=showProjectNames ? (line.projectName ?? (line.projectID == nil ? (zh ? "无项目":"No project"):nil)):nil
             let values=[line.tool,line.model,line.effort ?? "--",line.fast ? (zh ? "快速":"Fast"):"",project,time,
                 (zh ? "输出 ":"Output ")+format.tokens(line.tokens),line.speed60s.map{String(format:"%.0f t/s",locale:Locale(identifier:"en_US_POSIX"),$0)}]
                 .compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")

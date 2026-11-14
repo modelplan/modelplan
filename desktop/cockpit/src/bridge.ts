@@ -11,11 +11,11 @@ export interface BridgeSource { readonly origin:string; readonly isMainFrame:boo
 export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean; readonly showProjectNames:boolean }
 export type LiveAppearance = Appearance;
 export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string }
-export type PageAction = 'chooseSetup'|'openSettings'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'openField'|'openWebsite';
+export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'openField'|'openWebsite';
 export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
-  {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly ackedCautions?:unknown; readonly pinnedModels?:unknown} |
-  ({readonly type:'appearance'; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean} & LiveAppearance) |
+  {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly ackedCautions?:unknown; readonly pinnedModels?:unknown; readonly memberOrder?:readonly string[]} |
+  ({readonly type:'appearance'; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly memberOrder?:readonly string[]} & LiveAppearance) |
   ({readonly type:'shell'} & ShellState) |
   {readonly type:'display'; readonly data:WireCockpitData} |
   {readonly type:'visibility'; readonly visible:boolean; readonly occluded:boolean; readonly key:boolean} |
@@ -27,8 +27,9 @@ export interface CockpitView {
   /** D136: the favourite (pinned) model ids the host remembered; sent before `configure`. */
   restorePins?(ids:string[]):void;
   forgetAcked?():void;
-  configure(appearance:Appearance,redBelow:RedBelow,showUsedPercent?:boolean,showAllModels?:boolean):void;
-  updateAppearance(appearance:LiveAppearance,now:number,redBelow:RedBelow,showUsedPercent?:boolean,showAllModels?:boolean):void;
+  /** memberOrder (D244): the saved subscription order; absent or empty is the engine's default order. */
+  configure(appearance:Appearance,redBelow:RedBelow,showUsedPercent?:boolean,memberOrder?:readonly string[],showAllModels?:boolean):void;
+  updateAppearance(appearance:LiveAppearance,now:number,redBelow:RedBelow,showUsedPercent?:boolean,memberOrder?:readonly string[],showAllModels?:boolean):void;
   shell(state:ShellState):void;
   render(data:WireCockpitData,now:number):void;
   clear():void;
@@ -70,10 +71,12 @@ function message(raw:string):HostMessage|null {
   const keys=(extra:string[]=[],optional:string[]=[])=>exact(m,[...header,'type',...extra,...optional.filter(key=>Object.hasOwn(m,key))]);
   const validAppearance=(v:unknown):boolean=>exact(v,['theme','locale','reduceMotion','reduceTransparency','showProjectNames'])&&typeof v.showProjectNames==='boolean'&&['day','night'].includes(v.theme as string)&&['en','zh-CN'].includes(v.locale as string)&&typeof v.reduceMotion==='boolean'&&typeof v.reduceTransparency==='boolean';
   const validScope=(v:unknown):boolean=>{if(typeof v!=='string')return false;if(v==='all'||/^[a-f0-9]{16}$/.test(v))return true;const parts=v.split('#');let last=parts.pop()??'';if(/^\d+$/.test(last)){if(!/^[1-9]\d*$/.test(last)||Number(last)>1024)return false;last=parts.pop()??'';}return identity(parts.join('#'))&&['saved_login_api','runtime_rpc','local_log','api_key_api','local_sqlite','status_line','browser_session','manual','unknown'].includes(last);};
+  // D244: the saved member order is member keys only, at most 256, no repeats.
+  const validOrder=(v:unknown):boolean=>Array.isArray(v)&&v.length>0&&v.length<=256&&v.every(k=>k!=='all'&&validScope(k))&&new Set(v).size===v.length;
   const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope'])&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
   switch(m.type) {
-    case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','showAllModels','ackedCautions','pinnedModels'])||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))||(m.pinnedModels!==undefined&&!validAcked(m.pinnedModels))) return no('load.keys'); break;
-    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent','showAllModels'])||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
+    case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','showAllModels','ackedCautions','pinnedModels','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))||(m.pinnedModels!==undefined&&!validAcked(m.pinnedModels))) return no('load.keys'); break;
+    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent','showAllModels','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
     case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return no('shell.fields'); break;
     case 'display': if(!keys(['data']))return no('display.keys');if(!validData(m.data))return null; break;
     case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return no('visibility.fields'); break;
@@ -156,7 +159,7 @@ export class CockpitBridge {
       this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;
       this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
       this.sequence=BigInt(m.sequence); this.loaded=true;this.cleared=false;this.loadRequestId=m.requestId;
-      try {this.view.restoreAcked?.(validAcked(m.ackedCautions)?m.ackedCautions:[]);this.view.restorePins?.(validAcked(m.pinnedModels)?m.pinnedModels:[]);this.view.configure(m.appearance,threshold(m.redBelow),m.showUsedPercent===true,m.showAllModels===true);this.view.shell(m.shell);} catch {this.unload();return this.no('load.view');}
+      try {this.view.restoreAcked?.(validAcked(m.ackedCautions)?m.ackedCautions:[]);this.view.restorePins?.(validAcked(m.pinnedModels)?m.pinnedModels:[]);this.view.configure(m.appearance,threshold(m.redBelow),m.showUsedPercent===true,m.memberOrder??[],m.showAllModels===true);this.view.shell(m.shell);} catch {this.unload();return this.no('load.view');}
       this.shellState=m.shell;this.syncActive();
       if(this.domReady) {this.emit('ready',m.requestId,{appearanceVersion:2,capabilities:['appearanceUpdates','shellState','shellActions']});this.loadRequestId=null;}
       return true;
@@ -181,7 +184,7 @@ export class CockpitBridge {
     if(!same(m,this.context)) return this.no('recv.context');
     switch(m.type) {
       case 'appearance':
-        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow),m.showUsedPercent===true,m.showAllModels===true);} catch {this.unload();return this.no('appearance.view');}
+        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow),m.showUsedPercent===true,m.memberOrder??[],m.showAllModels===true);} catch {this.unload();return this.no('appearance.view');}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'shell':
         try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return this.no('shell.view');}
@@ -231,7 +234,7 @@ export class CockpitBridge {
     this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});return true;
   }
   action(action:PageAction,tool?:string):boolean {
-    if(!this.isActive()||!['chooseSetup','openSettings','openHistory','close','detach','putBack','shutterToggle','scopeSelect','openField','openWebsite'].includes(action)) return false;
+    if(!this.isActive()||!['chooseSetup','openSettings','openSettingsSubscriptions','openHistory','close','detach','putBack','shutterToggle','scopeSelect','openField','openWebsite'].includes(action)) return false;
     if(['close','detach','putBack','shutterToggle'].includes(action)) {
       if(!this.shellState)return false;
       if(action==='detach'&&!this.shellState.attached||action==='putBack'&&this.shellState.attached||action==='shutterToggle'&&this.shellState.forcedClosed)return false;

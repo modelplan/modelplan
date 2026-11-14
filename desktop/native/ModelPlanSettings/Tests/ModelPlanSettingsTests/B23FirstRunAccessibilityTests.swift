@@ -17,7 +17,7 @@ import XCTest
         for language in [SettingsLanguage.chinese,.english] {
             for theme in [SettingsTheme.day,.night] {
                 try await store.update{$0.language=language;$0.theme=theme};await editor.reload()
-                XCTAssertEqual(controller.window?.appearance?.name,theme == .day ? .aqua:.darkAqua)
+                XCTAssertEqual(controller.window?.appearance?.name,.darkAqua,"FR-9-11: the first-run window is dark whatever the theme")
                 let page=try FirstRunPage(preferences:editor.snapshot!.preferences,context:editor.context)
                 XCTAssertEqual(controller.loginButton.accessibilityHelp(),page.loginSubtitle.value(language))
                 XCTAssertEqual(controller.doneButton.title,language == .chinese ? "完成":"Done")
