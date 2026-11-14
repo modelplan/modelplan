@@ -1540,8 +1540,13 @@ struct DockHelpInteraction: Equatable {
         callback(observation.placement, observation.recovering)
     }
     private func bindBackgroundMovement(_ value: DockEdgePresentation) {
-        dockView.backgroundDragDelegate = nil
-        alternateViews.forEach { $0.backgroundDragDelegate = nil }
+        // A held carry keeps its handler on every view: a carry onto another edge swaps that edge's view in, but the
+        // pointer's drag and release still arrive at the view that took the press. Clearing it there stranded the
+        // held drag (no release, no later carry). The binding is exact again at the first present after the drop.
+        if !edge.isBackgroundPressed {
+            dockView.backgroundDragDelegate = nil
+            alternateViews.forEach { $0.backgroundDragDelegate = nil }
+        }
         edge.dragRegions = nil
         guard permitted, !retired, value.state == .expanded else { return }
         let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
@@ -2340,6 +2345,9 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
         edge.endBackgroundMove(global: globalPoint)
     }
     public var hasPanelControlCapture: Bool { interactionController?.hasCapture == true }
+    /// A carry is held (a body press, or a ring press past the click threshold, D244): the panel routes the rest of
+    /// the drag and its release here, whichever view took the press.
+    public var hasPanelCarry: Bool { permitted && !retired && edge.isBackgroundPressed }
 
     public func cancelPanelMove() {
         if hasPanelControlCapture { interactionController?.cancelNozzle() }

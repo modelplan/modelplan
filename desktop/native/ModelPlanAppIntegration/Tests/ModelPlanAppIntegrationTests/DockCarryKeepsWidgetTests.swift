@@ -6,6 +6,7 @@ import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanWire
+import ModelPlanShell
 @testable import ModelPlanAppIntegration
 
 private actor CarryEngine: EngineClient {
@@ -246,6 +247,57 @@ private actor CarryEngine: EngineClient {
         XCTAssertTrue(plate.intersects(carried.insetBy(dx: -220, dy: -220)), "the card moved with the widget, not left on the right edge")
         XCTAssertFalse(plate.intersects(o.plate), "the card left its old place by the right edge")
         dock.cancelPanelMove()
+        await o.app.stopLifecycle(); dock.close()
+    }
+
+    /// After a ring carry swaps in another edge's view, the rest of the drag and its release still reach the carry:
+    /// the view that took the press keeps its handler while the carry is held, and the panel routes a held carry's
+    /// drag and release (live pointer) whichever view took the press. Before, the press view lost its handler on the
+    /// edge change, so the release never ended the carry and the widget could not be dragged again.
+    func testRingCarryOntoAnotherEdgeStillDropsAndTheWidgetDragsAgain() async throws {
+        let pointer = Pointer()
+        let o = try await openCardAndPressItsRing(pointer, screen: screen)
+        let dock = o.dock, view = o.view, editor = o.app.settingsHost.application.editor
+        let bottom = CGPoint(x: screen.visibleFrame.midX, y: screen.visibleFrame.minY + 2)
+        pointer.at = bottom
+        view.performPointerDrag(atLocal: o.local, global: bottom)
+        XCTAssertEqual(dock.edgePresentation?.placement?.edge, .bottom, "precondition: the carry shows the bottom edge")
+        XCTAssertTrue(dock.hasPanelCarry, "the panel routes the held carry")
+        let first = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+
+        // The press view keeps receiving the drag: the carry follows it along the bottom edge.
+        let along = CGPoint(x: bottom.x + 100, y: bottom.y)
+        pointer.at = along
+        view.performPointerDrag(atLocal: o.local, global: along)
+        let followed = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+        XCTAssertEqual(followed.midX - first.midX, 100, accuracy: 1, "the carry still follows the pointer after the edge change")
+
+        // ... and the release ends the carry and saves the bottom edge.
+        view.performPointerUp(atLocal: o.local, global: along)
+        XCTAssertFalse(dock.hasPanelCarry, "the release ended the carry")
+        XCTAssertNotEqual(dock.edgePresentation?.moving, true)
+        try await waitForSettings(editor) { editor.snapshot?.preferences.dockEdge == .bottom && !editor.isSaving }
+
+        // A second drag, on the body of the bottom-edge widget, still moves it.
+        try await Task.sleep(for: .milliseconds(50))
+        let painted = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+        let window = try XCTUnwrap(NSApplication.shared.windows.first { $0 is PulseDockPanel && $0.isVisible && $0.frame.insetBy(dx: 1, dy: 1).intersects(painted) },
+                                   "the widget panel")
+        let shown = try XCTUnwrap(window.contentView?.subviews.compactMap { $0 as? DockInstrumentView }.first, "the bottom-edge view is in the panel")
+        let drag = try XCTUnwrap(shown.backgroundDragDelegate, "the presented view has the drag handler")
+        let local = try XCTUnwrap(stride(from: 4.0, to: shown.bounds.height, by: 4).lazy.flatMap { y in
+            stride(from: 4.0, to: shown.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
+        }.first { drag.backgroundCanDrag(local: $0) }, "the widget body is draggable")
+        let rest = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+        let down = window.convertToScreen(shown.convert(CGRect(origin: local, size: .zero), to: nil)).origin
+        pointer.at = down
+        XCTAssertTrue(drag.beginBackgroundMove(local: local, global: down), "a new drag is taken")
+        let next = CGPoint(x: down.x - 150, y: down.y)
+        pointer.at = next
+        drag.updateBackgroundMove(global: next)
+        let again = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+        XCTAssertEqual(again.midX - rest.midX, -150, accuracy: 1, "the second drag moves the widget")
+        drag.endBackgroundMove(global: next)
         await o.app.stopLifecycle(); dock.close()
     }
 }
