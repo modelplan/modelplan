@@ -64,10 +64,45 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   shutter.setAttribute('aria-label',zh?'舷窗快门':'Porthole shutter');shutter.setAttribute('aria-pressed',String(closed));shutter.setAttribute('aria-describedby',reason.id);shutter.title=reason.textContent;shutter.disabled=!active||!nativeShell||forced;
   attach.hidden=!nativeShell;close.hidden=!nativeShell;
   attach.disabled=!active||!nativeShell;close.disabled=!active||!nativeShell;
+  shutterLayout(closed);
+  if(closed){stop();caution.classList.remove('flash');}
+ }
+ function drawShell(closed:boolean){
   cap.hidden=!closed;cap.style.display=closed?'block':'none';
   root.querySelector<HTMLElement>('.ck-portrow')!.style.visibility=closed?'hidden':'';
   root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?(tier==='tall'?691:609):(tier==='tall'?905:635))+'px');
-  if(closed){stop();caution.classList.remove('flash');}
+ }
+ // G3-108 (owner, build 14e): the porthole itself closes and opens; the body never moves on the page (the closed root
+ // stands on the open root's floor, cockpit.css), so the native window's own motion is the only one the body makes.
+ // Closing, the glass slides down into the hull top (cockpit.css `cockpit-shutter`, 250 ms) and then
+ // the slab is drawn; opening, the open shell is drawn at once and the glass rises out of the hull top. The native side uses the same 250 ms. Reduce Motion, a
+ // hidden page and the first shell draw at once (CKP-MOT-03). The page keeps no timers (bundle.test.mjs): the motion
+ // ends on the animation's own finish. That is its `finished` promise, settled with the animation itself, not the
+ // animationend event, which waits for a later rendering update (macrev2-923-1: a loaded runner left it undelivered).
+ // A cancelled run (the class removed, a newer motion) settles too, unless a newer motion has started since.
+ const portrow=root.querySelector<HTMLElement>('.ck-portrow')!;
+ let shutterRun:Animation|null=null;
+ const shutterEnded=(run:Animation)=>{if(run===shutterRun){shutterRun=null;finishShutter();}};
+ function shutterLayout(closed:boolean){
+  const want=closed?'closed':'open',motion=root.dataset.shell!==undefined&&active&&!reduceMotion&&!motionQuery.matches;
+  if(closed&&root.dataset.shutterMotion==='closing')return;
+  delete root.dataset.shutterMotion;
+  if(root.dataset.shell===want||!motion){drawShell(closed);return;}
+  root.dataset.shutterMotion=closed?'closing':'opening';
+  // Closing, the page shows the open layout under data-shell="closing", so every open-only motion (porthole flicker,
+  // caution blink, cursors, mouth shimmer: [data-shell="open"]) stops at once, as for a closed page.
+  if(closed)root.dataset.shell='closing';else drawShell(false);
+  // No motion drawn (the stylesheet's own Reduce Motion rule): settle at once.
+  const run=portrow.getAnimations().find(a=>(a as CSSAnimation).animationName==='cockpit-shutter');
+  shutterRun=run??null;
+  if(!run){finishShutter();return;}
+  run.finished.then(()=>shutterEnded(run),()=>shutterEnded(run));
+ }
+ // The motion's end, or a hidden page cutting it short (MOT-2.3-08: a hidden page runs no animation).
+ function finishShutter(){
+  shutterRun=null;
+  if(root.dataset.shutterMotion===undefined)return;
+  delete root.dataset.shutterMotion;drawShell(nativeShell?.profile==='closed');
  }
  function localise(now?:number){
   document.documentElement.lang=locale;deck.locale(locale,now);tape.locale(locale);frame.settings.setAttribute('aria-label',words[locale].settings);
@@ -155,7 +190,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   nextDeadline(){return lastData?nextDeadline(lastData,lastRenderedAt):null;},
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
-  active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}},
-  dispose(){if(disposed)return;disposed=true;base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  active(value){active=value;root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}},
+  dispose(){if(disposed)return;disposed=true;shutterRun=null;base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }
