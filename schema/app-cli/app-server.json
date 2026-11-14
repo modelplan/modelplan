@@ -1218,6 +1218,15 @@
             }
           ]
         },
+        "projectState": {
+          "enum": [
+            "named",
+            "unnamed",
+            "hidden",
+            "none"
+          ],
+          "type": "string"
+        },
         "sessionRef": {
           "maxLength": 16,
           "pattern": "^[a-f0-9]{16}$",
@@ -1324,6 +1333,15 @@
               "type": "null"
             }
           ]
+        },
+        "projectState": {
+          "enum": [
+            "named",
+            "unnamed",
+            "hidden",
+            "none"
+          ],
+          "type": "string"
         },
         "rate": {
           "anyOf": [

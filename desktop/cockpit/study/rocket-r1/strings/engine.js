@@ -31,6 +31,7 @@ register('eng', {
   resetCompactOne: ['lcd', '重置1次', '1 reset'],
   resetsWords: ['lcd', '重置 {n} 次', {"one": "{n} reset", "other": "{n} resets"}],
   resetsCompact: ['lcd', '重置{n}次', {"one": "{n} reset", "other": "{n} resets"}],
+  balance: ['lcd', '余额 {v}', 'Balance {v}'], // G3-109: a money balance in the reserve row
   creditWords: ['lcd', '{n} 点', {"one": "{n} credit", "other": "{n} credits"}],
   other: ['silk', '其他', 'Other'], // all nonmatching general windows and scoped quotas
   // round D2: each quota cell's period tag (the extras use extra.name: Fable·周)

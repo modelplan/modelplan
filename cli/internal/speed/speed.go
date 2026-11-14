@@ -128,6 +128,7 @@ type turn struct {
 	all   []request
 	mixed bool
 	cwd   string // the working directory its log records, "" when none
+	np    nativeProject // the tool's own project, when its store names one
 }
 
 const (

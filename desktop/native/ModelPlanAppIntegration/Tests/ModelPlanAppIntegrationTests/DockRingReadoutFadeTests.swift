@@ -4,6 +4,16 @@ import CryptoKit
 import ImageIO
 import XCTest
 @_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanOfficialDock
+
+/// The palette the production Dock builds (T2DockSkin), so synthetic skins draw with every colour key the renderer requires.
+enum ProductionDockPalette {
+    static func make() throws -> [String: DockInk] {
+        let geometry = try T2Geometry.make(subscriptions: [.init(id: "member-a")],
+            input: .init(coordinates: .init(edge: .right, width: 1470, height: 956, menuBarExclusion: 26), diameter: 44))
+        return try T2DockSkin.make(geometry: geometry, rows: [], showsPercentages: true).palette
+    }
+}
 
 /// G3-98: during a ring-click refresh the number never counts; it fades out, stays hidden until the
 /// result lands (or fails, or 3 s pass), then fades in with the value then admitted.
@@ -45,7 +55,8 @@ import XCTest
             "bodyPolygon": [], "fixedLayers": [["resource": "body", "rect": [[0, 0], [width, 64]]]],
             "palette": [:], "text": ["size": 10, "weight": 400], "aliasText": ["size": 10, "weight": 400],
             "stations": ids.enumerated().map { station($0.element, 64 * $0.offset) }]
-        let skin = try JSONDecoder().decode(DockInstrumentSkin.self, from: JSONSerialization.data(withJSONObject: json))
+        var skin = try JSONDecoder().decode(DockInstrumentSkin.self, from: JSONSerialization.data(withJSONObject: json))
+        skin.palette = try ProductionDockPalette.make()
         let renderer = DockInstrumentRenderer(resources: store)
         folderOut = folder
         let view = DockInstrumentView(frame: .zero)

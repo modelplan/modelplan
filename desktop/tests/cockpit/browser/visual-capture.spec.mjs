@@ -14,7 +14,7 @@ const SELECTORS=['.ck','.ck-shell','.ck-head','.ck-portrow','.ck-port','.ck-eng'
  '.ck-base .bz','.ck-base .bz-empty','.ck-base .bz-line','.eng-keys .ek','.eng-keys .ek .bl','.ck-booster'];
 // state: tier, profile, theme, viewport height (636 wide; the tall root is 905 plus the 34 px base row).
 const STATES={'cockpit-tall-night':['tall','open','night',939],'cockpit-short-night':['compact','open','night',669],
- 'cockpit-closed-night':['tall','closed','night',725]};
+ 'cockpit-closed-night':['tall','closed','night',939]};
 
 for(const [name,[tier,profile,theme,height]] of Object.entries(STATES))
 test(`visual capture ${name}`,async({page})=>{
