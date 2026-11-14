@@ -218,6 +218,76 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(reopened.frame.height,fit.frame.height,accuracy:1)
         second.discard();await coordinator.shutdown();await app.composition.stop()
     }
+    /// G3-108 (owner, build 14e) through the normal entry: the Dock's console button opens the cockpit through the real
+    /// composition with the cockpit entry enabled, and the page's shutterToggle intent (the controller's handler) closes
+    /// and reopens the porthole. Attached, the top edge stays under the icon and the body slides by the porthole band
+    /// in one motion; detached, the body (bottom edge) never moves and only the top edge does. Never rescaled: the
+    /// content bounds follow the live frame and the web view keeps the open canvas. CKP-PORT-09 (amended G3-108, 250 ms),
+    /// CKP-SHELL-07 (closing keeps the open scale), CKP-SHELL-05.
+    @MainActor func testG3_108NormalEntryShutterMovesOnlyWhereTheOwnerAsked() async throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        owner.appearance = .init(theme:.night,locale:.en,profile:.full,reduceMotion:false)
+        let client=RouteClient()
+        var pages:[CockpitWindowController]=[]
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let page=try XCTUnwrap(pages.first), window=try XCTUnwrap(page.window)
+        let content=try XCTUnwrap(window.contentView), web=try XCTUnwrap(content.subviews.first as? WKWebView)
+        web.navigationDelegate=nil
+        try await Task.sleep(for:.milliseconds(400))
+        let scale=web.pageZoom, canvas=web.frame.size
+        let band=((253-CockpitShellLayout.closedSlabBand)*scale).rounded(.down)
+        func toggle() async throws -> [CGRect] {
+            var frames=[window.frame]
+            page.toggleShutter()
+            let deadline=ContinuousClock.now + .seconds(2)
+            var still=0
+            while ContinuousClock.now < deadline, still < 20 {
+                frames.append(window.frame)
+                XCTAssertEqual(content.bounds.size.width,window.frame.width,accuracy:0.5,"never rescaled")
+                XCTAssertEqual(content.bounds.size.height,window.frame.height,accuracy:0.5,"never rescaled")
+                XCTAssertEqual(web.frame.size,canvas,"the page canvas never changes");XCTAssertEqual(web.frame.minY,0)
+                still = frames[frames.count-2]==window.frame && !page.shutterMoving && !page.shutterPending ? still+1 : 0
+                try await Task.sleep(for:.milliseconds(5))
+            }
+            XCTAssertEqual(web.pageZoom,scale,"the toggle never changes the fit scale")
+            return frames
+        }
+        // Attached.
+        let start=window.frame
+        let closing=try await toggle()
+        XCTAssertTrue(owner.shell.shutterClosed)
+        for frame in closing { XCTAssertEqual(frame.maxY,start.maxY,accuracy:0.5,"attached, the top edge stays under the icon") }
+        XCTAssertEqual(window.frame.minY-start.minY,band,accuracy:0.5,"the body rose by the porthole band")
+        XCTAssertTrue(closing.contains { $0.minY > start.minY+1 && $0.minY < start.minY+band-1 },"one motion, not a jump: \(closing.map(\.minY))")
+        let opening=try await toggle()
+        for frame in opening { XCTAssertEqual(frame.maxY,start.maxY,accuracy:0.5) }
+        XCTAssertEqual(window.frame,start)
+        // Detached, lowered so the porthole has room above in both states, but only inside the visible frame (the scaled
+        // cockpit fills the room above the Dock; below it the replay clamps the body back, G3-79).
+        page.setAttached(false)
+        let usable=try XCTUnwrap(window.screen ?? NSScreen.main).visibleFrame
+        window.setFrameOrigin(.init(x:window.frame.minX,y:max(usable.minY.rounded(.up),window.frame.minY-60)))
+        let floating=window.frame
+        let detachedClose=try await toggle()
+        for frame in detachedClose { XCTAssertEqual(frame.minY,floating.minY,accuracy:0.5,"detached, the body never moves") }
+        XCTAssertEqual(window.frame.maxY,floating.maxY-band,accuracy:0.5,"only the top edge came down")
+        let detachedOpen=try await toggle()
+        for frame in detachedOpen { XCTAssertEqual(frame.minY,floating.minY,accuracy:0.5) }
+        XCTAssertEqual(window.frame,floating)
+        page.discard();await coordinator.shutdown();await app.composition.stop()
+    }
     // G3-13 / R-06: exercise the ordinary entry and real CLI transport. No
     // refresh or second subscription is sent after the synthetic local update.
     @MainActor func testG313RealCLIRecoversRetainedWeeklyCard() async throws {

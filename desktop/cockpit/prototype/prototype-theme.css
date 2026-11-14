@@ -34,6 +34,7 @@
   --shell-shadow:0 30px 70px #000c,inset 0 0 0 1px #ffffff12,inset 0 1px 0 #ffffff1a;
   --hair:#9c968d33;
   --key-1:#2c2e31;--key-2:#202124;--key-p1:#222326;--key-p2:#1a1b1d;
+  --close-1:#5a1a22;--close-2:#43101a;--close-h1:#6a2029;--close-h2:#4f1620;--close-p1:#3a0e16;--close-p2:#2c0a11;--close-off1:#4a1a22;--close-off2:#39131a;--close-ink:#efe9de;--close-edge:#1a0508;
   --caution-1:#252629;--caution-2:#1c1d20;--deadfront-ink:#1d1e21;
   --raised:inset 0 1px 0 #ffffff1c,inset 0 -1px 0 #0006,0 1px 2px #000a,0 0 0 1px #0b0c0e;
   --pressed:inset 0 1px 3px #000c,0 0 0 1px #0b0c0e;
@@ -64,6 +65,7 @@
   --shell-shadow:0 30px 70px #0007,inset 0 0 0 1px #0000003d,inset 0 1px 0 #ffffff99;
   --hair:#0000002b;
   --key-1:#d2d6da;--key-2:#bfc4c9;--key-p1:#b2b7bc;--key-p2:#a7adb3;
+  --close-1:#7a2630;--close-2:#5c1a23;--close-h1:#8a2d38;--close-h2:#6a202a;--close-p1:#521620;--close-p2:#43101a;--close-off1:#6c2a33;--close-off2:#55202a;--close-ink:#f6f1e7;--close-edge:#3a0e14;
   --caution-1:#c6cace;--caution-2:#b4b9be;--deadfront-ink:#9aa0a7;
   --raised:inset 0 1px 0 #ffffffb3,inset 0 -1px 0 #00000026,0 1px 2px #0000004d,0 0 0 1px #868c93;
   --pressed:inset 0 1px 3px #00000059,0 0 0 1px #868c93;
@@ -84,11 +86,16 @@
   --key-led-on:#1f252b;--key-led-glow:none;
 }
 
-/* D131 / COL-2.1-18: the light maker colours (xAI yellow, Cursor rose, Codex green) are about 1.0-1.7:1 on the day metal; on day the
-   identity marks are drawn at 40% of the maker colour toward black (>= 3.4:1 for every table colour). Day values (Set 1):
-   Codex #064133 6.1:1, GLM #162466 7.4:1, xAI #625c1a 3.6:1, Cursor #633f51 4.7:1, GLM alt #384465 5.0:1, xAI alt #3c3805 6.2:1. Night is unchanged.
+/* D131 / COL-2.1-18: the light maker colours (Cursor light grey, Codex blue, Claude peach) are about 1.0-2.0:1 on the day metal; on day the
+   identity marks are drawn at 40% of the maker colour toward black (>= 3.4:1 for every table colour). Day values (D250):
+   Codex #2a4366, GLM #393266, xAI #353b42, Cursor takes its grey alt #6f7782 first (then 40%: #2c3034), Claude #663e2a. Night is unchanged.
    Logos and names stay beside every mark, so colour is never alone. */
 :root[data-theme="day"] .ck-eng .ek .bl,
 :root[data-theme="day"] .dk-fad .st-vend b,
 :root[data-theme="day"] .chip,
 :root[data-theme="day"] .mg:not(.orig){background:color-mix(in srgb,var(--v) 40%,#000)}
+/* Cursor's near-white (#eef2f6) would only reach 3.25:1; on day its mark starts from the grey alt #6f7782 so the 3.4:1 floor holds. */
+:root[data-theme="day"] .ck-eng .ek .bl[style*="#eef2f6" i],
+:root[data-theme="day"] .dk-fad .st-vend b[style*="#eef2f6" i],
+:root[data-theme="day"] .chip[style*="#eef2f6" i],
+:root[data-theme="day"] .mg:not(.orig)[style*="#eef2f6" i]{background:color-mix(in srgb,#6f7782 40%,#000)}

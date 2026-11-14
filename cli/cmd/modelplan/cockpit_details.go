@@ -241,6 +241,18 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 				}
 			}
 		}
+		// G3-100: a real project whose records hold no readable name is not "no project"; glm-909-1: neither is
+		// one whose name `project-labels off` withholds. The state says which, so the strip never guesses.
+		state := wire.ProjectNone
+		switch {
+		case session.ProjectRef == nil:
+		case !labels:
+			state = wire.ProjectHidden
+		case label != nil:
+			state = wire.ProjectNamed
+		default:
+			state, label = wire.ProjectUnnamed, unnamedProjectLabel(*session.ProjectRef)
+		}
 		// The live record's account is the same evidence the working signal binds on. A reference
 		// outside this cockpit's subscriptions stays unbound; never substitute a source-wide one.
 		var subscription *string
@@ -253,7 +265,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			v := true
 			fast = &v
 		}
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast})
+		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, ProjectState: state, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast})
 	}
 	if appserver.CockpitSessionsEnabled(ctx) {
 		result.RecentSessions = cockpitRecentSessions(perf.Ledger.Sessions, allowed, sourceScope, byRef, labels, view.PublicModels, now)
@@ -293,4 +305,11 @@ func cockpitModelID(raw, source string, models []digest.Model) string {
 		}
 	}
 	return "unknown"
+}
+
+// unnamedProjectLabel: the label of a project that has a reference but no readable name. The page shows it
+// in the viewer's language (prototype-tape.ts matches this exact text).
+func unnamedProjectLabel(string) *string {
+	v := "Unnamed project"
+	return &v
 }

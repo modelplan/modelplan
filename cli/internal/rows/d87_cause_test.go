@@ -17,6 +17,7 @@ func TestD87ReaderCauseCodesReachRows(t *testing.T) {
 		{"closed", CodeClosed, StateFailed},
 		{"no_key", CodeKeyMissing, StateNeedsAction},
 		{"region_refused", CodeRegionRefused, StateNeedsAction},
+		{"no_plan", CodeNoPlan, StateNeedsAction}, // z.ai: a key without a Coding Plan, not a server error
 	} {
 		out, known := MapSignal(SignalError, c.word)
 		if !known || out.Code != c.code || out.State != c.state || out.Text.EN == "" || out.Text.ZH == "" {
