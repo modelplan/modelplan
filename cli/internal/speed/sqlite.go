@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -41,6 +42,18 @@ type DBCursor struct {
 	ResetRow     int64   `json:"resetRow,omitempty"`
 	ResetMark    int64   `json:"resetMark,omitempty"`
 	ResetPending []int64 `json:"resetPending,omitempty"`
+	// When the reads passed over rows at a clear (the row at RowID is from before it), the
+	// post-clear rows up to RowID are read apart, in row order. Unread: some are still unread, from
+	// past row Below on, and the reads past RowID wait. Eligible: how many post-clear rows up to
+	// RowID there were once all were read; a different count means the rows changed. Row numbers
+	// and a count only: nothing identifies a row.
+	Unread   bool  `json:"unread,omitempty"`
+	Below    int64 `json:"below,omitempty"`
+	Eligible int64 `json:"eligible,omitempty"`
+	// File: once the tool's history was cleared, the identity of the database file (device, inode,
+	// birth time where the system has it; see fileID). Another file at the path is a replacement:
+	// the post-clear reads start over from the clear's watermark. It names the file, nothing in it.
+	File string `json:"file,omitempty"`
 }
 
 const (
@@ -63,6 +76,7 @@ type dbRow struct {
 	out        int64
 	TokenKinds
 	cwd string
+	np  nativeProject
 }
 
 // openRO opens an existing database for reading only.
@@ -102,6 +116,49 @@ func anchorOf(db *sql.DB, query string, rowid int64) (string, error) {
 	return hashID("anchor:" + id), nil
 }
 
+// preClear: whether the row with this rowid counts as from before the tool's clear (cleared, unix
+// ms; 0: none). It is the one test of that for a row by number, made with the same clause
+// (postClear) as the count and read of post-clear rows below a skipped row: a row is post-clear
+// only when that clause selects it, so a missing or non-numeric start (read as 0) is pre-clear,
+// and so is a missing row.
+func preClear(db *sql.DB, postClear string, rowid, cleared int64) (bool, error) {
+	if cleared <= 0 {
+		return false, nil
+	}
+	n, err := countPostClear(db, postClear+" AND rowid >= ?", rowid, cleared, rowid)
+	return n == 0, err
+}
+
+// countPostClear: how many rows a postClear clause (with any extra condition) selects.
+func countPostClear(db *sql.DB, clause string, args ...any) (int64, error) {
+	var n int64
+	err := db.QueryRow("SELECT COUNT(*) "+clause, args...).Scan(&n)
+	return n, err
+}
+
+// rowIDs: the row numbers a query selects.
+func rowIDs(db *sql.DB, query string, args ...any) ([]int64, error) {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// fileIDOf: a file identity from its device, inode and birth time (unix ns; 0: unknown).
+func fileIDOf(dev, ino uint64, birth int64) string {
+	return strconv.FormatUint(dev, 10) + ":" + strconv.FormatUint(ino, 10) + ":" + strconv.FormatInt(birth, 10)
+}
+
 func hashID(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:8])
@@ -110,14 +167,22 @@ func hashID(s string) string {
 // scanDB reads what is new in one database with read (rows past a rowid, plus listed rowids) and
 // adds the finished requests to the ledger under source. anchor selects a stable identity of the
 // row with the given rowid (its own id and start), so a replaced database is recognised.
-func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, read func(db *sql.DB, after int64, pending []int64) ([]dbRow, error)) bool {
+// postClear is the FROM … WHERE clause of the requests at or below a row number (first parameter)
+// that started at or after a time (second parameter, unix ms): see preClear and below.
+func (l *PerfLedger) scanDB(path, source, parser, anchor, postClear string, now time.Time, read func(db *sql.DB, after int64, pending []int64) ([]dbRow, error)) bool {
 	if l.Stores == nil {
 		l.Stores = map[string]DBCursor{}
 	}
 	key := source + ":" + fileKey(path)
 	c := l.Stores[key]
 	sig := dbSig(path)
-	if sig == "" || (sig == c.Sig && len(c.Pending) == 0 && !c.More) || now.Sub(c.Checked) < dbEvery {
+	// The file's identity is read before the signature gate and before the database is opened.
+	// Another file at the path (another identity) is always read, even with the same sizes and
+	// times: a replacement can keep both. A file swapped in after this is then a replacement next
+	// time and read again, never taken for the file that was read.
+	file := fileID(path)
+	sameFile := c.File == "" || file == "" || file == c.File
+	if sig == "" || (sig == c.Sig && sameFile && len(c.Pending) == 0 && !c.More) || now.Sub(c.Checked) < dbEvery {
 		return false
 	}
 	db, err := openRO(path)
@@ -125,7 +190,35 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 		return false
 	}
 	defer db.Close()
-	if c.RowID > 0 {
+	var cleared int64
+	if f := l.cleared.floor(source); !f.IsZero() {
+		cleared = f.UnixMilli()
+	}
+	// atClear: the row at RowID is from before the tool's clear, so the reads went on past it and
+	// the rows below it without reading them; the post-clear rows among those are read apart below.
+	atClear := false
+	_, had := l.Stores[key]
+	// After a clear, another database file at the path (another identity: a replacement, whatever
+	// its rows) starts the post-clear reads over, as a first read after the clear would: only Mark
+	// and Seen (the post-clear requests counted, by their hashed ids) are kept, so those are not
+	// counted again; the old file's row numbers, pending rows and lower progress mean nothing in
+	// the new file. The same file changed in place (appends, WAL) keeps its cursor.
+	if had && cleared > 0 && file != "" && c.File != "" && file != c.File {
+		c, had = DBCursor{Mark: c.Mark, Seen: c.Seen}, false
+	}
+	if !had {
+		// The tool's history was cleared through row N of its database: read on past it, so the
+		// rows from before the clear are not read again. When this database's row N is missing
+		// or is post-clear, it is not the database that was cleared (replaced since): it is read
+		// from the start, and the clear time keeps its earlier requests out.
+		if n := l.cleared.dbRows(source); n > 0 {
+			if at, err := anchorOf(db, anchor, n); err == nil && at != "" {
+				if pre, err := preClear(db, postClear, n, cleared); err == nil && pre {
+					c.RowID, atClear = n, true
+				}
+			}
+		}
+	} else if c.RowID > 0 {
 		// A database recreated (or emptied, or renumbered) at the same path numbers its rows from 1
 		// again: past the old watermark its first rows would never be read. When the row at the
 		// watermark is gone or is another request, start over. A cursor saved without an anchor
@@ -134,21 +227,92 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 		if err != nil {
 			return false
 		}
-		if at == "" || c.Anchor == "" || at != c.Anchor {
+		// No anchor is kept for a row from before the tool's clear (see below). While that row is
+		// still there and still from before the clear, the reads go on past it: going back to row
+		// zero would only skip the same pre-clear rows again, and with a full batch of them would
+		// never get past them.
+		if c.Anchor == "" && at != "" {
+			if atClear, err = preClear(db, postClear, c.RowID, cleared); err != nil {
+				return false
+			}
+		}
+		if !atClear && (at == "" || c.Anchor == "" || at != c.Anchor) {
 			// Every request counted so far started no later than Mark, so the re-read counts only
 			// rows that started after it (or were still running): nothing counts twice, however
-			// many ids Seen has dropped.
-			c.ResetRow, c.ResetMark = max(c.ResetRow, c.RowID), max(c.ResetMark, c.Mark)
+			// many ids Seen has dropped. While post-clear rows below RowID were still unread, the
+			// rows read reach only Below (the reads past RowID waited for them).
+			upTo := c.RowID
+			if c.Unread {
+				upTo = c.Below
+			}
+			c.ResetRow, c.ResetMark = max(c.ResetRow, upTo), max(c.ResetMark, c.Mark)
 			c.ResetPending = append(c.ResetPending, c.Pending...)
 			if len(c.ResetPending) > maxPending {
 				c.ResetPending = c.ResetPending[len(c.ResetPending)-maxPending:]
 			}
-			c.RowID, c.Pending = 0, nil
+			c.RowID, c.Pending, c.Unread, c.Below = 0, nil, false, 0
 		}
 	}
-	rows, err := read(db, c.RowID, c.Pending)
-	if err != nil {
-		return false
+	// The row at a clear's watermark being from before the clear proves neither that the rows below
+	// it are old nor that this is the database that was cleared: a replacement can number a
+	// post-clear request lower. So, at such a row, the rows up to it are counted by the one
+	// eligibility clause (postClear, the same test as preClear) and only those are read, never a
+	// pre-clear one. They are read once, in row order, a batch per scan: Below is how far, and the
+	// reads past RowID wait until all are read (More meanwhile), so the two reads never overlap.
+	// Once all are read, Eligible keeps their count; a later scan that counts a different number
+	// reads them again from the start, and requests already counted are known by Seen. A
+	// replacement by another file is noticed by its identity (above), whatever the count; the count
+	// covers the same file changed in place and systems without a file identity.
+	var below []dbRow
+	held := false
+	if atClear {
+		if !c.Unread {
+			n, err := countPostClear(db, postClear, c.RowID, cleared)
+			if err != nil {
+				return false
+			}
+			if n != c.Eligible {
+				c.Unread, c.Below = true, 0
+			}
+		}
+		if c.Unread {
+			ids, err := rowIDs(db, "SELECT rowid "+postClear+" AND rowid > ? ORDER BY rowid LIMIT "+itoa64(dbBatch), c.RowID, cleared, c.Below)
+			if err != nil {
+				return false
+			}
+			if below, err = read(db, math.MaxInt64, ids); err != nil {
+				return false
+			}
+			if held = len(ids) >= dbBatch; held {
+				c.Below = ids[len(ids)-1]
+			} else {
+				c.Unread, c.Below = false, 0
+			}
+		}
+	}
+	var rows []dbRow
+	more := held
+	if held {
+		// Only the requests still running last time are read again, beside the batch below RowID.
+		if len(c.Pending) > 0 {
+			if rows, err = read(db, math.MaxInt64, c.Pending); err != nil {
+				return false
+			}
+		}
+	} else {
+		if rows, err = read(db, c.RowID, c.Pending); err != nil {
+			return false
+		}
+		more = len(rows) >= dbBatch
+	}
+	inRows := make(map[int64]bool, len(rows))
+	for _, r := range rows {
+		inRows[r.rowid] = true
+	}
+	for _, r := range below {
+		if !inRows[r.rowid] {
+			rows = append(rows, r)
+		}
 	}
 	if c.Seen == nil {
 		c.Seen = map[string]int64{}
@@ -162,7 +326,9 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 		if r.rowid > c.RowID {
 			c.RowID = r.rowid
 		}
-		if r.start <= 0 {
+		if r.start <= 0 || r.start < cleared {
+			// No readable start, or from before the tool's history was cleared: only the row
+			// position moves on. No id hash, start or mark is kept, so the clear's erasure holds.
 			continue
 		}
 		if r.rowid <= c.ResetRow && r.start <= c.ResetMark && !slices.Contains(c.ResetPending, r.rowid) {
@@ -204,16 +370,33 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 			delete(c.Seen, id)
 		}
 	}
-	if c.RowID >= c.ResetRow && len(rows) < dbBatch {
+	if c.RowID >= c.ResetRow && !more {
 		c.ResetRow, c.ResetMark, c.ResetPending = 0, 0, nil // the re-read is complete
 	}
-	c.Anchor = ""
+	// The anchor is the identity of the request at the watermark. One that counts as from before
+	// the tool's clear (preClear: also one without a readable start) is not kept: the clear erased
+	// it. Until a post-clear request is at the watermark, the reads go on from the row number alone
+	// (above), with Eligible, a count, to notice a change below it; the first post-clear request
+	// then becomes the anchor.
+	c.Anchor, c.Eligible = "", 0
 	if c.RowID > 0 {
-		if at, err := anchorOf(db, anchor, c.RowID); err == nil {
+		at, err := anchorOf(db, anchor, c.RowID)
+		pre, perr := preClear(db, postClear, c.RowID, cleared)
+		switch {
+		case err != nil || perr != nil || at == "":
+		case !pre:
 			c.Anchor = at
+		case !c.Unread:
+			if c.Eligible, err = countPostClear(db, postClear, c.RowID, cleared); err != nil {
+				c.Eligible = -1 // unknown: the next scan reads the post-clear rows below again
+			}
 		}
 	}
-	c.Pending, c.Sig, c.Day, c.Checked, c.More = pending, sig, day(now), now.UTC().Truncate(time.Second), len(rows) >= dbBatch
+	c.File = ""
+	if cleared > 0 {
+		c.File = file
+	}
+	c.Pending, c.Sig, c.Day, c.Checked, c.More = pending, sig, day(now), now.UTC().Truncate(time.Second), more
 	l.Stores[key] = c
 	return true
 }
@@ -225,7 +408,7 @@ func (l *PerfLedger) addDBRow(source, parser string, r dbRow) {
 	at, end := time.UnixMilli(r.start), time.UnixMilli(r.end)
 	cfg := config{model: clip(r.model)}
 	q := request{TokenKinds: r.TokenKinds, out: max(r.out, 0), cfg: cfg, end: end}
-	t := turn{cfg: cfg, at: at, dur: max(end.Sub(at), 0), out: q.out, all: []request{q}, cwd: r.cwd}
+	t := turn{cfg: cfg, at: at, dur: max(end.Sub(at), 0), out: q.out, all: []request{q}, cwd: r.cwd, np: r.np}
 	l.add(source, parser, t)
 	if r.session != "" {
 		l.addSession(fileKey(source+":"+r.session), source, t)
@@ -265,7 +448,7 @@ func (l *PerfLedger) liveDB(source string, r dbRow, now time.Time) {
 	if r.end > 0 {
 		qs = []request{q}
 	}
-	l.setLive(fileKey(source+":"+r.session), source, liveProbe{cfg: cfg, start: at, last: last, running: r.end <= 0, requests: qs, cwd: r.cwd}, "", now)
+	l.setLive(fileKey(source+":"+r.session), source, liveProbe{cfg: cfg, start: at, last: last, running: r.end <= 0, requests: qs, cwd: r.cwd, np: r.np}, "", now)
 }
 func nullCount(n sql.NullInt64) *int64 {
 	if !n.Valid || n.Int64 < 0 {

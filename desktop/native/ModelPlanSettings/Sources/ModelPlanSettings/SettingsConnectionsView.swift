@@ -29,9 +29,6 @@ import AppKit
     private let presentationID = UUID()
     private var preferenceSaving = false
     private var preferenceFailed = false
-    private var keySection: ReaderKeySection?
-    private var keysShown = false
-    private var editorObserver: UUID?
     weak var followingKeyView: NSView? { didSet { buttons.last?.nextKeyView = followingKeyView } }
     var firstControl: NSView? { buttons.first { $0.isEnabled } }
     init(editor: SettingsEditor, firstRun: Bool = false) {
@@ -41,20 +38,14 @@ import AppKit
         orientation = .vertical; alignment = .leading; spacing = 10
         setAccessibilityIdentifier("settings.connections")
         observer = controller.observe { [weak self] in self?.render() }
-        keysShown = editor.readerKeys != nil
-        editorObserver = editor.observeChanges { [weak self] in
-            guard let self, (self.editor.readerKeys != nil) != self.keysShown else { return }
-            self.keysShown = self.editor.readerKeys != nil; self.render()
-        }
         render()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     deinit {
         if let observer { let controller = controller; Task { @MainActor in controller.removeObserver(observer) } }
-        if let editorObserver { let editor = editor; Task { @MainActor in editor.removeChangeObserver(editorObserver) } }
     }
-    func apply(language: SettingsLanguage) { self.language = language; keySection?.apply(language: language); render() }
-    func suspend() { task?.cancel(); task = nil; keySection?.dismiss(); controller.suspend(presentationID: presentationID) }
+    func apply(language: SettingsLanguage) { self.language = language; render() }
+    func suspend() { task?.cancel(); task = nil; controller.suspend(presentationID: presentationID) }
     private func label(_ text: SettingsText, heading: Bool = false) {
         let field = NSTextField(wrappingLabelWithString: text.value(language))
         field.font = .systemFont(ofSize: heading ? 14 : 12, weight: heading ? .semibold : .regular)
@@ -129,7 +120,6 @@ import AppKit
             label(.init("Tool presence and shared consent have not been checked.", "尚未检查工具及共享授权。"))
             toolGroup([], advanced: true)
         }
-        readerKeySection()
         label(.init("ModelPlan plugins", "ModelPlan 插件"), heading: true)
         if controller.availability.pluginTools.isEmpty {
             label(.init("Plugin installation needs a verified component. Open About to check the component and setup instructions.", "插件安装组件尚未核验。请打开关于，检查组件与安装说明。"))
@@ -166,13 +156,6 @@ import AppKit
         if let focusedID, let next = buttons.first(where: { $0.accessibilityIdentifier() == focusedID && $0.isEnabled }) {
             window?.makeFirstResponder(next)
         }
-    }
-    /// D90: one small, optional fix action for the key-only providers. Auto-detect stays first.
-    private func readerKeySection() {
-        guard let backend = editor.readerKeys else { return }
-        let section = keySection ?? ReaderKeySection(backend: backend, language: language)
-        keySection = section
-        addArrangedSubview(section)
     }
     private func subscriptions(_ subscriptions: [SettingsVerifiedSubscription]) {
         label(.init("Verified subscriptions", "已验证订阅"), heading: true)

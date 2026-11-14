@@ -82,8 +82,6 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     public var onEnvironmentChange: ((SettingsSnapshot, EffectiveSettings) -> Void)?
     /// Emitted only after a successful explicit edit. The host must check revision and its own authorization.
     public var onHostRequest: ((SettingsHostRequest) -> Void)?
-    /// D90: the engine seam for the optional manual key. Nil hides the key entry.
-    public var readerKeys: ReaderKeyBackend? { didSet { notifyChange() } }
     private var changeObservers: [UUID: () -> Void] = [:]
     private var firstRunPresentation: (id: UUID, action: () -> Void, about: (() -> Void)?)?
     public var canPresentFirstRun: Bool { firstRunPresentation != nil || onHostRequest != nil }
@@ -136,7 +134,14 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         for observer in Array(changeObservers.values) { observer() }
     }
     public func reload() async { accept(await store.snapshot()); notifyChange() }
-    public func update(context: SettingsPageContext) { self.context = context; notifyChange() }
+    /// G3-71: the hidden-icon notice was dismissed; it stays dismissed until the notice clears (situation changes).
+    public private(set) var statusItemNoticeDismissed = false
+    public func dismissStatusItemNotice() { statusItemNoticeDismissed = true; notifyChange() }
+    public func update(context: SettingsPageContext) {
+        self.context = context
+        if context.statusItemNotice == nil { statusItemNoticeDismissed = false }
+        notifyChange()
+    }
     /// The host's live read of the macOS login item. An explicit login choice is decided against it,
     /// not against the observation cached when the app started; nil keeps that cached observation.
     public var observeLogin: (@MainActor () -> LoginServiceState)?

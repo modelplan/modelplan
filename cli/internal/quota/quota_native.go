@@ -46,6 +46,9 @@ type nativeReader struct {
 	Managed  func(context.Context, *http.Client, readerContext) readerOutcome
 	Profiles func() []ReaderProfile
 	Budget   *nativeReadBudget
+	// LoginFiles: the profile's sign-in files besides its AccountFile, stamped (never opened) so
+	// a new sign-in can end a failure back-off (G3-103). They are not part of the profile key.
+	LoginFiles func(ReaderProfile) []string
 }
 
 // Shared by saved-login and existing explicitly configured key routes. Callers
@@ -318,25 +321,19 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		key := os.Getenv(x.KeyEnv)
 		readerCtx := productionReaderContext(ctx, p, x.Provider)
-		if mk, ok := loadManualKey(p.Cache, x.Provider); ok {
-			// D90: a key the user entered is the first source. It goes only to the compiled
-			// official host of its region.
-			e, key = fetchManualKey(ctx, nativeClient, x.Provider, mk, now), mk.Key
-		} else if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
+		if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
 			e = collectZaiConfig(readerCtx, nativeClient, p.Cache, now)
 		} else if n.Collect != nil {
 			e = n.Collect(readerCtx, nativeClient, p.Cache, now)
 		} else {
-			code := ""
-			if x.Provider == "opencodego" && strings.TrimSpace(key) == "" {
-				// D90: after the manual key and OPENCODE_API_KEY, OpenCode's own saved login.
-				key, code = opencodeLoginKey(ctx, now)
-			}
-			if code != "" {
-				e = codexbarEntry{Status: "error", ErrorCode: code, ObservedAt: now.UTC()}
-			} else {
-				e = n.Fetch(ctx, nativeClient, x.Region, key, now)
-			}
+			// D230: for OpenCode Go only OPENCODE_API_KEY is a detected key; OpenCode's own saved
+			// login is checked for existence by detection and never read here.
+			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
+		}
+		if mk, ok := loadManualKey(p.Cache, x.Provider); ok && e.Status != "ok" && manualKeyFallback(ReaderErrorCode(e.ErrorCode)) {
+			// D90 / SET-9-41: auto-detect first; a key the user entered is used only when no detected
+			// source gave a usable key. It goes only to the compiled official host of its region.
+			e, key = fetchManualKey(ctx, nativeClient, x.Provider, mk, now), mk.Key
 		}
 		if e.Status == "ok" {
 			e.ErrorCode = ""

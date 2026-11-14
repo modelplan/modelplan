@@ -48,15 +48,19 @@ public struct SettingsSubscription: Sendable {
     public let isUnstable: Bool
     /// The engine's fixed failure code for this subscription's source, if it failed (D87); text comes from ReaderCauseTable.
     public let causeCode: String?
+    /// The engine's tool id for this subscription's row (`codex`, `zai`, `opencodego`, ...). `vendor` is the
+    /// row's vendor key (`openai`, `glm`, `opencode`, ...) and is not a tool id (macrev2-803-2).
+    public let tool: String
     public var persistenceDisabledReason: SettingsText? {
         isUnstable ? .init("Unverified account — changes can't be saved yet", "未验证账号，暂不能保存设置") : nil
     }
     public init(id: String, name: SettingsText, plan: String = "", vendor: String = "",
                 modelNames: [String] = [], toolNames: [String] = [], source: SubscriptionSourceState = .unavailable,
-                isUnstable: Bool = false, causeCode: String? = nil) {
+                isUnstable: Bool = false, causeCode: String? = nil, tool: String = "") {
         self.id = id; self.name = name; self.plan = plan; self.vendor = vendor
         self.modelNames = modelNames; self.toolNames = toolNames; self.source = source; self.isUnstable = isUnstable
         self.causeCode = causeCode
+        self.tool = tool.isEmpty ? SubscriptionRowModel.toolID(vendor: vendor) : tool
     }
 }
 public enum CLIReadState: String, Sendable { case ready, unavailable, denied, stale }
@@ -105,7 +109,7 @@ public struct SettingsAbout: Sendable {
     }
     public static let consentHelpURL = URL(string: "https://github.com/modelplan/modelplan/blob/main/docs/cli-consent.md")!
     public static let feedbackURL = URL(string: "https://github.com/modelplan/modelplan/issues/new/choose")!
-    public static let privacy = SettingsText("No local data is uploaded. Only public data is downloaded.", "不上传任何本机数据，只下载公开数据。")
+    public static let privacy = SettingsText("No local data is uploaded. Only public data is downloaded; a key you enter is sent only to its provider's official host.", "不上传任何本机数据，只下载公开数据；你输入的密钥只发送到对应服务商的官方主机。")
     public static let intelNote = SettingsText("Intel untested; 3D may stutter.", "Intel 未测试，3D 效果可能卡顿。")
     public static let trademarkNotice = SettingsText(
         "ModelPlan and Model Plan identify the official project. Software licenses do not grant endorsement or permission to impersonate it. Official visuals have a separate reserved license; the root MIT license does not cover them. Third-party marks belong to their respective owners.",

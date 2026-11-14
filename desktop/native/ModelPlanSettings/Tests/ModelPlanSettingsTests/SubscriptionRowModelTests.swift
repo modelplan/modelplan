@@ -73,6 +73,29 @@ final class SubscriptionRowModelTests: XCTestCase {
         XCTAssertNil(model.row(forTool: "nothing"))
     }
 
+    /// macrev2-803-2: the producer's vendor keys are not tool ids (codex -> openai, zai -> glm, opencodego -> opencode).
+    /// An added subscription is matched to its tool's facts and never offered again as a detected or pending row.
+    func testRealVendorKeysMapToTheirToolIDs() {
+        let producer = { (id: String, vendor: String, row: String) in
+            SettingsSubscription(id: id, name: .init(id, id), vendor: vendor, source: .unavailable, tool: row)
+        }
+        let facts = ["codex": ToolRowFacts(consent: .allowed, state: .needsAction, code: "not_found"),
+                     "zai": ToolRowFacts(consent: .allowed, state: .needsAction, code: "key_missing")]
+        let tools = [tool("codex"), tool("zai"), tool("opencodego")]
+        for subs in [[producer("codex-1", "openai", "codex"), producer("zai-1", "glm", "zai"), producer("go-1", "opencode", "opencodego")],
+                     // No row id given: the vendor key alone still resolves through the producer's fixed table.
+                     [producer("codex-1", "openai", ""), producer("zai-1", "glm", ""), producer("go-1", "opencode", "")]] {
+            let model = build(subs, order: ["codex-1", "zai-1", "go-1"], tools: tools, facts: facts, reading: ["codex", "zai", "opencodego"], keys: true)
+            XCTAssertEqual(model.added.map(\.id), ["codex-1", "zai-1", "go-1"], "no second pending row for an added tool")
+            XCTAssertEqual(model.added.map(\.tool), ["codex", "zai", "opencodego"])
+            XCTAssertTrue(model.detected.isEmpty)
+            XCTAssertEqual(model.added[0].fix?.target, ReaderCauseTable.rowEntry(code: "not_found", tool: "codex")?.target, "codex facts are found by tool id")
+            XCTAssertEqual(model.added[1].fix?.target, .addKey, "zai facts are found by tool id")
+            XCTAssertEqual(model.row(forTool: "openai")?.id, "codex-1")
+            XCTAssertEqual(model.row(forTool: "zai")?.id, "zai-1")
+        }
+    }
+
     func testFirstRunPrerequisiteLineUsesTheSameTable() {
         func line(_ t: FirstRunTool, _ facts: ToolRowFacts? = nil) -> (SettingsText, Bool) {
             let r = SubscriptionRowModel.prerequisite(tool: t, name: t.tool.capitalized, facts: facts); return (r.text, r.needsAttention)

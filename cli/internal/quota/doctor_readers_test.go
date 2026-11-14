@@ -208,12 +208,12 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 								t.Fatal(row)
 							}
 						case "state":
-							if !regexp.MustCompile(`^(ok|stale|not_supported_yet|unavailable:(policy_pending|denied|consent_required|privacy_blocked|not_detected|rate_limited|login_expired|confirmation_needed|partial|not_read|reader_error|no_key|update_required|catalogue_off|not_admitted|config_unavailable|cache_unavailable)(:(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|other))?)$`).MatchString(value.(string)) {
+							if !regexp.MustCompile(`^(ok|stale|not_supported_yet|unavailable:(policy_pending|denied|consent_required|privacy_blocked|not_detected|rate_limited|login_expired|confirmation_needed|partial|not_read|reader_error|no_key|update_required|catalogue_off|not_admitted|config_unavailable|cache_unavailable)(:(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|no_plan|other))?)$`).MatchString(value.(string)) {
 								t.Fatal("unreviewed state", row)
 							}
 						case "cause":
 							// A fixed reader code or empty; never text.
-							if !regexp.MustCompile(`^(|file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|other)$`).MatchString(value.(string)) {
+							if !regexp.MustCompile(`^(|file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|no_plan|other)$`).MatchString(value.(string)) {
 								t.Fatal("unreviewed cause", row)
 							}
 						case "failures":
@@ -228,7 +228,7 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 									t.Fatal("new failure field needs privacy review", row)
 								}
 								code, _ := entry["code"].(string)
-								if !regexp.MustCompile(`^(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|other)$`).MatchString(code) {
+								if !regexp.MustCompile(`^(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|no_plan|other)$`).MatchString(code) {
 									t.Fatal("unreviewed failure code", row)
 								}
 								at, _ := entry["at"].(string)

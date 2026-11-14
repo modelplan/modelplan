@@ -16,6 +16,9 @@ import AppKit
     private var save: ConnectionButton!
     private var remove: ConnectionButton!
     var buttons: [ConnectionButton] { [test, save, remove] }
+    /// Called when whether a key is saved changes (after load, save or remove), so the host row can say so.
+    var onPresenceChange: (() -> Void)?
+    private var lastPresent = false
 
     /// Inline in a tool row: the heading names the action ("Add a key"), not the provider the row already names.
     private let inline: Bool
@@ -28,7 +31,7 @@ import AppKit
         setAccessibilityIdentifier(id)
         title.font = .systemFont(ofSize: 12, weight: .semibold)
         field.setAccessibilityIdentifier(id + ".field"); field.delegate = self
-        field.setAccessibilityLabel(SettingsWords.text("API key", "API 密钥", language))
+        field.setAccessibilityLabel(SettingsWords.text("API key", "密钥", language))
         field.widthAnchor.constraint(greaterThanOrEqualToConstant: 280).isActive = true
         picker.setAccessibilityIdentifier(id + ".region")
         for region in ReaderKeyRegion.allCases { picker.addItem(withTitle: ""); picker.lastItem?.representedObject = region.rawValue }
@@ -50,12 +53,16 @@ import AppKit
         addArrangedSubview(NSStackView(views: [test, save, remove]))
         addArrangedSubview(help)
         addArrangedSubview(result)
-        entry.onChange = { [weak self] in self?.refresh() }
+        entry.onChange = { [weak self] in
+            guard let self else { return }
+            self.refresh()
+            if self.entry.status.present != self.lastPresent { self.lastPresent = self.entry.status.present; self.onPresenceChange?() }
+        }
         refresh()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 
-    func apply(language: SettingsLanguage) { self.language = language; field.setAccessibilityLabel(SettingsWords.text("API key", "API 密钥", language)); refresh() }
+    func apply(language: SettingsLanguage) { self.language = language; field.setAccessibilityLabel(SettingsWords.text("API key", "密钥", language)); refresh() }
 
     func controlTextDidChange(_ notification: Notification) {
         guard notification.object as AnyObject? === field else { return }
@@ -67,7 +74,7 @@ import AppKit
 
     private func refresh() {
         title.stringValue = inline ? (language == .english ? "Add a key (optional)" : "添加密钥（可选）") : entry.provider.title.value(language)
-        field.placeholderString = language == .english ? "Paste your API key" : "粘贴你的 API 密钥"
+        field.placeholderString = language == .english ? "Paste your API key" : "粘贴你的密钥"
         if field.stringValue != entry.typed { field.stringValue = entry.typed }
         for (index, region) in ReaderKeyRegion.allCases.enumerated() {
             picker.item(at: index)?.title = region.title.value(language)
@@ -93,6 +100,8 @@ import AppKit
     private let heading = NSTextField(wrappingLabelWithString: "")
     private let note = NSTextField(wrappingLabelWithString: "")
     private var language: SettingsLanguage
+    /// The host re-renders its rows when an inline entry's saved-key presence changes.
+    var onPresenceChange: (() -> Void)?
 
     init(backend: ReaderKeyBackend, language: SettingsLanguage) {
         self.language = language; self.backend = backend
@@ -117,6 +126,7 @@ import AppKit
     func inlineEntry(for provider: ReaderKeyProvider) -> ReaderKeyEntryView {
         if let existing = inlineEntries[provider] { existing.apply(language: language); return existing }
         let view = ReaderKeyEntryView(entry: .init(provider: provider, backend: backend), language: language, inline: true)
+        view.onPresenceChange = { [weak self] in self?.onPresenceChange?() }
         inlineEntries[provider] = view
         let model = view.entry; Task { @MainActor in await model.load() }
         return view

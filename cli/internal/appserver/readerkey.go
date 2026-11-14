@@ -52,7 +52,7 @@ func wireRegion(region string) wire.ReaderKeyRegion {
 	return wire.ReaderKeyRegion(region)
 }
 
-// ReaderKeyHandlers returns the three methods.
+// ReaderKeyHandlers returns the four methods (set, test, remove, status).
 func ReaderKeyHandlers(c ReaderKeyConfig) map[string]Handler {
 	handler := func(run func(context.Context, wire.ReaderKeyParams, string) wire.ReaderKeyOutcome) Handler {
 		return Handler{Capability: "reader_key", Timeout: 30 * time.Second, Handle: func(ctx context.Context, raw json.RawMessage, stamp Stamp) (Reply, error) {

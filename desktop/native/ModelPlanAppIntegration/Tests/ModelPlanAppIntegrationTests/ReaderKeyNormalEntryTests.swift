@@ -105,6 +105,7 @@ private actor KeyEngine: EngineClient {
         defer { app.composition.dock.close() }
         await app.prepare(); await app.composition.start()
         let view = app.scopeConsentEntry.view
+        view.apply(language: .english) // the oracles below are English; do not depend on the machine's language
         for _ in 0..<200 { if find(view, "readerkey.zai.field", as: NSSecureTextField.self) != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
         let field = try XCTUnwrap(find(view, "readerkey.zai.field", as: NSSecureTextField.self), "the key area appears once the engine supports it")
         let ids = { app.composition.store.snapshot.rows?.projection.rows.map(\.id) ?? [] }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+import ModelPlanWire
 
 enum ProviderDiagnosticCondition: Int, Sendable {
     case normal = 0, loading = 1, stale = 2, refreshUnavailable = 3, failed = 4, permission = 5
@@ -28,6 +29,27 @@ enum ProviderDiagnosticSummary {
             case .normal, .loading: return nil
             }
             return fact.name + (english ? ": " : "：") + text
+        }
+    }
+}
+
+/// D238: a supported tool installed after the first run that the user has not decided on yet and
+/// that needs more than local logs (its saved login, runtime or a network call; local-log scopes
+/// are allowed without a prompt, D240).
+/// The engine offers it on the menu surface only: consent unset, no values, no reader run and,
+/// like every unreadable tool, no Quota Widget ring (G3-38, owner D76). Choosing the line opens
+/// Settings › Subscriptions, where the tool's own switch grants its scope.
+struct DetectedToolOffer: Equatable, Sendable {
+    let rowID: String
+    let title: String
+    static func offers(_ rows: [RowsRow], english: Bool) -> [DetectedToolOffer] {
+        var seen = Set<String>()
+        return rows.compactMap { row in
+            guard row.kind == .tool, row.consent == .unset, row.state == .needsConsent, row.accounts.isEmpty,
+                  row.surfaces.contains(.menu), row.nextStep?.action == .openSettingsConsent,
+                  seen.insert(row.id).inserted else { return nil }
+            let name = english ? row.name.en : row.name.zh
+            return .init(rowID: row.id, title: name + (english ? ": Detected · Enable…" : "：已检测到 · 启用…"))
         }
     }
 }

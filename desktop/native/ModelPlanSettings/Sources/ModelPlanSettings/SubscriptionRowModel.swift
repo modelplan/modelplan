@@ -54,8 +54,21 @@ public struct SubscriptionRowModel: Equatable, Sendable {
     public func row(id: String) -> SubscriptionRow? { all.first { $0.id == id } }
     /// The row a widget card's reason links to: that tool's added subscription, else its detected row.
     public func row(forTool tool: String) -> SubscriptionRow? {
-        let key = tool.lowercased()
+        let key = Self.toolID(vendor: tool)
         return added.first { $0.tool.lowercased() == key } ?? (detected + notInstalled).first { $0.tool.lowercased() == key }
+    }
+
+    /// The engine's tool id for a row vendor key, by the producer's fixed table (`cli/internal/rows/catalogue.go`
+    /// titles and `CanonicalTool` aliases); anything else is taken as a tool id already. Lowercased.
+    public static func toolID(vendor: String) -> String {
+        let key = vendor.lowercased()
+        switch key {
+        case "openai": return "codex"
+        case "glm", "zcode": return "zai"
+        case "opencode": return "opencodego"
+        case "claude-code": return "claude"
+        default: return key
+        }
     }
 
     /// Codes that describe consent or timing, not a prerequisite: first run asks for consent itself.
@@ -103,12 +116,12 @@ public struct SubscriptionRowModel: Equatable, Sendable {
                              keyEntryAvailable: Bool = false, name: (String) -> SettingsText) -> SubscriptionRowModel {
         let byID = Dictionary(subscriptions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let ordered = orderedIDs.filter { byID[$0] != nil }
-        let addedTools = Set(ordered.compactMap { byID[$0]?.vendor.lowercased() })
+        let addedTools = Set(ordered.compactMap { byID[$0]?.tool.lowercased() })
         let english = SettingsLanguage.english
 
         let added: [SubscriptionRow] = ordered.enumerated().map { index, id in
             let sub = byID[id]!
-            let tool = sub.vendor
+            let tool = sub.tool.lowercased()
             let toolFacts = facts[tool]
             var code = actionableCode(sub.causeCode) ?? actionableCode(toolFacts?.code)
             if code == nil, let state = toolFacts?.state {

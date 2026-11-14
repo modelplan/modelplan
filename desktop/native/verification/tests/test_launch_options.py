@@ -124,7 +124,12 @@ class ReaderOptionTests(unittest.TestCase):
         keys = json.loads((root / 'schema/app-cli/child-environment.json').read_text())['allowedKeys']
         swift = (root / 'clients/swift/ModelPlanWire/Sources/ModelPlanWire/Generated.swift').read_text()
         switches = {*subject_options.reader_env('off'), *subject_options.reader_env('passive'), *subject_options.reader_env('zai')}
-        self.assertEqual(sorted(k for k in keys if k.startswith('MODELPLAN_')), sorted(switches))
+        # D164: MODELPLAN_PROFILE_ROOT is a profile switch set by test-build tooling, not a reader switch.
+        # It must still be in the contract and the generated Swift, but `readers` never sets it.
+        profile = {'MODELPLAN_PROFILE_ROOT'}
+        self.assertEqual(sorted(k for k in keys if k.startswith('MODELPLAN_') and k not in profile), sorted(switches))
+        self.assertLessEqual(profile, set(keys))
+        self.assertIn('"MODELPLAN_PROFILE_ROOT"', swift)
         for key in switches:
             self.assertIn(f'"{key}"', swift)
 
