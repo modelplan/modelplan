@@ -172,8 +172,8 @@ func (s span) has(t time.Time) bool { return !t.Before(s.lo) && t.Before(s.hi) }
 type importJob struct {
 	source string
 	root   *ImportRoot
-	dir    string // under the root
-	prefix string // file name prefix, "" for any
+	dirs   []string // under the root
+	prefix string   // file name prefix, "" for any
 	newP   func() parser
 	parser string
 	ranges []span
@@ -221,8 +221,9 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		live = consent.Capture
 	}
 	jobs := []*importJob{
-		{source: "claude-code", root: o.Claude, dir: "projects", newP: func() parser { return newClaude(now) }, parser: ParserClaude},
-		{source: "codex", root: o.Codex, dir: "sessions", prefix: "rollout-", newP: func() parser { return newCodex() }, parser: ParserCodex},
+		{source: "claude-code", root: o.Claude, dirs: []string{"projects"}, newP: func() parser { return newClaude(now) }, parser: ParserClaude},
+		// G3-112: Codex moves archived threads to archived_sessions; their turns are history too.
+		{source: "codex", root: o.Codex, dirs: []string{"sessions", "archived_sessions"}, prefix: "rollout-", newP: func() parser { return newCodex() }, parser: ParserCodex},
 	}
 	if Off() {
 		for _, j := range jobs {
@@ -367,7 +368,9 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 	if res.Cancelled {
 		return res, nil
 	}
-	if !committed && o.Auto {
+	// G3-112: a first-run import that could read no source (no history grant yet) stays pending, so
+	// it runs when a grant arrives; once a source was admitted the first run is done.
+	if !committed && o.Auto && len(active) > 0 {
 		return res, markAutoRan(cache, now)
 	}
 	return res, nil
@@ -553,12 +556,23 @@ func (j *importJob) files(since time.Time) []string {
 // walk is files plus whether the scan saw every log: false when a folder could not be listed or the
 // scan stopped at its cap. A missing root is complete (there are no logs).
 func (j *importJob) walk(since time.Time) ([]string, bool) {
-	root := filepath.Join(j.root.Dir, j.dir)
-	if !filepath.IsAbs(root) {
-		return nil, true
-	}
 	var out []string
 	visited, complete := 0, true
+	for _, dir := range j.dirs {
+		var ok bool
+		out, visited, ok = j.walkDir(filepath.Join(j.root.Dir, dir), since, out, visited)
+		complete = complete && ok
+	}
+	sort.Strings(out)
+	return out, complete
+}
+
+// walkDir adds one folder's logs to out; visited counts entries across all of a source's folders.
+func (j *importJob) walkDir(root string, since time.Time, out []string, visited int) ([]string, int, bool) {
+	if !filepath.IsAbs(root) {
+		return out, visited, true
+	}
+	complete := true
 	_ = importWalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if visited++; visited > maxImportFiles {
 			complete = false
@@ -585,8 +599,7 @@ func (j *importJob) walk(since time.Time) ([]string, bool) {
 		out = append(out, path)
 		return nil
 	})
-	sort.Strings(out)
-	return out, complete
+	return out, visited, complete
 }
 
 // readWhole streams one log line by line through a parser and returns its finished turns. A line
@@ -864,6 +877,25 @@ type ImportState struct {
 	AutoRan  bool
 	Rows     int
 	Coverage []ImportCoverage
+}
+
+// ImportedCoverage is one source's coverage end and imported row count; ok is false when the
+// source has none. It reads imported.json only.
+func ImportedCoverage(cache, source string) (through time.Time, rows int, ok bool) {
+	l, readable := LoadImported(cache)
+	if !readable {
+		return time.Time{}, 0, false
+	}
+	c, has := l.Coverage[source]
+	if !has || c.Through.IsZero() {
+		return time.Time{}, 0, false
+	}
+	for _, r := range l.Rows {
+		if r.Source == source {
+			rows++
+		}
+	}
+	return c.Through, rows, true
 }
 
 // ImportStatus reads imported.json only.

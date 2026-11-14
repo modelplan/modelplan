@@ -85,6 +85,24 @@ func importOptions(st *store.Store, days int, firstRun bool, now time.Time) spee
 	return opts
 }
 
+// firstRunImportPending: the first-run import is still owed (it failed, never started, or a reset
+// re-armed it) and a recorded Claude Code or Codex history grant is in force (G3-112). The engine then starts
+// it itself; the run skips every source without a grant.
+func firstRunImportPending(cache string, a consent.Admission) bool {
+	if !speed.NeedsAutoImport(cache) {
+		return false
+	}
+	// Only a recorded grant counts: before the user has answered first run, a default-on scope must
+	// not start a read of past logs.
+	s := a.State()
+	for _, scope := range []string{consent.ScopeClaudeLocalHistory, consent.ScopeCodexLocalHistory} {
+		if r, decided := s.Scopes[scope]; decided && r.Allowed && s.AllowsScope(scope, a.Mode()) {
+			return true
+		}
+	}
+	return false
+}
+
 // importEngine adapts the importer to the app-server's history/import_* methods.
 type importEngine struct{ st *store.Store }
 

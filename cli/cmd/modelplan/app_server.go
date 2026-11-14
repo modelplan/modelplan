@@ -16,6 +16,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -105,6 +106,10 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		importer = appserver.NewImportController(importEngine{st: st})
 		for method, h := range appserver.HistoryImportHandlers(importer) {
 			handlers[method] = h
+		}
+		// G3-112: an owed first-run import (failed, never started or re-armed by a reset) runs at start.
+		if firstRunImportPending(st.Dir, consent.Capture()) {
+			importer.StartFirstRun(speed.ImportDefaultDays)
 		}
 	}
 	closeBackend := func() {}

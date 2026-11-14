@@ -544,6 +544,11 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, legacy 
 		}
 		doc["coverage"], _ = json.Marshal(coverage)
 	}
+	// G3-112: clearing a tool's history re-arms the first-run import, so the next grant imports the
+	// past again (the importer skips sources without a grant, so the others are not read twice).
+	if name == "imported.json" && history {
+		delete(doc, "autoRan")
+	}
 	b, _ = json.Marshal(doc)
 	if err := replace(path, append(b, '\n')); err != nil {
 		return err

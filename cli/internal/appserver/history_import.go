@@ -98,6 +98,11 @@ func (c *ImportController) start(p wire.HistoryImportStartParams) error {
 	return nil
 }
 
+// StartFirstRun starts the first-run import in the background unless one is running (G3-112).
+func (c *ImportController) StartFirstRun(days int) {
+	_ = c.start(wire.HistoryImportStartParams{Days: days, FirstRun: true})
+}
+
 // HistoryImportHandlers: history/import_start answers at once with the running status;
 // history/import_status polls it (read-only); history/import_cancel stops a running import
 // without writing; history/import_remove deletes exactly the imported history.
