@@ -226,14 +226,13 @@ func RemoveManualKey(dir, provider string) error {
 
 // Outcomes of a manual key test. Fixed words only.
 const (
-	ManualKeyOK             = "ok"
-	ManualKeyRefused        = "key_refused" // the host does not accept this key (wrong key or wrong region)
-	ManualKeyPlanLapsed     = "plan_lapsed" // the key is good but the account has no active plan
-	ManualKeyNoKey          = "no_key"
-	ManualKeyUnreachable    = "unreachable"
-	ManualKeyFailed         = "failed"
-	ManualKeyNotAccepted    = "not_accepted" // the text cannot be a key, or the provider/region is unknown
-	manualKeyPlanLapsedText = "plan_lapsed"
+	ManualKeyOK          = "ok"
+	ManualKeyRefused     = "key_refused" // the host does not accept this key (wrong key or wrong region)
+	ManualKeyPlanLapsed  = "plan_lapsed" // the key is good but the account has no active plan
+	ManualKeyNoKey       = "no_key"
+	ManualKeyUnreachable = "unreachable"
+	ManualKeyFailed      = "failed"
+	ManualKeyNotAccepted = "not_accepted" // the text cannot be a key, or the provider/region is unknown
 )
 
 // fetchManualKey reads quota with a stored key, through the same official-host fetchers the
@@ -248,13 +247,24 @@ func fetchManualKey(ctx context.Context, c *http.Client, provider string, k Manu
 	return codexbarEntry{Status: "error", ErrorCode: "other", ObservedAt: now.UTC()}
 }
 
+// manualKeyFallback: the detected sources' outcomes after which a key the user entered is tried. Only a missing,
+// unreadable, relay or refused detected key; a working key, a lapsed plan, an outage or a rate limit is final.
+func manualKeyFallback(code string) bool {
+	switch code {
+	case "no_key", "file_missing", "file_unreadable", "parse_error", "not_signed_in", "not_found", "region_refused", "unsupported_login", "http_401":
+		return true
+	}
+	return false
+}
+
 // manualKeyOutcome turns a reader entry into one outcome word.
 func manualKeyOutcome(provider string, e codexbarEntry) string {
 	if e.Status == "ok" {
 		return ManualKeyOK
 	}
 	switch {
-	case e.Error == manualKeyPlanLapsedText:
+	case e.ErrorCode == "no_plan":
+		// z.ai answers a working key without a Coding Plan with body code 500 (parseZai: no_plan).
 		return ManualKeyPlanLapsed
 	case e.ErrorCode == "http_401":
 		return ManualKeyRefused
