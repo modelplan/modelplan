@@ -166,6 +166,8 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 				s = "claude"
 			case "Kind":
 				s = "tokens"
+			case "Currency":
+				s = "USD" // ISO 4217 pattern ^[A-Z]{3}$
 			}
 		}
 		v.SetString(s)

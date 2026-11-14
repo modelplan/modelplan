@@ -723,6 +723,9 @@ struct DockHelpInteraction: Equatable {
         displayed.setNozzlePoses(poses)
     }
 
+    /// G3-98: a failed or never-started refresh releases the hidden number (a landed result does it in the view).
+    func resolveRefreshReadout(_ id: String) { interactionView.resolveRefreshReadout(id) }
+
     @discardableResult func sweepRefresh(_ id: String) -> Bool {
         guard permitted, !retired, preferences.showDock,
               model?.inputs.contains(where: { $0.id == id }) == true else { return false }
@@ -1161,7 +1164,9 @@ struct DockHelpInteraction: Equatable {
         menuNotice = nil; menuNoticeDidChange?(nil, false)
         if !keepCard { catalogueKey = ""; catalogueChanged?([]) }
         try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
-        for view in [dockView] + alternateViews { view.retireOfficialPresentation() }
+        // G3-98: a plain replacement keeps a ring click's hidden number so the landed value fades in (#906);
+        // a privacy withdrawal drops it with everything else.
+        for view in [dockView] + alternateViews { view.retireOfficialPresentation(keepingRefreshHolds: !privacy) }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
         return keepCard
@@ -1334,7 +1339,7 @@ struct DockHelpInteraction: Equatable {
             do {
                 let profile = RenderProfile(dark: true, scale: backingScale, reduceMotion: application?.effective.reduceMotion ?? true)
                 try driver.configure(view: dockView, readings: rows, profile: profile,
-                                     rotation: DockEffectRotation(period: 1), provider: { _ in provider })
+                                     rotation: .working, provider: { _ in provider })
             } catch { driver.stop(); lastWorkingEffectError = error }
         } else { workingDriver?.stop() }
         workingEffectsDidConfigureForChecks?()

@@ -227,7 +227,14 @@ public enum EngineDeadlineFacts {
                     case .missing,.invalid: number=nil
                     }
                     if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:number+(english ? " credits":" 点数"),detail:reserveDetail(),hint:"credits")) }
-                case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:M5CreditsDisplayFormat.moneyText(balance,english:english),detail:reserveDetail(english ? "Currency not reported":"未报告币种"),hint:"money"))
+                case "money":
+                    // G3-103 follow-up: a reader that reports its currency (Grok: USD) shows it; only a balance
+                    // without one keeps the "currency not reported" note.
+                    if let code = credits.currency, let money = M5CreditsDisplayFormat.currencyText(balance, code: code, english: english) {
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:money,detail:reserveDetail(),hint:"money"))
+                    } else {
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:M5CreditsDisplayFormat.moneyText(balance,english:english),detail:reserveDetail(english ? "Currency not reported":"未报告币种"),hint:"money"))
+                    }
                 default:
                     let unit=M5CreditsDisplayFormat.Unit(identifier:credits.unit)
                     switch M5CreditsDisplayFormat.unknownUnitText(balance,unit:unit,knowledge:.unknown,english:english) {
@@ -240,6 +247,12 @@ public enum EngineDeadlineFacts {
                 }
             }
             reserve.append(todayRow(account))
+            // D228/D233: a reading with a balance but no usage percentage needs no action, so the shared cause
+            // table's sentence is only a small grey footnote at the bottom of the card (no fix line, no button).
+            if row.reason.code == .usageNotReported,
+               let entry = ReaderCauseTable.entry(code: "usage_not_reported", tool: row.id, toolName: member.name(english: english)) {
+                reserve.append(.init(id: "usage-not-reported", kind: .footnote, label: "", value: entry.reason.value(english ? .english : .chinese)))
+            }
             let cardState: DockCardReadingState
             if row.consent != .allowed && row.consent != .implicit && row.consent != .notRequired {
                 cardState = .error
@@ -526,7 +539,11 @@ public enum EngineDeadlineFacts {
             let a=left.remainingPercent ?? .infinity,b=right.remainingPercent ?? .infinity
             return a == b ? left.id < right.id:a < b
         }
-        input.dataState = input.windows.contains { $0.remainingPercent != nil } ? .fresh : .unavailable
+        // D228: a current balance-only reading (Grok's X Subscription: a balance, no usage percentage) is a
+        // successful read. Its quota stays unknown ("--"), but the card is not presented as a failed one.
+        let balanceOnly = accountCurrent && row.reason.code == .usageNotReported && account.credits?.balance != nil &&
+            input.windows.allSatisfy { $0.remainingPercent == nil }
+        input.dataState = input.windows.contains { $0.remainingPercent != nil } || balanceOnly ? .fresh : .unavailable
         if source.dockContent.status == .ready, accountCurrent, member.isStable, let ref=member.subscriptionRef {
             let admitted=(account.activity ?? []).compactMap { activity -> Date? in
                 guard activity.bindingVerified, activity.subscriptionRef == ref,

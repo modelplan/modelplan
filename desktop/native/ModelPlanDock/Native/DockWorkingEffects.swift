@@ -22,9 +22,18 @@ public struct DockEffectRotation: Equatable, Sendable {
     public let period:Double
     public let direction:Direction
     public init(period:Double,direction:Direction = .clockwise){self.period=period;self.direction=direction}
+    /// D171 / DOCK-3.8-23: the working-ring spin is one fixed turn every 2 s. No data drives it.
+    public static let working=DockEffectRotation(period:2)
     var valid:Bool {period.isFinite && (0.01...86_400).contains(period)}
+    /// The spin's phase is a function of host time only: the origin is the last whole-period
+    /// boundary, so every reconfigure resumes at the angle it already showed instead of 0.
+    public func phaseOrigin(hostTime:CFTimeInterval)->CFTimeInterval {
+        guard hostTime.isFinite,valid else{return hostTime}
+        return (hostTime/period).rounded(.down)*period
+    }
+    public func angle(hostTime:CFTimeInterval)->Double {angle(elapsed:hostTime-phaseOrigin(hostTime:hostTime))}
     // The nested flipped parents reverse the final NSView basis; negative CA Z is visual clockwise.
-    func angle(elapsed:Double)->Double {
+    public func angle(elapsed:Double)->Double {
         let turns=max(0,elapsed).truncatingRemainder(dividingBy:period)/period
         return turns*2*Double.pi*(direction == .clockwise ? -1:1)
     }
@@ -56,6 +65,12 @@ public struct DockEffectRotation: Equatable, Sendable {
     public var rotationPeriods:[String:Double] {
         consumers.reduce(into:[:]) { result,item in
             if let animation=item.value.layer.animation(forKey:Self.rotationKey) { result[item.key]=animation.duration }
+        }
+    }
+    /// Layer-time start of each running spin; equal across reconfigures within one host timeline.
+    public var rotationBeginTimes:[String:CFTimeInterval] {
+        consumers.reduce(into:[:]) { result,item in
+            if let animation=item.value.layer.animation(forKey:Self.rotationKey) { result[item.key]=animation.beginTime }
         }
     }
     public init(pool:EffectResourcePool,systemReduceMotion:@escaping ()->Bool = {NSWorkspace.shared.accessibilityDisplayShouldReduceMotion},onBattery:@escaping ()->Bool = DockPowerSource.onBattery,hostTime:@escaping ()->CFTimeInterval = {CACurrentMediaTime()}){
@@ -100,7 +115,7 @@ public struct DockEffectRotation: Equatable, Sendable {
                 let spin=CABasicAnimation(keyPath:"transform.rotation.z")
                 spin.fromValue=0;spin.toValue=rotation.direction == .clockwise ? -2*Double.pi:2*Double.pi
                 spin.duration=rotation.period;spin.timingFunction=CAMediaTimingFunction(name:.linear)
-                spin.repeatCount = .infinity;spin.beginTime=effect.layer.convertTime(epoch,from:nil)
+                spin.repeatCount = .infinity;spin.beginTime=effect.layer.convertTime(rotation.phaseOrigin(hostTime:epoch),from:nil)
                 effect.layer.add(spin,forKey:Self.rotationKey);motionByID[id]=rotation
             }
             consumers[id]=effect

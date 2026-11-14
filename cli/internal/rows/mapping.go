@@ -15,6 +15,7 @@ type Outcome struct {
 var outcomes = map[Code]Outcome{
 	CodeOK:                            {State: StateFresh, Code: CodeOK, Action: ActionNone, Text: Text{EN: "Reading available", ZH: "已读到用量"}},
 	CodeEstimated:                     {State: StateFresh, Code: CodeEstimated, Action: ActionNone, Text: Text{EN: "Estimated reading", ZH: "估算读数"}},
+	CodeUsageNotReported:              {State: StateFresh, Code: CodeUsageNotReported, Action: ActionNone, Text: Text{EN: "This plan reports no usage percentage; only the balance is shown", ZH: "该订阅不提供用量百分比，只显示余额"}},
 	CodeStaleReading:                  {State: StateStale, Code: CodeStaleReading, Action: ActionRefresh, Text: Text{EN: "A retained reading is shown", ZH: "正在显示保留的旧读数"}},
 	CodeObservationTimeUnknown:        {State: StateStale, Code: CodeObservationTimeUnknown, Action: ActionRefresh, Text: Text{EN: "The reading time is unknown", ZH: "读取时间未知"}},
 	CodeNotReadYet:                    {State: StatePending, Code: CodeNotReadYet, Action: ActionNone, Text: Text{EN: "Waiting for the first reading", ZH: "等待首次读取"}},
@@ -66,6 +67,7 @@ var outcomes = map[Code]Outcome{
 	CodeRegionRefused:                 {State: StateNeedsAction, Code: CodeRegionRefused, Action: ActionNone, Text: Text{EN: "This address is a third-party relay; its quota cannot be read", ZH: "这个地址是第三方转发服务，查不到额度"}},
 	CodeCodexCustomProvider:           {State: StateNeedsAction, Code: CodeCodexCustomProvider, Action: ActionNone, Text: Text{EN: "Codex uses another model provider, so there are no ChatGPT plan limits to read", ZH: "Codex 使用的是其他模型服务商，没有 ChatGPT 套餐额度可读"}},
 	CodeTeamUnsupported:               {State: StateNeedsAction, Code: CodeTeamUnsupported, Action: ActionNone, Text: Text{EN: "Team and enterprise usage cannot be read from this tool", ZH: "团队版和企业版的用量无法从这个工具读取"}},
+	CodeNoPlan:                        {State: StateNeedsAction, Code: CodeNoPlan, Action: ActionNone, Text: Text{EN: "This key has no GLM Coding Plan", ZH: "这个密钥没有开通 GLM 编程套餐"}},
 }
 
 // Describe returns only compiled messages. Unknown codes never carry caller text.
@@ -123,6 +125,7 @@ var signalCodes = map[signalKey]Code{
 	{SignalError, "region_refused"}:                     CodeRegionRefused,
 	{SignalError, "codex_custom_provider"}:              CodeCodexCustomProvider,
 	{SignalError, "team_unsupported"}:                   CodeTeamUnsupported,
+	{SignalError, "no_plan"}:                            CodeNoPlan,
 	{SignalBlocked, "native-off"}:                       CodePrivacyBlocked,
 	{SignalBlocked, "codexbar-off"}:                     CodePrivacyBlocked,
 	{SignalBlocked, "off"}:                              CodePrivacyBlocked,
