@@ -291,7 +291,7 @@ final class ShellLayoutTests: XCTestCase {
         let state = CockpitBridgeState(context: try .init(sessionID: UUID(), storeEpoch: "synthetic", generation: 1))
         let load = try state.load(.init(theme: .night, locale: .en, profile: .full, reduceMotion: true), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
         var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
-        ack["shell"] = nil; ack["appearance"] = nil; ack["redBelow"] = nil; ack["showUsedPercent"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"
+        ack["shell"] = nil; ack["appearance"] = nil; ack["redBelow"] = nil; ack["showUsedPercent"] = nil; ack["showAllModels"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"
         XCTAssertThrowsError(try state.accept(String(decoding: JSONSerialization.data(withJSONObject: ack), as: UTF8.self), source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle")))
         XCTAssertFalse(state.supportsAppearance)
         XCTAssertNil(state.queryTicket)
@@ -303,7 +303,7 @@ final class ShellLayoutTests: XCTestCase {
         var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
         let initialAppearance = try XCTUnwrap(ack["appearance"] as? [String: Any])
         XCTAssertEqual(Set(initialAppearance.keys), ["theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames"], "v2 load appearance excludes shell/profile state")
-        ack["shell"] = nil; ack["appearance"] = nil; ack["redBelow"] = nil; ack["showUsedPercent"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"; ack["appearanceVersion"] = 2; ack["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
+        ack["shell"] = nil; ack["appearance"] = nil; ack["redBelow"] = nil; ack["showUsedPercent"] = nil; ack["showAllModels"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"; ack["appearanceVersion"] = 2; ack["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
         let raw = String(decoding: try JSONSerialization.data(withJSONObject: ack), as: UTF8.self)
         _ = try state.accept(raw, source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))
         XCTAssertTrue(state.supportsAppearance)

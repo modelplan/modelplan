@@ -14,8 +14,8 @@ export interface ShellState { readonly profile:'open'|'closed'; readonly attache
 export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'openField'|'openWebsite';
 export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
-  {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly ackedCautions?:unknown; readonly memberOrder?:readonly string[]} |
-  ({readonly type:'appearance'; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly memberOrder?:readonly string[]} & LiveAppearance) |
+  {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly ackedCautions?:unknown; readonly pinnedModels?:unknown; readonly memberOrder?:readonly string[]} |
+  ({readonly type:'appearance'; readonly redBelow?:unknown; readonly showUsedPercent?:boolean; readonly showAllModels?:boolean; readonly memberOrder?:readonly string[]} & LiveAppearance) |
   ({readonly type:'shell'} & ShellState) |
   {readonly type:'ignition'; readonly on:boolean} |
   {readonly type:'display'; readonly data:WireCockpitData} |
@@ -25,10 +25,12 @@ export type HostMessage = Header & (
 export interface CockpitView {
   /** G3-56: caution identities the host remembered as acknowledged; sent before `configure`. */
   restoreAcked?(ids:string[]):void;
+  /** D136: the favourite (pinned) model ids the host remembered; sent before `configure`. */
+  restorePins?(ids:string[]):void;
   forgetAcked?():void;
   /** memberOrder (D244): the saved subscription order; absent or empty is the engine's default order. */
-  configure(appearance:Appearance,redBelow:RedBelow,showUsedPercent?:boolean,memberOrder?:readonly string[]):void;
-  updateAppearance(appearance:LiveAppearance,now:number,redBelow:RedBelow,showUsedPercent?:boolean,memberOrder?:readonly string[]):void;
+  configure(appearance:Appearance,redBelow:RedBelow,showUsedPercent?:boolean,showAllModels?:boolean,memberOrder?:readonly string[]):void;
+  updateAppearance(appearance:LiveAppearance,now:number,redBelow:RedBelow,showUsedPercent?:boolean,showAllModels?:boolean,memberOrder?:readonly string[]):void;
   shell(state:ShellState):void;
   /** CKP-SHELL-33 (D178/D186): the host lights every base bell with the amber nozzle glow during a rack put-back or key detach. */
   ignite?(on:boolean):void;
@@ -76,8 +78,8 @@ function message(raw:string):HostMessage|null {
   const validOrder=(v:unknown):boolean=>Array.isArray(v)&&v.length>0&&v.length<=256&&v.every(k=>k!=='all'&&validScope(k))&&new Set(v).size===v.length;
   const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope'])&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
   switch(m.type) {
-    case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','ackedCautions','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))) return no('load.keys'); break;
-    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
+    case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','showAllModels','ackedCautions','pinnedModels','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))||(m.pinnedModels!==undefined&&!validAcked(m.pinnedModels))) return no('load.keys'); break;
+    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent','showAllModels','memberOrder'])||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
     case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return no('shell.fields'); break;
     case 'ignition': if(!keys(['on'])||typeof m.on!=='boolean') return no('ignition.fields'); break;
     case 'display': if(!keys(['data']))return no('display.keys');if(!validData(m.data))return null; break;
@@ -161,7 +163,7 @@ export class CockpitBridge {
       this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;
       this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
       this.sequence=BigInt(m.sequence); this.loaded=true;this.cleared=false;this.loadRequestId=m.requestId;
-      try {this.view.restoreAcked?.(validAcked(m.ackedCautions)?m.ackedCautions:[]);this.view.configure(m.appearance,threshold(m.redBelow),m.showUsedPercent===true,m.memberOrder??[]);this.view.shell(m.shell);} catch {this.unload();return this.no('load.view');}
+      try {this.view.restoreAcked?.(validAcked(m.ackedCautions)?m.ackedCautions:[]);this.view.restorePins?.(validAcked(m.pinnedModels)?m.pinnedModels:[]);this.view.configure(m.appearance,threshold(m.redBelow),m.showUsedPercent===true,m.showAllModels===true,m.memberOrder??[]);this.view.shell(m.shell);} catch {this.unload();return this.no('load.view');}
       this.shellState=m.shell;this.syncActive();
       if(this.domReady) {this.emit('ready',m.requestId,{appearanceVersion:2,capabilities:['appearanceUpdates','shellState','shellActions']});this.loadRequestId=null;}
       return true;
@@ -186,7 +188,7 @@ export class CockpitBridge {
     if(!same(m,this.context)) return this.no('recv.context');
     switch(m.type) {
       case 'appearance':
-        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow),m.showUsedPercent===true,m.memberOrder??[]);} catch {this.unload();return this.no('appearance.view');}
+        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow),m.showUsedPercent===true,m.showAllModels===true,m.memberOrder??[]);} catch {this.unload();return this.no('appearance.view');}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'shell':
         try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return this.no('shell.view');}
@@ -220,9 +222,17 @@ export class CockpitBridge {
   }
   /** G3-56: the lamp was pressed; the host keeps the acknowledged identities across restarts. */
   private pendingAck:string[]|null=null;
+  private pendingPins:string[]|null=null;
   private syncActive():void {
     this.view.active(this.isActive());
     if(this.pendingAck&&this.isActive()) {const ids=this.pendingAck;this.pendingAck=null;this.emit('action',this.requestId(),{action:'cautionAck',ids});}
+    if(this.pendingPins&&this.isActive()) {const ids=this.pendingPins;this.pendingPins=null;this.emit('action',this.requestId(),{action:'pinnedModels',ids});}
+  }
+  /** D136: report the favourite model ids after every long-press; the host keeps them across restarts. */
+  pinModels(ids:string[]):boolean {
+    if(!validAcked(ids)) return false;
+    if(!this.isActive()) {this.pendingPins=ids;return false;}
+    this.pendingPins=null;this.emit('action',this.requestId(),{action:'pinnedModels',ids});return true;
   }
   acknowledgeCautions(ids:string[]):boolean {
     if(!validAcked(ids)) return false;

@@ -13,7 +13,7 @@ import ModelPlanWire
   private let source = CockpitMessageSource(mainFrame: true, origin: "modelplan-cockpit://bundle")
   private func reply(_ raw: String, type: String, sequence: Int, extra: [String: Any] = [:]) throws -> String {
     var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
-    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "ackedCautions", "nowUnixMs", "reason"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "ackedCautions", "pinnedModels", "nowUnixMs", "reason"] { value[key] = nil }
     value["type"] = type; value["sequence"] = String(sequence)
     if type == "ready" { value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"] }
     for (key, field) in extra { value[key] = field }
@@ -287,6 +287,21 @@ import ModelPlanWire
     XCTAssertEqual(intents, [.scopeSelect("all")]); XCTAssertTrue(failures.isEmpty)
     XCTAssertTrue(delays.contains(500), "The valid delayed rendered receipt releases its deadline")
     XCTAssertFalse(page.bridge.disposed); XCTAssertNil(page.window); page.discard()
+  }
+  /// D136: the favourite model ids go to the page in `load`, and a long-press comes back as an intent.
+  func testPinnedModelsAreRestoredInLoadAndComeBackAsAnIntent() throws {
+    let shell = CockpitShellState(closed: false, attached: true, forcedClosed: false, tier: .tall)
+    let page = try page(); var intents: [CockpitIntent] = [], failures: [CockpitWindowFailure] = []
+    page.onIntent = { intents.append($0) }; page.onFailure = { failures.append($0) }
+    page.setPinnedModels(["model-a"]); page.verificationNoWindowShell = shell
+    let load = try page.bridge.load(.init(theme: .night, locale: .en, profile: .full), shell: shell)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
+    XCTAssertEqual(object["pinnedModels"] as? [String], ["model-a"])
+    _ = try page.bridge.accept(reply(load, type: "ready", sequence: 1), source: source)
+    try page.verificationConfirmVisible()
+    page.verificationReceive(try reply(load, type: "action", sequence: 2, extra: ["action": "pinnedModels", "ids": ["model-b", "model-a"], "requestId": UUID().uuidString]), source: source)
+    XCTAssertEqual(intents, [.pinnedModels(["model-b", "model-a"])]); XCTAssertTrue(failures.isEmpty)
+    page.discard()
   }
   /// G3-56: the acknowledged caution identities go to the page in `load`, and a press comes back as an intent.
   func testAcknowledgedCautionsAreRestoredInLoadAndComeBackAsAnIntent() throws {

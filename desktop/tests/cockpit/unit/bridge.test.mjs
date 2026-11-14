@@ -288,6 +288,50 @@ test('redBelow is optional, validated and logged on load and appearance without 
   assert.ok(logs.every(args=>args.length===1&&args[0]==='Cockpit redBelow missing or invalid; using default 25.'));
  }finally{console.warn=original;}
 });
+
+test('showAllModels (D135) is an optional boolean on load and appearance; off by default; anything else is rejected',()=>{
+ const logs=[],original=console.warn;console.warn=(...args)=>logs.push(args);
+ try{
+  for(const [input,expected] of [[true,true],[false,false],[undefined,false]]){
+   const seen=[],view={clear(){},configure(_a,_n,_u,all){seen.push(all);},updateAppearance(_a,_now,_n,_u,all){seen.push(all);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+   const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
+   const extra=input===undefined?{}:{showAllModels:input};
+   assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,...extra}),source),true);
+   assert.equal(b.receive(send('appearance',{...appearance,redBelow:25,...extra}),source),true);
+   assert.deepEqual(seen,[expected,expected]);
+  }
+  for(const bad of ['yes',1,null,{}]){
+   const view={clear(){},configure(){},updateAppearance(){},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+   const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
+   assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,showAllModels:bad}),source),false);
+   assert.equal(b.receive(send('load',{appearance,shell,redBelow:25}),source),true);
+   assert.equal(b.receive(send('appearance',{...appearance,redBelow:25,showAllModels:bad}),source),false);
+   assert.equal(b.receive(send('appearance',{...appearance,redBelow:25,appearance:{showAllModels:true}}),source),false);
+  }
+ }finally{console.warn=original;}
+});
+
+test('pinnedModels (D136): restored from load before configure, reported after each long-press, strictly validated',()=>{
+ const order=[],events=[];
+ const view={clear(){},configure(){order.push('configure');},restorePins(ids){order.push(['pins',ids]);},updateAppearance(){},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+ const send=commands(),b=new CockpitBridge(pageId,source.origin,v=>events.push(JSON.parse(v)),view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
+ assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,pinnedModels:['model-b','model-a']}),source),true);
+ assert.deepEqual(order,[['pins',['model-b','model-a']],'configure']);
+ // Not active yet: the report is kept and sent when the page becomes active.
+ assert.equal(b.pinModels(['model-a']),false);
+ assert.equal(b.receive(send('visibility',{visible:true,occluded:false,key:true}),source),true);
+ let sent=events.filter(e=>e.type==='action'&&e.action==='pinnedModels');
+ assert.deepEqual(sent.map(e=>e.ids),[['model-a']]);
+ assert.equal(b.pinModels(['model-c','model-a']),true);
+ sent=events.filter(e=>e.type==='action'&&e.action==='pinnedModels');
+ assert.deepEqual(sent.map(e=>e.ids),[['model-a'],['model-c','model-a']]);
+ assert.equal(b.pinModels(['bad\u0007id']),false);
+ assert.equal(events.filter(e=>e.type==='action'&&e.action==='pinnedModels').length,2);
+ for(const bad of ['x',[1],[''],Array.from({length:65},(_,i)=>'m'+i),null]){
+  const b2=new CockpitBridge(pageId,source.origin,()=>{},{...view,restorePins(){}},()=>sessionId,()=>1000);b2.documentHidden(false);b2.ready();
+  assert.equal(b2.receive(send('load',{appearance,shell,redBelow:25,pinnedModels:bad}),source),false);
+ }
+});
 test('G3-66: a show tick before the page document event is accepted once the host says visible',()=>{
   const f=fixture(),tick={nowUnixMs:'1793620800000',reason:'show'};
   assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);

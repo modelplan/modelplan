@@ -58,7 +58,7 @@ actor RouteClient: EngineClient { // internal: the real-page size test (OwnerTes
     func open(){
         let raw=try! state.load(.init(theme:.day,locale:.en,profile:.full),shell:.init(closed:false,attached:true,forcedClosed:false,tier:.tall))
         var value=try! JSONSerialization.jsonObject(with:Data(raw.utf8)) as! [String:Any]
-        value["appearance"]=nil;value["shell"]=nil;value["redBelow"] = nil; value["showUsedPercent"] = nil;value["type"]="ready";value["sequence"]="1"
+        value["appearance"]=nil;value["shell"]=nil;value["redBelow"] = nil; value["showUsedPercent"] = nil; value["showAllModels"] = nil;value["type"]="ready";value["sequence"]="1"
         value["appearanceVersion"]=2;value["capabilities"]=["appearanceUpdates","shellState","shellActions"]
         _=try! state.accept(String(decoding:try! JSONSerialization.data(withJSONObject:value),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"));onReady?()
     }
@@ -274,9 +274,11 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let opening=try await toggle()
         for frame in opening { XCTAssertEqual(frame.maxY,start.maxY,accuracy:0.5) }
         XCTAssertEqual(window.frame,start)
-        // Detached, lowered so the porthole has room above in both states.
+        // Detached, lowered so the porthole has room above in both states, but only inside the visible frame (the scaled
+        // cockpit fills the room above the Dock; below it the replay clamps the body back, G3-79).
         page.setAttached(false)
-        window.setFrameOrigin(.init(x:window.frame.minX,y:window.frame.minY-60))
+        let usable=try XCTUnwrap(window.screen ?? NSScreen.main).visibleFrame
+        window.setFrameOrigin(.init(x:window.frame.minX,y:max(usable.minY.rounded(.up),window.frame.minY-60)))
         let floating=window.frame
         let detachedClose=try await toggle()
         for frame in detachedClose { XCTAssertEqual(frame.minY,floating.minY,accuracy:0.5,"detached, the body never moves") }

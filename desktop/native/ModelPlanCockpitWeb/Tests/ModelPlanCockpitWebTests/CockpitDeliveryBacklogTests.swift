@@ -62,7 +62,7 @@ import ModelPlanWire
     let load = try state.load(.init(theme: .night, locale: .en, profile: .full),
                               shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
     var ready = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
-    for key in ["appearance", "shell", "redBelow", "showUsedPercent", "ackedCautions"] { ready[key] = nil }
+    for key in ["appearance", "shell", "redBelow", "showUsedPercent", "showAllModels", "pinnedModels", "ackedCautions"] { ready[key] = nil }
     ready["type"] = "ready"; ready["sequence"] = "1"; ready["appearanceVersion"] = 2
     ready["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     let source = CockpitMessageSource(mainFrame: true, origin: "modelplan-cockpit://bundle")
@@ -96,7 +96,7 @@ import ModelPlanWire
   private let source = CockpitMessageSource(mainFrame: true, origin: "modelplan-cockpit://bundle")
   private func reply(_ raw: String, type: String, sequence: Int, extra: [String: Any] = [:]) throws -> String {
     var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
-    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "ackedCautions", "nowUnixMs", "reason"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "pinnedModels", "ackedCautions", "nowUnixMs", "reason"] { value[key] = nil }
     value["type"] = type; value["sequence"] = String(sequence)
     if type == "ready" { value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"] }
     for (key, field) in extra { value[key] = field }
