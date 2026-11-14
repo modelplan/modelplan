@@ -6,6 +6,12 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.61, Codex plugin 0.15.48 and Claude Code plugin 0.7.47 (2026-11-14)
+
+- A supported tool installed after the first run no longer gets runtime or account reads from the automatic local-history grant: the grant enables local session or history log reading only. Anything that needs the tool's saved sign-in, its runtime or a network call stays off until you allow it in Settings › Subscriptions (G3, #924).
+
+- Cockpit help now starts inside the visible window when the Window shutter is closed on the tall cockpit, and a shell refresh during the opening motion no longer snaps the glass open.
+
 ## CLI v0.5.60, Codex plugin 0.15.47 and Claude Code plugin 0.7.46 (2026-11-13)
 
 - Codex's Pro tiers now show by name, as Codex itself shows them: Pro 100, Pro 200 and Pro 500 instead of the raw plan ids `prolite`, `pro` and `promax`, in the quota text, the effort and reset-card lines and the desktop app; history and advice still key on the id. A z.ai/GLM key without a Coding Plan, which the quota service answers with a body code 500, is now reported as `no_plan` ("This key has no GLM Coding Plan") instead of a provider server error. Codex speed no longer drops every response after a tool call in a tool-heavy turn: the token_count notice Codex writes after the tools finish is matched to its own response instead of being counted as a new one.

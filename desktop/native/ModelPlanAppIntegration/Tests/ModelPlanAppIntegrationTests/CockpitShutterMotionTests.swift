@@ -95,8 +95,11 @@ import XCTest
     defer { fixture.page.discard() }
     try await Task.sleep(for: .milliseconds(400))
     fixture.page.setAttached(false)
-    // Lower it so the porthole has room above in both states.
-    window.setFrameOrigin(.init(x: window.frame.minX, y: window.frame.minY - 60))
+    // Lower it so the porthole has room above in both states, but only inside the visible frame: a scaled cockpit fills
+    // the room above the Dock, and a body below the visible frame is not a place a user can drop it (the replay clamps
+    // it back, G3-79), so the body could not be told from a clamp.
+    let usable = window.screen?.visibleFrame ?? fixture.usable
+    window.setFrameOrigin(.init(x: window.frame.minX, y: max(usable.minY.rounded(.up), window.frame.minY - 60)))
     let start = window.frame
     let band = ((253 - CockpitShellLayout.closedSlabBand) * (try web(window).pageZoom)).rounded(.down)
     let closing = try await toggleAndSample(fixture, window)

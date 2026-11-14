@@ -156,7 +156,9 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 // allowLaterLocalLogs applies D240 (owner 2026-11-13): a tool installed after the first run
 // has its local-log scopes allowed without a prompt, through the same grant path Settings
 // uses, once, while the user has made no decision for that tool. Anything that needs the
-// tool's saved login, its runtime or a network call stays opt-in (offered in the menu, D238).
+// tool's saved login, its runtime or a network call stays opt-in (offered in the menu, D238):
+// the same grant records those scopes as off when they would otherwise pass while undecided
+// (#924), because the local-log grant's tool record would admit their readers.
 // A failed or stale attempt is retried on the next view.
 func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
 	if b.config.LaterInstalled == nil || b.config.ReadOnly {
@@ -176,7 +178,7 @@ func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
 		return
 	}
 	_, _ = b.Grant(ctx, wire.ConsentGrantParams{RequestID: fmt.Sprintf("d240-local-logs-%d", state.Generation), ExpectStoreEpoch: state.StoreEpoch,
-		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: []string{}})
+		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: consent.AutoLaterClosedScopes(state, scopes)})
 }
 
 func (b *SharedBackend) buildView(admission consent.Admission, changed bool) View {
@@ -262,10 +264,12 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "no-native-reader" {
 					continue
 				}
-				// A denied generic runtime route must not veto the independently
-				// admitted local-history route. ReadPermitted still checks each
-				// scope and the row builder enforces tool denial and cleanup.
-				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "reader-consent-or-privacy" && admission.Allows("codex", consent.Local) {
+				// A denied or undecided runtime/account route must not veto the
+				// independently admitted local-history route, for any tool (#924:
+				// a later-installed tool's history is allowed, its account is not).
+				// ReadPermitted still checks each scope and the row builder enforces
+				// tool denial and cleanup.
+				if selected.Backend == quota.BackendNative && selected.Blocked == "reader-consent-or-privacy" && admission.Allows(selected.Provider, consent.Local) {
 					continue
 				}
 				in.Admissions = append(in.Admissions, rows.Admission{ToolID: selected.Provider, Veto: selected.Blocked})
