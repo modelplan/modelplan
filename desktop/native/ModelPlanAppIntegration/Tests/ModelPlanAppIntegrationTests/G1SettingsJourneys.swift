@@ -11,11 +11,15 @@ import ModelPlanWire
 private actor G1SettingsEngine: EngineClient {
     let store: EngineStore
     let rows: WireRowsSnapshot
+    /// The reader's handshake answer. First run v1 (#881, FR-9-10/FR-9-11, owner 11-12 answer 3) keeps Done disabled
+    /// until it arrives, so the first-run journeys need it; nil keeps the other journeys as they were.
+    let facts: WireConsentFacts?
     let context = EngineDeliveryContext(sessionID: "g1-settings", floor: .init(storeEpoch: "g1-settings", generation: 1), revision: 1)
-    init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
+    init(store: EngineStore, rows: WireRowsSnapshot, facts: WireConsentFacts? = nil) { self.store = store; self.rows = rows; self.facts = facts }
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context))); await store.consume(.context(context))
+        if let facts { await store.consume(.consentChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: facts), delivery: context))) }
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: rows.projection.invalidRowCount))
         return context
     }
@@ -35,7 +39,7 @@ private actor G1SettingsEngine: EngineClient {
 /// Window journeys are compiled locally; execution requires an admitted GUI CI runner.
 @MainActor final class G1SettingsJourneys: XCTestCase {
     private func entry(locale: String, discoveredMembers: Int? = nil, profileURL: URL? = nil,
-                       startsComposition: Bool = true) async throws -> EngineDockMenuApplication {
+                       startsComposition: Bool = true, handshake: Bool = false) async throws -> EngineDockMenuApplication {
         let profile = profileURL ?? FileManager.default.temporaryDirectory.appendingPathComponent("g1-settings-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
@@ -59,14 +63,28 @@ private actor G1SettingsEngine: EngineClient {
             projection["rows"] = rows; root["projection"] = projection
         }
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        var facts: WireConsentFacts?
+        if handshake {
+            // The captured facts with no tool scopes: the reader answered and found nothing to tick, so Done needs no choice.
+            let factsCapture = capture.deletingLastPathComponent().appendingPathComponent("WireConsentFacts.json")
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: factsCapture)) as? [String: Any])
+            object["scopes"] = [[String: Any]]()
+            facts = try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: object))
+        }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"), makeClient: { _, target in G1SettingsEngine(store: target, rows: rows) }, activateSettings: {})
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"), makeClient: { _, target in G1SettingsEngine(store: target, rows: rows, facts: facts) }, activateSettings: {})
         addTeardownBlock { @MainActor in await app.composition.stop() }
         await app.prepare()
         if startsComposition { await app.composition.start() }
         return app
     }
     private func flatten(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(flatten) }
+    /// First run v1 (#881, owner 11-12 answer 3): Done opens with the reader's handshake. Wait for that state change.
+    private func waitUntilEnabled(_ button: NSButton, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let end = ContinuousClock.now + .seconds(5)
+        while !button.isEnabled, ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(button.isEnabled, "Done opens once the reader answered the handshake", file: file, line: line)
+    }
     private func firstRun(_ app: EngineDockMenuApplication) async throws -> NSWindow {
         let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
         await app.restoreFirstRunIfNeeded()
@@ -144,17 +162,18 @@ private actor G1SettingsEngine: EngineClient {
 
     func testG1_FR_9_06_LoginChoiceDefaultAndCompletion() async throws {
         for enabled in [true, false] {
-            let app = try await entry(locale: "en-US")
+            let app = try await entry(locale: "en-US", handshake: true)
             let window = try await firstRun(app)
             let login = try control("firstRun.login", in: window, as: NSButton.self)
             let done = try control("firstRun.done", in: window, as: NSButton.self)
+            try await waitUntilEnabled(done)
             XCTAssertEqual(login.state, .on)
             XCTAssertEqual(login.accessibilityHelp(), "You can turn this off in Settings")
             // FR-9-11: the login choice and Done share the footer row, the choice on the left.
             XCTAssertLessThan(login.convert(login.bounds, to: nil).minX, done.convert(done.bounds, to: nil).minX)
             XCTAssertLessThan(abs(login.convert(login.bounds, to: nil).midY - done.convert(done.bounds, to: nil).midY), 40)
             if !enabled { XCTAssertTrue(login.isEnabled); login.performClick(nil) }
-            XCTAssertTrue(done.isEnabled); done.performClick(nil)
+            done.performClick(nil)
             var saved = await app.foundationStore.snapshot()
             for _ in 0..<1000 where !saved.preferences.onboarding.completed {
                 await Task.yield(); saved = await app.foundationStore.snapshot()
@@ -187,7 +206,7 @@ private actor G1SettingsEngine: EngineClient {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-g3-24-" + UUID().uuidString)
         XCTAssertFalse(FileManager.default.fileExists(atPath: profile.path), "Precondition: a fresh synthetic profile")
         let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
-        let app = try await entry(locale: "en-US", profileURL: profile, startsComposition: false)
+        let app = try await entry(locale: "en-US", profileURL: profile, startsComposition: false, handshake: true)
         XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.onboarding.completed, false)
         launch(app)
         let presented = try await firstRunWindow(after: before, seconds: 5)
@@ -195,7 +214,7 @@ private actor G1SettingsEngine: EngineClient {
         addTeardownBlock { @MainActor in window.close() }
         XCTAssertFalse(app.lifecyclePaused)
         let done = try control("firstRun.done", in: window, as: NSButton.self)
-        XCTAssertTrue(done.isEnabled); done.performClick(nil)
+        try await waitUntilEnabled(done); done.performClick(nil)
         var saved = await app.foundationStore.snapshot()
         for _ in 0..<1000 where !saved.preferences.onboarding.completed {
             await Task.yield(); saved = await app.foundationStore.snapshot()
@@ -204,7 +223,7 @@ private actor G1SettingsEngine: EngineClient {
         window.close(); await app.stopLifecycle(); await app.composition.stop()
 
         let relaunchBefore = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
-        let reopened = try await entry(locale: "en-US", profileURL: profile, startsComposition: false)
+        let reopened = try await entry(locale: "en-US", profileURL: profile, startsComposition: false, handshake: true)
         launch(reopened)
         let end = ContinuousClock.now + .seconds(5)
         while reopened.lifecyclePaused && ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(20)) }

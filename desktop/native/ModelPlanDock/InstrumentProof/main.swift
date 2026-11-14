@@ -557,7 +557,10 @@ struct NativeFailure:Error {let message:String}
     try require(orderRequests.count==2 && !interaction.hasCapture,"D244: releasing a moved ring press saves no order and is no click")
     interactionTime=12;_=interaction.beginNozzle(id:"a",along:0)
     interactionEnv.bindingRevision+=1;interaction.refresh();try require(!interaction.hasCapture,"binding change cancels captured old nozzle")
-    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["b","c"],"overflow list retains accepted off-main subscriptions in shared canonical order")
+    // D244 dropped the stop/start that used to reset overflowOpen here, so the list opened by the accepted off-main move is still open.
+    try require(interaction.presentation?.overflowIDs==["b","c"],"overflow list retains accepted off-main subscriptions in shared canonical order")
+    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==[],"toggle closes the open overflow list")
+    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["b","c"],"reopened overflow list keeps the shared canonical order")
     interaction.stop()
     let reorderSurface=DockReorderLayersView(frame:effectsSkin.bounds)
     let firstVisuals=try renderer.reorderVisuals(skin:effectsSkin,readings:Dictionary(uniqueKeysWithValues:working.map{($0.subscriptionID,$0)}),scale:1)

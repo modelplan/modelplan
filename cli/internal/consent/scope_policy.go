@@ -250,3 +250,30 @@ func AutoLocalLogScopes(s State, tools map[string]bool) []string {
 	sort.Strings(out)
 	return out
 }
+
+// AutoLaterClosedScopes lists the scopes the D240 grant records as off next to the local-log
+// scopes it allows (#924): every undecided runtime, saved-login or key scope of the same tools
+// that would pass while undecided (DefaultCheck). Without this, the tool record that the
+// local-log grant writes admits that tool's runtime or account reader, so a tool installed
+// after the first run would be launched or its account read without a click. Undecided scopes
+// that are off by default stay undecided. The user can turn any of them on. Sorted.
+func AutoLaterClosedScopes(s State, allowed []string) []string {
+	tools := map[string]bool{}
+	for _, id := range allowed {
+		if d, known := Definition(id); known && d.Class == Local {
+			tools[d.Tool] = true
+		}
+	}
+	out := []string{}
+	for _, d := range Definitions() {
+		if !tools[d.Tool] || d.Class == Local || !d.DefaultCheck {
+			continue
+		}
+		if _, decided := s.Scopes[d.ID]; decided {
+			continue
+		}
+		out = append(out, d.ID)
+	}
+	sort.Strings(out)
+	return out
+}

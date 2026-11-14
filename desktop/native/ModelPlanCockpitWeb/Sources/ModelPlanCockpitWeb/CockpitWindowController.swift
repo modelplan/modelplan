@@ -109,9 +109,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// D49: the widget stays at `.floating` while the cockpit is open, and the cockpit opens over it.
   /// A widget being dragged rises to `.statusBar`, above this.
   public static let panelLevel = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+  /// G3-102 (build 14e): a detached cockpit is an ordinary window, so other apps can cover it; only the attached
+  /// one (under the menu-bar icon, over the widget, D49) floats.
+  public static func level(detached: Bool) -> NSWindow.Level { detached ? .normal : panelLevel }
   /// Windows the open cockpit brings up (the enlarged field, the Help overlay) sit above it.
   public static let aboveCockpitLevel = NSWindow.Level(rawValue: panelLevel.rawValue + 1)
-  /// The drag snap guide shares the cockpit's level so it can be ordered just below the cockpit.
+  /// The drag snap guide's level beside an attached cockpit; on every show it takes the cockpit's current level
+  /// (`.normal` while detached, G3-102) so it can be ordered just below the cockpit.
   public static let snapGuideLevel = panelLevel
   /// D88: the icon grow on open and the shrink on close, ease-out, instant with Reduce Motion.
   static let growDuration: TimeInterval = 0.2
@@ -413,6 +417,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
     if web == nil, !bridge.disposed, !ending { build() }
     guard let panel = window else { return }
+    // G3-102: a page built or warmed while the shared session had another attachment opens at the session's level.
+    panel.level = Self.level(detached: shellSession.detached)
     guard shown else {
       shown = true; awaitingShown = true; rendersSinceOpen = 0
       let entrance = shellSession.nextEntrance; shellSession.nextEntrance = .fade
@@ -529,7 +535,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     view.allowsBackForwardNavigationGestures = false
     let panel = CockpitPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
     panel.isOpaque = false; panel.backgroundColor = .clear
-    panel.hasShadow = false; panel.level = Self.panelLevel; panel.hidesOnDeactivate = false
+    panel.hasShadow = false; panel.level = Self.level(detached: shellSession.detached); panel.hidesOnDeactivate = false
     panel.appearance = NSAppearance(named: .darkAqua)
     panel.title = "ModelPlan"
     panel.isReleasedWhenClosed = false
@@ -955,6 +961,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
       reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size, memberOrder: value.memberOrder)
+    window?.level = Self.level(detached: shellSession.detached)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       // Audit A-6: only a shown cockpit goes to full opacity; a prewarmed page (warm-painting at alpha 0) stays hidden.
@@ -1157,10 +1164,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
     } else {
       shellSession.detached = false
-      guard placement() != nil else { return }
       // Audit A-3: the animated put back commits the destination display's layout (profile, zoom, drag strip) too;
-      // only the window frame moves over time.
-      applyLayout(animated: !appearance.reduceMotion)
+      // only the window frame moves over time. G3-102: with no fitting display the frame stays, but the level and
+      // the page's shell state still follow the session below.
+      if placement() != nil { applyLayout(animated: !appearance.reduceMotion) }
     }
     updateAppearance(appearance)
     onShellChanged?()
@@ -1256,7 +1263,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = false
       panel.ignoresMouseEvents = true; panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
       let view = NSView(frame: .init(origin: .zero, size: frame.size)); view.wantsLayer = true
-      view.layer = CAShapeLayer(); panel.contentView = view; panel.level = Self.snapGuideLevel; snapGuide = panel
+      view.layer = CAShapeLayer(); panel.contentView = view; panel.level = window.level; snapGuide = panel
     }
     snapGuide?.setFrame(frame, display: false)
     if let shape = snapGuide?.contentView?.layer as? CAShapeLayer {
@@ -1264,6 +1271,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       shape.strokeColor = NSColor.gray.cgColor; shape.fillColor = NSColor.clear.cgColor
       shape.lineWidth = 1; shape.lineDashPattern = ready ? nil : [6, 4]
     }
+    snapGuide?.level = window.level
     snapGuide?.order(.below, relativeTo: window.windowNumber)
   }
   private func cancelDrag() {

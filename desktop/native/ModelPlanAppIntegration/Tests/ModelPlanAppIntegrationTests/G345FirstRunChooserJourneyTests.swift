@@ -268,6 +268,9 @@ private actor G345Engine: EngineClient {
             .compactMap { ($0 as? NSTextField)?.stringValue }
         XCTAssertTrue(keyed.contains("本机已检测到"), "\(keyed)")
         XCTAssertFalse(keyed.contains { $0.hasPrefix("没有找到 OpenCode Go 订阅密钥") })
+        // #910-2: the reader takes the key only from OPENCODE_API_KEY, so with the engine's key_missing row the
+        // found subscription still says why no quota is shown (D230: the saved key is never read).
+        XCTAssertTrue(keyed.contains { $0.hasPrefix("找到了 OpenCode Go 登录") }, "\(keyed)")
         // Other detected tools keep the plain tag.
         XCTAssertTrue(views(try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.settings.row.codex" })).compactMap { ($0 as? NSTextField)?.stringValue }.contains("本机已检测到"))
     }
