@@ -118,6 +118,17 @@ if (official) {
   }
   await cp(resolve(hull,'SOURCES.md'),resolve(output,'assets/hull/SOURCES.md'));
   css+='\n'+await readFile(resolve(hull,'hull.css'),'utf8');
+  // CKP-FAD-24 / CKP-FAD-17 (D115, D122, D196): the v4 top-down throttle on every fader travel, each file checked against the
+  // reserved-visuals registry. The community edition keeps the MIT flat fader.
+  const throttle=resolve(assets,'cockpit/throttle');
+  await mkdir(resolve(output,'assets/throttle'),{recursive:true});
+  for(const name of ['plate-night.png','plate-day.png','lever-night.png','lever-day.png','ghost-night.png','ghost-day.png']){
+    const bytes=await readFile(resolve(throttle,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/throttle/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved throttle resource: '+name);
+    await writeFile(resolve(output,'assets/throttle',name),bytes);
+  }
+  await cp(resolve(throttle,'SOURCES.md'),resolve(output,'assets/throttle/SOURCES.md'));
+  css+='\n'+await readFile(resolve(throttle,'throttle.css'),'utf8');
   // Strip logo (owner build 13): the study's rocket mark (shell6/logo.svg) is the repository logo, the same drawing.
   const logo=await readFile(resolve(assets,'logo.svg'));
   if(createHash('sha256').update(logo).digest('hex')!==policy.reservedVisuals.historicalMit['desktop/official-visuals/logo.svg'])throw Error('Unapproved logo');
