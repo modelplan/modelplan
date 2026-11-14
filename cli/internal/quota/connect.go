@@ -640,11 +640,16 @@ func ledgerLogRoots(p Paths) []speed.LogRoot {
 	return roots
 }
 
-// markHistoryCleared sets the tool's clear boundary before its ledger state is removed, so a
+// markHistoryCleared sets the tool's clear boundary (and, for a database tool, the row its
+// database was cleared through) before its ledger state is removed, so a
 // failure part way leaves the boundary in place rather than cursors gone without one. The caller
 // holds the ledger locks.
 func markHistoryCleared(cache, tool string) error {
-	return speed.MarkCleared(cache, tool, time.Now())
+	if err := speed.MarkCleared(cache, tool, time.Now()); err != nil {
+		return err
+	}
+	home, _ := os.UserHomeDir()
+	return speed.MarkClearedDB(cache, home, tool)
 }
 
 // active: the providers whose selected backend is this one and runs.

@@ -15,12 +15,19 @@ import (
 // read would take the tool's logs from the start, and a resumed Claude Code session's copy of an
 // old request would no longer be recognised. So the clear leaves one boundary per tool in
 // <cache>/observed/cleared.json: the time of the clear. The observers and the history importer
-// count nothing of that tool from before it. The file holds only tool names and times: no
-// paths, hashes or counts. Each boundary applies only to its own tool: clearing one tool never
-// holds back another tool's logs.
+// count nothing of that tool from before it. For a tool that keeps its history in an agent
+// database (ZCode, OpenCode), the clear also keeps one row number: the database's highest row then
+// ("cleared through row N"). Its next read starts past that row, so the pre-clear rows are never
+// read again; a database that no longer has that row was replaced, and is read from the start
+// under the time boundary. The file holds only tool names, times and those row numbers: no paths,
+// database hashes, request ids or counts. Each boundary applies only to its own tool: clearing one
+// tool never holds back another tool's logs.
 type Cleared struct {
 	SchemaVersion int                  `json:"schemaVersion"`
 	Tools         map[string]time.Time `json:"tools,omitempty"` // consent tool id → clear time, UTC
+	// DBRows: consent tool id → the highest row of the tool's agent database at the clear
+	// ("cleared through row N"). One number per tool; never a path, a database hash or a row's id.
+	DBRows map[string]int64 `json:"dbRows,omitempty"`
 }
 
 // ClearedPath is the boundary file.
@@ -57,6 +64,54 @@ func MarkCleared(cache, tool string, now time.Time) error {
 	b, _ := json.Marshal(c)
 	return write(ClearedPath(cache), append(b, '\n'))
 }
+
+// clearedDBs: the agent database of each tool that keeps one, with its ledger source and the
+// query for its highest row.
+var clearedDBs = map[string]struct {
+	source string
+	path   func(home string) string
+	top    string
+}{
+	"zai":        {"zcode", ZCodeDB, `SELECT COALESCE(MAX(rowid), 0) FROM model_usage`},
+	"opencodego": {"opencode", OpenCodeDB, `SELECT COALESCE(MAX(rowid), 0) FROM session_message`},
+}
+
+// MarkClearedDB records how far the tool's agent database went when its history was cleared: its
+// highest row, or, when it cannot be read, the row its cursor had reached. Called with the clear's
+// MarkCleared, before the tool's cursors are removed; the caller holds the ledger locks. A tool
+// without a database records nothing; a clear that finds no rows removes an earlier number.
+func MarkClearedDB(cache, home, tool string) error {
+	d, ok := clearedDBs[tool]
+	if !ok {
+		return nil
+	}
+	var rows int64
+	path := d.path(home)
+	if db, err := openRO(path); err == nil {
+		_ = db.QueryRow(d.top).Scan(&rows)
+		db.Close()
+	}
+	if p, ok := LoadPerf(cache); ok {
+		rows = max(rows, p.Stores[d.source+":"+fileKey(path)].RowID)
+	}
+	c := LoadCleared(cache)
+	if c.DBRows == nil {
+		c.DBRows = map[string]int64{}
+	}
+	if rows > 0 {
+		c.DBRows[tool] = rows
+	} else {
+		delete(c.DBRows, tool)
+	}
+	if err := os.MkdirAll(filepath.Dir(ClearedPath(cache)), 0o700); err != nil {
+		return err
+	}
+	b, _ := json.Marshal(c)
+	return write(ClearedPath(cache), append(b, '\n'))
+}
+
+// dbRows: the row a database of source was cleared through, 0 when none.
+func (c Cleared) dbRows(source string) int64 { return c.DBRows[sourceTool(source)] }
 
 // sourceTool: the consent tool id of a ledger source (claude-code → claude, zcode → zai, …).
 func sourceTool(source string) string {

@@ -491,3 +491,168 @@ func zcodeAnchors(t *testing.T, cache string) []string {
 	}
 	return out
 }
+
+// zcodeBatchDB: a synthetic ZCode database at path, with n requests that started at start and
+// finished a minute later, one output token each.
+func zcodeBatchDB(t *testing.T, path, prefix string, n int, start time.Time) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec(`CREATE TABLE model_usage (id TEXT PRIMARY KEY, session_id TEXT, model_id TEXT, started_at INTEGER, completed_at INTEGER, output_tokens INTEGER)`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt, err := tx.Prepare(`INSERT INTO model_usage VALUES (?, 'synthetic-session', 'synthetic-model', ?, ?, 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if _, err := stmt.Exec(fmt.Sprintf("%s-%d", prefix, i), start.UnixMilli(), start.Add(time.Minute).UnixMilli()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stmt.Close()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+// zcodeCursor: the one ZCode database cursor of the perf ledger.
+func zcodeCursor(t *testing.T, cache string) speed.DBCursor {
+	t.Helper()
+	p, ok := speed.LoadPerf(cache)
+	if !ok {
+		t.Fatal("perf.json unreadable")
+	}
+	var out []speed.DBCursor
+	for key, c := range p.Stores {
+		if strings.HasPrefix(key, "zcode:") {
+			out = append(out, c)
+		}
+	}
+	if len(out) != 1 {
+		t.Fatalf("want one ZCode cursor, got %d", len(out))
+	}
+	return out[0]
+}
+
+// A cleared ZCode database with a full read batch (5,000 rows) of pre-clear requests: the clear
+// keeps only "cleared through row 5,000" for the tool, the reads start past it and make progress,
+// and the requests after the clear count once each, with no pre-clear hash or anchor kept.
+func TestHistoryClearDatabaseBatchProgress(t *testing.T) {
+	testenv.IsolateHome(t)
+	t.Setenv("MODELPLAN_HISTORY", "")
+	cache, home := t.TempDir(), t.TempDir()
+	now := time.Now().UTC()
+	seedPerfLedger(t, cache, now.Add(-time.Hour))
+	path := filepath.Join(home, "db.sqlite")
+	t.Setenv("MODELPLAN_ZCODE_DB", path)
+	db := zcodeBatchDB(t, path, "synthetic-old", 5000, now.Add(-2*time.Minute))
+	if err := speed.ObserveZCode(cache, home, speed.Ingest{}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := EraseScope(Paths{Cache: cache}, "zai.local_history", true); err != nil {
+		t.Fatal(err)
+	}
+	cleared := speed.LoadCleared(cache)
+	boundary := cleared.Tools["zai"]
+	if got := cleared.DBRows["zai"]; got != 5000 {
+		t.Fatalf("want the clear to keep the tool's database watermark 5000, got %d (%v)", got, cleared.DBRows)
+	}
+	raw, err := os.ReadFile(speed.ClearedPath(cache))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "zcode:") || strings.Contains(string(raw), "synthetic") || strings.Contains(string(raw), home) {
+		t.Fatalf("the clear record holds more than tool names, times and row numbers: %s", raw)
+	}
+	insert := func(id string, at time.Time, out int) {
+		t.Helper()
+		if _, err := db.Exec(`INSERT INTO model_usage VALUES (?, 'synthetic-session', 'synthetic-model', ?, ?, ?)`, id, at.UnixMilli(), at.Add(time.Second).UnixMilli(), out); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("synthetic-new", boundary.Add(time.Second), 55)
+	for i := 1; i <= 6; i++ {
+		if err := speed.ObserveZCode(cache, home, speed.Ingest{}, boundary.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if c := zcodeCursor(t, cache); c.RowID < 5000 || (i > 1 && c.More) {
+			t.Fatalf("scan %d made no progress: rowID=%d more=%t", i, c.RowID, c.More)
+		}
+	}
+	if _, _, n, out := ledgerTotals(t, cache, "zcode"); n != 1 || out != 55 {
+		t.Fatalf("post-clear request must count once after bounded scans: got %d/%d, want 1/55", n, out)
+	}
+	if seen := zcodeSeen(t, cache); len(seen) != 1 || seen[0] < boundary.UnixMilli() {
+		t.Fatalf("want only the post-clear request's hash, got starts %v", seen)
+	}
+	c := zcodeCursor(t, cache)
+	if c.RowID != 5001 || c.Anchor == "" {
+		t.Fatalf("want the cursor anchored at the post-clear row 5001, got rowID=%d anchor=%q", c.RowID, c.Anchor)
+	}
+	insert("synthetic-newer", boundary.Add(2*time.Second), 11)
+	for i := 7; i <= 8; i++ {
+		if err := speed.ObserveZCode(cache, home, speed.Ingest{}, boundary.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, n, out := ledgerTotals(t, cache, "zcode"); n != 2 || out != 66 {
+		t.Fatalf("a later request counts once: got %d/%d, want 2/66", n, out)
+	}
+}
+
+// A database replaced after the clear holds fewer rows than the watermark: the reads fall back to
+// the clear time. Its 5,000 pre-clear requests are skipped (and still do not stop the reads), and
+// its post-clear request counts once.
+func TestHistoryClearDatabaseReplacedFallsBackToClearTime(t *testing.T) {
+	testenv.IsolateHome(t)
+	t.Setenv("MODELPLAN_HISTORY", "")
+	cache, home := t.TempDir(), t.TempDir()
+	now := time.Now().UTC()
+	seedPerfLedger(t, cache, now.Add(-time.Hour))
+	path := filepath.Join(home, "db.sqlite")
+	t.Setenv("MODELPLAN_ZCODE_DB", path)
+	old := zcodeBatchDB(t, path, "synthetic-old", 6000, now.Add(-2*time.Minute))
+	if err := speed.ObserveZCode(cache, home, speed.Ingest{}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := EraseScope(Paths{Cache: cache}, "zai.local_history", true); err != nil {
+		t.Fatal(err)
+	}
+	cleared := speed.LoadCleared(cache)
+	boundary := cleared.Tools["zai"]
+	if got := cleared.DBRows["zai"]; got != 6000 {
+		t.Fatalf("want the watermark 6000, got %d", got)
+	}
+	old.Close()
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		os.Remove(p)
+	}
+	db := zcodeBatchDB(t, path, "synthetic-copied", 5000, now.Add(-90*time.Second))
+	if _, err := db.Exec(`INSERT INTO model_usage VALUES ('synthetic-replaced-new', 'synthetic-session', 'synthetic-model', ?, ?, 44)`,
+		boundary.Add(time.Second).UnixMilli(), boundary.Add(2*time.Second).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 6; i++ {
+		if err := speed.ObserveZCode(cache, home, speed.Ingest{}, boundary.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, n, out := ledgerTotals(t, cache, "zcode"); n != 1 || out != 44 {
+		t.Fatalf("the replaced database's post-clear request counts once: got %d/%d, want 1/44", n, out)
+	}
+	if seen := zcodeSeen(t, cache); len(seen) != 1 || seen[0] < boundary.UnixMilli() {
+		t.Fatalf("want only the post-clear request's hash, got starts %v", seen)
+	}
+	if c := zcodeCursor(t, cache); c.RowID != 5001 || c.More {
+		t.Fatalf("want the reads through row 5001, got rowID=%d more=%t", c.RowID, c.More)
+	}
+}

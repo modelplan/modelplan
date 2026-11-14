@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure Go, read-only use
@@ -90,17 +91,27 @@ func dbSig(path string) string {
 	return s
 }
 
-// anchorOf: the hashed identity of the row with this rowid, "" when there is none.
-func anchorOf(db *sql.DB, query string, rowid int64) (string, error) {
+// anchorOf: the hashed identity of the row with this rowid, "" when there is none, and the
+// request start (unix ms) the anchor query ends with ("<id>|<start>"; 0 when unknown).
+func anchorOf(db *sql.DB, query string, rowid int64) (string, int64, error) {
 	var id string
 	switch err := db.QueryRow(query, rowid).Scan(&id); {
 	case errors.Is(err, sql.ErrNoRows):
-		return "", nil
+		return "", 0, nil
 	case err != nil:
-		return "", err
+		return "", 0, err
 	}
-	return hashID("anchor:" + id), nil
+	var start int64
+	if i := strings.LastIndexByte(id, '|'); i >= 0 {
+		if f, err := strconv.ParseFloat(id[i+1:], 64); err == nil {
+			start = int64(f)
+		}
+	}
+	return hashID("anchor:" + id), start, nil
 }
+
+// beforeClear: a request start from before the tool's clear (cleared, unix ms; 0: none).
+func beforeClear(start, cleared int64) bool { return start > 0 && start < cleared }
 
 func hashID(s string) string {
 	h := sha256.Sum256([]byte(s))
@@ -125,16 +136,35 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 		return false
 	}
 	defer db.Close()
-	if c.RowID > 0 {
+	var cleared int64
+	if f := l.cleared.floor(source); !f.IsZero() {
+		cleared = f.UnixMilli()
+	}
+	if _, had := l.Stores[key]; !had {
+		// The tool's history was cleared through row N of its database: read on past it, so the
+		// rows from before the clear are not read again. When this database's row N is missing
+		// or started after the clear, it is not the database that was cleared (replaced since):
+		// it is read from the start, and the clear time keeps its earlier requests out.
+		if n := l.cleared.dbRows(source); n > 0 {
+			if at, start, err := anchorOf(db, anchor, n); err == nil && at != "" && beforeClear(start, cleared) {
+				c.RowID = n
+			}
+		}
+	} else if c.RowID > 0 {
 		// A database recreated (or emptied, or renumbered) at the same path numbers its rows from 1
 		// again: past the old watermark its first rows would never be read. When the row at the
 		// watermark is gone or is another request, start over. A cursor saved without an anchor
 		// (by an earlier build) cannot be matched to this database and is read again once too.
-		at, err := anchorOf(db, anchor, c.RowID)
+		at, start, err := anchorOf(db, anchor, c.RowID)
 		if err != nil {
 			return false
 		}
-		if at == "" || c.Anchor == "" || at != c.Anchor {
+		// No anchor is kept for a row from before the tool's clear (see below). While that row is
+		// still there and still from before the clear, the reads go on past it: going back to row
+		// zero would only skip the same pre-clear rows again, and with a full batch of them would
+		// never get past them.
+		keep := c.Anchor == "" && at != "" && beforeClear(start, cleared)
+		if !keep && (at == "" || c.Anchor == "" || at != c.Anchor) {
 			// Every request counted so far started no later than Mark, so the re-read counts only
 			// rows that started after it (or were still running): nothing counts twice, however
 			// many ids Seen has dropped.
@@ -155,20 +185,12 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].rowid < rows[j].rowid })
 	since := l.Since.UnixMilli()
-	var cleared int64
-	if f := l.cleared.floor(source); !f.IsZero() {
-		cleared = f.UnixMilli()
-	}
 	look := dbLookback.Milliseconds()
 	var pending []int64
 	liveSeen := map[string]bool{}
-	clearedAt := false // the row at c.RowID read here started before the tool's clear
 	for _, r := range rows {
 		if r.rowid > c.RowID {
 			c.RowID = r.rowid
-		}
-		if r.rowid == c.RowID {
-			clearedAt = r.start > 0 && r.start < cleared
 		}
 		if r.start <= 0 {
 			continue
@@ -222,11 +244,10 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 	}
 	c.Anchor = ""
 	// The anchor is the identity of the request at the watermark. One from before the tool's clear
-	// is not kept: the clear erased it. Without an anchor, the next change to the database reads it
-	// from the start once (the reset above), which counts nothing before the clear or already
-	// counted, and anchors the first post-clear request at the watermark.
-	if c.RowID > 0 && !clearedAt {
-		if at, err := anchorOf(db, anchor, c.RowID); err == nil {
+	// is not kept: the clear erased it. Until a post-clear request is at the watermark, the reads go
+	// on from the row number alone (above); the first post-clear request then becomes the anchor.
+	if c.RowID > 0 {
+		if at, start, err := anchorOf(db, anchor, c.RowID); err == nil && !beforeClear(start, cleared) {
 			c.Anchor = at
 		}
 	}
