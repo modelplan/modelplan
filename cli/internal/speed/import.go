@@ -188,9 +188,14 @@ type importJob struct {
 	epoch     *GrantEpoch
 	live      func() consent.Admission
 	withdrawn bool
+	// cleared: the source's clear boundary (cleared.go) when the run started; nothing before it
+	// is read, and a clear during the run withdraws the source as a grant change does.
+	cleared time.Time
 }
 
 var errGrantWithdrawn = errors.New("history grant withdrawn during the import")
+
+var errClearedDuringImport = errors.New("history cleared during the import")
 
 // Import reads the older logs of the sources the caller holds consent for and merges their turns
 // into imported.json. Cancelling ctx before the read finishes leaves the ledger untouched.
@@ -235,6 +240,7 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		cutoff = p.Since
 	}
 	from := dayStart(now.AddDate(0, 0, -days))
+	clr := LoadCleared(cache)
 	var active []*importJob
 	for _, j := range jobs {
 		if j.root == nil || j.root.Dir == "" || currentEpoch(adm, j.source) == nil {
@@ -245,7 +251,12 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		if !sameEpoch(c.Epoch, currentEpoch(adm, j.source)) {
 			c = Span{}
 		}
-		j.ranges = missing(c, from, cutoff)
+		j.cleared = clr.tool(j.source)
+		jfrom := from
+		if j.cleared.After(jfrom) {
+			jfrom = j.cleared // a cleared history is not imported again
+		}
+		j.ranges = missing(c, jfrom, cutoff)
 		j.pend = c.Retry
 		j.epoch, j.live = currentEpoch(adm, j.source), live
 		active = append(active, j)
@@ -332,7 +343,12 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 				skip(j)
 				return nil
 			}
-			return commitImport(cache, j, o.Auto, now, adm, &committed)
+			err := commitImport(cache, j, o.Auto, now, adm, &committed)
+			if errors.Is(err, errClearedDuringImport) {
+				skip(j)
+				return nil
+			}
+			return err
 		}
 		var err error
 		if o.Guard != nil {
@@ -497,7 +513,7 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			}
 		}
 		for _, t := range turns {
-			if t.at.IsZero() || !inRange(it.ranges, t.at) {
+			if t.at.IsZero() || !inRange(it.ranges, t.at) || t.at.Before(j.cleared) {
 				continue
 			}
 			tmp.addTurn(j.source, j.parser, t, false)
@@ -620,6 +636,9 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		return errors.New("readings busy; retry the import")
 	}
 	defer unlock()
+	if !LoadCleared(cache).tool(j.source).Equal(j.cleared) { // under perf.lock, as the clear writes it
+		return errClearedDuringImport
+	}
 	led, ok := LoadImported(cache)
 	if !ok {
 		return errors.New("imported history unreadable; left as it is")

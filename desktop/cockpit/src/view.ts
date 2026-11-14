@@ -86,6 +86,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  function shutterLayout(closed:boolean){
   const want=closed?'closed':'open',motion=root.dataset.shell!==undefined&&active&&!reduceMotion&&!motionQuery.matches;
   if(closed&&root.dataset.shutterMotion==='closing')return;
+  // The opening twin (macrev2-923-1): a shell refresh in the 250 ms must not drop the motion and snap the glass open.
+  if(!closed&&root.dataset.shutterMotion==='opening')return;
   delete root.dataset.shutterMotion;
   if(root.dataset.shell===want||!motion){drawShell(closed);return;}
   root.dataset.shutterMotion=closed?'closing':'opening';

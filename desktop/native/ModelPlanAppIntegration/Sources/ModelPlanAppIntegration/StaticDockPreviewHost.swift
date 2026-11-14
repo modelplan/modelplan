@@ -1164,7 +1164,9 @@ struct DockHelpInteraction: Equatable {
         menuNotice = nil; menuNoticeDidChange?(nil, false)
         if !keepCard { catalogueKey = ""; catalogueChanged?([]) }
         try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
-        for view in [dockView] + alternateViews { view.retireOfficialPresentation() }
+        // G3-98: a plain replacement keeps a ring click's hidden number so the landed value fades in (#906);
+        // a privacy withdrawal drops it with everything else.
+        for view in [dockView] + alternateViews { view.retireOfficialPresentation(keepingRefreshHolds: !privacy) }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
         return keepCard

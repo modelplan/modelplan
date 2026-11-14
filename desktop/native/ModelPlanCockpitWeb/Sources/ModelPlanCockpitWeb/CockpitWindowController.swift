@@ -110,6 +110,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// D49: the widget stays at `.floating` while the cockpit is open, and the cockpit opens over it.
   /// A widget being dragged rises to `.statusBar`, above this.
   public static let panelLevel = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+  /// G3-102 (build 14e): a detached cockpit is an ordinary window, so other apps can cover it; only the attached
+  /// one (under the menu-bar icon, over the widget, D49) floats.
+  public static func level(detached: Bool) -> NSWindow.Level { detached ? .normal : panelLevel }
   /// Windows the open cockpit brings up (the enlarged field, the Help overlay) sit above it.
   public static let aboveCockpitLevel = NSWindow.Level(rawValue: panelLevel.rawValue + 1)
   /// G3-108 (owner, build 14e): the shutter reads as the porthole closing or opening, 250 ms, the same time as the
@@ -428,6 +431,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
     if web == nil, !bridge.disposed, !ending { build() }
     guard let panel = window else { return }
+    // G3-102: a page built or warmed while the shared session had another attachment opens at the session's level.
+    panel.level = Self.level(detached: shellSession.detached)
     guard shown else {
       shown = true; awaitingShown = true; rendersSinceOpen = 0
       let entrance = shellSession.nextEntrance; shellSession.nextEntrance = .fade
@@ -562,7 +567,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     view.allowsBackForwardNavigationGestures = false
     let panel = CockpitPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
     panel.isOpaque = false; panel.backgroundColor = .clear
-    panel.hasShadow = false; panel.level = Self.panelLevel; panel.hidesOnDeactivate = false
+    panel.hasShadow = false; panel.level = Self.level(detached: shellSession.detached); panel.hidesOnDeactivate = false
     panel.appearance = NSAppearance(named: .darkAqua)
     panel.title = "ModelPlan"
     panel.isReleasedWhenClosed = false
@@ -988,6 +993,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
       reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size, memberOrder: value.memberOrder)
+    window?.level = Self.level(detached: shellSession.detached)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       // Audit A-6: only a shown cockpit goes to full opacity; a prewarmed page (warm-painting at alpha 0) stays hidden.
@@ -1244,7 +1250,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   private func keyPutBack(_ window: NSWindow) {
     shellSession.compactWhileDetached = false
-    guard let home = attachedHome() else { return }
+    // G3-102: with no fitting display the frame stays, but the level and the page's shell state still follow the session.
+    guard let home = attachedHome() else { latch(); return }
     if window.frame.size != home.size || layout?.frame.size != home.size {
       // Audit A-3: the put back commits the attached layout (profile, zoom, drag strip) at once, at the attached size
       // where the cockpit is now (top edge kept); only the window frame then flies home.
@@ -1289,8 +1296,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     shellSession.detached = false; shellSession.compactWhileDetached = false
     rackExtension = rackIcon() != nil ? 1 : 0; rackTarget = rackExtension
     ignite(false)
-    guard placement() != nil else { return }
-    applyLayout()
+    if placement() != nil { applyLayout() }
     updateAppearance(appearance)
     onShellChanged?()
   }

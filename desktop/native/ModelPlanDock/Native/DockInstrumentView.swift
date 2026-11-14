@@ -479,7 +479,9 @@ enum DockGripInk {
             appliedGeometryScale = factor
             let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:renderScale)
             // G3-98: a landed result releases the hold; until then the new render keeps the number hidden.
-            readoutHolds=readoutHolds.filter{values[$0.key] != nil}
+            // A hold whose member is absent from this render is kept: the engine replaces content by clearing and
+            // reinstalling it in one turn, so the member can be missing from the intermediate render. The sweep loop
+            // drops it once the settled readings lack the member, and its own clock ends it in any case.
             for (id,hold) in readoutHolds where hold.resolvedAt==nil {
                 if let new=values[id],hold.outgoing.readout != new.readout || hold.outgoing.remainingPercent != new.remainingPercent || hold.outgoing.dataState != new.dataState {resolveRefreshReadout(id)}
             }
@@ -505,8 +507,11 @@ enum DockGripInk {
         }
     }
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
-    public func retireOfficialPresentation() {
-        readoutHolds = [:]; refreshSweepRing = nil
+    /// `keepingRefreshHolds`: a content replacement (clear, then reinstall with the landed value) keeps the G3-98
+    /// ring-click holds, so the reinstalled render fades the new number in instead of popping it. A privacy
+    /// withdrawal, a failed render and the view leaving its window still drop them.
+    public func retireOfficialPresentation(keepingRefreshHolds: Bool = false) {
+        if !keepingRefreshHolds { readoutHolds = [:]; refreshSweepRing = nil }
         setAccessibilityValue(nil)
         clearFocusedHelpExplanation(); resetVisuals(); focusedGripIndex = nil; registeredGripRects = []; registeredGripArtRects = []; community = false; failed = true
         restingInstrumentImage = nil
