@@ -1,5 +1,5 @@
 {
-  "revision": "2026-10-12.2",
+  "revision": "2026-11-14.1",
   "reviewedAt": "2026-09-26",
   "curationReviewedAt": "2026-09-30",
   "basis": "Stable release IDs and exact AA configuration mappings are reviewed separately from the versioned default-lineage policy and per-plan access evidence.",
@@ -147,6 +147,33 @@
         ],
         "thinkingMode": "adaptive",
         "fallbackPolicy": "default"
+      }
+    },
+    {
+      "id": "auto:anthropic:a24a93ceda35e3ae",
+      "displayName": "Claude Fable 5.2",
+      "modelsdev": "anthropic/claude-fable-5-2",
+      "developerId": "anthropic",
+      "lineageId": "anthropic:fable",
+      "status": "stable",
+      "role": "high-capability",
+      "successorOf": "fable",
+      "releasedAt": "2026-11-09",
+      "releaseEvidence": "https://platform.claude.com/docs/en/models/fable-5-2/overview",
+      "officialDefaultEffort": "high",
+      "identityBasis": "reviewed",
+      "aa": {
+        "prefix": "claude-fable-5-2",
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "thinkingMode": "adaptive",
+        "fallbackPolicy": "default",
+        "unsuffixedEffort": "max"
       }
     },
     {
