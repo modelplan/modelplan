@@ -13,6 +13,9 @@ enum CockpitDeliveryResult { case accepted, missing, rejected, failed }
   private let capacity: Int, deliver: (Message, @escaping Completion) -> Void
   private var queued: [Job] = [], active: Job?
   private var generation: UInt64 = 0, serial: UInt64 = 0
+  /// G3-116: calls the page completed as accepted, counted whether or not the message was still current then. A
+  /// replaced display still proves the page is alive and working through its queue.
+  private(set) var acceptedCount: UInt64 = 0
   init(capacity: Int = 32, deliver: @escaping (Message, @escaping Completion) -> Void) {
     self.capacity = capacity; self.deliver = deliver
   }
@@ -44,6 +47,7 @@ enum CockpitDeliveryResult { case accepted, missing, rejected, failed }
       deliver(job.message) { [weak self] result in
         guard let self, self.serial == token, let current = self.active else { return }
         self.active = nil; self.serial &+= 1
+        if result == .accepted { self.acceptedCount &+= 1 }
         if self.generation == epoch && current.isCurrent() { current.completed(result) }
         self.pump()
       }

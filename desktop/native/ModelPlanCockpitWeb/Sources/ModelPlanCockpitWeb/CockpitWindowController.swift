@@ -181,7 +181,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var appearanceGate = CockpitAppearanceGate()
   private var pendingFreshnessReason: CockpitDeadlineReason?
   private struct OutboundMessage { let code: String, raw: String }
-  private lazy var orderedDelivery = CockpitOrderedDelivery<OutboundMessage> { [weak self] message, complete in
+  private lazy var orderedDelivery: CockpitOrderedDelivery<OutboundMessage> = CockpitOrderedDelivery<OutboundMessage> { [weak self] message, complete in
     #if MODELPLAN_TEST_ONLY_SPI
     if let fake = self?.verificationNoWindowDelivery { fake(message.raw, complete); return }
     #endif
@@ -243,7 +243,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       guard let self, !self.ending, self.bridge.awaitsDisplayReceipt(id) else { return }
       self.fail(.deadlineReceiptTimeout)
     })
-  private lazy var appearanceWatchdog = CockpitDeadlineReceiptWatchdog(
+  private lazy var appearanceWatchdog: CockpitDeadlineReceiptWatchdog = CockpitDeadlineReceiptWatchdog(
     arm: { [weak self] delay, fire in self?.armDeadline(delay, fire) ?? {} }, timedOut: { [weak self] _ in
       guard let self, !self.ending, self.visibilityFence.isConfirmedVisible, self.appearanceGate.isDeferred else { return }
       // G3-97: the retry hooks run only on rendered, nextDeadline and a visibility receipt. A display receipt that
@@ -257,15 +257,33 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         self.publishAppearance()
         return
       }
+      // G3-116 (build 14f): a page open for a while gets a fresh engine reply about every second, and each render
+      // takes about a second, so a newer display is almost always pending and the appearance waits behind it. That
+      // is a busy page, not a stuck one: it rendered or completed a call during this wait. Keep waiting; the
+      // rendered and nextDeadline hooks publish the appearance once the display receipt clears. Only a page that
+      // made no progress at all for the whole wait is failed and rebuilt (which only made it flicker: the rebuilt
+      // page is just as busy).
+      if self.bridge.ready, !self.bridge.blocked, self.pageProgress != self.appearanceWaitProgress {
+        CockpitFailureLog.record("page-resync appearance wait extended displayPending=\(self.bridge.hasPendingDisplay)")
+        self.appearanceWaitProgress = self.pageProgress
+        self.appearanceWatchdog.wait(for: UUID())
+        return
+      }
       self.fail(.appearanceWaitTimeout)
     })
   /// G3-97: set once the appearance wait timed out on a sendable state and the appearance was republished.
   private var appearanceWaitRetried = false
+  /// G3-116: receipts the page sent (rendered, nextDeadline, an early deadline) and calls it completed. Either proves
+  /// the page is alive; the appearance wait compares it with the value when the wait started.
+  private var pageReceipts: UInt64 = 0
+  private var pageProgress: UInt64 { orderedDelivery.acceptedCount &+ pageReceipts }
+  private var appearanceWaitProgress: UInt64 = 0
   private func cancelAppearanceWait() {
     appearanceWatchdog.cancel(); appearanceWaitRetried = false
   }
   private func watchDeferredAppearance() {
     guard visibilityFence.isConfirmedVisible, appearanceGate.isDeferred, appearanceWatchdog.currentID == nil else { return }
+    appearanceWaitProgress = pageProgress
     appearanceWatchdog.wait(for: UUID())
   }
   /// Page-side code path of the last rejected host message (bridge.ts `lastReject`).
@@ -770,6 +788,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         default: onIntent?(intent)
         }
       case .rendered:
+        pageReceipts &+= 1
         if let id = renderWatchdog.currentID, !bridge.awaitsDisplayReceipt(id) { renderWatchdog.cancel() }
         if let id = receiptWatchdog.currentID, !bridge.awaitsDeadlineReceipt(id) {
           receiptWatchdog.cancel()
@@ -785,8 +804,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
         onRendered?()
       case .deadlinePending(let id):
+        pageReceipts &+= 1
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
       case .nextDeadline(let value):
+        pageReceipts &+= 1
         receiptWatchdog.cancel(); freshnessDriver.accept(deadline: value)
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
       }

@@ -1186,7 +1186,7 @@ struct StatusNoticePresentation {
     }
     @objc private func showAbout() { Task { await settingsHost.present(paneID:"about",origin:.userInitiated) } }
     @objc private func refreshRows() {
-        if lifecyclePaused { lifecycleController?.retryPending(); return }
+        if lifecyclePaused || lifecycleController?.engineStopped == true { lifecycleController?.retryPending(); return }
         Task {
             #if MODELPLAN_U6_DRIVE
             if let driveGuard {
