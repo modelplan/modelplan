@@ -162,7 +162,8 @@ public enum DiagnosticsBundle {
 
         Never included: API keys, tokens, cookies, prompt or reply text, account emails or ids.
         Every file was passed through a redaction step that replaces anything shaped like a key, token,
-        cookie or email address, and the user folder name in paths, with [redacted], [email] or ~.
+        cookie or email address, the value of any credential, account or user-text field (prompt, reply,
+        message, content...), and the user folder name in paths, with [redacted], [email] or ~.
         Nothing was uploaded. This file was saved by you and goes only where you send it.
 
         """
@@ -181,9 +182,12 @@ public enum DiagnosticsBundle {
         final class Box: @unchecked Sendable { var data = Data() }
         let box = Box()
         DispatchQueue.global(qos: .utility).async {
-            box.data = (try? pipe.fileHandleForReading.read(upToCount: DiagnosticsBundle.maxTextBytes)) ?? Data()
-            // Keep draining so a chatty child is never blocked on a full pipe.
-            while let more = try? pipe.fileHandleForReading.read(upToCount: 64 * 1024), !more.isEmpty {}
+            // A pipe read returns whatever is available, so collect every chunk up to EOF (bounded); past the bound
+            // keep draining so a chatty child is never blocked on a full pipe.
+            while let chunk = try? pipe.fileHandleForReading.read(upToCount: 64 * 1024), !chunk.isEmpty {
+                let room = DiagnosticsBundle.maxTextBytes - box.data.count
+                if room > 0 { box.data.append(chunk.prefix(room)) }
+            }
             done.signal()
         }
         if done.wait(timeout: .now() + timeout) == .timedOut {

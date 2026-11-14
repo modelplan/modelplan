@@ -9,13 +9,25 @@ import os
 /// durations; this pass is the backstop for text the app does not control (engine stderr, crash reports).
 public enum DiagnosticsRedactor {
     public static let marker = "[redacted]"
+    /// Keys whose value is a secret, an account identifier, or user-written text (prompts, replies, messages).
+    static let secretKeys = #"api[_-]?key|apikey|access[_-]?key|secret(?:[_-]?key)?|client[_-]?secret|password|passwd|passphrase|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?(?:id|key|token)|cookie|auth|authorization|credentials?|private[_-]?key"#
+    static let identityKeys = #"account(?:[_-]?(?:id|name|email|uuid))?|user(?:[_-]?(?:id|name|email))?|username|e[_-]?mail|login|org(?:anization)?[_-]?id"#
+    static let proseKeys = #"prompts?|input|output|response|reply|replies|completion|content|text|messages?|query|instructions?|transcript|body"#
     private static let rules: [(NSRegularExpression, String)] = {
+        let secretKeys = DiagnosticsRedactor.secretKeys, identityKeys = DiagnosticsRedactor.identityKeys
+        let proseKeys = DiagnosticsRedactor.proseKeys, marker = DiagnosticsRedactor.marker
+        let all = secretKeys + "|" + identityKeys + "|" + proseKeys
         let sources: [(String, String)] = [
-            // Header- and assignment-shaped secrets: keep the name, drop the value.
+            // Header- and assignment-shaped values: keep the name, drop the value.
             (#"(?im)^(\s*(?:set-)?cookie\s*[:=]).*$"#, "$1 " + marker),
-            (#"(?i)\b(authorization\s*[:=]\s*)(?:bearer|basic|token)?\s*[^\s,;"']+"#, "$1" + marker),
-            (#"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"#, "Bearer " + marker),
-            (#"(?i)((?:api[_-]?key|apikey|access[_-]?key|secret(?:[_-]?key)?|client[_-]?secret|password|passwd|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?(?:id|key|token)|cookie|auth)["']?\s*[:=]\s*["']?)[^\s"',;&}]+"#, "$1" + marker),
+            // A quoted value (JSON, plist, logfmt) under any sensitive key, whatever it contains, quotes included.
+            (#"(?i)((?<![A-Za-z0-9])["']?(?:"# + all + #")["']?\s*[:=]\s*)"(?:[^"\\\n]|\\.)*""#, "$1\"" + marker + "\""),
+            (#"(?i)((?<![A-Za-z0-9])["']?(?:"# + all + #")["']?\s*[:=]\s*)'(?:[^'\\\n]|\\.)*'"#, "$1'" + marker + "'"),
+            // Unquoted user text runs to the end of the line.
+            (#"(?im)((?<![A-Za-z0-9])(?:"# + proseKeys + #")\s*[:=]\s*)[^\s"'\[{].*$"#, "$1" + marker),
+            // Unquoted secrets and identifiers run to the next delimiter (an optional auth scheme is dropped too).
+            (#"(?i)((?<![A-Za-z0-9])["']?(?:"# + secretKeys + "|" + identityKeys + #")["']?\s*[:=]\s*)(?!\[)(?:(?:bearer|basic|token)\s+)?[^\s"',;&}\]]+"#, "$1" + marker),
+            (#"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}"#, "$1 " + marker),
             // Well-known token shapes, wherever they appear.
             (#"\bsk-[A-Za-z0-9_-]{12,}"#, marker),
             (#"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"#, marker),

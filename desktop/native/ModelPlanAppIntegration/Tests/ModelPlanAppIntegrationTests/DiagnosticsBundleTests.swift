@@ -9,7 +9,9 @@ import ModelPlanSettings
 /// own recent crash reports, the engine's reader report and the versions, and no known secret survives into it.
 final class DiagnosticsBundleTests: XCTestCase {
     private let secrets = ["sk-ant-api03-SYNTHETICsecretvalue0001", "synthetic-bearer-value-0002", "jane.synthetic@example.com",
-                           "synthetic-person", "ghp_SYNTHETICgithubtoken000000000003", "synthetic-cookie-value-0004"]
+                           "synthetic-person", "ghp_SYNTHETICgithubtoken000000000003", "synthetic-cookie-value-0004",
+                           // glm-963-1: quoted credentials, account ids and user-written text.
+                           "c3ludGhldGljOnNhbXBsZQ", "synthetic-account-123", "synthetic private words", "synthetic reply words"]
 
     private func folder(_ name: String = "diagnostics-bundle") throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(name + "-" + UUID().uuidString, isDirectory: true)
@@ -37,11 +39,14 @@ final class DiagnosticsBundleTests: XCTestCase {
         try write("2026-11-13T09:00:00.000-08:00 info [engine] connection ready\n", logs.appendingPathComponent("ModelPlan.1.log"))
         try write("2026-11-14T20:14:13.400-08:00 pid=4242 panic: synthetic failure token=sk-ant-api03-SYNTHETICsecretvalue0001\n"
                   + "2026-11-14T20:14:13.401-08:00 pid=4242 \t/Users/synthetic-person/src/main.go:5 +0x1d\n"
+                  + "2026-11-14T20:14:13.402-08:00 pid=4242 {'reply': 'synthetic reply words'}\n"
                   + "2026-11-14T20:14:13.402-08:00 pid=4242 --- exited reason=exit status=2\n",
                   logs.appendingPathComponent("engine.log"))
         try write(#"{"app_name":"ModelPlanCommunity","userID":501,"email":"jane.synthetic@example.com","path":"/Users/synthetic-person/Applications/ModelPlan.app"}"#,
                   reports.appendingPathComponent("ModelPlanCommunity-2026-11-14-201413.ips"), age: 3600)
-        try write("Process: modelplan [4242]\nCookie: session=synthetic-cookie-value-0004\n",
+        try write("Process: modelplan [4242]\nCookie: session=synthetic-cookie-value-0004\n"
+                  + #"{"Authorization": "Basic c3ludGhldGljOnNhbXBsZQ=="}"# + "\n" + #"{"account_id":"synthetic-account-123"}"# + "\n"
+                  + "panic: prompt: synthetic private words\n",
                   reports.appendingPathComponent("modelplan-2026-11-14-201413.ips"), age: 7200)
         try write("someone else's crash", reports.appendingPathComponent("OtherApp-2026-11-14-201413.ips"))
         try write("too old", reports.appendingPathComponent("ModelPlanCommunity-2026-10-01-101010.ips"), age: 40 * 24 * 3600)
@@ -94,6 +99,25 @@ final class DiagnosticsBundleTests: XCTestCase {
         let readme = try String(contentsOf: staged.appendingPathComponent("README.txt"), encoding: .utf8)
         XCTAssertTrue(readme.contains("Never included"))
         XCTAssertTrue(readme.contains("Nothing was uploaded"))
+    }
+
+    /// glm-963-2: a reply that arrives in several pipe reads is kept whole, not just its first chunk.
+    func testDoctorOutputWrittenInChunksIsKeptWhole() throws {
+        let chunked = try script("""
+        printf '{"readers":['
+        sleep 0.3
+        printf '{"provider":"codex","state":"fresh"},'
+        sleep 0.3
+        printf '{"provider":"claude","state":"stale"}],"message":"ok"}\\n'
+        """)
+        let staged = try folder("diagnostics-chunked").appendingPathComponent("bundle")
+        var value = try inputs(helper: chunked); value.doctorTimeout = 10
+        let files = try DiagnosticsBundle.stage(value, into: staged)
+        XCTAssertTrue(files.contains("doctor-readers.json"))
+        let data = try Data(contentsOf: staged.appendingPathComponent("doctor-readers.json"))
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let readers = try XCTUnwrap(object["readers"] as? [[String: Any]])
+        XCTAssertEqual(readers.compactMap { $0["provider"] as? String }, ["codex", "claude"])
     }
 
     func testAnUnresponsiveOrMissingEngineIsReportedNotFatal() throws {

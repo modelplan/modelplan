@@ -93,8 +93,18 @@ final class DiagnosticsLogTests: XCTestCase {
             "account jane.synthetic@example.com signed in",
             "open /Users/synthetic-person/.codex/auth.json failed",
             "session_id=synthetic-session-0009&refresh_token=synthetic-refresh-0010",
+            // glm-963-1: quoted values under credential, account and user-text keys, and unquoted user text.
+            #"{"Authorization": "Basic c3ludGhldGljOnNhbXBsZQ=="}"#,
+            #"{"account_id":"synthetic-account-123","accountEmail":"synthetic-mail-0011"}"#,
+            "prompt: synthetic private words",
+            "{'response': 'synthetic response words'}",
+            "Authorization: Basic c3ludGhldGljOnNhbXBsZQ== user=synthetic-user-77",
         ]
         let output = inputs.map(DiagnosticsRedactor.redact).joined(separator: "\n")
+        for leaked in ["c3ludGhldGljOnNhbXBsZQ", "synthetic-account-123", "synthetic-mail-0011", "synthetic private words",
+                       "synthetic response words", "synthetic-user-77"] {
+            XCTAssertFalse(output.contains(leaked), "\(leaked) survived redaction:\n\(output)")
+        }
         for secret in secrets { XCTAssertFalse(output.contains(secret), "\(secret) survived redaction:\n\(output)") }
         XCTAssertTrue(output.contains("/Users/~/.codex/auth.json"))
         XCTAssertTrue(output.contains(DiagnosticsRedactor.marker))
@@ -177,6 +187,26 @@ final class DiagnosticsLogTests: XCTestCase {
         XCTAssertTrue(written.contains("--- exited reason=exit status=2"), written)
         XCTAssertFalse(written.contains("SYNTHETICsecretvalue0001"))
         XCTAssertFalse(written.contains("synthetic-person"))
+    }
+
+    /// glm-963-1: quoted credentials, account identifiers and user-written text in unstructured helper stderr never
+    /// reach engine.log, while the panic line around them survives.
+    func testHelperStderrWithCredentialsAccountsAndPromptTextIsRedacted() throws {
+        let helper = try fakeHelper("""
+        printf '%s\\n' '{"Authorization": "Basic c3ludGhldGljOnNhbXBsZQ=="}' '{"account_id":"synthetic-account-123"}' 'prompt: synthetic private words' "{'reply': 'synthetic reply words'}" 'panic: user=synthetic-user-77 message="synthetic chat message"' >&2
+        exit 2
+        """)
+        let log = RotatingLogFile(url: try folder().appendingPathComponent("engine.log"))
+        let written = try run(helper, log: log)
+        for leaked in ["c3ludGhldGljOnNhbXBsZQ", "synthetic-account-123", "synthetic private words", "synthetic reply words",
+                       "synthetic-user-77", "synthetic chat message"] {
+            XCTAssertFalse(written.contains(leaked), "\(leaked) reached engine.log:\n\(written)")
+        }
+        XCTAssertTrue(written.contains(#"{"Authorization": "[redacted]"}"#), written)
+        XCTAssertTrue(written.contains(#"{"account_id":"[redacted]"}"#), written)
+        XCTAssertTrue(written.contains("prompt: [redacted]"), written)
+        XCTAssertTrue(written.contains("panic: user=[redacted]"), written)
+        XCTAssertTrue(written.contains("--- exited reason=exit status=2"), written)
     }
 
     func testHelperKilledBySignalIsRecorded() throws {
