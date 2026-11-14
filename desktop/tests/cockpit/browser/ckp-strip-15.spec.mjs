@@ -46,7 +46,7 @@ test('the deck lights the fader carrying a session',async({page})=>{
 });
 
 test('with the wire publication, a record line lights the fader of its model',async({page})=>{
- const {data}=visualFixture(),session=data.details.sessions[0];session.subscriptionRef=null;session.model='model-b';
+ const {data}=visualFixture(),session=data.details.sessions[0];session.subscriptionRef=null;session.model='model-b';session.lastObservedAt=new Date().toISOString(); // D123: in use = seen in the last 7 days
  const model=(id,name)=>({id,name,developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]});
  data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[model('model-a','Synthetic A'),model('model-b','Synthetic B')]};
  await open(page,data);

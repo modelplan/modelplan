@@ -293,7 +293,7 @@ test('showAllModels (D135) is an optional boolean on load and appearance; off by
  const logs=[],original=console.warn;console.warn=(...args)=>logs.push(args);
  try{
   for(const [input,expected] of [[true,true],[false,false],[undefined,false]]){
-   const seen=[],view={clear(){},configure(_a,_n,_u,_o,all){seen.push(all);},updateAppearance(_a,_now,_n,_u,_o,all){seen.push(all);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+   const seen=[],view={clear(){},configure(_a,_n,_u,all){seen.push(all);},updateAppearance(_a,_now,_n,_u,all){seen.push(all);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
    const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
    const extra=input===undefined?{}:{showAllModels:input};
    assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,...extra}),source),true);

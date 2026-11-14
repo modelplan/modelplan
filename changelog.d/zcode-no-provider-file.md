@@ -1,0 +1,1 @@
+A ZCode install whose data folder keeps no `provider_config.json` (the ZCode Desktop layout, or a sign-in that stores no plaintext Coding Plan key) now shows "This saved sign-in is not supported" instead of waiting for a first reading that can never come, and `modelplan doctor readers` reports it as `unavailable:no_provider_file` (G3-21). Nothing inside the folder is opened.

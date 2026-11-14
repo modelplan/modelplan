@@ -15,7 +15,7 @@ function fixture(){
  data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:true,models:publication};
  data.details.publishedModels=[...publication,model('more-1','openai'),model('xai-1','xai'),model('more-2','openai'),model('also-used','anthropic'),model('more-3','openai')];
  data.details.sessions=[{sessionRef:'00000000000000a1',source:'codex',subscriptionRef:null,model:'used',effort:'medium',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'running',rate:null},
-  {sessionRef:'00000000000000a2',source:'claude',subscriptionRef:null,model:'also-used',effort:'medium',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'idle',rate:null}];
+  {sessionRef:'00000000000000a2',source:'claude',subscriptionRef:null,model:'also-used',effort:'medium',projectLabel:null,lastObservedAt:new Date(Date.now()-60e3).toISOString(),state:'idle',rate:null}];
  return data;
 }
 async function open(page,data){
