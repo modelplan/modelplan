@@ -216,8 +216,11 @@ def empty_states(binary, home, fault_binary):
         engine = EngineProcess(fault_binary if empty == 'pending' else binary, case, 'u14-empty-' + empty)
         if empty == 'readers_off':
             engine.environment['MODELPLAN_READERS'] = 'off'
-        if empty == 'pending':
-            # Background reads build views too; this case is only about the consent fault.
+        if empty in ('pending', 'empty'):
+            # Background reads build views too; 'pending' is only about the consent fault. In 'empty'
+            # the synthetic Codex exits at once, so a background first read that ends before rows are
+            # taken turns the codex row failed (closed, #792-2) and the summary no_dock_rows: a race,
+            # not the "still reading" state this case asserts.
             engine.environment['MODELPLAN_NATIVE'] = 'off'
             engine.environment['MODELPLAN_CODEX_ACCOUNT'] = 'off'
         with engine:

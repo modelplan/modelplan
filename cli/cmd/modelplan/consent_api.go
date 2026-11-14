@@ -237,6 +237,9 @@ func consentCmd(args []string, stdin io.Reader, stdout io.Writer, st *store.Stor
 		detected := map[string]bool{}
 		for _, t := range detection(st).Tools {
 			detected[t.ProviderID] = t.Detected
+			for _, scope := range t.UndetectedScopes() {
+				detected[scope] = false
+			}
 		}
 		facts := consent.NewAdmission(s, consentMode(s)).ScopeFacts(detected)
 		for i := range facts {

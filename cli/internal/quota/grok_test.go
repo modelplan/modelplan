@@ -53,6 +53,14 @@ func grokTestServer(t *testing.T, mode *string, hits *int) {
 			w.Header().Set("Retry-After", "7200")
 			w.WriteHeader(429)
 			return
+		case "unavailable":
+			w.Header().Set("Retry-After", "7200")
+			w.WriteHeader(503)
+			return
+		case "unavailable-short":
+			w.Header().Set("Retry-After", "900")
+			w.WriteHeader(503)
+			return
 		case "oversized":
 			_, _ = w.Write([]byte(strings.Repeat("x", nativeMaxBody+1)))
 			return
