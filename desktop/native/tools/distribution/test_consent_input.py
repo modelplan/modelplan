@@ -89,7 +89,7 @@ class NativeConsentInputTests(unittest.TestCase):
             self.assertIs(provenance[gate], True)
         self.assertTrue(provenance["isolation"]["outsideDirectoryReadDenied"])
         self.assertTrue(provenance["isolation"]["networkSocketDenied"])
-        self.assertEqual(provenance["sourceCommit"], "4a32e4002a3761b73a07a85bdf3d1d92d51ed037")
+        self.assertEqual(provenance["sourceCommit"], "f7c97ed5dffe3ddf4eea223e3567af37ae0b9e65")
         self.assertRegex(provenance["rawSourceHelperSHA256"], r"^[0-9a-f]{64}$")
         self.assertEqual(json.loads(capture)["mode"], "off")
 
