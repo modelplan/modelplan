@@ -1,0 +1,9 @@
+{
+  "SPDX-License-Identifier": "LicenseRef-ModelPlan-Visuals-1.0",
+  "schemaVersion": 1,
+  "files": {
+    "Resources/modelplan-rocket-day-lod1.usdz": "2dcd806d6ddbfd0c654e95b219bda50208673b121cb91e9d0688d6d5e8a53c9e",
+    "Resources/modelplan-rocket-night-lod1.usdz": "3c8a377280f9828729fe2fd867b8cdf91d91336de1a9ae2e4b0b32a25e7a3a5a",
+    "Resources/rocket-geometry.json": "ae0d124ac2ee2aa4088f3e254e38dfdd58af230254e3a04f20455b82da8c2f3d"
+  }
+}
