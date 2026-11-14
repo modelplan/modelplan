@@ -142,12 +142,50 @@ final class DiagnosticsLogTests: XCTestCase {
 
     // MARK: engine stderr
 
-    func testStderrLinesSplitAndCutLongRuns() {
+    /// macrev2-963-1: an overlong line keeps only its head (redacted as one piece); its tail is dropped, never
+    /// written as a line of its own.
+    func testStderrLinesSplitAndDropTheTailOfLongRuns() {
         var lines = EngineStderrLines(limit: 8)
         XCTAssertEqual(lines.append(Array("one\ntwo".utf8)), ["one"])
-        XCTAssertEqual(lines.append(Array("\n0123456789".utf8)), ["two", "01234567"])
-        XCTAssertEqual(lines.finish(), "89")
+        XCTAssertEqual(lines.append(Array("\n0123456789TAIL\nnext".utf8)), ["two", "01234567 [cut]"])
+        XCTAssertEqual(lines.finish(), "next")
         XCTAssertNil(lines.finish())
+        XCTAssertEqual(lines.append(Array("abcdefghijk".utf8)), [])
+        XCTAssertEqual(lines.finish(), "abcdefgh [cut]")
+    }
+
+    /// macrev2-963-1: an array or object under a sensitive key goes as a whole, nested contents included, in JSON,
+    /// Go `%v` and pretty-printed multi-line form; an unclosed value goes to the end of the text.
+    func testStructuredSensitiveValuesAreRemovedWhole() {
+        let inputs = [
+            #"{"prompt":["synthetic-array-one","synthetic-array-two"],"n":1}"#,
+            #"{"account":{"id":"synthetic-nested-id","org":{"name":"synthetic-deep-name"}}, "ok":true}"#,
+            "req={Prompt:synthetic-go-words Account:{ID:synthetic-go-id}}",
+            "\"messages\": [\n  {\"role\":\"user\",\"content\":\"synthetic-multiline\"}\n],\n\"after\": 1",
+            #"{"prompt": ["synthetic-unclosed"#,
+        ]
+        let output = inputs.map(DiagnosticsRedactor.redact).joined(separator: "\n")
+        for leaked in ["synthetic-array-one", "synthetic-array-two", "synthetic-nested-id", "synthetic-deep-name",
+                       "synthetic-go-words", "synthetic-go-id", "synthetic-multiline", "synthetic-unclosed"] {
+            XCTAssertFalse(output.contains(leaked), "\(leaked) survived:\n\(output)")
+        }
+        XCTAssertEqual(DiagnosticsRedactor.redact(inputs[0]), #"{"prompt":"[redacted]","n":1}"#)
+        XCTAssertEqual(DiagnosticsRedactor.redact(inputs[1]), #"{"account":"[redacted]", "ok":true}"#)
+        XCTAssertTrue(DiagnosticsRedactor.redact(inputs[3]).hasSuffix(#""messages": "[redacted]","# + "\n\"after\": 1"))
+        XCTAssertEqual(DiagnosticsRedactor.redact(#"{"provider":"codex","state":"fresh"}"#), #"{"provider":"codex","state":"fresh"}"#)
+    }
+
+    /// Engine stderr keeps only the shape of a Go crash; anything else becomes its length.
+    func testEngineStderrProjectionKeepsOnlyCrashShapes() {
+        let kept = ["goroutine 1 [running]:", "main.main()", "net/http.(*conn).serve(0xc000123456, {0x1043, 0xc0001})",
+                    "created by main.main in goroutine 1", "[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x1234]",
+                    "exit status 2", "goroutine 7 gp=0xc000002380 m=0 mp=0x10 [running]:", "rax    0x0"]
+        for line in kept { XCTAssertEqual(EngineStderrProjection.project(line), line) }
+        XCTAssertEqual(EngineStderrProjection.project("\t/Users/synthetic-person/src/main.go:5 +0x1d"), "\t/Users/~/src/main.go:5 +0x1d")
+        XCTAssertEqual(EngineStderrProjection.project(#"{"prompt":["x"]}"#), "[line omitted: 16 bytes]")
+        XCTAssertEqual(EngineStderrProjection.project("reader said synthetic-free-text"), "[line omitted: 31 bytes]")
+        XCTAssertEqual(EngineStderrProjection.project("panic: " + String(repeating: "z", count: 2000)).utf8.count,
+                       EngineStderrProjection.messageLimit + " [cut]".utf8.count)
     }
 
     private func fakeHelper(_ body: String) throws -> URL {
@@ -202,10 +240,31 @@ final class DiagnosticsLogTests: XCTestCase {
                        "synthetic-user-77", "synthetic chat message"] {
             XCTAssertFalse(written.contains(leaked), "\(leaked) reached engine.log:\n\(written)")
         }
-        XCTAssertTrue(written.contains(#"{"Authorization": "[redacted]"}"#), written)
-        XCTAssertTrue(written.contains(#"{"account_id":"[redacted]"}"#), written)
-        XCTAssertTrue(written.contains("prompt: [redacted]"), written)
+        XCTAssertTrue(written.contains("[line omitted: "), written)
         XCTAssertTrue(written.contains("panic: user=[redacted]"), written)
+        XCTAssertTrue(written.contains("--- exited reason=exit status=2"), written)
+    }
+
+    /// macrev2-963-1: array and nested values, a pretty-printed multi-line object, a panic carrying an array, and a
+    /// prompt line longer than the line limit with private text past the limit: none reaches engine.log.
+    func testHelperStderrWithStructuredLongAndMultilineValuesIsRedacted() throws {
+        let filler = String(repeating: "f", count: 5000)
+        let helper = try fakeHelper("""
+        printf '%s\\n' '{"prompt":["synthetic-array-one","synthetic-array-two"]}' '{"account":{"id":"synthetic-nested-id"}}' >&2
+        printf '%s\\n' '{' '  "messages": [' '    {"role": "user", "content": "synthetic-pretty-line"}' '  ]' '}' >&2
+        printf '%s\\n' 'panic: {"prompt":["synthetic-panic-array"]}' >&2
+        printf '%s\\n' 'prompt: \(filler) synthetic-past-the-limit' >&2
+        printf '%s\\n' 'panic: prompt: \(filler) synthetic-panic-past-the-limit' >&2
+        exit 2
+        """)
+        let log = RotatingLogFile(url: try folder().appendingPathComponent("engine.log"))
+        let written = try run(helper, log: log)
+        for leaked in ["synthetic-array-one", "synthetic-array-two", "synthetic-nested-id", "synthetic-pretty-line",
+                       "synthetic-panic-array", "synthetic-past-the-limit", "synthetic-panic-past-the-limit", "fffff"] {
+            XCTAssertFalse(written.contains(leaked), "\(leaked) reached engine.log:\n\(written)")
+        }
+        XCTAssertTrue(written.contains(#"panic: {"prompt":"[redacted]"}"#), written)
+        XCTAssertTrue(written.contains("panic: prompt: [redacted]"), written)
         XCTAssertTrue(written.contains("--- exited reason=exit status=2"), written)
     }
 
@@ -213,7 +272,8 @@ final class DiagnosticsLogTests: XCTestCase {
         let helper = try fakeHelper("printf 'about to crash\\n' >&2\nkill -TERM $$")
         let log = RotatingLogFile(url: try folder().appendingPathComponent("engine.log"))
         let written = try run(helper, log: log)
-        XCTAssertTrue(written.contains("about to crash"), written)
+        XCTAssertTrue(written.contains("[line omitted: 14 bytes]"), written)
+        XCTAssertFalse(written.contains("about to crash"), written)
         XCTAssertTrue(written.contains("--- exited reason=signal status=\(SIGTERM)"), written)
     }
 }

@@ -101,10 +101,13 @@ rows. Raw frames/stderr/tokens are never included in events or errors.
 
 The child's stderr is drained and discarded unless a diagnostics log is
 configured (`EngineClientConfiguration.engineLog`, or
-`DiagnosticsLog.shared.configure(directory:)` in the app). Then each stderr line,
-the child's start and its exit status or signal go to a rotating `engine.log`,
-every line passed through `DiagnosticsRedactor` (keys, tokens, cookies, emails and
-home-folder names are replaced), so a Go panic trace survives the process. The
+`DiagnosticsLog.shared.configure(directory:)` in the app). Then the child's start,
+its exit status or signal, and the Go-crash shape of its stderr go to a rotating
+`engine.log`: panic/fatal-error messages (at most 512 bytes), goroutine headers,
+frames, file:line, signal and register lines. Every other stderr line is replaced
+by its length, and every kept line passes `DiagnosticsRedactor` (keys, tokens,
+cookies, emails, home-folder names, and whole values under credential, account or
+user-text keys), so a Go panic trace survives the process and nothing else does. The
 client also logs connection states and consent grant requests (scope ids only)
 to the app log. Nothing is uploaded.
 

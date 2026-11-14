@@ -11,7 +11,9 @@ final class DiagnosticsBundleTests: XCTestCase {
     private let secrets = ["sk-ant-api03-SYNTHETICsecretvalue0001", "synthetic-bearer-value-0002", "jane.synthetic@example.com",
                            "synthetic-person", "ghp_SYNTHETICgithubtoken000000000003", "synthetic-cookie-value-0004",
                            // glm-963-1: quoted credentials, account ids and user-written text.
-                           "c3ludGhldGljOnNhbXBsZQ", "synthetic-account-123", "synthetic private words", "synthetic reply words"]
+                           "c3ludGhldGljOnNhbXBsZQ", "synthetic-account-123", "synthetic private words", "synthetic reply words",
+                           // macrev2-963-1: whole array, nested and multi-line values.
+                           "synthetic-array-one", "synthetic-nested-id", "synthetic-deep-name", "synthetic-pretty-line"]
 
     private func folder(_ name: String = "diagnostics-bundle") throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(name + "-" + UUID().uuidString, isDirectory: true)
@@ -46,7 +48,9 @@ final class DiagnosticsBundleTests: XCTestCase {
                   reports.appendingPathComponent("ModelPlanCommunity-2026-11-14-201413.ips"), age: 3600)
         try write("Process: modelplan [4242]\nCookie: session=synthetic-cookie-value-0004\n"
                   + #"{"Authorization": "Basic c3ludGhldGljOnNhbXBsZQ=="}"# + "\n" + #"{"account_id":"synthetic-account-123"}"# + "\n"
-                  + "panic: prompt: synthetic private words\n",
+                  + "panic: prompt: synthetic private words\n"
+                  + #"{"prompt":["synthetic-array-one","x"],"account":{"id":"synthetic-nested-id","org":{"name":"synthetic-deep-name"}},"pid":4242}"# + "\n"
+                  + "{\n  \"messages\" : [\n    {\n      \"content\" : \"synthetic-pretty-line\"\n    }\n  ],\n  \"exception\" : {\"type\":\"EXC_CRASH\"}\n}\n",
                   reports.appendingPathComponent("modelplan-2026-11-14-201413.ips"), age: 7200)
         try write("someone else's crash", reports.appendingPathComponent("OtherApp-2026-11-14-201413.ips"))
         try write("too old", reports.appendingPathComponent("ModelPlanCommunity-2026-10-01-101010.ips"), age: 40 * 24 * 3600)
@@ -149,6 +153,30 @@ final class DiagnosticsBundleTests: XCTestCase {
         XCTAssertEqual(list.terminationStatus, 0)
         let entries = Set(names.split(separator: "\n").map(String.init).filter { !$0.hasSuffix("/") && !$0.hasPrefix("__MACOSX") })
         XCTAssertEqual(entries, Set(files.map { "ModelPlan-diagnostics-20261114-201500/" + $0 }))
+        // What the user would send: unpack the archive itself and look for every canary.
+        let unpacked = try folder("diagnostics-unpacked")
+        let unzip = Process()
+        unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto"); unzip.arguments = ["-x", "-k", destination.path, unpacked.path]
+        try unzip.run(); unzip.waitUntilExit()
+        XCTAssertEqual(unzip.terminationStatus, 0)
+        let text = try allText(unpacked)
+        XCTAssertTrue(text.contains("EXC_CRASH"), "the crash report itself is kept")
+        for secret in secrets { XCTAssertFalse(text.contains(secret), "\(secret) reached the archive") }
+    }
+
+    /// macrev2-963-2: a helper that closes stdout and stays alive is stopped at the deadline; export goes on.
+    func testDoctorThatLingersAfterClosingStdoutIsStoppedAtTheDeadline() throws {
+        let lingering = try script("""
+        printf '{"readers":[],"message":"ok"}\\n'
+        exec 1>&-
+        exec sleep 30
+        """)
+        let staged = try folder("diagnostics-linger").appendingPathComponent("bundle")
+        var value = try inputs(helper: lingering); value.doctorTimeout = 1
+        let started = Date()
+        let files = try DiagnosticsBundle.stage(value, into: staged)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 8, "export waited on a lingering helper")
+        XCTAssertTrue(files.contains("doctor-readers.json"))
     }
 
     func testOnlyModelPlanCrashReportsAreSelected() {

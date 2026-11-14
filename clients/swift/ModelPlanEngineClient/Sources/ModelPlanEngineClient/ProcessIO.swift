@@ -7,25 +7,27 @@ import Darwin
 import Glibc
 #endif
 
-/// Splits the child's stderr into lines. A line longer than `limit` bytes is cut into pieces so a stream with no
-/// newline cannot grow without bound.
+/// Splits the child's stderr into lines. A line longer than `limit` bytes keeps its first `limit` bytes and drops
+/// the rest up to the newline (marked " [cut]"), so the whole kept part is redacted together and no continuation
+/// of a sensitive field is ever written as a line of its own.
 struct EngineStderrLines {
     var limit = 4096
     private var pending: [UInt8] = []
+    private var overflow = false
     init(limit: Int = 4096) { self.limit = limit }
     mutating func append<Bytes: Sequence>(_ bytes: Bytes) -> [String] where Bytes.Element == UInt8 {
         var out: [String] = []
         for byte in bytes {
             if byte == UInt8(ascii: "\n") { out.append(take()); continue }
+            if pending.count >= limit { overflow = true; continue }
             pending.append(byte)
-            if pending.count >= limit { out.append(take()) }
         }
         return out
     }
-    mutating func finish() -> String? { pending.isEmpty ? nil : take() }
+    mutating func finish() -> String? { pending.isEmpty && !overflow ? nil : take() }
     private mutating func take() -> String {
-        defer { pending.removeAll(keepingCapacity: true) }
-        return String(decoding: pending, as: UTF8.self)
+        defer { pending.removeAll(keepingCapacity: true); overflow = false }
+        return String(decoding: pending, as: UTF8.self) + (overflow ? " [cut]" : "")
     }
 }
 

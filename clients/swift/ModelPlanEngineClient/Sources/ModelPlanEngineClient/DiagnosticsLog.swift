@@ -49,14 +49,85 @@ public enum DiagnosticsRedactor {
         }
     }()
 
+    /// A sensitive key whose value is an array or object (JSON, Go `%v`, plist-ish): the whole value is removed.
+    private static let structuredKey: NSRegularExpression? = {
+        let all = DiagnosticsRedactor.secretKeys + "|" + DiagnosticsRedactor.identityKeys + "|" + DiagnosticsRedactor.proseKeys
+        return try? NSRegularExpression(pattern: #"(?i)(?<![A-Za-z0-9])["']?(?:"# + all + #")["']?\s*[:=]\s*(?=[\[{])"#)
+    }()
+
+    /// Replaces every array or object value under a sensitive key, nested contents included, with "[redacted]".
+    /// Brackets are matched with quoted strings skipped; an unclosed value is removed to the end of the text.
+    static func redactStructured(_ text: String) -> String {
+        guard let structuredKey else { return text }
+        let source = text as NSString
+        let units = Array(text.utf16)
+        var out = "", cursor = 0
+        for match in structuredKey.matches(in: text, range: NSRange(location: 0, length: source.length)) {
+            guard match.range.location >= cursor else { continue } // inside a value already removed
+            let valueStart = match.range.location + match.range.length
+            out += source.substring(with: NSRange(location: cursor, length: valueStart - cursor)) + "\"" + marker + "\""
+            cursor = closingIndex(units, from: valueStart)
+        }
+        guard cursor > 0 else { return text }
+        return out + source.substring(from: cursor)
+    }
+    /// The index just past the bracket that closes the one at `start`, or the end of the text.
+    static func closingIndex(_ units: [UInt16], from start: Int) -> Int {
+        var depth = 0, quote: UInt16?, escaped = false, index = start
+        while index < units.count {
+            let unit = units[index]
+            if let open = quote {
+                if escaped { escaped = false } else if unit == 92 { escaped = true } else if unit == open { quote = nil }
+            } else {
+                switch unit {
+                case 34, 39: quote = unit // " '
+                case 91, 123: depth += 1 // [ {
+                case 93, 125: depth -= 1; if depth <= 0 { return index + 1 } // ] }
+                default: break
+                }
+            }
+            index += 1
+        }
+        return units.count
+    }
+
     public static func redact(_ text: String) -> String {
         guard !text.isEmpty else { return text }
-        var value = text
+        var value = redactStructured(text)
         for (expression, template) in rules {
             let range = NSRange(value.startIndex..<value.endIndex, in: value)
             value = expression.stringByReplacingMatches(in: value, options: [], range: range, withTemplate: template)
         }
         return value
+    }
+}
+
+/// What the engine helper's stderr may leave on disk: only the shape of a Go crash. A panic or fatal-error message
+/// is kept (redacted, at most 512 bytes); goroutine headers, stack frames, file:line locations, signal and register
+/// lines are kept (redacted). Any other line (which could hold reader output, prompts or account values in a form
+/// no pattern anticipates) is replaced by its length.
+public enum EngineStderrProjection {
+    public static let messageLimit = 512
+    private static let message = try? NSRegularExpression(pattern: #"^(?:panic|fatal error): "#)
+    private static let trace: [NSRegularExpression] = [
+        #"^goroutine \d+(?: [a-z]+=(?:0x[0-9a-f]+|\d+))* \[[^\]\n]{0,80}\]:$"#,
+        #"^\t.{1,400}\.(?:go|s|c):\d+(?: \+0x[0-9a-fA-F]+)?$"#,
+        #"^(?:created by )?[A-Za-z0-9_.\-/*()\[\]]{1,300}\([0-9a-fA-Fx?{}., ]{0,200}\)(?: in goroutine \d+)?$"#,
+        #"^created by [A-Za-z0-9_.\-/*()\[\]]{1,300}(?: in goroutine \d+)?$"#,
+        #"^\[signal [^\]\n]{1,200}\]$"#,
+        #"^(?:SIG[A-Z]+: [a-z ]{1,60}|PC=0x[0-9a-f]+ m=\d+ sigcode=\d+(?: addr=0x[0-9a-f]+)?|runtime stack:|exit status \d+|\.\.\.additional frames elided\.\.\.|[a-z0-9]{2,6}\s+0x[0-9a-f]+)$"#,
+    ].compactMap { try? NSRegularExpression(pattern: $0) }
+
+    public static func project(_ line: String) -> String {
+        if line.trimmingCharacters(in: .whitespaces).isEmpty { return "" }
+        let range = NSRange(location: 0, length: (line as NSString).length)
+        if message?.firstMatch(in: line, range: range) != nil {
+            let redacted = DiagnosticsRedactor.redact(line)
+            guard redacted.utf8.count > messageLimit else { return redacted }
+            return String(decoding: Data(redacted.utf8.prefix(messageLimit)), as: UTF8.self) + " [cut]"
+        }
+        if trace.contains(where: { $0.firstMatch(in: line, range: range) != nil }) { return DiagnosticsRedactor.redact(line) }
+        return "[line omitted: \(line.utf8.count) bytes]"
     }
 }
 
@@ -196,10 +267,10 @@ public final class DiagnosticsLog: @unchecked Sendable {
     public func notice(_ category: String, _ message: String) { record(category, .notice, message) }
     public func error(_ category: String, _ message: String) { record(category, .error, message) }
 
-    /// One line the engine helper wrote to stderr, kept verbatim (after redaction) in engine.log.
+    /// One line the engine helper wrote to stderr, projected to its crash shape (`EngineStderrProjection`) in engine.log.
     public func engineOutput(pid: Int32, line: String, into file: RotatingLogFile? = nil) {
         guard let file = file ?? engine else { return }
-        file.append(Self.timestamp() + " pid=\(pid) " + line)
+        file.append(Self.timestamp() + " pid=\(pid) " + EngineStderrProjection.project(line))
     }
     /// A start or exit of the helper, in both files so either one tells the story.
     public func engineEvent(pid: Int32, _ message: String, into file: RotatingLogFile? = nil) {

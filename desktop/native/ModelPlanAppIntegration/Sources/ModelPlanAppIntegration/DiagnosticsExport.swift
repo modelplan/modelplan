@@ -169,6 +169,15 @@ public enum DiagnosticsBundle {
         """
     }
 
+    /// SIGTERM, then SIGKILL after a second; never waits without a bound.
+    static func stop(_ process: Process) {
+        guard process.isRunning else { return }
+        process.terminate()
+        let until = Date().addingTimeInterval(1)
+        while process.isRunning && Date() < until { Thread.sleep(forTimeInterval: 0.02) }
+        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+    }
+
     /// Runs the engine's read-only reader report. Never refreshes and never shows output on screen.
     static func runDoctor(helper: URL, environment: [String: String], timeout: TimeInterval) -> (output: String?, status: String) {
         guard FileManager.default.isExecutableFile(atPath: helper.path) else { return (nil, "helper_missing") }
@@ -190,12 +199,20 @@ public enum DiagnosticsBundle {
             }
             done.signal()
         }
-        if done.wait(timeout: .now() + timeout) == .timedOut {
-            process.terminate()
+        let deadline = DispatchTime.now() + timeout
+        if done.wait(timeout: deadline) == .timedOut {
+            stop(process)
             _ = done.wait(timeout: .now() + 2)
             return (nil, "timeout")
         }
-        process.waitUntilExit()
+        // Output is complete at EOF, but a child that closed stdout may still linger: the same deadline bounds its
+        // exit, then it is stopped and the complete output is kept.
+        while process.isRunning && DispatchTime.now() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+        if process.isRunning {
+            stop(process)
+            guard !box.data.isEmpty else { return (nil, "timeout") }
+            return (String(decoding: box.data, as: UTF8.self), "lingered")
+        }
         guard process.terminationReason == .exit else { return (nil, "signal_\(process.terminationStatus)") }
         guard !box.data.isEmpty else { return (nil, "exit_\(process.terminationStatus)_no_output") }
         return (String(decoding: box.data, as: UTF8.self), "exit_\(process.terminationStatus)")
