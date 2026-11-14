@@ -463,8 +463,8 @@
           "seconds": 1
         },
         {
-          "op": "click",
-          "target": "subrole:AXCloseButton"
+          "op": "key",
+          "name": "cmd-w"
         },
         {
           "op": "wait",
