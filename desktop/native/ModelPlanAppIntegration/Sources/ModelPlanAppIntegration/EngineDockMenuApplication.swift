@@ -989,6 +989,7 @@ struct StatusNoticePresentation {
         noticeIndicator.apply(notice, firstAppearanceAnimation: pulse, reducedMotion: composition.latestSettings?.effective.reduceMotion ?? true)
     }
     static let statusFallbackTitle = "MP"
+    static func statusAccessibilityLabel(title: String) -> String { title.isEmpty ? "ModelPlan" : "ModelPlan \(title)" }
     static func configureStatusButton(_ button:NSButton,image:NSImage?,barThickness:CGFloat) {
         let side=min(16,max(0,barThickness.isFinite ? barThickness : 0))
         // Every menu render calls this; a button that already shows the image at this size is left alone, so a
@@ -1017,6 +1018,12 @@ struct StatusNoticePresentation {
             let position: NSControl.ImagePosition = title.isEmpty ? .imageOnly : .imageLeading
             if button.imagePosition != position { button.imagePosition = position }
         }
+        // A11Y: an icon-only status item has no text, so AX clients (VoiceOver, the MacCI verification agent) found no
+        // labelled button under AXExtrasMenuBar. Label it "ModelPlan" plus the remaining quota and keep the button role.
+        let label = Self.statusAccessibilityLabel(title: title)
+        if button.accessibilityLabel() != label { button.setAccessibilityLabel(label) }
+        button.setAccessibilityElement(true); button.setAccessibilityRole(.button)
+        button.setAccessibilityIdentifier("status.item")
         statusTooltip = detail
         let tooltip = statusTooltipHidden ? nil : detail
         if button.toolTip != tooltip { button.toolTip = tooltip }
