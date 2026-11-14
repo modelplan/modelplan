@@ -86,6 +86,9 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	b := &SharedBackend{config: config, resetMemo: resetevents.NewMemo(), changes: make(chan struct{}, 1)}
 	if !config.ReadOnly {
 		_ = consent.RetryCleanup(consent.Path(), config.Cleanup)
+		// Engine-start migration: apply D240 (and close what v0.5.60's grant left open) before
+		// any view or automatic refresh can admit a later-installed tool's runtime reader.
+		b.allowLaterLocalLogs(context.Background())
 	}
 	return b, nil
 }
@@ -173,12 +176,26 @@ func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
 		return
 	}
 	state := admission.State()
-	scopes := consent.AutoLocalLogScopes(state, later)
-	if len(scopes) == 0 || state.StoreEpoch == "" {
+	if state.StoreEpoch == "" {
 		return
 	}
-	_, _ = b.Grant(ctx, wire.ConsentGrantParams{RequestID: fmt.Sprintf("d240-local-logs-%d", state.Generation), ExpectStoreEpoch: state.StoreEpoch,
-		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: consent.AutoLaterClosedScopes(state, scopes)})
+	scopes := consent.AutoLocalLogScopes(state, later)
+	// Upgrade repair (sampling P1 on #955): CLI v0.5.60 allowed the local logs without the
+	// denies below, so the tool record it wrote still admits that tool's runtime/account
+	// readers. Close those for every later-installed tool whose local logs are already allowed.
+	// Only undecided scopes are denied: every user choice (allow or deny) is a scope record,
+	// which AutoLaterClosedScopes skips, and v0.5.60 never wrote one for these scopes. Once
+	// recorded, the list is empty, so a second run writes nothing.
+	deny := consent.AutoLaterClosedScopes(state, append(append([]string{}, scopes...), consent.LaterLocalLogScopes(state, later)...))
+	if len(scopes) == 0 && len(deny) == 0 {
+		return
+	}
+	request := "d240-local-logs-%d"
+	if len(scopes) == 0 {
+		request = "d240-close-later-%d"
+	}
+	_, _ = b.Grant(ctx, wire.ConsentGrantParams{RequestID: fmt.Sprintf(request, state.Generation), ExpectStoreEpoch: state.StoreEpoch,
+		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: deny})
 }
 
 func (b *SharedBackend) buildView(admission consent.Admission, changed bool) View {
