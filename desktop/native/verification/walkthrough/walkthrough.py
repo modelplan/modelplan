@@ -59,6 +59,7 @@ def matcher(target):
         "ax": lambda n: n.get("id") == value,
         "ax^": lambda n: str(n.get("id", "")).startswith(value),
         "label": lambda n: value in (n.get("label"), n.get("title")),
+        "title^": lambda n: str(n.get("title", "")).startswith(value),
         "value": lambda n: n.get("value") == value,
         "dom^": lambda n: str(n.get("dom", "")).startswith(value),
         "role": lambda n: n.get("role") == value,
@@ -199,6 +200,7 @@ class Walkthrough:
         self.remembered = None
         self.window_baseline = set()
         self.results, self.statuses = [], {}
+        self.after_step = {}  # step id -> callable run once that step has been walked
         self.frames_mirrored = False
         self.mirror_evidence = {}
         self.crops = {}
@@ -269,7 +271,8 @@ class Walkthrough:
         self.host.helper("move", *self.point(PARK))
 
     def op_press(self, action):
-        if not self.host.helper("press", self.pid, action["by"], action["value"]).get("pressed"):
+        scope = [action["within"]] if action.get("within") else []
+        if not self.host.helper("press", self.pid, action["by"], action["value"], *scope).get("pressed"):
             raise WalkthroughError("could not press " + action["value"])
 
     def op_click(self, action):
@@ -615,6 +618,8 @@ class Walkthrough:
             record = self.run_step(index, step)
             self.results.append(record)
             self.statuses[step["id"]] = record["status"]
+            if step["id"] in self.after_step:
+                self.after_step[step["id"]]()
             print("%-20s %s %s" % (step["id"], record["status"], record.get("reason") or ""), flush=True)
         return self.results
 
@@ -725,17 +730,28 @@ def wait_for_quit(host, process, seconds=QUIT_SECONDS):
     return process.poll()
 
 
-def launch_app(host, walkthrough, exe, env, log):
-    """Start the app and time the first status item and the first reading on the widget."""
+def await_reading(host, walkthrough, since, process=None, seconds=45):
+    """Seconds from `since` until a dock ring shows a reading, or None."""
+    deadline = since + seconds
+    while True:
+        if resolve(walkthrough.tree(), "ax^:dock.subscription.") is not None:
+            return round(host.now() - since, 2)
+        if host.now() >= deadline or (process is not None and process.poll() is not None):
+            return None
+        host.sleep(0.25)
+
+
+def launch_app(host, walkthrough, exe, env, log, wait_reading=True):
+    """Start the app and time the first status item and, unless a first run comes first, the first reading on the widget."""
     started = host.now()
     process = host.launch([str(exe)], env, log)
     walkthrough.pid = process.pid
     first_window = first_reading = None
     deadline = started + 45
-    while host.now() < deadline and process.poll() is None and first_reading is None:
+    while host.now() < deadline and process.poll() is None and (first_reading is None and wait_reading or first_window is None):
         if first_window is None and window_ids(walkthrough.windows()):
             first_window = round(host.now() - started, 2)
-        if resolve(walkthrough.tree(), "ax^:dock.subscription.") is not None:
+        if wait_reading and resolve(walkthrough.tree(), "ax^:dock.subscription.") is not None:
             first_reading = round(host.now() - started, 2)
         host.sleep(0.25)
     return process, first_window, first_reading
@@ -997,11 +1013,17 @@ def failures(manifest):
 def walk_app(host, walkthrough, exe, cli, env, out):
     checks = []
     with (out / "app.log").open("w", encoding="utf-8") as log:
-        process, first_window, first_reading = launch_app(host, walkthrough, exe, env, log)
+        # A fresh profile opens the first-run window and shows no widget until Done (#881), so the first
+        # reading is timed from the end of the first-run Done step, not from launch.
+        process, first_window, _ = launch_app(host, walkthrough, exe, env, log, wait_reading=False)
         checks.append(outcome("launch", first_window is not None and process.poll() is None,
                               {"firstWindowSeconds": first_window}))
-        checks.append(outcome("reader-first-reading", first_reading is not None, {"seconds": first_reading}))
+        reading = {}
+        def time_first_reading():
+            reading["seconds"] = await_reading(host, walkthrough, host.now(), process)
+        walkthrough.after_step["first-run-done"] = time_first_reading
         walkthrough.walk_steps()
+        checks.append(outcome("reader-first-reading", reading.get("seconds") is not None, {"seconds": reading.get("seconds")}))
         checks.append(outcome("alive-after-walk", process.poll() is None, {"exit": process.poll()}))
         checks.append(outcome("widget-ax-frames", not walkthrough.frames_mirrored, {"mirrored": walkthrough.frames_mirrored, **walkthrough.mirror_evidence}))
         code, report, seconds = doctor(host, cli, env)
