@@ -516,7 +516,7 @@ enum DockGripInk {
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){readoutHolds=[:];refreshSweepRing=nil;onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){ringPress=nil;readoutHolds=[:];refreshSweepRing=nil;onNozzlePosesChanged=nil;onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
@@ -879,21 +879,64 @@ enum DockGripInk {
     public override func mouseEntered(with event:NSEvent){mouseMoved(with:event)}
     public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil);onHelpPointerMoved?()}
     public override func mouseDragged(with event:NSEvent){
-        if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.moveNozzle(local:convert(event.locationInWindow,from:nil));return}
-        guard let window,let handler=backgroundDragDelegate else{super.mouseDragged(with:event);return}
-        handler.updateBackgroundMove(global:window.convertPoint(toScreen:event.locationInWindow))
+        if ringPress != nil || nozzleEventDelegate?.hasCapture == true{
+            pointerDragged(local:convert(event.locationInWindow,from:nil),global:window?.convertPoint(toScreen:event.locationInWindow));return
+        }
+        guard let window,backgroundDragDelegate != nil else{super.mouseDragged(with:event);return}
+        pointerDragged(local:convert(event.locationInWindow,from:nil),global:window.convertPoint(toScreen:event.locationInWindow))
+    }
+    /// D244 (owner 2026-11-13): rings never reorder. A press on a ring that moves more than 5 pt carries the
+    /// whole widget, exactly as a press on its body does (Pulse); a stationary press stays the ring's click.
+    /// The order is set in Settings › Subscriptions; Option-arrow keyboard reorder is unchanged.
+    /// The admitted ring press is kept here, apart from the controller's nozzle capture: a content refresh
+    /// (engine delivery, presentation tick, context update) cancels that capture, but must not cancel the
+    /// press, so the carry and the stationary click both survive a refresh between press and move.
+    private var ringPress:(global:CGPoint,id:String)?
+    private func pointerDragged(local:CGPoint,global:CGPoint?){
+        if let press=ringPress{
+            if let global,let handler=backgroundDragDelegate,hypot(global.x-press.global.x,global.y-press.global.y)>5{
+                ringPress=nil
+                if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.cancelNozzle()}
+                if handler.beginCarry(global:press.global){handler.updateBackgroundMove(global:global)}
+                if handler.isBackgroundMoving{NSCursor.closedHand.set()}
+                return
+            }
+            if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.moveNozzle(local:local)}
+            return
+        }
+        if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.moveNozzle(local:local);return}
+        guard let global,let handler=backgroundDragDelegate else{return}
+        handler.updateBackgroundMove(global:global)
         if handler.isBackgroundMoving{NSCursor.closedHand.set()}
     }
     public override func mouseUp(with event:NSEvent){
-        if let handler=nozzleEventDelegate,handler.hasCapture,let window{
-            let p=convert(event.locationInWindow,from:nil),id:String?
-            if case .subscription(let current)?=pointerAction(atLocal:p),isPainted(atLocal:p){id=current}else{id=nil}
-            handler.endNozzle(global:window.convertPoint(toScreen:event.locationInWindow),currentID:id);return
-        }
-        if let window{backgroundDragDelegate?.endBackgroundMove(global:window.convertPoint(toScreen:event.locationInWindow))}
+        if let window{pointerUp(local:convert(event.locationInWindow,from:nil),global:window.convertPoint(toScreen:event.locationInWindow));return}
+        ringPress=nil
         NSCursor.arrow.set()
     }
-    public override func cancelOperation(_ sender:Any?){nozzleEventDelegate?.cancelNozzle();backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
+    private func pointerUp(local p:CGPoint,global:CGPoint){
+        let press=ringPress;ringPress=nil
+        let current:String?
+        if case .subscription(let id)?=pointerAction(atLocal:p),isPainted(atLocal:p){current=id}else{current=nil}
+        if let handler=nozzleEventDelegate,handler.hasCapture{handler.endNozzle(global:global,currentID:current);return}
+        // A refresh dropped the capture of a press that never moved: it is still the ring's click.
+        if let press{
+            if current==press.id,let onAction,permitsAction?(.subscription(press.id),.pointer) ?? true{onAction(.subscription(press.id))}
+            NSCursor.arrow.set();return
+        }
+        backgroundDragDelegate?.endBackgroundMove(global:global)
+        NSCursor.arrow.set()
+    }
+    /// Windowless checks drive the same press, drag and release path as the mouse handlers, with the
+    /// screen point a native window would report. Returns whether the press was taken.
+    @_spi(DockResourceChecks) @discardableResult public func performPointerDown(atLocal p:CGPoint,global:CGPoint)->Bool{
+        guard !failed else{return false}
+        if backgroundDragDelegate?.beginBackgroundMove(local:p,global:global) == true{return true}
+        return dispatchPointer(currentPoint:{p},nozzleGlobal:global)
+    }
+    @_spi(DockResourceChecks) public func performPointerDrag(atLocal p:CGPoint,global:CGPoint){pointerDragged(local:p,global:global)}
+    @_spi(DockResourceChecks) public func performPointerUp(atLocal p:CGPoint,global:CGPoint){pointerUp(local:p,global:global)}
+    public override func cancelOperation(_ sender:Any?){ringPress=nil;nozzleEventDelegate?.cancelNozzle();backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
     public override func keyDown(with event:NSEvent){
         let modifiers=event.modifierFlags.intersection([.option,.control,.command])
         if modifiers.isEmpty, event.keyCode == 53, keyboardTargetID != nil, onEscape?() == true { return }
@@ -969,7 +1012,11 @@ enum DockGripInk {
         // A gate can replace/reorder stations without removing their readings. Re-hit-test the
         // original physical pointer against the current presentation, rather than validating only ID existence.
         guard let current=currentPoint(),isPainted(atLocal:current),pointerAction(atLocal:current)==action else{return false}
-        if nozzleGlobal != nil,case .subscription(let id)=action,let handler=nozzleEventDelegate{return handler.beginNozzle(id:id,local:current)}
+        if let nozzleGlobal,case .subscription(let id)=action,let handler=nozzleEventDelegate{
+            let taken=handler.beginNozzle(id:id,local:current)
+            if taken{ringPress=(global:nozzleGlobal,id:id)}else{ringPress=nil}
+            return taken
+        }
         guard let onAction else{return false};onAction(action);return true
     }
     /// Neutral checks exercise the same dispatcher without creating a native window/event source.

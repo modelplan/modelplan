@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 package consent
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // ScopeDefinition is compiled authority. Catalogue detection is presence only;
 // it cannot add permissions or promote defaults.
@@ -224,4 +227,26 @@ func SetBrowserSession(s *State, tool string, browser bool) {
 	r.BrowserSession = browser
 	s.Tools[tool] = r
 	setToolScopes(s, tool, r)
+}
+
+// AutoLocalLogScopes lists the scopes D240 (owner 2026-11-13) allows without a prompt for
+// tools installed after the first run: local-log scopes only (session/history logs on this
+// Mac; no credential read, no network call), on by default, for a tool with no decision yet.
+// Saved-login, runtime and key scopes stay opt-in. Sorted.
+func AutoLocalLogScopes(s State, tools map[string]bool) []string {
+	var out []string
+	for _, d := range Definitions() {
+		if !tools[d.Tool] || d.Class != Local || d.Route != "local_log" || !d.DefaultCheck || d.Keychain {
+			continue
+		}
+		if _, decided := s.Tools[d.Tool]; decided {
+			continue
+		}
+		if _, decided := s.Scopes[d.ID]; decided {
+			continue
+		}
+		out = append(out, d.ID)
+	}
+	sort.Strings(out)
+	return out
 }

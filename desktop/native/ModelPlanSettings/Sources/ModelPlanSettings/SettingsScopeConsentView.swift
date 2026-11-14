@@ -338,7 +338,7 @@ import ModelPlanWire
         let name = NSTextField(labelWithString: Self.toolName(id).value(language))
         name.font = .systemFont(ofSize: 14, weight: .semibold)
         name.setAccessibilityIdentifier(prefix + "name." + id)
-        let tag = NSTextField(labelWithString: (tool.detected ? SettingsText("Detected on this Mac", "本机已检测到") : SettingsText("Not detected on this Mac", "本机未检测到")).value(language))
+        let tag = NSTextField(labelWithString: Self.presenceTag(tool).value(language))
         tag.font = .systemFont(ofSize: 11); tag.textColor = .secondaryLabelColor
         let title = NSStackView(views: [name, tag]); title.orientation = .horizontal; title.alignment = .firstBaseline; title.spacing = 8
         let column = NSStackView(views: [title]); column.orientation = .vertical; column.alignment = .leading; column.spacing = 3
@@ -360,6 +360,8 @@ import ModelPlanWire
         }
         if let block = tool.block {
             line(Self.blockLine(block, tool: id), id: prefix + "status." + id, color: .systemOrange)
+        } else if tool.detected, tool.keyMissing, !Self.hasOpenCodeGoSubscription(tool), let missing = Self.keyMissingLine(id) {
+            line(missing, id: prefix + "status." + id, color: .systemOrange)
         } else if tool.detected, !tool.canRead {
             // Only browser-session or unrecognised paths: never describe a read that will not happen.
             line(Self.unreadableLine, id: prefix + "status." + id)
@@ -398,6 +400,23 @@ import ModelPlanWire
                      "opencode": "OpenCode", "kiro": "Kiro", "amp": "Amp", "droid": "Droid", "antigravity": "Antigravity", "minimax": "MiniMax"]
         return names[tool].map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
     }
+    /// G3-105: presence is what the engine detects, so say what was found. OpenCode installed is not an
+    /// OpenCode Go subscription; D230: the engine reports the OpenCode Go account path as detected only when
+    /// OpenCode's key store has an opencode-go entry (or OPENCODE_API_KEY is set).
+    static func presenceTag(_ tool: FirstRunTool) -> SettingsText {
+        guard tool.detected else { return .init("Not detected on this Mac", "本机未检测到") }
+        if tool.tool == "opencodego", !hasOpenCodeGoSubscription(tool) {
+            return .init("OpenCode installed · no OpenCode Go subscription found", "OpenCode 已安装 · 未找到 OpenCode Go 订阅")
+        }
+        return .init("Detected on this Mac", "本机已检测到")
+    }
+    static func hasOpenCodeGoSubscription(_ tool: FirstRunTool) -> Bool { tool.routes.contains(.apiKeyApi) }
+    /// G3-105: an installed tool whose subscription key is missing, in plain words; nil keeps the generic row.
+    static func keyMissingLine(_ tool: String) -> SettingsText? {
+        guard tool == "opencodego" else { return nil }
+        return .init("No OpenCode Go subscription key was found, so no OpenCode Go quota is shown. OpenCode's local history is still read.",
+                     "没有找到 OpenCode Go 订阅密钥，因此不显示 OpenCode Go 额度；仍会读取 OpenCode 的本机历史记录。")
+    }
     static let unreadableLine = SettingsText("ModelPlan can't read this tool's sign-in on this Mac yet.", "暂不支持读取这个工具在本机的登录。")
     private static let noKeychain = SettingsText(" No Keychain prompt.", "不会弹出钥匙串授权。")
     private static let mayAskKeychain = SettingsText(" macOS may ask once for Keychain access; choose \u{201C}Always Allow\u{201D}.",
@@ -422,6 +441,9 @@ import ModelPlanWire
         case "kiro":
             base = .init("Asks the Kiro CLI for usage with the sign-in Kiro saved. ModelPlan does not read or keep Kiro's credentials.",
                          "调用 Kiro 命令行工具查询用量，沿用它已保存的登录。ModelPlan 不读取也不保存 Kiro 的凭据。")
+        case "opencodego":
+            base = .init("Reads OpenCode's local history, and OpenCode Go usage with the OpenCode Go API key you set (OPENCODE_API_KEY).",
+                         "读取 OpenCode 的本机历史记录；设置了 OpenCode Go 的接口密钥环境变量时，也读取 OpenCode Go 额度。")
         case "zai":
             base = .init("Reads the GLM Coding Plan key you saved in ZCode, and its local history.",
                          "读取你在 ZCode 里保存的 GLM 编程套餐密钥，以及本机历史记录。")
@@ -544,6 +566,9 @@ import ModelPlanWire
             }
             if !scope.route.isKnown || scope.route == .knownUnknown {
                 label(.init("This reading path is not recognized. Update the app or check the tool connection; Revoke and Forget remain available.", "尚不识别此读取路径。请更新应用或检查工具连接；仍可撤销或忘记已保存权限。"))
+            } else if !scope.retired, !scope.detected, facts.scopes.contains(where: { $0.tool == scope.tool && $0.detected && !$0.retired }) {
+                // The tool is on this Mac but this path has nothing to read (for example no OpenCode Go subscription key).
+                label(.init("Nothing to read on this path: the tool is installed but no key for it was found. Saved permissions can still be revoked or forgotten.", "此读取路径暂无可读内容：已安装该工具，但没有找到对应的密钥；仍可撤销或忘记已保存权限。"))
             } else if scope.retired || !scope.detected {
                 label(.init("This tool is no longer detected. Saved permissions can still be revoked or forgotten.", "未检测到该工具；仍可撤销或忘记已保存权限。"))
             } else if scope.disabledReason != nil {

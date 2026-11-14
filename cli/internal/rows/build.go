@@ -161,6 +161,11 @@ func Build(in Input) Projection {
 	return out
 }
 
+func offeredLater(c *candidate, f classification) bool {
+	return !f.Declared && c.consent.State == ConsentUnset && !c.consent.CleanupPending && c.hasCatalogue &&
+		c.catalogue.InstalledLater && c.catalogue.Detected && !f.Retired && f.ReaderExists && f.Veto == ""
+}
+
 func permitted(c Consent) bool {
 	return c == ConsentAllowed || c == ConsentImplicit || c == ConsentNotRequired || c == ConsentRetired
 }
@@ -298,6 +303,12 @@ func buildCandidate(in Input, c *candidate) Row {
 	}
 	outcome := classify(f)
 	applyOutcome(&row, in, c, outcome)
+	if offeredLater(c, f) {
+		// D238: a tool installed after the first run and not yet decided is offered in the menu
+		// as detected-not-enabled. Consent stays unset, so no reader runs and no values are
+		// exported; like every unreadable tool it has no Dock ring (G3-38, owner D76).
+		row.Surfaces = []Surface{SurfaceMenu, SurfaceSettings}
+	}
 	if row.Reason.Code == CodeNotSignedIn {
 		// G3-38 (owner D52): a signed-out tool has no ring. Settings and the menu still say why.
 		row.Surfaces = []Surface{SurfaceMenu, SurfaceSettings}

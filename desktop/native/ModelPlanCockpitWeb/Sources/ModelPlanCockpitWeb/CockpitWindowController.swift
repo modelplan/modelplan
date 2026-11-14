@@ -112,6 +112,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public static let panelLevel = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
   /// Windows the open cockpit brings up (the enlarged field, the Help overlay) sit above it.
   public static let aboveCockpitLevel = NSWindow.Level(rawValue: panelLevel.rawValue + 1)
+  /// G3-108 (owner, build 14e): the shutter reads as the porthole closing or opening, 250 ms, the same time as the
+  /// page's own porthole motion (cockpit.css `cockpit-shutter`); Reduce Motion is instant (CKP-MOT-03).
+  public static let shutterDuration: TimeInterval = 0.25
   /// D88: help and hint panels carry this identifier; a press on one is not an outside click.
   public static let helpOverlayIdentifier = NSUserInterfaceItemIdentifier("modelplan.help-overlay")
   /// The enlarged field's panel carries this identifier. It opens from the cockpit and is wider than it, so a press on
@@ -139,6 +142,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var scope = "all"
   private var outsideMonitor: Any?, localMonitor: Any?
   private var closeTask: Task<Void, Never>?
+  /// G3-108: true while the shutter moves the window's bottom edge; the content then keeps the live window size, so
+  /// nothing is rescaled (the D88 grow and shrink keep the layout size and scale with the frame).
+  private(set) var shutterMoving = false
+  /// G3-108: a later toggle's motion owns `shutterMoving`; an earlier motion's completion leaves it alone.
+  private var shutterGeneration = 0
+  /// G3-108: a detached close lowers the top edge once the page has closed its porthole.
+  private var shutterTask: Task<Void, Never>?
+  var shutterPending: Bool { shutterTask != nil }
   private var dragStart: (point: CGPoint, frame: CGRect, detached: Bool)?
   private var dragRegion: CockpitTitleDrag?
   /// CKP-SHELL-33: the drag has been outside the catch zone since it tore off, and the rack is now reaching for it.
@@ -962,9 +973,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// D88: the grow and shrink animate the frame; the content keeps its 636 pt bounds so it scales with it.
   public func windowDidResize(_ notification: Notification) {
-    guard let layout, let content = window?.contentView else { return }
-    // Scaled layouts (CKP-SHELL-07): the settled canvas is the scaled frame, not the 636-pt page.
-    let size = layout.frame.size
+    guard let layout, let window, let content = window.contentView else { return }
+    // Scaled layouts (CKP-SHELL-07): the settled canvas is the scaled frame, not the 636-pt page. G3-108: while the
+    // shutter moves the bottom edge the content follows the live frame, so the cockpit slides instead of stretching.
+    let size = shutterMoving ? window.frame.size : layout.frame.size
     if content.bounds.size != size { content.setBoundsSize(size) }
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
@@ -975,7 +987,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size, memberOrder: value.memberOrder)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       // Audit A-6: only a shown cockpit goes to full opacity; a prewarmed page (warm-painting at alpha 0) stays hidden.
@@ -1097,25 +1109,60 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let replayed = detachedOrigin.flatMap { CockpitScreenSelection.replayFrame(origin: $0, size: fit.frame.size, screens: screens()) }
     return (fit, replayed ?? fit.frame)
   }
-  private func applyLayout(animated: Bool = false) {
+  private func applyLayout(animated: Bool = false, shutter: Bool = false) {
     // D88: a closing cockpit keeps its close animation. A relayout then (a screen-parameter change, a resize from
     // Settings) set the frame back to the layout frame and cut the shrink into the icon; a re-open cancels the close
     // first and lays out again.
     guard closeTask == nil, let window, let (fit, frame) = placement() else { return }
+    shutterTask?.cancel(); shutterTask = nil
     layout = fit
     appearance = .init(theme: CockpitDayPolicy.resolve(appearance.theme), locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size)
-    if animated {
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size, memberOrder: appearance.memberOrder)
+    // G3-108: the web view keeps the open canvas on the window's bottom edge and the page keeps the body at one place on
+    // it, open or closed. So the page's own relayout, whenever its message lands, never moves the body; only the window
+    // frame does, and only where the owner wants it to (attached: the bottom edge, top pinned under the icon;
+    // detached: the top edge, the body stays; with too little room above an open, the body comes down by the shortfall).
+    let current = window.frame
+    let bottomMoves = abs(current.minY - frame.minY) >= 0.5 || abs(current.minX - frame.minX) >= 0.5
+    let motion = shutter && !appearance.reduceMotion && window.isVisible && !entering && current.width == frame.width
+    var pending = false
+    if motion && bottomMoves {
+      shutterMoving = true; shutterGeneration += 1
+      let generation = shutterGeneration
+      NSAnimationContext.runAnimationGroup({ context in
+        context.duration = Self.shutterDuration; context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        window.animator().setFrame(frame, display: true)
+      }, completionHandler: { [weak self] in
+        Task { @MainActor in
+          guard let self, self.shutterMoving, self.shutterGeneration == generation else { return }
+          self.shutterMoving = false
+          if let size = self.layout?.frame.size { self.window?.contentView?.setBoundsSize(size) }
+        }
+      })
+    } else if motion && frame.height < current.height {
+      // Detached close: the page closes its porthole first (same duration), then the top edge comes down over the band
+      // that is empty by then. Nothing below the band moves.
+      pending = true
+      shutterTask = Task { @MainActor [weak self] in
+        do { try await Task.sleep(for: .milliseconds(Int(Self.shutterDuration * 1_000))) } catch { return }
+        guard let self, self.closeTask == nil, !self.ending, let window = self.window else { return }
+        self.shutterTask = nil
+        // The bottom edge where it is now (a drag in the meantime keeps its place); only the top edge comes down.
+        let settled = CGRect(origin: window.frame.origin, size: frame.size)
+        window.setFrame(settled, display: true)
+        window.contentView?.setBoundsSize(settled.size)
+      }
+    } else if animated {
+      shutterMoving = false
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0.25; context.timingFunction = CAMediaTimingFunction(name: .easeOut)
         window.animator().setFrame(frame, display: true)
       }
-    } else { window.setFrame(frame, display: true) }
+    } else { shutterMoving = false; window.setFrame(frame, display: true) }
     // CKP-SHELL-07 (owner D51): a scaled cockpit is the same page at a uniform WebKit page zoom, not a
     // scaled bitmap, so text is drawn at its final size and the page hit-tests its own controls.
-    let bounds = CGRect(origin: .zero, size: frame.size)
-    window.contentView?.setBoundsSize(bounds.size)
-    web?.frame = bounds
+    window.contentView?.setBoundsSize(shutterMoving || pending ? window.frame.size : frame.size)
+    web?.frame = fit.webFrame
     web?.pageZoom = fit.scale
     dragRegion?.frame = fit.scaledTitleDragFrame
     publishAppearance()
@@ -1141,7 +1188,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     web.callAsyncJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Alt'}))", arguments: [:], in: nil, in: .page, completionHandler: nil)
   }
   func toggleShutter() {
-    if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+    guard layout?.forcedClosed != true else { return }
+    // CKP-SHELL-33: a key detach's landing or a put back's flight ends first, in its final state (as another key press
+    // ends it), so its 60 Hz driver never moves the window under the shutter's own motion.
+    if !entering { finishEntrance() }
+    // G3-108: detached, the body stays where it is now (a close after an open that had to come down keeps that place).
+    if shellSession.detached, let window, !entering, dragStart == nil { shellSession.remember(window.frame.origin, arrangement: arrangement) }
+    shellSession.shutterClosed.toggle(); applyLayout(shutter: true)
   }
   public var isAttached: Bool { !shellSession.detached }
   /// The detach key (attached) or the put-back key (detached) in the same strip slot, and the right-click item.
@@ -1259,9 +1312,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var attachmentHintAnchor: CockpitAttachmentHintAnchor? {
     guard let window, shown, !ending, !entering, motion == nil, closeTask == nil, dragStart == nil, window.isVisible,
           window.alphaValue > 0, let layout, let content = window.contentView else { return nil }
-    let height = layout.rootHeight + 34, size = Self.attachmentKeySize
+    let height = layout.pageSize.height, size = Self.attachmentKeySize
     // The page lays out in CSS px and renders at `layout.scale`, top-anchored in the whole-point window.
+    // G3-108: closed, the window leaves out the porthole band of the canvas; the anchor keeps to the window's top edge.
     let local = layout.windowRect(page: CGRect(x: Self.attachmentKeyX, y: height - size - 2, width: size, height: size))
+      .offsetBy(dx: 0, dy: -layout.portholeHeight)
     let frame = window.convertToScreen(content.convert(local, to: nil))
     guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
           [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
@@ -1410,6 +1465,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     orderedDelivery.invalidate(); appearanceGate.deferUntilVisible(); cancelAppearanceWait()
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
+    shutterTask?.cancel(); shutterTask = nil; shutterMoving = false
     // CKP-SHELL-33 (D186/D188): an attached cockpit opened from the icon reverses the open: it goes up under the menu
     // bar while the hidden rack shortens behind it, then the rack's visible part retracts into the icon.
     let reverse = openedFromIcon && !appearance.reduceMotion && !shellSession.detached && rackIcon() != nil && window != nil
@@ -1581,6 +1637,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     closeTask?.cancel(); closeTask = nil; cancelDrag()
     stopRack()
+    shutterTask?.cancel(); shutterTask = nil; shutterMoving = false
     if shellSession.detached, let window { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }; outsideMonitor = nil
     if let localMonitor { NSEvent.removeMonitor(localMonitor) }; localMonitor = nil

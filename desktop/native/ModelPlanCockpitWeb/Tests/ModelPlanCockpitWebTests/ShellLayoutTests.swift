@@ -33,10 +33,14 @@ final class ShellLayoutTests: XCTestCase {
     }
     /// The window server places borderless panels on whole points: the layout frame is already whole, so the
     /// real window equals it, and it holds the scaled page with under 1 pt to spare.
+    /// G3-108: the web view keeps the open canvas; closed, the window leaves out the porthole band above the slab.
     func assertHoldsThePage(_ value: CockpitShellLayout, _ label: String, file: StaticString = #filePath, line: UInt = #line) {
         let frame = value.frame
-        for edge in [frame.minX, frame.minY, frame.width, frame.height] { XCTAssertEqual(edge, edge.rounded(), "\(label): whole points", file: file, line: line) }
-        for (window, page) in [(frame.width, value.pageSize.width * value.scale), (frame.height, value.pageSize.height * value.scale)] {
+        for edge in [frame.minX, frame.minY, frame.width, frame.height, value.canvasHeight] { XCTAssertEqual(edge, edge.rounded(), "\(label): whole points", file: file, line: line) }
+        XCTAssertEqual(value.webFrame, CGRect(x: 0, y: 0, width: frame.width, height: value.canvasHeight), "\(label): on the bottom edge", file: file, line: line)
+        let band = value.shutterClosed ? ((value.profile == .full ? 228 : 40) * value.scale).rounded(.down) : 0
+        XCTAssertEqual(value.portholeHeight, band, "\(label): the closed window leaves out the porthole band", file: file, line: line)
+        for (window, page) in [(frame.width, value.pageSize.width * value.scale), (value.canvasHeight, value.pageSize.height * value.scale)] {
             XCTAssertGreaterThanOrEqual(window, page - 1e-6, "\(label): the page fits", file: file, line: line)
             XCTAssertLessThan(window - page, 1, "\(label): no more than the rounding", file: file, line: line)
         }
@@ -103,6 +107,32 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(closed.scale, open.scale); XCTAssertEqual(closed.frame.width, open.frame.width)
         XCTAssertEqual(closed.frame.maxY, open.frame.maxY)
         assertHoldsThePage(closed, "closed")
+    }
+    /// G3-108 (owner, build 14e): the shutter never rescales and never moves the body inside the window. The page
+    /// canvas, the web view and the strip's window place (from the bottom edge) are the same open or closed.
+    /// Attached (D88 / CKP-SHELL-07: the window hangs 6 pt below the menu bar icon) the top edge stays and the body
+    /// rises by the porthole band; the detached placement (bottom edge kept) is the controller's, covered by
+    /// CockpitShutterMotionTests.
+    func testG3_108ShutterKeepsTheBodyAndTheScale() throws {
+        for (width, height, bar, dock) in [(1470, 956, 37, 70), (1440, 900, 24, 0), (1680, 1050, 24, 0)] as [(CGFloat, CGFloat, CGFloat, CGFloat)] {
+            for size in CockpitSize.allCases {
+                let open = try placed(width: width, height: height, bar: bar, macDock: dock, size: size)
+                let closed = try placed(width: width, height: height, bar: bar, macDock: dock, closed: true, size: size)
+                let label = "\(Int(width))x\(Int(height)) \(size.rawValue)"
+                XCTAssertEqual(closed.scale, open.scale, label)
+                XCTAssertEqual(closed.pageSize, open.pageSize, label); XCTAssertEqual(closed.webFrame, open.webFrame, label)
+                XCTAssertEqual(closed.scaledTitleDragFrame, open.scaledTitleDragFrame, "\(label): the strip keeps its place over the bottom edge")
+                XCTAssertEqual(closed.frame.maxY, open.frame.maxY, "\(label): attached, the top edge stays under the icon")
+                XCTAssertEqual(closed.frame.minY - open.frame.minY, closed.portholeHeight, "\(label): the body rises by the porthole band")
+                XCTAssertEqual(closed.portholeHeight, (228 * open.scale).rounded(.down), label)
+                XCTAssertEqual(open.portholeHeight, 0, label)
+            }
+        }
+        let compactOpen = try fit(700), compactClosed = try fit(700, closed: true)
+        XCTAssertEqual(compactOpen.profile, .compact)
+        XCTAssertEqual(compactClosed.webFrame, compactOpen.webFrame)
+        XCTAssertEqual(compactClosed.portholeHeight, (40 * compactOpen.scale).rounded(.down))
+        XCTAssertEqual(compactClosed.scaledTitleDragFrame, compactOpen.scaledTitleDragFrame)
     }
     /// D51: below 75 % the short version shows, at the chosen size when it fits (D60: 85 % by default).
     func testD51ShortVersionOnlyBelowTheReadableScale() throws {
@@ -174,15 +204,16 @@ final class ShellLayoutTests: XCTestCase {
     /// D51: the drag region scales with the page so it stays on the strip at every size.
     func testD51DragRegionScalesWithThePage() throws {
         let value = try placed(width: 1440, height: 900, bar: 24, macDock: 70)
-        // The page is top-anchored in the whole-point window, so the region keeps its scaled distance from the top.
-        XCTAssertEqual(value.frame.height - value.scaledTitleDragFrame.maxY, (value.pageSize.height - value.titleDragFrame.maxY) * value.scale, accuracy: 1e-9)
+        // The page is top-anchored in the whole-point web view, so the region keeps its scaled distance from the top.
+        XCTAssertEqual(value.canvasHeight - value.scaledTitleDragFrame.maxY, (value.pageSize.height - value.titleDragFrame.maxY) * value.scale, accuracy: 1e-9)
         XCTAssertEqual(value.scaledTitleDragFrame.width, 216 * value.scale, accuracy: 1e-9)
         XCTAssertLessThanOrEqual(value.scaledTitleDragFrame.maxY, value.frame.height)
     }
     /// G3-43 / CKP-SHELL-04: the drag region sits on the strip, not on the canopy, in every shape.
     func testG3_43TitleDragFrameFollowsTheStrip() throws {
-        for (height, closed, stripTop) in [(1000, false, 253), (1000, true, 25), (680, false, 65), (680, true, 25)] as [(CGFloat, Bool, CGFloat)] {
-            let value = try fit(height, closed: closed), canvas = value.rootHeight + 34
+        // G3-108: the closed page keeps the strip at its open place on the open canvas.
+        for (height, closed, stripTop) in [(1000, false, 253), (1000, true, 253), (680, false, 65), (680, true, 65)] as [(CGFloat, Bool, CGFloat)] {
+            let value = try fit(height, closed: closed), canvas = value.pageSize.height
             XCTAssertEqual(canvas - value.titleDragFrame.maxY, stripTop - 3, "top of the strip keys")
             XCTAssertEqual(value.titleDragFrame.height, 32)
             XCTAssertLessThan(value.titleDragFrame.maxX, 243, "the shutter keeps its input")
@@ -193,7 +224,8 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertTrue(value.shutterClosed); XCTAssertTrue(value.forcedClosed)
         XCTAssertEqual(value.rootHeight, 609)
         XCTAssertLessThan(value.scale, 1)
-        XCTAssertEqual(value.frame.width / 636, value.frame.height / 643, accuracy: 0.002, "uniform, up to the whole-point rounding")
+        XCTAssertEqual(value.frame.width / 636, value.canvasHeight / 669, accuracy: 0.002, "uniform, up to the whole-point rounding")
+        XCTAssertLessThanOrEqual(value.frame.height, 494, "the closed window fits the room")
         assertHoldsThePage(value, "short and narrow")
         XCTAssertGreaterThanOrEqual(value.frame.minY, 50)
         XCTAssertLessThanOrEqual(value.frame.maxX, 500)
