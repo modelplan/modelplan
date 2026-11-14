@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -113,6 +114,24 @@ func anchorOf(db *sql.DB, query string, rowid int64) (string, int64, error) {
 // beforeClear: a request start from before the tool's clear (cleared, unix ms; 0: none).
 func beforeClear(start, cleared int64) bool { return start > 0 && start < cleared }
 
+// rowIDs: the row numbers a query selects.
+func rowIDs(db *sql.DB, query string, args ...any) ([]int64, error) {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 func hashID(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:8])
@@ -121,7 +140,9 @@ func hashID(s string) string {
 // scanDB reads what is new in one database with read (rows past a rowid, plus listed rowids) and
 // adds the finished requests to the ledger under source. anchor selects a stable identity of the
 // row with the given rowid (its own id and start), so a replaced database is recognised.
-func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, read func(db *sql.DB, after int64, pending []int64) ([]dbRow, error)) bool {
+// postClear is the FROM … WHERE clause of the requests at or below a row number (first parameter)
+// that started at or after a time (second parameter, unix ms): see below.
+func (l *PerfLedger) scanDB(path, source, parser, anchor, postClear string, now time.Time, read func(db *sql.DB, after int64, pending []int64) ([]dbRow, error)) bool {
 	if l.Stores == nil {
 		l.Stores = map[string]DBCursor{}
 	}
@@ -140,6 +161,8 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 	if f := l.cleared.floor(source); !f.IsZero() {
 		cleared = f.UnixMilli()
 	}
+	// skip: the rows up to it are passed over unread because the row there is from before the clear.
+	var skip int64
 	if _, had := l.Stores[key]; !had {
 		// The tool's history was cleared through row N of its database: read on past it, so the
 		// rows from before the clear are not read again. When this database's row N is missing
@@ -147,7 +170,7 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 		// it is read from the start, and the clear time keeps its earlier requests out.
 		if n := l.cleared.dbRows(source); n > 0 {
 			if at, start, err := anchorOf(db, anchor, n); err == nil && at != "" && beforeClear(start, cleared) {
-				c.RowID = n
+				c.RowID, skip = n, n
 			}
 		}
 	} else if c.RowID > 0 {
@@ -164,6 +187,9 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 		// zero would only skip the same pre-clear rows again, and with a full batch of them would
 		// never get past them.
 		keep := c.Anchor == "" && at != "" && beforeClear(start, cleared)
+		if keep {
+			skip = c.RowID
+		}
 		if !keep && (at == "" || c.Anchor == "" || at != c.Anchor) {
 			// Every request counted so far started no later than Mark, so the re-read counts only
 			// rows that started after it (or were still running): nothing counts twice, however
@@ -176,9 +202,37 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 			c.RowID, c.Pending = 0, nil
 		}
 	}
+	// An old request at the skipped row proves neither that the rows below it are old nor that this
+	// is the database that was cleared: a replacement can number a post-clear request lower. One
+	// count of the rows up to the skipped one that started at or after the clear: none (the usual
+	// case) and they stay skipped, without a re-read; otherwise exactly those rows are read too.
+	// Rows from before the clear still record nothing (below). A row whose start is missing or not
+	// a number counts as 0, so as from before the clear, and is not read.
+	var below []dbRow
+	if skip > 0 && cleared > 0 {
+		var n int64
+		if err := db.QueryRow("SELECT COUNT(*) "+postClear, skip, cleared).Scan(&n); err != nil {
+			return false
+		}
+		if n > 0 {
+			ids, err := rowIDs(db, "SELECT rowid "+postClear+" ORDER BY rowid LIMIT "+itoa64(dbBatch), skip, cleared)
+			if err != nil {
+				return false
+			}
+			if below, err = read(db, math.MaxInt64, ids); err != nil {
+				return false
+			}
+		}
+	}
 	rows, err := read(db, c.RowID, c.Pending)
 	if err != nil {
 		return false
+	}
+	more := len(rows) >= dbBatch
+	for _, r := range below {
+		if !slices.ContainsFunc(rows, func(x dbRow) bool { return x.rowid == r.rowid }) {
+			rows = append(rows, r)
+		}
 	}
 	if c.Seen == nil {
 		c.Seen = map[string]int64{}
@@ -239,7 +293,7 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 			delete(c.Seen, id)
 		}
 	}
-	if c.RowID >= c.ResetRow && len(rows) < dbBatch {
+	if c.RowID >= c.ResetRow && !more {
 		c.ResetRow, c.ResetMark, c.ResetPending = 0, 0, nil // the re-read is complete
 	}
 	c.Anchor = ""
@@ -251,7 +305,7 @@ func (l *PerfLedger) scanDB(path, source, parser, anchor string, now time.Time, 
 			c.Anchor = at
 		}
 	}
-	c.Pending, c.Sig, c.Day, c.Checked, c.More = pending, sig, day(now), now.UTC().Truncate(time.Second), len(rows) >= dbBatch
+	c.Pending, c.Sig, c.Day, c.Checked, c.More = pending, sig, day(now), now.UTC().Truncate(time.Second), more
 	l.Stores[key] = c
 	return true
 }

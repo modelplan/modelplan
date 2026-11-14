@@ -584,7 +584,7 @@ func TestHistoryClearDatabaseBatchProgress(t *testing.T) {
 		if err := speed.ObserveZCode(cache, home, speed.Ingest{}, boundary.Add(time.Duration(i)*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
-		if c := zcodeCursor(t, cache); c.RowID < 5000 || (i > 1 && c.More) {
+		if c := zcodeCursor(t, cache); c.RowID < 5000 || (i == 1 && c.RowID != 5001) || (i > 1 && c.More) {
 			t.Fatalf("scan %d made no progress: rowID=%d more=%t", i, c.RowID, c.More)
 		}
 	}
@@ -654,5 +654,149 @@ func TestHistoryClearDatabaseReplacedFallsBackToClearTime(t *testing.T) {
 	}
 	if c := zcodeCursor(t, cache); c.RowID != 5001 || c.More {
 		t.Fatalf("want the reads through row 5001, got rowID=%d more=%t", c.RowID, c.More)
+	}
+}
+
+// A database replaced after the clear with as many rows as the watermark, where the row at the
+// watermark is a pre-clear request but rows below it are post-clear requests (row numbers do not
+// follow request times). Each post-clear request counts exactly once, no pre-clear one counts or
+// leaves a hash, and a request added later counts once too.
+func TestHistoryClearDatabaseReplacedWithMixedRequestTimes(t *testing.T) {
+	testenv.IsolateHome(t)
+	t.Setenv("MODELPLAN_HISTORY", "")
+	cache, home := t.TempDir(), t.TempDir()
+	now := time.Now().UTC()
+	seedPerfLedger(t, cache, now.Add(-time.Hour))
+	path := filepath.Join(home, "db.sqlite")
+	t.Setenv("MODELPLAN_ZCODE_DB", path)
+	old := zcodeBatchDB(t, path, "synthetic-old", 5000, now.Add(-2*time.Minute))
+	if err := speed.ObserveZCode(cache, home, speed.Ingest{}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := EraseScope(Paths{Cache: cache}, "zai.local_history", true); err != nil {
+		t.Fatal(err)
+	}
+	cleared := speed.LoadCleared(cache)
+	boundary := cleared.Tools["zai"]
+	if got := cleared.DBRows["zai"]; got != 5000 {
+		t.Fatalf("want the watermark 5000, got %d", got)
+	}
+	old.Close()
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		os.Remove(p)
+	}
+	db := zcodeBatchDB(t, path, "synthetic-copied", 5000, now.Add(-90*time.Second))
+	for i, row := range []struct {
+		rowid int64
+		out   int
+	}{{1, 44}, {2500, 33}, {4999, 22}} {
+		at := boundary.Add(time.Duration(i+1) * time.Second)
+		if _, err := db.Exec(`UPDATE model_usage SET id = ?, started_at = ?, completed_at = ?, output_tokens = ? WHERE rowid = ?`,
+			fmt.Sprintf("synthetic-replaced-new-%d", i), at.UnixMilli(), at.Add(time.Second).UnixMilli(), row.out, row.rowid); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 1; i <= 6; i++ {
+		if err := speed.ObserveZCode(cache, home, speed.Ingest{}, boundary.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if c := zcodeCursor(t, cache); c.RowID < 5000 || c.More {
+			t.Fatalf("scan %d: rowID=%d more=%t", i, c.RowID, c.More)
+		}
+	}
+	if _, _, n, out := ledgerTotals(t, cache, "zcode"); n != 3 || out != 99 {
+		t.Fatalf("each post-clear request below the watermark counts once: got %d/%d, want 3/99", n, out)
+	}
+	seen := zcodeSeen(t, cache)
+	if len(seen) != 3 {
+		t.Fatalf("want the three post-clear requests' hashes, got starts %v", seen)
+	}
+	for _, at := range seen {
+		if at < boundary.UnixMilli() {
+			t.Fatalf("a pre-clear request's hash was kept: starts %v", seen)
+		}
+	}
+	if got := zcodeAnchors(t, cache); len(got) != 0 {
+		t.Fatalf("no anchor for the pre-clear row at the watermark, got %v", got)
+	}
+	if _, err := db.Exec(`INSERT INTO model_usage VALUES ('synthetic-replaced-later', 'synthetic-session', 'synthetic-model', ?, ?, 11)`,
+		boundary.Add(10*time.Second).UnixMilli(), boundary.Add(11*time.Second).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	for i := 7; i <= 9; i++ {
+		if err := speed.ObserveZCode(cache, home, speed.Ingest{}, boundary.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, n, out := ledgerTotals(t, cache, "zcode"); n != 4 || out != 110 {
+		t.Fatalf("a later request counts once: got %d/%d, want 4/110", n, out)
+	}
+	if c := zcodeCursor(t, cache); c.RowID != 5001 || c.Anchor == "" {
+		t.Fatalf("want the cursor anchored at row 5001, got rowID=%d anchor=%q", c.RowID, c.Anchor)
+	}
+}
+
+// The same for OpenCode: a replaced database whose row at the watermark is a pre-clear message
+// and whose first row is a post-clear one. The post-clear message counts once; a message without
+// a readable start counts as pre-clear.
+func TestHistoryClearOpenCodeReplacedWithMixedRequestTimes(t *testing.T) {
+	testenv.IsolateHome(t)
+	t.Setenv("MODELPLAN_HISTORY", "")
+	cache, home := t.TempDir(), t.TempDir()
+	now := time.Now().UTC()
+	seedPerfLedger(t, cache, now.Add(-time.Hour))
+	path := filepath.Join(home, "opencode.db")
+	t.Setenv("MODELPLAN_OPENCODE_DB", path)
+	openDB := func() *sql.DB {
+		t.Helper()
+		db, err := sql.Open("sqlite", "file:"+path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { db.Close() })
+		if _, err := db.Exec(`CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL)`); err != nil {
+			t.Fatal(err)
+		}
+		return db
+	}
+	msg := func(db *sql.DB, id string, created string, out int) {
+		t.Helper()
+		data := fmt.Sprintf(`{"id":%q,"time":{"created":%s,"completed":%d},"model":{"id":"synthetic-model"},"tokens":{"output":%d}}`,
+			id, created, now.Add(time.Hour).UnixMilli(), out)
+		if _, err := db.Exec(`INSERT INTO session_message VALUES (?, 'synthetic-session', 'assistant', ?)`, "row-"+id, data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ms := func(at time.Time) string { return fmt.Sprint(at.UnixMilli()) }
+	old := openDB()
+	for i := 0; i < 3; i++ {
+		msg(old, fmt.Sprintf("synthetic-old-%d", i), ms(now.Add(-2*time.Minute)), 1)
+	}
+	if err := speed.ObserveOpenCode(cache, home, speed.Ingest{}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := EraseScope(Paths{Cache: cache}, "opencodego.local_history", true); err != nil {
+		t.Fatal(err)
+	}
+	cleared := speed.LoadCleared(cache)
+	boundary := cleared.Tools["opencodego"]
+	if got := cleared.DBRows["opencodego"]; got != 3 {
+		t.Fatalf("want the watermark 3, got %d", got)
+	}
+	old.Close()
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		os.Remove(p)
+	}
+	db := openDB()
+	msg(db, "synthetic-replaced-new", ms(boundary.Add(time.Second)), 44)
+	msg(db, "synthetic-no-start", `"not a time"`, 7)
+	msg(db, "synthetic-copied", ms(now.Add(-90*time.Second)), 1)
+	for i := 1; i <= 4; i++ {
+		if err := speed.ObserveOpenCode(cache, home, speed.Ingest{}, boundary.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, n, out := ledgerTotals(t, cache, "opencode"); n != 1 || out != 44 {
+		t.Fatalf("the post-clear message below the watermark counts once: got %d/%d, want 1/44", n, out)
 	}
 }
