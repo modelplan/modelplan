@@ -2373,7 +2373,11 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
         guard permitted, !retired else { edge.cancelBackgroundMove(); return }
         edge.updateBackgroundMove(global: globalPoint)
     }
+    /// The carry sets the closed hand (DockInstrumentView.pointerDragged); a release or cancel routed through the
+    /// panel never reaches the view's pointerUp, so the panel route restores the arrow itself (#960 sampling, P3).
+    var restorePanelMoveCursor: () -> Void = { NSCursor.arrow.set() }
     public func finishPanelMove(globalPoint: CGPoint) {
+        defer { restorePanelMoveCursor() }
         guard permitted, !retired else { edge.cancelBackgroundMove(); return }
         edge.endBackgroundMove(global: globalPoint)
     }
@@ -2383,6 +2387,7 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
     public var hasPanelCarry: Bool { permitted && !retired && edge.isBackgroundPressed }
 
     public func cancelPanelMove() {
+        defer { restorePanelMoveCursor() }
         if hasPanelControlCapture { interactionController?.cancelNozzle() }
         edge.cancelBackgroundMove()
     }

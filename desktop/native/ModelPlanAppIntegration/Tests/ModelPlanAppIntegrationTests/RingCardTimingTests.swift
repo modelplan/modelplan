@@ -302,4 +302,16 @@ private actor RingCardClient: EngineClient {
         XCTAssertTrue(dock.card.isHidden, "an outside press closes without the grace")
         pressed = false
     }
+
+    /// #960 post-merge sampling (P3): a ring carry released or cancelled through the panel route (hasPanelCarry)
+    /// never reaches the view's pointerUp, which was the only place the closed-hand cursor was reset.
+    func testAPanelRoutedReleaseOrCancelRestoresTheArrowCursor() async throws {
+        let (dock, _, ring) = try await widget()
+        var restored = 0
+        dock.restorePanelMoveCursor = { restored += 1 }
+        dock.finishPanelMove(globalPoint: CGPoint(x: ring.midX, y: ring.midY))
+        XCTAssertEqual(restored, 1, "a panel-routed drop restores the arrow")
+        dock.cancelPanelMove()
+        XCTAssertEqual(restored, 2, "a panel-routed cancel restores the arrow")
+    }
 }
