@@ -3,8 +3,15 @@ package quota
 // Independent read-only Code Assist reader. Protocol evidence: google-gemini/
 // gemini-cli 363a13119a57354f469732577518b9d6b319d1d6, code_assist types/server/
 // setup and utils/paths (Apache-2.0); CodexBar 0.81.0 GeminiStatusProbe.swift
-// (MIT). No source is vendored. No OAuth refresh, client-secret extraction,
-// project enumeration, onboarding, provider CLI launch or inference is performed.
+// (MIT). No source is vendored. No client-secret extraction, project enumeration,
+// onboarding, provider CLI launch or inference is performed.
+//
+// D232 (owner, 2026-11-13): behind the separate opt-in scope
+// gemini.account_usage.token_refresh, a lapsed one-hour access token is exchanged for a
+// new one with the saved refresh token, as CodexBar does (GeminiStatusProbe.swift at
+// steipete/CodexBar 7447bc77c2497323d9c41e40164ce705533493c8, MIT). The client is the
+// Gemini CLI's published installed-app client (readers.GeminiCLIClientID). The new token
+// stays in this process's memory only; ~/.gemini and ModelPlan's cache are never written.
 
 import (
 	"bytes"
@@ -14,10 +21,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/readers"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,6 +43,7 @@ func geminiLoginFiles(profile ReaderProfile) []string {
 }
 
 var geminiHost = "https://cloudcode-pa.googleapis.com"
+var geminiTokenEndpoint = "https://oauth2.googleapis.com/token"
 var geminiIdentifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
 var geminiProjectID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$`)
 
@@ -52,9 +62,102 @@ func geminiProfiles() []ReaderProfile {
 }
 
 type geminiCredential struct {
-	AccessToken string `json:"access_token"`
-	Expiry      int64  `json:"expiry_date"`
-	IDToken     string `json:"id_token"`
+	AccessToken  string `json:"access_token"`
+	Expiry       int64  `json:"expiry_date"`
+	IDToken      string `json:"id_token"`
+	RefreshToken string `json:"refresh_token"` // sent only to Google's token endpoint, only under D232 consent
+}
+
+// Refreshed access tokens stay in this process's memory, keyed by a hash of the profile,
+// the saved login and the grant generation, so a new login or a consent change drops them.
+var geminiTokens = struct {
+	sync.Mutex
+	values map[string]geminiToken
+}{values: map[string]geminiToken{}}
+
+type geminiToken struct {
+	Access, ID string
+	Until      time.Time
+}
+
+func geminiCachedToken(key string, now time.Time) geminiToken {
+	geminiTokens.Lock()
+	defer geminiTokens.Unlock()
+	v := geminiTokens.values[key]
+	if !v.Until.After(now.Add(time.Minute)) {
+		delete(geminiTokens.values, key)
+		return geminiToken{}
+	}
+	return v
+}
+
+func geminiRememberToken(key string, v geminiToken, now time.Time) {
+	geminiTokens.Lock()
+	defer geminiTokens.Unlock()
+	for k, old := range geminiTokens.values {
+		if !old.Until.After(now) {
+			delete(geminiTokens.values, k)
+		}
+	}
+	if len(geminiTokens.values) >= 8 {
+		geminiTokens.values = map[string]geminiToken{}
+	}
+	geminiTokens.values[key] = v
+}
+
+// geminiRefresh exchanges the saved refresh token once, through its own pinned transport.
+// It returns the reader state and fixed code on failure; no response text is kept.
+func geminiRefresh(ctx context.Context, base *http.Client, refresh string, now time.Time) (geminiToken, string, time.Time, string) {
+	if refresh == "" || len(refresh) > 2048 || strings.ContainsAny(refresh, " \t\r\n") {
+		return geminiToken{}, "expired", time.Time{}, ""
+	}
+	form := url.Values{"client_id": {readers.GeminiCLIClientID}, "client_secret": {readers.GeminiCLIClientSecret}, "grant_type": {"refresh_token"}, "refresh_token": {refresh}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, geminiTokenEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return geminiToken{}, "unavailable", time.Time{}, "other"
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "modelplan")
+	client := *accountReadClient(consent.ScopeGeminiAccountUsageTokenRefresh, base)
+	client.Jar = nil
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
+	if err != nil {
+		return geminiToken{}, "unavailable", time.Time{}, transportErrorCode(err)
+	}
+	defer resp.Body.Close()
+	retry := time.Time{}
+	if resp.StatusCode == 429 || resp.StatusCode == 503 {
+		if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && seconds > 0 && seconds <= 86400 {
+			retry = now.Add(time.Duration(seconds) * time.Second)
+		}
+	}
+	switch {
+	case resp.StatusCode == 200:
+	case resp.StatusCode == 400 || resp.StatusCode == 401:
+		// invalid_grant: the saved login was revoked or replaced; the user signs in again.
+		return geminiToken{}, "expired", retry, "http_401"
+	case resp.StatusCode == 429:
+		return geminiToken{}, "rate-limited", retry, "http_429"
+	default:
+		return geminiToken{}, "unavailable", retry, httpErrorCode(resp.StatusCode)
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10+1))
+	if err != nil {
+		return geminiToken{}, "unavailable", retry, transportErrorCode(err)
+	}
+	var reply struct {
+		Access  string `json:"access_token"`
+		Expires int64  `json:"expires_in"`
+		Type    string `json:"token_type"`
+		ID      string `json:"id_token"`
+	}
+	if len(b) > 64<<10 || json.Unmarshal(b, &reply) != nil || reply.Access == "" || len(reply.Access) > 16<<10 || strings.ContainsAny(reply.Access, " \t\r\n") ||
+		!strings.EqualFold(reply.Type, "Bearer") || reply.Expires < 120 || reply.Expires > 86400 || len(reply.ID) > 32<<10 {
+		return geminiToken{}, "unsupported_schema", retry, "schema_changed"
+	}
+	return geminiToken{Access: reply.Access, ID: reply.ID, Until: now.Add(time.Duration(reply.Expires) * time.Second)}, "", retry, ""
 }
 
 // Project selectors remain transient. Persist only their HMAC and stable tier.
@@ -141,6 +244,7 @@ func geminiUnsupported(root string) string {
 }
 
 func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	base := c
 	c = accountReadClient(consent.ScopeGeminiAccountUsageSavedLogin, c)
 	meta := r.Previous.Metadata
 	configured := os.Getenv("GOOGLE_CLOUD_PROJECT")
@@ -175,13 +279,46 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 	}
 	credentialKey := readerHash(r.Paths.Cache, "gemini:credential", credential.AccessToken)
 	changed = scopeChanged || (meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey))
-	if credential.AccessToken == "" || len(credential.AccessToken) > 16<<10 || strings.ContainsAny(credential.AccessToken, "\r\n") || credential.Expiry <= r.Now.Add(time.Minute).UnixMilli() {
+	if credential.AccessToken == "" || len(credential.AccessToken) > 16<<10 || strings.ContainsAny(credential.AccessToken, "\r\n") {
 		out := fail("expired", "Open Gemini CLI to refresh")
 		out.Entry.NextStep = out.Entry.Notice
 		return out
 	}
 	if credentialKey == "" {
 		return fail("unavailable", "Identity key unavailable")
+	}
+	// The bearer is the saved token while it is valid. Once it lapses, and only when the
+	// D232 refresh scope is granted, a refreshed token held in memory replaces it.
+	bearer, idToken := credential.AccessToken, credential.IDToken
+	if credential.Expiry <= r.Now.Add(time.Minute).UnixMilli() {
+		tokenKey := readerHash(r.Paths.Cache, "gemini:transient-token", r.ProfileKey+"\x00"+credentialKey+"\x00"+r.Grant.Generation)
+		if !r.Grant.TokenRefresh || credential.RefreshToken == "" || tokenKey == "" {
+			out := fail("expired", "Open Gemini CLI to refresh")
+			out.Entry.NextStep = out.Entry.Notice
+			return out
+		}
+		token := geminiCachedToken(tokenKey, r.Now)
+		if token.Access == "" {
+			var state, code string
+			var retry time.Time
+			token, state, retry, code = geminiRefresh(ctx, base, credential.RefreshToken, r.Now)
+			if state != "" {
+				out := fail(state, geminiNextStep(state))
+				if code != "" {
+					out.Entry.ErrorCode = code
+				}
+				if state == "expired" {
+					out.Entry.NextStep = out.Entry.Notice
+				}
+				out.RetryAfter = retry
+				return out
+			}
+			geminiRememberToken(tokenKey, token, r.Now)
+		}
+		bearer = token.Access
+		if token.ID != "" {
+			idToken = token.ID
+		}
 	}
 	projectCacheKey := readerHash(r.Paths.Cache, "gemini:transient-project", r.ProfileKey+"\x00"+credentialKey+"\x00"+r.Grant.Generation)
 	if projectCacheKey == "" {
@@ -226,7 +363,7 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 			request["cloudaicompanionProject"] = configured
 		}
 		var assist geminiAssist
-		state, retry, code := geminiJSON(ctx, c, "loadCodeAssist", credential.AccessToken, request, &assist, r.Now)
+		state, retry, code := geminiJSON(ctx, c, "loadCodeAssist", bearer, request, &assist, r.Now)
 		if state != "" {
 			out := fail(state, geminiNextStep(state))
 			out.Entry.ErrorCode = code
@@ -252,7 +389,7 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 		wallet = geminiCredits(creditValues, r.Now)
 	}
 	var quota geminiQuota
-	state, retry, code := geminiJSON(ctx, c, "retrieveUserQuota", credential.AccessToken, map[string]string{"project": project.ID}, &quota, r.Now)
+	state, retry, code := geminiJSON(ctx, c, "retrieveUserQuota", bearer, map[string]string{"project": project.ID}, &quota, r.Now)
 	if state != "" {
 		out := fail(state, geminiNextStep(state))
 		out.Invalidate = changed
@@ -269,7 +406,7 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Gemini sign-in changed during the read; refresh required"}, Invalidate: true}
 	}
 	a := &Account{Source: "native:gemini", Via: "native", Plan: meta.Plan, ObservedAt: r.Now.UTC(), Windows: windows, Credits: wallet}
-	if subject := geminiSubject(credential.IDToken, r.Now); subject != "" {
+	if subject := geminiSubject(idToken, r.Now); subject != "" {
 		meta.AccountKey = readerHash(r.Paths.Cache, "gemini:account", subject)
 		if !IdentityOff() {
 			if ref := assignSubscription(r.Paths.Cache, "gemini-cli-account-project", subject+"\x00"+project.ID, r.Now); ref != "" {
