@@ -109,6 +109,11 @@ func parseZai(r zaiResponse, now time.Time) codexbarEntry {
 			code, _ = r.Error.Code.Int64()
 		}
 		e.ErrorCode = zaiBodyErrorCode(code)
+		if r.Error == nil && r.Code == 500 {
+			// The monitor envelope's 500 is a key without a Coding Plan, not a server error
+			// (Token Monitor docs/providers/zai.md and tests/shared/zaiLimits.test.js@b6b5548).
+			e.ErrorCode = "no_plan"
+		}
 		e.Error = e.ErrorCode
 		return e
 	}

@@ -3,15 +3,17 @@
 // Last-seen evidence does not establish an end time or a complete history.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
-import {sessionMember,memberColour,NEUTRAL} from './session-binding.js';
+import {sessionMember,memberColours,NEUTRAL} from './session-binding.js';
 import {shortLabel} from '../study/rocket-r1/short-label.js';
+// The producer's label for a project that has a reference but no name the tool stores (cockpit_details.go).
+const UNNAMED='Unnamed project';
 type Locale='en'|'zh-CN';
 const esc=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 type TapeSession=NonNullable<WireCockpitData['details']>['sessions'][number];
 // CKP-STRIP-15: the frame owns what a line links to; the tape only reports which line.
 export interface TapeLink {knows(ref:string):boolean;hover(session:TapeSession|null):void;select(session:TapeSession):void;}
 export function mountPrototypeTape(root:HTMLElement,link?:TapeLink){
- const host=root.querySelector<HTMLElement>('.ck-tape')!;let locale:Locale='en',count=5,data:WireCockpitData|null=null;
+ const host=root.querySelector<HTMLElement>('.ck-tape')!;let locale:Locale='en',count=5,data:WireCockpitData|null=null,named=true;
  function paint(){
   const detail=data?.details,coverage=detail?.sessionCoverage??'unavailable';
   host.dataset.sessionsAvailable=String(!!detail&&coverage==='local-last-seen');
@@ -23,14 +25,18 @@ export function mountPrototypeTape(root:HTMLElement,link?:TapeLink){
   // The chip is the session's subscription colour (study tape.js); an unbound session stays neutral.
   // A published model reads by its short name, as on the faders and the HUD; anything else as reported.
   const names=new Map((detail?.publishedModels??[]).map(m=>[m.id,shortLabel(m.name)])),modelName=(id:string)=>names.get(id)??id;
-  const colours=shown.map(s=>{const m=sessionMember(members,s);return m?memberColour(m):NEUTRAL;});
+  const palette=memberColours(members),colours=shown.map(s=>{const m=sessionMember(members,s);return m?palette.get(m.key)??NEUTRAL:NEUTRAL;});
   const rows=shown.map(s=>{
    const rate=s.state==='running'&&s.rate!==null&&Number.isFinite(s.rate)&&s.rate>=0?s.rate:null;
    const running=s.state==='running'?(locale==='en'?'Running':'运行中'):(locale==='en'?'Last seen':'最近读数'),rateLabel=rate===null?'':(locale==='en'?'Session rate ':'会话速率 ')+rate+' t/s';
+   // G3-100: no project in the tool's own definition reads "No project"; with names turned off the label stays hidden ("--").
+   // glm-909-1: the producer's state decides, so a name hidden by `project-labels off` never reads "No project".
+   const state=s.projectState??(s.projectLabel===UNNAMED?'unnamed':s.projectLabel===null?'none':'named');
+   const project=!named||state==='hidden'?'--':state==='unnamed'?(locale==='en'?UNNAMED:'未命名项目'):state==='none'?(locale==='en'?'No project':'无项目'):s.projectLabel??'--';
    const linked=!!link&&(!!s.subscriptionRef||link.knows(s.sessionRef));
-   return `<button class="tl t-observed" type="button"${linked?'':' aria-disabled="true" tabindex="-1"'} data-session="${esc(s.sessionRef)}" aria-label="${esc([s.source,s.model,s.effort??'--',s.projectLabel??'--',running,rateLabel].filter(Boolean).join(' · '))}">
+   return `<button class="tl t-observed" type="button"${linked?'':' aria-disabled="true" tabindex="-1"'} data-session="${esc(s.sessionRef)}" aria-label="${esc([s.source,s.model,s.effort??'--',project,running,rateLabel].filter(Boolean).join(' · '))}">
    <i class="chip"></i><span class="t-tool">${esc(s.source)}</span><span class="t-model" title="${esc(s.model)}">${esc(modelName(s.model))}</span><span class="t-eff">${esc(s.effort??'--')}</span>
-   <span class="t-proj">${esc(s.projectLabel??'--')}</span><span class="t-live" aria-label="${esc(rateLabel)}">${rate===null?'--':`${esc(Math.round(rate))}<em class="t-unit"> t/s</em>`}</span><span class="t-time">${esc(running)}${s.state==='running'?'<i class="t-cur" aria-hidden="true"></i>':''}</span></button>`;
+   <span class="t-proj">${esc(project)}</span><span class="t-live" aria-label="${esc(rateLabel)}">${rate===null?'--':`${esc(Math.round(rate))}<em class="t-unit"> t/s</em>`}</span><span class="t-time">${esc(running)}${s.state==='running'?'<i class="t-cur" aria-hidden="true"></i>':''}</span></button>`;
   });
   if(sessions.length>shown.length){const hidden=sessions.slice(shown.length),n=hidden.length,running=hidden.every(s=>s.state==='running');rows.push(`<span class="tl t-overflow">${locale==='en'?(running?`${n} more running`:`${n} more sessions`):(running?`另有 ${n} 个会话运行中`:`另有 ${n} 个会话`)}</span>`);}
   while(rows.length<count)rows.push('<span class="tl t-blank" aria-hidden="true"></span>');
@@ -43,5 +49,5 @@ export function mountPrototypeTape(root:HTMLElement,link?:TapeLink){
   host.addEventListener('focusin',e=>link.hover(sessionAt(e.target)));host.addEventListener('focusout',()=>link.hover(null));
   host.addEventListener('click',e=>{const session=sessionAt(e.target);if(e.isTrusted&&session)link.select(session);});
  }
- paint();return {locale(value:Locale){locale=value;paint();},layout(value:number){count=value===5?5:3;root.style.setProperty('--tape-lines',String(count));paint();},render(value:WireCockpitData){data=value;paint();},clear(){data=null;paint();}};
+ paint();return {locale(value:Locale){locale=value;paint();},layout(value:number){count=value===5?5:3;root.style.setProperty('--tape-lines',String(count));paint();},render(value:WireCockpitData,namesShown=true){data=value;named=namesShown;paint();},clear(){data=null;paint();}};
 }

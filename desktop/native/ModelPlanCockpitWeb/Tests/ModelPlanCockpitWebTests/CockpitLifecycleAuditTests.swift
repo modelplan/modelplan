@@ -29,11 +29,11 @@ import ModelPlanWire
     try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
-  private func page(_ bundle: VerifiedCockpitBundle, reduceMotion: Bool, icon: CGRect?) throws -> CockpitWindowController {
+  private func page(_ bundle: VerifiedCockpitBundle, reduceMotion: Bool, icon: CGRect?, session: CockpitShellSession? = nil) throws -> CockpitWindowController {
     _ = NSApplication.shared
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let page = CockpitWindowController(bundle: bundle, context: context,
-      appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion), anchor: { icon })
+      appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion), shellSession: session, anchor: { icon })
     page.onFailure = { [weak self] in self?.failures.append($0) }
     return page
   }
@@ -60,6 +60,28 @@ import ModelPlanWire
     let shell = CockpitShellState(closed: false, attached: true, forcedClosed: false, tier: .tall)
     let load = try page.bridge.load(.init(theme: .night, locale: .en, profile: .full), shell: shell)
     page.verificationReceive(try reply(load, type: "ready", sequence: 1), source: source)
+  }
+
+  /// Post-merge 887: a bundle admitted earlier whose index.html is gone when the page loads fails as a bundle problem
+  /// (`bundleResource`), not as a generic navigation failure, so the notice can ask for a reinstall.
+  func testABundledFileThatDisappearsAfterAdmissionFailsAsABundleResource() async throws {
+    guard NSScreen.main != nil else { throw XCTSkip("needs a display") }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-bundle-gone-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+    let html = Data("<!doctype html><title>synthetic</title>".utf8)
+    try html.write(to: root.appendingPathComponent("index.html"))
+    let manifest = try JSONSerialization.data(withJSONObject: [
+      "schemaVersion": 1, "edition": "community", "interfaceOnly": true, "files": ["index.html": VerifiedCockpitBundle.digest(html)],
+    ])
+    try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
+    let admitted = try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
+    try FileManager.default.removeItem(at: root.appendingPathComponent("index.html"))
+    let page = try page(admitted, reduceMotion: true, icon: nil)
+    addTeardownBlock { @MainActor in page.discard() }
+    page.open()
+    for _ in 0..<500 where failures.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(failures, [.bundleResource])
   }
 
   /// Finding 1 (P1): a press on the enlarged field, outside the smaller cockpit under it, reached the cockpit's
@@ -159,6 +181,36 @@ import ModelPlanWire
     XCTAssertEqual(window.frame, home.frame, "the window settles under the icon")
     XCTAssertEqual(window.contentView?.bounds.size, home.frame.size, "with the page canvas of that layout")
     XCTAssertEqual(failures, [])
+  }
+
+  /// G3-102 (build 14e): a detached cockpit stayed above every other app. Attached floats over the widget (D49);
+  /// detached is a normal window; putting it back floats it again. Through the strip's drag entry and the put-back.
+  func testADetachedCockpitIsANormalWindowAndAnAttachedOneFloats() throws {
+    let page = try page(try bundle(), reduceMotion: true, icon: try menuBarIcon())
+    page.prewarm(); detachSyntheticLoad(page)
+    defer { page.discard() }
+    let window = try XCTUnwrap(page.window)
+    XCTAssertEqual(window.level, CockpitWindowController.panelLevel, "attached: above the widget")
+    let from = CGPoint(x: window.frame.minX + 60, y: window.frame.maxY - 30)
+    page.titleDrag(.began, point: from)
+    page.titleDrag(.moved, point: CGPoint(x: from.x + 80, y: from.y - 300))
+    page.titleDrag(.ended, point: CGPoint(x: from.x + 80, y: from.y - 300))
+    XCTAssertFalse(page.isAttached)
+    XCTAssertEqual(window.level, .normal, "detached: other apps can cover it")
+    page.setAttached(true)
+    XCTAssertEqual(window.level, CockpitWindowController.panelLevel, "put back: floats again")
+  }
+
+  /// glm-908-1 (P2): closing a detached cockpit keeps the session detached; a reopen before the prewarm builds a
+  /// cold page through `open()` alone (no appearance update). That page is a normal window too.
+  func testAColdReopenOfADetachedSessionIsANormalWindow() throws {
+    let session = CockpitShellSession(); session.detached = true
+    let page = try page(try bundle(), reduceMotion: true, icon: try menuBarIcon(), session: session)
+    defer { page.discard() }
+    page.open(); detachSyntheticLoad(page)
+    let window = try XCTUnwrap(page.window)
+    XCTAssertFalse(page.isAttached)
+    XCTAssertEqual(window.level, .normal, "a cold detached reopen does not float over other apps")
   }
 
   /// Finding 4 (P2): the strip takes first responder on mouse-down; after the drag ends or is cancelled the page has

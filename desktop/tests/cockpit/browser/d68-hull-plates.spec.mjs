@@ -6,7 +6,7 @@ import {visualFixture} from '../visual-fixture.mjs';
 // D68 / CKP-SHELL-16, -25 (owner 2026-11-08): the hull is the r3 plain plates as the opus-r7 study composes them,
 // not a CSS plate. Below the c01 canopy the side walls are the study's upper wall, taper and lower wall (owner build 13); no crown plate,
 // record panel or detail layer; no CSS plate, rim or booster. The wall tile is the study's canopy-h1 lower skin. Numbers measured on the study in each shape.
-for(const [tier,closed,wallTop,canvas] of [['tall',false,244,939],['tall',true,30,725],['compact',false,56,669],['compact',true,30,643]])
+for(const [tier,closed,wallTop,canvas] of [['tall',false,244,939],['tall',true,30,939],['compact',false,56,669],['compact',true,30,669]])
 test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the aft plate`,async({page})=>{
  const bad=[];page.on('response',r=>{if(r.status()>=400)bad.push(new URL(r.url()).pathname);});
  await page.setViewportSize({width:636,height:canvas});
@@ -27,7 +27,8 @@ test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the
  // Closed (owner D72): the study's 16 px cap slab sits 14 px down, 620 wide, in the shared gunmetal tone; open, the
  // c01 canopy is the crown and no crown plate shows.
  if(closed){
-  expect(v.crown).toMatchObject({display:'block',top:14,height:16,left:0,width:620,filter:'saturate(0.12) brightness(0.78)'});
+  // G3-108: the slab reaches 1 px under the walls' top, so no seam shows between them on a scaled page.
+  expect(v.crown).toMatchObject({display:'block',top:14,height:17,left:0,width:620,filter:'saturate(0.12) brightness(0.78)'});
   expect(v.crown.bg).toContain('/assets/hull/cap-slab.svg');
   // Nothing covers the slab: the page's closed-state section stays transparent (the study has no dark cap there).
   expect(v.cap).toBe('none rgba(0, 0, 0, 0)');

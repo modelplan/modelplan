@@ -1,0 +1,1 @@
+Settings: switching a tool off now refuses every saved or default-on reading path of that tool, including paths not detected at that moment, so an OpenCode Go key that comes back later is not read against your Off. When an OpenCode Go sign-in is found but no key is set in OPENCODE_API_KEY, the OpenCode Go row now says why no quota is shown.

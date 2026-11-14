@@ -218,7 +218,7 @@ export function comparison(d, ui, args) {
   const note = [!cur ? `<em>${t('mfd.currentUnknown')}</em>` : ''].filter(Boolean).join('');
   const words = websiteWords(ui.lang), size = fill(ui, 'cmp', {w: 300, h: 60}), title = t('mfd.cmpTitle', {m: m.short});
   const howFits = textW(title) * 1.2 + textW(words.compare + ' ↗') + textW(words.how + ' ↗') + 36 <= size.w;
-  const links = `<span class="cmp-header-links">${secondaryLink(modelUrl(m.id), words.compare)}${howFits ? secondaryLink(methodologyUrl('cost-basis'), words.how) : ''}</span>`;
+  const links = `<span class="cmp-header-links">${secondaryLink(modelUrl(m.publishedId ?? m.id), words.compare)}${howFits ? secondaryLink(methodologyUrl('cost-basis'), words.how) : ''}</span>`;
   const {L, E} = edges(ui, size.w), levels = m.e.map(r => r[0]);
   // CKP-FAD-18 (D151): one quiet line, bottom right, while a trial detent is shown. The compact shell has no height for it, so
   // it collapses to an info mark inside the ladder row (CSS picks one by the profile); the full text is its accessible name.

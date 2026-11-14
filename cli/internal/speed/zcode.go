@@ -24,9 +24,12 @@ func ZCodeDB(home string) string {
 }
 
 func readZCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
-	join, dir := "", "''"
+	join, dir, pid := "", "''", "''"
 	if hasColumns(db, "session", "id", "directory") {
 		join, dir = " LEFT JOIN session s ON s.id = mu.session_id", "COALESCE(s.directory, '')"
+		if hasColumns(db, "session", "project_id") {
+			pid = "COALESCE(s.project_id, '')"
+		}
 	}
 	kinds := []string{}
 	for _, name := range []string{"input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"} {
@@ -37,7 +40,7 @@ func readZCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
 		kinds = append(kinds, expr)
 	}
 	q := `SELECT mu.rowid, CAST(mu.id AS TEXT), COALESCE(mu.session_id, ''), COALESCE(mu.model_id, ''),
-		COALESCE(mu.started_at, 0), COALESCE(mu.completed_at, 0), COALESCE(mu.output_tokens, 0), ` + dir + `, ` + strings.Join(kinds, ",") + `
+		COALESCE(mu.started_at, 0), COALESCE(mu.completed_at, 0), COALESCE(mu.output_tokens, 0), ` + dir + `, ` + pid + `, ` + strings.Join(kinds, ",") + `
 		FROM model_usage mu` + join + ` WHERE mu.rowid > ?` + inRowIDs("mu.rowid", pending) + ` ORDER BY mu.rowid LIMIT ` + itoa64(dbBatch)
 	rows, err := db.Query(q, after)
 	if err != nil {
@@ -49,7 +52,7 @@ func readZCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
 		var r dbRow
 		var id string
 		var input, read, write sql.NullInt64
-		if rows.Scan(&r.rowid, &id, &r.session, &r.model, &r.start, &r.end, &r.out, &r.cwd, &input, &read, &write) != nil {
+		if rows.Scan(&r.rowid, &id, &r.session, &r.model, &r.start, &r.end, &r.out, &r.cwd, &r.np.ID, &input, &read, &write) != nil {
 			continue
 		}
 		r.TokenKinds = TokenKinds{InputTokens: nullCount(input), CacheReadTokens: nullCount(read), CacheWriteTokens: nullCount(write)}
@@ -66,7 +69,7 @@ func ObserveZCode(cache, home string, in Ingest, now time.Time) error {
 		return nil
 	}
 	return observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return l.scanDB(path, "zcode", ParserZCode, zcodeAnchor, now, readZCode)
+		return l.scanDB(path, "zcode", ParserZCode, zcodeAnchor, zcodePostClear, now, readZCode)
 	})
 }
 
@@ -106,3 +109,7 @@ func inRowIDs(col string, ids []int64) string {
 
 // zcodeAnchor: a request's own id and start, which a replaced database does not repeat.
 const zcodeAnchor = `SELECT CAST(id AS TEXT) || '|' || COALESCE(started_at, 0) FROM model_usage WHERE rowid = ?`
+
+// zcodePostClear: the requests up to a row that started at or after a time, by the start
+// readZCode reads (a missing or non-numeric start is 0).
+const zcodePostClear = `FROM model_usage WHERE rowid <= ? AND CAST(COALESCE(started_at, 0) AS INTEGER) >= ?`

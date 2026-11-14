@@ -135,4 +135,8 @@ register('mfd', {
   effort: ['lcd', '档位', 'Effort'],
   unreported: ['lcd', '档位未报告', 'No effort'],
   follows: ['lcd', '★ 跟随推荐', '★ Follows'], // round D1: ◉ is gone; gold ★ is the one recommended marker
+  // G3-109: the Overview of a subscription that reports a balance but no usage percentage (D228).
+  balance: ['lcd', '余额', 'Balance'],
+  balanceOnly: ['text', '只报告余额，不报告用量百分比', 'Reports a balance, no usage percentage'],
+  balanceOnlyX: ['text', 'X 订阅只报告余额，不报告用量百分比', 'X Subscription reports a balance, no usage %'],
 });
