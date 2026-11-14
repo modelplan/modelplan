@@ -63,6 +63,7 @@ type dbRow struct {
 	out        int64
 	TokenKinds
 	cwd string
+	np  nativeProject
 }
 
 // openRO opens an existing database for reading only.
@@ -225,7 +226,7 @@ func (l *PerfLedger) addDBRow(source, parser string, r dbRow) {
 	at, end := time.UnixMilli(r.start), time.UnixMilli(r.end)
 	cfg := config{model: clip(r.model)}
 	q := request{TokenKinds: r.TokenKinds, out: max(r.out, 0), cfg: cfg, end: end}
-	t := turn{cfg: cfg, at: at, dur: max(end.Sub(at), 0), out: q.out, all: []request{q}, cwd: r.cwd}
+	t := turn{cfg: cfg, at: at, dur: max(end.Sub(at), 0), out: q.out, all: []request{q}, cwd: r.cwd, np: r.np}
 	l.add(source, parser, t)
 	if r.session != "" {
 		l.addSession(fileKey(source+":"+r.session), source, t)
@@ -265,7 +266,7 @@ func (l *PerfLedger) liveDB(source string, r dbRow, now time.Time) {
 	if r.end > 0 {
 		qs = []request{q}
 	}
-	l.setLive(fileKey(source+":"+r.session), source, liveProbe{cfg: cfg, start: at, last: last, running: r.end <= 0, requests: qs, cwd: r.cwd}, "", now)
+	l.setLive(fileKey(source+":"+r.session), source, liveProbe{cfg: cfg, start: at, last: last, running: r.end <= 0, requests: qs, cwd: r.cwd, np: r.np}, "", now)
 }
 func nullCount(n sql.NullInt64) *int64 {
 	if !n.Valid || n.Int64 < 0 {

@@ -27,7 +27,14 @@ import (
 // Independently written compatibility reader. Schema references: CodexBar
 // ee890b5 (MIT), Token Monitor e1c393c (MIT); see docs/cursor-native-quota.md.
 // Credentials exist only in memory. No refresh, credential copy or browser access.
-var cursorReader = &nativeReader{Name: "Cursor", Regions: []string{"global"}, Profiles: cursorProfiles, Managed: collectCursorAccount}
+var cursorReader = &nativeReader{Name: "Cursor", Regions: []string{"global"}, Profiles: cursorProfiles, Managed: collectCursorAccount, LoginFiles: cursorLoginFiles}
+
+// Cursor keeps its sign-in in SQLite, which may hold a new token only in the write-ahead log.
+func cursorLoginFiles(profile ReaderProfile) []string {
+	db := filepath.Join(profile.Root, "state.vscdb")
+	return []string{db, db + "-wal"}
+}
+
 var cursorHost = "https://cursor.com"
 var cursorRPCHost = "https://api2.cursor.sh"
 
@@ -499,8 +506,13 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 	if !ok {
 		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Cursor period-usage format is not supported yet"}, Invalidate: changed}
 	}
+	// The store fingerprint covers the whole database, so any Cursor state write changes it. Only a
+	// changed or unreadable credential binding invalidates the reading; other writes keep it.
 	if stamp == "" || cursorStateAt(path) != stamp {
-		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Cursor sign-in changed during the read; refresh required"}, Invalidate: true}
+		again, err := readCursorSessionAt(ctx, path, r.Now)
+		if err != nil || readerHash(r.Paths.Cache, "cursor:credential", again.token) != credentialKey || readerHash(r.Paths.Cache, "cursor:account", again.user) != accountKey {
+			return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Cursor sign-in changed during the read; refresh required"}, Invalidate: true}
+		}
 	}
 	a := &Account{Source: "native:cursor", Via: "native", Plan: meta.Plan, ObservedAt: r.Now.UTC(), Windows: windows}
 	if !IdentityOff() {

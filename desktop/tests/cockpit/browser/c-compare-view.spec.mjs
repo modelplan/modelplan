@@ -11,11 +11,11 @@ import {build13Profile,SESSION_REF} from '../build13-fixture.mjs';
 const speedTiers=JSON.parse(readFileSync(new URL('../unit/client-speed-tiers.fixture.json',import.meta.url),'utf8')).data.speedTiers.map(({reviewedAt,...tier})=>tier);
 
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
-async function open(page,locale='en',tiers=false,edit=null){
+async function open(page,locale='en',tiers=false,edit=null,tier=null){
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:tier?{...shell,tier}:shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  const data=build13Profile();
  if(tiers){ // Published ids as /v1/client carries them (the tiers match a model by its published id), plus the tiers.
@@ -76,6 +76,52 @@ test('CKP-MFD compare: the effort keys move the trial, one trial at a time, and 
  await page.keyboard.press('Escape');await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);
  await sol(page).locator('.fd-strip').click();await sol(page).locator('.fd-strip').click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);
+});
+
+test('CKP-FAD-18 the comparison carries one quiet trial note, only while a trial detent is shown, in both languages',async({page})=>{
+ for(const [locale,text] of [['en','Trial only — your tool settings stay unchanged'],['zh-CN','试算，不会改工具设置']]){
+  await open(page,locale);
+  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
+  const note=page.locator('.mfd-page.pg-compare .cmp-trial-note');
+  await expect(note).toHaveCount(1);await expect(note).toHaveText(text);
+  // Small, muted and at the bottom right, below the effort keys and clear of the comparison.
+  const box=await note.boundingBox(),lad=await page.locator('.cmp-lad').boundingBox(),page_=await page.locator('.mfd-page').boundingBox();
+  expect(box.y).toBeGreaterThanOrEqual(lad.y+lad.height-1);expect(box.x+box.width).toBeGreaterThan(page_.x+page_.width-20);
+  expect(await note.evaluate(e=>parseFloat(getComputedStyle(e).fontSize))).toBeLessThanOrEqual(10);
+  // Not clipped by the LCD's overflow:hidden (boundingBox ignores clipping): the page has no horizontal overflow.
+  expect(await page.locator('.mfd-page').evaluate(e=>e.scrollWidth<=e.clientWidth+.5)).toBe(true);
+  // The trial returns to the real setting: no trial detent, no note.
+  await page.locator('.cmp-lad .lad.cur').click();
+  await expect(page.locator('.cmp-trial-note')).toHaveCount(0);
+ }
+});
+
+test('CKP-FAD-18 tall keeps the full note; compact keeps the chart and collapses the note to an info mark with the full text',async({page})=>{
+ for(const tier of ['compact','tall'])for(const [locale,text] of [['en','Trial only — your tool settings stay unchanged'],['zh-CN','试算，不会改工具设置']]){
+  await open(page,locale,false,null,tier);
+  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
+  const note=page.locator('.mfd-page.pg-compare .cmp-trial-note'),mark=page.locator('.mfd-page.pg-compare .cmp-trial-i');
+  await expect(note).toHaveText(text);await expect(mark).toHaveAttribute('aria-label',text);
+  expect(await page.locator('.mfd-page').evaluate(e=>e.scrollWidth<=e.clientWidth+.5),tier+' '+locale).toBe(true);
+  const inside=await page.evaluate(()=>{const p=document.querySelector('.mfd-page').getBoundingClientRect(),ok=sel=>{const r=document.querySelector(sel).getBoundingClientRect();return r.top>=p.top-.5&&r.bottom<=p.bottom+.5&&r.left>=p.left-.5&&r.right<=p.right+.5;};return {table:ok('table.cmp'),mark:ok('.cmp-trial-i')||getComputedStyle(document.querySelector('.cmp-trial-i')).display==='none'};});
+  expect(inside,tier+' '+locale).toEqual({table:true,mark:true});
+  if(tier==='tall'){await expect(note).toBeVisible();await expect(mark).toBeHidden();}
+  else{
+   await expect(note).toBeHidden();await expect(mark).toBeVisible();
+   // The chart survives, with the trial marker; the mark is keyboard-focusable and shows the full text as a tooltip.
+   await expect(page.locator('.mfd-page.pg-compare svg.cmp-chart .cfg-trial')).not.toHaveCount(0);
+   await mark.focus();await expect(mark).toBeFocused();
+   expect(await mark.evaluate(e=>getComputedStyle(e,'::after').content)).toBe('"'+text+'"');
+  }
+ }
+});
+
+test('CKP-FAD-18 the note still shows when the screen is measured before it is laid out',async({page})=>{
+ await open(page);
+ await page.evaluate(()=>{const e=document.querySelector('.mfd-page');e.style.height='0px';e.style.minHeight='0px';});
+ await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
+ await page.evaluate(()=>{const e=document.querySelector('.mfd-page');e.style.height='';e.style.minHeight='';});
+ await expect(page.locator('.mfd-page.pg-compare .cmp-trial-note')).toHaveCount(1);
 });
 
 test('CKP-MFD compare: Chinese labels match the study',async({page})=>{

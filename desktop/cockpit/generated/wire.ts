@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: c3cf49891aace260752393455c6500eaed06411cbbdd8758de56b19017b0b1d4
+// Schema SHA-256: 96747dd432597a1ff5d4f2bf2b6f4282f59d51d06b09a4f1ef5e7387113a94b6
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -214,6 +214,7 @@ export type WireCockpitRecentSession = {
   readonly "lastObservedAt": string;
   readonly "model": string;
   readonly "projectLabel": string | null;
+  readonly "projectState"?: "named" | "unnamed" | "hidden" | "none";
   readonly "sessionRef": string;
   readonly "source": string;
   readonly "subscriptionRef": string | null;
@@ -231,6 +232,7 @@ export type WireCockpitSession = {
   readonly "lastObservedAt": string;
   readonly "model": string;
   readonly "projectLabel": string | null;
+  readonly "projectState"?: "named" | "unnamed" | "hidden" | "none";
   readonly "rate": number | null;
   readonly "sessionRef": string;
   readonly "source": string;
@@ -316,6 +318,7 @@ export type WireCockpitToday = {
 
 export type WireCredits = {
   readonly "balance": number | null;
+  readonly "currency"?: string;
   readonly "unit": string;
 };
 
@@ -327,7 +330,7 @@ export type WireExpiryState = {
 
 export type WireFailure = {
   readonly "at": string;
-  readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+  readonly "code": "ok" | "estimated" | "usage_not_reported" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "no_plan" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
 };
 
 export type WireModelScope = {
@@ -371,7 +374,7 @@ export type WireProposedResetSource = {
 };
 
 export type WireReason = {
-  readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+  readonly "code": "ok" | "estimated" | "usage_not_reported" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "not_signed_in" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "not_found" | "rpc_error" | "closed" | "region_refused" | "no_plan" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
   readonly "text": WireText;
 };
 
@@ -395,9 +398,12 @@ export type WireResetCards = {
 };
 
 export type WireResetEvent = {
+  readonly "confirmedAt"?: string;
+  readonly "confirmedAtBasis"?: "published" | "observed" | "firstSeen";
   readonly "confirms"?: string;
   readonly "expiresAt": string;
   readonly "id": string;
+  readonly "kind"?: "reset_credit" | "direct_reset";
   readonly "planIds"?: ReadonlyArray<string>;
   readonly "provider": string;
   readonly "publishedAt": string;
@@ -1637,6 +1643,15 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "projectState": {
+        "enum": [
+          "named",
+          "unnamed",
+          "hidden",
+          "none"
+        ],
+        "type": "string"
+      },
       "sessionRef": {
         "maxLength": 16,
         "pattern": "^[a-f0-9]{16}$",
@@ -1743,6 +1758,15 @@ export const definitions: Readonly<Record<string, Schema>> = {
             "type": "null"
           }
         ]
+      },
+      "projectState": {
+        "enum": [
+          "named",
+          "unnamed",
+          "hidden",
+          "none"
+        ],
+        "type": "string"
       },
       "rate": {
         "anyOf": [
@@ -2151,6 +2175,10 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "currency": {
+        "pattern": "^[A-Z]{3}$",
+        "type": "string"
+      },
       "unit": {
         "type": "string"
       }
@@ -2211,6 +2239,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "enum": [
           "ok",
           "estimated",
+          "usage_not_reported",
           "stale_reading",
           "observation_time_unknown",
           "not_read_yet",
@@ -2259,6 +2288,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "rpc_error",
           "closed",
           "region_refused",
+          "no_plan",
           "other",
           "readers_off",
           "no_consent",
@@ -2482,6 +2512,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "enum": [
           "ok",
           "estimated",
+          "usage_not_reported",
           "stale_reading",
           "observation_time_unknown",
           "not_read_yet",
@@ -2530,6 +2561,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "rpc_error",
           "closed",
           "region_refused",
+          "no_plan",
           "other",
           "readers_off",
           "no_consent",
@@ -2648,6 +2680,19 @@ export const definitions: Readonly<Record<string, Schema>> = {
   "ResetEvent": {
     "additionalProperties": false,
     "properties": {
+      "confirmedAt": {
+        "description": "Confirmed events only: the publication's confirmation time, or when the CLI first read the confirmation (see confirmedAtBasis).",
+        "format": "date-time",
+        "type": "string"
+      },
+      "confirmedAtBasis": {
+        "enum": [
+          "published",
+          "observed",
+          "firstSeen"
+        ],
+        "type": "string"
+      },
       "confirms": {
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
         "type": "string"
@@ -2658,6 +2703,14 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "id": {
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "type": "string"
+      },
+      "kind": {
+        "description": "reset_credit: extra resets were issued (news, not a window restart); direct_reset: usage limits reset. Absent from older producers, read as direct_reset.",
+        "enum": [
+          "reset_credit",
+          "direct_reset"
+        ],
         "type": "string"
       },
       "planIds": {

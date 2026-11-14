@@ -24,7 +24,7 @@ import ModelPlanDock
             }
             let shown = try XCTUnwrap(app.statusNoticePresentation)
             XCTAssertTrue(shown.isVisible)
-            XCTAssertEqual(shown.tone, .blue)
+            XCTAssertEqual(shown.tone, DockNotice.resetAnnouncedTone)
             XCTAssertEqual(shown.shape, .hollow)
             XCTAssertEqual(shown.frameInButton.maxX, shown.buttonBounds.maxX, accuracy: 0.01)
             if shown.buttonIsFlipped {

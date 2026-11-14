@@ -107,6 +107,13 @@ public enum EngineDeadlineFacts {
             guard matches else { continue }
             includeDate(event.publishedAt)
             includeDate(event.expiresAt)
+            // D166: the confirmed dot ends before the event does; recompute then on the existing deadline path.
+            if event.status == "confirmed" {
+                includeDate((event.confirmedAt ?? event.publishedAt).addingTimeInterval(DockResetSignal.confirmedDotLifetime))
+            } else if let through = event.scheduledThrough {
+                // The card turns to "awaiting confirmation" when the forecast window ends.
+                includeDate(through)
+            }
         }
         if let next { return .scheduled(next, hasUnknownDeadline: unknown) }
         return unknown ? .unknown : .none
@@ -179,20 +186,25 @@ public enum EngineDeadlineFacts {
             var signal=DockSubscriptionSignal(id:member.id);signal.dataState=input.dataState
             if let event=preferred {
                 if event.status == "confirmed" {
-                    var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:event.publishedAt,expiresAt:event.expiresAt)
-                    reset.restartedReading=member.account.valueState == .current && member.account.windows.contains { window in
-                        guard window.current else { return false }
-                        guard let observed=date(window.observedAt),let resets=date(window.resetsAt) else { return false }
-                        return observed > event.publishedAt && resets > event.publishedAt
-                    }
+                    let confirmedAt=event.confirmedAt ?? event.publishedAt
+                    var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:confirmedAt,expiresAt:event.expiresAt)
+                    reset.kind=event.isResetCredit ? .resetCredit : .directReset
+                    // A local reading that restarted after the confirmation is an observation, not proof of the
+                    // public event (same predicate as the notification).
+                    reset.restartedReading = event.restartedReading(in: member.account)
                     signal.reset=reset
-                } else { signal.reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt) }
+                } else {
+                    var reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt)
+                    reset.kind=event.isResetCredit ? .resetCredit : .directReset
+                    signal.reset=reset
+                }
             }
             passSignals.append(signal)
             if let event = preferred {
+                let wording = EngineResetEventWording(english: english)
                 reserve.append(.init(id: "reset-event:" + event.id + ":" + event.status, kind: .notice,
-                    label: "↺ " + (english ? "Extra reset" : "额外重置"), value: resetEventTitle(event, restarted: signal.reset?.restartedReading == true),
-                    detail: english ? "A notice is not your reset" : "公告不等于你的账户已重置",
+                    label: wording.label(event), value: wording.title(event, now: context.now),
+                    detail: wording.detail(rose: signal.reset?.restartedReading == true),
                     pill: event.status == "confirmed" ? (english ? "Confirmed" : "已确认") : (english ? "Announced" : "已预告")))
             }
             let resetCount = resetCountRow(member, now: context.now)
@@ -215,7 +227,14 @@ public enum EngineDeadlineFacts {
                     case .missing,.invalid: number=nil
                     }
                     if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:number+(english ? " credits":" 点数"),detail:reserveDetail(),hint:"credits")) }
-                case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:M5CreditsDisplayFormat.moneyText(balance,english:english),detail:reserveDetail(english ? "Currency not reported":"未报告币种"),hint:"money"))
+                case "money":
+                    // G3-103 follow-up: a reader that reports its currency (Grok: USD) shows it; only a balance
+                    // without one keeps the "currency not reported" note.
+                    if let code = credits.currency, let money = M5CreditsDisplayFormat.currencyText(balance, code: code, english: english) {
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:money,detail:reserveDetail(),hint:"money"))
+                    } else {
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:M5CreditsDisplayFormat.moneyText(balance,english:english),detail:reserveDetail(english ? "Currency not reported":"未报告币种"),hint:"money"))
+                    }
                 default:
                     let unit=M5CreditsDisplayFormat.Unit(identifier:credits.unit)
                     switch M5CreditsDisplayFormat.unknownUnitText(balance,unit:unit,knowledge:.unknown,english:english) {
@@ -228,6 +247,12 @@ public enum EngineDeadlineFacts {
                 }
             }
             reserve.append(todayRow(account))
+            // D228/D233: a reading with a balance but no usage percentage needs no action, so the shared cause
+            // table's sentence is only a small grey footnote at the bottom of the card (no fix line, no button).
+            if row.reason.code == .usageNotReported,
+               let entry = ReaderCauseTable.entry(code: "usage_not_reported", tool: row.id, toolName: member.name(english: english)) {
+                reserve.append(.init(id: "usage-not-reported", kind: .footnote, label: "", value: entry.reason.value(english ? .english : .chinese)))
+            }
             let cardState: DockCardReadingState
             if row.consent != .allowed && row.consent != .implicit && row.consent != .notRequired {
                 cardState = .error
@@ -332,22 +357,6 @@ public enum EngineDeadlineFacts {
         if let running = today?.runningSessions, running > 0 { parts.append(english ? "\(running) running" : "\(running) 个运行中") }
         return .init(id: "today", kind: .statistic, label: english ? "Today" : "今日", value: parts.joined(separator: " · "))
     }
-    private func resetEventTitle(_ event: EngineResetEvent, restarted: Bool) -> String {
-        if event.status == "confirmed" {
-            if restarted { return english ? "Reset confirmed" : "重置已确认" }
-            return english ? "Reset · awaiting reading" : "已重置 · 等读数"
-        }
-        if event.schedulePrecision == "deadline",
-           let from = event.scheduledFrom, from == event.scheduledThrough {
-            let components = Calendar.current.dateComponents([.hour, .minute], from: from)
-            if let hour = components.hour, let minute = components.minute {
-                let time = String(format: "%02d:%02d", hour, minute)
-                return english ? "Reset " + time + " announced" : "预告 " + time + " 重置"
-            }
-        }
-        return english ? "Public reset announced" : "已公告公开重置"
-    }
-
     private func resetEventLinks(_ event: EngineResetEvent) -> [DockCardLink] {
         let order = english
             ? [("original", "Original"), ("aihot", "AIHot"), ("official", "Official source"), ("publication", "Source")]
@@ -530,7 +539,11 @@ public enum EngineDeadlineFacts {
             let a=left.remainingPercent ?? .infinity,b=right.remainingPercent ?? .infinity
             return a == b ? left.id < right.id:a < b
         }
-        input.dataState = input.windows.contains { $0.remainingPercent != nil } ? .fresh : .unavailable
+        // D228: a current balance-only reading (Grok's X Subscription: a balance, no usage percentage) is a
+        // successful read. Its quota stays unknown ("--"), but the card is not presented as a failed one.
+        let balanceOnly = accountCurrent && row.reason.code == .usageNotReported && account.credits?.balance != nil &&
+            input.windows.allSatisfy { $0.remainingPercent == nil }
+        input.dataState = input.windows.contains { $0.remainingPercent != nil } || balanceOnly ? .fresh : .unavailable
         if source.dockContent.status == .ready, accountCurrent, member.isStable, let ref=member.subscriptionRef {
             let admitted=(account.activity ?? []).compactMap { activity -> Date? in
                 guard activity.bindingVerified, activity.subscriptionRef == ref,

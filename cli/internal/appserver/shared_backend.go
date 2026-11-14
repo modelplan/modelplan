@@ -4,6 +4,7 @@ package appserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -30,9 +31,12 @@ type SharedConfig struct {
 	// quota history is kept without a second read.
 	Reported func(quota.Report, time.Time)
 	// Activity is an admitted, cache-only observer, independent of quota refresh/rate.
-	Activity          func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
-	ResetPublication  func() (*digest.Digest, error)
-	Detect            func() detect.Report
+	Activity         func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
+	ResetPublication func() (*digest.Digest, error)
+	Detect           func() detect.Report
+	// LaterInstalled records each detection report and returns the tools detected now that
+	// were absent when this Mac's engine first looked (D238). Optional.
+	LaterInstalled    func(detect.Report) map[string]bool
 	Paths             func(consent.Admission) quota.Paths
 	Cleanup           func(string, bool) error
 	Offline, ReadOnly bool
@@ -53,6 +57,7 @@ type SharedBackend struct {
 	reportBusy    atomic.Bool
 	reportedAt    time.Time
 	config        SharedConfig
+	resetMemo     *resetevents.Memo
 	changes       chan struct{}
 	once          sync.Once
 	// Bound by the constructor before Serve. Credentials remain in the
@@ -78,7 +83,7 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	if err != nil {
 		return nil, err
 	}
-	b := &SharedBackend{config: config, changes: make(chan struct{}, 1)}
+	b := &SharedBackend{config: config, resetMemo: resetevents.NewMemo(), changes: make(chan struct{}, 1)}
 	if !config.ReadOnly {
 		_ = consent.RetryCleanup(consent.Path(), config.Cleanup)
 	}
@@ -137,6 +142,7 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 	if err := ctx.Err(); err != nil {
 		return View{}, err
 	}
+	b.allowLaterLocalLogs(ctx)
 	result := consent.BuildStable(func(admission consent.Admission) View { return b.buildView(admission, false) }, func(admission consent.Admission) View { return b.buildView(admission, true) })
 	if ctx.Err() != nil {
 		return View{}, ctx.Err()
@@ -146,10 +152,41 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 	}
 	return result, nil
 }
+
+// allowLaterLocalLogs applies D240 (owner 2026-11-13): a tool installed after the first run
+// has its local-log scopes allowed without a prompt, through the same grant path Settings
+// uses, once, while the user has made no decision for that tool. Anything that needs the
+// tool's saved login, its runtime or a network call stays opt-in (offered in the menu, D238).
+// A failed or stale attempt is retried on the next view.
+func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
+	if b.config.LaterInstalled == nil || b.config.ReadOnly {
+		return
+	}
+	later := b.config.LaterInstalled(b.config.Detect())
+	if len(later) == 0 {
+		return
+	}
+	admission := consent.Capture()
+	if admission.Mode() == consent.Off {
+		return
+	}
+	state := admission.State()
+	scopes := consent.AutoLocalLogScopes(state, later)
+	if len(scopes) == 0 || state.StoreEpoch == "" {
+		return
+	}
+	_, _ = b.Grant(ctx, wire.ConsentGrantParams{RequestID: fmt.Sprintf("d240-local-logs-%d", state.Generation), ExpectStoreEpoch: state.StoreEpoch,
+		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: []string{}})
+}
+
 func (b *SharedBackend) buildView(admission consent.Admission, changed bool) View {
 	p := b.paths(admission)
 	detection := b.config.Detect()
 	detected := map[string]bool{}
+	later := map[string]bool{}
+	if b.config.LaterInstalled != nil {
+		later = b.config.LaterInstalled(detection)
+	}
 	in := admission.RowsInput(b.now())
 	in.ReadOnly = b.config.ReadOnly
 	in.Offline = b.config.Offline
@@ -160,9 +197,12 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	for _, tool := range detection.Tools {
 		id := rows.CanonicalTool(tool.ProviderID)
 		detected[id] = tool.Detected
+		for _, scope := range tool.UndetectedScopes() {
+			detected[scope] = false
+		}
 		_, _, native := quota.NativeReader(id)
 		exists := native || id == "codex" || tool.Preferred == "codexbar" && tool.HelperStatus() == ""
-		in.Catalogue = append(in.Catalogue, rows.CatalogueEntry{ToolID: id, ReaderID: tool.ReaderID, Backend: tool.Preferred, Detected: tool.Detected, ReaderExists: exists, Status: tool.Status})
+		in.Catalogue = append(in.Catalogue, rows.CatalogueEntry{ToolID: id, ReaderID: tool.ReaderID, Backend: tool.Preferred, Detected: tool.Detected, ReaderExists: exists, Status: tool.Status, InstalledLater: later[tool.ProviderID]})
 	}
 	// Implicit local permission becomes a candidate only when a real tool/source
 	// establishes it. A blank home must not acquire phantom Claude/Codex cards.
@@ -239,7 +279,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed && b.config.ResetPublication != nil {
 		if d, err := b.config.ResetPublication(); err == nil && d != nil {
 			publicModels = d.Models
-			events, dropped := resetevents.Project(d, projection, in.Now)
+			events, dropped := resetevents.ProjectWithMemo(d, projection, in.Now, b.resetMemo)
 			droppedResetConfirmations = dropped
 			resetEvents = &events
 		}

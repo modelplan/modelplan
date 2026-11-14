@@ -68,13 +68,16 @@ type CockpitPeak struct {
 // CockpitRecentSession is one recorded session. Model is a published model ID or "unknown";
 // SubscriptionRef is set only under a binding the cockpit already verified.
 type CockpitRecentSession struct {
-	SessionRef      string    `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
-	Source          string    `json:"source"`
-	SubscriptionRef *string   `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
-	Model           string    `json:"model"`
-	Effort          *string   `json:"effort" null:"coalesced"`
-	ProjectLabel    *string   `json:"projectLabel" null:"coalesced"`
-	LastObservedAt  time.Time `json:"lastObservedAt"`
+	SessionRef      string  `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Source          string  `json:"source"`
+	SubscriptionRef *string `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
+	Model           string  `json:"model"`
+	Effort          *string `json:"effort" null:"coalesced"`
+	ProjectLabel    *string `json:"projectLabel" null:"coalesced"`
+	// ProjectState tells "no project" apart from a name that is hidden or not stored (glm-909-1). The CLI always
+	// sends it; a reader treats an absent state as before (a null label reads as no project).
+	ProjectState   CockpitProjectState `json:"projectState,omitempty" null:"forbidden"`
+	LastObservedAt time.Time           `json:"lastObservedAt"`
 }
 
 // CockpitForecast is the engine's outlook for one current window. RunsOutAt is
@@ -207,15 +210,18 @@ type CockpitToday struct {
 	BindingBasis         string   `json:"bindingBasis"`
 }
 type CockpitSession struct {
-	SessionRef      string    `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
-	Source          string    `json:"source"`
-	SubscriptionRef *string   `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
-	Model           string    `json:"model"`
-	Effort          *string   `json:"effort" null:"coalesced"`
-	ProjectLabel    *string   `json:"projectLabel" null:"coalesced"`
-	LastObservedAt  time.Time `json:"lastObservedAt"`
-	State           string    `json:"state"`
-	Rate            *float64  `json:"rate" null:"coalesced"`
+	SessionRef      string  `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Source          string  `json:"source"`
+	SubscriptionRef *string `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
+	Model           string  `json:"model"`
+	Effort          *string `json:"effort" null:"coalesced"`
+	ProjectLabel    *string `json:"projectLabel" null:"coalesced"`
+	// ProjectState tells "no project" apart from a name that is hidden or not stored (glm-909-1). The CLI always
+	// sends it; a reader treats an absent state as before (a null label reads as no project).
+	ProjectState   CockpitProjectState `json:"projectState,omitempty" null:"forbidden"`
+	LastObservedAt time.Time           `json:"lastObservedAt"`
+	State          string              `json:"state"`
+	Rate           *float64            `json:"rate" null:"coalesced"`
 	// Fast is present (true) only for a session whose recorded speed mode is the harness's fast
 	// mode. Absent means the mode was not reported or was standard; the ledger cannot tell those apart.
 	Fast *bool `json:"fast,omitempty" null:"forbidden"`

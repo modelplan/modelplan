@@ -9,7 +9,7 @@ import Darwin
 import Glibc
 #endif
 
-enum TestFailure: Error { case timeout, childFailed }
+enum TestFailure: Error { case timeout, childFailed, childExited(arguments: [String], status: Int32, stdout: String, stderr: String) }
 
 actor EventProbe: EngineClientEventConsumer {
     var events: [EngineClientEvent] = []
@@ -94,7 +94,11 @@ final class RealBinaryTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return root
     }
-    func environment(_ home: URL) -> [String: String] { ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C"] }
+    // A temporary HOME does not hide machine-wide installs: the app-server's automatic refresh
+    // finds a real codex in /opt/homebrew/bin, /usr/local/bin or /Applications/Codex.app and runs
+    // it under the reader lock, which adds rows/changed events and delays revoke cleanup on a
+    // reused Mac. MODELPLAN_CODEX_ACCOUNT=off (an allowed child key) keeps Codex to its logs.
+    func environment(_ home: URL) -> [String: String] { ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C", "MODELPLAN_CODEX_ACCOUNT": "off"] }
     @discardableResult
     func cli(_ binary: URL, home: URL, arguments: [String], input: Data? = nil) throws -> Data {
         let process = Process(); let output = Pipe(); let errors = Pipe(); let stdin = Pipe()
@@ -106,7 +110,9 @@ final class RealBinaryTests: XCTestCase {
         let bytes = output.fileHandleForReading.readDataToEndOfFile()
         let errorBytes = errors.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        guard process.terminationStatus == 0, errorBytes.isEmpty else { throw TestFailure.childFailed }
+        guard process.terminationStatus == 0, errorBytes.isEmpty else {
+            throw TestFailure.childExited(arguments: arguments, status: process.terminationStatus, stdout: String(decoding: bytes.prefix(2000), as: UTF8.self), stderr: String(decoding: errorBytes.prefix(2000), as: UTF8.self))
+        }
         return bytes
     }
     func configuration(_ binary: URL, home: URL) -> EngineClientConfiguration {

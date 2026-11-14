@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/appserver"
 	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detach"
@@ -23,6 +24,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/profile"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
@@ -134,7 +136,8 @@ Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
      MODELPLAN_READERS=passive|off (restrict shared reader permissions),
      MODELPLAN_EFFORT_SUGGESTION=on (opt in to local weekly effort suggestions; default off),
      MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history, speed measurement or tokens per day), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
-     MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
+     MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run),
+     MODELPLAN_PROFILE_ROOT=<absolute dir> (keep all ModelPlan config and cache under dir: a fresh profile)
 `
 
 type common struct {
@@ -203,6 +206,11 @@ func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 var startDetached = detach.Start
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// A fresh-profile root that is not absolute is refused before any store is touched.
+	if err := profile.Check(); err != nil {
+		fmt.Fprintln(stderr, err)
+		return exitUsage
+	}
 	if len(args) > 0 && args[0] == "app-server" {
 		return appServerCmd(args[1:], stdin, stdout, stderr)
 	}
@@ -1294,7 +1302,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly, withHisto
 		// A second change publishes only the user's own declarations. No tool
 		// account, connection, history, session or advice survives a discarded build.
 		home, _ := os.UserHomeDir()
-		report := quota.ReadDeclared(quota.Paths{LocalFile: filepath.Join(home, ".config", "modelplan", "local.json")}, now)
+		report := quota.ReadDeclared(quota.Paths{LocalFile: profile.ConfigFile(home, "local.json")}, now)
 		report.ConsentGeneration = admission.Generation()
 		report.ConsentStoreEpoch = admission.Fence().StoreEpoch
 		report.Sources = append(report.Sources, quota.SourceStatus{Source: "readers", Status: "off", Reason: "consent-changed"})
@@ -1309,17 +1317,20 @@ func observeLiveSessions(st *store.Store, paths quota.Paths, report quota.Report
 }
 
 // observeLiveLogs is observeLiveSessions for a caller without a report: the current consent fences it.
-func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, now time.Time) {
+func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, now time.Time) appserver.ObserveOutcome {
 	fence := consent.Capture().Fence()
-	observeLive(st, codexHome, refs, quota.Report{ConsentStoreEpoch: fence.StoreEpoch, ConsentGeneration: fence.Generation}, now)
+	return observeLive(st, codexHome, refs, quota.Report{ConsentStoreEpoch: fence.StoreEpoch, ConsentGeneration: fence.Generation}, now)
 }
 
-func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time) {
+func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time) appserver.ObserveOutcome {
 	// Each harness's logs are read under its own grant: a Codex-only user still gets live Codex sessions (owner
 	// build 13), and Claude Code's logs stay unread without its grant. An empty home disables that root.
 	claudeAllowed, codexAllowed := consent.Allowed("claude", consent.Local), consent.Allowed("codex", consent.Local)
-	if speed.Off() || !claudeAllowed && !codexAllowed {
-		return
+	if speed.Off() {
+		return appserver.ObserveSkippedOff
+	}
+	if !claudeAllowed && !codexAllowed {
+		return appserver.ObserveSkippedConsent
 	}
 	claude := ""
 	if claudeAllowed {
@@ -1331,9 +1342,9 @@ func observeLive(st *store.Store, codexHome string, refs map[string]string, repo
 	if !codexAllowed {
 		codexHome = ""
 	}
-	reportWrite(report, func() error {
+	return observeOutcome(reportWrite(report, func() error {
 		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, codexHome, now), projectLabels(), refs, now)
-	})
+	}))
 }
 
 // observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex
@@ -1342,14 +1353,21 @@ func observeCodexSpeed(st *store.Store, now time.Time) {
 	observeCodexHomeSpeed(st, quotaPaths(st).CodexHome, now)
 }
 
-func observeCodexHomeSpeed(st *store.Store, home string, now time.Time) {
+func observeCodexHomeSpeed(st *store.Store, home string, now time.Time) appserver.ObserveOutcome {
 	if !consent.Allowed("codex", consent.Local) {
-		return
+		return appserver.ObserveSkippedConsent
 	}
-	_ = consent.LocalWrite("codex", func() error {
-		return speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
+	if speed.Off() {
+		return appserver.ObserveSkippedOff
+	}
+	rollouts := quota.RecentRollouts(home, 8)
+	if len(rollouts) == 0 {
+		return appserver.ObserveSkippedNoLogs
+	}
+	return observeOutcome(consent.LocalWrite("codex", func() error {
+		return speed.ObserveCodex(st.Dir, rollouts, func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
 			speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}, now)
-	})
+	}))
 }
 
 // projectLabelsCmd shows or sets the project-label switch: on unless the user turned it off (the
@@ -1391,15 +1409,17 @@ func projectLabelsCmd(args []string, stdout, stderr io.Writer, st *store.Store, 
 
 // observeAgents measures what is new in the other agents' databases (ZCode, OpenCode V2); each
 // is read at most every 30 seconds and only when it changed.
-func observeAgents(st *store.Store, now time.Time) {
+func observeAgents(st *store.Store, now time.Time) []appserver.ObserveResult {
 	home, _ := os.UserHomeDir()
 	in := speed.Ingest{Labels: projectLabels()}
+	results := []appserver.ObserveResult{{Source: "zai", Outcome: appserver.ObserveSkippedConsent}, {Source: "opencodego", Outcome: appserver.ObserveSkippedConsent}}
 	if consent.Allowed("zai", consent.Local) {
-		_ = consent.LocalWrite("zai", func() error { return speed.ObserveZCode(st.Dir, home, in, now) })
+		results[0].Outcome = observeOutcome(consent.LocalWrite("zai", func() error { return speed.ObserveZCode(st.Dir, home, in, now) }))
 	}
 	if consent.Allowed("opencodego", consent.Local) {
-		_ = consent.LocalWrite("opencodego", func() error { return speed.ObserveOpenCode(st.Dir, home, in, now) })
+		results[1].Outcome = observeOutcome(consent.LocalWrite("opencodego", func() error { return speed.ObserveOpenCode(st.Dir, home, in, now) }))
 	}
+	return results
 }
 
 // projectLabels: project labels are on, unless the user turned them off (`modelplan project-labels off`).

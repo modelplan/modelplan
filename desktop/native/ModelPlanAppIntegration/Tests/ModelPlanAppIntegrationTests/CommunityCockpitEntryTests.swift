@@ -218,6 +218,74 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(reopened.frame.height,fit.frame.height,accuracy:1)
         second.discard();await coordinator.shutdown();await app.composition.stop()
     }
+    /// G3-108 (owner, build 14e) through the normal entry: the Dock's console button opens the cockpit through the real
+    /// composition with the cockpit entry enabled, and the page's shutterToggle intent (the controller's handler) closes
+    /// and reopens the porthole. Attached, the top edge stays under the icon and the body slides by the porthole band
+    /// in one motion; detached, the body (bottom edge) never moves and only the top edge does. Never rescaled: the
+    /// content bounds follow the live frame and the web view keeps the open canvas. CKP-PORT-09 (amended G3-108, 250 ms),
+    /// CKP-SHELL-07 (closing keeps the open scale), CKP-SHELL-05.
+    @MainActor func testG3_108NormalEntryShutterMovesOnlyWhereTheOwnerAsked() async throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        owner.appearance = .init(theme:.night,locale:.en,profile:.full,reduceMotion:false)
+        let client=RouteClient()
+        var pages:[CockpitWindowController]=[]
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let page=try XCTUnwrap(pages.first), window=try XCTUnwrap(page.window)
+        let content=try XCTUnwrap(window.contentView), web=try XCTUnwrap(content.subviews.first as? WKWebView)
+        web.navigationDelegate=nil
+        try await Task.sleep(for:.milliseconds(400))
+        let scale=web.pageZoom, canvas=web.frame.size
+        let band=((253-CockpitShellLayout.closedSlabBand)*scale).rounded(.down)
+        func toggle() async throws -> [CGRect] {
+            var frames=[window.frame]
+            page.toggleShutter()
+            let deadline=ContinuousClock.now + .seconds(2)
+            var still=0
+            while ContinuousClock.now < deadline, still < 20 {
+                frames.append(window.frame)
+                XCTAssertEqual(content.bounds.size.width,window.frame.width,accuracy:0.5,"never rescaled")
+                XCTAssertEqual(content.bounds.size.height,window.frame.height,accuracy:0.5,"never rescaled")
+                XCTAssertEqual(web.frame.size,canvas,"the page canvas never changes");XCTAssertEqual(web.frame.minY,0)
+                still = frames[frames.count-2]==window.frame && !page.shutterMoving && !page.shutterPending ? still+1 : 0
+                try await Task.sleep(for:.milliseconds(5))
+            }
+            XCTAssertEqual(web.pageZoom,scale,"the toggle never changes the fit scale")
+            return frames
+        }
+        // Attached.
+        let start=window.frame
+        let closing=try await toggle()
+        XCTAssertTrue(owner.shell.shutterClosed)
+        for frame in closing { XCTAssertEqual(frame.maxY,start.maxY,accuracy:0.5,"attached, the top edge stays under the icon") }
+        XCTAssertEqual(window.frame.minY-start.minY,band,accuracy:0.5,"the body rose by the porthole band")
+        XCTAssertTrue(closing.contains { $0.minY > start.minY+1 && $0.minY < start.minY+band-1 },"one motion, not a jump: \(closing.map(\.minY))")
+        let opening=try await toggle()
+        for frame in opening { XCTAssertEqual(frame.maxY,start.maxY,accuracy:0.5) }
+        XCTAssertEqual(window.frame,start)
+        // Detached, lowered so the porthole has room above in both states.
+        page.setAttached(false)
+        window.setFrameOrigin(.init(x:window.frame.minX,y:window.frame.minY-60))
+        let floating=window.frame
+        let detachedClose=try await toggle()
+        for frame in detachedClose { XCTAssertEqual(frame.minY,floating.minY,accuracy:0.5,"detached, the body never moves") }
+        XCTAssertEqual(window.frame.maxY,floating.maxY-band,accuracy:0.5,"only the top edge came down")
+        let detachedOpen=try await toggle()
+        for frame in detachedOpen { XCTAssertEqual(frame.minY,floating.minY,accuracy:0.5) }
+        XCTAssertEqual(window.frame,floating)
+        page.discard();await coordinator.shutdown();await app.composition.stop()
+    }
     // G3-13 / R-06: exercise the ordinary entry and real CLI transport. No
     // refresh or second subscription is sent after the synthetic local update.
     @MainActor func testG313RealCLIRecoversRetainedWeeklyCard() async throws {
@@ -549,12 +617,15 @@ final class CommunityCockpitEntryTests:XCTestCase {
         await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:wire),delivery:context))))
         let payload=try XCTUnwrap(surface.fieldPayload())
         XCTAssertTrue(payload.contains("synthetic-model"));XCTAssertFalse(payload.contains("subscriptionRef"),"Only public model data crosses")
+        XCTAssertTrue(payload.contains(#""lowPower":"#),"D63: the payload says whether Low Power Mode is on")
+        XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(lowPower:true)).contains(#""lowPower":true"#))
+        XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(lowPower:false)).contains(#""lowPower":false"#))
         XCTAssertTrue(payload.contains(#""focus":null"#) || !payload.contains(#""focus""#),"No rocket clicked, no focus")
         XCTAssertTrue(try XCTUnwrap(surface.fieldPayload(focusName:"Synthetic")).contains(#""focus":"synthetic-model""#),"D63: the clicked rocket's name resolves to its published ID")
         XCTAssertFalse(try XCTUnwrap(surface.fieldPayload(focusName:"Not published")).contains("Not published"),"An unknown name focuses nothing")
         // CKP-PORT-11D: the payload is exactly presentation plus published models; no account or local field is in it.
         let object=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(payload.utf8)) as? [String:Any])
-        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","models","mine","focus"]),"only presentation and published models: \(object.keys.sorted())")
+        XCTAssertTrue(Set(object.keys).isSubset(of:["language","reduceMotion","lowPower","models","mine","focus"]),"only presentation and published models: \(object.keys.sorted())")
         for forbidden in ["account","email","subscriptionRef","usedPercent","remaining","projectName","token"] { XCTAssertFalse(payload.contains(forbidden),"no \(forbidden) in the field payload") }
         surface.handle(.openField)
         XCTAssertTrue(surface.fieldIsOpen)
@@ -766,6 +837,31 @@ final class CommunityCockpitEntryTests:XCTestCase {
             page.onIntent?(.openWebsite(try XCTUnwrap(CockpitWebsiteLink(page:name,value:value))))
         }
         XCTAssertEqual(opened.map(\.absoluteString),["https://modelplan.ai/plans?seller=openai","https://modelplan.ai/effort?model=gpt-6.1-sol","https://modelplan.ai/methodology#effort-ladder"])
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
+    /// CKP-SHELL-39: the empty engine screen's button reaches the owner as Settings on its Subscriptions pane, and the
+    /// plain Settings key keeps opening Settings as before.
+    @MainActor func testEmptyScreenButtonOpensSettingsOnTheSubscriptionsPane() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("ckp-shell-39-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        var opened:[String]=[]
+        owner.settings = { opened.append("settings") }
+        owner.settingsSubscriptions = { opened.append("subscriptions") }
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        page.onIntent?(.openSettingsSubscriptions)
+        page.onIntent?(.openSettings)
+        XCTAssertEqual(opened,["subscriptions","settings"])
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
 

@@ -160,11 +160,11 @@ Then the rules apply in order:
 | 3 | tool missing from the machine, or retired | needs_action | tool_not_found, catalogue_retired |
 | 4 | no reader exists for the tool | unsupported | no_reader |
 | 5 | the credential read is **actually blocked** by the credential store (Keychain unset/denied/canceled/not found/unavailable/confirmation needed, and no readable credentials file), and C is empty | needs_keychain / needs_action | keychain_unset, keychain_denied, keychain_canceled, keychain_not_found, keychain_unavailable, keychain_confirmation_needed; not_signed_in when the Keychain has no login item (G3-38) |
-| 6 | C and R both empty, and the latest attempt failed | failed / needs_action | reader error codes (D87 cause codes: not_found, runtime_missing, timeout, rpc_error, closed, key_missing for no_key, region_refused); login_expired, runtime_missing, not_found, region_refused and http_401 give needs_action |
+| 6 | C and R both empty, and the latest attempt failed | failed / needs_action | reader error codes (D87 cause codes: not_found, runtime_missing, timeout, rpc_error, closed, key_missing for no_key, region_refused, no_plan); login_expired, runtime_missing, not_found, region_refused, no_plan and http_401 give needs_action |
 | 7 | C and R both empty, and the latest attempt succeeded with no windows | empty | no_usage_windows |
 | 8 | C and R both empty, and there was no attempt yet, or the reader is busy or cooling down | pending | not_read_yet, reader_busy, no_manual_reading |
 | 9 | R is not empty | stale | stale_reading or observation_time_unknown (the original error stays only in that account's `lastFailure`) |
-| 10 | C is not empty and R is empty | fresh | ok, estimated |
+| 10 | C is not empty and R is empty | fresh | ok, estimated, usage_not_reported (every current account has a balance and no usage percentage, D228) |
 | 11 | none of the above (unreachable by construction; asserted by a test) | failed | other |
 
 Notes:
@@ -182,7 +182,7 @@ The closed set of codes, with the state and next-step action each one gives:
 
 | code | state | action |
 |---|---|---|
-| ok, estimated | fresh | none |
+| ok, estimated, usage_not_reported | fresh | none |
 | stale_reading, observation_time_unknown | stale | refresh |
 | not_read_yet, reader_busy, consent_changed | pending | none (a refresh action carries `disabledReason` while cooling down) |
 | no_manual_reading | pending | none |
@@ -195,6 +195,7 @@ The closed set of codes, with the state and next-step action each one gives:
 | update_required | needs_action | update_cli |
 | key_missing, tool_not_found, not_found, catalogue_retired, http_401, unsupported_login | needs_action | open_settings_consent |
 | region_refused | needs_action (the configured address is a third-party relay; nothing to retry) | none |
+| no_plan | needs_action (z.ai's quota service answered that this key has no Coding Plan: a state, not a server error; nothing to retry) | none |
 | privacy_blocked, catalogue_off, not_admitted, codexbar_not_audited, codexbar_not_read, codexbar_access_unknown, browser_session_consent_required | off | open_settings_consent |
 | policy_pending | off | open_settings_consent |
 | no_reader | unsupported | none |
