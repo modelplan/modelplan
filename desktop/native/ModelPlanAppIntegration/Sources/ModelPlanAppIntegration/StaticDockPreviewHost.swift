@@ -393,6 +393,9 @@ struct DockHelpInteraction: Equatable {
     #endif
 
     #if DEBUG
+    /// The carry sets the closed hand (DockInstrumentView.pointerDragged); a release or cancel routed through the
+    /// panel never reaches the view's pointerUp, so the panel route restores the arrow itself (#960 sampling, P3).
+    var restorePanelMoveCursor: () -> Void = { NSCursor.arrow.set() }
     var detachedCardForChecks: DockCardView? { !createsNativePanels && !card.isHidden ? card : nil }
     #endif
     func refreshPresence() { displayFollower.sample(); edge.refresh() }
@@ -2373,9 +2376,6 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
         guard permitted, !retired else { edge.cancelBackgroundMove(); return }
         edge.updateBackgroundMove(global: globalPoint)
     }
-    /// The carry sets the closed hand (DockInstrumentView.pointerDragged); a release or cancel routed through the
-    /// panel never reaches the view's pointerUp, so the panel route restores the arrow itself (#960 sampling, P3).
-    var restorePanelMoveCursor: () -> Void = { NSCursor.arrow.set() }
     public func finishPanelMove(globalPoint: CGPoint) {
         defer { restorePanelMoveCursor() }
         guard permitted, !retired else { edge.cancelBackgroundMove(); return }
