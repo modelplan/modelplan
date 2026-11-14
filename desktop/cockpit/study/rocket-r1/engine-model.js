@@ -82,7 +82,7 @@ function reserveOf(a, now) {
   const first = expiries.length ? Math.min(...expiries) : null;
   const count = cards.some(c => c.count === null) ? null : cards.reduce((n,c) => n + (c.count ?? 1), 0);
   return {cards: cards.length ? count : null, warn: expiries.some(v => (v - now) / H <= 48), firstExpiry: first,
-    credits: cr ? cr.balance : null, drawing: !!cr?.drawing};
+    credits: cr ? cr.balance : null, money: cr?.money ?? null, drawing: !!cr?.drawing};
 }
 function columnOf(a, i, ui, status, now) {
   const grey = GREY.has(a.state), st = grey ? null : status.get(a.id) || null;

@@ -199,15 +199,28 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 :root[data-theme="night"] #cockpit .ck-shell .hull-cone{top:var(--hull-taper-top);height:31px;background-position:50% calc(var(--hull-cap-h) + 9px - var(--hull-taper-top));-webkit-mask-image:var(--hull-taper-mask);mask-image:var(--hull-taper-mask);-webkit-mask-size:636px 31px;mask-size:636px 31px;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:0 0;mask-position:0 0}
 :root[data-theme="night"] #cockpit .ck-shell .hull-lower{top:calc(var(--hull-taper-top) + 31px);bottom:22px;height:auto;background-position:50% calc(var(--hull-cap-h) - 22px - var(--hull-taper-top));-webkit-mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);-webkit-mask-size:636px var(--hull-lower-h),636px 32px;mask-size:636px var(--hull-lower-h),636px 32px;-webkit-mask-repeat:no-repeat,repeat-y;mask-repeat:no-repeat,repeat-y;-webkit-mask-position:50% 100%,50% 0;mask-position:50% 100%,50% 0}
 :root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(var(--hull-cap-h) 16px 22px)}
-/* Collapsed (owner build 13): the study's slab row keeps 14 px of nothing above the slab, which in the native window
-   only widened the gap under the menu bar. The page draws the slab at the window's top edge instead; the shell
+/* G3-108 (owner, build 14e): the closed root stands on the open root's floor, so the strip, the panels and the base are
+   at the same page place open or closed (strip at 253 tall, 65 compact) and the shutter never moves the body on the
+   page. The page canvas is always the open root's; the native window leaves out the band above the slab (closed:
+   strip - 25 px), so the slab is still the window's top edge (owner build 13: no gap under the menu bar). The shell
    inside keeps the study's coordinates. */
-#cockpit.ck[data-shell="closed"]{margin-top:-14px}
+#cockpit.ck[data-shell="closed"]{margin-top:214px}
+#cockpit.ck[data-shell="closed"][data-layout="640"]{margin-top:26px}
+/* G3-108: the porthole closes as the glass sliding down into the hull top (and rises out of it on open), clipped at
+   the hull top so it never covers the strip; 250 ms (SHUTTER_MS), none under Reduce Motion (the page then draws the
+   new shell at once). */
+@keyframes cockpit-shutter{from{transform:translateY(0);clip-path:inset(-24px -32px 0 -32px)}to{transform:translateY(100%);clip-path:inset(-24px -32px 100% -32px)}}
+#cockpit.ck[data-shutter-motion="closing"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) both}
+#cockpit.ck[data-shutter-motion="opening"] .ck-portrow{animation:cockpit-shutter .25s cubic-bezier(.4,0,.2,1) reverse both}
+html[data-reduce-motion="true"] #cockpit.ck[data-shutter-motion] .ck-portrow{animation:none}
+@media(prefers-reduced-motion:reduce){#cockpit.ck[data-shutter-motion] .ck-portrow{animation:none}}
 /* Closed (owner D72): the porthole row is the study's slab row, cap 16 + 2 px (strip-hull-unify .ck.shut), so the
    strip sits at 39 px and the record panel ends on the aft plate's edge. */
 #cockpit.ck[data-shell="closed"]{grid-template-rows:18px 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px)}
 /* Closed (owner D72), as the study composes it: the cap slab, 620 x 16 at 14 px, in the shared gunmetal tone (task 88). */
-:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{display:block;left:0;width:620px;top:14px;height:16px;-webkit-mask-image:none;mask-image:none;clip-path:none;background:var(--hull-cap,none) center/620px 16px no-repeat;filter:saturate(.12) brightness(.78)}
+/* G3-108 (owner: a seam stayed after closing): the slab and the upper walls met on one edge, which a scaled page
+   rasterises as two half-covered rows with the desktop showing through. The slab now reaches 1 px under the walls' top. */
+:root[data-theme="night"] #cockpit[data-shell="closed"] .ck-shell .hull-crown{display:block;left:0;width:620px;top:14px;height:17px;-webkit-mask-image:none;mask-image:none;clip-path:none;background:var(--hull-cap,none) center/620px 17px no-repeat;filter:saturate(.12) brightness(.78)}
 :root[data-theme="night"] #cockpit .ck-deck::before{left:0;right:0;clip-path:inset(0)}
 
 /* Owner D76: the Reserve hint floats over the page in the MFD tip style. */
@@ -221,3 +234,19 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .ck-eng .ek .ek-identity .lamp[src$="openai-white.svg"]{--fit:1.75}
 .ck-eng .ek .ek-identity .lamp[src$="claude-rounded.svg"],.ck-eng .ek .ek-identity .lamp[src$="cursor.svg"],.ck-eng .ek .ek-identity .lamp[src$="copilot.svg"],.ck-eng .ek .ek-identity .lamp[src$="opencode.svg"]{--fit:.875}
 .ck-eng .ek .ek-identity .lamp[src$="kimi-white.svg"]{--fit:.91}
+/* CKP-SHELL-39: empty engine screen, one line and one button */
+.ck-eng .ec-empty-box{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:10px}
+.ck-eng .ec-empty-box .ec-empty{font-size:12px;text-align:center;padding:0;color:var(--lcd-muted)}
+.ck-eng .ec-empty-open{font:12px var(--f-silk);color:#e9edf0;background:#1b2128;border:1px solid #4a525b;border-radius:6px;padding:6px 16px;cursor:pointer}
+.ck-eng .ec-empty-open:hover{background:#252d35}.ck-eng .ec-empty-open:focus-visible{outline:2px solid #7fd4b8;outline-offset:2px}
+
+/* G3-102 (owner D234): the close key is a matte oxblood cap with an off-white cross, red at all times. Same 32 px shape,
+   radius and bevel as the gear and detach keys; no glow and no amber so it never reads as the ALERT lamp. The cross is two diagonal gradient bars in a
+   12 px box inset 10 px on every side of the 32 px key (CSP allows no data: images), so it cannot drift. Colours come from the --close-* tokens of the theme. */
+#cockpit .ck-head [data-close]{--close-fill:linear-gradient(180deg,var(--close-1),var(--close-2))}
+#cockpit .ck-head [data-close]:hover{--close-fill:linear-gradient(180deg,var(--close-h1),var(--close-h2))}
+#cockpit .ck-head [data-close]:active{--close-fill:linear-gradient(180deg,var(--close-p1),var(--close-p2))}
+#cockpit .ck-head [data-close]:disabled{--close-fill:linear-gradient(180deg,var(--close-off1),var(--close-off2));cursor:default;opacity:1}
+#cockpit .ck-head [data-close]::before{inset:.85px;background:var(--close-fill);border-radius:4px;filter:none;box-shadow:inset 0 1px 0 #ffffff26,inset 0 -1px 0 #0000004d,0 1px 2px #000a,0 0 0 1px var(--close-edge)}
+#cockpit .ck-head [data-close]::after{content:"";position:absolute;inset:10px;pointer-events:none;background:linear-gradient(45deg,transparent 43%,var(--close-ink) 43% 57%,transparent 57%),linear-gradient(-45deg,transparent 43%,var(--close-ink) 43% 57%,transparent 57%)}
+#cockpit .ck-head [data-close]:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}

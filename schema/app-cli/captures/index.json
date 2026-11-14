@@ -151,6 +151,14 @@
           "wrongType": true,
           "strict": false,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "currency",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1093,6 +1101,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectState",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1154,6 +1170,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectState",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         },
         {
           "field": "rate",

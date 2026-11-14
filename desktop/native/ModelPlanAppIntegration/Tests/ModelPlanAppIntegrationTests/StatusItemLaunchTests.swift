@@ -44,6 +44,23 @@ import XCTest
             windowNumber: button.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     }
 
+    /// A11Y (14e MacCI): AX clients must find the status item as a labelled button; an icon-only item had no label.
+    func testStatusItemButtonIsALabelledAccessibilityButton() async throws {
+        let app = try await application(cockpitEntryEnabled: true, console: StatusClickConsole())
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertTrue(button.isAccessibilityElement())
+        XCTAssertEqual(button.accessibilityRole(), .button)
+        XCTAssertTrue(try XCTUnwrap(button.accessibilityLabel()).hasPrefix("ModelPlan"))
+        XCTAssertEqual(button.accessibilityIdentifier(), "status.item")
+        XCTAssertNotNil(app.statusMenuForTesting, "the menu stays attached so an AX press shows it natively")
+    }
+    func testStatusAccessibilityLabelCarriesTheQuota() {
+        XCTAssertEqual(EngineDockMenuApplication.statusAccessibilityLabel(title: ""), "ModelPlan")
+        XCTAssertEqual(EngineDockMenuApplication.statusAccessibilityLabel(title: "42%"), "ModelPlan 42%")
+    }
+
     /// D44: both halves of a click are claimed, so AppKit never starts menu tracking for a left click.
     func testLeftClickOpensTheCockpitWithoutTheMenu() async throws {
         let console = StatusClickConsole()
@@ -263,11 +280,11 @@ import XCTest
         var visible = false
         app.statusItemVisibility = { visible }
         app.checkStatusItemVisibility()
-        let notice = "The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right."
+        let notice = "The menu bar icon is hidden — the menu bar may be full or the camera notch may cover it. You can still use the Quota Widget, the ignition key, or the shortcut below."
         // The warning belongs to Settings only: the widget's context menu never carries it (G3-57).
         XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice },
                        "the widget context menu has no hidden-icon item")
-        XCTAssertEqual(app.settingsHost.application.editor.context.statusItemNotice?.chinese, "菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。")
+        XCTAssertEqual(app.settingsHost.application.editor.context.statusItemNotice?.chinese, "菜单栏图标被遮住了。可能是菜单栏已满，或被屏幕刘海挡住，拖动也不一定有用。仍可用：额度挂件。", "cockpit entry off: no ignition key or shortcut is promised")
         visible = true
         app.checkStatusItemVisibility()
         XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
@@ -279,7 +296,7 @@ import XCTest
         let app = try await application()
         defer { app.removeStatusItem(); app.composition.dock.close() }
         app.installStatusItem(); app.renderMenu()
-        let notice = "The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right."
+        let notice = "The menu bar icon is hidden — the menu bar may be full or the camera notch may cover it. You can still use the Quota Widget, the ignition key, or the shortcut below."
         // Hidden on the built-in display, shown on the external one: no warning.
         app.statusWindowVisibilities = { [false, true] }
         app.checkStatusItemVisibility()
@@ -299,6 +316,20 @@ import XCTest
         XCTAssertFalse(app.statusItemHidden)
         XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
         XCTAssertNil(EngineDockMenuApplication.anyWindowVisible([]), "no known window gives no verdict")
+    }
+
+    /// G3-71 (macrevc-790-1): the hidden-icon notice promises the ignition key and the shortcut only where the cockpit entry can use them.
+    func testHiddenIconNoticePromisesOnlyWhatTheBuildCanOpen() async throws {
+        for (enabled, mentionsKey) in [(false, false), (true, true)] {
+            let app = try await application(cockpitEntryEnabled: enabled)
+            defer { app.removeStatusItem(); app.composition.dock.close() }
+            app.installStatusItem(); app.renderMenu()
+            app.statusWindowVisibilities = { [false] }
+            app.checkStatusItemVisibility()
+            let english = try XCTUnwrap(app.settingsHost.application.editor.context.statusItemNotice?.english)
+            XCTAssertEqual(english.contains("ignition key"), mentionsKey, "cockpit entry \(enabled)")
+            XCTAssertEqual(english.contains("shortcut"), mentionsKey, "cockpit entry \(enabled)")
+        }
     }
 
     func testMissingTemplateImageFallsBackToAVisibleTitle() async throws {

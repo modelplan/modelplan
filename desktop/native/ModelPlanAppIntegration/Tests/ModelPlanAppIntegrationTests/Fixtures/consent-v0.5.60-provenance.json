@@ -1,0 +1,26 @@
+{
+  "command": [
+    "consent",
+    "--json"
+  ],
+  "syntheticHomeOnly": true,
+  "ownerHomeDenied": true,
+  "networkDenied": true,
+  "allReadersOff": true,
+  "capturePlatform": "linux_arm64",
+  "sourceRelease": "https://github.com/modelplan/modelplan/releases/tag/v0.5.60",
+  "sourceCommit": "4a32e4002a3761b73a07a85bdf3d1d92d51ed037",
+  "sourceArchiveSHA256": "9ef894b2124d9ee779cd8009953a50ba01685d23fb3ca9de88c2431a97a50bb6",
+  "rawSourceHelperSHA256": "3c68425fa3296f7f8e8147c93cc88b2f3f16550afcd04dbc326f850484f40cf1",
+  "outputSHA256": "0544eda3132bb8c863a813542df94a524659d6f6cadcb6949db1ed0405fee18c",
+  "bytes": 3328,
+  "exit": 0,
+  "isolation": {
+    "filesystem": "bubblewrap with a private network namespace; synthetic HOME holding only a Codex presence config, empty environment and PATH, all readers, history, CodexBar and account reads off. An strace of the run shows no owner-home path opened. This run had no Landlock",
+    "network": "private network namespace; MODELPLAN_BASE pointed at a closed local port; strace shows no connect call",
+    "outsideDirectoryReadDenied": true,
+    "networkSocketDenied": true
+  },
+  "purpose": "complete real released-CLI contract fixture; synthetic metadata only, not an owner observation",
+  "cliVersion": "0.5.60"
+}

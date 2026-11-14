@@ -57,8 +57,13 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let showUsedPercent: Bool
   /// Settings "Cockpit size": native window geometry only, never sent to the page.
   public let size: CockpitSize
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, size: CockpitSize = .standard) {
+  /// D244 (owner 2026-11-13): the saved subscription order from Settings › Subscriptions, shared with the
+  /// widget. Members it names come first in this order; the rest follow in the engine's order. Empty = default.
+  public let memberOrder: [String]
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, size: CockpitSize = .standard, memberOrder: [String] = []) {
     self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent; self.size = size
+    var seen = Set<String>()
+    self.memberOrder = Array(memberOrder.filter { $0 != "all" && CockpitMemberScopes.isValidKey($0) && seen.insert($0).inserted }.prefix(256))
     if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
       self.redBelow = redBelow
     } else {
@@ -97,7 +102,7 @@ public struct CockpitVisibility: Equatable, Sendable {
   var active: Bool { visible && !occluded && key }
 }
 public enum CockpitIntent: Equatable, Sendable {
-  case chooseSetup, openSettings, close, detach, putBack, shutterToggle, openField
+  case chooseSetup, openSettings, openSettingsSubscriptions, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
   /// D63: open the enlarged field focused on the rocket with this published display name (resolved by the host).
   case openFieldAt(String)
@@ -311,16 +316,21 @@ public final class CockpitBridgeState {
     ]
     // G3-56: sent only when there is something to restore, so a page that has none sees the unchanged contract.
     if CockpitCautionIdentities.valid(ackedCautions), !ackedCautions.isEmpty { extra["ackedCautions"] = ackedCautions }
+    // D244: likewise the saved member order; absent means the engine's default order.
+    if !appearance.memberOrder.isEmpty { extra["memberOrder"] = appearance.memberOrder }
     return try envelope("load", extra: extra, receipt: "ready")
   }
   public func setAppearance(_ appearance: CockpitAppearance, deadlineEligible: Bool = false) throws -> String {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
     let correlated = deadlineEligible && visibility.visible && !visibility.occluded
-    return try envelope("appearance", extra: [
+    var extra: [String: Any] = [
       "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
       "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
       "showProjectNames": appearance.showProjectNames, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent,
-    ], appearanceDeadline: correlated)
+    ]
+    // D244: absent means the default order, so a reset in Settings reaches an open page too.
+    if !appearance.memberOrder.isEmpty { extra["memberOrder"] = appearance.memberOrder }
+    return try envelope("appearance", extra: extra, appearanceDeadline: correlated)
   }
   public func setShell(_ shell: CockpitShellState) throws -> String {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
@@ -532,6 +542,8 @@ public final class CockpitBridgeState {
       switch action {
       case "chooseSetup": intent = .chooseSetup
       case "openSettings": intent = .openSettings
+      // CKP-SHELL-39: the empty engine screen's one button; it opens the Subscriptions pane and carries nothing.
+      case "openSettingsSubscriptions": intent = .openSettingsSubscriptions
       case "scopeSelect":
         guard let key=m["key"] as? String, scopeMembers.contains(key),
           earlyDisplay.map({ pending[$0.requestID]?.members.contains(key) == true }) ?? true else { throw CockpitBridgeError.invalidMessage }

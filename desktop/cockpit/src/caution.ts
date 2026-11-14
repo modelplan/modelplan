@@ -21,7 +21,12 @@ export interface CautionItem {
  /** Stable per condition and window cycle: a reset or a cleared-then-returning condition is a new condition. */
  readonly id:string; /** Identity of the caution itself: tool, window and severity. Unlike `id` it survives a refresh that moves the reset time. */ readonly stable:string; readonly level:CautionLevel|'blue'; readonly member:string;
  readonly text:{readonly en:string;readonly zh:string};
+ /** G3-106: the reset moment of the window cycle an amber forecast caution belongs to. The forecast comes and goes with
+  *  the recent usage rate, so for amber only a new cycle (or a red escalation) is a recurrence, never a paused forecast. */
+ readonly cycle?:number;
 }
+/** A window with a real current reading, with what tells its cycles apart. */
+export interface ReadWindow {readonly resetAt:number|null;readonly span:number|null}
 const span=(minutes:number)=>minutes<60?`${Math.max(0,Math.round(minutes))}m`:minutes<1440?`${Math.floor(minutes/60)}h${String(Math.round(minutes%60)).padStart(2,'0')}`:`${Math.floor(minutes/1440)}d${Math.floor(minutes%1440/60)}h`;
 const rank={red:0,amber:1,blue:2} as const;
 // Both languages from the study's string tables (strings/common.js, strings/mfd.js), so the copy stays the study's.
@@ -42,7 +47,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
    if(!currentWindow(account,w,now)||w.remainingPercent===null)continue;
    const r=Math.round(w.remainingPercent),resetAt=w.resetsAt?Date.parse(w.resetsAt):NaN,left=Number.isFinite(resetAt)&&resetAt>now?span((resetAt-now)/60000):null;
    if(w.remainingPercent>redBelow){
-    if(left&&runOutMinutes(data,row.id,account,w,now)!==null)lamp.push({remaining:w.remainingPercent,resetAt,item:{id:JSON.stringify([key,w.id,w.resetsAt,'forecast']),stable:JSON.stringify([key,w.id,'amber']),level:'amber',member:key,
+    if(left&&runOutMinutes(data,row.id,account,w,now)!==null)lamp.push({remaining:w.remainingPercent,resetAt,item:{id:JSON.stringify([key,w.id,w.resetsAt,'forecast']),stable:JSON.stringify([key,w.id,'amber']),level:'amber',member:key,cycle:resetAt,
      text:{en:`${row.name.en} ${w.label.en} ${r}% · won't last ${left}`,zh:`${row.name.zh} ${w.label.zh} ${r}% · 撑不到 ${left} 后重置`}}});
     continue;
    }
@@ -106,13 +111,16 @@ export function cautionLevel(items:readonly CautionItem[],member?:string):Cautio
  return own.some(x=>x.level==='red')?'red':own.some(x=>x.level==='amber')?'amber':null;
 }
 
-/** Windows that have a real current reading right now, as `[member, window]`. A condition is cleared only for these:
+/** Windows that have a real current reading right now, keyed `[member, window]`. A condition is cleared only for these:
  *  a pending, stale or missing read says nothing about whether the caution is over. */
-export function readWindows(data:WireCockpitData,now:number):Set<string> {
- const out=new Set<string>();
+export function readWindows(data:WireCockpitData,now:number):Map<string,ReadWindow> {
+ const out=new Map<string,ReadWindow>();
  for(const {key,account} of cockpitMembers(data)){
   if(account.valueState==='retained')continue;
-  for(const w of account.windows)if(currentWindow(account,w,now)&&w.remainingPercent!==null)out.add(JSON.stringify([key,w.id]));
+  for(const w of account.windows)if(currentWindow(account,w,now)&&w.remainingPercent!==null){
+   const at=w.resetsAt?Date.parse(w.resetsAt):NaN;
+   out.set(JSON.stringify([key,w.id]),{resetAt:Number.isFinite(at)?at:null,span:finite(w.durationSeconds)&&w.durationSeconds>0?w.durationSeconds*1000:null});
+  }
  }
  return out;
 }

@@ -66,6 +66,9 @@ type claudeParser struct {
 	// and the ones this read counted, in finished turns, to record.
 	elsewhere map[string]bool
 	counted   []string
+	// cleared: the tool's clear boundary. A turn from before it is never counted, so none of its
+	// request ids is recorded either.
+	cleared time.Time
 }
 
 // idleDone: a turn whose last reply ended it and nothing followed for this long is finished, even
@@ -155,7 +158,7 @@ func (p *claudeParser) close() {
 	if t == nil || len(t.reqs) == 0 {
 		return
 	}
-	if p.elsewhere != nil {
+	if p.elsewhere != nil && !t.at.Before(p.cleared) {
 		for _, q := range t.reqs {
 			if q.id != "" {
 				p.counted = append(p.counted, requestKey(q.id))

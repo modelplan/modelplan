@@ -87,12 +87,12 @@ import ModelPlanWire
         // G3-45 (owner 11-08) supersedes the G3-19 one-line notice: the page lists each detected tool
         // with a checkbox, checked by default when it can be read (D27 keeps standard readers on), and
         // no per-path controls. Browser sessions and unrecognised paths are not offered here.
-        let toolBoxes = try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.") }
+        let toolBoxes = try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.firstRun.tool.") }
         XCTAssertEqual(Set(toolBoxes.map { $0.accessibilityIdentifier() }), ["scope.firstRun.tool.codex", "scope.firstRun.tool.cursor"],
                        "one checkbox per detected tool and nothing else")
         XCTAssertTrue(toolBoxes.allSatisfy { $0.state == .on }, "readable tools start checked")
-        let notice = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.firstRun.notice" } as? NSTextField)
-        XCTAssertTrue(notice.stringValue.contains("Settings › Data & Privacy"), notice.stringValue)
+        let smallPrint = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.firstRun.import" } as? NSTextField)
+        XCTAssertTrue(smallPrint.stringValue.contains("Settings › Data & Privacy"), smallPrint.stringValue)
         XCTAssertTrue(first.scopeConsentEntry.controller.isOnByDefault("codex.local_history"))
         XCTAssertFalse(first.scopeConsentEntry.controller.isOnByDefault("cursor.browser_session"), "browser sessions ask when first needed")
         // Settings lists the same reader as on, with an on switch; turning it off is a confirmed revoke.

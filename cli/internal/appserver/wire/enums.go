@@ -273,3 +273,15 @@ const (
 	ImportSourceNothing   HistoryImportSourceStatus = "nothing_found"
 	ImportSourceOff       HistoryImportSourceStatus = "off"
 )
+
+// CockpitProjectState says whether a cockpit session has a project, apart from whether its name is shown:
+// named (projectLabel is the name), unnamed (a project the tool stores no name for), hidden (a project
+// whose name `project-labels off` withholds) or none (no project at all).
+type CockpitProjectState string
+
+const (
+	ProjectNamed   CockpitProjectState = "named"
+	ProjectUnnamed CockpitProjectState = "unnamed"
+	ProjectHidden  CockpitProjectState = "hidden"
+	ProjectNone    CockpitProjectState = "none"
+)
