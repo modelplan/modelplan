@@ -1628,13 +1628,6 @@ struct DockHelpInteraction: Equatable {
         panel.level = value.moving ? .statusBar : .floating
         let previousFrame = panel.frame
         panel.setFrame(frame, display: false)
-        // G3-114: an open card follows its ring when the widget moves (D244: a ring press-drag carries the whole
-        // widget), as prototype card.js re-places it from the ring as painted. While carrying, the edge's own
-        // refresh is idle, so re-place now; after a drop, re-place once the release's refresh has finished.
-        if value.state == .expanded, previousFrame != panel.frame {
-            if value.moving { refreshCardPlacement() }
-            else { Task { @MainActor [weak self] in self?.refreshCardPlacement() } }
-        }
         panel.collectionBehavior = panelCollectionBehavior
         let content: NSView
         switch value.state {
@@ -1655,6 +1648,14 @@ struct DockHelpInteraction: Equatable {
         case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
+        // G3-114: an open card follows its ring when the widget moves (D244: a ring press-drag carries the whole
+        // widget), as prototype card.js re-places it from the ring as painted. Only now is the presented edge's view
+        // in the panel (macrevc-960-1: a carry onto another edge swaps it in above). While carrying, the edge's own
+        // refresh is idle, so re-place now; after a drop, re-place once the release's refresh has finished.
+        if value.state == .expanded, previousFrame != panel.frame {
+            if value.moving { refreshCardPlacement() }
+            else { Task { @MainActor [weak self] in self?.refreshCardPlacement() } }
+        }
         bindPointerInput(value, content: content)
         // Keep the AppKit tracking instance attached while the surface redraws.
         let contextualMenu = trackedDockMenu ?? menu()

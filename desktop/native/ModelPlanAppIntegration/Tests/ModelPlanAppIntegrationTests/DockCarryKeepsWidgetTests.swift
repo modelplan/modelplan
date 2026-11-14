@@ -143,10 +143,14 @@ private actor CarryEngine: EngineClient {
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
 
-    /// G3-114: with a ring's card open, a press-drag on that ring carries the whole widget (D244). The card
-    /// follows its ring as painted (prototype card.js refreshCardPlacement), keeping the same gap and arrow,
-    /// instead of staying behind where the widget was. Through the normal entry with native panels.
-    func testG3114AnOpenCardFollowsItsRingWhileTheWidgetIsCarried() async throws {
+    /// The normal entry with native panels on the right edge, a ring's card open from hover (no magnification),
+    /// and the ring pressed (D244: the press is the start of a carry). `pointer` is the native pointer sample.
+    private final class Pointer { var at = CGPoint(x: 600, y: 450) }
+    private struct Opened {
+        let app: EngineDockMenuApplication, dock: StaticDockPreviewHost, view: DockInstrumentView
+        let id: String, plate: CGRect, ring: CGRect, local: CGPoint, start: CGRect
+    }
+    private func openCardAndPressItsRing(_ pointer: Pointer, screen: DockDisplayArea) async throws -> Opened {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-carry-card-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
@@ -156,10 +160,8 @@ private actor CarryEngine: EngineClient {
         }
         let snapshot = try rows([("codex", "openai"), ("claude-code", "claude"), ("zcode", "zhipu")])
         let clock = CarryClock()
-        var pointer = CGPoint(x: 600, y: 450)
-        let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795), backingScale: 2)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: true, bundleURL: profile.appendingPathComponent("Synthetic.app"),
-            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: pointer) },
+            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: pointer.at) },
             deadlineNow: { [clock] in clock.wall }, deadlineElapsed: { [clock] in clock.elapsed },
             makeClient: { _, target in CarryEngine(store: target, rows: snapshot) }, makeSettingsSurface: { _ in CarryNoWindowSurface() },
             isolatedResetNotificationLedger: profile.appendingPathComponent("reset-notifications.json"), activateSettings: {})
@@ -175,44 +177,75 @@ private actor CarryEngine: EngineClient {
         }
         let id = try XCTUnwrap(view.presentedSkinForChecks?.stations.compactMap(\.subscriptionID).first)
         let window = try XCTUnwrap(view.window)
-        func screenRect(_ local: CGRect) -> CGRect { window.convertToScreen(view.convert(local, to: nil)) }
         let anchor = try XCTUnwrap(view.interactionAnchor(id))
-        let hit = screenRect(anchor)
-        pointer = CGPoint(x: hit.midX, y: hit.midY)
+        let hit = window.convertToScreen(view.convert(anchor, to: nil))
+        pointer.at = CGPoint(x: hit.midX, y: hit.midY)
         let events = try XCTUnwrap(view.nozzleEventDelegate)
         events.hoverNozzle(nil); events.hoverNozzle(id)
         clock.elapsed += 0.6; clock.wall.addTimeInterval(0.6); dock.interactionControllerForChecks?.refresh()
         for _ in 0..<200 where dock.cardPlateForChecks == nil { try await Task.sleep(for: .milliseconds(10)); dock.interactionControllerForChecks?.refresh() }
         let plate = try XCTUnwrap(dock.cardPlateForChecks, "the ring's card is open")
-        let ring = screenRect(try XCTUnwrap(view.cardRingAnchor(id)))
-
-        // Press the ring and pull it 150 pt along the edge: the whole widget is carried (D244).
+        let ring = window.convertToScreen(view.convert(try XCTUnwrap(view.cardRingAnchor(id)), to: nil))
         let local = CGPoint(x: anchor.midX, y: anchor.midY)
         let start = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
         let arrival = ContinuousClock.now + .seconds(1)
-        while !view.performPointerDown(atLocal: local, global: pointer) {
-            guard ContinuousClock.now < arrival else { return XCTFail("a press on a ring is taken") }
+        while !view.performPointerDown(atLocal: local, global: pointer.at) {
+            guard ContinuousClock.now < arrival else { XCTFail("a press on a ring is taken"); throw CancellationError() }
             try await Task.sleep(for: .milliseconds(10))
         }
-        let pulled = CGPoint(x: pointer.x, y: pointer.y - 150)
-        pointer = pulled
-        view.performPointerDrag(atLocal: local, global: pulled)
+        return .init(app: app, dock: dock, view: view, id: id, plate: plate, ring: ring, local: local, start: start)
+    }
+    private let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795), backingScale: 2)
+
+    /// G3-114: with a ring's card open, a press-drag on that ring carries the whole widget (D244). The card
+    /// follows its ring as painted (prototype card.js refreshCardPlacement), keeping the same gap and arrow,
+    /// instead of staying behind where the widget was. Through the normal entry with native panels.
+    func testG3114AnOpenCardFollowsItsRingWhileTheWidgetIsCarried() async throws {
+        let pointer = Pointer()
+        let o = try await openCardAndPressItsRing(pointer, screen: screen)
+        let view = o.view, dock = o.dock
+        func ringOnScreen() throws -> CGRect {
+            let window = try XCTUnwrap(view.window)
+            return window.convertToScreen(view.convert(try XCTUnwrap(view.cardRingAnchor(o.id)), to: nil))
+        }
+        // Pull the pressed ring 150 pt along the right edge: the whole widget is carried (D244).
+        let pulled = CGPoint(x: pointer.at.x, y: pointer.at.y - 150)
+        pointer.at = pulled
+        view.performPointerDrag(atLocal: o.local, global: pulled)
         XCTAssertEqual(dock.edgePresentation?.moving, true, "D244: the ring press carries the widget")
         let carried = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
-        XCTAssertLessThan(carried.midY, start.midY - 100, "the widget follows the pointer")
-        let movedRing = screenRect(try XCTUnwrap(view.cardRingAnchor(id)))
-        XCTAssertEqual(movedRing.midY - ring.midY, carried.midY - start.midY, accuracy: 1, "the ring moved with the widget")
-        if let moved = dock.cardPlateForChecks {
-            XCTAssertEqual(moved.midY - movedRing.midY, plate.midY - ring.midY, accuracy: 1, "G3-114: the open card follows its ring")
-            XCTAssertEqual(movedRing.minX - moved.maxX, ring.minX - plate.maxX, accuracy: 1, "G3-114: the card keeps its gap to the ring")
-        }
-        view.performPointerUp(atLocal: local, global: pulled)
+        XCTAssertLessThan(carried.midY, o.start.midY - 100, "the widget follows the pointer")
+        let movedRing = try ringOnScreen()
+        XCTAssertEqual(movedRing.midY - o.ring.midY, carried.midY - o.start.midY, accuracy: 1, "the ring moved with the widget")
+        let moved = try XCTUnwrap(dock.cardPlateForChecks, "G3-114: the card stays open during the carry")
+        XCTAssertEqual(moved.midY - movedRing.midY, o.plate.midY - o.ring.midY, accuracy: 1, "G3-114: the open card follows its ring")
+        XCTAssertEqual(movedRing.minX - moved.maxX, o.ring.minX - o.plate.maxX, accuracy: 1, "G3-114: the card keeps its gap to the ring")
+        view.performPointerUp(atLocal: o.local, global: pulled)
         try await Task.sleep(for: .milliseconds(50))
-        if let dropped = dock.cardPlateForChecks {
-            let restingRing = screenRect(try XCTUnwrap(view.cardRingAnchor(id)))
-            XCTAssertEqual(dropped.midY - restingRing.midY, plate.midY - ring.midY, accuracy: 1, "G3-114: the card sits by its ring after the drop")
-        }
-        events.hoverNozzle(nil)
-        await app.stopLifecycle(); dock.close()
+        let dropped = try XCTUnwrap(dock.cardPlateForChecks, "the card is still open after the drop")
+        XCTAssertEqual(dropped.midY - (try ringOnScreen()).midY, o.plate.midY - o.ring.midY, accuracy: 1, "G3-114: the card sits by its ring after the drop")
+        await o.app.stopLifecycle(); dock.close()
+    }
+
+    /// macrevc-960-1: a carry that takes the widget onto another edge swaps that edge's view into the panel. The
+    /// card must be placed from the newly attached view, not before it is in the window (which dismissed the card).
+    func testG3114AnOpenCardFollowsItsRingWhenTheCarryChangesEdge() async throws {
+        let pointer = Pointer()
+        let o = try await openCardAndPressItsRing(pointer, screen: screen)
+        let dock = o.dock
+        XCTAssertEqual(dock.edgePresentation?.placement?.edge, .right)
+        // Pull the pressed ring straight to the middle of the bottom edge.
+        let bottom = CGPoint(x: screen.visibleFrame.midX, y: screen.visibleFrame.minY + 2)
+        pointer.at = bottom
+        o.view.performPointerDrag(atLocal: o.local, global: bottom)
+        XCTAssertEqual(dock.edgePresentation?.moving, true, "D244: the ring press carries the widget")
+        XCTAssertEqual(dock.edgePresentation?.placement?.edge, .bottom, "precondition: the carry shows the bottom edge")
+        let carried = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+        let plate = try XCTUnwrap(dock.cardPlateForChecks, "macrevc-960-1: the card stays open when the carry changes edge")
+        XCTAssertGreaterThanOrEqual(plate.minY, carried.minY, "the card sits above the bottom-edge widget, by its ring")
+        XCTAssertTrue(plate.intersects(carried.insetBy(dx: -220, dy: -220)), "the card moved with the widget, not left on the right edge")
+        XCTAssertFalse(plate.intersects(o.plate), "the card left its old place by the right edge")
+        dock.cancelPanelMove()
+        await o.app.stopLifecycle(); dock.close()
     }
 }
