@@ -2,6 +2,10 @@
 package localusage
 
 import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -70,5 +74,74 @@ func TestGrokUsageCountsEachTurnOnce(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+func grokHistoryTotal(t *testing.T, r HistoryResult) int64 {
+	t.Helper()
+	var total int64
+	for _, row := range r.Rows {
+		if row.Total != nil {
+			total += *row.Total
+		}
+	}
+	return total
+}
+
+// Review macrev2-968-1 / glm-968-1: Grok history decoded before the per-turn rules keeps its old
+// rows for files that never change. The first refresh after the upgrade re-reads every Grok file
+// once with the new rules and replaces that file's old rows; later refreshes skip unchanged files
+// again. A fresh cache is the positive control.
+func TestGrokHistoryUpgradeRereadsOldDecoderRowsOnce(t *testing.T) {
+	a := historyTestAccess(t)
+	usage := `{"turns":[{"turnNumber":1,"endedAt":"2026-10-23T10:00:00Z","totalTokens":900,"primaryModelId":"grok-a","modelUsage":{"grok-a":{"totalTokens":900},"grok-b":{"totalTokens":900}}}]}`
+	setup := func() (string, string) {
+		root, cache := t.TempDir(), t.TempDir()
+		fixtureFile(t, filepath.Join(root, "project/session/summary.json"), `{"info":{},"created_at":"2026-10-23T09:00:00Z","num_messages":1}`)
+		fixtureFile(t, filepath.Join(root, "project/session/usage.json"), usage)
+		return root, cache
+	}
+
+	root, cache := setup()
+	if r := RefreshHistory(context.Background(), "grok", root, cache, a, testNow); grokHistoryTotal(t, r) != 900 {
+		t.Fatalf("fresh cache total = %d, want 900", grokHistoryTotal(t, r))
+	}
+
+	// Rewrite the stored state as the old decoder left it: one row per model subtotal (1,800 for a
+	// 900-token turn) and no decoder version. The source file stays byte-for-byte the same.
+	root, cache = setup()
+	RefreshHistory(context.Background(), "grok", root, cache, a, testNow)
+	path := historyPath(cache, "grok", a)
+	var state map[string]json.RawMessage
+	b, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(b, &state) != nil {
+		t.Fatal("no stored grok history", err)
+	}
+	delete(state, "grokDecoder")
+	var entries map[string]historyStored
+	if err := json.Unmarshal(state["entries"], &entries); err != nil || len(entries) != 1 {
+		t.Fatal("stored entries", err, len(entries))
+	}
+	for id, e := range entries {
+		e.Model = "grok-b"
+		entries = map[string]historyStored{id: entries[id], id + "-old-decoder": e}
+		break
+	}
+	state["entries"], _ = json.Marshal(entries)
+	b, _ = json.Marshal(state)
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r := ReadHistoryCache(cache, "grok", a, testNow.Add(time.Minute)); grokHistoryTotal(t, r) != 1800 {
+		t.Fatalf("old-decoder seed total = %d, want 1800", grokHistoryTotal(t, r))
+	}
+
+	upgraded := RefreshHistory(context.Background(), "grok", root, cache, a, testNow.Add(5*time.Minute))
+	if got := grokHistoryTotal(t, upgraded); got != 900 || upgraded.BytesRead == 0 {
+		t.Fatalf("after upgrade total = %d (bytesRead %d), want 900 from a re-read", got, upgraded.BytesRead)
+	}
+	again := RefreshHistory(context.Background(), "grok", root, cache, a, testNow.Add(10*time.Minute))
+	if got := grokHistoryTotal(t, again); got != 900 || again.BytesRead != 0 {
+		t.Fatalf("second refresh total = %d (bytesRead %d), want 900 without a re-read", got, again.BytesRead)
 	}
 }
