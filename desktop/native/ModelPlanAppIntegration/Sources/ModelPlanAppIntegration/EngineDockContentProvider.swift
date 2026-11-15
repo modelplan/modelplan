@@ -339,7 +339,7 @@ public enum EngineDeadlineFacts {
                 name: .init(member.name(english: true), member.name(english: false)),
                 plan: planName, vendor: member.row.vendorKey ?? "",
                 source: sourceState(member, now: context.now), isUnstable: !member.isStable,
-                causeCode: causeCode)
+                causeCode: causeCode, tool: member.row.id)
         }
         let content = DockContent(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)

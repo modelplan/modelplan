@@ -402,6 +402,12 @@ import ModelPlanWire
                 line(Self.firstRunKeyLine, id: prefix + "keylater." + id)
             }
         }
+        // D87 slice 8: what the tool still needs, from the same table as the Subscriptions rows.
+        if !settings, tool.detected, tool.block == nil {
+            let pre = SubscriptionRowModel.prerequisite(tool: tool, name: Self.toolName(id).english,
+                                                        facts: controller.toolRowFacts[id], keyEntryAvailable: readerKeys != nil)
+            line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
+        }
         let row = NSStackView(views: [box, mark, column]); row.orientation = .horizontal; row.alignment = .top; row.spacing = 10
         row.setAccessibilityIdentifier(prefix + "row." + id)
         addArrangedSubview(row)
