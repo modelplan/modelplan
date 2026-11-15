@@ -143,6 +143,10 @@ Unknown: backend provisioning/session/audit writes, service-quota consumption,
 billing treatment and current account eligibility. No live account or quota
 endpoint was probed for this card.
 
+## Reported models (D99)
+
+D99 reports the `modelId` of the quota buckets already parsed (no extra request; slugs only).
+
 ## Read shape and budget
 
 A cold logical read is **G1 then G2, at most two requests**; any G1 error or invalid
