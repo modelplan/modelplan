@@ -10,7 +10,7 @@ import ModelPlanShell
 /// a synthetic document, as in CockpitD88AttachmentTests.
 @MainActor final class NativeShellBatchTests: XCTestCase {
   private struct Fixture { let page: CockpitWindowController, icon: CGRect, usable: CGRect }
-  private final class FakeWindow: PulsePresenceWindow {
+  @MainActor private final class FakeWindow: PulsePresenceWindow {
     var isVisible = false, isMiniaturized = false
     func close() { isVisible = false }
   }
@@ -42,8 +42,10 @@ import ModelPlanShell
     let window = try XCTUnwrap(page.window)
     return (window.level, window.collectionBehavior, page.dismissal.isArmed)
   }
-  private let attachedTraits = (CockpitWindowController.panelLevel, CockpitWindowController.collectionBehavior(detached: false), true)
-  private let detachedTraits = (NSWindow.Level.normal, NSWindow.CollectionBehavior([]), false)
+  private var attachedTraits: (NSWindow.Level, NSWindow.CollectionBehavior, Bool) {
+    (CockpitWindowController.panelLevel, CockpitWindowController.collectionBehavior(detached: false), true)
+  }
+  private var detachedTraits: (NSWindow.Level, NSWindow.CollectionBehavior, Bool) { (.normal, [], false) }
   private func assertTraits(_ page: CockpitWindowController, _ expected: (NSWindow.Level, NSWindow.CollectionBehavior, Bool),
                             _ message: String, line: UInt = #line) throws {
     let value = try traits(page)
@@ -123,6 +125,8 @@ import ModelPlanShell
   /// accessory and the cockpit then ignores the resulting resign-active.
   func testOnePresenceForSettingsAndTheDetachedCockpit() throws {
     let f = try open()
+    var clock: UInt64 = 10_000
+    f.page.dismissalClock = { clock }
     var policy: NSApplication.ActivationPolicy = .accessory, log: [NSApplication.ActivationPolicy] = [], activations = 0
     let presence = PulseDockPresence(currentPolicy: { policy }, setPolicy: { value in
       f.page.suppressDismissal(.policyChange, forMilliseconds: EngineDockMenuApplication.policyChangeHoldMilliseconds)
@@ -141,7 +145,10 @@ import ModelPlanShell
     XCTAssertEqual(log, [.regular], "closing Settings keeps the icon for the detached cockpit")
     f.page.setAttached(true)
     XCTAssertEqual(log, [.regular, .accessory], "put back: the icon goes")
+    clock += EngineDockMenuApplication.policyChangeHoldMilliseconds - 1
     XCTAssertEqual(f.page.dismissal.request(.appResigned), .suppressed(.policyChange), "the flip's own resign does not close it")
     XCTAssertNotNil(f.page.window)
+    clock += 1
+    XCTAssertEqual(f.page.dismissal.request(.appResigned), .closed, "after 250 ms a resign closes it again")
   }
 }

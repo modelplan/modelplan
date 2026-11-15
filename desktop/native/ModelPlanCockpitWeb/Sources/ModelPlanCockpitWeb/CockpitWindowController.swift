@@ -227,7 +227,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func suppressDismissal(_ suppression: DismissalSuppression, forMilliseconds duration: UInt64) {
     dismissal.hold(suppression, forMilliseconds: duration)
   }
+  /// Test seam: the funnel's clock in milliseconds (default: system uptime).
+  var dismissalClock: (() -> UInt64)?
   private func dismissalNow() -> UInt64 {
+    if let dismissalClock { return dismissalClock() }
     #if MODELPLAN_TEST_ONLY_SPI
     if let clock = verificationNoWindowClock { return clock() }
     #endif
@@ -1357,7 +1360,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // Spec item 4: the Dock icon follows the detached window; a put back can drop the app to accessory, which can
     // take key from the cockpit, so it is made key again (the funnel's policy hold keeps it from closing).
     onPresenceChanged?(true)
-    if attached, let window, window.isVisible, shown, closeTask == nil, !ending { window.makeKeyAndOrderFront(nil) }
+    if attached, window.isVisible, shown, closeTask == nil, !ending { window.makeKeyAndOrderFront(nil) }
   }
   private func toggleAttachment() { setAttached(shellSession.detached) }
   /// D88: the app's own right-click menu: one item that detaches or puts back. No Reload.

@@ -162,7 +162,7 @@ struct StatusNoticePresentation {
         currentPolicy: { NSApplication.shared.activationPolicy() },
         setPolicy: { [weak self] policy in
             guard let self, !self.terminating else { return }
-            self.currentCockpitPage?()?.suppressDismissal(.policyChange, forMilliseconds: Self.policyChangeHoldMilliseconds)
+            self.currentCockpitPage?()?.suppressDismissal(.policyChange, forMilliseconds: EngineDockMenuApplication.policyChangeHoldMilliseconds)
             _ = NSApplication.shared.setActivationPolicy(policy)
         },
         activate: { NSApplication.shared.activate() })
