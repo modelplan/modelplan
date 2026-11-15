@@ -3,9 +3,32 @@ import Foundation
 import ModelPlanWire
 
 extension ProcessEngineClient {
+    /// Connection changes, private-view clears and feature failures, by fixed name only, in the app log.
+    func logDiagnostics(_ event: EngineClientEvent) {
+        let tag = "client=" + logTag
+        switch event {
+        case .connection(let state):
+            switch state {
+            case .idle: DiagnosticsLog.shared.info("engine", "connection idle \(tag)")
+            case .starting: DiagnosticsLog.shared.info("engine", "connection starting \(tag)")
+            case .ready: DiagnosticsLog.shared.info("engine", "connection ready \(tag) server=\(DiagnosticsLog.safeID(serverVersion ?? "unknown"))")
+            case .restarting(let attempt, let delay):
+                let ms = delay.components.seconds * 1_000 + delay.components.attoseconds / 1_000_000_000_000_000
+                DiagnosticsLog.shared.notice("engine", "connection lost; restart attempt=\(attempt) delayMs=\(ms) \(tag)")
+            case .stopped(let reason):
+                DiagnosticsLog.shared.record("engine", reason == .requested ? .info : .error, "connection stopped reason=\(reason) \(tag)")
+            }
+        case .clearPrivateViews(let invalidation):
+            DiagnosticsLog.shared.info("engine", "clear views reason=\(invalidation.reason) revision=\(invalidation.revision) \(tag)")
+        case .featureFailure(let feature, let error):
+            DiagnosticsLog.shared.notice("engine", "feature failure feature=\(feature) error=\(DiagnosticsLog.errorName(error)) \(tag)")
+        default: break
+        }
+    }
     func emit(_ event: EngineClientEvent, bytes: Int = 256, revision expected: UInt64? = nil,
               request key: String? = nil, error: EngineClientError? = nil, data: Bool = false, clear: UInt64? = nil,
               ready: Bool = false, receipt: Bool = false, epoch: String? = nil) {
+        logDiagnostics(event)
         var item = ClientDelivery(event: event, bytes: bytes, revision: expected, epoch: epoch, requestKey: key)
         item.completionError = error
         item.isData = data; item.clearRevision = clear; item.ready = ready; item.receiptMetadata = receipt

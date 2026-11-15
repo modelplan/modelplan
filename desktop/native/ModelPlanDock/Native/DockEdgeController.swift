@@ -73,6 +73,8 @@ public struct DockEdgePresentation:Equatable,Sendable {
     private var dragStart: DockEdgePresentation?
     public var prepareDragDisplay: ((DockDisplayArea) -> Void)?
     public var onDragCancelled: (() -> Void)?
+    /// One fixed-wording line per drag start, end or cancel and per edge change, for the app's diagnostics log.
+    public var onDiagnostic: ((String) -> Void)?
     public var isBackgroundMoving: Bool { presentation?.moving == true }
     public var isBackgroundPressed: Bool { drag != nil }
     public private(set) var isPublishingRelease = false
@@ -95,6 +97,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
     public func resume(){stop();running=true;refresh()}
     public func setPreference(_ value:DockEdgePreference){
         guard drag == nil else { return }
+        if value.edge != preference.edge { onDiagnostic?("edge change edge=\(value.edge) was=\(preference.edge) source=settings") }
         preference=value;refresh()
     }
     public func reveal(){refresh(intent:.reveal)}
@@ -173,6 +176,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
               let current = presentation, current.state == .expanded, let placement = current.placement else { return false }
         dragStart = current
         drag = PulsePanelDrag(press: global, placement: placement)
+        onDiagnostic?("drag start kind=body edge=\(placement.edge)")
         return true
     }
     /// D244: the ring is not a body drag region (its click stays a click); once its press moves, the same Pulse
@@ -182,6 +186,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
               let current = presentation, current.state == .expanded, let placement = current.placement else { return false }
         dragStart = current
         drag = PulsePanelDrag(press: global, placement: placement)
+        onDiagnostic?("drag start kind=carry edge=\(placement.edge)")
         return true
     }
     private func allowsDrag(_ presence: DockPresence) -> Bool {
@@ -241,8 +246,13 @@ public struct DockEdgePresentation:Equatable,Sendable {
                 cancelBackgroundMove(); return
             }
             let token = timerGeneration
+            let startEdge = dragStart?.placement?.edge
             clearMove()
             onClearRecordedLocks?(.drag)
+            onDiagnostic?("drag end edge=\(destination.preference.edge) was=\(startEdge.map { "\($0)" } ?? "none")")
+            if let startEdge, startEdge != destination.preference.edge {
+                onDiagnostic?("edge change edge=\(destination.preference.edge) was=\(startEdge) source=drag")
+            }
             guard running, timerGeneration == token else { return }
             preference = destination.preference
             isPublishingRelease = true
@@ -258,6 +268,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
 
     public func cancelBackgroundMove() {
         guard drag != nil else { return }
+        onDiagnostic?("drag cancelled")
         let previous = dragStart
         clearMove()
         onClearRecordedLocks?(.drag)

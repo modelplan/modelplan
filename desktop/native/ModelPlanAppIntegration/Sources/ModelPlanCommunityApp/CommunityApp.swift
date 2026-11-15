@@ -14,6 +14,12 @@ import ModelPlanWire
         // D164: resolve the profile before anything reads or writes a store; a fresh profile also
         // refuses to start with an engine that would not follow it.
         ProfileRoot.current.prepareLaunch(helper: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"))
+        // Persistent diagnostics (ModelPlan.log, engine.log), before any engine child starts so its stderr is kept.
+        DiagnosticsLog.shared.configure(directory: ProfileRoot.current.logs)
+        let info = Bundle.main.infoDictionary ?? [:]
+        DiagnosticsLog.shared.notice("lifecycle", "launch version=\(info["CFBundleShortVersionString"] as? String ?? "unknown") "
+            + "build=\(info["CFBundleVersion"] as? String ?? "unknown") macOS=\(ProcessInfo.processInfo.operatingSystemVersion.majorVersion).\(ProcessInfo.processInfo.operatingSystemVersion.minorVersion).\(ProcessInfo.processInfo.operatingSystemVersion.patchVersion) "
+            + "freshProfile=\(ProfileRoot.current.isFresh)")
         // Probe routes retain their existing explicit harness; normal launch consumes app-server rows.
         let explicitProbe = CommandLine.arguments.contains("--access-probe") || CommandLine.arguments.contains("--runtime-probe")
         if !explicitProbe && ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE"] != "1" {
