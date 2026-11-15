@@ -1,0 +1,1 @@
+A cockpit left open for a while no longer flickers closed and open and then reports "Cockpit unavailable" when a settings or layout change arrives while it is busy rendering new readings. After the reading service stops on its own, Refresh and the next wake or unlock start it again instead of leaving the widget at "?" until the app is quit.

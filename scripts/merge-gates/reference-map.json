@@ -1,0 +1,32 @@
+{
+  "_doc": "Path areas that must name the reference app they follow (docs/readers/integration-standard.md section 3). To cover a new area add one group: paths are regexes tested against each changed path (case-insensitive); apps are the allowed references (keys of REFERENCE_APPS in rules.mjs). A PR touching several groups needs an allowed app for each. 'Reference: none (<reason>)' needs a reason of at least 20 characters.",
+  "noneReasonMinLength": 20,
+  "groups": [
+    {
+      "name": "reader",
+      "paths": [
+        "^cli/internal/(quota|detect|localusage|speed|consent)/",
+        "^desktop/native/.*/Sources/.*ReaderCause[^/]*\\.swift$",
+        "^desktop/cockpit/src/(.*/)?reader-?causes?[^/]*$"
+      ],
+      "apps": ["CodexBar", "Pulse", "TokenMonitor", "ccusage", "Tokei"]
+    },
+    {
+      "name": "widget",
+      "paths": [
+        "^desktop/native/ModelPlanDock/",
+        "^desktop/native/ModelPlanAppIntegration/.*/(StaticDockPreviewHost|StaticDockPreviewApplication|DockEdgeController|DockCard|DockInteraction|CommunityPlacement)[^/]*\\.swift$"
+      ],
+      "apps": ["Pulse"]
+    },
+    {
+      "name": "menu-bar and native shell",
+      "paths": [
+        "^desktop/native/ModelPlanAppIntegration/.*/(CommunityMenuBar|EngineMenuBarTitle|LivePrivateMenus|CockpitContextMenu|EngineDockMenu[^/]*|U6StatusItem[^/]*|EngineLifecycleController|HelpOverlayRouter|HintExecutionHost|Dock(Requested)?Help[^/]*)\\.swift$",
+        "^desktop/native/ModelPlanCockpitShell/Sources/",
+        "^desktop/native/ModelPlanCockpitWeb/Sources/.*/CockpitWindowController\\.swift$"
+      ],
+      "apps": ["CodexBar", "Stats", "Maccy", "Pulse"]
+    }
+  ]
+}

@@ -15,6 +15,7 @@ final class ReaderCauseTableTests: XCTestCase {
             ("keychain_unset", "claude", "Claude Code", "Keychain access needed", "需要允许读取钥匙串", "Allow Keychain reading in Settings", "在设置允许读取钥匙串", .openSettings),
             ("key_missing", "zai", "GLM", "Sign in to the GLM Coding Plan in ZCode", "在 ZCode 里登录 GLM 编程套餐", "Open ZCode and sign in", "打开 ZCode 并登录", .guidance),
             ("region_refused", "zai", "GLM", "This address is a third-party relay, so its quota can't be read", "这个地址是第三方转发服务，查不到额度", "Use the official address to read its quota", "改用官方地址才能读取额度", .guidance),
+            ("no_plan", "zai", "GLM", "This key has no GLM Coding Plan", "这个密钥没有开通 GLM 编程套餐", "Use a key with a GLM Coding Plan, or subscribe to one", "换用已开通 GLM 编程套餐的密钥，或开通套餐", .guidance),
             ("consent_required", nil, nil, "Reading permission needed", "需要读取授权", "Review permission in Settings", "在设置检查授权", .openSettings),
         ]
         for (code, tool, name, reasonEN, reasonZH, actionEN, actionZH, target) in cases {
@@ -25,12 +26,21 @@ final class ReaderCauseTableTests: XCTestCase {
         }
     }
 
+    /// D228: a balance-only reading names X Subscription for Grok and the tool otherwise; no control is drawn.
+    func testUsageNotReportedNamesTheXSubscriptionForGrok() throws {
+        let grok = try XCTUnwrap(ReaderCauseTable.entry(code: "usage_not_reported", tool: "grok", toolName: "Grok Build"))
+        XCTAssertEqual(grok.reason, SettingsText("The X Subscription reports no usage percentage; only the balance is shown", "X 订阅不提供用量百分比，只显示余额"))
+        XCTAssertEqual(grok.target, .guidance)
+        let other = try XCTUnwrap(ReaderCauseTable.entry(code: "usage_not_reported", tool: "kimi", toolName: "Kimi Code"))
+        XCTAssertEqual(other.reason.chinese, "Kimi Code 不提供用量百分比，只显示余额")
+    }
+
     /// Review finding (GLM Q2): no step may suggest a button that does not exist. Only the card's Settings entry is a
     /// real control, so every cause either points at it or is plain guidance that renders no control.
     func testEveryCauseNextStepIsTheWiredSettingsEntryOrPlainGuidance() throws {
         let codes = ["not_found", "runtime_missing", "timeout", "rpc_error", "closed", "not_signed_in", "login_expired",
                      "keychain_unset", "keychain_unavailable", "keychain_not_found", "keychain_denied", "key_missing",
-                     "region_refused", "consent_required"]
+                     "region_refused", "no_plan", "consent_required"]
         let buttonWords = ["Retry", "Retry now", "Why?", "Install Node.js", "Open ZCode", "How to allow it", "Allow reading"]
         for code in codes {
             for tool in [nil, "zai", "codex"] {

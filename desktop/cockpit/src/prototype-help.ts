@@ -31,10 +31,11 @@ export function mountPrototypeHelp(root:HTMLElement,getLocale:()=>Locale,isActiv
   const dismiss=document.createElement('span');dismiss.className='help-map-dismiss';dismiss.textContent=locale==='en'?'Press Esc or click to dismiss help':'按 Esc 或点一下退出说明';title.append(dismiss);layer.append(title);
   const targets=notes.flatMap(([selector,en,zh])=>{const target=[...root.querySelectorAll(selector)].find(visible);if(!target)return [];const box=target.getBoundingClientRect(),caption=document.createElement('span');caption.className='an';caption.dataset.target=selector;caption.textContent=selector==='[data-detach]'&&!isAttached()?(locale==='en'?'Put back':'放回菜单栏'):locale==='en'?en:zh;layer.append(caption);return [{target,box,caption}];}).sort((a,b)=>a.box.y-b.box.y);
   if(!targets.length){layer.hidden=true;return;}
+  const crop=root.dataset.shell==='closed'?Math.max(0,parseFloat(getComputedStyle(root).marginTop)||0):0,top=34+crop; // the closed window crops the porthole band: help starts inside the visible area
   const viewportWidth=window.innerWidth,viewportHeight=window.innerHeight,ship=root.getBoundingClientRect();const available=Math.max(180,ship.x-28),width=Math.min(400,available),gap=root.dataset.layout==='890'?12:6,edge=ship.x;
-  Object.assign(title.style,{left:Math.max(8,edge-width-14)+'px',top:'34px',width:width+'px'});
+  Object.assign(title.style,{left:Math.max(8,edge-width-14)+'px',top:top+'px',width:width+'px'});
   for(const {caption} of targets)caption.style.width=width+'px';
-  const start=34+title.offsetHeight+gap,space=viewportHeight-start-12,total=targets.reduce((n,x)=>n+x.caption.offsetHeight+gap,0),columns=total>space?2:1;
+  const start=top+title.offsetHeight+gap,space=viewportHeight-start-12,total=targets.reduce((n,x)=>n+x.caption.offsetHeight+gap,0),columns=total>space?2:1;
   if(columns===2)for(const {caption} of targets)caption.style.width=Math.min(width,(available-12)/2)+'px';
   const heights=Array<number>(columns).fill(start),columnWidth=targets[0].caption.offsetWidth;
   for(const [i,{caption}] of targets.entries()){const col=columns===1?0:Math.min(columns-1,Math.floor(i/Math.ceil(targets.length/columns)));Object.assign(caption.style,{left:Math.max(8,edge-14-columnWidth*(columns-col)-12*(columns-col-1))+'px',top:heights[col]+'px'});heights[col]+=caption.offsetHeight+gap;}

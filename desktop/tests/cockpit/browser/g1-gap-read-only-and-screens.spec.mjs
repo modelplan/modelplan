@@ -173,5 +173,5 @@ for(const theme of ['night','day'])test(`THM-10-02 metal text reaches 4.5:1 and 
 test('COL-2.1-15 Cursor, Copilot and OpenCode keys carry their brand-near accents',async({page})=>{
  await open(page,{data:fixture(['cursor','copilot','opencode','glm'])});
  const accents=await page.locator('.eng-keys .ek[data-sub] .bl').evaluateAll(l=>l.map(e=>e.getAttribute('style')));
- expect(accents.slice(0,3).map(s=>/--v:\s*(#[0-9a-f]{6})/i.exec(s)?.[1].toLowerCase())).toEqual(['#f79dcb','#c08cff','#b5d65a']);
+ expect(accents.slice(0,3).map(s=>/--v:\s*(#[0-9a-f]{6})/i.exec(s)?.[1].toLowerCase())).toEqual(['#eef2f6','#c08cff','#b5d65a']);
 });

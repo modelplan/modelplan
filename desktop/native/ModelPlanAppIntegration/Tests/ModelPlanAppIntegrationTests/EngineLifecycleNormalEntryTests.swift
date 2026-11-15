@@ -26,7 +26,12 @@ private actor LifecycleEngine: EngineClient {
     func releaseStop() { stopGate?.resume(); stopGate = nil }
     init(store: EngineStore, rows: WireRowsSnapshot? = nil) { self.store = store; self.rows = rows }
     func counts() -> (Int, Int) { (starts, stops) }
+    /// G3-116: after the process client's crash limit, start() refuses until an explicit retry().
+    private var needsRetry = false, retries = 0
+    func requireRetry() { needsRetry = true }
+    func retryCount() -> Int { retries }
     func start() async throws -> EngineDeliveryContext {
+        if needsRetry { throw EngineClientError.notReady }
         starts += 1
         let value = EngineDeliveryContext(sessionID: "synthetic-\(starts)", floor: .init(storeEpoch: "synthetic-\(starts)", generation: 1), revision: UInt64(starts))
         current = value; if first == nil { first = value }
@@ -38,7 +43,7 @@ private actor LifecycleEngine: EngineClient {
         await store.consume(.clearPrivateViews(.init(revision: UInt64(starts + 1), reason: .stopped, previous: current, nextFloor: nil)))
         current = nil
     }
-    func retry() async throws -> EngineDeliveryContext { try await start() }
+    func retry() async throws -> EngineDeliveryContext { retries += 1; needsRetry = false; return try await start() }
     func publish(_ value: EngineDeliveryContext) async throws {
         guard let rows else { return }
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: value.sessionID, storeEpoch: value.floor.storeEpoch, consentGeneration: value.floor.generation, data: rows), delivery: value), invalidRowCount: 0))
@@ -120,6 +125,25 @@ private actor LifecycleEngine: EngineClient {
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertTrue(app.lifecyclePaused, "A real consent failure must withdraw the normal presentation")
         XCTAssertEqual(app.liveStatusMenu?.items.first?.title, "Waiting for current readings. Refresh to retry.")
+        await app.stopLifecycle()
+    }
+
+    /// G3-116 (build 14f): the engine crashed past its restart budget, so the client accepts only an explicit retry.
+    /// Each later wake or unlock resumed the lifecycle with start(), which failed at once ("Engine restart or consent
+    /// failed" at 20:48 and 20:50), and the widget kept "?" until the app was quit. A resume retries instead.
+    func testResumeRetriesAnEngineThatNeedsAnExplicitRetry() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-retry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        var client: LifecycleEngine?
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"]), createsNativePanels: false, makeClient: { _, store in let value = LifecycleEngine(store: store, rows: fixture); client = value; return value }, activateSettings: {})
+        await app.prepare(); let engine = try XCTUnwrap(client); await engine.requireRetry()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        for _ in 0..<1000 { if !app.lifecyclePaused { break }; try await Task.sleep(for: .milliseconds(10)) }
+        let retries = await engine.retryCount()
+        XCTAssertEqual(retries, 1, "The resume retries the stopped engine once")
+        XCTAssertFalse(app.lifecyclePaused, "Fresh rows after the retry restore the readings")
         await app.stopLifecycle()
     }
 

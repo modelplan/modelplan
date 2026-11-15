@@ -27,7 +27,14 @@ import (
 // Independently written compatibility reader. Schema references: CodexBar
 // ee890b5 (MIT), Token Monitor e1c393c (MIT); see docs/cursor-native-quota.md.
 // Credentials exist only in memory. No refresh, credential copy or browser access.
-var cursorReader = &nativeReader{Name: "Cursor", Regions: []string{"global"}, Profiles: cursorProfiles, Managed: collectCursorAccount}
+var cursorReader = &nativeReader{Name: "Cursor", Regions: []string{"global"}, Profiles: cursorProfiles, Managed: collectCursorAccount, LoginFiles: cursorLoginFiles}
+
+// Cursor keeps its sign-in in SQLite, which may hold a new token only in the write-ahead log.
+func cursorLoginFiles(profile ReaderProfile) []string {
+	db := filepath.Join(profile.Root, "state.vscdb")
+	return []string{db, db + "-wal"}
+}
+
 var cursorHost = "https://cursor.com"
 var cursorRPCHost = "https://api2.cursor.sh"
 

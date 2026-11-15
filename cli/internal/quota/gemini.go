@@ -27,7 +27,12 @@ import (
 	"time"
 )
 
-var geminiReader = &nativeReader{Name: "Gemini CLI", Regions: []string{"oauth"}, Profiles: geminiProfiles, Managed: collectGemini}
+var geminiReader = &nativeReader{Name: "Gemini CLI", Regions: []string{"oauth"}, Profiles: geminiProfiles, Managed: collectGemini, LoginFiles: geminiLoginFiles}
+
+func geminiLoginFiles(profile ReaderProfile) []string {
+	return []string{filepath.Join(profile.Root, "oauth_creds.json")}
+}
+
 var geminiHost = "https://cloudcode-pa.googleapis.com"
 var geminiIdentifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
 var geminiProjectID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$`)

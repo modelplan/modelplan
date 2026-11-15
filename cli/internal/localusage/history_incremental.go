@@ -91,6 +91,7 @@ type historyState struct {
 	Entries         map[string]historyStored `json:"entries"`
 	BytesRead       int64                    `json:"bytesRead"`
 	Projection      *ProjectionState         `json:"projection,omitempty"`
+	ProjectionOrder int                      `json:"projectionOrder,omitempty"`
 	Complete        bool                     `json:"complete,omitempty"`
 }
 type historyGate struct {
@@ -321,12 +322,17 @@ func historyDiscover(root, tool string) ([]string, bool, error) {
 	if err := safePath(root, true); err != nil {
 		return nil, false, err
 	}
-	budget := 4096
+	// The session projection reads only the newest main files, so it may list
+	// more names than count history tracks; projectionWindow bounds the reads.
+	budget, maxFiles := 4096, 256
+	if tool == projectionTool {
+		budget, maxFiles = projectionDiscoverEntries, projectionDiscoverFiles
+	}
 	limited := false
 	var files []string
 	var walk func(string, int) error
 	walk = func(rel string, depth int) error {
-		if len(files) >= 256 {
+		if len(files) >= maxFiles {
 			limited = true
 			return nil
 		}
@@ -349,7 +355,7 @@ func historyDiscover(root, tool string) ([]string, bool, error) {
 						if err := walk(next, depth+1); err != nil {
 							limited = true
 						}
-						if len(files) >= 256 {
+						if len(files) >= maxFiles {
 							return nil
 						}
 					}
@@ -357,7 +363,7 @@ func historyDiscover(root, tool string) ([]string, bool, error) {
 				}
 				if historyAllowed(tool, next) {
 					files = append(files, next)
-					if len(files) >= 256 {
+					if len(files) >= maxFiles {
 						limited = true
 						return nil
 					}
@@ -463,6 +469,12 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 	historyAttempts.Store(attemptKey, now)
 	s := historyReadState(cache, tool, a)
 	if projection != nil {
+		if s.ProjectionOrder != projectionOrder {
+			// Earlier caches were read in name order under node caps that could
+			// never converge on large histories. Rebuild once, newest first.
+			s = historyState{SchemaVersion: 1, Files: map[string]historyCursor{}, Entries: map[string]historyStored{}}
+		}
+		s.ProjectionOrder = projectionOrder
 		projection.start(s.Projection)
 	}
 	// Migrate schema-1 readings while their original safe scope cursor still
@@ -485,6 +497,15 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		}
 	}
 	files, limited, err := historyDiscover(root, tool)
+	// The projection reads newest-first within a bounded window. Anything it
+	// leaves unread this pass is summarized by the newest modification time it
+	// could hide (projection.unread), never by dropping the whole pass.
+	modified := map[string]time.Time{}
+	if projection != nil && err == nil && !limited {
+		var outside time.Time
+		files, modified, outside = projectionWindow(root, files)
+		projection.unread(outside)
+	}
 	if err != nil {
 		if os.IsNotExist(err) {
 			s.Availability = "not_detected"
@@ -527,16 +548,14 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		if ctx.Err() != nil {
 			return ReadHistoryCache(cache, tool, a, now)
 		}
-		if projection != nil && projection.records >= projectionRecordLimit {
-			s.Availability = "partial"
-			break
-		}
-		if s.BytesRead >= 32<<20 {
-			s.Availability = "partial"
-			break
-		}
 		fileKey := historyHash(a.Key, "history/path/"+a.ProfileRef+"/"+tool, rel)
+		// Budget exhaustion ends count history's pass. The projection still
+		// confirms unchanged files and records what it could not read yet.
+		exhausted := s.BytesRead >= 32<<20 || (projection != nil && projection.records >= projectionRecordLimit)
 		if _, exists := s.Files[fileKey]; !exists && len(s.Files) >= 256 {
+			exhausted = true
+		}
+		if exhausted && projection == nil {
 			s.Availability = "partial"
 			break
 		}
@@ -558,6 +577,11 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		}
 		f, info, err := historyOpenSource(filepath.Join(root, rel))
 		if err != nil {
+			if projection != nil && !modified[rel].IsZero() {
+				// Its prior frontier stays; only what it may hide is unknown.
+				projection.unread(modified[rel])
+				continue
+			}
 			s.Availability = "partial"
 			continue
 		}
@@ -575,9 +599,19 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 				s.Availability = cursor.Status
 			}
 			if projection != nil {
+				if cursor.Offset < cursor.Size {
+					// An unfinished last line still waits for its writer.
+					projection.unread(info.ModTime())
+				}
 				projection.reset("", cursor.OmittedPrefix)
-				projection.file(rel, fileKey, cursor.Status == "ok", true)
+				projection.file(rel, fileKey, cursor.Status == "ok", true, info.ModTime())
 			}
+			f.Close()
+			continue
+		}
+		if exhausted {
+			// Projection only: read on a later pass, newest first.
+			projection.unread(info.ModTime())
 			f.Close()
 			continue
 		}
@@ -597,6 +631,10 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 			reset = "truncation"
 		case (change != cursor.ChangeRef && info.Size() <= cursor.Size) || validate(0, cursor.PrefixLength) != cursor.Prefix || validate(max(0, cursor.Offset-1024), min(cursor.Offset, 1024)) != cursor.Tail:
 			reset = "rewrite"
+		case projection != nil && info.Size()-cursor.Offset > 8<<20:
+			// The projection needs only a transcript's newest records. A suffix
+			// longer than one pass's per-file read restarts from a bounded tail.
+			reset = "gap"
 		}
 		if reset != "" {
 			cursor = historyCursor{}
@@ -697,12 +735,32 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 					consumed += int64(len(line))
 					if err != nil {
 						retrySource = err != io.EOF
+						if projection != nil && err == io.EOF {
+							// A fragment cut by this pass's read limit is either the
+							// start of an overlarge record, skipped up to its newline,
+							// or read whole on a later pass. A trailing unfinished
+							// line waits for its writer.
+							if cursor.Offset+int64(len(line)) < info.Size() && (cursor.Align || len(line) > 1<<20) {
+								cursor.Offset += int64(len(line))
+								cursor.Align = true
+								projection.gap()
+							}
+							break
+						}
 						if err != io.EOF || len(line) > 0 {
 							markFile("partial")
 						}
 						break
 					}
 					if len(line) > 1<<20 {
+						if projection != nil {
+							// Huge tool output: never delivered, only skipped. The
+							// reducer treats the missing record as unknown ancestry.
+							cursor.Offset += int64(len(line))
+							cursor.Align = false
+							projection.gap()
+							continue
+						}
 						markFile("not_supported_yet")
 						break
 					}
@@ -721,7 +779,11 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 				}
 			}
 			if cursor.Offset < info.Size() && fileStatus == "ok" {
-				markFile("partial")
+				if projection != nil {
+					projection.unread(info.ModTime())
+				} else {
+					markFile("partial")
+				}
 			}
 		} else {
 			if info.Size() > 8<<20 || info.Size() > 32<<20-s.BytesRead {
@@ -775,7 +837,7 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		cursor.Modified = info.ModTime()
 		s.Files[fileKey] = cursor
 		if projection != nil {
-			projection.file(rel, fileKey, fileStatus == "ok", false)
+			projection.file(rel, fileKey, fileStatus == "ok", false, info.ModTime())
 		}
 		if tool == "grok" && filepath.Base(rel) == "summary.json" && cursor.Decode.GrokScope == "root" {
 			verifiedGrokScopes[fileKey] = true

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 package consent
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // ScopeDefinition is compiled authority. Catalogue detection is presence only;
 // it cannot add permissions or promote defaults.
@@ -224,4 +227,53 @@ func SetBrowserSession(s *State, tool string, browser bool) {
 	r.BrowserSession = browser
 	s.Tools[tool] = r
 	setToolScopes(s, tool, r)
+}
+
+// AutoLocalLogScopes lists the scopes D240 (owner 2026-11-13) allows without a prompt for
+// tools installed after the first run: local-log scopes only (session/history logs on this
+// Mac; no credential read, no network call), on by default, for a tool with no decision yet.
+// Saved-login, runtime and key scopes stay opt-in. Sorted.
+func AutoLocalLogScopes(s State, tools map[string]bool) []string {
+	var out []string
+	for _, d := range Definitions() {
+		if !tools[d.Tool] || d.Class != Local || d.Route != "local_log" || !d.DefaultCheck || d.Keychain {
+			continue
+		}
+		if _, decided := s.Tools[d.Tool]; decided {
+			continue
+		}
+		if _, decided := s.Scopes[d.ID]; decided {
+			continue
+		}
+		out = append(out, d.ID)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// AutoLaterClosedScopes lists the scopes the D240 grant records as off next to the local-log
+// scopes it allows (#924): every undecided runtime, saved-login or key scope of the same tools
+// that would pass while undecided (DefaultCheck). Without this, the tool record that the
+// local-log grant writes admits that tool's runtime or account reader, so a tool installed
+// after the first run would be launched or its account read without a click. Undecided scopes
+// that are off by default stay undecided. The user can turn any of them on. Sorted.
+func AutoLaterClosedScopes(s State, allowed []string) []string {
+	tools := map[string]bool{}
+	for _, id := range allowed {
+		if d, known := Definition(id); known && d.Class == Local {
+			tools[d.Tool] = true
+		}
+	}
+	out := []string{}
+	for _, d := range Definitions() {
+		if !tools[d.Tool] || d.Class == Local || !d.DefaultCheck {
+			continue
+		}
+		if _, decided := s.Scopes[d.ID]; decided {
+			continue
+		}
+		out = append(out, d.ID)
+	}
+	sort.Strings(out)
+	return out
 }

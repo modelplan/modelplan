@@ -11,6 +11,9 @@ import ModelPlanWire
 /// Normal entry is above both packages. Probe modes remain in the shared root host and skip Settings.
 @main struct CommunityApp {
     @MainActor static func main() {
+        // D164: resolve the profile before anything reads or writes a store; a fresh profile also
+        // refuses to start with an engine that would not follow it.
+        ProfileRoot.current.prepareLaunch(helper: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"))
         // Probe routes retain their existing explicit harness; normal launch consumes app-server rows.
         let explicitProbe = CommandLine.arguments.contains("--access-probe") || CommandLine.arguments.contains("--runtime-probe")
         if !explicitProbe && ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE"] != "1" {
@@ -35,17 +38,14 @@ import ModelPlanWire
         let consentTransport = BundledCLI(bundle: Bundle.main.bundleURL)
         let consent = CommunityApplicationFactory.makeConsentPort(bundle: Bundle.main.bundleURL, transport: consentTransport)
         let backend = CommunityConnectionBackend(port: consent, desktop: transport)
-        let preferenceURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("ModelPlan/Native/community-v1.json")
-        let surfaces = CommunityApplicationFactory.makeSurfaces(preferences: preferenceURL.map { PreferenceFile(url: $0) }, openWebsite: { link in
+        let preferenceURL = ProfileRoot.current.applicationSupport.appendingPathComponent("ModelPlan/Native/community-v1.json")
+        let surfaces = CommunityApplicationFactory.makeSurfaces(preferences: PreferenceFile(url: preferenceURL), openWebsite: { link in
             guard let url=URL(string:link.url),url.scheme=="https",url.host=="modelplan.ai",
                   url.user==nil,url.password==nil,url.port==nil else { return }
             NSWorkspace.shared.open(url)
         })
         let delegate = CommunityApplicationFactory.makeDelegate(surfaces: surfaces, companion: dock, consentBackend: backend, transport: transport) { gate in
-            let support = try FileManager.default.url(for: .applicationSupportDirectory,
-                in: .userDomainMask, appropriateFor: nil, create: false)
-            let url = support.appendingPathComponent("ModelPlan/Native/settings-v1.json")
+            let url = ProfileRoot.current.applicationSupport.appendingPathComponent("ModelPlan/Native/settings-v1.json")
             let store = try SettingsStore(url: url)
             let context = CommunityApplicationFactory.makeSettingsContext(bundle: Bundle.main.bundleURL, availability: consent.availability)
             let application = SettingsApplicationCoordinator(store: store, context: context,
@@ -134,12 +134,12 @@ import ModelPlanWire
     }
     @MainActor private static func runEngineRows() {
         do {
-            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            let preferences = try EngineRowsEntry.makeSettingsStore(applicationSupport: support)
+            let profile = ProfileRoot.current
+            let preferences = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.applicationSupport)
             let app = EngineRowsEntry.make(configuration: .init(
                 executableURL: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"),
                 applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "community",
-                allowedEnvironment: ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) },
+                allowedEnvironment: profile.childEnvironment(ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) }),
                 minimumServerVersion: EngineRowsEntry.minimumAppServerVersion), settingsStore: preferences)
             NSApplication.shared.delegate = app
             withExtendedLifetime(app) { NSApplication.shared.run() }

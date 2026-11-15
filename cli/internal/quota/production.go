@@ -16,6 +16,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/profile"
 )
 
 // ProductionPaths is the single CLI/App/hooks constructor. It reads ModelPlan
@@ -42,9 +43,9 @@ func CodexHome() string {
 func ProductionPathsWithAdmission(cache, version string, admission consent.Admission) Paths {
 	home, _ := os.UserHomeDir()
 	p := Paths{Admission: &admission, CLIVersion: version, Cache: cache, CodexHome: CodexHome(),
-		LocalFile:       filepath.Join(home, ".config", "modelplan", "local.json"),
-		CodexBarFile:    filepath.Join(home, ".config", "modelplan", "codexbar.json"),
-		ConnectionsFile: filepath.Join(home, ".config", "modelplan", "connections.json"),
+		LocalFile:       profile.ConfigFile(home, "local.json"),
+		CodexBarFile:    profile.ConfigFile(home, "codexbar.json"),
+		ConnectionsFile: profile.ConfigFile(home, "connections.json"),
 		CodexThread:     os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID"),
 		ReaderAccess: &ReaderAccess{Grants: map[string]ReaderGrant{}}}
 	state, mode := admission.State(), admission.Mode()
@@ -144,10 +145,27 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 		}
 		p.ReaderAccess.Grants[id] = g
 	}
-	if g, ok := defaultZCodeGrant(home, state, mode, glmSourceConfigured(p)); ok {
+	configured := glmSourceConfigured(p)
+	if g, ok := defaultZCodeGrant(home, state, mode, configured); ok {
 		p.ReaderAccess.Grants["zai"] = g
+	} else if _, granted := p.ReaderAccess.Grants["zai"]; !granted && zcodeDefaultApplies(home, state, mode, configured) {
+		// ZCode is there but keeps no provider file (a Desktop layout or a sign-in that
+		// stores no plaintext key). No reader can run, so say so instead of "not read yet"
+		// forever (G3-21). Presence metadata only; nothing inside the folder is opened.
+		if _, err := os.Lstat(ZCodeProviderConfig(home)); os.IsNotExist(err) && detect.LocalRoot(filepath.Join(home, ".zcode")) {
+			p.ZCodeNoProviderFile = true
+		}
 	}
 	return p
+}
+
+// zcodeDefaultApplies: no explicit GLM decision, source or readers-off stands in the way of
+// ZCode's own default route.
+func zcodeDefaultApplies(home string, state consent.State, mode string, configured bool) bool {
+	if r, decided := state.Tools["zai"]; decided && (!r.Allowed || zaiRecordChoseSource(r)) {
+		return false
+	}
+	return !configured && home != "" && mode == consent.Automatic && state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode)
 }
 
 // defaultZCodeGrant: ZCode's own Coding Plan key route is on by default (owner decision
@@ -156,7 +174,7 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 // the reader lock, by the existing Z.ai configured-key reader. An explicit GLM decision
 // (allow with another source, or deny) always takes precedence.
 func defaultZCodeGrant(home string, state consent.State, mode string, configured bool) (ReaderGrant, bool) {
-	if r, decided := state.Tools["zai"]; (decided && (!r.Allowed || zaiRecordChoseSource(r))) || configured || home == "" || mode != consent.Automatic || !state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode) {
+	if !zcodeDefaultApplies(home, state, mode, configured) {
 		return ReaderGrant{}, false
 	}
 	file := ZCodeProviderConfig(home)

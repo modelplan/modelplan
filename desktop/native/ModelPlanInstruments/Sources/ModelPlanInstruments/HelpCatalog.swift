@@ -54,7 +54,7 @@ public struct HelpCatalog: Sendable {
             basis = copy("这里只练习本地操作，不会改变真实会话。", "This is a local practice preview that leaves real sessions unchanged.")
         case .ignition:
             title = copy("点火钮", "Ignition")
-            basis = copy("点按打开驾驶舱。", "Tap to open the Cockpit.") // D37: holding the ignition is v1.1
+            basis = copy("点按打开驾驶舱。", "Tap to open the Cockpit.") // C03, D59: in v1 a hold opens it the same way; hold-to-ignite is v1.1
         case .sliver:
             title = copy("细条", "Sliver")
             basis = copy("靠近这里稍停可显示额度挂件，右键可打开菜单。", "Rest near this edge to reveal the Quota Widget or right-click for its menu.")
@@ -135,7 +135,7 @@ public struct HelpCatalog: Sendable {
             title = copy("额度挂件喷口 · 订阅", "Quota Widget nozzle · subscription")
             basis = context.nozzleLocation == .overflow
                 ? copy("悬停查看额度卡片，点按刷新；更多订阅暂不支持拖动排序，可用 ⌥ 加方向键移动一位。", "Hover for the quota card or click to refresh; overflow items cannot be dragged in v1; use Option arrows to move one place.")
-                : copy("悬停查看额度卡片，点按刷新，沿额度挂件拖动喷口可调整订阅顺序；也可用 ⌥ 加方向键移动一位。", "Hover for the quota card, click to refresh, or drag along the Quota Widget to reorder; Option arrows move one place.")
+                : copy("悬停查看额度卡片，点按刷新，拖动喷口可移动整个额度挂件；也可用 ⌥ 加方向键移动一位。", "Hover for the quota card, click to refresh, or drag to move the whole Quota Widget; Option arrows move one place.")
         case .page:
             title = copy("订阅页", "Subscription page")
             basis = copy("翻页不会改变已选订阅。", "Changing pages keeps your subscription selection.")

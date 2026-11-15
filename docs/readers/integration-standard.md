@@ -106,8 +106,9 @@ Reader, detection and metric work follows one of these apps. The per-tool winner
 1. Pick the panel app whose route for this tool wins, at a pinned commit or tag. Our privacy rules (section 2) beat parity whenever the panel disagrees with them.
 2. Choose the mode: **PORT** copies code under MIT or Apache-2.0, keeps the licence header, cites the upstream commit in the file header and records it in `docs/borrowed/` and `desktop/third-party/NOTICES.md`. **MATCH** writes our own code for the same behaviour and cites the source in a comment. **PATTERN** borrows an interface idea only.
 3. Copy no user-facing strings verbatim; match the meaning.
-4. Name the reference in the PR. The merge gate notes (advisory, D243; never a failure) any PR that touches `cli/internal/{quota,detect,localusage,speed,consent}/` or the reader-cause copy table without a body line
-   `Reference: <app>@<commit-or-tag> <path>[; <app>@<commit-or-tag> <path>]` naming a panel app, or `Reference: none (<reason>)`.
+4. Name the reference in the PR. The merge gate notes (advisory, D243; never a failure) any PR that touches a mapped area without a body line
+   `Reference: <app>@<commit-or-tag> <path>[; <app>@<commit-or-tag> <path>]` naming an app allowed for that area, or `Reference: none (<reason>)` with a reason of at least 20 characters. The areas and their allowed apps live in one file, `scripts/merge-gates/reference-map.json`: reader, detection and metric code (CodexBar, Pulse, TokenMonitor, ccusage, Tokei), widget and Dock interaction (Pulse; the widget copies Pulse first), and the menu bar and native shell (CodexBar, Stats, Maccy, Pulse). Adding an area is one entry in that file.
+5. Reviewers check that the change matches the cited reference's behaviour; a deviation needs a reason in the PR.
 
 ### Wider list
 

@@ -97,12 +97,12 @@ func Validate(in Input, out Projection) error {
 				return fail("unpermitted values")
 			}
 		}
-		if err := validateOutcome(row.State, row.Reason, row.NextStep, in.Now); err != nil {
+		if err := validateOutcome(row.ID, row.State, row.Reason, row.NextStep, in.Now); err != nil {
 			return err
 		}
 		var expiry *time.Time
 		for _, a := range row.Accounts {
-			if err := validateAccount(in, a, declaredPlan, refs); err != nil {
+			if err := validateAccount(in, row.ID, a, declaredPlan, refs); err != nil {
 				return err
 			}
 			if a.ValueState == ValueStateCurrent {
@@ -125,7 +125,7 @@ func Validate(in Input, out Projection) error {
 			if row.StateAfterExpiry == nil || row.StateAfterExpiry.State == StateFresh {
 				return fail("missing/conservative latch")
 			}
-			if err := validateOutcome(row.StateAfterExpiry.State, row.StateAfterExpiry.Reason, row.StateAfterExpiry.NextStep, in.Now); err != nil {
+			if err := validateOutcome(row.ID, row.StateAfterExpiry.State, row.StateAfterExpiry.Reason, row.StateAfterExpiry.NextStep, in.Now); err != nil {
 				return err
 			}
 		}
@@ -154,7 +154,7 @@ func Validate(in Input, out Projection) error {
 	return nil
 }
 
-func validateOutcome(state State, reason Reason, step *NextStep, now time.Time) error {
+func validateOutcome(tool string, state State, reason Reason, step *NextStep, now time.Time) error {
 	expected, ok := outcomes[reason.Code]
 	if !ok || expected.State != state || expected.Text != reason.Text {
 		return fmt.Errorf("invalid rows field: state/reason message table")
@@ -178,6 +178,9 @@ func validateOutcome(state State, reason Reason, step *NextStep, now time.Time) 
 	if step.Text != text {
 		return fmt.Errorf("invalid rows field: action message table")
 	}
+	if !reflect.DeepEqual(step.Hint, toolHint(tool, reason.Code)) {
+		return fmt.Errorf("invalid rows field: tool hint table")
+	}
 	if step.DisabledReason != nil {
 		if step.Action != ActionRefresh {
 			return fmt.Errorf("invalid rows field: disabled non-refresh")
@@ -194,7 +197,7 @@ func validateOutcome(state State, reason Reason, step *NextStep, now time.Time) 
 	return nil
 }
 
-func validateAccount(in Input, a Account, declared string, refs map[string]bool) error {
+func validateAccount(in Input, tool string, a Account, declared string, refs map[string]bool) error {
 	fail := func(field string) error { return fmt.Errorf("invalid rows account field: %s", field) }
 	seenActivity := map[string]bool{}
 	for _, v := range a.Activity {
@@ -225,7 +228,7 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 		}
 	}
 	if declared != "" {
-		if !reflect.DeepEqual(a.Plan, planValue("", declared)) {
+		if !reflect.DeepEqual(a.Plan, planValue("", "", declared)) {
 			return fail("declared plan")
 		}
 	} else if a.Plan.ID == "unknown" {
@@ -237,7 +240,7 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 		if strings.HasPrefix(raw, "cursor-") {
 			raw = "cursor " + strings.TrimPrefix(raw, "cursor-")
 		}
-		expected := planValue(raw, "")
+		expected := planValue(tool, raw, "")
 		if expected.ID == "unknown" || !reflect.DeepEqual(a.Plan, expected) {
 			return fail("plan allow-list")
 		}
@@ -253,6 +256,9 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 		case "money", "credits", "other":
 		default:
 			return fail("credits unit")
+		}
+		if a.Credits.Currency != "" && (a.Credits.Unit != "money" || !isoCurrency(a.Credits.Currency)) {
+			return fail("credits currency")
 		}
 	}
 	if a.ObservedAt != nil && (!validTime(a.ObservedAt) || a.ObservedAt.After(in.Now)) {

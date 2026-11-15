@@ -563,7 +563,7 @@ Licence: `MIT`.
 
 Copyright (c) 2026 Peter Steinberger
 
-Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files.
+Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files; Reader cause and sign-in command parity (D232), independent implementations citing CodexBar main 7447bc77c2497323d9c41e40164ce705533493c8.
 
 Source: https://github.com/steipete/CodexBar/releases/tag/v0.83.0
 

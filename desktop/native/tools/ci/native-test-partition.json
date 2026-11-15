@@ -86,6 +86,7 @@
         "ProductionConsentIdentityTests",
         "ProductionSettingsFactoryTests",
         "ProductionSettingsJourneyTests",
+        "ProfileRootTests",
         "PulseDockPositioningTests",
         "ReserveTruthNoWindowTests",
         "Respin5FreshnessPreferenceTests",

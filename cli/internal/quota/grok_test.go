@@ -31,7 +31,7 @@ func grokTestPaths(t *testing.T) Paths {
 
 func writeGrokAuth(t *testing.T, root string, auth grokAuth) {
 	t.Helper()
-	v := map[string]any{"key": auth.Key, "auth_mode": auth.Mode, "user_id": auth.User, "oidc_issuer": auth.Issuer, "oidc_client_id": auth.Client, "expires_at": auth.Expires, "create_time": grokNow.Add(-time.Hour).Format(time.RFC3339), "refresh_token": "synthetic-grok-refresh-never-use", "email": "synthetic-private@example.invalid", "principal_id": auth.Principal, "team_id": auth.Team}
+	v := map[string]any{"key": auth.Key, "auth_mode": auth.Mode, "user_id": auth.User, "oidc_issuer": auth.Issuer, "oidc_client_id": auth.Client, "expires_at": auth.Expires, "create_time": grokNow.Add(-time.Hour).Format(time.RFC3339), "refresh_token": "synthetic-grok-refresh-never-use", "email": "synthetic-private@example.invalid", "principal_id": auth.Principal, "principal_type": auth.PrincipalType, "team_id": auth.Team}
 	b, _ := json.Marshal(map[string]any{"https://auth.x.ai::" + grokDefaultClient: v, "xai::api_key": map[string]string{"key": "synthetic-api-key-never-use", "auth_mode": "api_key"}})
 	if err := os.WriteFile(filepath.Join(root, "auth.json"), b, 0o644); err != nil {
 		t.Fatal(err)
@@ -53,6 +53,14 @@ func grokTestServer(t *testing.T, mode *string, hits *int) {
 			w.Header().Set("Retry-After", "7200")
 			w.WriteHeader(429)
 			return
+		case "unavailable":
+			w.Header().Set("Retry-After", "7200")
+			w.WriteHeader(503)
+			return
+		case "unavailable-short":
+			w.Header().Set("Retry-After", "900")
+			w.WriteHeader(503)
+			return
 		case "oversized":
 			_, _ = w.Write([]byte(strings.Repeat("x", nativeMaxBody+1)))
 			return
@@ -61,6 +69,10 @@ func grokTestServer(t *testing.T, mode *string, hits *int) {
 			return
 		case "empty":
 			_, _ = w.Write([]byte(`{"config":{}}`))
+			return
+		case "refused":
+			w.WriteHeader(400)
+			_, _ = w.Write([]byte(`{"error":"no personal team"}`))
 			return
 		}
 		b, err := os.ReadFile(filepath.Join("testdata", "grok-quota", "unified.json"))

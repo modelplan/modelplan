@@ -35,6 +35,13 @@ public struct CockpitShellLayout: Equatable, Sendable {
     /// is rasterized at its final size and hit testing stays in page coordinates.
     public let scale: CGFloat
     public let rootHeight: CGFloat
+    /// G3-108: the page always lays out on the open root's canvas (905 / 635 plus the base reserve), open or closed, and
+    /// the web view keeps that canvas, bottom-anchored in the window. The closed page draws its slab right above the
+    /// strip, so the body (strip, panels, base) is at the same page position in both states and never moves in the web
+    /// view when the shutter toggles; only the window's top edge (detached) or the whole window (attached) moves.
+    public let canvasRootHeight: CGFloat
+    /// The web view's height in points: the scaled open canvas, on a whole point.
+    public let canvasHeight: CGFloat
     public let frame: CGRect
     /// The chosen size did not fit this screen, so the cockpit is drawn smaller.
     public let sizeFellBack: Bool
@@ -61,18 +68,32 @@ public struct CockpitShellLayout: Equatable, Sendable {
         let fellBack = scale < chosen
         let closed = shutterClosed || forcedClosed
         let height: CGFloat = profile == .full ? (closed ? 691 : 905) : (closed ? 609 : 635)
-        // The scale follows the open root, so closing the shutter never resizes the strip or the canopy.
+        let openRoot: CGFloat = profile == .full ? 905 : 635
+        // The scale follows the open root, so closing the shutter never resizes the strip or the canopy (CKP-SHELL-07:
+        // "Closing the shutter keeps the open scale").
         // The window server places borderless panels on whole points, so the frame is pixel-aligned here and the
-        // controller, its content bounds and every expectation agree with the real window. Rounding up (never past
-        // the usable area) keeps the scaled page inside the window: the page is top-anchored, so the < 1 pt of
-        // slack is transparent space under the base reserve.
+        // controller, its content bounds and every expectation agree with the real window. Rounding up keeps the scaled
+        // page inside the web view: the page is top-anchored in it, so the < 1 pt of slack is transparent space under
+        // the base reserve.
+        let canvasHeight = Self.wholePoints((openRoot + Self.baseReserve) * scale)
+        // G3-108: closed, the window leaves out the porthole band above the slab (strip top - 25 px: the 16 px slab and
+        // its 9 px gutter), rounded down so the slab is never cut; the web view keeps the open canvas, bottom-anchored.
+        let porthole = closed ? ((Self.stripTop(profile) - Self.closedSlabBand) * scale).rounded(.down) : 0
         let canvas = CGSize(width: min(Self.wholePoints(Self.width * scale), usable.width.rounded(.down)),
-                            height: min(Self.wholePoints((height + Self.baseReserve) * scale), available.rounded(.down)))
+                            height: min(canvasHeight - porthole, available.rounded(.down)))
         let x = max(usable.minX.rounded(.up), min(attachedX(anchor: anchor, width: canvas.width, scale: scale, usable: usable).rounded(),
                                                   (usable.maxX - canvas.width).rounded(.down)))
         return Self(profile: profile, shutterClosed: closed, forcedClosed: forcedClosed, scale: scale, rootHeight: height,
+                    canvasRootHeight: openRoot, canvasHeight: canvasHeight,
                     frame: CGRect(x: x, y: top - canvas.height, width: canvas.width, height: canvas.height), sizeFellBack: fellBack)
     }
+    /// The strip's top in the page canvas (the open root's; the closed page keeps the strip there too, G3-108).
+    static func stripTop(_ profile: CockpitAppearance.Profile) -> CGFloat { profile == .full ? 253 : 65 }
+    /// G3-108: the closed slab (16 px) and the gutter under it (9 px) stand directly above the strip.
+    public static let closedSlabBand: CGFloat = 25
+    /// G3-108: the points the closed window leaves out above the slab (0 when open). Attached, the window keeps its
+    /// top edge and the body rises by this much; detached, the body stays and the top edge comes down by this much.
+    public var portholeHeight: CGFloat { canvasHeight - frame.height }
     /// The smallest whole point count that holds `length`; float noise (913/939 * 939) never adds a point.
     static func wholePoints(_ length: CGFloat) -> CGFloat { (length - 1e-6).rounded(.up) }
     /// G3-46: with no visible menu bar icon, open at the top-right of the screen, directly below the menu bar.
@@ -85,21 +106,22 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public static func attachedX(anchor: CGRect, width: CGFloat, scale: CGFloat, usable: CGRect) -> CGFloat {
         max(usable.minX, min(anchor.midX - width / 2, usable.maxX - width))
     }
-    /// The page canvas in CSS px: the root plus the base reserve.
-    public var pageSize: CGSize { .init(width: Self.width, height: rootHeight + Self.baseReserve) }
+    /// The page canvas in CSS px: the open root plus the base reserve, open or closed (G3-108).
+    public var pageSize: CGSize { .init(width: Self.width, height: canvasRootHeight + Self.baseReserve) }
+    /// The web view's frame in the window: the open canvas, bottom-anchored, so the body keeps its place in the window
+    /// whatever the window's height (G3-108).
+    public var webFrame: CGRect { CGRect(x: 0, y: 0, width: frame.width, height: canvasHeight) }
     /// G3-43 / CKP-SHELL-04: the free left of the title strip in page px with Y up; the window uses
-    /// `scaledTitleDragFrame`. It stops short of the shutter so buttons keep their own input. Strip tops are the page's,
-    /// window-relative: the closed page draws its slab at the window's top edge (cockpit.css, 14 px above the study's
-    /// slab row), so its strip is at 25, not the study's 39. Pinned on the page by b13-hull-taper.spec.mjs.
+    /// `scaledTitleDragFrame`. It stops short of the shutter so buttons keep their own input. G3-108: the closed page
+    /// keeps the strip at its open place on the canvas (253 tall, 65 compact). Pinned on the page by b13-hull-taper.spec.mjs.
     public var titleDragFrame: CGRect {
-        let stripTop: CGFloat = shutterClosed ? 25 : (profile == .full ? 253 : 65)
-        return CGRect(x: 24, y: rootHeight + 34 - stripTop - 29, width: 216, height: 32)
+        CGRect(x: 24, y: pageSize.height - Self.stripTop(profile) - 29, width: 216, height: 32)
     }
     public var scaledTitleDragFrame: CGRect { windowRect(page: titleDragFrame) }
     /// A page rect (CSS px, Y up from the canvas bottom) in window points: scaled, then lifted by the slack the
-    /// whole-point frame leaves under the top-anchored page.
+    /// whole-point web view leaves under the top-anchored page. The web view stands on the window's bottom edge.
     public func windowRect(page rect: CGRect) -> CGRect {
-        rect.applying(.init(scaleX: scale, y: scale)).offsetBy(dx: 0, dy: frame.height - pageSize.height * scale)
+        rect.applying(.init(scaleX: scale, y: scale)).offsetBy(dx: 0, dy: canvasHeight - pageSize.height * scale)
     }
 
     public func shellState(attached: Bool, scope: String = "all") -> CockpitShellState {

@@ -25,7 +25,12 @@ import (
 
 var claudeAccountReader = &nativeReader{
 	Name: "Claude Code", Regions: []string{"oauth"},
-	Profiles: claudeProfiles, Managed: collectClaudeAccount,
+	Profiles: claudeProfiles, Managed: collectClaudeAccount, LoginFiles: claudeLoginFiles,
+}
+
+// The file credential, besides the account file in the profile (#911).
+func claudeLoginFiles(profile ReaderProfile) []string {
+	return []string{filepath.Join(profile.Root, ".credentials.json")}
 }
 
 // Compiled endpoint; never selected by settings, detection or publication data.

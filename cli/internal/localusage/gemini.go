@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/modelplan/modelplan/cli/internal/profile"
 )
 
 const (
@@ -36,7 +38,7 @@ type setting struct {
 }
 
 func SettingsPath(home string) string {
-	return filepath.Join(home, ".config", "modelplan", "local-usage.json")
+	return profile.ConfigFile(home, "local-usage.json")
 }
 func GeminiHome(home string) string {
 	if p := os.Getenv("MODELPLAN_GEMINI_HOME"); p != "" && filepath.IsAbs(p) {
