@@ -1006,3 +1006,45 @@ test("D239: widget, menu-bar and native-shell PRs name an allowed reference (ref
   assert.match(ok("Scenarios: none\nReference: Stats@v2.11.0 a/b.swift", [...widget, ...shell]).why, /widget PR must follow/);
   assert.doesNotMatch(ok("Scenarios: none\nReference: Stats@v2.11.0 a/b.swift; Pulse@v1.12.4 c/d.swift", [...widget, ...shell]).why, /Reference/);
 });
+
+test("D239: every mapped area carries the generated AGENTS.md and CLAUDE.md for exactly the apps in reference-map.json", async () => {
+  const { readFileSync, existsSync } = await import("node:fs");
+  const { expectedFiles, mappedDirs } = await import("../merge-gates/reference-docs.mjs");
+  const map = JSON.parse(readFileSync(new URL("../merge-gates/reference-map.json", import.meta.url), "utf8"));
+  assert.ok(mappedDirs(map).size > 0);
+  for (const g of map.groups) {
+    assert.ok(g.dirs?.length && g.hint, `${g.name} needs dirs and hint`);
+    for (const a of g.apps) assert.ok(map.repos[a], `${a} needs a repos entry`);
+  }
+  for (const [path, text] of expectedFiles(map)) {
+    const full = new URL(`../../${path}`, import.meta.url);
+    assert.ok(existsSync(full), `${path} is missing: run node scripts/merge-gates/reference-docs.mjs --write`);
+    assert.equal(readFileSync(full, "utf8"), text, `${path} is stale: run node scripts/merge-gates/reference-docs.mjs --write`);
+  }
+  for (const g of map.groups) for (const d of g.dirs) {
+    const text = readFileSync(new URL(`../../${d}/AGENTS.md`, import.meta.url), "utf8");
+    for (const a of g.apps) assert.ok(text.includes(a), `${d}/AGENTS.md omits ${a}`);
+  }
+});
+
+test("D239: check-reference.mjs runs the gate rule on a local diff", async () => {
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "refcheck-"));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, encoding: "utf8" });
+  git("init", "-q"); git("config", "user.email", "a@b.c"); git("config", "user.name", "t");
+  writeFileSync(join(dir, "x"), "1"); git("add", "."); git("commit", "-qm", "base");
+  git("checkout", "-qb", "work");
+  execFileSync("mkdir", ["-p", join(dir, "desktop/native/ModelPlanDock/Native")]);
+  writeFileSync(join(dir, "desktop/native/ModelPlanDock/Native/DockCardView.swift"), "x"); git("add", "."); git("commit", "-qm", "dock");
+  const script = new URL("../merge-gates/check-reference.mjs", import.meta.url).pathname;
+  const run = (body) => { const f = join(dir, "body.txt"); writeFileSync(f, body); return spawnSync(process.execPath, [script, "--diff", "HEAD~1", "--body", f], { cwd: dir, encoding: "utf8" }); };
+  assert.equal(run("Reference: Pulse@v1.12.4 Sources/Dock.swift").status, 0);
+  assert.equal(run("Reference: none (no Pulse equivalent for this)").status, 0);
+  const bad = run("Reference: none (n/a)");
+  assert.equal(bad.status, 1); assert.match(bad.stderr, /at least 20 characters/);
+  assert.equal(run("nothing").status, 1);
+  assert.equal(run("Reference: CodexBar@0827f30 a/b.swift").status, 1);
+});
