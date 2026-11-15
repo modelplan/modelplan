@@ -238,6 +238,10 @@ func parseAntigravity(b []byte, now time.Time) codexbarEntry {
 		return e
 	}
 	seen := map[string]bool{}
+	var reported []string
+	for _, m := range raw.UserStatus.Config.Models {
+		reported = append(reported, m.Model.Model)
+	}
 	for _, m := range raw.UserStatus.Config.Models {
 		id := clip(m.Model.Model)
 		if id == "" || seen[id] || m.Quota == nil {
@@ -259,6 +263,8 @@ func parseAntigravity(b []byte, now time.Time) codexbarEntry {
 		e.Status = "ok"
 		e.ErrorCode = ""
 		e.Error = ""
+		// D99: every model the app lists for the account (not only those with a quota), slugs only.
+		e.ReportedModels = cleanReportedModels(reported)
 	}
 	// Models are Antigravity pools; no Claude Code/Codex plan or account binding.
 	return e

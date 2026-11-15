@@ -51,6 +51,15 @@ func TestCopilotHelperProcess(t *testing.T) {
 			}
 		case "account.getQuota":
 			result = copilotQuota
+		case "models.list": // D99: the one method added to the allowlist
+			switch m := os.Getenv("MODELPLAN_TEST_COPILOT_MODELS"); m {
+			case "":
+				result = `{"models":[]}`
+			case "hang":
+				time.Sleep(30 * time.Second)
+			default:
+				result = m
+			}
 		default:
 			os.Exit(4) // no session, login or inference may be requested
 		}

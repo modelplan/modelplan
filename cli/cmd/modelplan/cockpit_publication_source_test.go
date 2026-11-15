@@ -316,3 +316,38 @@ func TestCockpitPlanModelsCopyOnlyPublishedPlanLists(t *testing.T) {
 		t.Fatal("a publication without planModels must yield none")
 	}
 }
+
+func TestReportedModelsMapThroughPublishedHarnessAliases(t *testing.T) {
+	d := &digest.Digest{Source: digest.ComponentClient, Models: []digest.Model{
+		{ID: "astra", HarnessIDs: map[string][]string{"codex": {"native-astra", "native-astra-old"}}},
+		{ID: "sol", HarnessIDs: map[string][]string{"codex": {"native-sol"}}},
+		{ID: "opus", HarnessIDs: map[string][]string{"claude-code": {"native-astra"}}},
+		{ID: "unpublished", HarnessIDs: map[string][]string{"codex": {"native-x"}}},
+	}}
+	published := []wire.CockpitPublicationModel{{ID: "astra"}, {ID: "sol"}, {ID: "opus"}}
+	got := reportedPublishedModels(d, "codex", []string{"native-astra-old", "native-x", "native-unknown"}, published)
+	if !reflect.DeepEqual(got, []string{"astra"}) {
+		t.Fatalf("got %v: only a codex alias of a published model maps; unknown ids are dropped, not guessed", got)
+	}
+	if reportedPublishedModels(d, "codex", []string{"native-unknown"}, published) != nil || reportedPublishedModels(nil, "codex", []string{"native-sol"}, published) != nil {
+		t.Fatal("nothing maps: nothing reported")
+	}
+}
+
+func TestReportedModelsMapUnderEachToolKey(t *testing.T) {
+	if reportedHarnessKey("native:gemini") != "gemini" || reportedHarnessKey("claude-code") != "claude-code" || reportedHarnessKey("codex") != "codex" {
+		t.Fatal("tool key")
+	}
+	d := &digest.Digest{Source: digest.ComponentClient, Models: []digest.Model{
+		{ID: "flash", HarnessIDs: map[string][]string{"gemini": {"gemini-2.5-flash"}, "copilot": {}}},
+		{ID: "gpt", HarnessIDs: map[string][]string{"copilot": {"gpt-5.1"}}},
+	}}
+	published := []wire.CockpitPublicationModel{{ID: "flash"}, {ID: "gpt"}}
+	if got := reportedPublishedModels(d, reportedHarnessKey("native:gemini"), []string{"gemini-2.5-flash", "gpt-5.1"}, published); !reflect.DeepEqual(got, []string{"flash"}) {
+		t.Fatalf("got %v: an id maps only under its own tool key", got)
+	}
+	// No harnessIds published for the tool yet: nothing maps, the plan list stays.
+	if reportedPublishedModels(d, reportedHarnessKey("native:grok"), []string{"grok-build-1"}, published) != nil {
+		t.Fatal("unmapped ids must be dropped")
+	}
+}
