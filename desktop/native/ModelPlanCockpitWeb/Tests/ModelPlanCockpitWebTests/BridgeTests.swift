@@ -509,4 +509,29 @@ final class BridgeTests: XCTestCase {
       XCTFail("ResetEvent.\(field) has no type; the page rejects every display that carries it")
     }
   }
+
+  /// Cockpit recovery step 2: the real Go capture, decoded into WireCockpitData and encoded by the bridge, reaches the
+  /// page unchanged (reset events included). desktop/tests/cockpit/unit/bridge.test.mjs takes the same capture through
+  /// the page bridge's validation and render, so Go JSON -> Swift decode/encode -> TS validation/render holds end to end.
+  func testTheGoCaptureIsSentToThePageUnchanged() throws {
+    var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    while !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures").path) { root.deleteLastPathComponent() }
+    let bytes = try Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))
+    let capture = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? NSDictionary)
+    let wire = try WireDecoder.decode(WireCockpitData.self, from: bytes)
+    let state = CockpitBridgeState(context: try context())
+    _ = try ready(state)
+    let display = try object(state.display(wire, ticket: XCTUnwrap(state.queryTicket)))
+    let sent = try XCTUnwrap(display["data"] as? NSDictionary)
+    XCTAssertEqual(sent, capture, "The host adds, drops or rewrites nothing the page validates")
+    XCTAssertEqual(state.lastNonFinitePaths, [])
+  }
+  /// Cockpit recovery step 2: the correlated probe names this page, and only this page.
+  func testTheCorrelatedProbeNamesItsPage() throws {
+    let state = CockpitBridgeState(context: try context())
+    XCTAssertEqual(state.probeScript,
+      "const c=window.modelPlanCockpit;return c&&typeof c.state==='function'?String(c.state('\(state.pageID.uuidString)')):'missing'",
+      "Only the page id is interpolated")
+    XCTAssertNotEqual(state.probeScript, CockpitBridgeState(context: try context()).probeScript)
+  }
 }

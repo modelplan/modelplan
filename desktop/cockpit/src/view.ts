@@ -170,7 +170,48 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   target?.focus({preventScroll:true});
  }
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);syncCaution(lastData!,now);});}
+ // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
+ // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
+ // and keeps the page. If that repaint fails too (glm-990-1, macrevb-990-1, macrev2-990-1), the whole cockpit view is
+ // put back as it was before the render: every element under the root gets its own child nodes, attributes, handler
+ // properties and form values back, so the engine, HUD, MFD, records and lamp keep their committed nodes and controls;
+ // the view's own state (engine closures, shell scope, last data) is restored with them. Nothing is repainted then, so
+ // a failure that persists cannot erase the view again. lastData never points at data that did not render.
+ let restoring=false;
+ const HANDLERS=['onclick','onchange','oninput','onkeydown','onlostpointercapture','onpointercancel','onpointerdown','onpointerleave','onpointermove','onpointerover','onpointerup'] as const;
+ type Handlers=Partial<Record<typeof HANDLERS[number],unknown>>;
+ function snapshot(){
+  const elements=[root,...root.querySelectorAll<HTMLElement>('*')].map(element=>{
+   const handlers:Handlers={};for(const key of HANDLERS){const value=(element as unknown as Record<string,unknown>)[key];if(value)handlers[key]=value;}
+   const form=element instanceof HTMLInputElement?{value:element.value,checked:element.checked}:null;
+   return {element,children:[...element.childNodes],attributes:[...element.attributes].map(a=>[a.name,a.value] as const),handlers,form};
+  });
+  const saved={applyScope,refreshEngine,localiseEngine,quotaFocusIdentity,nativeShell,lastData,lastRenderedAt};
+  return ()=>{
+   for(const {element,children,attributes,handlers,form} of elements){
+    element.replaceChildren(...children);
+    for(const name of element.getAttributeNames())if(!attributes.some(([kept])=>kept===name))element.removeAttribute(name);
+    for(const [name,value] of attributes)if(element.getAttribute(name)!==value)element.setAttribute(name,value);
+    for(const key of HANDLERS)(element as unknown as Record<string,unknown>)[key]=handlers[key]??null;
+    if(form&&element instanceof HTMLInputElement){element.value=form.value;element.checked=form.checked;}
+   }
+   ({applyScope,refreshEngine,localiseEngine,quotaFocusIdentity,nativeShell,lastData,lastRenderedAt}=saved);
+  };
+ }
  function renderData(data:WireCockpitData,now:number){
+  const previous=lastData,previousAt=lastRenderedAt,restore=snapshot();
+  try{renderInto(data,now);}
+  catch(error){
+   if(!restoring&&!disposed){
+    restoring=true;
+    try{if(previous)renderInto(previous,previousAt);else{lastData=null;frame.engine.replaceChildren();setEmpty('waiting');}}
+    catch{restore();}
+    finally{restoring=false;}
+   }
+   throw error;
+  }
+ }
+ function renderInto(data:WireCockpitData,now:number){
   preserveFocus(()=>{
    const previousData=lastData;lastData=data;lastRenderedAt=now;
    if(disposed)throw Error('closed');const before=displayedState();const priorPage=Number(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??0);const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const selectedScope=nativeShell?.scope??priorButton?.dataset.scope??'all';const unstable=(previousData?cockpitMembers(previousData):[]).some(m=>m.key===selectedScope&&m.unstable)||cockpitMembers(data).some(m=>m.key===selectedScope&&m.unstable);const priorScope=unstable?'':selectedScope==='all'?'':selectedScope;if(unstable){retiredUnstableScopes.add(selectedScope);if(nativeShell)nativeShell={...nativeShell,scope:'all'};}applyScope=null;frame.engine.replaceChildren();
