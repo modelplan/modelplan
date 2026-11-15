@@ -110,7 +110,10 @@ import ModelPlanWire
                 XCTAssertNotNil(field(), "a saved key keeps Test and Remove on the row")
             } else {
                 XCTAssertNil(field(), "closed until Add key is pressed")
-                fix.performClick(nil)
+                // The view is offscreen (no orderFront in these tests), and ConnectionButton.pressed ignores clicks without a
+                // visible window by design; run the button's own action, as the normal-entry tests do.
+                let connection = try XCTUnwrap(fix as? ConnectionButton, "the fix is the production ConnectionButton")
+                try XCTUnwrap(connection.invoke, "the fix has its production action")()
                 let reopened = try XCTUnwrap(views(view).first { $0.accessibilityIdentifier() == "subscriptions.row.opencodego" })
                 XCTAssertNotNil(views(reopened).first { $0.accessibilityIdentifier() == "readerkey.opencodego.field" } as? NSSecureTextField,
                                 "Add key mounts the secure field on the row")

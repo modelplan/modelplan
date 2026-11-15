@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
-import ModelPlanSettings
+@testable import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanWire
@@ -166,6 +166,11 @@ private actor G345Engine: EngineClient {
         }
         addTeardownBlock { @MainActor in await app.composition.stop(); app.composition.dock.close() }
         return (app, try XCTUnwrap(holder.engine))
+    }
+    /// The rows' buttons ignore clicks without a visible window by design (ConnectionButton.pressed); this view is offscreen,
+    /// so run the button's own production action, as ReaderKeyNormalEntryTests does.
+    private func press(_ button: NSButton) {
+        if let connection = button as? ConnectionButton { connection.invoke?() } else { button.performClick(nil) }
     }
     private func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }
     private func firstRun(_ app: EngineDockMenuApplication) async throws -> NSWindow {
@@ -337,13 +342,16 @@ private actor G345Engine: EngineClient {
         XCTAssertEqual(try button("subscriptions.visible.codex").state, .on); XCTAssertEqual(try button("subscriptions.visible.grok1").state, .off)
         XCTAssertFalse(try button("subscriptions.up.codex").isEnabled); XCTAssertTrue(try button("subscriptions.down.codex").isEnabled)
         XCTAssertTrue(try button("subscriptions.up.grok1").isEnabled); XCTAssertFalse(try button("subscriptions.down.grok1").isEnabled)
-        try button("subscriptions.visible.grok1").performClick(nil)
-        try button("subscriptions.down.codex").performClick(nil)
+        press(try button("subscriptions.visible.grok1"))
+        press(try button("subscriptions.down.codex"))
         XCTAssertEqual(visibility.map { "\($0.0):\($0.1)" }, ["grok1:true"])
         XCTAssertEqual(moves.map { "\($0.0):\($0.1)" }, ["codex:1"])
         // D89: the grip sits next to up and down, and "Reset order" sits below the list.
-        for id in ["codex", "grok1"] { _ = try button("subscriptions.drag." + id) }
-        try button("subscriptions.resetOrder").performClick(nil)
+        // The grip is an NSImageView (SubscriptionDragHandle), not an NSButton: look it up as a view.
+        for id in ["codex", "grok1"] {
+            XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.drag." + id } as? NSImageView, "Missing grip for \(id)")
+        }
+        press(try button("subscriptions.resetOrder"))
         XCTAssertEqual(resets, 1)
         if case .idle = controller.phase {} else { XCTFail("visibility and order never ask for or change reading consent") }
         let grantsBefore = await engine.recorded(); XCTAssertTrue(grantsBefore.isEmpty)
@@ -355,11 +363,11 @@ private actor G345Engine: EngineClient {
         XCTAssertNil(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.add.codex" }, "an added subscription is not offered again")
         // The supported tool this Mac does not have is collapsed until asked for.
         XCTAssertNil(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.status.gemini" })
-        try button("subscriptions.notInstalled.toggle").performClick(nil)
+        press(try button("subscriptions.notInstalled.toggle"))
         XCTAssertEqual(try label("subscriptions.status.gemini"), "Not installed on this Mac")
         XCTAssertNil(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.add.gemini" }, "no action on a tool that is not installed")
         // Add is the existing consent: confirmation first, then the existing grant.
-        try button("subscriptions.add.cursor").performClick(nil)
+        press(try button("subscriptions.add.cursor"))
         guard case .confirmation(let confirmation) = controller.phase else { return XCTFail("Add asks to confirm") }
         XCTAssertEqual(confirmation.intent.allowIDs, ["cursor.account_usage.saved_login", "cursor.local_history"])
         XCTAssertNotNil(views(settings).first { $0.accessibilityIdentifier() == "scope.confirm" }, "the confirmation is shown with the rows")
