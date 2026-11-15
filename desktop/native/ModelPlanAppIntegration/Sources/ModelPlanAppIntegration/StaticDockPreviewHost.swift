@@ -11,6 +11,7 @@ import ModelPlanInstruments
 import ModelPlanOfficialDock
 import ModelPlanDockResources
 import ModelPlanCommunityHost
+import ModelPlanEngineClient
 
 /// Geometry returned by an injected appearance, already scaled in view-local points.
 struct DockHoverStation {
@@ -1071,6 +1072,7 @@ struct DockHelpInteraction: Equatable {
             self.rebuildPass(self.inputGeneration, carriedTo: display)
         }
         edge.onDragCancelled = { [weak self] in self?.rebuild() }
+        edge.onDiagnostic = { DiagnosticsLog.shared.info("dock", $0) }
         edge.onCommittedPlacement = { [weak self] value in
             guard let self, let next = SettingsDockEdge(rawValue: String(describing: value.edge)) else { return }
             if let id = value.displayID, let commit = self.commitDisplayPlacement {

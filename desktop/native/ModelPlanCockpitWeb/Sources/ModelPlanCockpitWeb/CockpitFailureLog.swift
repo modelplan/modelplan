@@ -20,7 +20,7 @@ public enum CockpitUnavailableReason: Equatable, Sendable {
   }
 }
 
-/// One line per cockpit failure, for the unified log and for stderr, which a test run keeps as
+/// One line per cockpit failure, for the unified log, ModelPlan.log and for stderr, which a test run keeps as
 /// app.log. Callers pass code paths and counters only, never engine data or an error's text.
 public enum CockpitFailureLog {
   /// Milliseconds since this process started, or -1 when the system will not say. Lets a failure line show how early in
@@ -43,6 +43,7 @@ public enum CockpitFailureLog {
     verificationLine?(line)
     #endif
     logger.error("\(line, privacy: .public)")
+    DiagnosticsLog.shared.record("cockpit", .error, line, systemLog: false)
     _ = stderrPrepared
     // Not FileHandle.write, which raises an exception when stderr is closed. A failed write is ignored.
     ("modelplan-cockpit " + line + "\n").withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
@@ -78,6 +79,7 @@ public enum CockpitTimingLog {
     verificationLine?(line)
     #endif
     logger.notice("timing \(line, privacy: .public)")
+    DiagnosticsLog.shared.record("cockpit", .notice, "timing " + line, systemLog: false)
     _ = stderrPrepared
     ("modelplan-cockpit timing " + line + "\n").withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
   }
