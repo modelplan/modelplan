@@ -401,8 +401,11 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
   const sh = /run: \|\n((?:          .*\n|\n)+)/.exec(scope)[1].replace(/^          /gm, "");
   const dir = fs.mkdtempSync("/tmp/d169-scope-");
   fs.mkdirSync(`${dir}/desktop/native/tools/ci`, { recursive: true });
-  // gh answers the runs query with $RUNS, filtered by the step's own --jq expression (real jq).
-  fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\n[ -n "${GH_FAIL:-}" ] && exit 1\nwhile [ $# -gt 0 ]; do [ "$1" = --jq ] && f="$2"; shift; done\nprintf "%s" "${RUNS:-null}" | jq -r "$f"\n', { mode: 0o755 });
+  // gh answers the runs query with $RUNS and a run's jobs query with $JOBS_<id>, filtered by the step's own --jq
+  // expression (real jq).
+  fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\n[ -n "${GH_FAIL:-}" ] && exit 1\nurl="$2"\nwhile [ $# -gt 0 ]; do [ "$1" = --jq ] && f="$2"; shift; done\n' +
+    'if [[ $url =~ /runs/([0-9]+)/jobs ]]; then [ -n "${JOBS_FAIL:-}" ] && exit 1; v="JOBS_${BASH_REMATCH[1]}"; d="${!v:-null}"; else d="${RUNS:-null}"; fi\n' +
+    'printf "%s" "$d" | jq -r "$f"\n', { mode: 0o755 });
   fs.writeFileSync(`${dir}/git`, '#!/bin/bash\ncase "$1" in fetch) [ -z "${NO_BASE:-}" ];; merge-base) echo base;; diff) echo desktop/native/x.swift;; esac\n', { mode: 0o755 });
   fs.writeFileSync(`${dir}/python3`, '#!/bin/bash\n[ -n "${SEL_FAIL:-}" ] && exit 1\nprintf "%s\\n" "${SELECTED:-WidgetTests}"\n', { mode: 0o755 });
   const go = (env) => {
@@ -425,9 +428,26 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
     assert.equal(go({ EVENT: "schedule", REF: "refs/heads/main" }), "run=true classes=full");
     const runs = (...r) => JSON.stringify({ workflow_runs: r });
     const self = { id: 7, status: "in_progress", conclusion: null };
-    const night = (RUNS) => go({ EVENT: "schedule", REF: "refs/heads/main", GITHUB_RUN_ID: "7", RUNS });
+    const night = (RUNS, jobs = {}) => go({ EVENT: "schedule", REF: "refs/heads/main", GITHUB_RUN_ID: "7", RUNS, ...jobs });
+    const jobs = (...j) => JSON.stringify({ jobs: j.map(([name, conclusion]) => ({ name, conclusion })) });
+    const guiPassed = jobs(["gui-scope", "success"], ["native (macos-latest) / native (macos-latest)", "success"]);
+    const guiSkipped = jobs(["gui-scope", "success"], ["native (macos-latest) / native (macos-latest)", "skipped"], ["native-owner-gui (macos-latest)", "skipped"]);
     assert.equal(night(runs(self)), "run=true classes=full", "only this run at the head");
-    assert.equal(night(runs(self, { id: 5, status: "completed", conclusion: "success" })), "run=false classes=full", "same main head already passed");
+    const ok5 = { id: 5, status: "completed", conclusion: "success" };
+    assert.equal(night(runs(self, ok5), { JOBS_5: guiPassed }), "run=false classes=full", "same main head already passed its GUI leg");
+    // macrevb-866-1 / glm-866-3: a successful nightly whose GUI legs were skipped (it saw another nightly running) is
+    // not a GUI pass. A active -> B skipped (success) -> A failed: C must run.
+    const a = { id: 4, status: "completed", conclusion: "failure" };
+    assert.equal(night(runs(self, a, ok5), { JOBS_5: guiSkipped }), "run=true classes=full", "a skipped-GUI success does not count");
+    assert.equal(night(runs(self, ok5)), "run=true classes=full", "unreadable jobs -> run");
+    assert.equal(night(runs(self, ok5), { JOBS_5: guiPassed, JOBS_FAIL: "1" }), "run=true classes=full", "jobs query fails -> run");
+    // The hosted pool's GUI leg is the pair native-hosted + native-owner-gui; one of them alone is not a pass.
+    const hosted = ["native-hosted (macos-15) / native-hosted-gui (macos-15)", "success"], owner = ["native-owner-gui (macos-latest) / native-owner-gui (macos-latest)", "success"];
+    assert.equal(night(runs(self, ok5), { JOBS_5: jobs(hosted, owner) }), "run=false classes=full", "hosted pair passed");
+    assert.equal(night(runs(self, ok5), { JOBS_5: jobs(hosted, [owner[0], "failure"]) }), "run=true classes=full", "only half the pair");
+    assert.equal(night(runs(self, ok5), { JOBS_5: jobs(["native (macos-latest) / native-headless (macos-latest)", "success"]) }), "run=true classes=full", "a non-GUI task is not a GUI pass");
+    // An older GUI pass still counts when a newer skipped success sits next to it.
+    assert.equal(night(runs(self, ok5, { id: 6, status: "completed", conclusion: "success" }), { JOBS_5: guiSkipped, JOBS_6: guiPassed }), "run=false classes=full");
     assert.equal(night(runs(self, { id: 5, status: "completed", conclusion: "failure" })), "run=true classes=full", "a failed nightly is retried");
     // glm-866-2: an earlier nightly still queued or running at the same head already holds the GUI Mac for it.
     for (const status of ["queued", "in_progress", "waiting"])
