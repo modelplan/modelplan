@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
-import { ALLOWED_ROUTES, GUI_LEND_GUARD, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
 
 test("trusted Mac route is confined to the reviewed reusable workflow path", () => {
@@ -314,4 +314,31 @@ test("desktop.yml pr=<N> dispatch builds refs/pull/<N>/merge in every job it own
   }
   // trusted-mac.yml is SHA-pinned and takes no ref: its callers stay unchanged and test the dispatched commit.
   for (const name of ["native", "native-hosted", "native-owner-gui", "native-headless"]) assert.doesNotMatch(job(name), /pr-ref|inputs\.pr/, name);
+});
+
+test("the compile runner is confined to mac-compile.yml with one exact route and owner/same-repository gate", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/mac-compile.yml", import.meta.url), "utf8");
+  assert.deepEqual(workflowProblems(text, MAC_COMPILE_PATH), []);
+  assert.deepEqual(macConcurrencyProblems(text), []);
+  assert.deepEqual(draftGuardProblems(text), []);
+  // the gate itself names the checks that keep fork, draft and non-owner code off the Macs
+  for (const part of ["github.event.pull_request.head.repo.full_name == github.repository", "github.event.pull_request.user.id == 11829005",
+    "!github.event.pull_request.draft", "github.actor_id == '11829005'", "needs.plan.outputs.run == 'true'"]) assert.ok(MAC_COMPILE_IF.includes(part), part);
+  // the route elsewhere, or the label in any other form, fails
+  assert.ok(workflowProblems(text, ".github/workflows/other.yml").length > 0);
+  assert.ok(workflowProblems("jobs:\n  a:\n    runs-on: modelplan-compile\n", ".github/workflows/other.yml").includes("compile runner label outside mac-compile.yml"));
+  const bad = [
+    [MAC_COMPILE_IF, MAC_COMPILE_IF.replace(" && github.event.pull_request.head.repo.full_name == github.repository", "")], // forks admitted
+    [MAC_COMPILE_IF, MAC_COMPILE_IF.replace(" && github.event.pull_request.user.id == 11829005", "")],                     // any author
+    ["  workflow_dispatch:\n", "  workflow_dispatch:\n  pull_request_target:\n"],                                         // extra trigger
+    ["permissions:\n  contents: read\n#", "permissions:\n  contents: write\n#"],                                         // write token
+    ["          persist-credentials: false\n      - name: Compile", "      - name: Compile"],                                  // persisted credentials
+    ["          PR: ${{ needs.plan.outputs.pr }}\n", "          PR: ${{ needs.plan.outputs.pr }}\n          T: ${{ secrets.X }}\n"], // a secret
+    ["  compile:\n", "  compile2:\n    needs: plan\n    " + MAC_COMPILE_IF + "\n    " + MAC_COMPILE_ROUTE + "\n    steps: []\n  compile:\n"], // a second Mac job
+  ];
+  for (const [from, to] of bad) {
+    assert.ok(text.includes(from), from);
+    assert.ok(workflowProblems(text.replace(from, to), MAC_COMPILE_PATH).length > 0, `accepted: ${from} -> ${to}`);
+  }
+  assert.ok(macCompileProblems(text.replace("    if: ${{ needs.plan.outputs.run == 'true' && github.repository", "    if: ${{ true || github.repository")).length > 0);
 });

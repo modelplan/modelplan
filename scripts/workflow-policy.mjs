@@ -8,6 +8,34 @@ export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && i
 // selectors fail; escaped YAML spellings are checked too.
 export const ALLOWED_ROUTES = new Set();
 
+// The Mac compile check (owner 2026-11-15). Only mac-compile.yml may name the compile runners, with exactly this line,
+// in one job whose condition is exactly MAC_COMPILE_IF: a ready (or dispatched), same-repository PR by the owner
+// account, so fork code never reaches the owner's Macs. It may start only from pull_request or workflow_dispatch,
+// holds a read-only token, uses no secrets and never persists checkout credentials. The enforced boundary is the
+// modelplan-compile runner group, restricted to this workflow at main.
+export const MAC_COMPILE_PATH = ".github/workflows/mac-compile.yml";
+export const MAC_COMPILE_ROUTE = "runs-on: [self-hosted, macOS, ARM64, modelplan-compile]";
+export const MAC_COMPILE_GATE = "github.repository == 'modelplan/modelplan' && (github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft) && ((github.event_name == 'workflow_dispatch' && github.actor_id == '11829005') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005))";
+export const MAC_COMPILE_IF = `if: \${{ needs.plan.outputs.run == 'true' && ${MAC_COMPILE_GATE} }}`;
+const MAC_COMPILE_TRIGGERS = Object.freeze(["pull_request", "workflow_dispatch"]);
+
+export function macCompileProblems(text) {
+  const problems = [];
+  const on = topLevelBlock(text, "on");
+  const keys = on ? [...on.matchAll(/^ {2}([A-Za-z_]+):/gm)].map((m) => m[1]) : [];
+  if (!keys.length || keys.some((k) => !MAC_COMPILE_TRIGGERS.includes(k))) problems.push("mac-compile.yml may start only from pull_request or workflow_dispatch");
+  const perms = (topLevelBlock(text, "permissions") ?? "").split("\n").filter((l) => l.trim() && !/^\s*#/.test(l)).join("\n");
+  if (perms !== "permissions:\n  contents: read") problems.push("mac-compile.yml needs top-level permissions: contents: read");
+  if (/:\s*write\b/.test(text)) problems.push("mac-compile.yml may not ask for write permissions");
+  if (/\bsecrets\./.test(text)) problems.push("mac-compile.yml may not use secrets");
+  const checkouts = (text.match(/uses: actions\/checkout@/g) ?? []).length;
+  if (checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every mac-compile.yml checkout must set persist-credentials: false");
+  const routed = jobBlocks(text).filter((j) => j.lines.some((l) => l.trim() === MAC_COMPILE_ROUTE));
+  if (routed.length !== 1 || text.split("\n").filter((l) => l.trim() === MAC_COMPILE_ROUTE).length !== 1) problems.push("mac-compile.yml has exactly one compile-runner job");
+  else if (routed[0].lines.filter((l) => /^    if:/.test(l)).join("\n") !== "    " + MAC_COMPILE_IF) problems.push("the compile-runner job's condition must be exactly MAC_COMPILE_IF");
+  return problems;
+}
+
 // GitHub runs top-level .yml and .yaml files under .github/workflows/.
 export function isWorkflowFile(path) {
   return /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path);
@@ -23,9 +51,10 @@ function decodedVariant(text) {
       (_, x, u, U) => String.fromCodePoint(parseInt(x || u || U, 16)));
 }
 
-function lineProblems(raw, problems) {
+function lineProblems(raw, problems, path = "") {
   const line = raw.trim();
   if (/modelplans-(publish|ci)/.test(line)) problems.add("private runner label");
+  if (path !== MAC_COMPILE_PATH && /modelplan-compile\b/.test(line)) problems.add("compile runner label outside mac-compile.yml");
   if (/^runs-on:.*\b(format|join)\(/.test(line)) problems.add("dynamically constructed runner label");
   if ((line.includes("self-hosted") || line.includes("pull_request_target")) && !ALLOWED_ROUTES.has(line))
     problems.add("non-canonical self-hosted route or pull_request_target");
@@ -35,8 +64,10 @@ export function workflowProblems(text, path = "") {
   const problems = new Set();
   const check = (raw) => {
     if (path === ".github/workflows/trusted-mac.yml" && raw.trim() === TRUSTED_MAC_ROUTE) return;
-    lineProblems(raw, problems);
+    if (path === MAC_COMPILE_PATH && raw.trim() === MAC_COMPILE_ROUTE) return;
+    lineProblems(raw, problems, path);
   };
+  if (path === MAC_COMPILE_PATH) for (const p of macCompileProblems(text)) problems.add(p);
   if (path !== ".github/workflows/trusted-mac.yml" && text.includes("MAC_GUI_LEND")) problems.add("GUI lending switch outside trusted-mac.yml");
   for (const raw of text.split("\n")) check(raw);
   if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) check(raw);

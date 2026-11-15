@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: MIT
+# Mac compile check (owner 2026-11-15): swift build plus the XCTest classes of the Swift packages a PR touches, on the
+# owner's compile Macs (runner label modelplan-compile, its own runner group). It replaces the coordinator's compile
+# clerk, which briefed a Mac agent with the same selection (scripts/mac-compile/plan.mjs). No secrets, read-only token.
+# Only ready, same-repository PRs by the owner account reach the Macs: fork code must never run there (public repo).
+# A GitHub-hosted plan job decides first, so a PR without a Swift change under desktop/native never takes a Mac.
+# Follow-up (not done): remove /Volumes/MacBuildCache/compile/pr-<N> when the PR closes.
+name: mac-compile
+run-name: "${{ inputs.pr && format('mac-compile PR #{0}', inputs.pr) || '' }}"
+on:
+  pull_request:
+    branches: [main]
+    paths: ["desktop/native/**"]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number: compile the PR merged with current main (refs/pull/<pr>/merge); drafts allowed"
+        type: string
+        required: true
+permissions:
+  contents: read
+# One group per PR (a dispatch with pr=<N> joins the PR's group); a newer PR head cancels the older run.
+concurrency:
+  group: mac-compile-${{ inputs.pr && format('pr-{0}', inputs.pr) || github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    if: ${{ github.repository == 'modelplan/modelplan' && (github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft) && ((github.event_name == 'workflow_dispatch' && github.actor_id == '11829005') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.ref.outputs.pr }}
+      sha: ${{ steps.ref.outputs.sha }}
+      run: ${{ steps.plan.outputs.run }}
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      # The commit to build is the PR merged with current main (the default pull_request checkout, refs/pull/<N>/merge):
+      # a PR that compiles alone but not against today's main fails here, as its merge would. A dispatch resolves the
+      # same ref and checks the PR is open, targets main, comes from this repository and is by the owner account.
+      - id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
+          EVENT_SHA: ${{ github.sha }}
+          INPUT_PR: ${{ inputs.pr }}
+        run: |
+          set -eu
+          if [ "$EVENT" = pull_request ]; then
+            echo "pr=$EVENT_PR" >> "$GITHUB_OUTPUT"; echo "sha=$EVENT_SHA" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          PR=$INPUT_PR
+          case $PR in ''|*[!0-9]*) echo "::error::pr must be a PR number, got '$PR'"; exit 1;; esac
+          # GitHub computes the merge commit lazily: poll until mergeable is known.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            j=$(gh api "repos/$REPO/pulls/$PR")
+            [ "$(jq -r .mergeable <<<"$j")" != null ] && break
+            sleep 6
+          done
+          [ "$(jq -r .state <<<"$j")" = open ] || { echo "::error::PR #$PR is not open"; exit 1; }
+          [ "$(jq -r .base.ref <<<"$j")" = main ] || { echo "::error::PR #$PR does not target main"; exit 1; }
+          [ "$(jq -r .head.repo.full_name <<<"$j")" = "$REPO" ] || { echo "::error::PR #$PR is not from this repository"; exit 1; }
+          [ "$(jq -r .user.id <<<"$j")" = 11829005 ] || { echo "::error::PR #$PR is not by the owner account"; exit 1; }
+          [ "$(jq -r .mergeable <<<"$j")" = true ] || { echo "::error::PR #$PR does not merge cleanly with main: merge main into it first"; exit 1; }
+          head=$(jq -r .head.sha <<<"$j")
+          sha=$(git ls-remote "https://github.com/$REPO" "refs/pull/$PR/merge" | cut -f1)
+          [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no refs/pull/$PR/merge"; exit 1; }
+          gh api "repos/$REPO/commits/$sha" --jq '.parents[].sha' | grep -qx "$head" \
+            || { echo "::error::refs/pull/$PR/merge ($sha) does not contain the PR head $head yet; dispatch again"; exit 1; }
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"; echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.ref.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - id: plan
+        run: |
+          set -eu
+          plan=$(node scripts/mac-compile/plan.mjs HEAD^1)
+          { echo "plan<<MAC_COMPILE_PLAN_EOF"; printf '%s\n' "$plan"; echo "MAC_COMPILE_PLAN_EOF"; } >> "$GITHUB_OUTPUT"
+          if [ -n "$plan" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; fi
+          { if [ -n "$plan" ]; then echo "Packages to compile:"; echo '```'; printf '%s\n' "$plan" | cut -f1,3; echo '```'
+            else echo "No Swift change under desktop/native: nothing to compile."; fi; } >> "$GITHUB_STEP_SUMMARY"
+
+  compile:
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' && github.repository == 'modelplan/modelplan' && (github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft) && ((github.event_name == 'workflow_dispatch' && github.actor_id == '11829005') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005)) }}
+    runs-on: [self-hosted, macOS, ARM64, modelplan-compile]
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - name: Compile and test the touched packages
+        env:
+          PR: ${{ needs.plan.outputs.pr }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          PLAN: ${{ needs.plan.outputs.plan }}
+        run: |
+          set -eu
+          [ "$(git rev-parse HEAD)" = "$SHA" ] || { echo "::error::checked out $(git rev-parse HEAD), expected $SHA"; exit 1; }
+          case $PR in ''|*[!0-9]*) echo "::error::bad PR number '$PR'"; exit 1;; esac
+          # Build products go to the cache disk when it is mounted, one directory per PR (one per package inside).
+          if [ -d /Volumes/MacBuildCache ]; then root=/Volumes/MacBuildCache/compile/pr-$PR; else root=$RUNNER_TEMP/mac-compile/pr-$PR; fi
+          printf '%s\n' "$PLAN" > "$RUNNER_TEMP/mac-compile-plan.tsv"
+          swift --version
+          bash scripts/mac-compile/run.sh "$RUNNER_TEMP/mac-compile-plan.tsv" "$root" "$SHA"
