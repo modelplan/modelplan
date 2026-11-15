@@ -47,6 +47,8 @@ type CatalogueEntry struct {
 	Retired      bool
 	ReaderExists bool
 	Status       string
+	// InstalledLater: detected now, and absent when this Mac's engine first looked (D238).
+	InstalledLater bool
 }
 
 // ConsentRecord includes persisted allow/deny decisions and computed implicit
@@ -120,8 +122,9 @@ type AccountInput struct {
 }
 
 type CreditsInput struct {
-	Balance *float64
-	Unit    string
+	Balance  *float64
+	Unit     string
+	Currency string
 }
 
 // WindowInput keys/roles/plans may contain raw provider values. The projection

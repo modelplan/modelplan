@@ -50,7 +50,7 @@ private actor CountingClient: EngineClient {
   init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
   private func ack(_ raw: String, _ type: String) {
     var value = try! JSONSerialization.jsonObject(with: Data(raw.utf8)) as! [String: Any]
-    value["shell"] = nil; value["appearance"] = nil; value["redBelow"] = nil; value["showUsedPercent"] = nil
+    value["shell"] = nil; value["appearance"] = nil; value["redBelow"] = nil; value["showUsedPercent"] = nil; value["showAllModels"] = nil
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }
@@ -219,6 +219,33 @@ final class CoordinatorPrewarmTests: XCTestCase {
     coordinator.requestClose()
     await settle { pages.count == 6 }
     XCTAssertEqual(pages.count, 6, "after an open, prewarming resumes")
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// G3-116: the console rebuilds a failed page (close, then open) up to three times while the window stays up. A
+  /// rebuild replaces the page only: the engine client and its delivery stay, so the next open is never
+  /// `open.noDelivery`. (On build 14f the delivery was lost about 40 s after the rebuilds, through the engine's own
+  /// clear event, not through them.)
+  @MainActor func testPageRebuildsKeepTheEngineDelivery() async throws {
+    var pages: [WarmProbe] = [], unavailable: [CockpitUnavailableReason] = [], opened = 0
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.onUnavailable = { unavailable.append($0) }
+    coordinator.onOpened = { opened += 1 }
+    await coordinator.consume(.context(delivery()))
+    XCTAssertTrue(coordinator.diagnosticState.contains("delivery=true"))
+    for round in 1...4 {
+      coordinator.open()
+      XCTAssertEqual(pages.count, round, "each rebuild opens a new page")
+      XCTAssertEqual(opened, round)
+      pages[round - 1].discard() // what a page failure does (appearanceWaitTimeout and the like)
+      XCTAssertFalse(coordinator.presented)
+      XCTAssertTrue(coordinator.diagnosticState.contains("client=true delivery=true"),
+        "a rebuild keeps the engine client and delivery: \(coordinator.diagnosticState)")
+    }
+    coordinator.open()
+    XCTAssertEqual(pages.count, 5); XCTAssertTrue(coordinator.presented)
+    XCTAssertEqual(unavailable.count, 0, "no open after the rebuilds reports a missing delivery")
     await coordinator.shutdown(); await client.complete()
   }
 

@@ -24,7 +24,11 @@ import (
 // Original implementation. The legacy explicit-key route is separate from the
 // consent-admitted, China-only saved-login route below; neither refreshes auth.
 var kimiHosts = map[string]string{"china": "https://api.kimi.com", "international": "https://api.kimi.ai"}
-var kimiReader = &nativeReader{Name: "Kimi Code", Regions: []string{"china", "international"}, KeyEnv: "KIMI_CODE_API_KEY", Fetch: fetchKimi, Managed: collectKimiLogin, Profiles: kimiLoginProfiles, Budget: &nativeReadBudget{Due: kimiBudgetDue, Reserve: kimiReserve, Finish: kimiFinish}}
+var kimiReader = &nativeReader{Name: "Kimi Code", Regions: []string{"china", "international"}, KeyEnv: "KIMI_CODE_API_KEY", Fetch: fetchKimi, Managed: collectKimiLogin, Profiles: kimiLoginProfiles, Budget: &nativeReadBudget{Due: kimiBudgetDue, Reserve: kimiReserve, Finish: kimiFinish}, LoginFiles: kimiLoginFiles}
+
+func kimiLoginFiles(profile ReaderProfile) []string {
+	return []string{filepath.Join(profile.Root, "credentials", "kimi-code.json")}
+}
 
 const KimiEndpointNotice = "Undocumented compatibility endpoint: GET /coding/v1/usages. Only the selected environment key is read; its value is never printed or stored. No Kimi credentials are refreshed or rewritten."
 

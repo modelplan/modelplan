@@ -59,7 +59,12 @@ def tighten(binary, home, **actions):
 
 
 def plain_smoke(binary, home):
-    with EngineProcess(binary, home, 'u14-plain') as engine:
+    engine = EngineProcess(binary, home, 'u14-plain')
+    # Same race as the 'empty' case in empty_states: the synthetic Codex exits at once, so a background
+    # first read can end before rows/subscribe and turn the row failed/closed instead of pending (G3-38).
+    engine.environment['MODELPLAN_NATIVE'] = 'off'
+    engine.environment['MODELPLAN_CODEX_ACCOUNT'] = 'off'
+    with engine:
         hello = engine.initialize()
         require({'consent', 'rows', 'diagnostics', 'history', 'refresh', 'publication', 'plugin_install'} <=
                 set(hello['data']['capabilities']), 'production-handlers-not-linked')
@@ -216,8 +221,11 @@ def empty_states(binary, home, fault_binary):
         engine = EngineProcess(fault_binary if empty == 'pending' else binary, case, 'u14-empty-' + empty)
         if empty == 'readers_off':
             engine.environment['MODELPLAN_READERS'] = 'off'
-        if empty == 'pending':
-            # Background reads build views too; this case is only about the consent fault.
+        if empty in ('pending', 'empty'):
+            # Background reads build views too; 'pending' is only about the consent fault. In 'empty'
+            # the synthetic Codex exits at once, so a background first read that ends before rows are
+            # taken turns the codex row failed (closed, #792-2) and the summary no_dock_rows: a race,
+            # not the "still reading" state this case asserts.
             engine.environment['MODELPLAN_NATIVE'] = 'off'
             engine.environment['MODELPLAN_CODEX_ACCOUNT'] = 'off'
         with engine:

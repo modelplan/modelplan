@@ -94,7 +94,11 @@ final class RealBinaryTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return root
     }
-    func environment(_ home: URL) -> [String: String] { ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C"] }
+    // A temporary HOME does not hide machine-wide installs: the app-server's automatic refresh
+    // finds a real codex in /opt/homebrew/bin, /usr/local/bin or /Applications/Codex.app and runs
+    // it under the reader lock, which adds rows/changed events and delays revoke cleanup on a
+    // reused Mac. MODELPLAN_CODEX_ACCOUNT=off (an allowed child key) keeps Codex to its logs.
+    func environment(_ home: URL) -> [String: String] { ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C", "MODELPLAN_CODEX_ACCOUNT": "off"] }
     @discardableResult
     func cli(_ binary: URL, home: URL, arguments: [String], input: Data? = nil) throws -> Data {
         let process = Process(); let output = Pipe(); let errors = Pipe(); let stdin = Pipe()

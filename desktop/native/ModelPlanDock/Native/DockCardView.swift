@@ -210,8 +210,8 @@ import CryptoKit
         var rowY=y+pad.top
         let c=style.columns,g=style.columnGap
         highlightRects=[];noticeRect=nil
-        let readings=value.rows.filter{$0.kind != .notice && $0.kind != .event},notices=value.rows.filter{$0.kind == .notice}
-        let events=value.rows.filter{$0.kind == .event}
+        let readings=value.rows.filter{$0.kind != .notice && $0.kind != .event && $0.kind != .footnote},notices=value.rows.filter{$0.kind == .notice}
+        let events=value.rows.filter{$0.kind == .event},footnotes=value.rows.filter{$0.kind == .footnote}
         let noticeTextWidth=inner-style.noticePadding.left-style.noticePadding.right
         for (index,row) in readings.enumerated(){
             if index>0{rowY+=style.rowGap}
@@ -355,6 +355,17 @@ import CryptoKit
         if !notices.isEmpty{
             y+=style.noticePadding.bottom
             noticeRect=style.window == nil ? nil : CGRect(x:style.padding,y:noticeTop,width:inner,height:y-noticeTop)
+        }
+        // D233: an informational cause that needs no action is a small grey footnote at the bottom of the card.
+        for row in footnotes{
+            let rowID="row."+row.id
+            usedRows.insert(rowID)
+            let rowView=rowViews[rowID] ?? DockCardRowView();rowViews[rowID]=rowView;place(rowView,in:self)
+            rowView.setAccessibilityElement(true);rowView.setAccessibilityRole(.staticText);rowView.setAccessibilityLabel(row.value)
+            let line=label(rowID+".value",row.value,font:small,color:style.muted,wraps:true);place(line,in:rowView)
+            let h=wrapped(line,width:inner);line.frame=CGRect(x:-2,y:0,width:inner+4,height:h)
+            for child in rowView.subviews where child !== line{child.removeFromSuperview()}
+            y+=style.eventGap;rowView.frame=CGRect(x:style.padding,y:y,width:inner,height:h);y+=h
         }
         // D41: an action this subscription needs now, independent of the footer buttons.
         if !value.actionLabel.isEmpty{

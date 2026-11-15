@@ -29,11 +29,11 @@ import ModelPlanWire
     try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
   }
-  private func page(_ bundle: VerifiedCockpitBundle, reduceMotion: Bool, icon: CGRect?) throws -> CockpitWindowController {
+  private func page(_ bundle: VerifiedCockpitBundle, reduceMotion: Bool, icon: CGRect?, session: CockpitShellSession? = nil) throws -> CockpitWindowController {
     _ = NSApplication.shared
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let page = CockpitWindowController(bundle: bundle, context: context,
-      appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion), anchor: { icon })
+      appearance: .init(theme: .night, locale: .en, profile: .full, reduceMotion: reduceMotion), shellSession: session, anchor: { icon })
     page.onFailure = { [weak self] in self?.failures.append($0) }
     return page
   }
@@ -45,7 +45,7 @@ import ModelPlanWire
   }
   private func reply(_ raw: String, type: String, sequence: Int) throws -> String {
     var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
-    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "ackedCautions", "nowUnixMs", "reason"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "pinnedModels", "ackedCautions", "nowUnixMs", "reason"] { value[key] = nil }
     value["type"] = type; value["sequence"] = String(sequence)
     if type == "ready" { value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"] }
     return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
@@ -181,6 +181,36 @@ import ModelPlanWire
     XCTAssertEqual(window.frame, home.frame, "the window settles under the icon")
     XCTAssertEqual(window.contentView?.bounds.size, home.frame.size, "with the page canvas of that layout")
     XCTAssertEqual(failures, [])
+  }
+
+  /// G3-102 (build 14e): a detached cockpit stayed above every other app. Attached floats over the widget (D49);
+  /// detached is a normal window; putting it back floats it again. Through the strip's drag entry and the put-back.
+  func testADetachedCockpitIsANormalWindowAndAnAttachedOneFloats() throws {
+    let page = try page(try bundle(), reduceMotion: true, icon: try menuBarIcon())
+    page.prewarm(); detachSyntheticLoad(page)
+    defer { page.discard() }
+    let window = try XCTUnwrap(page.window)
+    XCTAssertEqual(window.level, CockpitWindowController.panelLevel, "attached: above the widget")
+    let from = CGPoint(x: window.frame.minX + 60, y: window.frame.maxY - 30)
+    page.titleDrag(.began, point: from)
+    page.titleDrag(.moved, point: CGPoint(x: from.x + 80, y: from.y - 300))
+    page.titleDrag(.ended, point: CGPoint(x: from.x + 80, y: from.y - 300))
+    XCTAssertFalse(page.isAttached)
+    XCTAssertEqual(window.level, .normal, "detached: other apps can cover it")
+    page.setAttached(true)
+    XCTAssertEqual(window.level, CockpitWindowController.panelLevel, "put back: floats again")
+  }
+
+  /// glm-908-1 (P2): closing a detached cockpit keeps the session detached; a reopen before the prewarm builds a
+  /// cold page through `open()` alone (no appearance update). That page is a normal window too.
+  func testAColdReopenOfADetachedSessionIsANormalWindow() throws {
+    let session = CockpitShellSession(); session.detached = true
+    let page = try page(try bundle(), reduceMotion: true, icon: try menuBarIcon(), session: session)
+    defer { page.discard() }
+    page.open(); detachSyntheticLoad(page)
+    let window = try XCTUnwrap(page.window)
+    XCTAssertFalse(page.isAttached)
+    XCTAssertEqual(window.level, .normal, "a cold detached reopen does not float over other apps")
   }
 
   /// Finding 4 (P2): the strip takes first responder on mouse-down; after the drag ends or is cancelled the page has

@@ -46,6 +46,9 @@ type nativeReader struct {
 	Managed  func(context.Context, *http.Client, readerContext) readerOutcome
 	Profiles func() []ReaderProfile
 	Budget   *nativeReadBudget
+	// LoginFiles: the profile's sign-in files besides its AccountFile, stamped (never opened) so
+	// a new sign-in can end a failure back-off (G3-103). They are not part of the profile key.
+	LoginFiles func(ReaderProfile) []string
 }
 
 // Shared by saved-login and existing explicitly configured key routes. Callers
@@ -420,6 +423,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 	// Apply local state after native accounts, including early-return paths.
 	// Both Read and the production ReadPermitted flow pass through this hook.
 	defer applyClaudeSessions(r, p, now)
+	defer applyZCodeNoProviderFile(r, p)
 	ss, err := Selections(p)
 	if err != nil {
 		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: errorCode(err), ErrorCode: errorCode(err)})
@@ -663,4 +667,24 @@ func claudeBackoffIsLocal(cache string) bool {
 
 func credentialStageFailure(e readerEntry) bool {
 	return e.CredentialReadState != "" || e.ErrorCode == "file_missing"
+}
+
+// applyZCodeNoProviderFile reports ZCode's unreadable layout as a fixed reason, never a
+// pending first reading, unless another ZCode/GLM source already reported (G3-21).
+func applyZCodeNoProviderFile(r *Report, p Paths) {
+	if !p.ZCodeNoProviderFile {
+		return
+	}
+	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
+	for i, s := range r.Sources {
+		if s.Source == "native:zai" {
+			// A bare legacy GLM allow reports its absent environment key; ZCode's missing
+			// provider file is the actual cause (post-merge #711 (2)). Any other status stands.
+			if s.Status == "missing" {
+				r.Sources[i] = cause
+			}
+			return
+		}
+	}
+	r.Sources = append(r.Sources, cause)
 }

@@ -219,8 +219,7 @@ public struct EngineMenuRefreshResult {
         if let isolatedLedger {
             base = isolatedLedger.deletingLastPathComponent()
         } else if live {
-            guard let appSupport=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first else { return }
-            base=appSupport.appendingPathComponent("ModelPlan",isDirectory:true)
+            base=ProfileRoot.current.modelPlanSupport
         } else { base=FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-s4-"+UUID().uuidString,isDirectory:true);resetScratch=base }
         do {
             let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:isolatedLedger ?? base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live && isolatedLedger == nil)
@@ -269,6 +268,18 @@ public struct EngineMenuRefreshResult {
             fallback = english ? "Readings unavailable. Check Settings." : "读数不可用，请检查设置。"
         }
         return fallback
+    }
+    /// G3-122: the menu-bar title as a reading, so the status item can keep its number across a projection gap.
+    /// Definitive (`.none` or a value): icon mode, a privacy clear, no rows, and whatever an admitted content says.
+    /// A gap (`.unavailable`): no Settings yet, or no admitted content (between the clear and the install of an
+    /// engine delivery, a withdrawn or suspended projection).
+    var menuTitleReading: StatusTitleReading {
+        guard let settings = latestSettings else { return .unavailable }
+        guard settings.snapshot.preferences.menuDisplay != .icon else { return .none }
+        if provider.dockContent.status == .cleared || provider.dockContent.status == .empty { return .none }
+        let now = deadlineWall()
+        guard let content = admittedCache.admittedContent(.init(snapshot: nil, diagnostics: .init(), now: now)) else { return .unavailable }
+        return EngineMenuBarTitle.reading(inputs: content.snapshot.inputs, preferences: settings.snapshot.preferences, now: now)
     }
     public var menuPresentation: CommunityMenuBarPresentation {
         let now = deadlineWall()

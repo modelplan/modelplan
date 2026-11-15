@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
-import { ALLOWED_ROUTES, GUI_LEND_GUARD, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
 
 test("trusted Mac route is confined to the reviewed reusable workflow path", () => {
@@ -394,7 +394,7 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
   assert.ok(queue.indexOf('echo "gui=true"') > 0 && queue.indexOf('echo "gui=true"') < queue.indexOf("rev-list --parents"));
   assert.match(queue, /gui: \$\{\{ steps\.scope\.outputs\.gui \}\}/);
   // The nightly runs only the GUI legs: every other job skips the schedule.
-  for (const name of ["app", "shell", "native-partition", "cockpit-pins", "app-smoke", "native-headless"])
+  for (const name of ["app", "shell", "native-partition", "cockpit-pins", "cockpit-spi-tests", "app-smoke", "native-headless"])
     assert.match(job(name), /github\.event_name != 'schedule'/, name);
 
   // Execute the selection step against stubs.
@@ -434,4 +434,50 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
       assert.equal(night(runs(self, { id: 5, status, conclusion: null })), "run=false classes=full", status);
     assert.equal(go({ EVENT: "schedule", REF: "refs/heads/main", GH_FAIL: "1" }), "run=true classes=full", "unreadable -> run");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the compile runner is confined to mac-compile.yml, started only through workflow_run/dispatch (main's definition)", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/mac-compile.yml", import.meta.url), "utf8");
+  assert.deepEqual(workflowProblems(text, MAC_COMPILE_PATH), []);
+  // the gate names the checks that keep fork, stale and non-owner runs off the Macs
+  for (const part of ["github.ref == 'refs/heads/main'", "github.event.workflow_run.event == 'pull_request'", "github.event.workflow_run.conclusion == 'success'",
+    "github.event.workflow_run.head_repository.full_name == github.repository", "github.actor_id == '11829005'", "needs.plan.outputs.run == 'true'"]) assert.ok(MAC_COMPILE_IF.includes(part), part);
+  // the route elsewhere, or the label in any other form, fails
+  assert.ok(workflowProblems(text, ".github/workflows/other.yml").length > 0);
+  assert.ok(workflowProblems("jobs:\n  a:\n    runs-on: modelplan-compile\n", ".github/workflows/other.yml").includes("compile runner label outside mac-compile.yml"));
+  const bad = [
+    [MAC_COMPILE_IF, MAC_COMPILE_IF.replace(" && github.event.workflow_run.head_repository.full_name == github.repository", "")], // forks admitted
+    [MAC_COMPILE_IF, MAC_COMPILE_IF.replace(" && github.ref == 'refs/heads/main'", "")],                                         // a branch's copy
+    ["on:\n  workflow_run:\n", "on:\n  pull_request:\n  workflow_run:\n"],                                                       // the PR's own copy
+    ["    workflows: [mac-compile trigger]\n", "    workflows: [ci]\n"],                                                         // another workflow
+    ["permissions:\n  contents: read\n#", "permissions:\n  contents: write\n#"],                                                 // write token
+    ["      statuses: write\n", "      statuses: write\n      pull-requests: write\n"],                                         // more write scopes
+    ["      statuses: write\n    steps:\n", "      statuses: write\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          persist-credentials: false\n"], // writer runs code
+    ["    permissions:\n      contents: read\n    steps:\n      - name: Check out main's", "    permissions:\n      contents: read\n      statuses: write\n    steps:\n      - name: Check out main's"], // Mac job writes
+    ["          path: pr\n          persist-credentials: false\n", "          path: pr\n"],                                         // persisted credentials
+    ["          PR: ${{ needs.plan.outputs.pr }}\n", "          PR: ${{ needs.plan.outputs.pr }}\n          T: ${{ secrets.X }}\n"], // a secret
+    ["  compile:\n", "  compile2:\n    needs: plan\n    " + MAC_COMPILE_IF + "\n    " + MAC_COMPILE_ROUTE + "\n    steps: []\n  compile:\n"], // a second Mac job
+  ];
+  for (const [from, to] of bad) {
+    assert.ok(text.includes(from), from);
+    assert.ok(workflowProblems(text.replace(from, to), MAC_COMPILE_PATH).length > 0, `accepted: ${from} -> ${to}`);
+  }
+  assert.ok(macCompileProblems(text.replace("    if: ${{ needs.plan.outputs.run == 'true' && github.repository", "    if: ${{ true || github.repository")).length > 0);
+});
+
+test("the mac-compile trigger is a no-permission, no-action pull_request run", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/mac-compile-trigger.yml", import.meta.url), "utf8");
+  assert.deepEqual(workflowProblems(text, MAC_COMPILE_TRIGGER_PATH), []);
+  assert.deepEqual(macConcurrencyProblems(text), []);
+  assert.deepEqual(draftGuardProblems(text), []);
+  for (const [from, to] of [
+    ["permissions: {}", "permissions:\n  contents: read"],
+    ["    steps:\n", "    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n"],
+    ["    steps:\n", "    permissions:\n      statuses: write\n    steps:\n"],
+    ["on:\n  pull_request:\n", "on:\n  pull_request:\n  push:\n"],
+    ["    steps:\n", "    env:\n      T: ${{ secrets.X }}\n    steps:\n"],
+  ]) {
+    assert.ok(text.includes(from), from);
+    assert.ok(macCompileTriggerProblems(text.replace(from, to)).length > 0, `accepted: ${from} -> ${to}`);
+  }
 });

@@ -130,6 +130,9 @@ test("D97 AUTO-VERIFIED: trusted first line at the exact head clears the listed 
   const av = (ids, sha = H, gates = "ci,gui,review") => `AUTO-VERIFIED: ${ids} @ ${sha} gates=${gates}`;
   assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(`${av("V-01, V-02")}\n\nchecked`)] }).state, R.SUCCESS);
   assert.equal(evalPr({ p: ledger("Scenarios: G3-07, V-01, V-02"), files: docs, comments: [comment(av("G3-07 V-01 V-02"))] }).state, R.SUCCESS, "G3 row and space-separated IDs");
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-107, V-01"), files: docs, comments: [comment(av("G3-107, V-01"))] }).state, R.SUCCESS, "three-digit G3 row");
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-107"), files: docs, comments: [comment(`VERIFIED: G3-107 @ ${H} evidence=/x/y`)] }).state, R.SUCCESS, "three-digit VERIFIED line");
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-107"), files: docs, comments: [comment(`EVIDENCE-DEFERRED: G3-107 @ ${H} issue=470`)] }).state, R.SUCCESS, "three-digit deferral");
   for (const gates of R.AUTO_VERIFIED_GATES)
     assert.equal(evalPr({ p: ledger("Scenarios: V-01"), files: docs, comments: [comment(av("V-01", H, gates))] }).state, R.SUCCESS, gates);
   // Mixed with a coordinator VERIFIED line and a #470 deferral.
@@ -509,6 +512,8 @@ test("Scenarios lines: spec IDs or none; requirement IDs and free text are repor
     "Scenarios: DOCK-3.1-01, D-01",
     "Scenarios: owner test build opens the cockpit from the menu bar",
     "Scenarios: D-01 and a sentence",
+    "Scenarios: G3-1007",
+    "Scenarios: G3-007",
     "Scenarios: none listed",
     "Scenarios: none, D-03",
     "Scenarios:",
@@ -527,6 +532,7 @@ test("Scenarios lines: spec IDs or none; requirement IDs and free text are repor
     "**Scenarios:** C-13 (Effort and Breakdown slice), C-05 (live locale; web slice)": ["C-05", "C-13"],
     "Scenarios: D-12 and D-24": ["D-12", "D-24"],
     "Scenarios: G3-12, V-03": ["G3-12", "V-03"],
+    "Scenarios: G3-107, C-01 (three-digit ledger row)": ["C-01", "G3-107"],
     "Scenarios: none": [],
     "**Scenarios:** None": [],
     "Scenarios: none (no new product behaviour)": [],

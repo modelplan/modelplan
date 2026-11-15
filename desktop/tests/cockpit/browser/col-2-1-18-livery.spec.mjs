@@ -17,25 +17,25 @@ async function open(page,vendorKeys,theme='night'){
 }
 const keys=page=>page.locator('.eng-keys .ek').evaluateAll(list=>list.map(k=>({text:k.innerText.trim().replace(/\s+/g,' '),v:getComputedStyle(k.querySelector('.bl')).getPropertyValue('--v').trim()})));
 
-test('COL-2.1-18 Set 1: Codex, GLM and Cursor keys carry their owner-chosen identity colours; Claude keeps its orange',async({page})=>{
+test('COL-2.1-18 D250: Codex, GLM, Cursor and Claude keys carry the old pastel accents (no two collide)',async({page})=>{
  // xAI/Grok has no cockpit engine key yet (no vendor row, no logo); its colour is pinned in the unit test.
  await open(page,['openai','glm','cursor','claude']);
- expect((await keys(page)).slice(0,4).map(k=>k.v)).toEqual(['#10a37f','#3859ff','#f79dcb','#d97757']);
+ expect((await keys(page)).slice(0,4).map(k=>k.v)).toEqual(['#6aa8ff','#8f7dff','#eef2f6','#ff9a6a']);
 });
 
-test('COL-2.1-18 Claude, GLM and Kimi keys: GLM next to Kimi collides (12.7) so the later one takes its fallback #8dabfd',async({page})=>{
- await open(page,['claude','kimi','glm']);
+test('COL-2.1-18 Copilot, Claude and GLM keys: GLM next to Copilot collides (9.7) so the later one takes its fallback #4422a0',async({page})=>{
+ await open(page,['claude','copilot','glm']);
  const list=await keys(page);
- expect(list.slice(0,3).map(k=>k.v)).toEqual(['#d97757','#007cff','#8dabfd']);
+ expect(list.slice(0,3).map(k=>k.v)).toEqual(['#ff9a6a','#c08cff','#4422a0']);
  for(const k of list.slice(0,3))expect(k.text.length).toBeGreaterThan(0); // colour is never alone
- await open(page,['claude','glm','kimi']);
- const first=await keys(page);expect(first[1].v).toBe('#3859ff');expect(first[2].v).not.toBe('#007cff'); // the later of the two takes its alternate
+ await open(page,['claude','glm','copilot']);
+ const first=await keys(page);expect(first[1].v).toBe('#8f7dff');expect(first[2].v).not.toBe('#c08cff'); // the later of the two takes its alternate
 });
 
-test('COL-2.1-18 contrast: on day the identity marks are drawn at 40% of the maker colour (Codex #064133); on night they are the colour',async({page})=>{
+test('COL-2.1-18 contrast: on day the identity marks are drawn at 40% of the maker colour (Codex #2a4366; Cursor starts from its grey alt #6f7782, so #2c3034); on night they are the colour',async({page})=>{
  await open(page,['openai','glm','cursor','claude'],'day');
  const fills=()=>page.locator('.eng-keys .ek .bl').evaluateAll(l=>l.map(e=>{const c=getComputedStyle(e).backgroundColor;const m=/^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)\)/.exec(c);return m?'rgb('+m.slice(1).map(x=>Math.round(x*255)).join(', ')+')':c;}));
- expect((await fills()).slice(0,4)).toEqual(['rgb(6, 65, 51)','rgb(22, 36, 102)','rgb(99, 63, 81)','rgb(87, 48, 35)']);
+ expect((await fills()).slice(0,4)).toEqual(['rgb(42, 67, 102)','rgb(57, 50, 102)','rgb(44, 48, 52)','rgb(102, 62, 42)']);
  await open(page,['openai','glm','cursor','claude'],'night');
- expect((await fills()).slice(0,4)).toEqual(['rgb(16, 163, 127)','rgb(56, 89, 255)','rgb(247, 157, 203)','rgb(217, 119, 87)']);
+ expect((await fills()).slice(0,4)).toEqual(['rgb(106, 168, 255)','rgb(143, 125, 255)','rgb(238, 242, 246)','rgb(255, 154, 106)']);
 });
