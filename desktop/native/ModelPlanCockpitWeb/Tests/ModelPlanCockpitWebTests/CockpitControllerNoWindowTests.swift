@@ -23,6 +23,9 @@ import ModelPlanWire
     let url = try XCTUnwrap(Bundle.module.url(forResource: "cockpit", withExtension: "json", subdirectory: "Fixtures"))
     return try JSONDecoder().decode(WireCockpitData.self, from: Data(contentsOf: url))
   }
+  private func type(_ raw: String) -> String? {
+    (try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])?["type"] as? String
+  }
   private func page() throws -> CockpitWindowController {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-no-window-" + UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -151,8 +154,17 @@ import ModelPlanWire
     for _ in 0..<4 { page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket)) }
     XCTAssertEqual(sent.count, 1, "Replacement displays remain ordered behind the active send")
     appearanceTimeout()
-    XCTAssertEqual(failures, [.appearanceWaitTimeout], "Continuous replacements must fail in bounded time")
-    XCTAssertNil(page.window)
+    // Recovery contract: the wait is bounded, but its end applies the appearance behind the pending display instead of
+    // failing and rebuilding a page that is only busy.
+    XCTAssertEqual(failures, [], "Continuous replacements never fail the page")
+    XCTAssertFalse(page.bridge.disposed)
+    sent[0].1(.accepted)
+    XCTAssertEqual(sent.count, 2); XCTAssertEqual(type(sent[1].0), "display", "Only the latest replacement is delivered")
+    sent[1].1(.accepted)
+    XCTAssertEqual(sent.count, 3)
+    let appearance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(sent[2].0.utf8)) as? [String: Any])
+    XCTAssertEqual(appearance["type"] as? String, "appearance"); XCTAssertEqual(appearance["locale"] as? String, "zh-CN")
+    XCTAssertNil(page.window); page.discard()
   }
   /// G3-97: the display receipt can clear without a rendered, nextDeadline or visibility event (here a refused
   /// replacement display is abandoned). The appearance wait then re-checks once and publishes instead of failing.
@@ -189,9 +201,9 @@ import ModelPlanWire
     XCTAssertEqual(failures, [])
     XCTAssertFalse(page.bridge.disposed); XCTAssertNil(page.window); page.discard()
   }
-  /// G3-97: the re-check runs once. A republished appearance that is still not acknowledged fails at the next timeout,
-  /// and a display that stays pending fails at the first one (see the continuous-replacement test).
-  func testAppearanceWaitRetriesOnlyOnceThenFails() throws {
+  /// G3-97 under the recovery contract: a republished appearance that is still not acknowledged is published again at
+  /// the next timeout; no number of timeouts fails the page (only `CockpitPageHealth` can end a silent one).
+  func testAppearanceWaitNeverFailsThePageHoweverOftenItTimesOut() throws {
     let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
     var timers: [(UInt64, @MainActor () -> Void)] = [], failures: [CockpitWindowFailure] = []
     page.verificationNoWindowClock = { 1_000 }
@@ -211,10 +223,14 @@ import ModelPlanWire
     XCTAssertEqual(timers.count, armed + 1)
     let secondTimeout = try XCTUnwrap(timers.last).1
     secondTimeout()
-    XCTAssertEqual(failures, [.appearanceWaitTimeout], "The second wait fails in bounded time")
-    XCTAssertTrue(page.bridge.disposed); XCTAssertNil(page.window)
+    XCTAssertEqual(failures, [], "The second wait publishes again instead of failing")
+    XCTAssertFalse(page.bridge.disposed)
+    XCTAssertEqual(timers.count, armed + 2, "Each wait stays bounded: one more period is armed")
+    XCTAssertNil(page.window); page.discard()
   }
-  func testAppearanceWaitTimeoutStillFailsWhileDisplayPending() throws {
+  /// Recovery contract (replaces #959's four extensions and its ceiling): a display receipt that stays pending holds an
+  /// appearance back for one wait, then the appearance goes out behind it, uncorrelated, and the page is kept.
+  func testAppearanceWaitTimeoutAppliesTheAppearanceBehindAPendingDisplay() throws {
     let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
     var timers: [(UInt64, @MainActor () -> Void)] = [], failures: [CockpitWindowFailure] = []
     page.verificationNoWindowClock = { 1_000 }
@@ -228,9 +244,15 @@ import ModelPlanWire
     let timeout = try XCTUnwrap(timers.last).1
     XCTAssertTrue(page.bridge.hasPendingDisplay)
     timeout()
-    XCTAssertEqual(failures, [.appearanceWaitTimeout], "A display receipt that stays pending still fails as before")
-    XCTAssertEqual(sent.count, 1, "No appearance is sent while the display receipt is pending")
-    XCTAssertNil(page.window)
+    XCTAssertEqual(failures, [], "A display receipt that stays pending no longer fails the page")
+    XCTAssertFalse(page.bridge.disposed)
+    XCTAssertEqual(sent.count, 2, "The appearance goes out behind the pending display")
+    let appearance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(sent[1].0.utf8)) as? [String: Any])
+    XCTAssertEqual(appearance["type"] as? String, "appearance"); XCTAssertEqual(appearance["locale"] as? String, "zh-CN")
+    XCTAssertTrue(page.bridge.hasPendingDisplay, "The pending display keeps its own receipt and deadline correlation")
+    sent[1].1(.accepted)
+    XCTAssertEqual(sent.count, 3); XCTAssertEqual(type(sent[2].0), "shell"); sent[2].1(.accepted)
+    XCTAssertEqual(failures, []); XCTAssertNil(page.window); page.discard()
   }
   /// G3-116 (build 14f): a page open for minutes gets an engine reply about every second and each render takes about a
   /// second, so at any moment a newer display is usually pending. The appearance wait then timed out on a page that
@@ -269,7 +291,7 @@ import ModelPlanWire
     appearanceTimeout()
     XCTAssertEqual(failures, [], "A rendered, visible page that made progress is not failed and rebuilt")
     XCTAssertFalse(page.bridge.disposed)
-    XCTAssertEqual(timers.count, armed + 1, "It waits one more bounded period")
+    XCTAssertEqual(timers.count, armed + 1, "The appearance goes out behind the pending display; one bounded period is armed for its acknowledgement")
     // The latest display renders; the deferred appearance goes out with that receipt.
     sent[3].1(.accepted)
     page.verificationReceive(try reply(latest, type: "rendered", sequence: 4), source: source)
@@ -284,8 +306,8 @@ import ModelPlanWire
     XCTAssertFalse(page.bridge.disposed); XCTAssertNil(page.window); page.discard()
   }
   /// glm-959-1: replies that arrive every 900 ms forever, each replacing the last before it renders, must not hold
-  /// an appearance change back indefinitely. It is applied within the ceiling (2 s wait + 4 extensions = 10 s), with
-  /// its shell, and the progressing page is never failed or rebuilt.
+  /// an appearance change back indefinitely. Under the recovery contract it is applied after one wait (2 s), well inside
+  /// the old 10 s ceiling, with its shell, and the progressing page is never failed or rebuilt.
   func testAppearanceAppliesWithinCeilingWhileDisplaysKeepReplacingEachOther() throws {
     let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
     var now: UInt64 = 1_000, nextTimer = 0, timers: [Int: (due: UInt64, fire: @MainActor () -> Void)] = [:]
@@ -336,7 +358,7 @@ import ModelPlanWire
       XCTAssertTrue(page.bridge.hasPendingDisplay)
     }
     let applied = try XCTUnwrap(appliedAt, "The appearance change is applied despite endless replacements")
-    XCTAssertLessThanOrEqual(applied - start, 10_900, "Applied within the 10 s ceiling (plus one 900 ms step)")
+    XCTAssertLessThanOrEqual(applied - start, 2_900, "Applied after one 2 s wait (plus one 900 ms step)")
     let appearance = try XCTUnwrap(sent.first { type($0.0) == "appearance" }).0
     XCTAssertEqual((try JSONSerialization.jsonObject(with: Data(appearance.utf8)) as? [String: Any])?["locale"] as? String, "zh-CN")
     XCTAssertTrue(sent.contains { type($0.0) == "shell" }, "The shell goes with it")
@@ -438,7 +460,8 @@ import ModelPlanWire
     XCTAssertEqual(intents, [.cautionAck(pressed)]); XCTAssertTrue(failures.isEmpty)
     page.discard()
   }
-  func testNonconvergingPastDeadlinesFailClosedWithoutWindow() throws {
+  /// Recovery contract: deadlines that keep expiring in transit throttle the tick stream to one a second; the page stays.
+  func testNonconvergingPastDeadlinesAreThrottledWithoutFailingThePage() throws {
     let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
     var timers: [(UInt64, @MainActor () -> Void)] = [], failures: [CockpitWindowFailure] = []
     page.verificationNoWindowClock = { 10_000 }
@@ -458,8 +481,15 @@ import ModelPlanWire
     }
     let last = try XCTUnwrap(sent.last); last.1(.accepted)
     page.verificationReceive(try reply(last.0, type: "nextDeadline", sequence: CockpitDeadlineDriver.maximumImmediateAdvances + 3, extra: ["deadlineUnixMs": String(CockpitDeadlineDriver.maximumImmediateAdvances + 1)]), source: source)
-    XCTAssertEqual(failures, [.deadlineConvergence])
-    XCTAssertTrue(page.bridge.disposed); XCTAssertNil(page.window)
+    XCTAssertEqual(failures, [], "A slow stream of past deadlines is not a broken page")
+    XCTAssertFalse(page.bridge.disposed)
+    let throttled = try XCTUnwrap(timers.last)
+    XCTAssertEqual(throttled.0, CockpitDeadlineDriver.throttledDelay, "The next past deadline waits a second")
+    let before = sent.count
+    throttled.1()
+    XCTAssertEqual(sent.count, before + 1, "and still ticks")
+    XCTAssertEqual(type(sent[before].0), "tick")
+    XCTAssertNil(page.window); page.discard()
   }
   func testDeferredAppearanceCannotCrossHideAndNewGeneration() throws {
     let page = try page(); var sent: [(String, (CockpitDeliveryResult) -> Void)] = []
