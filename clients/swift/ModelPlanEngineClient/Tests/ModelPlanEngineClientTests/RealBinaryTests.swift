@@ -519,7 +519,9 @@ extension RealBinaryTests {
         XCTAssertTrue(client.isCurrent(current), "start() works again once the half-open attempt is ready")
     }
     /// Recovery contract (step 5): a lost epoch probe no longer leaves the delivery gate closed for good; it is asked
-    /// again with backoff and the confirmed epoch opens the gate.
+    /// again with backoff and the confirmed epoch opens the gate. The proxy reports a foreign epoch in one diagnostics
+    /// reply and loses the reply to exactly the probe that follows it; the store's real epoch never changes, so the
+    /// retried probe confirms the original epoch on a new delivery revision.
     func testRealLostEpochProbeIsRetriedAndTheGateReopens() async throws {
         let binary = try binary(); let home = try home(); let probe = EventProbe()
         try cli(binary, home: home, arguments: ["consent", "init", "--json"])
@@ -527,13 +529,17 @@ extension RealBinaryTests {
         let client = ProcessEngineClient(configuration: configuration(try proxy(home, binary: binary, mode: "probe-fails-once"), home: home), consumer: probe, runtime: runtime)
         addTeardownBlock { await client.stop() }
         let original = try await client.start()
+        let began = ProcessInfo.processInfo.systemUptime
         do { _ = try await client.diagnostics(); XCTFail("unconfirmed epoch was delivered") } catch {}
         XCTAssertFalse(client.isCurrent(original))
-        try await eventually({ !(await client.gateClosed) }, timeout: 15)
-        let confirmed = await client.context
-        XCTAssertNotNil(confirmed)
-        XCTAssertNotEqual(confirmed?.floor.storeEpoch, original.floor.storeEpoch, "the confirmed epoch is the new one")
-        XCTAssertTrue(client.isCurrent(try XCTUnwrap(confirmed)))
+        try await eventually({ await probe.consentFailures() >= 1 }, timeout: 15) // the lost probe timed out
+        XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime - began, 1.9, "the probe's own 2 s timeout passed: it was really lost")
+        try await eventually({ !(await client.gateClosed) }, timeout: 15) // the retried probe is answered
+        let current = await client.context
+        let confirmed = try XCTUnwrap(current)
+        XCTAssertEqual(confirmed.floor.storeEpoch, original.floor.storeEpoch, "the store's real epoch is confirmed")
+        XCTAssertGreaterThan(confirmed.revision, original.revision, "on a new delivery revision")
+        XCTAssertTrue(client.isCurrent(confirmed))
     }
 }
 
