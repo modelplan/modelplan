@@ -593,3 +593,67 @@ func TestReplacingOrRemovingAKeyDropsOnlyThatProvidersCachedReading(t *testing.T
 		t.Fatalf("removing a key must drop only that provider's cached reading: %v", got)
 	}
 }
+
+// macrev2-993-1 / macrevb-993-1: a read that was already in flight with the old key must not leave its (previous
+// account's) reading cached after the key is replaced or removed, with or without a cache present before.
+func TestInFlightReadWithTheOldKeyIsNotCachedAfterTheKeyChanges(t *testing.T) {
+	for _, change := range []string{"replace", "remove"} {
+		for _, seeded := range []bool{true, false} {
+			t.Run(change+"/seeded="+map[bool]string{true: "yes", false: "no"}[seeded], func(t *testing.T) {
+				isolateHome(t)
+				arrived, release := make(chan struct{}, 1), make(chan struct{})
+				var once sync.Once
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					once.Do(func() { arrived <- struct{}{}; <-release })
+					w.Write([]byte(goOKBody))
+				}))
+				t.Cleanup(srv.Close)
+				useClient(t, srv, "opencode.ai")
+				p := nativePaths(t)
+				if err := SetManualKey(p.Cache, "opencodego", fakeGoKey, ""); err != nil {
+					t.Fatal(err)
+				}
+				if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "opencodego", Backend: BackendNative, Enabled: true}); err != nil {
+					t.Fatal(err)
+				}
+				if seeded {
+					s := &nativeSnap{SchemaVersion: 1, ObservedAt: time.Now().UTC(), Providers: []codexbarEntry{{Provider: "opencodego", Status: "ok", ObservedAt: time.Now().UTC()}}}
+					b, _ := json.Marshal(s)
+					if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(nativePath(p.Cache), b, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				done := make(chan error, 1)
+				go func() { done <- RefreshNative(context.Background(), p, time.Now().Add(time.Hour)) }()
+				select {
+				case <-arrived:
+				case <-time.After(10 * time.Second):
+					t.Fatal("the read did not start")
+				}
+				var err error
+				if change == "replace" {
+					err = SetManualKey(p.Cache, "opencodego", "fake-opencode-key-0009", "")
+				} else {
+					err = RemoveManualKey(p.Cache, "opencodego")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				close(release)
+				if err := <-done; err != nil {
+					t.Fatal(err)
+				}
+				if s := loadNative(p.Cache); s != nil {
+					for _, e := range s.Providers {
+						if e.Provider == "opencodego" {
+							t.Fatalf("the old key's reading stayed cached after the key %sd: %+v", change, e)
+						}
+					}
+				}
+			})
+		}
+	}
+}

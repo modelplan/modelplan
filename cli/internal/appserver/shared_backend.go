@@ -455,7 +455,11 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 			// D90: saving a manual GLM key allows this scope too. Where ZCode's own provider file is the detected
 			// source, the record must not name an environment key: that would count as a chosen source and switch ZCode's
 			// default route off, so removing the manual key would leave GLM unread. The manual key still wins first.
-			if definition.Tool == "zai" && b.config.ManualKeyPresent != nil && b.config.ManualKeyPresent("zai") {
+			// An existing explicit choice (an environment key, a profile or another backend) is never replaced: file
+			// presence is not evidence that ZCode was the selected source.
+			prior := consent.Capture().State().Tools["zai"]
+			chosen := prior.KeyEnv != "" || len(prior.Profiles) > 0 || (prior.Backend != "" && prior.Backend != "native")
+			if definition.Tool == "zai" && !chosen && b.config.ManualKeyPresent != nil && b.config.ManualKeyPresent("zai") {
 				if home, err := os.UserHomeDir(); err == nil {
 					if fi, err := os.Lstat(quota.ZCodeProviderConfig(home)); err == nil && fi.Mode().IsRegular() {
 						record.KeyEnv = ""

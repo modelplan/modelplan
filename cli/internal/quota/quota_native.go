@@ -339,6 +339,12 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 			// login is checked for existence by detection and never read here.
 			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
 		}
+		// D90: the entered key can be replaced or removed while this read is in flight. The reading belongs to the key it
+		// was made with (possibly another account's), so when the saved key changed, drop it instead of caching it; the
+		// provider's request-budget reservation stays, and the next due read uses the new key.
+		if mk2, has2, err2 := loadManualKeyChecked(p.Cache, x.Provider); (err2 != nil) != (manualErr != nil) || has2 != hasManual || mk2 != mk {
+			continue
+		}
 		if e.Status == "ok" {
 			e.ErrorCode = ""
 		} else {
