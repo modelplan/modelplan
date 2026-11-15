@@ -6,7 +6,7 @@ MIT; macOS 14+. This package contains state, persistence, page data, consumer pr
 swift test --package-path desktop/native/ModelPlanSettings --jobs 2
 ```
 
-The current first run is the single-page `OnboardingDefinition.task65`; it has no tour or gesture practice. The confirmed task65 data table has eight panes in order: General, Dock, Cockpit, Appearance, Subscriptions, Notifications, Data & Privacy, About. Dock has Display/Numbers/Position/Order groups, and About stays independent. `SettingsStructure.task65` is the default; the old `provisional` table remains historical input for compatibility tests. This data-table decision is not a visual freeze.
+The current first run is the single-page `OnboardingDefinition.task65`; it has no tour or gesture practice. The confirmed task65 data table has eight panes in order: General, Dock, Cockpit, Appearance, Subscriptions, Notifications, Data & Privacy, About. Dock has Display/Numbers/Position groups; the Order group lives in Subscriptions (owner decision D87, SET-9-13); About stays independent. `SettingsStructure.task65` is the default; the old `provisional` table remains historical input for compatibility tests. This data-table decision is not a visual freeze.
 
 The desktop CI runs this suite on the newest hosted macOS image. macOS 14 is not tested in CI and not guaranteed (2026-11-02). Its F15/F20-style inputs are synthetic: no private assets, account observations or design checkout are needed. Model and offscreen AppKit checks do not establish desktop display, real-input or system-service acceptance.
 

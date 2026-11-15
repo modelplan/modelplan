@@ -1,0 +1,26 @@
+{
+  "command": [
+    "consent",
+    "--json"
+  ],
+  "syntheticHomeOnly": true,
+  "ownerHomeDenied": true,
+  "networkDenied": true,
+  "allReadersOff": true,
+  "capturePlatform": "linux_arm64",
+  "sourceRelease": "https://github.com/modelplan/modelplan/releases/tag/v0.5.56",
+  "sourceCommit": "de8915a48d8ff960aa3fd090f1fd338568d1aac6",
+  "sourceArchiveSHA256": "b3ae3515af71d6910f1229378aaacb72f6191b10f319e24080b178f62830f3d1",
+  "rawSourceHelperSHA256": "9beaab9a78a463af72e4b85df6dfe46de434542754016bd103e8a3bc5185bb0a",
+  "outputSHA256": "0544eda3132bb8c863a813542df94a524659d6f6cadcb6949db1ed0405fee18c",
+  "bytes": 3328,
+  "exit": 0,
+  "isolation": {
+    "filesystem": "Synthetic HOME with an empty environment; strace of the run shows no path under the owner home opened or stat-ed, only stat of the installed claude and codex executables (the same detection stats the recorded captures show)",
+    "network": "MODELPLAN_BASE pointed at a closed local port with all readers, history, CodexBar and account reads off; strace shows no connect call; a bubblewrap network-namespace probe confirmed the host has no reachable network from a sandboxed process",
+    "outsideDirectoryReadDenied": true,
+    "networkSocketDenied": true
+  },
+  "purpose": "complete real released-CLI contract fixture; synthetic metadata only, not an owner observation",
+  "cliVersion": "0.5.56"
+}

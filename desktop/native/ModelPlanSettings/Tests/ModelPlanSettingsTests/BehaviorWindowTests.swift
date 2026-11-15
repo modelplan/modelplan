@@ -5,10 +5,18 @@ import XCTest
 
 /// Native delegate/action paths with synthetic context; no window ordering or service execution.
 @MainActor final class BehaviorWindowTests: XCTestCase {
+    /// Any alias text is now accepted (cut to the limit), so a failed save means a failed write.
+    private var storeDirectory: URL?
+    private func lockStore() throws {
+        let directory = try XCTUnwrap(storeDirectory)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+    }
     private func makeEditor() async throws -> SettingsEditor {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("settings-behavior-window-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        storeDirectory = directory
         let store = try SettingsStore(url: directory.appendingPathComponent("preferences.json"))
         try await store.update { $0.language = .english }
         var context = SettingsPageContext()
@@ -62,6 +70,28 @@ import XCTest
         XCTAssertEqual(editor.effective?.opening, .quick)
         controller.selectPane("notifications")
         XCTAssertTrue(try XCTUnwrap(controller.choice(key: .notificationConsent)).isEnabled)
+        controller.close()
+    }
+    /// CKP-SHELL-07 / owner D51, D60: "Cockpit size" is a live v1 control on the Cockpit pane, default Auto (D66),
+    /// with its fallback note, and the choice persists and reaches the cockpit consumer.
+    func testD51CockpitSizeChoicePersistsAndFeedsTheCockpit() async throws {
+        let editor = try await makeEditor()
+        var context = editor.context; context.configureV1NormalEntry(); editor.update(context: context)
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare()
+        controller.selectPane("cockpit")
+        let popup = try XCTUnwrap(controller.choice(key: .cockpitSize))
+        XCTAssertTrue(popup.isEnabled)
+        XCTAssertEqual(popup.itemArray.compactMap { $0.representedObject as? String }, ["automatic", "80", "85", "90", "100"])
+        XCTAssertEqual(popup.itemArray.map(\.title), ["Auto", "80 %", "85 %", "90 %", "100 %"])
+        XCTAssertEqual(popup.selectedItem?.representedObject as? String, "automatic", "D66: Auto by default")
+        XCTAssertTrue(labels(controller.window!.contentView!).contains { $0.contains("85 % on laptop screens") })
+        try await choose("80", key: .cockpitSize, controller: controller)
+        XCTAssertEqual(editor.snapshot?.preferences.cockpitSize, .percent80)
+        XCTAssertEqual(editor.effective?.cockpitSize, .percent80)
+        let restarted = try SettingsStore(url: try XCTUnwrap(storeDirectory).appendingPathComponent("preferences.json"))
+        let restored = await restarted.snapshot().preferences
+        XCTAssertEqual(restored.cockpitSize, .percent80)
         controller.close()
     }
     func testAliasMarkedTextSurvivesEnvironmentAndContextRefreshThenCommitsOnce() async throws {
@@ -147,6 +177,7 @@ import XCTest
         let revision = editor.snapshot!.revision, invalid = String(repeating: "x", count: 129)
         var commits = 0, requests = 0
         editor.onCommit = { _, _ in commits += 1 }; editor.onHostRequest = { _ in requests += 1 }
+        try lockStore()
         field.stringValue = invalid
         field.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: field))
         field.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
@@ -211,6 +242,8 @@ import XCTest
         let editor = try await makeEditor()
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
         await controller.prepare(); controller.selectPane("dock")
+        XCTAssertNil(controller.orderControl, "G3-68: the order control is not in the Quota Widget pane")
+        controller.selectPane("subscriptions")
         let live = controller.editor, order = try XCTUnwrap(controller.orderControl)
         let moved = expectation(description: "arrow reorder persisted")
         live.onCommit = { _, _ in moved.fulfill() }
@@ -251,6 +284,31 @@ import XCTest
         XCTAssertTrue(editor.snapshot!.preferences.readerConsent.gemini)
         XCTAssertTrue(editor.context.readerObservations.isEmpty)
         XCTAssertNil(controller.choice(key: .detectedReaders))
+        controller.close()
+    }
+    /// G3-71 / D87: the hidden-icon notice shows on General only, never on another pane, and stays dismissed until it clears.
+    func testHiddenIconNoticeShowsOnGeneralOnlyAndIsDismissible() async throws {
+        let editor = try await makeEditor()
+        var context = editor.context
+        context.statusItemNotice = .init("The menu bar icon is hidden", "菜单栏图标被遮住了")
+        editor.update(context: context)
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare()
+        controller.selectPane("general")
+        XCTAssertTrue(controller.iconNoticeVisible); XCTAssertEqual(controller.iconNoticeText, "The menu bar icon is hidden")
+        XCTAssertFalse(controller.iconNoticeShortcutButton.isHidden)
+        for pane in SettingsStructure.task65.panes.map(\.id) where pane != "general" {
+            controller.selectPane(pane)
+            XCTAssertFalse(controller.iconNoticeVisible, "no hidden-icon notice on \(pane)")
+        }
+        controller.selectPane("general"); XCTAssertTrue(controller.iconNoticeVisible)
+        let close = controller.iconNoticeDismissButton
+        XCTAssertTrue(close.sendAction(close.action, to: close.target))
+        XCTAssertFalse(controller.iconNoticeVisible)
+        controller.selectPane("general"); XCTAssertFalse(controller.iconNoticeVisible, "stays dismissed")
+        var cleared = editor.context; cleared.statusItemNotice = nil; editor.update(context: cleared)
+        editor.update(context: context)
+        controller.selectPane("general"); XCTAssertTrue(controller.iconNoticeVisible, "a new hidden situation shows it again")
         controller.close()
     }
 }

@@ -109,12 +109,19 @@ public struct EngineClientConfiguration: Sendable {
     public let allowedEnvironment: [String: String]
     public let offline: Bool
     public let readOnly: Bool
+    /// Minimum released CLI build required by this client; nil leaves version selection to the caller.
+    public let minimumServerVersion: String?
+    /// Where the child's stderr, start and exit go (redacted, rotating). nil uses `DiagnosticsLog.shared.engine`,
+    /// which is nil (stderr discarded) until the app configures its log folder.
+    public let engineLog: RotatingLogFile?
 
-    public init(executableURL: URL, applicationVersion: String, allowedEnvironment: [String: String], offline: Bool = false, readOnly: Bool = false) {
+    public init(executableURL: URL, applicationVersion: String, allowedEnvironment: [String: String], offline: Bool = false, readOnly: Bool = false, minimumServerVersion: String? = nil, engineLog: RotatingLogFile? = nil) {
         self.executableURL = executableURL
         self.applicationVersion = applicationVersion
         self.allowedEnvironment = allowedEnvironment
         self.offline = offline
         self.readOnly = readOnly
+        self.minimumServerVersion = minimumServerVersion
+        self.engineLog = engineLog
     }
 }

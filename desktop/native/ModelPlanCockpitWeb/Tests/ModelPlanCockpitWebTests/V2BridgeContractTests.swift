@@ -13,7 +13,7 @@ final class V2BridgeContractTests: XCTestCase {
     }
     func receipt(_ load: String, version: Int? = 2, capabilities: [String]? = ["appearanceUpdates", "shellState", "shellActions"]) throws -> [String: Any] {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
-        object["shell"] = nil; object["appearance"] = nil; object["redBelow"] = nil; object["type"] = "ready"; object["sequence"] = "1"
+        object["shell"] = nil; object["appearance"] = nil; object["redBelow"] = nil; object["showUsedPercent"] = nil; object["showAllModels"] = nil; object["type"] = "ready"; object["sequence"] = "1"
         object["appearanceVersion"] = version; object["capabilities"] = capabilities
         return object
     }
@@ -23,7 +23,7 @@ final class V2BridgeContractTests: XCTestCase {
         let load = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
         XCTAssertEqual(load["version"] as? Int, 2)
         let appearance = try XCTUnwrap(load["appearance"] as? [String: Any])
-        XCTAssertEqual(Set(appearance.keys), ["theme","locale","reduceMotion","reduceTransparency"])
+        XCTAssertEqual(Set(appearance.keys), ["theme","locale","reduceMotion","reduceTransparency","showProjectNames"])
         let shell = try XCTUnwrap(load["shell"] as? [String: Any])
         XCTAssertEqual(Set(shell.keys), ["profile", "attached", "forcedClosed", "tier", "scope"])
         XCTAssertEqual(shell["profile"] as? String, "closed")
@@ -31,19 +31,51 @@ final class V2BridgeContractTests: XCTestCase {
         XCTAssertEqual(shell["forcedClosed"] as? Bool, true)
         XCTAssertEqual(shell["attached"] as? Bool, false)
     }
+    /// CKP-ENG-23 / SET-9-10: the Settings remaining/used choice is a top-level boolean on load and on every appearance update.
+    func testUsedPercentChoiceIsEncodedOnLoadAndEachAppearanceUpdate() throws {
+        for used in [false, true] {
+            let value = try state()
+            let load = try value.load(.init(theme: .night, locale: .en, profile: .full, showUsedPercent: used), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
+            XCTAssertEqual(body["showUsedPercent"] as? Bool, used)
+            XCTAssertNil((body["appearance"] as? [String: Any])?["showUsedPercent"], "The flag is not part of the strict appearance object")
+            _ = try value.accept(encode(receipt(load)), source: source)
+            let update = try value.setAppearance(.init(theme: .night, locale: .en, profile: .full, showUsedPercent: !used))
+            let message = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(update.utf8)) as? [String: Any])
+            XCTAssertEqual(message["showUsedPercent"] as? Bool, !used)
+        }
+        XCTAssertFalse(CockpitAppearance(theme: .night, locale: .en, profile: .full).showUsedPercent, "Default is remaining")
+    }
+    /// D135 / SET-9-30: the Settings "Show all models" choice is a top-level boolean on load and on every appearance update.
+    func testShowAllModelsChoiceIsEncodedOnLoadAndEachAppearanceUpdate() throws {
+        for all in [false, true] {
+            let value = try state()
+            let load = try value.load(.init(theme: .night, locale: .en, profile: .full, showAllModels: all), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
+            XCTAssertEqual(body["showAllModels"] as? Bool, all)
+            XCTAssertNil((body["appearance"] as? [String: Any])?["showAllModels"], "The flag is not part of the strict appearance object")
+            _ = try value.accept(encode(receipt(load)), source: source)
+            let update = try value.setAppearance(.init(theme: .night, locale: .en, profile: .full, showAllModels: !all))
+            let message = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(update.utf8)) as? [String: Any])
+            XCTAssertEqual(message["showAllModels"] as? Bool, !all)
+        }
+        XCTAssertFalse(CockpitAppearance(theme: .night, locale: .en, profile: .full).showAllModels, "Default is the own-plan set")
+    }
     func testCommittedThresholdIsEncodedOnLoadAndEachAppearanceUpdate() throws {
-        for threshold in [10, 16, 20, 25] {
+        for threshold in [10, 15, 20, 25, 30, 40] {
             let value = try state()
             let load = try value.load(.init(theme: .night, locale: .en, profile: .full, redBelow: threshold), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
             let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
             XCTAssertEqual(body["redBelow"] as? Int, threshold)
             _ = try value.accept(encode(receipt(load)), source: source)
-            let next = threshold == 10 ? 16 : 10
+            let next = threshold == 10 ? 40 : 10
             let update = try value.setAppearance(.init(theme: .night, locale: .en, profile: .full, redBelow: next))
             let message = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(update.utf8)) as? [String: Any])
             XCTAssertEqual(message["redBelow"] as? Int, next)
         }
-        XCTAssertEqual(CockpitAppearance(theme: .night, locale: .en, profile: .full, redBelow: 17).redBelow, 25)
+        for threshold: Int? in [nil, 0, 16, 17, 100] {
+            XCTAssertEqual(CockpitAppearance(theme: .night, locale: .en, profile: .full, redBelow: threshold).redBelow, 25)
+        }
     }
     func testRequiresVersionTwoAndAllThreeCapabilitiesBeforeAnyQuery() throws {
         let value = try state(), load = try value.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
@@ -87,11 +119,12 @@ final class V2BridgeContractTests: XCTestCase {
         XCTAssertEqual(value.readyCapabilities, Set(capabilities))
         let ticket = value.queryTicket
         let header: Set<String> = ["version","pageId","requestId","sessionId","storeEpoch","generation","viewRevision","sequence","type"]
-        let appearanceRaw = try value.setAppearance(.init(theme: .night, locale: .zhCN, profile: .compact, reduceMotion: true, reduceTransparency: true))
+        let appearanceRaw = try value.setAppearance(.init(theme: .night, locale: .zhCN, profile: .compact, reduceMotion: true, reduceTransparency: true, showProjectNames: false))
         let appearance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(appearanceRaw.utf8)) as? [String: Any])
-        XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency","redBelow"]))
+        XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency","showProjectNames","redBelow","showUsedPercent","showAllModels"]))
         XCTAssertEqual(appearance["type"] as? String, "appearance")
         XCTAssertEqual(appearance["reduceTransparency"] as? Bool, true)
+        XCTAssertEqual(appearance["showProjectNames"] as? Bool, false)
         let shellRaw = try value.setShell(.init(closed: false, attached: true, forcedClosed: true, tier: .compact))
         let shell = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(shellRaw.utf8)) as? [String: Any])
         XCTAssertEqual(Set(shell.keys), header.union(["profile","attached","forcedClosed","tier","scope"]))
@@ -103,7 +136,7 @@ final class V2BridgeContractTests: XCTestCase {
         XCTAssertThrowsError(try value.setShell(.init(closed: false, attached: true, forcedClosed: false, tier: .tall)))
     }
     func testOnlyContractShellActionsAreAdmittedAndVisibilityStillGatesThem() throws {
-        let actions: [(String, CockpitIntent)] = [("close",.close),("detach",.detach),("putBack",.putBack),("shutterToggle",.shutterToggle)]
+        let actions: [(String, CockpitIntent)] = [("openField",.openField),("close",.close),("detach",.detach),("putBack",.putBack),("shutterToggle",.shutterToggle)]
         for (action, expected) in actions {
             let value = try state(), load = try value.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
             _ = try value.accept(encode(receipt(load)), source: source)
@@ -120,6 +153,18 @@ final class V2BridgeContractTests: XCTestCase {
             var object = try receipt(load, version: nil, capabilities: nil)
             object["type"] = "action"; object["action"] = action; object["sequence"] = "2"; object["requestId"] = UUID().uuidString
             XCTAssertThrowsError(try value.accept(encode(object), source: source))
+        }
+    }
+    /// D63: a click on a still rocket opens the field focused on it, named by its published display name (1–64 characters).
+    func testOpenFieldMayNameTheClickedRocket() throws {
+        for (key, expected) in [("Synthetic 5.5", CockpitIntent.openFieldAt("Synthetic 5.5")), ("", nil), ("   ", nil), (String(repeating: "x", count: 65), nil)] as [(String, CockpitIntent?)] {
+            let value = try state(), load = try value.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+            _ = try value.accept(encode(receipt(load)), source: source)
+            _ = try value.setVisibility(.init(visible: true, occluded: false, key: true))
+            var object = try receipt(load, version: nil, capabilities: nil)
+            object["type"] = "action"; object["action"] = "openField"; object["key"] = key; object["sequence"] = "2"; object["requestId"] = UUID().uuidString
+            if let expected { XCTAssertEqual(try value.accept(encode(object), source: source), .action(expected)) }
+            else { XCTAssertThrowsError(try value.accept(encode(object), source: source), key) }
         }
     }
 

@@ -51,11 +51,20 @@ func TestDoctorReadersProductionInventoryAndBudgets(t *testing.T) {
 			cache := t.TempDir()
 			paths := func() Paths { return ProductionPaths(cache, "1.0.0") }
 			rows := ReaderDiagnostics(paths(), at)
-			if len(rows) != len(nativeReaders)+len(localusage.HistoryProviders())+1 {
+			if len(rows) != len(nativeReaders)+len(localusage.HistoryProviders())+4 { // codex, claude:session, codex:history, claude:history
 				t.Fatal("incomplete inventory", rows)
 			}
 			for _, tool := range localusage.HistoryProviders() {
 				diagnosticRow(t, rows, tool+":history")
+			}
+			if id == "claude" {
+				// D27 (G3-19): Claude Code's saved login is on by default; the
+				// not-admitted/no-read checks below run after a recorded refusal.
+				if diagnosticRow(t, rows, id).Admitted != "yes" {
+					t.Fatal("default-on Claude saved login not admitted on a fresh profile")
+				}
+				productionConsent(t, id, false)
+				rows = ReaderDiagnostics(paths(), at)
 			}
 			if diagnosticRow(t, rows, id).Admitted != "no" {
 				t.Fatal("admitted before consent")
@@ -165,14 +174,21 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, row := range wire {
-					if len(row) != 8 {
+					want := 8 // cause and failures are present only when there is something to report
+					if _, ok := row["cause"]; ok {
+						want++
+					}
+					if _, ok := row["failures"]; ok {
+						want++
+					}
+					if len(row) != want {
 						t.Fatal("new output field needs privacy review", row)
 					}
 					for key, value := range row {
 						switch key {
 						case "provider":
 							id := value.(string)
-							if nativeReaders[id] == nil && id != "claude:session" {
+							if nativeReaders[id] == nil && id != "claude:session" && id != "codex" && id != "codex:history" && id != "claude:history" {
 								found := false
 								for _, tool := range localusage.HistoryProviders() {
 									if id == tool+":history" {
@@ -192,8 +208,36 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 								t.Fatal(row)
 							}
 						case "state":
-							if !regexp.MustCompile(`^(ok|stale|not_supported_yet|unavailable:(policy_pending|denied|consent_required|privacy_blocked|not_detected|rate_limited|login_expired|confirmation_needed|partial|not_read|reader_error|no_key|update_required|catalogue_off|not_admitted|config_unavailable|cache_unavailable)(:(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|other))?)$`).MatchString(value.(string)) {
+							if !regexp.MustCompile(`^(ok|stale|not_supported_yet|unavailable:(policy_pending|denied|consent_required|privacy_blocked|not_detected|rate_limited|login_expired|confirmation_needed|partial|not_read|reader_error|no_key|no_provider_file|update_required|catalogue_off|not_admitted|config_unavailable|cache_unavailable)(:(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|codex_custom_provider|team_unsupported|no_plan|other))?)$`).MatchString(value.(string)) {
 								t.Fatal("unreviewed state", row)
+							}
+						case "cause":
+							// A fixed reader code or empty; never text.
+							if !regexp.MustCompile(`^(|file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|codex_custom_provider|team_unsupported|no_plan|other)$`).MatchString(value.(string)) {
+								t.Fatal("unreviewed cause", row)
+							}
+						case "failures":
+							// Codex's recent failures: a fixed code, a UTC time and a streak length; nothing else.
+							list, ok := value.([]any)
+							if !ok {
+								t.Fatal("failures is not a list", row)
+							}
+							for _, item := range list {
+								entry, ok := item.(map[string]any)
+								if !ok || len(entry) != 3 {
+									t.Fatal("new failure field needs privacy review", row)
+								}
+								code, _ := entry["code"].(string)
+								if !regexp.MustCompile(`^(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|codex_custom_provider|team_unsupported|no_plan|other)$`).MatchString(code) {
+									t.Fatal("unreviewed failure code", row)
+								}
+								at, _ := entry["at"].(string)
+								if _, err := time.Parse(time.RFC3339, at); err != nil || !strings.HasSuffix(at, "Z") {
+									t.Fatal("failure time is not UTC", row)
+								}
+								if _, ok := entry["streakSeconds"].(float64); !ok {
+									t.Fatal("failure streak is not a number", row)
+								}
 							}
 						case "last":
 							if !regexp.MustCompile(`^(unknown|[0-9]+s)$`).MatchString(value.(string)) {

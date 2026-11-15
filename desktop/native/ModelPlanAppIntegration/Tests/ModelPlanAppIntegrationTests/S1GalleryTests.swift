@@ -48,6 +48,18 @@ import XCTest
         }
         try await S1Gallery.run(goldenPath: golden, outputPath: output)
         let root = URL(fileURLWithPath: output, isDirectory: true)
+        let metricsData = try Data(contentsOf: root.appendingPathComponent("metrics.json"))
+        let metrics = try XCTUnwrap(JSONSerialization.jsonObject(with: metricsData) as? [String: Any])
+        let rows = try XCTUnwrap(metrics["results"] as? [[String: Any]])
+        for state in ["normal", "warning", "critical"] {
+            let row = try XCTUnwrap(rows.first { ($0["scenario"] as? String) == "synthetic-working-" + state })
+            let scores = try XCTUnwrap(row["frameMetrics"] as? [Double])
+            XCTAssertEqual(scores.count, 9, state)
+            for (pose, score) in scores.enumerated() {
+                // The prototype intentionally uses different logo ink. This is a coarse crop-alignment guard.
+                XCTAssertGreaterThanOrEqual(score, 0.90, "\(state) pose \(pose) must sample the registered flame tile")
+            }
+        }
         let html = try String(contentsOf: root.appendingPathComponent("index.html"), encoding: .utf8)
         let expression = try NSRegularExpression(pattern: #"(?:src|href)="([^"]+)""#)
         let text = html as NSString

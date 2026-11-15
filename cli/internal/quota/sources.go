@@ -147,6 +147,10 @@ func (in StatuslineInput) Account(now time.Time) Account {
 		if x.w == nil {
 			continue
 		}
+		// A five-hour entry without a percentage is no session window (weekly-only plans).
+		if x.kind == "five_hour" && finite(x.w.UsedPercentage, 0, 1000) == nil {
+			continue
+		}
 		w := Window{Kind: x.kind, UsedPercent: finite(x.w.UsedPercentage, 0, 1000), ResetsAt: unixTime(x.w.ResetsAt), ResetMode: "fixed", ObservedAt: a.ObservedAt}
 		if x.kind == "five_hour" {
 			w.WindowMinutes = 300
@@ -356,13 +360,10 @@ func readCodex(home, thread string) ([]Account, SourceStatus) {
 		return nil, st
 	}
 	root := filepath.Join(home, "sessions")
-	files := newestRollouts(root, codexFiles)
+	files := CodexRollouts(home, thread, codexFiles)
 	own := ""
 	if thread = clip(thread); thread != "" {
 		own = findThread(root, thread)
-		if own != "" && !contains(files, own) {
-			files = append([]string{own}, files...)
-		}
 	}
 	if len(files) == 0 {
 		st.Status, st.Reason = "missing", "no Codex session logs found"
@@ -385,6 +386,19 @@ func readCodex(home, thread string) ([]Account, SourceStatus) {
 	}
 	st.Status = "ok"
 	return []Account{*a}, st
+}
+
+// CodexRollouts returns the bounded recent rollout set plus the caller's own
+// thread when present, matching the files used by the local Codex reader.
+func CodexRollouts(home, thread string, n int) []string {
+	root := filepath.Join(home, "sessions")
+	files := newestRollouts(root, n)
+	if thread = clip(thread); thread != "" {
+		if own := findThread(root, thread); own != "" && !contains(files, own) {
+			files = append([]string{own}, files...)
+		}
+	}
+	return files
 }
 
 func contains(xs []string, x string) bool {
@@ -500,7 +514,9 @@ func codexLimit(id, name string) string {
 
 var rolloutName = regexp.MustCompile(`^rollout-.*\.jsonl$`)
 
-// newestRollouts walks sessions/YYYY/MM/DD from the newest day and returns up to n files by mtime.
+// newestRollouts lists sessions/YYYY/MM/DD and returns up to n files by mtime. Every day is
+// listed (names and stats only, no reads): a resumed session keeps appending to the file in
+// its start day's directory, so a busier newer day must not hide it.
 func newestRollouts(root string, n int) []string {
 	type f struct {
 		path string
@@ -519,13 +535,9 @@ func newestRollouts(root string, n int) []string {
 						}
 					}
 				}
-				if len(out) >= n*2 {
-					goto done
-				}
 			}
 		}
 	}
-done:
 	sort.Slice(out, func(i, j int) bool { return out[i].mod.After(out[j].mod) })
 	var paths []string
 	for i := 0; i < len(out) && i < n; i++ {
@@ -998,6 +1010,17 @@ func ThreadOrigin(path string) string {
 		return ""
 	}
 	return originOf(meta.Source)
+}
+
+// CodexBackgroundThread: the thread's own log says Codex started it by itself (a subagent, an
+// internal guardian or review), not the user. Only the log's first line is read; a thread whose
+// log is not found is taken as the user's.
+func CodexBackgroundThread(home, thread string) bool {
+	if home == "" || clip(thread) == "" || thread != clip(thread) {
+		return false
+	}
+	p := findThread(filepath.Join(home, "sessions"), thread)
+	return p != "" && background(ThreadOrigin(p), "")
 }
 
 // Background: a thread Codex runs by itself (subagent reviews, internal guardians, auto review),

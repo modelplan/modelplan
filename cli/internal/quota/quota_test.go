@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -536,5 +537,30 @@ func TestClaudeCodeSessionsAreBoundedByCountAndAge(t *testing.T) {
 	json.Unmarshal(raw, &s)
 	if len(s.Sessions) != 1 || s.Sessions[0].Key != SessionKey("s9") {
 		t.Fatalf("stale sessions kept: %+v", s.Sessions)
+	}
+}
+
+func TestReadersOffSaysWhenANewerModelPlanWroteConsent(t *testing.T) {
+	isolateHome(t)
+	p := consent.Path()
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	reason := func(body string) string {
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		r := ReadPermitted(Paths{Cache: t.TempDir()}, now)
+		if len(r.Accounts) != 0 || len(r.Sources) != 1 || r.Sources[0].Status != "off" {
+			t.Fatalf("report %+v", r)
+		}
+		return r.Sources[0].Reason
+	}
+	// A future shape must still say so, and still read nothing.
+	if got := reason(`{"schemaVersion":3,"tools":"changed"}`); got != "consent-newer" {
+		t.Fatalf("newer store: %q", got)
+	}
+	if got := reason(`{"schemaVersion":2,"privacy":"broken"}`); got != "reader-privacy" {
+		t.Fatalf("damaged store: %q", got)
 	}
 }

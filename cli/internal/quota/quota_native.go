@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/keychain"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
@@ -45,6 +46,9 @@ type nativeReader struct {
 	Managed  func(context.Context, *http.Client, readerContext) readerOutcome
 	Profiles func() []ReaderProfile
 	Budget   *nativeReadBudget
+	// LoginFiles: the profile's sign-in files besides its AccountFile, stamped (never opened) so
+	// a new sign-in can end a failure back-off (G3-103). They are not part of the profile key.
+	LoginFiles func(ReaderProfile) []string
 }
 
 // Shared by saved-login and existing explicitly configured key routes. Callers
@@ -249,7 +253,7 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 	}
 	unlock, ok := lockFile(filepath.Join(p.Cache, "observed", "native.lock"), now, time.Duration(len(on)+len(managed)+1)*nativeTimeout)
 	if !ok {
-		return errors.New("another refresh is running")
+		return fmt.Errorf("another refresh is running: %w", consent.ErrReaderBusy)
 	}
 	defer unlock()
 	var refreshErr error
@@ -374,13 +378,19 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 // getJSON: one GET with the key as a bearer token, bounded, decoded into v. The error names the
 // HTTP status, never the key or the body.
 func getJSON(ctx context.Context, c *http.Client, url, key string, v any) error {
+	return getJSONAuthorization(ctx, c, url, "Bearer "+key, v)
+}
+
+// getJSONAuthorization is getJSON with the complete Authorization value supplied by the
+// caller, for a vendor contract that takes the key without a scheme prefix.
+func getJSONAuthorization(ctx context.Context, c *http.Client, url, authorization string, v any) error {
 	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return codeError("other", "bad request")
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "modelplan")
 	resp, err := c.Do(req)
@@ -413,6 +423,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 	// Apply local state after native accounts, including early-return paths.
 	// Both Read and the production ReadPermitted flow pass through this hook.
 	defer applyClaudeSessions(r, p, now)
+	defer applyZCodeNoProviderFile(r, p)
 	ss, err := Selections(p)
 	if err != nil {
 		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: errorCode(err), ErrorCode: errorCode(err)})
@@ -510,7 +521,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			if x.Provider == "cursor" {
 				basis = "cursor-auth"
 			}
-			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding(basis)})
+			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding(basis), ReportedModels: e.ReportedModels})
 		}
 		r.Sources = append(r.Sources, st)
 	}
@@ -604,6 +615,8 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 	if profileKey == "" {
 		return errors.New("identity key unavailable")
 	}
+	// Decide before the outcome below clears the failure facts this reads.
+	localBackoff := claudeBackoffIsLocal(p.Cache)
 	// This operation is interactive even when the remote budget is closed. Keep
 	// its credential only in this stack frame and reuse it if a remote read is due.
 	credential := g.Credential
@@ -633,5 +646,45 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 	g.Credential = func(context.Context) ([]byte, string) { return value, "" }
 	access := &ReaderAccess{Grants: map[string]ReaderGrant{provider: g}}
 	p.ReaderAccess = access
-	return refreshManaged(ctx, p, provider, now)
+	return refreshManagedAfter(ctx, p, provider, now, localBackoff)
+}
+
+// claudeBackoffIsLocal: every recorded failure stopped at the credential, before any
+// provider request, so the back-off protects nothing the user's Allow should wait for.
+// A provider failure or a success keeps its floor and any Retry-After.
+func claudeBackoffIsLocal(cache string) bool {
+	s, err := loadReaderState(cache, "claude")
+	if err != nil || s.Failures == 0 || !s.LocalBackoff || len(s.Entries) == 0 {
+		return false
+	}
+	for _, e := range s.Entries {
+		if e.Status == "ok" || !credentialStageFailure(e) {
+			return false
+		}
+	}
+	return true
+}
+
+func credentialStageFailure(e readerEntry) bool {
+	return e.CredentialReadState != "" || e.ErrorCode == "file_missing"
+}
+
+// applyZCodeNoProviderFile reports ZCode's unreadable layout as a fixed reason, never a
+// pending first reading, unless another ZCode/GLM source already reported (G3-21).
+func applyZCodeNoProviderFile(r *Report, p Paths) {
+	if !p.ZCodeNoProviderFile {
+		return
+	}
+	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
+	for i, s := range r.Sources {
+		if s.Source == "native:zai" {
+			// A bare legacy GLM allow reports its absent environment key; ZCode's missing
+			// provider file is the actual cause (post-merge #711 (2)). Any other status stands.
+			if s.Status == "missing" {
+				r.Sources[i] = cause
+			}
+			return
+		}
+	}
+	r.Sources = append(r.Sources, cause)
 }

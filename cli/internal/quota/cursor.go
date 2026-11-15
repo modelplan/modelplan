@@ -27,7 +27,14 @@ import (
 // Independently written compatibility reader. Schema references: CodexBar
 // ee890b5 (MIT), Token Monitor e1c393c (MIT); see docs/cursor-native-quota.md.
 // Credentials exist only in memory. No refresh, credential copy or browser access.
-var cursorReader = &nativeReader{Name: "Cursor", Regions: []string{"global"}, Profiles: cursorProfiles, Managed: collectCursorAccount}
+var cursorReader = &nativeReader{Name: "Cursor", Regions: []string{"global"}, Profiles: cursorProfiles, Managed: collectCursorAccount, LoginFiles: cursorLoginFiles}
+
+// Cursor keeps its sign-in in SQLite, which may hold a new token only in the write-ahead log.
+func cursorLoginFiles(profile ReaderProfile) []string {
+	db := filepath.Join(profile.Root, "state.vscdb")
+	return []string{db, db + "-wal"}
+}
+
 var cursorHost = "https://cursor.com"
 var cursorRPCHost = "https://api2.cursor.sh"
 
@@ -484,6 +491,10 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 			return out
 		}
 		plan, details := parseCursorPlan(raw)
+		if details == nil && cursorFreePlan(raw) {
+			// G3-117: a free or hobby account has no included-usage period; nothing to read, no schema change.
+			return readerOutcome{Entry: readerEntry{Status: "unavailable", ErrorCode: "no_plan", Notice: "This Cursor account has no paid plan with included usage"}, Invalidate: changed}
+		}
 		if details == nil {
 			return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Cursor plan format is not supported yet"}, Invalidate: changed}
 		}
@@ -499,8 +510,13 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 	if !ok {
 		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Cursor period-usage format is not supported yet"}, Invalidate: changed}
 	}
+	// The store fingerprint covers the whole database, so any Cursor state write changes it. Only a
+	// changed or unreadable credential binding invalidates the reading; other writes keep it.
 	if stamp == "" || cursorStateAt(path) != stamp {
-		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Cursor sign-in changed during the read; refresh required"}, Invalidate: true}
+		again, err := readCursorSessionAt(ctx, path, r.Now)
+		if err != nil || readerHash(r.Paths.Cache, "cursor:credential", again.token) != credentialKey || readerHash(r.Paths.Cache, "cursor:account", again.user) != accountKey {
+			return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Cursor sign-in changed during the read; refresh required"}, Invalidate: true}
+		}
 	}
 	a := &Account{Source: "native:cursor", Via: "native", Plan: meta.Plan, ObservedAt: r.Now.UTC(), Windows: windows}
 	if !IdentityOff() {
@@ -515,6 +531,24 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 		notice = "Shared-pool link unverified"
 	}
 	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta, Notice: notice}}
+}
+
+// cursorFreePlan: the plan info names the free or hobby plan and states no included-usage period.
+func cursorFreePlan(raw []byte) bool {
+	var p struct {
+		Info struct {
+			Name   string `json:"planName"`
+			Period string `json:"includedUsagePeriod"`
+		} `json:"planInfo"`
+	}
+	if json.Unmarshal(raw, &p) != nil || p.Info.Period != "" {
+		return false
+	}
+	switch strings.ToLower(p.Info.Name) {
+	case "free", "hobby", "free_trial", "free-trial":
+		return true
+	}
+	return false
 }
 
 func parseCursorPlan(raw []byte) (string, *readerPlanDetails) {

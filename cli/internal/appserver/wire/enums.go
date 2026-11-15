@@ -202,3 +202,53 @@ const (
 	MemberRefreshNotGranted MemberRefreshReason = "not_granted"
 	MemberRefreshOffline    MemberRefreshReason = "offline"
 )
+
+type ForecastPace string
+
+const (
+	ForecastTight     ForecastPace = "tight"
+	ForecastOnTrack   ForecastPace = "on_track"
+	ForecastSurplus   ForecastPace = "surplus"
+	ForecastExhausted ForecastPace = "exhausted"
+)
+
+type ForecastBasis string
+
+const (
+	ForecastRecentRate   ForecastBasis = "recent-rate"
+	ForecastCycleAverage ForecastBasis = "cycle-average"
+	ForecastNoBasis      ForecastBasis = "none"
+)
+
+// HistoryImportPhase is the importer's state as the app shows it.
+type HistoryImportPhase string
+
+const (
+	ImportIdle      HistoryImportPhase = "idle"
+	ImportRunning   HistoryImportPhase = "running"
+	ImportDone      HistoryImportPhase = "done"
+	ImportCancelled HistoryImportPhase = "cancelled"
+	ImportFailed    HistoryImportPhase = "failed"
+)
+
+// HistoryImportSourceStatus is one source's outcome in a finished import.
+type HistoryImportSourceStatus string
+
+const (
+	ImportSourceImported  HistoryImportSourceStatus = "imported"
+	ImportSourceNoConsent HistoryImportSourceStatus = "skipped_no_consent"
+	ImportSourceNothing   HistoryImportSourceStatus = "nothing_found"
+	ImportSourceOff       HistoryImportSourceStatus = "off"
+)
+
+// CockpitProjectState says whether a cockpit session has a project, apart from whether its name is shown:
+// named (projectLabel is the name), unnamed (a project the tool stores no name for), hidden (a project
+// whose name `project-labels off` withholds) or none (no project at all).
+type CockpitProjectState string
+
+const (
+	ProjectNamed   CockpitProjectState = "named"
+	ProjectUnnamed CockpitProjectState = "unnamed"
+	ProjectHidden  CockpitProjectState = "hidden"
+	ProjectNone    CockpitProjectState = "none"
+)

@@ -282,7 +282,7 @@ def main():
                 assert row['accounts'], 'successful token did not produce an account'
             else:
                 code = {'canceled': 'keychain_canceled', 'denied': 'keychain_denied',
-                        'not_found': 'keychain_not_found', 'interaction_required': 'keychain_confirmation_needed',
+                        'not_found': 'not_signed_in', 'interaction_required': 'keychain_confirmation_needed',
                         'timeout': 'keychain_confirmation_needed', 'error': 'keychain_unavailable'}[value]
                 assert row['reason']['code'] == code, 'credential recovery reason missing or mismatched'
             expected = 2 if value == 'ok' else 0

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import ModelPlanSettings
+import ModelPlanShell
 
 public enum SettingsPresentationOrigin: Sendable { case userInitiated, restoration, programmatic }
 
@@ -11,18 +12,35 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
     func hide()
 }
 
-@MainActor private final class NativeSettingsWindowSurface: SettingsWindowSurface {
+/// While Settings is open the app is a regular app (Dock icon, standard main menu, so Command-comma, -W and -Q
+/// work). Native-shell spec item 4: the app's one `PulseDockPresence` decides, so closing Settings while a detached
+/// cockpit is open keeps the Dock icon (the old Settings-only presence dropped it).
+@MainActor final class NativeSettingsWindowSurface: SettingsWindowSurface {
+    private let presence: PulseDockPresence
+    private var closeObserver: NSObjectProtocol?
     private let controller: SettingsWindowController
-    init(editor: SettingsEditor, environment: @escaping @MainActor () -> SettingsEnvironment, scopeConsentEntry: ScopeConsentEntry?) {
+    init(editor: SettingsEditor, environment: @escaping @MainActor () -> SettingsEnvironment, scopeConsentEntry: ScopeConsentEntry?,
+         presence: PulseDockPresence) {
         controller = SettingsWindowController(editor: editor, environmentProvider: environment, scopeConsentEntry: scopeConsentEntry)
+        self.presence = presence
     }
     func prepare() async { await controller.prepare() }
     func show(paneID: String?) {
         if let paneID { controller.selectPane(paneID) }
         controller.showWindow(nil)
+        if let window = controller.window {
+            presence.track(window)
+            if closeObserver == nil {
+                closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self, weak window] _ in
+                    MainActor.assumeIsolated { self?.presence.apply(closing: window) }
+                }
+            }
+        }
+        // The host activates for user entry; a restoration or programmatic open never steals focus.
+        presence.apply()
         controller.window?.makeKeyAndOrderFront(nil)
     }
-    func hide() { controller.window?.orderOut(nil) }
+    func hide() { controller.window?.orderOut(nil); presence.apply(closing: controller.window) }
 }
 
 /// Retain one per app. All Settings entry points share the existing application editor and one lazy window.
@@ -43,7 +61,10 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
                 environment: (@MainActor () -> SettingsEnvironment)? = nil,
                 activate: @escaping @MainActor () -> Void = { NSApplication.shared.activate() },
                 scopeConsentEntry: ScopeConsentEntry? = nil,
+                presence: PulseDockPresence? = nil,
                 makeSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil) {
+        let presence = presence ?? PulseDockPresence(currentPolicy: { NSApplication.shared.activationPolicy() },
+            setPolicy: { _ = NSApplication.shared.setActivationPolicy($0) }, activate: { NSApplication.shared.activate() })
         let resolveEnvironment: @MainActor () -> SettingsEnvironment = environment ?? {
             // OS UI observations cannot replace app-owned fullscreen or entrance acceptance.
             var current = application.editor.environment
@@ -57,7 +78,7 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
         }
         self.application = application; self.scopeConsentEntry = scopeConsentEntry; self.canPresent = canPresent; self.environment = resolveEnvironment
         self.activate = activate
-        self.makeSurface = makeSurface ?? { NativeSettingsWindowSurface(editor: $0, environment: resolveEnvironment, scopeConsentEntry: scopeConsentEntry) }
+        self.makeSurface = makeSurface ?? { NativeSettingsWindowSurface(editor: $0, environment: resolveEnvironment, scopeConsentEntry: scopeConsentEntry, presence: presence) }
         super.init()
     }
 
@@ -96,6 +117,9 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
         if case .userInitiated = origin { activate() }
         guard current == request, canPresent() else { return }
         surface.show(paneID: paneID)
+        // The first activation ran while the app was still an accessory; once Settings has made it a regular app
+        // (menu bar, Dock icon) activate again on the next turn so the menu bar and window really come forward.
+        if case .userInitiated = origin { await Task.yield(); guard current == request else { return }; activate() }
     }
 
     /// Lifecycle loss retires pending requests; resumption never opens Settings without a new user action.

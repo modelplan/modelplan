@@ -13,7 +13,10 @@ public enum PulseLoginResult: Equatable, Sendable {
     var state: PulseLoginState { get }
     func register() throws
     func unregister() throws
+    /// True only when SMAppService reports `.notFound` (typically the app is not in /Applications).
+    var isNotFound: Bool { get }
 }
+extension PulseLoginService { public var isNotFound: Bool { false } }
 @MainActor private final class MainAppLoginService: PulseLoginService {
     var state: PulseLoginState {
         switch SMAppService.mainApp.status {
@@ -24,6 +27,7 @@ public enum PulseLoginResult: Equatable, Sendable {
         @unknown default: return .unavailable
         }
     }
+    var isNotFound: Bool { SMAppService.mainApp.status == .notFound }
     func register() throws { try SMAppService.mainApp.register() }
     func unregister() throws { try SMAppService.mainApp.unregister() }
 }
@@ -41,6 +45,8 @@ public enum PulseLoginResult: Equatable, Sendable {
                   service: MainAppLoginService())
     }
     public var state: PulseLoginState { isAppBundle ? service.state : .unavailable }
+    /// D87 / G3-69: the system said the app was not found, as opposed to any other unavailable cause.
+    public var isNotFound: Bool { isAppBundle && service.isNotFound }
     public func request(enabled: Bool, origin: PulseLoginOrigin) -> PulseLoginResult {
         guard isAppBundle else { return .unsupported }
         let observed = service.state

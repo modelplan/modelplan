@@ -37,7 +37,8 @@ func TestDoctorReadersCacheOnlyOutput(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Readers) != 12+len(localusage.HistoryProviders()) || report.Message != "Paste this whole output back to the coordinator; it contains no personal data." {
+	// 15: the native readers, codex, claude:session, and the codex:history/claude:history import rows (G3-112).
+	if len(report.Readers) != 15+len(localusage.HistoryProviders()) || report.Message != "Paste this whole output back to the coordinator; it contains no personal data." {
 		t.Fatal(out.String())
 	}
 	jsonBytes := out.String()

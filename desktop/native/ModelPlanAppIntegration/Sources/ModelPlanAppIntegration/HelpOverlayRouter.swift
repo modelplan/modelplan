@@ -26,7 +26,9 @@ import ModelPlanSettings
     }
 
     private func usesDock(_ kind: FirstUseHintKind) -> Bool {
-        kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || (kind == .pinned && context.cockpitOpen == nil)
+        kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || kind == .widgetOff || (kind == .pinned && context.cockpitOpen == nil)
+            // D88: v1 shows the detach / put-back hints on the Dock presenter, anchored to the cockpit key.
+            || (context.v1MinimalHints && (kind == .detach || kind == .putBack))
     }
     public func placeableKinds(context: HintContext, trial: InstrumentHintSourceSnapshot?) -> Set<FirstUseHintKind> {
         self.context = context

@@ -201,7 +201,7 @@ def validate_candidate(app, source, bundle_id, team_id, *, feed=None):
         raise ValueError('Invalid approved source/team')
     if info.get('CFBundleIdentifier') != bundle_id or not bundle_id:
         raise ValueError('Candidate bundle ID mismatch')
-    if info.get('LSMinimumSystemVersion') not in ('14.0', '14.0.0'):
+    if info.get('LSMinimumSystemVersion') not in ('15.0', '15.0.0'):
         raise ValueError('Candidate deployment floor mismatch')
     if not re.fullmatch(r'\d+(?:\.\d+){0,2}', info.get('CFBundleVersion', '')):
         raise ValueError('Invalid build version')
@@ -211,15 +211,14 @@ def validate_candidate(app, source, bundle_id, team_id, *, feed=None):
     helper = app / 'Contents/Helpers/modelplan'
     if sha256(helper) != (resource / 'modelplan.sha256').read_text().strip():
         raise ValueError('Candidate bundled CLI hash mismatch')
-    for executable in (helper, app / 'Contents/MacOS' / info['CFBundleExecutable']):
-        if set(run('xcrun', 'lipo', '-archs', str(executable)).decode().split()) != {'arm64', 'x86_64'}:
-            raise ValueError('Candidate must contain universal app and CLI executables')
-    if info.get('SUFeedURL') != https_url(feed if feed is not None else os.environ['MACOS_FEED_URL']):
-        raise ValueError('Candidate feed channel mismatch')
-    public_key = base64.b64decode(info.get('SUPublicEDKey', ''), validate=True)
-    if len(public_key) != 32:
-        raise ValueError('Candidate Sparkle public key missing')
+    check_bundle_architectures(app, app / 'Contents/MacOS' / info['CFBundleExecutable'])
     return info
+
+
+def require_arm64(executable):
+    # Exact architecture, including cardinality: do not accept universal or malformed output.
+    if run('xcrun', 'lipo', '-archs', str(executable)).decode().split() != ['arm64']:
+        raise ValueError('Candidate executable must contain exactly arm64')
 
 
 def check_credential_pin(app):
@@ -237,6 +236,17 @@ def check_credential_pin(app):
         raise ValueError('Approved credential helper SHA is missing')
     checker.require_expected_sha(pin, expected)
     checker.check_pair(Path(app), Path(app), pin)
+
+
+def check_bundle_architectures(app, main):
+    # Exemption is permitted only for the exact independently approved helper bytes.
+    check_credential_pin(app)
+    approved = json.loads(CREDENTIAL_PIN_FILE.read_text())['sha256']
+    path = ROOT / 'desktop/native/tools/distribution/check_app_architectures.py'
+    spec = importlib.util.spec_from_file_location('release_architectures', path)
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    module.validate(app, main, app / 'Contents/Helpers/modelplan', approved,
+                    lambda executable: run('xcrun', 'lipo', '-archs', str(executable)).decode().split())
 
 
 def sign_nested(app, codesign):
@@ -298,7 +308,7 @@ def notarize(app, output):
         run('xcrun', 'stapler', 'staple', str(app)); run('xcrun', 'stapler', 'validate', str(app))
         run('codesign', '--verify', '--deep', '--strict', str(app)); check_credential_pin(app); run('spctl', '--assess', '--type', 'execute', str(app))
         (output / 'notary-receipt.json').write_text(json.dumps({'id': receipt['id'], 'status': 'Accepted'}) + '\n')
-        run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(app), str(output / 'ModelPlan-universal.zip'))
+        run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(app), str(output / 'ModelPlan-arm64.zip'))
 
 
 def build_version(value):
@@ -380,11 +390,11 @@ def appcast_bytes(info, archive, signature, download, feed, *, channel_name=None
     ET.SubElement(item, 'title').text = 'ModelPlan ' + info['CFBundleShortVersionString']
     ET.SubElement(item, f'{{{NS}}}version').text = info['CFBundleVersion']
     ET.SubElement(item, f'{{{NS}}}shortVersionString').text = info['CFBundleShortVersionString']
-    ET.SubElement(item, f'{{{NS}}}minimumSystemVersion').text = '14.0.0'
+    ET.SubElement(item, f'{{{NS}}}minimumSystemVersion').text = '15.0.0'
     if channel_name == 'beta':
         ET.SubElement(item, f'{{{NS}}}channel').text = 'beta'
         ET.SubElement(item, f'{{{NS}}}releaseNotesLink').text = release_notes
-    ET.SubElement(item, 'description').text = 'Universal macOS 14+ binary. Intel execution untested; 3D may stutter.'
+    ET.SubElement(item, 'description').text = 'Apple silicon macOS 15+ binary.'
     ET.SubElement(item, 'enclosure', {'url': download, f'{{{NS}}}edSignature': signature,
         'length': str(Path(archive).stat().st_size), 'type': 'application/octet-stream'})
     for old in sorted(old_items, key=lambda item: build_version(item.findtext(f'{{{NS}}}version')), reverse=True):
@@ -414,7 +424,7 @@ if !key.isValidSignature(signature, for: archive) { exit(1) }
 
 
 def appcast(app, output, tool):
-    env = os.environ; output = Path(output); archive = output / 'ModelPlan-universal.zip'
+    env = os.environ; output = Path(output); archive = output / 'ModelPlan-arm64.zip'
     if env.get('MACOS_BETA_FEED_URL', '').strip():
         beta_feed_url(env)
     info = plistlib.loads((Path(app) / 'Contents/Info.plist').read_bytes())
@@ -524,7 +534,7 @@ def adhoc_appcast(app, output, tool, *, previous=None):
     run('codesign', '--verify', '--deep', '--strict', str(app))
     check_credential_pin(app)
     verify_beta_zai(app, beta_mark_proof)
-    archive = output / 'ModelPlan-beta-universal.zip'
+    archive = output / 'ModelPlan-beta-arm64.zip'
     run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(app), str(archive))
     signature = sign_archive(info, archive, tool)
     appcast = output / 'appcast-beta.xml'
@@ -533,7 +543,7 @@ def adhoc_appcast(app, output, tool, *, previous=None):
                                     previous=previous))
     notes = ('# ModelPlan ' + info['CFBundleShortVersionString'] + ' (ad-hoc beta)\n\n'
              'Build: ' + info['CFBundleVersion'] + '\n\nSource commit: ' + env['GITHUB_SHA'] + '\n\n'
-             'Universal macOS 14+ build. Intel execution is untested; 3D may stutter.\n\n'
+             'Apple silicon macOS 15+ build.\n\n'
              'This beta is ad-hoc signed and is not notarized. Gatekeeper may block first open; '
              'after trying to open the app, use System Settings → Privacy & Security → Open Anyway '
              'and confirm the first-open prompt if you trust this release.\n\n'
@@ -573,10 +583,10 @@ def publish_beta(output):
     if metadata.get('tag_name') != 'macos-beta-' + version:
         raise ValueError('Beta release tag does not match appcast version')
     release_url = 'https://github.com/modelplan/modelplan/releases/download/' + metadata['tag_name']
-    if (items[0].find('enclosure').get('url') != release_url + '/ModelPlan-beta-universal.zip' or
+    if (items[0].find('enclosure').get('url') != release_url + '/ModelPlan-beta-arm64.zip' or
             items[0].findtext(f'{{{NS}}}releaseNotesLink') != release_url + '/release-notes.html'):
         raise ValueError('Beta appcast URLs must match the draft release assets')
-    names = ('ModelPlan-beta-universal.zip', 'appcast-beta.xml', 'RELEASE_NOTES.md', 'release-notes.html')
+    names = ('ModelPlan-beta-arm64.zip', 'appcast-beta.xml', 'RELEASE_NOTES.md', 'release-notes.html')
     expected = ''.join(f'{sha256(output / name)}  {name}\n' for name in names)
     if (output / 'SHA256SUMS').read_text() != expected:
         raise ValueError('Beta payload checksum mismatch')
