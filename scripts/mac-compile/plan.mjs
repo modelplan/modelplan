@@ -10,11 +10,10 @@
 //   such as @MainActor allowed, minus NEVER_RUN;
 // - a class list longer than FILTER_MAX runs the whole package minus NEVER_RUN; a package without XCTest classes
 //   only builds its tests.
-// Usage (in a checkout of the PR merge commit): node scripts/mac-compile/plan.mjs [base]
-// (default HEAD^1: the merge commit's first parent is main). Prints one TSV row per package:
+// Usage: node scripts/mac-compile/plan.mjs <base> <head> (base: the merge base of main and the PR head), in a clone
+// that has both commits. Prints one TSV row per package:
 // dir, scratch name, mode (filter | skip | build-tests), filter pattern, skip pattern.
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -67,11 +66,14 @@ export function toTsv(rows) {
 }
 
 function main(argv) {
-  const [base = "HEAD^1"] = argv;
-  const git = (...a) => execFileSync("git", a, { encoding: "utf8", maxBuffer: 64 << 20 }).split("\0").filter(Boolean);
-  const changed = git("diff", "--no-renames", "--name-only", "-z", "--diff-filter=ACMRD", base, "HEAD", "--", ROOT);
-  const files = git("ls-files", "-z", "--", ROOT);
-  const rows = plan(changed, files, (f) => fs.readFileSync(f, "utf8"));
+  const [base, head] = argv;
+  if (!base || !head) throw new Error("usage: plan.mjs <base> <head>");
+  const git = (...a) => execFileSync("git", a, { encoding: "utf8", maxBuffer: 64 << 20 });
+  const list = (...a) => git(...a).split("\0").filter(Boolean);
+  const changed = list("diff", "--no-renames", "--name-only", "-z", "--diff-filter=ACMRD", base, head, "--", ROOT);
+  const files = list("ls-tree", "-r", "-z", "--name-only", head, "--", ROOT);
+  // PR files are only read as text (git show), never checked out or run here.
+  const rows = plan(changed, files, (f) => git("show", `${head}:${f}`));
   process.stdout.write(rows.length ? toTsv(rows) + "\n" : "");
 }
 

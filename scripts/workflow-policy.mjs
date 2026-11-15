@@ -9,30 +9,51 @@ export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && i
 export const ALLOWED_ROUTES = new Set();
 
 // The Mac compile check (owner 2026-11-15). Only mac-compile.yml may name the compile runners, with exactly this line,
-// in one job whose condition is exactly MAC_COMPILE_IF: a ready (or dispatched), same-repository PR by the owner
-// account, so fork code never reaches the owner's Macs. It may start only from pull_request or workflow_dispatch,
-// holds a read-only token, uses no secrets and never persists checkout credentials. The enforced boundary is the
-// modelplan-compile runner group, restricted to this workflow at main.
+// in one job whose condition is exactly MAC_COMPILE_IF. It may start only from workflow_run (after the trigger
+// workflow) or workflow_dispatch, which both run main's definition: a pull_request run would execute the PR's own
+// copy, so a fork could drop the condition. Read-only token except one statuses: write job that checks nothing
+// out, no secrets, no persisted checkout credentials. The trigger workflow runs on pull_request with no permissions,
+// no checkout and no actions. The enforced boundary is the modelplan-compile runner group, restricted to
+// mac-compile.yml@refs/heads/main.
 export const MAC_COMPILE_PATH = ".github/workflows/mac-compile.yml";
+export const MAC_COMPILE_TRIGGER_PATH = ".github/workflows/mac-compile-trigger.yml";
 export const MAC_COMPILE_ROUTE = "runs-on: [self-hosted, macOS, ARM64, modelplan-compile]";
-export const MAC_COMPILE_GATE = "github.repository == 'modelplan/modelplan' && (github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft) && ((github.event_name == 'workflow_dispatch' && github.actor_id == '11829005') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005))";
+export const MAC_COMPILE_GATE = "github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005'))";
 export const MAC_COMPILE_IF = `if: \${{ needs.plan.outputs.run == 'true' && ${MAC_COMPILE_GATE} }}`;
-const MAC_COMPILE_TRIGGERS = Object.freeze(["pull_request", "workflow_dispatch"]);
+
+const onKeys = (text) => {
+  const on = topLevelBlock(text, "on");
+  return on ? [...on.matchAll(/^ {2}([A-Za-z_]+):/gm)].map((m) => m[1]) : [];
+};
+const significant = (block) => (block ?? "").split("\n").filter((l) => l.trim() && !/^\s*#/.test(l)).join("\n");
 
 export function macCompileProblems(text) {
   const problems = [];
-  const on = topLevelBlock(text, "on");
-  const keys = on ? [...on.matchAll(/^ {2}([A-Za-z_]+):/gm)].map((m) => m[1]) : [];
-  if (!keys.length || keys.some((k) => !MAC_COMPILE_TRIGGERS.includes(k))) problems.push("mac-compile.yml may start only from pull_request or workflow_dispatch");
-  const perms = (topLevelBlock(text, "permissions") ?? "").split("\n").filter((l) => l.trim() && !/^\s*#/.test(l)).join("\n");
-  if (perms !== "permissions:\n  contents: read") problems.push("mac-compile.yml needs top-level permissions: contents: read");
-  if (/:\s*write\b/.test(text)) problems.push("mac-compile.yml may not ask for write permissions");
+  const keys = onKeys(text);
+  if (keys.join(",") !== "workflow_run,workflow_dispatch") problems.push("mac-compile.yml may start only from workflow_run and workflow_dispatch");
+  if (!/^ {4}workflows: \[mac-compile trigger\]$/m.test(topLevelBlock(text, "on") ?? "")) problems.push("mac-compile.yml's workflow_run must follow only the mac-compile trigger workflow");
+  if (significant(topLevelBlock(text, "permissions")) !== "permissions:\n  contents: read") problems.push("mac-compile.yml needs top-level permissions: contents: read");
   if (/\bsecrets\./.test(text)) problems.push("mac-compile.yml may not use secrets");
   const checkouts = (text.match(/uses: actions\/checkout@/g) ?? []).length;
   if (checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every mac-compile.yml checkout must set persist-credentials: false");
-  const routed = jobBlocks(text).filter((j) => j.lines.some((l) => l.trim() === MAC_COMPILE_ROUTE));
+  const jobs = jobBlocks(text);
+  const writes = text.split("\n").filter((l) => !/^\s*#/.test(l) && /:\s*write\b/.test(l));
+  const writer = jobs.filter((j) => j.lines.some((l) => /:\s*write\b/.test(l)));
+  if (writes.some((l) => l !== "      statuses: write") || writes.length > 1) problems.push("mac-compile.yml may ask only for statuses: write, in one job");
+  else if (writer.length === 1 && writer[0].lines.some((l) => l.trim() === MAC_COMPILE_ROUTE || /^\s*(?:-\s*)?(?:uses|working-directory):/.test(l)))
+    problems.push("the statuses: write job may not check out or run repository code, nor run on the compile runners");
+  const routed = jobs.filter((j) => j.lines.some((l) => l.trim() === MAC_COMPILE_ROUTE));
   if (routed.length !== 1 || text.split("\n").filter((l) => l.trim() === MAC_COMPILE_ROUTE).length !== 1) problems.push("mac-compile.yml has exactly one compile-runner job");
   else if (routed[0].lines.filter((l) => /^    if:/.test(l)).join("\n") !== "    " + MAC_COMPILE_IF) problems.push("the compile-runner job's condition must be exactly MAC_COMPILE_IF");
+  return problems;
+}
+
+export function macCompileTriggerProblems(text) {
+  const problems = [];
+  if (onKeys(text).join(",") !== "pull_request") problems.push("mac-compile-trigger.yml may start only from pull_request");
+  if (!/^permissions: \{\}$/m.test(text)) problems.push("mac-compile-trigger.yml needs top-level permissions: {}");
+  if (/^\s*(?:-\s*)?(?:uses|permissions):/m.test(text.replace(/^permissions: \{\}$/m, ""))) problems.push("mac-compile-trigger.yml may not use actions or ask for permissions");
+  if (/\bsecrets\./.test(text)) problems.push("mac-compile-trigger.yml may not use secrets");
   return problems;
 }
 
@@ -68,6 +89,7 @@ export function workflowProblems(text, path = "") {
     lineProblems(raw, problems, path);
   };
   if (path === MAC_COMPILE_PATH) for (const p of macCompileProblems(text)) problems.add(p);
+  if (path === MAC_COMPILE_TRIGGER_PATH) for (const p of macCompileTriggerProblems(text)) problems.add(p);
   if (path !== ".github/workflows/trusted-mac.yml" && text.includes("MAC_GUI_LEND")) problems.add("GUI lending switch outside trusted-mac.yml");
   for (const raw of text.split("\n")) check(raw);
   if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) check(raw);
