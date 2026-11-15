@@ -40,9 +40,10 @@ import ModelPlanSettings
         surface.mapAnchors = [.init(id: "ring", region: .rings, rect: anchor, visible: true)]
         let layer = HelpUILayerView(recipeProvider: recipe)
         var activations = 0
+        var clock: UInt64 = 0
         let presenter = DockHelpPresenter(currentSurface: { surface }, isCurrent: { _ in true }, blockers: { _ in [] },
             windowPolicy: { _ in (.readOnly, []) }, language: { .english }, accessibility: { (true, true) },
-            copy: { _, _ in nil }, dismiss: { _ in }, activate: { activations += 1 }, layer: layer)
+            copy: { _, _ in nil }, dismiss: { _ in }, activate: { activations += 1 }, now: { clock }, layer: layer)
         addTeardownBlock { @MainActor in presenter.dispose() }
         func open(_ dismiss: @escaping @MainActor (HelpUIDismissReason?) -> Void) throws {
             let viewport = try XCTUnwrap(presenter.prepareMap(surface: surface))
@@ -50,6 +51,8 @@ import ModelPlanSettings
                 language: .english, anchors: anchors, blocked: [], recipe: recipe))
             layer.update(input)
             XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: dismiss))
+            // Past the opening hold that absorbs the menu's own dismissing click.
+            clock += DockHelpPresenter.mapOpeningHoldMilliseconds
         }
         func press(_ event: NSEvent?) throws { NSApplication.shared.sendEvent(try XCTUnwrap(event)) }
         let esc = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
@@ -86,10 +89,11 @@ import ModelPlanSettings
         let layer = HelpUILayerView(recipeProvider: recipe)
         var outside: [@MainActor () -> Void] = []
         var removed = 0
+        var clock: UInt64 = 0
         let presenter = DockHelpPresenter(currentSurface: { surface }, isCurrent: { _ in true }, blockers: { _ in [] },
             windowPolicy: { _ in (.readOnly, []) }, language: { .english }, accessibility: { (true, true) },
             copy: { _, _ in nil }, dismiss: { _ in }, activate: { /* macOS refused: the app stays inactive */ },
-            outsidePointerMonitor: { handler in outside.append(handler); return { removed += 1 } }, layer: layer)
+            outsidePointerMonitor: { handler in outside.append(handler); return { removed += 1 } }, now: { clock }, layer: layer)
         addTeardownBlock { @MainActor in presenter.dispose() }
         func open(_ dismiss: @escaping @MainActor (HelpUIDismissReason?) -> Void) throws {
             let viewport = try XCTUnwrap(presenter.prepareMap(surface: surface))
@@ -97,6 +101,8 @@ import ModelPlanSettings
                 language: .english, anchors: anchors, blocked: [], recipe: recipe))
             layer.update(input)
             XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: dismiss))
+            // Past the opening hold that absorbs the menu's own dismissing click.
+            clock += DockHelpPresenter.mapOpeningHoldMilliseconds
         }
         let esc = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
             context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
@@ -127,5 +133,56 @@ import ModelPlanSettings
         XCTAssertEqual(second, [.pointer], "a click after the map closed does nothing")
         // Hints never take the keyboard.
         XCTAssertFalse(panel.canBecomeKey)
+    }
+
+    /// Native-shell spec item 1: the map decides through one funnel. The click that opened it (a menu closing) and a
+    /// resign-active during the first 150 ms are dropped; an alert keeps it; each reason closes it once.
+    func testMapFunnelHoldsTheOpeningClickAndAModalAndClosesOnceOnResign() throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let anchor = CGRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY, width: 40, height: 40)
+        let recipe = NeutralHelpUIRecipeProvider()
+        let anchors: [DockRequestedHelpAnchor] = [.init(id: "ring", region: .rings, rect: CGRect(x: 100, y: 100, width: 40, height: 40), visible: true)]
+        var surface = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false, anchors: [:])
+        surface.mapAnchors = [.init(id: "ring", region: .rings, rect: anchor, visible: true)]
+        let layer = HelpUILayerView(recipeProvider: recipe)
+        var outside: [@MainActor () -> Void] = []
+        var clock: UInt64 = 1_000, modal = false
+        let center = NotificationCenter()
+        let presenter = DockHelpPresenter(currentSurface: { surface }, isCurrent: { _ in true }, blockers: { _ in [] },
+            windowPolicy: { _ in (.readOnly, []) }, language: { .english }, accessibility: { (true, true) },
+            copy: { _, _ in nil }, dismiss: { _ in }, activate: {},
+            outsidePointerMonitor: { handler in outside.append(handler); return {} },
+            now: { clock }, isModal: { modal }, notificationCenter: center, layer: layer)
+        addTeardownBlock { @MainActor in presenter.dispose() }
+        func open(_ dismiss: @escaping @MainActor (HelpUIDismissReason?) -> Void) throws {
+            let viewport = try XCTUnwrap(presenter.prepareMap(surface: surface))
+            let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: surface.layoutID, viewport: viewport.size,
+                language: .english, anchors: anchors, blocked: [], recipe: recipe))
+            layer.update(input)
+            XCTAssertTrue(presenter.showPreparedMap(surface: surface, dismissMap: dismiss))
+        }
+        var reasons: [HelpUIDismissReason?] = []
+        try open { reasons.append($0) }
+        let monitor = try XCTUnwrap(outside.last)
+        monitor()
+        center.post(name: NSApplication.didResignActiveNotification, object: nil)
+        XCTAssertEqual(reasons, [], "the opening click and a resign inside 150 ms are absorbed")
+        clock += 149; monitor()
+        XCTAssertEqual(reasons, [])
+        clock += 1; modal = true; monitor()
+        center.post(name: NSApplication.didResignActiveNotification, object: nil)
+        XCTAssertEqual(reasons, [], "an alert of ours keeps the map")
+        modal = false
+        center.post(name: NSApplication.didResignActiveNotification, object: nil)
+        center.post(name: NSApplication.didResignActiveNotification, object: nil)
+        monitor()
+        XCTAssertEqual(reasons, [nil], "the app losing focus closes the map once; later events are ignored")
+        presenter.endMap()
+        // A fresh map: Esc is not held by the opening hold.
+        var second: [HelpUIDismissReason?] = []
+        try open { second.append($0) }
+        try XCTUnwrap(presenter.panelForChecks).onEscape?()
+        XCTAssertEqual(second, [.escape])
+        presenter.endMap()
     }
 }
