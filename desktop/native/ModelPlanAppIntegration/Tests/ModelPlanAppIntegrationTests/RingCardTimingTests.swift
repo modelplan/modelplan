@@ -21,7 +21,7 @@ import ModelPlanWire
 }
 
 @MainActor final class RingCardTimingTests: XCTestCase {
-    private struct Rig {
+    @MainActor private struct Rig {
         let controller: DockInteractionController
         let deadlines: RingCardDeadlines
         var card: String? { controller.presentation?.card.subscriptionID }
