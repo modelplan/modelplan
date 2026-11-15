@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"math"
+	"strings"
 	"time"
 	"unicode"
 
@@ -196,6 +197,42 @@ func cockpitPlanModels(d *digest.Digest, published []wire.CockpitPublicationMode
 		}
 		if len(ids) > 0 {
 			out = append(out, wire.CockpitPlanModels{PlanID: p.PlanID, Generation: p.Generation, Basis: p.Basis, ModelIDs: ids})
+		}
+	}
+	return out
+}
+
+// reportedHarnessKey is the tool key a reported model id is mapped under in the published harnessIds: the
+// account source without its native reader prefix (codex, claude-code, gemini, antigravity, grok, copilot,
+// kimi).
+func reportedHarnessKey(source string) string { return strings.TrimPrefix(source, "native:") }
+
+// reportedPublishedModels maps the native model ids a tool reported (Codex model/list) to published model
+// ids through the published harnessIds for that tool, keeping only published models. An id with no alias is
+// dropped, not guessed; the result is nil when nothing maps, so the client falls back to the plan list.
+func reportedPublishedModels(d *digest.Digest, harness string, reported []string, published []wire.CockpitPublicationModel) []string {
+	if d == nil || d.Source != digest.ComponentClient {
+		return nil
+	}
+	known := map[string]bool{}
+	for _, m := range published {
+		known[m.ID] = true
+	}
+	native := map[string]bool{}
+	for _, id := range reported {
+		native[id] = true
+	}
+	var out []string
+	for i := range d.Models {
+		m := d.Models[i]
+		if !known[m.ID] || len(out) >= 256 {
+			continue
+		}
+		for _, id := range m.HarnessIDs[harness] {
+			if native[id] {
+				out = append(out, m.ID)
+				break
+			}
 		}
 	}
 	return out
