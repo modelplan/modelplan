@@ -145,10 +145,49 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 		}
 		p.ReaderAccess.Grants[id] = g
 	}
-	if g, ok := defaultZCodeGrant(home, state, mode, glmSourceConfigured(p)); ok {
+	configured := glmSourceConfigured(p)
+	if g, ok := defaultZCodeGrant(home, state, mode, configured); ok {
 		p.ReaderAccess.Grants["zai"] = g
+	} else if g, granted := p.ReaderAccess.Grants["zai"]; zcodeDefaultApplies(home, state, mode, configured) {
+		// A bare legacy GLM allow (no key, profile or source, and no key in the environment) is
+		// no route any reader can use; it must not hide the cause below (post-merge #711 (2)).
+		bare := granted && g.ConfigSource == nil && state.Tools["zai"].KeyEnv == "" && os.Getenv(nativeReaders["zai"].KeyEnv) == ""
+		// ZCode is there but keeps no provider file (a Desktop layout, the CLI community
+		// package, or a sign-in that stores no plaintext key). No reader can run, so say so
+		// instead of "not read yet" forever (G3-21, #711 (1)). Presence metadata only; nothing
+		// inside the folders is opened.
+		if _, err := os.Lstat(ZCodeProviderConfig(home)); (!granted || bare) && os.IsNotExist(err) && zcodePresent(home) {
+			if bare {
+				delete(p.ReaderAccess.Grants, "zai")
+			}
+			p.ZCodeNoProviderFile = true
+		}
 	}
 	return p
+}
+
+// zcodeRoots are ZCode's data folders, the same path signals detection lists for it
+// (detect/catalogue.go): Desktop and CLI (~/.zcode), the CLI community package and the macOS
+// support folder.
+var zcodeRoots = []string{".zcode", ".local/share/zcode-community", ".local/share/zcode-cli", "Library/Application Support/ZCode"}
+
+// zcodePresent: one of ZCode's own data folders exists. Presence metadata only.
+func zcodePresent(home string) bool {
+	for _, rel := range zcodeRoots {
+		if detect.LocalRoot(filepath.Join(home, filepath.FromSlash(rel))) {
+			return true
+		}
+	}
+	return false
+}
+
+// zcodeDefaultApplies: no explicit GLM decision, source or readers-off stands in the way of
+// ZCode's own default route.
+func zcodeDefaultApplies(home string, state consent.State, mode string, configured bool) bool {
+	if r, decided := state.Tools["zai"]; decided && (!r.Allowed || zaiRecordChoseSource(r)) {
+		return false
+	}
+	return !configured && home != "" && mode == consent.Automatic && state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode)
 }
 
 // defaultZCodeGrant: ZCode's own Coding Plan key route is on by default (owner decision
@@ -157,7 +196,7 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 // the reader lock, by the existing Z.ai configured-key reader. An explicit GLM decision
 // (allow with another source, or deny) always takes precedence.
 func defaultZCodeGrant(home string, state consent.State, mode string, configured bool) (ReaderGrant, bool) {
-	if r, decided := state.Tools["zai"]; (decided && (!r.Allowed || zaiRecordChoseSource(r))) || configured || home == "" || mode != consent.Automatic || !state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode) {
+	if !zcodeDefaultApplies(home, state, mode, configured) {
 		return ReaderGrant{}, false
 	}
 	file := ZCodeProviderConfig(home)

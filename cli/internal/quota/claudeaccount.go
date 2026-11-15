@@ -378,7 +378,16 @@ func parseClaudeUsage(raw map[string]json.RawMessage, now time.Time) ([]Window, 
 			Utilization *float64 `json:"utilization"`
 			ResetsAt    string   `json:"resets_at"`
 		}
-		if json.Unmarshal(b, &v) != nil || v.Utilization == nil || math.IsNaN(*v.Utilization) || math.IsInf(*v.Utilization, 0) || *v.Utilization < 0 {
+		if json.Unmarshal(b, &v) != nil {
+			return nil, false
+		}
+		// An entry without utilization is no measured window: a weekly-only plan reports its
+		// five_hour that way. It stays absent, judged by the response shape rather than the plan
+		// name, and does not hide the measured windows next to it (CodexBar a96e58f30).
+		if v.Utilization == nil {
+			continue
+		}
+		if math.IsNaN(*v.Utilization) || math.IsInf(*v.Utilization, 0) || *v.Utilization < 0 {
 			return nil, false
 		}
 		reset := stamp(v.ResetsAt)

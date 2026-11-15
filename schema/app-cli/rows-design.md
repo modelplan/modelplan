@@ -46,7 +46,11 @@ Row
                 this local read (Claude status line, Codex logs; connect.go:245, :306); treated exactly like allowed
   state         see "State"
   reason        {code, text {en, zh}}; code from the mapping table; text from the CLI message table
-  nextStep      {action, text {en, zh}, availableAt?, disabledReason?} or null
+  nextStep      {action, text {en, zh}, availableAt?, disabledReason?, hint?} or null
+                hint (D232): {signInCommand?, installCommand?, installUrl?, text {en, zh}}: the tool's own sign-in
+                command for not_signed_in, login_expired and http_401, or its install command/URL for not_found,
+                tool_not_found and runtime_missing (Codex, Claude Code, Gemini CLI, Grok Build, Kiro). Compiled
+                values only, never provider text; the app offers them to copy and never runs them.
                 action: open_settings_consent | open_settings_keychain | open_tool | install_runtime | refresh | update_cli | none
                 disabledReason: cooldown | read_only | offline (the app shows it and never bypasses it)
   accounts[]    see below
@@ -160,7 +164,7 @@ Then the rules apply in order:
 | 3 | tool missing from the machine, or retired | needs_action | tool_not_found, catalogue_retired |
 | 4 | no reader exists for the tool | unsupported | no_reader |
 | 5 | the credential read is **actually blocked** by the credential store (Keychain unset/denied/canceled/not found/unavailable/confirmation needed, and no readable credentials file), and C is empty | needs_keychain / needs_action | keychain_unset, keychain_denied, keychain_canceled, keychain_not_found, keychain_unavailable, keychain_confirmation_needed; not_signed_in when the Keychain has no login item (G3-38) |
-| 6 | C and R both empty, and the latest attempt failed | failed / needs_action | reader error codes (D87 cause codes: not_found, runtime_missing, timeout, rpc_error, closed, key_missing for no_key, region_refused, no_plan); login_expired, runtime_missing, not_found, region_refused, no_plan and http_401 give needs_action |
+| 6 | C and R both empty, and the latest attempt failed | failed / needs_action | reader error codes (D87 cause codes: not_found, runtime_missing, timeout, rpc_error, closed, key_missing for no_key, region_refused, codex_custom_provider, team_unsupported, no_plan); login_expired, runtime_missing, not_found, region_refused, no_plan, codex_custom_provider, team_unsupported and http_401 give needs_action |
 | 7 | C and R both empty, and the latest attempt succeeded with no windows | empty | no_usage_windows |
 | 8 | C and R both empty, and there was no attempt yet, or the reader is busy or cooling down | pending | not_read_yet, reader_busy, no_manual_reading |
 | 9 | R is not empty | stale | stale_reading or observation_time_unknown (the original error stays only in that account's `lastFailure`) |
@@ -196,6 +200,8 @@ The closed set of codes, with the state and next-step action each one gives:
 | key_missing, tool_not_found, not_found, catalogue_retired, http_401, unsupported_login | needs_action | open_settings_consent |
 | region_refused | needs_action (the configured address is a third-party relay; nothing to retry) | none |
 | no_plan | needs_action (z.ai's quota service answered that this key has no Coding Plan: a state, not a server error; nothing to retry) | none |
+| codex_custom_provider | needs_action (Codex uses Amazon Bedrock or another custom model provider, read-only from its `config.toml`; there are no ChatGPT plan limits, D232) | none |
+| team_unsupported | needs_action (a team or enterprise login whose usage the tool's endpoint does not report, D232) | none |
 | privacy_blocked, catalogue_off, not_admitted, codexbar_not_audited, codexbar_not_read, codexbar_access_unknown, browser_session_consent_required | off | open_settings_consent |
 | policy_pending | off | open_settings_consent |
 | no_reader | unsupported | none |
@@ -213,7 +219,7 @@ A single Go table maps every status, reason, errorCode and blocked value to `(st
 
 ## Privacy
 
-- No row field carries hosts, file paths, emails, account or login names, key names, credential, profile or account hashes, or free text read from a tool's files.
+- No row field carries hosts, file paths, emails, account or login names, key names, credential, profile or account hashes, or free text read from a tool's files. The one exception is `nextStep.hint`: compiled vendor install URLs and commands (D232), never values read from the machine.
 - Every exported id is one of four kinds: an allow-listed key, the literal `other`, the user's own declared `planId`, or an existing identity reference. That covers row ids, `accountLocator`, window ids, `limitKey` and `poolKey`. A charset check alone is not a privacy rule, so unknown provider limit or pool text never appears, not even in ids. Read-only commands write nothing.
 - `subscriptionRef` is the existing random local reference. `MODELPLAN_IDENTITY=off` gives `null`.
 - Plan names come from an allow-list. Declared plans are the user's own text from their own local.json, flagged `userAuthored`.

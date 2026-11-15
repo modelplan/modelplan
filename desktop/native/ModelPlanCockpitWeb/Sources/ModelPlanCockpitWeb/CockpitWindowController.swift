@@ -181,7 +181,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var appearanceGate = CockpitAppearanceGate()
   private var pendingFreshnessReason: CockpitDeadlineReason?
   private struct OutboundMessage { let code: String, raw: String }
-  private lazy var orderedDelivery = CockpitOrderedDelivery<OutboundMessage> { [weak self] message, complete in
+  private lazy var orderedDelivery: CockpitOrderedDelivery<OutboundMessage> = CockpitOrderedDelivery<OutboundMessage> { [weak self] message, complete in
     #if MODELPLAN_TEST_ONLY_SPI
     if let fake = self?.verificationNoWindowDelivery { fake(message.raw, complete); return }
     #endif
@@ -243,7 +243,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       guard let self, !self.ending, self.bridge.awaitsDisplayReceipt(id) else { return }
       self.fail(.deadlineReceiptTimeout)
     })
-  private lazy var appearanceWatchdog = CockpitDeadlineReceiptWatchdog(
+  private lazy var appearanceWatchdog: CockpitDeadlineReceiptWatchdog = CockpitDeadlineReceiptWatchdog(
     arm: { [weak self] delay, fire in self?.armDeadline(delay, fire) ?? {} }, timedOut: { [weak self] _ in
       guard let self, !self.ending, self.visibilityFence.isConfirmedVisible, self.appearanceGate.isDeferred else { return }
       // G3-97: the retry hooks run only on rendered, nextDeadline and a visibility receipt. A display receipt that
@@ -257,15 +257,46 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         self.publishAppearance()
         return
       }
+      // G3-116 (build 14f): a page open for a while gets a fresh engine reply about every second, and each render
+      // takes about a second, so a newer display is almost always pending and the appearance waits behind it. That
+      // is a busy page, not a stuck one: it rendered or completed a call during this wait. Keep waiting; the
+      // rendered and nextDeadline hooks publish the appearance once the display receipt clears. Only a page that
+      // made no progress at all for the whole wait is failed and rebuilt (which only made it flicker: the rebuilt
+      // page is just as busy).
+      if self.bridge.ready, !self.bridge.blocked, self.pageProgress != self.appearanceWaitProgress {
+        // glm-959-1: replies that keep arriving before the latest render receipt would hold the change back forever.
+        // After the ceiling (10 s in all) the change goes to the current page directly, without a deadline
+        // correlation, so the pending display keeps its own; the page is still never rebuilt while it progresses.
+        if self.appearanceWaitExtensions >= Self.maxAppearanceWaitExtensions {
+          CockpitFailureLog.record("page-resync appearance applied behind pending display")
+          self.publishAppearance(behindPendingDisplay: true)
+          if self.appearanceGate.isDeferred, self.appearanceWatchdog.currentID == nil { self.watchDeferredAppearance() }
+          return
+        }
+        self.appearanceWaitExtensions += 1
+        CockpitFailureLog.record("page-resync appearance wait extended displayPending=\(self.bridge.hasPendingDisplay)")
+        self.appearanceWaitProgress = self.pageProgress
+        self.appearanceWatchdog.wait(for: UUID())
+        return
+      }
       self.fail(.appearanceWaitTimeout)
     })
   /// G3-97: set once the appearance wait timed out on a sendable state and the appearance was republished.
   private var appearanceWaitRetried = false
+  /// G3-116: receipts the page sent (rendered, nextDeadline, an early deadline) and calls it completed. Either proves
+  /// the page is alive; the appearance wait compares it with the value when the wait started.
+  private var pageReceipts: UInt64 = 0
+  private var pageProgress: UInt64 { orderedDelivery.acceptedCount &+ pageReceipts }
+  private var appearanceWaitProgress: UInt64 = 0
+  /// glm-959-1: extra 2 s periods granted to a progressing page; after them the change is applied directly.
+  private var appearanceWaitExtensions = 0
+  static let maxAppearanceWaitExtensions = 4
   private func cancelAppearanceWait() {
-    appearanceWatchdog.cancel(); appearanceWaitRetried = false
+    appearanceWatchdog.cancel(); appearanceWaitRetried = false; appearanceWaitExtensions = 0
   }
   private func watchDeferredAppearance() {
     guard visibilityFence.isConfirmedVisible, appearanceGate.isDeferred, appearanceWatchdog.currentID == nil else { return }
+    appearanceWaitProgress = pageProgress
     appearanceWatchdog.wait(for: UUID())
   }
   /// Page-side code path of the last rejected host message (bridge.ts `lastReject`).
@@ -770,6 +801,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         default: onIntent?(intent)
         }
       case .rendered:
+        pageReceipts &+= 1
         if let id = renderWatchdog.currentID, !bridge.awaitsDisplayReceipt(id) { renderWatchdog.cancel() }
         if let id = receiptWatchdog.currentID, !bridge.awaitsDeadlineReceipt(id) {
           receiptWatchdog.cancel()
@@ -785,8 +817,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
         onRendered?()
       case .deadlinePending(let id):
+        pageReceipts &+= 1
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
       case .nextDeadline(let value):
+        pageReceipts &+= 1
         receiptWatchdog.cancel(); freshnessDriver.accept(deadline: value)
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
       }
@@ -955,6 +989,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if content.bounds.size != size { content.setBoundsSize(size) }
   }
   public func setAckedCautions(_ ids:[String]) { bridge.ackedCautions = ids }
+  public func setPinnedModels(_ ids:[String]) { bridge.pinnedModels = ids }
   public func updateScope(_ key:String) {
     guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
     scope=key; publishAppearance()
@@ -962,7 +997,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func updateAppearance(_ value: CockpitAppearance) {
     let resized = value.size != appearance.size
     appearance = CockpitAppearance(theme: CockpitDayPolicy.resolve(value.theme), locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, size: value.size, memberOrder: value.memberOrder)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames, showUsedPercent: value.showUsedPercent, showAllModels: value.showAllModels, size: value.size, memberOrder: value.memberOrder)
     window?.level = Self.level(detached: shellSession.detached)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
@@ -978,16 +1013,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     return layout?.shellState(attached: !shellSession.detached, scope: scope)
   }
-  private func publishAppearance() {
+  /// `behindPendingDisplay` (glm-959-1): send while a display receipt is still pending, as an uncorrelated change
+  /// that derives no deadline, so the pending display's own deadline correlation is untouched.
+  private func publishAppearance(behindPendingDisplay: Bool = false) {
     guard bridge.ready, !bridge.blocked, !ending else { return }
-    let canSend = appearanceGate.request(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay)
+    let requested = appearanceGate.request(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay)
+    let canSend = requested || (behindPendingDisplay && visibilityFence.isConfirmedVisible)
     let appearanceVersion = appearanceGate.version
     watchDeferredAppearance()
     guard canSend else { return }
     do {
-      let eligible = visibilityFence.isConfirmedVisible && freshnessHasRendered
+      let eligible = !behindPendingDisplay && visibilityFence.isConfirmedVisible && freshnessHasRendered
       let raw = try bridge.setAppearance(appearance, deadlineEligible: eligible)
-      if let id = bridge.currentAppearanceTrigger {
+      if !behindPendingDisplay, let id = bridge.currentAppearanceTrigger {
         // Keep the previously admitted deadline until this repaint reports a replacement.
         receiptWatchdog.wait(for: id)
         send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentAppearance(id) == true }, onAccepted: { [weak self] in
@@ -1082,7 +1120,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     shutterTask?.cancel(); shutterTask = nil
     layout = fit
     appearance = .init(theme: CockpitDayPolicy.resolve(appearance.theme), locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, size: appearance.size, memberOrder: appearance.memberOrder)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames, showUsedPercent: appearance.showUsedPercent, showAllModels: appearance.showAllModels, size: appearance.size, memberOrder: appearance.memberOrder)
     // G3-108: the web view keeps the open canvas on the window's bottom edge and the page keeps the body at one place on
     // it, open or closed. So the page's own relayout, whenever its message lands, never moves the body; only the window
     // frame does, and only where the owner wants it to (attached: the bottom edge, top pinned under the icon;

@@ -1,4 +1,4 @@
 SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0
 Copyright (c) 2026 ModelPlan. All rights reserved.
 
-Badge interiors are abstract colour fields containing no recognisable third-party logos.
+Night stills show the website's fleet round-four rockets with their maker liveries (owner D207/D209, 2026-11-12): rocket heads and roundels may carry vendor marks. Vendor marks are third-party trademarks of their owners, used only to identify each maker; they are not covered by the reserved visuals licence. Day stills keep plain badges.

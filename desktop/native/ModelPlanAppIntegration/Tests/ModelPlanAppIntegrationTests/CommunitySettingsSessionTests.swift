@@ -10,7 +10,7 @@ import ModelPlanCommunityHost
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("community-settings-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("preferences.json"))) { _ in }
+        return SettingsApplicationCoordinator(store: try chineseSettingsStore(url: directory.appendingPathComponent("preferences.json"))) { _ in }
     }
     func testRootIntegrationRestoresTheSameEditorWithoutAWindowOrActivation() async throws {
         let app = try application(); var created = 0, activated = 0

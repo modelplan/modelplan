@@ -36,9 +36,12 @@ type SharedConfig struct {
 	Detect           func() detect.Report
 	// LaterInstalled records each detection report and returns the tools detected now that
 	// were absent when this Mac's engine first looked (D238). Optional.
-	LaterInstalled    func(detect.Report) map[string]bool
-	Paths             func(consent.Admission) quota.Paths
-	Cleanup           func(string, bool) error
+	LaterInstalled func(detect.Report) map[string]bool
+	Paths          func(consent.Admission) quota.Paths
+	Cleanup        func(string, bool) error
+	// Granted runs after each committed, not replayed, consent change (optional); the history
+	// import retry hangs off it (G3-112).
+	Granted           func()
 	Offline, ReadOnly bool
 }
 
@@ -86,6 +89,9 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	b := &SharedBackend{config: config, resetMemo: resetevents.NewMemo(), changes: make(chan struct{}, 1)}
 	if !config.ReadOnly {
 		_ = consent.RetryCleanup(consent.Path(), config.Cleanup)
+		// Engine-start migration: apply D240 (and close what v0.5.60's grant left open) before
+		// any view or automatic refresh can admit a later-installed tool's runtime reader.
+		b.allowLaterLocalLogs(context.Background())
 	}
 	return b, nil
 }
@@ -159,7 +165,8 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 // tool's saved login, its runtime or a network call stays opt-in (offered in the menu, D238):
 // the same grant records those scopes as off when they would otherwise pass while undecided
 // (#924), because the local-log grant's tool record would admit their readers.
-// A failed or stale attempt is retried on the next view.
+// A failed or stale attempt is retried on the next view; until then buildView keeps the
+// scopes it would close out of the refreshable list.
 func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
 	if b.config.LaterInstalled == nil || b.config.ReadOnly {
 		return
@@ -173,12 +180,26 @@ func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
 		return
 	}
 	state := admission.State()
-	scopes := consent.AutoLocalLogScopes(state, later)
-	if len(scopes) == 0 || state.StoreEpoch == "" {
+	if state.StoreEpoch == "" {
 		return
 	}
-	_, _ = b.Grant(ctx, wire.ConsentGrantParams{RequestID: fmt.Sprintf("d240-local-logs-%d", state.Generation), ExpectStoreEpoch: state.StoreEpoch,
-		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: consent.AutoLaterClosedScopes(state, scopes)})
+	scopes := consent.AutoLocalLogScopes(state, later)
+	// Upgrade repair (sampling P1 on #955): CLI v0.5.60 allowed the local logs without the
+	// denies below, so the tool record it wrote still admits that tool's runtime/account
+	// readers. Close those for every later-installed tool whose local logs are already allowed.
+	// Only undecided scopes are denied: every user choice (allow or deny) is a scope record,
+	// which AutoLaterClosedScopes skips, and v0.5.60 never wrote one for these scopes. Once
+	// recorded, the list is empty, so a second run writes nothing.
+	deny := consent.AutoLaterClosedScopes(state, append(append([]string{}, scopes...), consent.LaterLocalLogScopes(state, later)...))
+	if len(scopes) == 0 && len(deny) == 0 {
+		return
+	}
+	request := "d240-local-logs-%d"
+	if len(scopes) == 0 {
+		request = "d240-close-later-%d"
+	}
+	_, _ = b.Grant(ctx, wire.ConsentGrantParams{RequestID: fmt.Sprintf(request, state.Generation), ExpectStoreEpoch: state.StoreEpoch,
+		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: deny})
 }
 
 func (b *SharedBackend) buildView(admission consent.Admission, changed bool) View {
@@ -292,6 +313,13 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	scopes := []string{}
 	diagnostics := []wire.ScopeDiag{}
 	state := admission.State()
+	// Until the D240 upgrade repair commits (a stale or failed grant is retried on the next
+	// view), the runtime/account scopes that CLI v0.5.60's grant left open stay out of the
+	// refreshable list, so neither the automatic scheduler nor a request admits them (#971).
+	unrepaired := map[string]bool{}
+	for _, id := range consent.AutoLaterClosedScopes(state, consent.LaterLocalLogScopes(state, later)) {
+		unrepaired[id] = true
+	}
 	for _, fact := range admission.ScopeFacts(detected) {
 		if id, pending := quota.PolicyPending(fact.Tool); pending && id == fact.Scope {
 			reason := "policy_pending"
@@ -314,7 +342,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 			scope.Disabled = &reason
 		}
 		facts.Scopes = append(facts.Scopes, scope)
-		if state.AllowsScope(fact.Scope, admission.Mode()) && scope.Disabled == nil && !scope.CleanupPending {
+		if state.AllowsScope(fact.Scope, admission.Mode()) && scope.Disabled == nil && !scope.CleanupPending && !unrepaired[fact.Scope] {
 			scopes = append(scopes, fact.Scope)
 		}
 		diag := wire.ScopeDiag{Scope: fact.Scope, State: rows.StatePending, Code: rows.CodeNotReadYet}
@@ -434,6 +462,9 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	}
 	if !b.config.Offline && receipt.Committed && !receipt.Replayed && keychain[consent.ScopeClaudeAccountUsageSavedLogin] == "allow" {
 		result.Credentials = []CredentialNeed{{Provider: "claude", Scope: consent.ScopeClaudeAccountUsageSavedLogin, Interactive: true}}
+	}
+	if receipt.Committed && !receipt.Replayed && b.config.Granted != nil {
+		b.config.Granted()
 	}
 	b.notify()
 	return result, nil
