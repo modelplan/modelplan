@@ -172,16 +172,27 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);syncCaution(lastData!,now);});}
  // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
  // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
- // and keeps the page. lastData never points at data that did not render.
+ // and keeps the page. If that repaint fails too (glm-990-1), the view parts a render touches are put back as they were
+ // before it: the engine and HUD nodes themselves, the engine's closures and the native shell scope. lastData never
+ // points at data that did not render.
  let restoring=false;
+ function snapshot(){
+  const engineNodes=[...frame.engine.childNodes],hudNodes=[...frame.hud.childNodes],hudHidden=frame.hud.hidden;
+  const saved={applyScope,refreshEngine,localiseEngine,quotaFocusIdentity,nativeShell,lastData,lastRenderedAt};
+  return ()=>{
+   frame.engine.replaceChildren(...engineNodes);frame.hud.replaceChildren(...hudNodes);frame.hud.hidden=hudHidden;
+   ({applyScope,refreshEngine,localiseEngine,quotaFocusIdentity,nativeShell,lastData,lastRenderedAt}=saved);
+   if(lastData){const previous=lastData;try{paintRecords(previous,lastRenderedAt);}catch{}try{syncCaution(previous,lastRenderedAt);}catch{}}
+  };
+ }
  function renderData(data:WireCockpitData,now:number){
-  const previous=lastData,previousAt=lastRenderedAt;
+  const previous=lastData,previousAt=lastRenderedAt,restore=snapshot();
   try{renderInto(data,now);}
   catch(error){
    if(!restoring&&!disposed){
     restoring=true;
     try{if(previous)renderInto(previous,previousAt);else{lastData=null;frame.engine.replaceChildren();setEmpty('waiting');}}
-    catch{lastData=previous;}
+    catch{restore();}
     finally{restoring=false;}
    }
    throw error;

@@ -35,6 +35,25 @@ test('a render that throws keeps the page and its last rendered data; the next d
   const after=capture();after.projection.rows[0].name={en:'Recovered',zh:'已恢复'};
   expect(await receive(send('display',{data:after}))).toBe(true);
 });
+test('when the repaint of the last data fails too, the previous view is put back as it was (glm-990-1)',async({page})=>{
+  const {send,receive}=await open(page);
+  expect(await receive(send('display',{data:capture()}))).toBe(true);
+  const before=await engine(page);
+  const next=capture();next.projection.rows[0].name={en:'Replaced',zh:'已替换'};
+  // The failure persists: the new render and the repaint of the last data both throw on their first append.
+  const refused=await page.evaluate(raw=>{
+    const original=Element.prototype.append;let failures=2;
+    Element.prototype.append=function(...nodes){if(failures>0){failures--;throw Error('synthetic render failure');}return original.apply(this,nodes);};
+    try{return {accepted:window.modelPlanCockpit.receive(raw),reject:window.modelPlanCockpit.reject(),left:failures};}
+    finally{Element.prototype.append=original;}
+  },send('display',{data:next}));
+  expect(refused).toEqual({accepted:false,reject:'display.render',left:0});
+  expect(await page.evaluate(()=>window.modelPlanCockpit.state())).toBe('ready');
+  expect(await engine(page)).toBe(before);
+  expect(await page.evaluate(()=>document.body.innerText.includes('Replaced'))).toBe(false);
+  const after=capture();after.projection.rows[0].name={en:'Recovered',zh:'已恢复'};
+  expect(await receive(send('display',{data:after}))).toBe(true);
+});
 test('the correlated probe answers only for its own page',async({page})=>{
   await open(page);
   expect(await page.evaluate(id=>window.modelPlanCockpit.state(id),pageId)).toBe('ready');
