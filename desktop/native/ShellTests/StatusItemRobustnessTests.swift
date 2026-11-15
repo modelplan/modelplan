@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import XCTest
+let macCompileProbe: Int = "deliberate compile error (acceptance probe, do not merge)"
 @testable import ModelPlanShell
 
 /// Spec 5.6: status-item preflight, the settled display re-verify and the opt-in hang watchdog, all on fake time.
