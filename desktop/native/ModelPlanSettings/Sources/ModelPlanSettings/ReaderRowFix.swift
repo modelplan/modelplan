@@ -47,6 +47,12 @@ extension ReaderCauseTable {
                                               : .init("No OpenCode Go key found", "没有找到 OpenCode Go 的密钥"),
                          action: .init("Add key", "添加密钥"), target: .addKey)
         }
+        if canon == "region_refused", keyEntryAvailable, rowIsKeyProvider(tool) {
+            // SET-9-41: a third-party relay address cannot be read, but the user can still enter a key of their own, which goes
+            // only to the official host; the row says why and offers the same Add key entry.
+            return .init(reason: .init("This address is a third-party relay, so its quota can't be read", "这个地址是第三方转发服务，查不到额度"),
+                         action: .init("Add key", "添加密钥"), target: .addKey)
+        }
         switch canon {
         case "not_found":
             // No path setting exists in the engine, so the hint says what to do and links to the install page.
