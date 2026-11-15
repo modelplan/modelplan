@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/localday"
 	"io"
 	"math"
 	"os"
@@ -270,7 +271,7 @@ func readHistory(home string, now time.Time, tool historyTool) Report {
 	observations := map[string]observation{}
 	readBytes := int64(0)
 	localNow := now.Local()
-	cutoff := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, localNow.Location()).AddDate(0, 0, -HistoryDays+1)
+	cutoff := localday.Start(localNow.Year(), localNow.Month(), localNow.Day()-HistoryDays+1, localNow.Location())
 	for i, f := range files {
 		if i >= maxFiles || readBytes+f.size > maxReadBytes {
 			r.Coverage.Truncated = true

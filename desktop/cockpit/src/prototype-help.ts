@@ -39,10 +39,18 @@ export function mountPrototypeHelp(root:HTMLElement,getLocale:()=>Locale,isActiv
   if(columns===2)for(const {caption} of targets)caption.style.width=Math.min(width,(available-12)/2)+'px';
   const heights=Array<number>(columns).fill(start),columnWidth=targets[0].caption.offsetWidth;
   for(const [i,{caption}] of targets.entries()){const col=columns===1?0:Math.min(columns-1,Math.floor(i/Math.ceil(targets.length/columns)));Object.assign(caption.style,{left:Math.max(8,edge-14-columnWidth*(columns-col)-12*(columns-col-1))+'px',top:heights[col]+'px'});heights[col]+=caption.offsetHeight+gap;}
+  // Sampling #953: the closed tall window crops the top, so two narrow columns in the left margin grow past the bottom
+  // (the page does not scroll). Then the captions keep their full width and continue in the right margin instead.
+  const rightWidth=Math.min(width,viewportWidth-ship.right-28);
+  if(columns===2&&Math.max(...heights)-gap>viewportHeight-12&&rightWidth>=120){
+   let side=0;heights.fill(start);
+   for(const {caption} of targets){caption.style.width=(side?rightWidth:width)+'px';if(!side&&heights[0]+caption.offsetHeight>viewportHeight-12){side=1;caption.style.width=rightWidth+'px';}
+    Object.assign(caption.style,{left:(side?ship.right+14:Math.max(8,edge-width-14))+'px',top:heights[side]+'px'});if(side)caption.dataset.side='right';heights[side]+=caption.offsetHeight+gap;}
+  }
   const rect=(e:Element)=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
   const labels=targets.map(x=>rect(x.caption)),live=[...root.querySelectorAll('.eng-cols,.fd-chs,.bank-lcd,.hud,.mfd-screen,.t-lines')].filter(visible).map(rect),titleRect=rect(title),viewport={width:viewportWidth,height:viewportHeight};
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('aria-hidden','true');svg.setAttribute('viewBox',`0 0 ${viewportWidth} ${viewportHeight}`);
-  targets.forEach(({box,caption},i)=>{const r=labels[i],start={x:r.x+r.width+2,y:r.y+r.height/2},blocks=[...live,titleRect,...labels.filter((_,j)=>j!==i)],side=caption.dataset.target?.startsWith('[data-')||['.mfd-pk','.ck-tape'].includes(caption.dataset.target??'')?'top':caption.dataset.target==='.dk-fad'?'bottom':'left',preferred=side==='top'?{x:box.x+box.width/2,y:Math.max(28,box.y-4)}:side==='bottom'?{x:box.x+box.width/2,y:box.y+box.height+4}:{x:box.x-4,y:box.y+box.height/2};
+  targets.forEach(({box,caption},i)=>{const r=labels[i],start={x:caption.dataset.side==='right'?r.x-2:r.x+r.width+2,y:r.y+r.height/2},blocks=[...live,titleRect,...labels.filter((_,j)=>j!==i)],side=caption.dataset.target?.startsWith('[data-')||['.mfd-pk','.ck-tape'].includes(caption.dataset.target??'')?'top':caption.dataset.target==='.dk-fad'?'bottom':'left',preferred=side==='top'?{x:box.x+box.width/2,y:Math.max(28,box.y-4)}:side==='bottom'?{x:box.x+box.width/2,y:box.y+box.height+4}:{x:box.x-4,y:box.y+box.height/2};
    const end=leaderAnchor(box,preferred,blocks,viewport),points=end?routeLeader(start,end,blocks,viewport):[];if(!end||!points.length)return;
    const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',points.map((p,j)=>(j?'L':'M')+p.x+' '+p.y).join(' '));svg.append(path);const circle=document.createElementNS(svg.namespaceURI,'circle');circle.setAttribute('cx',String(end.x));circle.setAttribute('cy',String(end.y));circle.setAttribute('r','2');svg.append(circle);
   });layer.prepend(svg);
