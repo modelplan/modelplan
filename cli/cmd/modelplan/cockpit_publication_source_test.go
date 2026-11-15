@@ -298,3 +298,21 @@ func TestCockpitPublicationCarriesPublishedSpeedTiers(t *testing.T) {
 		t.Fatalf("non-finite tier admitted: %+v", got)
 	}
 }
+
+func TestCockpitPlanModelsCopyOnlyPublishedPlanLists(t *testing.T) {
+	d := &digest.Digest{Source: digest.ComponentClient, PlanModels: &digest.PlanModels{Plans: []digest.PlanModelList{
+		{PlanID: "openai-plus", Generation: "current", Basis: "access", ModelIDs: []string{"astra", "gone", "sol"}},
+		{PlanID: "claude-pro", Basis: "listing", ModelIDs: []string{"gone"}},
+		{PlanID: "cursor-pro", Basis: "invented", ModelIDs: []string{"astra"}},
+	}}}
+	published := []wire.CockpitPublicationModel{{ID: "astra"}, {ID: "sol"}}
+	got := cockpitPlanModels(d, published)
+	want := []wire.CockpitPlanModels{{PlanID: "openai-plus", Generation: "current", Basis: "access", ModelIDs: []string{"astra", "sol"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	// An older publication has no planModels: nothing is invented.
+	if cockpitPlanModels(&digest.Digest{Source: digest.ComponentClient}, published) != nil || cockpitPlanModels(nil, published) != nil {
+		t.Fatal("a publication without planModels must yield none")
+	}
+}

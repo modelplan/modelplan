@@ -511,6 +511,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         // A new click starts its own grace period and opens at once. Recovery contract: it does not reset the rebuild
         // budget; only sustained verified health does.
         cancelRecoveryTimers(); rebuilding=false; retriedOpen=false; repairNoticed=false; noticePath=""; failureClosesPage=false
+        DiagnosticsLog.shared.info("cockpit", "open requested source=\(fromStatusItem ? "status-item" : "other") pending=\(showTask != nil)")
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
         CockpitTimingLog.markClick()
@@ -535,11 +536,13 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     var onShowingChanged: (() -> Void)?
     /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
     func requestClose() {
+        DiagnosticsLog.shared.info("cockpit", "close requested pageOpened=\(pageOpened)")
         cancelRecoveryTimers(); rebuilding=false
         if pageOpened { owner.coordinator?.requestClose() } else { hide() }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
+        if wantsVisible || pageOpened { DiagnosticsLog.shared.info("cockpit", "closed pageOpened=\(pageOpened) rebuilding=\(rebuilding)") }
         wantsVisible = false
         cancelRecoveryTimers(); rebuilding=false
         onShowingChanged?()
@@ -578,6 +581,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
             switch budget.pageFailed(at:now()) {
             case .rebuild(let delay,let number):
                 CockpitFailureLog.record("page-rebuild attempt=\(number) delayMs=\(delay) after=\(path)")
+                DiagnosticsLog.shared.notice("cockpit", "rebuild n=\(number) delayMs=\(delay) cause=\(path)")
                 scheduleRebuild(afterMs:delay,path:path)
             case .cooldown(let probe):
                 // The budget is spent and the dead page left nothing on screen: the one case for the generic notice.
