@@ -373,8 +373,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var probeTimer: (() -> Void)?
   private var probeSerial: UInt64 = 0
   private var bootstrapCheck: (() -> Void)?
-  /// Reads the page bridge's state in the page's own world. A page whose JavaScript thread is stuck never answers.
-  static let probeScript = "const c=window.modelPlanCockpit;return c&&typeof c.state==='function'?String(c.state()):'missing'"
+  /// The correlated probe (#990): reads this page's bridge state in the page's own world; a replaced page answers
+  /// "mismatch" and a page whose JavaScript thread is stuck never answers.
+  var probeScript: String { bridge.probeScript }
   private func monotonicNow() -> UInt64 {
     #if MODELPLAN_TEST_ONLY_SPI
     if let clock = verificationMonotonicClock { return clock() }
@@ -445,7 +446,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if let probe = verificationProbe { probe(reply); return }
     #endif
     guard let web else { return }
-    web.callAsyncJavaScript(Self.probeScript, arguments: [:], in: nil, in: .page) { result in
+    web.callAsyncJavaScript(probeScript, arguments: [:], in: nil, in: .page) { result in
       Task { @MainActor in
         if case .success(let value) = result { reply(value as? String) } else { reply(nil) }
       }
@@ -472,6 +473,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// Page-side code path of the last rejected host message (bridge.ts `lastReject`).
   private var lastRejectCode = "none"
+  /// The kind of the last refusal the page survived (recovery step 2b); step 4 reads it for data retries.
+  public private(set) var lastRejectionKind: CockpitRecoveryPolicy.RejectionKind?
   private var tickRetries = 0
   private static let maxTickRetries = 3
   /// A tick the page refuses only because its own visibility has not caught up (document still hidden, no
@@ -566,6 +569,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     func verificationWake() { grantHealthGrace(); freshnessDriver.notify(.wake) }
     /// The window facts `visibilityChanged` reads, for a no-window page; `shown` marks the page as opened.
     var verificationNoWindowVisibility: CockpitVisibility?
+    /// The bridge.ts reject code a fake `.rejected` completion carries (the real path parses "rejected:<code>").
+    var verificationRejectCode: String?
+    /// A no-window page shown before it is ready, as open() shows a cold page: liveness runs and bootstrap is watched.
+    func verificationShowUnready() { shown = true; health.resume(); if !bridge.ready { armBootstrapCheck() } }
     func verificationSetHostVisibility(_ value: CockpitVisibility) {
       shown = true; verificationNoWindowVisibility = value; visibilityChanged()
     }
@@ -989,6 +996,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       case .accepted: self.deliveryRefusals = 0; onAccepted?(); self.resyncAfterBacklog()
       case .missing: self.fail(clear ? .clearRejected : .pageAPIUnavailable) // macrevb-981-3: a clear that cannot reach the bridge is a privacy disposal
       case .rejected:
+        #if MODELPLAN_TEST_ONLY_SPI
+        if let code = self.verificationRejectCode { self.lastRejectCode = code }
+        #endif
         CockpitFailureLog.record("page-reject code=\(self.lastRejectCode)")
         if onRejected?() != true { self.pageRejected(clear: clear, bootstrap: bootstrap) }
       case .failed:
@@ -1015,7 +1025,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     switch CockpitRecoveryPolicy.rejection(code: lastRejectCode, clear: clear, bootstrap: bootstrap) {
     case .privacy: fail(.clearRejected)
     case .pageGone: fail(bootstrap ? .messageRejected : .pageAPIUnavailable)
-    case .kept: CockpitFailureLog.record("page-reject-kept code=\(lastRejectCode) displayPending=\(bridge.hasPendingDisplay)")
+    case .kept:
+      lastRejectionKind = CockpitRecoveryPolicy.rejectionKind(code: lastRejectCode)
+      CockpitFailureLog.record("page-reject-kept kind=\(lastRejectionKind?.rawValue ?? "none") code=\(lastRejectCode) displayPending=\(bridge.hasPendingDisplay)")
     }
   }
   private static func errorDetail(_ error: Error) -> String {
@@ -1163,7 +1175,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     pauseHealth()
   }
   /// The Mac woke or the screen unlocked: a wait that spanned the sleep starts over.
-  private func grantHealthGrace() { health.grantGrace(); stopProbing() }
+  /// #981 sampling P2: a shown page that never reported ready is monitored again after the grace; nothing else would
+  /// re-arm it (the receipt and visibility watchdogs need a ready page), so it would stay blank.
+  private func grantHealthGrace() {
+    health.grantGrace(); stopProbing()
+    if shown, !ending, !bridge.ready, !health.paused { armBootstrapCheck() }
+  }
   private func hostVisibility() -> CockpitVisibility? {
     #if MODELPLAN_TEST_ONLY_SPI
     if let value = verificationNoWindowVisibility { return value }
@@ -1176,7 +1193,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   private func visibilityChanged() {
     // The alpha-0 warm paint is not a visible cockpit; the page keeps the hidden state it was given.
-    guard !ending, !warmPainting, closeTask == nil, bridge.queryTicket != nil, let value = hostVisibility() else { return }
+    guard !ending, !warmPainting, closeTask == nil, let value = hostVisibility() else { return }
+    // #981 sampling P2: liveness follows the host's window facts before the page is ready too. A hidden unready page
+    // accrues nothing; shown again, it gets a fresh grace period and its bootstrap is monitored again. Everything
+    // that delivers to the page stays behind the query-ticket guard below.
+    if !(value.visible && !value.occluded) { if !health.paused { pauseHealth() } }
+    else {
+      health.resume()
+      if shown, !bridge.ready, bootstrapCheck == nil, !health.isWaiting { armBootstrapCheck() }
+    }
+    guard bridge.queryTicket != nil else { return }
     guard value != lastVisibility else { return }
     lastVisibility = value
     let visible = value.visible && !value.occluded

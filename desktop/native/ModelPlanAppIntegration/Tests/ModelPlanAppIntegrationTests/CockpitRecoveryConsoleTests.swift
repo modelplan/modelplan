@@ -137,6 +137,26 @@ extension CommunityCockpitEntryTests {
         await rig.finish()
     }
 
+    /// #981 sampling P2 (2): a page that rendered and was closed does not hand its health to the next page. Spend the
+    /// budget, render once, close, wait two minutes, open again and fail before rendering: still the cooldown.
+    @MainActor func testRecoveryAClosedPagesHealthDoesNotResetTheNextPagesBudget() async throws {
+        let rig = try RecoveryConsoleRig()
+        rig.surface.wantsVisible = true
+        rig.pageDied(.contentTerminated); rig.clock.advance(by: 1_000); rig.coordinator.onOpened?()
+        rig.pageDied(.contentTerminated); rig.clock.advance(by: 4_000); rig.coordinator.onOpened?()
+        rig.coordinator.onRenderVerified?()
+        rig.clock.advance(by: 10_000)
+        rig.coordinator.onClosed?() // the user closes the cockpit
+        XCTAssertFalse(rig.surface.wantsVisible)
+        XCTAssertNil(rig.surface.budget.healthySince, "health ends with the page that earned it")
+        rig.clock.advance(by: 130_000)
+        rig.surface.wantsVisible = true; rig.coordinator.onOpened?() // opened again
+        rig.pageDied(.contentTerminated) // fails before rendering
+        XCTAssertTrue(rig.lines.contains { $0.hasPrefix("page-rebuild cooldown") }, rig.lines.joined(separator: "\n"))
+        XCTAssertEqual(rig.surface.budget.attempts.count, 2)
+        await rig.finish()
+    }
+
     @MainActor func testRecoveryPrivacyDisposalRebuildsAtOnceWithoutNoticeOrBudget() async throws {
         let rig = try RecoveryConsoleRig()
         rig.surface.wantsVisible = true

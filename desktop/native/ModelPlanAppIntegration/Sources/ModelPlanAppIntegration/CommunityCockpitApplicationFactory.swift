@@ -448,6 +448,8 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         owner.coordinator?.onShellChanged = { [weak self] in self?.onShowingChanged?() }
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
+            // #981 sampling P2: the closed page's health ends with it; the next page earns its own.
+            self.budget.pageRetired(at: self.now())
             if self.rebuilding, self.wantsVisible {
                 // A dead page: keep the presentation; the scheduled rebuild builds the page again.
                 self.pageOpened=false

@@ -136,6 +136,13 @@ public struct CockpitRebuildBudget: Equatable, Sendable {
   public mutating func rendered(at now: UInt64) {
     if healthySince == nil { healthySince = now }
   }
+  /// The page that rendered closed (a user close, a hide, a rebuild). Health ends with it: the next page earns its
+  /// own, so a page that fails before rendering cannot inherit an earlier page's health. If the closing page had
+  /// sustained health, that resets the attempts now; the attempt history is otherwise kept (#981 sampling, P2).
+  public mutating func pageRetired(at now: UInt64) {
+    if let since = healthySince, now >= since, now - since >= Self.sustainedHealthMs { attempts.removeAll() }
+    healthySince = nil
+  }
 }
 
 public extension CockpitWindowFailure {
@@ -171,11 +178,31 @@ public enum CockpitRecoveryPolicy {
     /// A privacy clear was refused: the page may still hold private views, so it is disposed.
     case privacy
   }
-  /// bridge.ts reject codes after which the page has unloaded itself (`unload()` in the catch, or a page that has
-  /// ended). Every other code leaves the page as it was.
-  public static let selfUnloadingCodes: Set<String> = [
-    "load.view", "appearance.view", "shell.view", "display.render", "tick.view", "clear.retired", "recv.source",
-  ]
+  /// bridge.ts reject codes after which the page has unloaded itself: a load its view could not take, the
+  /// retired-context privacy bound, or a page that has already ended. Since recovery step 2 (#990) a render,
+  /// appearance, shell or tick exception is refused and the page stays loaded, so those codes are kept, not gone.
+  public static let selfUnloadingCodes: Set<String> = ["load.view", "clear.retired", "recv.source"]
+  /// What kind of refusal a bridge.ts reject code is. Only `gone` ends the page.
+  public enum RejectionKind: String, Equatable, Sendable {
+    /// The data failed validation or is a quarantined revision: keep the last data; a later reply may pass.
+    case data
+    /// The page's view could not draw it (render, appearance, shell, tick): the page kept what it showed.
+    case view
+    /// The message was out of step with the page (sequence, context, visibility, not ready yet).
+    case state
+    /// Any other refusal of the message itself (size, header, keys, type).
+    case message
+    /// The page unloaded itself.
+    case gone
+  }
+  public static func rejectionKind(code: String) -> RejectionKind {
+    if selfUnloadingCodes.contains(code) { return .gone }
+    if code.hasPrefix("data.") || code == "display.quarantined" { return .data }
+    if code.hasSuffix(".view") || code == "display.render" { return .view }
+    if code.hasPrefix("recv.") || code.hasPrefix("tick.") || code == "display.notReady" || code.hasPrefix("clear.")
+      || code == "load.again" { return .state }
+    return .message
+  }
   public static func rejection(code: String, clear: Bool, bootstrap: Bool) -> Rejection {
     if clear { return .privacy }
     if bootstrap || selfUnloadingCodes.contains(code) { return .pageGone }
@@ -195,6 +222,8 @@ public enum CockpitRecoveryPolicy {
     switch reply {
     case "missing", "unloaded": return pageReady ? .pageGone : .unanswered
     case "loading", "ready", "hidden", "cleared": return .answered
+    // The correlated probe (#990): another page answered, never this one.
+    case "mismatch": return .unanswered
     default: return .unanswered
     }
   }

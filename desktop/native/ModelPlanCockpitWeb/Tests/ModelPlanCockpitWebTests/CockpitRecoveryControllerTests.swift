@@ -341,5 +341,96 @@ import ModelPlanWire
     XCTAssertEqual(rig.rendersVerified, 2)
     page.discard()
   }
+
+  // MARK: recovery step 2b (and the #981 post-merge sampling P2s)
+
+  /// A shown page whose bootstrap has not reported ready (cold open, slow WebKit start): no query ticket yet.
+  private func unreadyPage(_ rig: Rig) throws -> CockpitWindowController {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-recovery-unready-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+    let html = Data("synthetic".utf8); try html.write(to: root.appendingPathComponent("index.html"))
+    let manifest = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "edition": "community", "interfaceOnly": true, "files": ["index.html": VerifiedCockpitBundle.digest(html)]])
+    try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
+    let bundle = try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
+    let page = CockpitWindowController(bundle: bundle, context: try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1),
+                                       appearance: .init(theme: .night, locale: .en, profile: .full))
+    page.verificationNoWindowClock = { 1_000 }
+    page.verificationNoWindowArm = { _, _ in {} }
+    page.verificationNoWindowDelivery = { raw, complete in rig.sent.append((raw, complete)) }
+    page.verificationMonotonicClock = { rig.mono }
+    page.verificationHealthArm = { delay, fire in
+      let id = rig.nextHealthTimer; rig.nextHealthTimer += 1
+      rig.healthTimers[id] = (due: rig.mono + delay, fire: fire)
+      return { rig.healthTimers[id] = nil }
+    }
+    page.verificationProbe = { answer in rig.probes.append(answer) }
+    page.onFailure = { rig.failures.append($0) }
+    page.verificationShowUnready()
+    XCTAssertNil(page.queryTicket)
+    return page
+  }
+
+  /// #981 sampling P2 (1): wake or unlock while an unready page's bootstrap is being probed. The grace restarts the
+  /// bootstrap check, so a page that never becomes ready is still recovered, 30 active seconds after it is late again.
+  func testWakeKeepsWatchingAPageThatNeverBecameReady() throws {
+    let rig = Rig(); let page = try unreadyPage(rig)
+    rig.advance(to: 3_000)
+    XCTAssertTrue(page.verificationHealth.isWaiting, "the bootstrap is late: probing")
+    rig.advance(to: 10_000)
+    page.verificationWake()
+    XCTAssertFalse(page.verificationHealth.isWaiting, "the wait that spanned the sleep starts over")
+    rig.advance(to: 12_000)
+    XCTAssertEqual(page.verificationHealth.waitingSince, 12_000, "and the bootstrap is watched again after the grace")
+    rig.advance(to: 41_999)
+    XCTAssertEqual(rig.failures, [])
+    rig.advance(to: 12_000 + 30_000 + CockpitPageHealth.probeTimeoutMs)
+    XCTAssertEqual(rig.failures, [.unresponsive], "a page that never becomes ready is recovered, not left blank")
+  }
+
+  /// #981 sampling P2 (3): an unready page that is minimised or covered accrues no liveness time; uncovered, it gets a
+  /// fresh grace period and its bootstrap is watched again.
+  func testAHiddenUnreadyPageAccruesNothing() throws {
+    let rig = Rig(); let page = try unreadyPage(rig)
+    page.verificationSetHostVisibility(.init(visible: true, occluded: true, key: false))
+    XCTAssertTrue(page.verificationHealth.paused, "covered before ready: nothing is accounted")
+    XCTAssertTrue(rig.healthTimers.isEmpty, "the bootstrap check waits for the page to be seen")
+    rig.advance(to: 3_600_000)
+    XCTAssertEqual(rig.failures, []); XCTAssertEqual(rig.probes.count, 0)
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: true))
+    XCTAssertFalse(page.verificationHealth.paused)
+    rig.advance(to: 3_602_000)
+    XCTAssertTrue(page.verificationHealth.isWaiting, "uncovered and still not ready: probed again")
+    XCTAssertGreaterThanOrEqual(rig.probes.count, 1)
+    XCTAssertFalse(page.bridge.disposed); page.discard()
+  }
+
+  /// Step 2b: since #990 the page refuses a render, appearance, shell or tick exception without unloading, so those
+  /// refusals keep the page (kind `view`); only a page that unloaded itself is gone.
+  func testAViewExceptionRefusalKeepsThePageAndOnlyAnUnloadEndsIt() throws {
+    for (code, kind) in [("display.render", CockpitRecoveryPolicy.RejectionKind.view), ("data.schema", .data), ("display.quarantined", .data)] {
+      let rig = Rig(); let page = try renderedPage(rig)
+      page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+      page.verificationRejectCode = code
+      try XCTUnwrap(rig.sent.last).1(.rejected)
+      XCTAssertEqual(rig.failures, [], "\(code): the page is kept")
+      XCTAssertEqual(page.lastRejectionKind, kind)
+      XCTAssertTrue(rig.lines.contains { $0.hasPrefix("page-reject-kept kind=\(kind.rawValue) code=\(code)") }, rig.lines.joined(separator: "\n"))
+      XCTAssertFalse(page.bridge.disposed); page.discard()
+    }
+    let rig = Rig(); let page = try renderedPage(rig)
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    page.verificationRejectCode = "recv.source"
+    try XCTUnwrap(rig.sent.last).1(.rejected)
+    XCTAssertEqual(rig.failures, [.pageAPIUnavailable], "a page that has ended is gone")
+  }
+
+  /// Step 2b: the controller probes with the correlated script for its own page (#990's state(pageId)).
+  func testTheHealthProbeIsCorrelatedWithThisPage() throws {
+    let rig = Rig(); let page = try renderedPage(rig)
+    XCTAssertEqual(page.probeScript, page.bridge.probeScript)
+    XCTAssertTrue(page.probeScript.contains("c.state('\(page.bridge.pageID.uuidString)')"))
+    page.discard()
+  }
 }
 #endif
