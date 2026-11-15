@@ -18,6 +18,8 @@ let result;
 try { result = JSON.parse(read(join(dir, "result.json"))); } catch { fail("the review result is not JSON"); }
 const bad = checkResult(result);
 if (bad) fail(`the review result does not match the schema (${bad})`);
+// R4: a review the model did not finish gives no verdict; the next run reviews the head again.
+if (result.complete_review !== true) fail("the reviewer did not finish the review (complete_review is false)");
 if (!/^[0-9a-f]{40}$/.test(env.HEAD_SHA ?? "")) fail("no head sha");
 
 const meta = { model: env.MODEL, effort: env.EFFORT, seconds: read(join(dir, "seconds")).trim() || "?", usage: usageFrom(read(join(dir, "events.jsonl"))), runUrl: env.RUN_URL };

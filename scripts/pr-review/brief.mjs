@@ -91,7 +91,8 @@ export function buildBrief({ pr, d, lane, paths, stat, referenceMap = false }) {
     "- Verdict: block if and only if at least one P1/P2 finding (new, or an earlier one still open) remains; otherwise merge with any P3 items as follow-ups.",
     "",
     "## Output",
-    "Answer with the JSON object the output schema describes and nothing else. `file` is a repository path, `line` a line number at this head (0 if none). Keep each `detail` short and concrete: what is wrong, why it matters, and the fix. `earlier_findings` lists each earlier finding with its status (empty on a complete review). `reference_check` and `requirements` are one or two sentences each, or \"not applicable\".",
+    "Answer with the JSON object the output schema describes and nothing else. `file` is a repository path, `line` a line number at this head (0 if none). Keep each `detail` short and concrete: what is wrong, why it matters, and the fix. `earlier_findings` lists each earlier finding with its status, each with its severity (P1, P2 or P3, as the earlier review rated it unless you re-rate it by R8); empty on a complete review. `reference_check` and `requirements` are one or two sentences each, or \"not applicable\".",
+    "`complete_review` is true only when you finished the whole review this brief asks for (every changed file, and on a delta review every earlier finding). If you could not, set it to false: then no verdict is posted for this head.",
     "",
     "## Changed files (git diff --stat)",
     fence(clip(stat, 6000)),
@@ -118,7 +119,7 @@ export function checkResult(r) {
   for (const f of r.findings)
     if (!f || !["P1", "P2", "P3"].includes(f.severity) || !str(f.file) || !Number.isInteger(f.line) || !str(f.title) || !str(f.detail)) return "finding";
   for (const f of r.earlier_findings)
-    if (!f || !str(f.finding) || !["fixed", "still open", "not applicable"].includes(f.status) || !str(f.note)) return "earlier finding";
+    if (!f || !str(f.finding) || !["P1", "P2", "P3"].includes(f.severity) || !["fixed", "still open", "not applicable"].includes(f.status) || !str(f.note)) return "earlier finding";
   return null;
 }
 
@@ -129,8 +130,11 @@ const tidy = (s, n = 1500) => clip(String(s).replace(/\r/g, ""), n).replace(/@(?
 const quote = (s) => tidy(s).split("\n").map((l) => `> ${l}`);
 
 export function renderComment({ result, head, lane, mode, tier, meta = {} }) {
+  // R4: only a finished review gives a verdict. post.mjs refuses first; this is the renderer's own guarantee.
+  if (result.complete_review !== true) throw new Error("incomplete review: no verdict is rendered");
   const open = result.findings.filter((f) => f.severity !== "P3");
-  const stillOpen = result.earlier_findings.filter((f) => f.status === "still open");
+  // R8: an earlier finding still open blocks only at P1/P2; an open P3 stays a follow-up.
+  const stillOpen = result.earlier_findings.filter((f) => f.status === "still open" && f.severity !== "P3");
   // The findings can turn a merge into a block, never the other way: a block without a listed finding stays a block.
   const verdict = result.verdict === "block" || open.length || stillOpen.length ? "block" : "merge";
   const kind = mode === "delta" ? "delta review" : "complete review";
@@ -145,7 +149,7 @@ export function renderComment({ result, head, lane, mode, tier, meta = {} }) {
   list("Follow-ups (P3)", result.findings.filter((f) => f.severity === "P3"));
   if (result.earlier_findings.length) {
     out.push("**Earlier findings**", "");
-    for (const f of result.earlier_findings) out.push(...quote(`${f.status}: ${f.finding}${f.note ? ` — ${f.note}` : ""}`), "");
+    for (const f of result.earlier_findings) out.push(...quote(`${f.status}: ${f.severity} ${f.finding}${f.note ? ` — ${f.note}` : ""}`), "");
   }
   out.push("**Reference**", "", ...quote(result.reference_check), "", "**Requirements**", "", ...quote(result.requirements), "");
   const tokens = meta.usage ? ` · tokens in ${meta.usage.input} (cached ${meta.usage.cached}) out ${meta.usage.output}` : "";

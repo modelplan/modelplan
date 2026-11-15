@@ -26,9 +26,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["finding", "status", "note"],
+        "required": ["finding", "severity", "status", "note"],
         "properties": {
           "finding": { "type": "string" },
+          "severity": { "type": "string", "enum": ["P1", "P2", "P3"] },
           "status": { "type": "string", "enum": ["fixed", "still open", "not applicable"] },
           "note": { "type": "string" }
         }
