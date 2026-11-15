@@ -170,7 +170,24 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   target?.focus({preventScroll:true});
  }
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);syncCaution(lastData!,now);});}
+ // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
+ // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
+ // and keeps the page. lastData never points at data that did not render.
+ let restoring=false;
  function renderData(data:WireCockpitData,now:number){
+  const previous=lastData,previousAt=lastRenderedAt;
+  try{renderInto(data,now);}
+  catch(error){
+   if(!restoring&&!disposed){
+    restoring=true;
+    try{if(previous)renderInto(previous,previousAt);else{lastData=null;frame.engine.replaceChildren();setEmpty('waiting');}}
+    catch{lastData=previous;}
+    finally{restoring=false;}
+   }
+   throw error;
+  }
+ }
+ function renderInto(data:WireCockpitData,now:number){
   preserveFocus(()=>{
    const previousData=lastData;lastData=data;lastRenderedAt=now;
    if(disposed)throw Error('closed');const before=displayedState();const priorPage=Number(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??0);const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const selectedScope=nativeShell?.scope??priorButton?.dataset.scope??'all';const unstable=(previousData?cockpitMembers(previousData):[]).some(m=>m.key===selectedScope&&m.unstable)||cockpitMembers(data).some(m=>m.key===selectedScope&&m.unstable);const priorScope=unstable?'':selectedScope==='all'?'':selectedScope;if(unstable){retiredUnstableScopes.add(selectedScope);if(nativeShell)nativeShell={...nativeShell,scope:'all'};}applyScope=null;frame.engine.replaceChildren();
