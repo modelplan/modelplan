@@ -322,12 +322,12 @@ test('CKP-MFD-12 scoped subscription shows reported credits and reading age with
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(credits).toContainText('5m前读取');
 });
 
-test('CKP-STRIP-06 a new caution flashes at most ten seconds and a new condition retriggers',async({page})=>{
+test('CKP-STRIP-06 a new caution blinks three times, then stays lit; a new condition retriggers',async({page})=>{
  const data=visualFixture().data;data.details=null;data.projection.rows=data.projection.rows.slice(0,1);const windows=data.projection.rows[0].accounts[0].windows;for(const w of windows)w.remainingPercent=75;
  const {send,receive}=await open(page,data),lamp=page.locator('[data-caution]');await expect(lamp).not.toHaveClass(/\bflash\b/);
  windows[0].remainingPercent=35;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\b(flash|lit)\b/);
  windows[0].remainingPercent=20;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bflash\b/);await expect(lamp).toHaveClass(/\bred\b/);
- const animation=await lamp.evaluate(e=>{const s=getComputedStyle(e);window.__g1CautionAnimation=e.getAnimations()[0];return {name:s.animationName,duration:s.animationDuration,count:s.animationIterationCount};});expect(animation.name).not.toBe('none');expect(animation.duration).toBe('1s');expect(animation.count).toBe('10');
+ const animation=await lamp.evaluate(e=>{const s=getComputedStyle(e);window.__g1CautionAnimation=e.getAnimations()[0];return {name:s.animationName,duration:s.animationDuration,count:s.animationIterationCount};});expect(animation.name).not.toBe('none');expect(animation.duration).toBe('1s');expect(animation.count).toBe('3');
  // The same condition keeps its blink; a second red window is a new condition and blinks again.
  windows[0].remainingPercent=18;expect(await receive(send('display',{data}))).toBe(true);expect(await lamp.evaluate(e=>e.getAnimations().includes(window.__g1CautionAnimation))).toBe(true);
  windows[1].remainingPercent=10;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bred\b/);expect(await lamp.evaluate(e=>e.getAnimations().includes(window.__g1CautionAnimation))).toBe(false);windows[1].remainingPercent=75;

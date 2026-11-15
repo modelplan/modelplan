@@ -7,7 +7,7 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture,renderVisualDeck} from '../visual-fixture.mjs';
 
 const ALLOWED_ANIMATIONS=new Set([
- 'cockpit-caution-blink', // CKP-STRIP-06 new caution, 1 s x 10
+ 'cockpit-caution-blink', // CKP-STRIP-06 new caution, 1 s x 3
  'strip-alert',           // the official strip's copy of the same lamp blink
  'cockpit-running-cursor', // CKP-STRIP-10 running-row cursor
  'cockpit-state-pulse',   // two finite lamp-dot pulses on a state change (no idle loop)
