@@ -1242,7 +1242,18 @@ struct DockHelpInteraction: Equatable {
     private func rebuild() {
         guard !retired, !retiring, application != nil else { return }
         rebuildPending = true
-        guard !rendering, !edge.isBackgroundPressed, !edge.isPublishingRelease else { return }
+        guard !rendering, !edge.isPublishingRelease else { return }
+        if edge.isBackgroundPressed {
+            // G3-113: a content replacement (the engine clears the admitted content, then reinstalls it) can land
+            // while the widget is held. The clear has already retired the rings, so waiting for the drop left the
+            // carried widget without them until the release. Repaint the held widget in place, as the carry's own
+            // preparation pass does; placement, menus and the card wait for the full pass after the drop (still pending).
+            guard let display = appearanceDisplay else { return }
+            rendering = true
+            defer { rendering = false; rebuildPending = true; bindInteractionInput(); interactionController?.refresh() }
+            rebuildPass(inputGeneration, carriedTo: display)
+            return
+        }
         rendering = true
         defer { rendering = false; bindInteractionInput(); interactionController?.refresh() }
         while rebuildPending, !retired {
@@ -1529,8 +1540,13 @@ struct DockHelpInteraction: Equatable {
         callback(observation.placement, observation.recovering)
     }
     private func bindBackgroundMovement(_ value: DockEdgePresentation) {
-        dockView.backgroundDragDelegate = nil
-        alternateViews.forEach { $0.backgroundDragDelegate = nil }
+        // A held carry keeps its handler on every view: a carry onto another edge swaps that edge's view in, but the
+        // pointer's drag and release still arrive at the view that took the press. Clearing it there stranded the
+        // held drag (no release, no later carry). The binding is exact again at the first present after the drop.
+        if !edge.isBackgroundPressed {
+            dockView.backgroundDragDelegate = nil
+            alternateViews.forEach { $0.backgroundDragDelegate = nil }
+        }
         edge.dragRegions = nil
         guard permitted, !retired, value.state == .expanded else { return }
         let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
@@ -1615,6 +1631,7 @@ struct DockHelpInteraction: Equatable {
             collapseGhost.play(snapshotOf: container, frame: panel.frame, level: panel.level, edge: motionEdge, reduceMotion: reduceMotion)
         } else if value.state == .expanded { collapseGhost.stop() }
         panel.level = value.moving ? .statusBar : .floating
+        let previousFrame = panel.frame
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = panelCollectionBehavior
         let content: NSView
@@ -1636,6 +1653,14 @@ struct DockHelpInteraction: Equatable {
         case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
+        // G3-114: an open card follows its ring when the widget moves (D244: a ring press-drag carries the whole
+        // widget), as prototype card.js re-places it from the ring as painted. Only now is the presented edge's view
+        // in the panel (macrevc-960-1: a carry onto another edge swaps it in above). While carrying, the edge's own
+        // refresh is idle, so re-place now; after a drop, re-place once the release's refresh has finished.
+        if value.state == .expanded, previousFrame != panel.frame {
+            if value.moving { refreshCardPlacement() }
+            else { Task { @MainActor [weak self] in self?.refreshCardPlacement() } }
+        }
         bindPointerInput(value, content: content)
         // Keep the AppKit tracking instance attached while the surface redraws.
         let contextualMenu = trackedDockMenu ?? menu()
@@ -2320,6 +2345,9 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
         edge.endBackgroundMove(global: globalPoint)
     }
     public var hasPanelControlCapture: Bool { interactionController?.hasCapture == true }
+    /// A carry is held (a body press, or a ring press past the click threshold, D244): the panel routes the rest of
+    /// the drag and its release here, whichever view took the press.
+    public var hasPanelCarry: Bool { permitted && !retired && edge.isBackgroundPressed }
 
     public func cancelPanelMove() {
         if hasPanelControlCapture { interactionController?.cancelNozzle() }

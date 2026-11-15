@@ -19,7 +19,7 @@ public enum ReaderKeyProvider: String, CaseIterable, Sendable {
     public var help: SettingsText {
         switch self {
         case .zai: return .init("Stored on this Mac and sent only to api.z.ai / open.bigmodel.cn to read plan usage",
-                                "保存在本机，只发送到 api.z.ai / open.bigmodel.cn 用于读取套餐用量")
+                                "保存在本机，只发送到智谱的官方站点用于读取套餐用量")
         case .opencodego: return .init("Stored on this Mac and sent only to opencode.ai to read plan usage",
                                        "保存在本机，只发送到 opencode.ai 用于读取套餐用量")
         }
@@ -29,7 +29,7 @@ public enum ReaderKeyProvider: String, CaseIterable, Sendable {
 public enum ReaderKeyRegion: String, CaseIterable, Sendable {
     case global, china
     public var title: SettingsText {
-        self == .global ? .init("Global (z.ai)", "国际站（z.ai）") : .init("China (bigmodel.cn)", "国内站（bigmodel.cn）")
+        self == .global ? .init("Global (z.ai)", "国际站") : .init("China (bigmodel.cn)", "国内站")
     }
 }
 

@@ -321,7 +321,12 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		key := os.Getenv(x.KeyEnv)
 		readerCtx := productionReaderContext(ctx, p, x.Provider)
-		if mk, ok := loadManualKey(p.Cache, x.Provider); ok {
+		mk, hasManual, manualErr := loadManualKeyChecked(p.Cache, x.Provider)
+		if manualErr != nil {
+			// The saved key file is unsafe or unreadable: fail this provider closed. Neither the saved key
+			// nor a detected key is sent anywhere, so a different account's usage cannot be shown.
+			e = codexbarEntry{Status: "error", ErrorCode: "file_unreadable", ObservedAt: now.UTC()}
+		} else if hasManual {
 			// D90, owner decision 2026-11-14: a key the user entered wins over any detected key and is
 			// the only one used; it goes only to the compiled official host of its region.
 			e, key = fetchManualKey(ctx, nativeClient, x.Provider, mk, now), mk.Key
@@ -435,6 +440,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 	// Apply local state after native accounts, including early-return paths.
 	// Both Read and the production ReadPermitted flow pass through this hook.
 	defer applyClaudeSessions(r, p, now)
+	defer applyZCodeNoProviderFile(r, p)
 	ss, err := Selections(p)
 	if err != nil {
 		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: errorCode(err), ErrorCode: errorCode(err)})
@@ -678,4 +684,24 @@ func claudeBackoffIsLocal(cache string) bool {
 
 func credentialStageFailure(e readerEntry) bool {
 	return e.CredentialReadState != "" || e.ErrorCode == "file_missing"
+}
+
+// applyZCodeNoProviderFile reports ZCode's unreadable layout as a fixed reason, never a
+// pending first reading, unless another ZCode/GLM source already reported (G3-21).
+func applyZCodeNoProviderFile(r *Report, p Paths) {
+	if !p.ZCodeNoProviderFile {
+		return
+	}
+	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
+	for i, s := range r.Sources {
+		if s.Source == "native:zai" {
+			// A bare legacy GLM allow reports its absent environment key; ZCode's missing
+			// provider file is the actual cause (post-merge #711 (2)). Any other status stands.
+			if s.Status == "missing" {
+				r.Sources[i] = cause
+			}
+			return
+		}
+	}
+	r.Sources = append(r.Sources, cause)
 }

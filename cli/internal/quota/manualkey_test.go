@@ -515,3 +515,22 @@ func TestRelayBaseURLKeyIsNeverSent(t *testing.T) {
 		t.Fatalf("a relay key was sent: %v", got)
 	}
 }
+
+// macrev2-795-11 / glm-795-6: an unsafe saved-key file fails the provider closed; a detected key is not used.
+func TestUnsafeSavedKeyFileFailsRefreshClosedWithoutAnyRequest(t *testing.T) {
+	isolateHome(t)
+	ks := &keyServer{body: zaiOKBody}
+	useClient(t, ks.serve(t), "api.z.ai", "open.bigmodel.cn")
+	p := nativePaths(t)
+	t.Setenv("Z_AI_API_KEY", fakeOtherKey)
+	if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(p.Cache, manualKeyFileName), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refreshWith(t, p, "zai")
+	if a := ks.seen(); len(a) != 0 {
+		t.Fatalf("an unsafe saved-key file must send no request with either key: %v", a)
+	}
+}

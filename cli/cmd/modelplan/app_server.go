@@ -16,6 +16,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -77,7 +78,13 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	}
 	broker := &appserver.CredentialBroker{PathsFor: rawPaths, Offline: options.Offline, ReadOnly: options.ReadOnly}
 	paths := broker.Paths
+	var importer *appserver.ImportController
 	shared, err := appserver.NewSharedBackend(appserver.SharedConfig{
+		Granted: func() {
+			if importer != nil {
+				importer.StartOwedAfter(owedGrantDelay, speed.ImportDefaultDays)
+			}
+		},
 		Activity: appActivity(st.Dir),
 		Reported: func(report quota.Report, now time.Time) {
 			if !options.ReadOnly {
@@ -103,12 +110,14 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	for method, h := range appserver.ReaderKeyHandlers(appserver.ReaderKeyConfig{Dir: st.Dir, ReadOnly: options.ReadOnly, Offline: options.Offline}) {
 		handlers[method] = h
 	}
-	var importer *appserver.ImportController
 	if !options.ReadOnly {
 		importer = appserver.NewImportController(importEngine{st: st})
 		for method, h := range appserver.HistoryImportHandlers(importer) {
 			handlers[method] = h
 		}
+		// G3-112: an import still owed (failed, interrupted, withdrawn, or cleared and granted
+		// again) is retried at start and after each committed grant. A fresh profile owes nothing.
+		importer.StartOwedAfter(owedLaunchDelay, speed.ImportDefaultDays)
 	}
 	closeBackend := func() {}
 	var scheduler *appserver.RefreshScheduler

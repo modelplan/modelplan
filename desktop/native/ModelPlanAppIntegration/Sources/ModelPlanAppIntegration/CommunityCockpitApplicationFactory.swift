@@ -77,6 +77,7 @@ import ModelPlanDock
                 coordinator.currentDate = deadlineNow // CKP-ENTRY-04: the scope's day is the app clock's day.
                 coordinator.scopeMemory = FileCockpitScopeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-scope.json"))
                 coordinator.cautionMemory = FileCockpitCautionMemory(url: settingsStore.directory.appendingPathComponent("cockpit-cautions.json"))
+                coordinator.pinMemory = FileCockpitPinMemory(url: settingsStore.directory.appendingPathComponent("cockpit-pins.json"))
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
@@ -220,14 +221,14 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         case .system:theme=NSApplication.shared.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
         }
         appearance = .init(theme:CockpitDayPolicy.resolve(theme),locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
-            redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,showUsedPercent:snapshot.preferences.percentageMode == .used,
+            redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,showUsedPercent:snapshot.preferences.percentageMode == .used,showAllModels:snapshot.preferences.showAllModels,
             size:CockpitSize(snapshot.preferences.cockpitSize),memberOrder:snapshot.preferences.subscriptions.order)
         if let applied { appearance=cockpitAppearance(applied) }
     }
     func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
         let e=value.effective
         return .init(theme:appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
-            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames,showUsedPercent:e.showUsedPercent,
+            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames,showUsedPercent:e.showUsedPercent,showAllModels:e.showAllModels,
             size:CockpitSize(e.cockpitSize),memberOrder:value.snapshot.preferences.subscriptions.order)
     }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
@@ -285,6 +286,25 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     func save(_ ids: [String]) {
         guard !ids.isEmpty else { try? FileManager.default.removeItem(at: url); return }
         guard let data = try? JSONSerialization.data(withJSONObject: ["acked": ids], options: [.sortedKeys]) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+/// D136: the favourite (long-press pinned) model ids in one small file beside the settings. Public model ids only.
+@MainActor final class FileCockpitPinMemory: CockpitPinMemory {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func load() -> [String] {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              ((attributes[.size] as? NSNumber)?.intValue ?? Int.max) <= 16 * 1024,
+              let data = try? Data(contentsOf: url),
+              let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let ids = value["pinned"] as? [String], CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { return [] }
+        return ids
+    }
+    func save(_ ids: [String]) {
+        guard !ids.isEmpty else { try? FileManager.default.removeItem(at: url); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["pinned": ids], options: [.sortedKeys]) else { return }
         try? data.write(to: url, options: .atomic)
     }
 }
@@ -432,7 +452,7 @@ struct CockpitUnavailableNotice {
         case .openFieldAt(let name):openField(focusName:name)
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.cautionAck,.pinnedModels:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()

@@ -43,7 +43,7 @@ import ModelPlanWire
     public var readerKeys: ReaderKeyBackend? {
         didSet { if keySection != nil { keySection?.dismiss(); keySection = nil }; render() }
     }
-    public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
+    public init(controller: ScopeConsentController, language: SettingsLanguage = .fallback,
                 buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false,
                 markImage: (@MainActor (String) -> NSImage?)? = nil, compactTools: Bool = false) {
         self.controller = controller; self.language = language;self.buildSigning=buildSigning; self.firstRun = firstRun
@@ -455,14 +455,14 @@ import ModelPlanWire
         if keyEntry {
             if hasOpenCodeGoSubscription(tool) {
                 return .init("An OpenCode Go sign-in was found, but ModelPlan does not read it, so no OpenCode Go quota is shown. Set the key in OPENCODE_API_KEY, or add it below, to show it. OpenCode's local history is still read.",
-                             "找到了 OpenCode Go 登录，但 ModelPlan 不读取它，因此不显示 OpenCode Go 额度；把密钥设置到 OPENCODE_API_KEY 环境变量或在下面添加后才会显示。仍会读取 OpenCode 的本机历史记录。")
+                             "找到了 OpenCode Go 登录，但 ModelPlan 不读取它，因此不显示 OpenCode Go 额度；把密钥设置到环境变量或在下面添加后才会显示。仍会读取 OpenCode 的本机历史记录。")
             }
             return .init("No OpenCode Go subscription key was found, so no OpenCode Go quota is shown. Add a key below to show it. OpenCode's local history is still read.",
                          "没有找到 OpenCode Go 订阅密钥，因此不显示 OpenCode Go 额度；在下面添加密钥后才会显示。仍会读取 OpenCode 的本机历史记录。")
         }
         if hasOpenCodeGoSubscription(tool) {
             return .init("An OpenCode Go sign-in was found, but ModelPlan does not read it yet, so no OpenCode Go quota is shown. Set the key in OPENCODE_API_KEY to show it. OpenCode's local history is still read.",
-                         "找到了 OpenCode Go 登录，但 ModelPlan 暂不读取它，因此不显示 OpenCode Go 额度；把密钥设置到 OPENCODE_API_KEY 环境变量后才会显示。仍会读取 OpenCode 的本机历史记录。")
+                         "找到了 OpenCode Go 登录，但 ModelPlan 暂不读取它，因此不显示 OpenCode Go 额度；把密钥设置到环境变量后才会显示。仍会读取 OpenCode 的本机历史记录。")
         }
         return .init("No OpenCode Go subscription key was found, so no OpenCode Go quota is shown. OpenCode's local history is still read.",
                      "没有找到 OpenCode Go 订阅密钥，因此不显示 OpenCode Go 额度；仍会读取 OpenCode 的本机历史记录。")
@@ -516,7 +516,7 @@ import ModelPlanWire
         case .zai: return .init("No GLM key found, so it is not read yet. Sign in to ZCode, or add a key below.",
                                 "没有找到 GLM 密钥，所以暂未读取。请在 ZCode 里登录，或在下面添加密钥。")
         case .opencodego: return .init("No OpenCode Go key found, so it is not read yet. Set OPENCODE_API_KEY, or add a key below.",
-                                       "没有找到 OpenCode Go 密钥，所以暂未读取。请设置 OPENCODE_API_KEY 环境变量，或在下面添加密钥。")
+                                       "没有找到 OpenCode Go 密钥，所以暂未读取。请在环境变量中设置密钥，或在下面添加密钥。")
         }
     }
     /// A key is saved but the tool's reading is off (switched off, or the grant after Save failed).

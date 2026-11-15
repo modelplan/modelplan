@@ -138,7 +138,7 @@ private let fakeKey = "fake-test-key-0001"
     func testHelpLineAndBothLanguages() {
         let zh = made(.zai, FakeKeyBackend(), language: .chinese)
         let help = descendants(zh).compactMap { ($0 as? NSTextField)?.stringValue }
-        XCTAssertTrue(help.contains("保存在本机，只发送到 api.z.ai / open.bigmodel.cn 用于读取套餐用量"))
+        XCTAssertTrue(help.contains("保存在本机，只发送到智谱的官方站点用于读取套餐用量"))
         XCTAssertEqual(button(zh, "save").title, "保存")
         let go = made(.opencodego, FakeKeyBackend(), language: .english)
         XCTAssertTrue(descendants(go).compactMap { ($0 as? NSTextField)?.stringValue }.contains("Stored on this Mac and sent only to opencode.ai to read plan usage"))
