@@ -8,6 +8,25 @@ export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && i
 // selectors fail; escaped YAML spellings are checked too.
 export const ALLOWED_ROUTES = new Set();
 
+// The workflow reviewer (owner 2026-11-15 pilot). Only pr-review.yml may name the review runner, with exactly
+// this line, and it may start only from workflow_run or workflow_dispatch: both run main's definition, so a PR
+// cannot change what runs next to the owner's Codex login. The enforced boundary is the runner group, which admits
+// only modelplan/modelplan/.github/workflows/pr-review.yml@refs/heads/main, and the runner's job-started hook.
+export const PR_REVIEW_PATH = ".github/workflows/pr-review.yml";
+export const PR_REVIEW_ROUTE = "runs-on: [self-hosted, Linux, ARM64, modelplan-review]";
+export const PR_REVIEW_TRIGGERS = Object.freeze(["workflow_run", "workflow_dispatch"]);
+
+export function prReviewProblems(text) {
+  const problems = [];
+  const on = topLevelBlock(text, "on");
+  const keys = on ? [...on.matchAll(/^ {2}([A-Za-z_]+):/gm)].map((m) => m[1]) : [];
+  if (!keys.length || keys.some((k) => !PR_REVIEW_TRIGGERS.includes(k))) problems.push("pr-review.yml may start only from workflow_run or workflow_dispatch");
+  if (!/^permissions: \{\}$/m.test(text)) problems.push("pr-review.yml needs top-level permissions: {}");
+  if (!/^\s+persist-credentials: false$/m.test(text)) problems.push("pr-review.yml checkout must not persist credentials");
+  if (text.split("\n").filter((l) => l.trim() === PR_REVIEW_ROUTE).length !== 1) problems.push("pr-review.yml has exactly one review-runner job");
+  return problems;
+}
+
 // The Mac compile check (owner 2026-11-15). Only mac-compile.yml may name the compile runners, with exactly this line,
 // in one job whose condition is exactly MAC_COMPILE_IF. It may start only from workflow_run (after the trigger
 // workflow) or workflow_dispatch, which both run main's definition: a pull_request run would execute the PR's own
@@ -75,6 +94,7 @@ function decodedVariant(text) {
 function lineProblems(raw, problems, path = "") {
   const line = raw.trim();
   if (/modelplans-(publish|ci)/.test(line)) problems.add("private runner label");
+  if (path !== PR_REVIEW_PATH && /modelplan-review/.test(line)) problems.add("review runner label outside pr-review.yml");
   if (path !== MAC_COMPILE_PATH && /modelplan-compile\b/.test(line)) problems.add("compile runner label outside mac-compile.yml");
   if (/^runs-on:.*\b(format|join)\(/.test(line)) problems.add("dynamically constructed runner label");
   if ((line.includes("self-hosted") || line.includes("pull_request_target")) && !ALLOWED_ROUTES.has(line))
@@ -85,9 +105,11 @@ export function workflowProblems(text, path = "") {
   const problems = new Set();
   const check = (raw) => {
     if (path === ".github/workflows/trusted-mac.yml" && raw.trim() === TRUSTED_MAC_ROUTE) return;
+    if (path === PR_REVIEW_PATH && raw.trim() === PR_REVIEW_ROUTE) return;
     if (path === MAC_COMPILE_PATH && raw.trim() === MAC_COMPILE_ROUTE) return;
     lineProblems(raw, problems, path);
   };
+  if (path === PR_REVIEW_PATH) for (const p of prReviewProblems(text)) problems.add(p);
   if (path === MAC_COMPILE_PATH) for (const p of macCompileProblems(text)) problems.add(p);
   if (path === MAC_COMPILE_TRIGGER_PATH) for (const p of macCompileTriggerProblems(text)) problems.add(p);
   if (path !== ".github/workflows/trusted-mac.yml" && text.includes("MAC_GUI_LEND")) problems.add("GUI lending switch outside trusted-mac.yml");

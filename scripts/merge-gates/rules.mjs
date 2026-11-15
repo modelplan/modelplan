@@ -61,7 +61,9 @@ const TIER2_RE = /^schema\/app-cli\/|^cli\/internal\/appserver\/wire\/|^cli\/int
 const TIER0_RE = /^docs\/|\.md$|^NOTICE|^LICEN|\.(png|jpe?g|svg|webp|woff2?|ttf|otf)$|^desktop\/official-visuals\/|^desktop\/third-party\/|^scripts\/check-[a-z-]+\.mjs$|^scripts\/tests\/(check-|[a-z-]+-pack\.test\.mjs$)|^\.github\/|^source-policy\.json$/;
 // Stricter: the gate's own rules and workflows are tier 2, so a PR cannot loosen the gate that judges it
 // with less review than a seam change gets. The tier table counts too: it decides which scenarios need evidence.
-const GATE_SELF_RE = /^scripts\/merge-gates\/|^\.github\/workflows\/merge-gates[^/]*$|^desktop\/native\/verification\/scenario-tiers\.tsv$/;
+// So does the workflow reviewer (pr-review.yml and scripts/pr-review/): it writes verdicts and runs next to the
+// owner's Codex login.
+const GATE_SELF_RE = /^scripts\/merge-gates\/|^\.github\/workflows\/merge-gates[^/]*$|^desktop\/native\/verification\/scenario-tiers\.tsv$|^\.github\/workflows\/pr-review\.yml$|^scripts\/pr-review\//;
 
 export function tierOverride(items) {
   let t = null;
@@ -168,15 +170,19 @@ export function carryChain(edges, head, verified = () => false) {
 // GPT reviewer lanes (owner D149): Sol = tier 2 (and tier 1), Terra = tier 1 only. macrevd is the third Sol lane
 // (owner 2026-11-12, until the v1 candidate).
 export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)", "(macrevd)"]);
-export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)"]);
+// (gh-terra) is the GitHub workflow reviewer (pr-review.yml, owner 2026-11-15 pilot): the same Terra model run by a
+// workflow on the owner's review runner instead of an interactive pane. Its shadow name (gh-terra-shadow) counts
+// for nothing, like any other named lane. A Sol workflow lane, (gh-sol), joins SOL_LANES only after the pilot.
+export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)", "(gh-terra)"]);
 // "VERDICT: merge|block @ <40 hex> (<lane>)" on its own line, case-insensitive, in trusted comments and
-// reviews. Counts for the head or a carried head; per lane the latest wins.
+// reviews. Counts for the head or a carried head; per lane the latest wins. A lane name is lower-case letters,
+// digits and inner hyphens; any other parenthesised suffix leaves the verdict unnamed.
 export function verdicts(items, head, carried) {
   const at = new Set([head, ...carried]);
   const lanes = new Map();
   for (const x of items)
     for (const l of lines(x.body)) {
-      const m = /^VERDICT: (merge|block) @ ([0-9a-f]{40})\b(?: \(([a-z0-9]+)\))?/i.exec(l);
+      const m = /^VERDICT: (merge|block) @ ([0-9a-f]{40})\b(?: \(([a-z0-9]+(?:-[a-z0-9]+)*)\))?/i.exec(l);
       if (!m) continue;
       const sha = m[2].toLowerCase();
       if (at.has(sha)) lanes.set(m[3] ? `(${m[3].toLowerCase()})` : "(unnamed)", m[1].toLowerCase());

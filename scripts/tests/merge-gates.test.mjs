@@ -114,6 +114,29 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs a Sol lane, macrev is a
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
 });
 
+test("workflow reviewer (gh-terra pilot): a Terra lane; its shadow name and other hyphenated names count for nothing", () => {
+  assert.ok(R.TERRA_LANES.includes("(gh-terra)"));
+  assert.ok(!R.SOL_LANES.includes("(gh-terra)"));
+  assert.deepEqual([...R.verdicts(R.feed([comment(v("merge", H, "gh-terra"))]), H, [])], [["(gh-terra)", "merge"]]);
+  assert.deepEqual([...R.verdicts(R.feed([comment(v("block", H, "GH-Terra-Shadow"))]), H, [])], [["(gh-terra-shadow)", "block"]]);
+  for (const odd of ["gh-", "-gh", "gh--terra", "gh_terra", "gh terra"])
+    assert.deepEqual([...R.verdicts(R.feed([comment(v("merge", H, odd))]), H, [])], [["(unnamed)", "merge"]], odd);
+  const t2 = [file("clients/swift/Wire.swift")];
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra"))] }).state, R.SUCCESS, "tier 1 gh-terra");
+  assert.equal(evalPr({ comments: [comment(v("block", H, "gh-terra")), comment(v("merge", H, "macrevc"))] }).state, R.FAILURE, "a gh-terra block stops tier 1");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "gh-terra"))] }).state, R.PENDING, "tier 2 needs Sol");
+  const t2Block = evalPr({ files: t2, comments: [comment(v("block", H, "gh-terra")), comment(v("merge", H, "macrev2"))] });
+  assert.equal(t2Block.state, R.SUCCESS, "on tier 2 a Terra block is advice");
+  assert.match(t2Block.why, /info: .*\(gh-terra\) block/);
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra-shadow"))] }).state, R.PENDING, "shadow never counts");
+  const shadow = evalPr({ comments: [comment(v("block", H, "gh-terra-shadow")), comment(v("merge", H, "macrevc"))] });
+  assert.equal(shadow.state, R.SUCCESS, "a shadow block is input");
+  assert.match(shadow.why, /info: .*\(gh-terra-shadow\) block/);
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra"), { login: "github-actions[bot]", id: 41898282 })] }).state, R.PENDING, "only the trusted account posts verdicts");
+  assert.equal(R.pathTier([".github/workflows/pr-review.yml"]), 2, "the reviewer workflow is gate-self");
+  assert.equal(R.pathTier(["scripts/pr-review/brief.mjs"]), 2);
+});
+
 test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothing looser does", () => {
   const ledger = pr({ title: "G3-20 fix", body: "Scenarios: D-01" });
   const later = `EVIDENCE-DEFERRED: D-01 @ ${H} issue=470`;
