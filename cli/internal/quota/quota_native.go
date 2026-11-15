@@ -675,10 +675,16 @@ func applyZCodeNoProviderFile(r *Report, p Paths) {
 	if !p.ZCodeNoProviderFile {
 		return
 	}
-	for _, s := range r.Sources {
+	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
+	for i, s := range r.Sources {
 		if s.Source == "native:zai" {
+			// A bare legacy GLM allow reports its absent environment key; ZCode's missing
+			// provider file is the actual cause (post-merge #711 (2)). Any other status stands.
+			if s.Status == "missing" {
+				r.Sources[i] = cause
+			}
 			return
 		}
 	}
-	r.Sources = append(r.Sources, SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"})
+	r.Sources = append(r.Sources, cause)
 }
