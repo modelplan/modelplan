@@ -124,13 +124,24 @@ extension ProcessEngineClient {
             bootstrap()
         }
         delivering = nil
+        if stallRecoveryPending { resumeAfterStall() }
         pumpDelivery()
+    }
+    /// Recovery contract (step 5): the stalled consume has returned, so no second callback can overlap it. Start a
+    /// fresh session through the supervisor's budget (a consumer that keeps stalling ends in its cooldown).
+    func resumeAfterStall() {
+        stallRecoveryPending = false
+        guard !stopping, child == nil, restartTask == nil else { return }
+        consumerBlocked = false; stopped = false; requiresRetry = false
+        if unreapedProcess != nil { requiresRetry = true; return } // the re-reap loop relaunches once it is gone
+        let previous = stalledProcess; stalledProcess = nil
+        superviseCrash(reaping: previous, planned: false) // the stalled session's child is reaped before another spawns
     }
     func consumerStalled(id: UUID? = nil) {
         if let id, delivering?.id != id { return }
         guard !consumerBlocked else { return }
         deliveryAuthority.replace(with: nil)
-        consumerBlocked = true; stopped = true; requiresRetry = true
+        consumerBlocked = true; stopped = true; requiresRetry = true; stallRecoveryPending = true; stalledProcess = child
         deliveryTask?.cancel(); deliveryTimer?.cancel()
         // The outstanding consume may be non-cooperative. Do not create another
         // concurrent callback. A sticky clear follows it when it eventually returns.
@@ -203,7 +214,24 @@ extension ProcessEngineClient {
             return
         }
         do { epochProbe = try enqueue("consent/get", params: .object([:]), purpose: .epochProbe, timeout: runtime.requestTimeout) }
-        catch { emit(.featureFailure(.consent, .staleValue)) }
+        catch { emit(.featureFailure(.consent, .staleValue)); scheduleEpochProbeRetry() }
+    }
+    /// Recovery contract (step 5): a failed or timed-out epoch probe is asked again after 1, 2, 4 ... at most 30 s, while
+    /// the epoch stays uncertain on the same child. The delivery gate stays closed until it is confirmed.
+    func scheduleEpochProbeRetry() {
+        guard epochProbeRetry == nil, let id = child?.id, epochUncertain, !stopped, !stopping else { return }
+        epochProbeAttempts += 1
+        let delay = min(30, pow(2, Double(min(epochProbeAttempts - 1, 5)))), sleep = runtime.sleep
+        epochProbeRetry = Task { [weak self] in
+            do { try await sleep(.seconds(delay)); try Task.checkCancellation() } catch { return }
+            await self?.retryEpochProbe(id)
+        }
+    }
+    func retryEpochProbe(_ id: UUID) {
+        epochProbeRetry = nil
+        guard child?.id == id, handshaken, epochUncertain, epochProbe == nil, !stopped, !stopping else { return }
+        do { epochProbe = try enqueue("consent/get", params: .object([:]), purpose: .epochProbe, timeout: runtime.requestTimeout) }
+        catch { scheduleEpochProbeRetry() }
     }
     func bootstrap() {
         guard handshaken, !gateClosed, child != nil else { return }
@@ -218,13 +246,21 @@ extension ProcessEngineClient {
 
     // Only retry the internal, read-only bootstrap subscription. Public request
     // callers receive the typed busy error and decide their own retry policy.
+    /// The wait before busy retry `attempt` (1-based) of the initial rows subscription: four quick ones, then 1, 2, 4 ...
+    /// at most 30 s, for as long as the server stays busy.
+    static func rowsBootstrapRetryDelay(attempt: Int) -> Duration {
+        attempt <= 4 ? .milliseconds(250) : .seconds(min(30, pow(2, Double(min(attempt - 5, 5)))))
+    }
     func retryBusyRowsBootstrap(_ id: UUID, error: EngineClientError) {
         guard child?.id == id, sequence == nil, rowsBootstrapRetry == nil else { return }
-        guard rowsBootstrapBusyCount < 4 else { emit(.featureFailure(.rows, error)); return }
+        // Recovery contract (step 5): after four quick retries the rows are reported unavailable once, and the subscription
+        // keeps being asked for with a capped backoff (1, 2, 4 ... at most 30 s) instead of giving up.
+        if rowsBootstrapBusyCount == 4 { emit(.featureFailure(.rows, error)) }
         rowsBootstrapBusyCount += 1
         let sleep = runtime.sleep
+        let delay = Self.rowsBootstrapRetryDelay(attempt: rowsBootstrapBusyCount)
         rowsBootstrapRetry = Task { [weak self] in
-            do { try await sleep(.milliseconds(250)); try Task.checkCancellation() }
+            do { try await sleep(delay); try Task.checkCancellation() }
             catch { return }
             await self?.resumeRowsBootstrap(id)
         }
@@ -265,7 +301,7 @@ extension ProcessEngineClient {
                 }
                 if let entry = pending[key], entry.purpose == .epochProbe, epochProbe == key {
                     let result = try decodeEnvelope(envelope, as: WireConsentFacts.self).value
-                    epochProbe = nil; finishRequest(key)
+                    epochProbe = nil; epochProbeAttempts = 0; finishRequest(key)
                     if adopt(EngineConsentFloor(storeEpoch: result.storeEpoch, generation: result.consentGeneration)) {
                         facts = result
                     } else { emit(.featureFailure(.consent, .staleValue)) }
@@ -311,7 +347,7 @@ extension ProcessEngineClient {
                         return
                     }
                     if entry.purpose == .initialize { initializationFailed(id, error: error); return }
-                    if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, error)) }
+                    if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, error)); scheduleEpochProbeRetry() }
                     if entry.purpose == .request, gateClosed {
                         emit(.featureFailure(entry.method == "history/query" ? .history : .consent, error), revision: revision, request: key, error: error)
                     } else { finishRequest(key, error: error) }

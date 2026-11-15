@@ -90,6 +90,12 @@ public actor ProcessEngineClient: EngineClient {
     var restartTask: Task<Void, Never>?
     var rowsBootstrapRetry: Task<Void, Never>?
     var rowsBootstrapBusyCount = 0
+    /// Recovery contract: a failed or timed-out epoch probe is retried with a capped backoff, never left closed.
+    var epochProbeRetry: Task<Void, Never>?
+    var epochProbeAttempts = 0
+    /// Recovery contract: a stalled consumer stops the child; once its outstanding consume returns, a fresh session starts.
+    var stallRecoveryPending = false
+    var stalledProcess: EngineProcess?
     var budget = RestartBudget()
     var facts: WireEnvelope<WireConsentFacts>?
     var intents: [String: CredentialIntent] = [:]
@@ -113,7 +119,7 @@ public actor ProcessEngineClient: EngineClient {
         self.credentialAgent = credentialAgent; self.consumer = consumer; self.runtime = runtime
     }
     deinit {
-        restartTask?.cancel(); rowsBootstrapRetry?.cancel(); deliveryTask?.cancel(); deliveryTimer?.cancel()
+        restartTask?.cancel(); rowsBootstrapRetry?.cancel(); epochProbeRetry?.cancel(); deliveryTask?.cancel(); deliveryTimer?.cancel()
         let current = child
         let abandoned = unreapedProcess
         if let current { Task { _ = await current.finish() } }
@@ -166,8 +172,9 @@ public actor ProcessEngineClient: EngineClient {
     public func stop() async {
         deliveryAuthority.replace(with: nil)
         if let stoppingTask { await stoppingTask.value; return }
-        stopped = true; stopping = true
+        stopped = true; stopping = true; stallRecoveryPending = false; stalledProcess = nil
         rowsBootstrapRetry?.cancel(); rowsBootstrapRetry = nil; rowsBootstrapBusyCount = 0
+        epochProbeRetry?.cancel(); epochProbeRetry = nil; epochProbeAttempts = 0
         let retiring = restartTask
         retiring?.cancel(); restartTask = nil
         let process = child ?? unreapedProcess
@@ -229,7 +236,9 @@ public actor ProcessEngineClient: EngineClient {
         } catch {
             failStarts(error as? EngineClientError ?? .invalidConfiguration)
             if let process = child { ended(process.id, protocolFault: false) }
-            else { stopped = true; emit(.connection(.stopped(.requested))) }
+            else if case EngineClientError.invalidConfiguration = error { stopped = true; emit(.connection(.stopped(.requested))) }
+            // Recovery contract: a child that could not be spawned is a crash for the budget, not a stop.
+            else { superviseCrash(reaping: nil, planned: false) }
         }
     }
     func validateConfiguration() throws {
@@ -247,6 +256,7 @@ public actor ProcessEngineClient: EngineClient {
         deliveryAuthority.replace(with: nil)
         child = nil; handshaken = false; writerRunning = false
         rowsBootstrapRetry?.cancel(); rowsBootstrapRetry = nil; rowsBootstrapBusyCount = 0
+        epochProbeRetry?.cancel(); epochProbeRetry = nil; epochProbeAttempts = 0
         writes.removeAll(); controlWrites.removeAll(); epochProbe = nil
         failRequests(.interrupted(.connectionLost)); failStarts(.interrupted(.connectionLost))
         invalidate(protocolFault ? .protocolFault : .connectionLost, next: floor)
@@ -254,26 +264,57 @@ public actor ProcessEngineClient: EngineClient {
             Task { [weak self] in if !(await process.finish()) { await self?.cleanupFailed(process) } }
             return
         }
-        let delay: Double? = planned ? 0 : budget.recordCrash(at: runtime.now())
-        if let delay { emit(.connection(.restarting(attempt: delay == 0 ? 0 : Int(log2(delay)) + 1, delay: .seconds(delay)))) }
-        else { stopped = true; requiresRetry = true; emit(.connection(.stopped(.crashLimit))) }
+        superviseCrash(reaping: process, planned: planned)
+    }
+    /// The engine supervisor (recovery contract, step 5): reap the old child first, then restart after the budget's
+    /// backoff; past the crash limit, a cooldown and then one automatic half-open attempt. `.stopped(.crashLimit)` still
+    /// tells the app the engine is cooling down; start() refuses until the half-open attempt (retry() skips the wait).
+    func superviseCrash(reaping process: EngineProcess?, planned: Bool) {
+        let decision: RestartBudget.Decision = planned ? .restart(after: 0) : budget.recordCrash(at: runtime.now())
+        let delay: Double, halfOpen: Bool
+        switch decision {
+        case .restart(let after):
+            delay = after; halfOpen = false
+            emit(.connection(.restarting(attempt: after == 0 ? 0 : Int(log2(after)) + 1, delay: .seconds(after))))
+        case .cooldown(let after):
+            delay = after; halfOpen = true; requiresRetry = true
+            emit(.connection(.stopped(.crashLimit)))
+        }
         let sleep = runtime.sleep
         restartTask = Task { [weak self] in
-            let reaped = await process.finish()
+            // Never two children: the old one is reaped before another can be spawned.
+            if let process, !(await process.finish()) { await self?.cleanupFailed(process); return }
             guard let self else { return }
-            if !reaped { await self.cleanupFailed(process); return }
-            guard let delay else { await self.restartFinished(launch: false); return }
-            do { try await sleep(.seconds(delay)); try Task.checkCancellation(); await self.restartFinished(launch: true) }
-            catch { await self.restartFinished(launch: false) }
+            do { try await sleep(.seconds(delay)); try Task.checkCancellation(); await self.restartFinished(launch: true, halfOpen: halfOpen) }
+            catch { await self.restartFinished(launch: false, halfOpen: false) }
         }
     }
+    /// A child that would not exit is re-reaped with a capped backoff; once it is gone a fresh session starts by itself.
     func cleanupFailed(_ process: EngineProcess) {
         deliveryAuthority.replace(with: nil)
-        unreapedProcess = process; stopped = true; requiresRetry = true; restartTask = nil
+        unreapedProcess = process; requiresRetry = true; restartTask = nil
         emit(.connection(.stopped(.processCleanupFailed)))
+        scheduleReap(process, attempt: 0)
     }
-    func restartFinished(launch shouldLaunch: Bool) {
+    func scheduleReap(_ process: EngineProcess, attempt: Int) {
+        guard !stopping else { return }
+        let sleep = runtime.sleep, delay = min(60, 5 * pow(2, Double(min(attempt, 6))))
+        restartTask = Task { [weak self] in
+            do { try await sleep(.seconds(delay)); try Task.checkCancellation() } catch { return }
+            let reaped = await process.finish()
+            await self?.reapFinished(process, reaped: reaped, attempt: attempt)
+        }
+    }
+    func reapFinished(_ process: EngineProcess, reaped: Bool, attempt: Int) {
         restartTask = nil
+        guard unreapedProcess?.id == process.id, !stopping else { return }
+        guard reaped else { scheduleReap(process, attempt: attempt + 1); return }
+        unreapedProcess = nil; requiresRetry = false
+        if !stopped && !consumerBlocked { launch() }
+    }
+    func restartFinished(launch shouldLaunch: Bool, halfOpen: Bool = false) {
+        restartTask = nil
+        if halfOpen { requiresRetry = false }
         if shouldLaunch && !stopped { launch() }
     }
     func initializationFailed(_ id: UUID, error: EngineClientError) {
@@ -383,7 +424,7 @@ public actor ProcessEngineClient: EngineClient {
         let error: EngineClientError = (entry.receiptKnown ? nil : entry.grant).map { .mutationOutcomeUnknown(requestID: $0.requestId, expected: EngineConsentFloor(storeEpoch: $0.expectStoreEpoch, generation: $0.expectGeneration)) } ?? .deadlineExceeded(entry.sent ? (entry.method == "plugin/install" ? .outcomeUnknown : .cancelled) : .notSent)
         finishRequest(key, error: error)
         if entry.purpose == .initialize { initializationFailed(id, error: error) }
-        if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, .staleValue)) }
+        if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, .staleValue)); scheduleEpochProbeRetry() }
     }
     func cancelRequest(_ key: String) {
         guard let entry = pending[key] else { return }

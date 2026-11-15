@@ -28,6 +28,7 @@ type proxy struct {
 	methods       map[string]string
 	session       string
 	triggered     bool
+	probeDropped  bool
 	paused        bool
 	held          map[string]any
 	receipt       map[string]any
@@ -259,7 +260,13 @@ func main() {
 			p.mu.Unlock()
 			continue
 		}
-		if p.plan.Mode == "probe-fails" && method == "diagnostics/get" && !p.triggered {
+		// Recovery step 5: the first epoch probe is lost; the client's retry is answered.
+		if p.plan.Mode == "probe-fails-once" && p.triggered && method == "consent/get" && !p.probeDropped {
+			p.probeDropped = true
+			p.mu.Unlock()
+			continue
+		}
+		if (p.plan.Mode == "probe-fails" || p.plan.Mode == "probe-fails-once") && method == "diagnostics/get" && !p.triggered {
 			p.triggered = true
 			object(m["result"])["storeEpoch"] = "00000000000000000000000000000001"
 			p.mu.Unlock()
