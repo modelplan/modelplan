@@ -80,6 +80,47 @@ import ModelPlanWire
         }
     }
 
+    /// macrev2-804-1 / GLMREV 804 Q1-Q2 / DESIGN SET-9-41: in the production rows layout (the Settings window always
+    /// pushes a rows context) "Add key" opens a real key entry on the tool's own row; a saved key keeps it there.
+    /// The row keeps #954's OpenCode Go line (OPENCODE_API_KEY).
+    func testRowsLayoutAddKeyMountsTheEntryOnTheRow() async throws {
+        for present in [false, true] {
+            let controller = controller()
+            controller.receiveAcceptedFacts(try facts([
+                ("opencodego.local_history", "opencodego", "local_log", "denied", true, true),
+                ("opencodego.account_usage.api_key", "opencodego", "api_key_api", "denied", true, true),
+            ]))
+            controller.receiveAcceptedRows(try keyMissingRows())
+            let view = SettingsScopeConsentView(controller: controller, language: .english, compactTools: true)
+            view.readerKeys = StoredKeyBackend(present: present)
+            view.setSubscriptionRows(SubscriptionRowsContext(subscriptions: [], orderedIDs: [], hiddenIDs: [], canSave: true))
+            // The row asks for the entry once (loading its saved state); a saved key re-renders the row with it.
+            if let entry = views(view).first(where: { $0.accessibilityIdentifier() == "readerkey.opencodego" }) as? ReaderKeyEntryView {
+                await entry.entry.load()
+            } else {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let status = try XCTUnwrap(text(view, "subscriptions.status.opencodego"), "present=\(present)")
+            XCTAssertTrue(status.contains("OPENCODE_API_KEY"), status)
+            let fix = try XCTUnwrap(views(view).first { $0.accessibilityIdentifier() == "subscriptions.fix.opencodego" } as? NSButton)
+            XCTAssertEqual(fix.title, "Add key"); XCTAssertTrue(fix.isEnabled)
+            let row = try XCTUnwrap(views(view).first { $0.accessibilityIdentifier() == "subscriptions.row.opencodego" })
+            func field() -> NSView? { views(row).first { $0.accessibilityIdentifier() == "readerkey.opencodego.field" } }
+            if present {
+                XCTAssertNotNil(field(), "a saved key keeps Test and Remove on the row")
+            } else {
+                XCTAssertNil(field(), "closed until Add key is pressed")
+                // The view is offscreen (no orderFront in these tests), and ConnectionButton.pressed ignores clicks without a
+                // visible window by design; run the button's own action, as the normal-entry tests do.
+                let connection = try XCTUnwrap(fix as? ConnectionButton, "the fix is the production ConnectionButton")
+                try XCTUnwrap(connection.invoke, "the fix has its production action")()
+                let reopened = try XCTUnwrap(views(view).first { $0.accessibilityIdentifier() == "subscriptions.row.opencodego" })
+                XCTAssertNotNil(views(reopened).first { $0.accessibilityIdentifier() == "readerkey.opencodego.field" } as? NSSecureTextField,
+                                "Add key mounts the secure field on the row")
+            }
+        }
+    }
+
     func testOpenCodeGoKeyMissingShowsOneLineThatPointsToTheEntry() async throws {
         let controller = controller()
         controller.receiveAcceptedFacts(try facts([

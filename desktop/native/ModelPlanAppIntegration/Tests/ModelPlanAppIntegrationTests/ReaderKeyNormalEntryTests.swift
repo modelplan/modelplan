@@ -104,7 +104,18 @@ private actor KeyEngine: EngineClient {
         object["scopes"] = [scope]
         let facts = try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: object))
         let rowsData = try Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))
-        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: rowsData)
+        // The engine's own answer for a detected ZCode with no key: a needs-action row with the key_missing cause. The Settings
+        // row offers Add key from that cause (SubscriptionRowModel), so the journey starts from it, as production does.
+        var rowsObject = try XCTUnwrap(JSONSerialization.jsonObject(with: rowsData) as? [String: Any])
+        var projection = try XCTUnwrap(rowsObject["projection"] as? [String: Any])
+        var needsKey = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
+        needsKey["id"] = "zai"; needsKey["vendorKey"] = "zai"; needsKey["name"] = ["en": "ZCode / GLM", "zh": "ZCode / GLM"]
+        needsKey["state"] = "needs_action"; needsKey["consent"] = "implicit"; needsKey["surfaces"] = ["menu", "settings"]
+        needsKey["accounts"] = [[String: Any]]()
+        needsKey["reason"] = ["code": "key_missing", "text": ["en": "engine text", "zh": "engine text"]]
+        needsKey["expiresAt"] = "2099-01-01T00:00:00Z"; needsKey.removeValue(forKey: "stateAfterExpiry"); needsKey.removeValue(forKey: "nextStep")
+        projection["rows"] = [needsKey]; rowsObject["projection"] = projection
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: rowsObject))
         let zaiText = String(decoding: rowsData, as: UTF8.self).replacingOccurrences(of: "\"codex\"", with: "\"zai\"")
         let rowsWithZai = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(zaiText.utf8))
         var engine: KeyEngine?
@@ -115,16 +126,26 @@ private actor KeyEngine: EngineClient {
         await app.prepare(); await app.composition.start()
         let view = app.scopeConsentEntry.view
         view.apply(language: .english) // the oracles below are English; do not depend on the machine's language
-        for _ in 0..<200 { if find(view, "readerkey.zai.field", as: NSSecureTextField.self) != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
-        let field = try XCTUnwrap(find(view, "readerkey.zai.field", as: NSSecureTextField.self), "the key area appears once the engine supports it")
-        let ids = { app.composition.store.snapshot.rows?.projection.rows.map(\.id) ?? [] }
-        XCTAssertFalse(ids().contains("zai"), "no row before a key is saved")
-        // SET-9-41: ZCode is detected but no key is found: its own row says so and carries the one entry.
-        let status = try XCTUnwrap(find(view, "scope.settings.nokey.zai", as: NSTextField.self), "an honest no-key line on the detected row")
-        XCTAssertEqual(status.stringValue, SettingsScopeConsentView.noKeyLine(.zai).english)
-        XCTAssertNotNil(find(view, "scope.settings.row.zai", as: NSStackView.self))
-        XCTAssertNil(find(view, "readerkey.opencodego.field", as: NSSecureTextField.self), "a tool that is not detected gets no key entry")
-        XCTAssertNil(find(view, "readerkey.section", as: NSStackView.self), "one affordance, on the row, not a second generic section")
+        // SET-9-41: open the app's own Settings window (the production rows layout, with the production row actions) and drive
+        // the key entry there, not a standalone consent view.
+        let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+        await app.settingsHost.present(paneID: "subscriptions", origin: .userInitiated)
+        let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible }, "Settings opens")
+        addTeardownBlock { @MainActor in window.close() }
+        let pane = try XCTUnwrap(window.contentView)
+        for _ in 0..<500 { if find(pane, "subscriptions.fix.zai", as: ConnectionButton.self) != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+        // SET-9-41: ZCode is detected but no key is found: its own row says so and offers Add key.
+        let addKey = try XCTUnwrap(find(pane, "subscriptions.fix.zai", as: ConnectionButton.self), "the detected ZCode row offers Add key once the engine supports it")
+        XCTAssertEqual(addKey.title, "Add key")
+        XCTAssertNotNil(find(pane, "subscriptions.row.zai", as: NSView.self))
+        XCTAssertNil(find(pane, "readerkey.opencodego.field", as: NSSecureTextField.self), "a tool that is not detected gets no key entry")
+        XCTAssertNil(find(pane, "readerkey.zai.field", as: NSSecureTextField.self), "closed until Add key is pressed")
+        addKey.performClick(nil)
+        for _ in 0..<200 { if find(pane, "readerkey.zai.field", as: NSSecureTextField.self) != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+        let field = try XCTUnwrap(find(pane, "readerkey.zai.field", as: NSSecureTextField.self), "Add key mounts the secure field on the row")
+        let zaiState = { app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "zai" }.map { String(describing: $0.state) } }
+        let stateBeforeSave = zaiState()
+        XCTAssertNotNil(stateBeforeSave, "the engine's needs-key row is there before a key is saved")
 
         // First run does not dead-end for it: the row stays a normal choice and says where a key can be added later.
         let firstRun = try app.scopeConsentEntry.makeFirstRunView(language: .english)
@@ -138,14 +159,14 @@ private actor KeyEngine: EngineClient {
         field.stringValue = fakeKey
         field.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: field))
         // Test.
-        try XCTUnwrap(find(view, "readerkey.zai.test", as: ConnectionButton.self)).invoke?()
-        let result = { self.find(view, "readerkey.zai.result", as: NSTextField.self)?.stringValue ?? "" }
+        try XCTUnwrap(find(pane, "readerkey.zai.test", as: ConnectionButton.self)).invoke?()
+        let result = { self.find(pane, "readerkey.zai.result", as: NSTextField.self)?.stringValue ?? "" }
         for _ in 0..<300 { if result() == ReaderKeyOutcome.ok.message.english { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(result(), ReaderKeyOutcome.ok.message.english)
         // Save.
-        try XCTUnwrap(find(view, "readerkey.zai.save", as: ConnectionButton.self)).invoke?()
-        for _ in 0..<500 { if ids().contains("zai") { break }; try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertTrue(ids().contains("zai"), "after Test and Save the provider's row appears")
+        try XCTUnwrap(find(pane, "readerkey.zai.save", as: ConnectionButton.self)).invoke?()
+        for _ in 0..<500 { if zaiState() != stateBeforeSave { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotEqual(zaiState(), stateBeforeSave, "after Test and Save the provider's row is read")
 
         let engineValue = try XCTUnwrap(engine)
         let calls = await engineValue.recordedKeyCalls()
@@ -158,21 +179,21 @@ private actor KeyEngine: EngineClient {
         XCTAssertEqual(calls.last { $0.method != "readerkey/status" }, .init(method: "readerkey/set", provider: "zai", region: "global", key: fakeKey))
         let grants = await engineValue.recordedGrants()
         XCTAssertEqual(grants, [[zaiScope]], "saving turns on exactly that provider's reading scope")
-        XCTAssertEqual(find(view, "readerkey.zai.field", as: NSSecureTextField.self)?.stringValue, "", "the key does not stay on screen")
+        XCTAssertEqual(find(pane, "readerkey.zai.field", as: NSSecureTextField.self)?.stringValue, "", "the key does not stay on screen")
 
         // Owner decision 2026-11-14 / macrevd-795-1: a reading then detects a different GLM key; the saved key
         // still wins (one row) and the open entry says another key was also found.
-        let other = { self.find(view, "readerkey.zai.otherkey", as: NSTextField.self) }
+        let other = { self.find(pane, "readerkey.zai.otherkey", as: NSTextField.self) }
         XCTAssertTrue(other()?.isHidden ?? true, "no detected key yet")
         try await engineValue.reading(detected: "fake-detected-key-0007")
         for _ in 0..<300 { if other()?.isHidden == false { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(other()?.stringValue, ReaderKeyStatus.otherKeyLine.english, "the line appears after the reading, on the reused entry")
         XCTAssertEqual(other()?.isHidden, false)
         // Saving the detected key itself: same key, one row, no line.
-        let again = try XCTUnwrap(find(view, "readerkey.zai.field", as: NSSecureTextField.self))
+        let again = try XCTUnwrap(find(pane, "readerkey.zai.field", as: NSSecureTextField.self))
         again.stringValue = "fake-detected-key-0007"
         again.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: again))
-        try XCTUnwrap(find(view, "readerkey.zai.save", as: ConnectionButton.self)).invoke?()
+        try XCTUnwrap(find(pane, "readerkey.zai.save", as: ConnectionButton.self)).invoke?()
         for _ in 0..<300 { if other()?.isHidden ?? true { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertTrue(other()?.isHidden ?? true, "the same key detected and entered shows no line")
         await app.composition.stop()
