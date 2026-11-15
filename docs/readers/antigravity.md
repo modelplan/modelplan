@@ -57,3 +57,5 @@ The wrapper preserves a five-minute attempt floor, ten-minute success cadence an
 ## Known gaps and unknowns
 
 The runtime side-effect gap is P1 for coordinator routing. Local identity checks prove the peer, not what it does internally. No runtime safety qualification, live quota, native app prompt proof, device L2 or L3 is claimed by this card. Do not infer plan duration or shared subscription from returned model pools.
+
+D99: the model ids of `clientModelConfigs` in the same `GetUserStatus` reply are also reported (slugs only, no extra request).

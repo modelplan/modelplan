@@ -50,8 +50,8 @@ test('with the wire publication, a record line lights the fader of its model',as
  const model=(id,name)=>({id,name,developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]});
  data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[model('model-a','Synthetic A'),model('model-b','Synthetic B')]};
  await open(page,data);
- const line=page.locator(`.ck-tape .t-observed[data-session="${session.sessionRef}"]`),fader=page.locator('.fd-ch:not(.empty)').first();
- await expect(fader.locator('.fd-strip')).toContainText('Synthetic B');
+ const line=page.locator(`.ck-tape .t-observed[data-session="${session.sessionRef}"]`),fader=page.locator('.fd-ch:not(.empty)').filter({hasText:'Synthetic B'});
+ await expect(fader).toHaveCount(1);
  await expect(line).not.toHaveAttribute('aria-disabled','true');
  await line.hover();await expect(fader).toHaveClass(/\bxhl\b/);
  await page.mouse.move(0,0);await expect(fader).not.toHaveClass(/\bxhl\b/);

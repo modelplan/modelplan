@@ -41,6 +41,10 @@ func writeGrokAuth(t *testing.T, root string, auth grokAuth) {
 func grokTestServer(t *testing.T, mode *string, hits *int) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			grokModelsHandler(w, r) // D99: not a billing request; see reportedmodels_test.go
+			return
+		}
 		*hits++
 		if r.Method != "GET" || r.URL.Path != "/v1/billing" || r.URL.RawQuery != "format=credits" || r.Header.Get("Authorization") != "Bearer synthetic-grok-access" || r.Header.Get("X-XAI-Token-Auth") != "xai-grok-cli" || r.Header.Get("x-userid") != "synthetic-grok-user" || r.Header.Get("x-grok-client-mode") != "headless" || !strings.Contains(r.Header.Get("x-grok-client-version"), "modelplan") {
 			t.Error("incorrect billing request")

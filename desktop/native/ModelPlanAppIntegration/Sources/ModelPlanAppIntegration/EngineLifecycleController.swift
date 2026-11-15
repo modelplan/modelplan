@@ -130,6 +130,8 @@ import ModelPlanShell
         }
     }
     func start() { events.start() }
+    /// Spec item 2: the single wake/unlock/clock/display source for every other consumer (the cockpit).
+    func subscribe(_ handler: @escaping @MainActor (SystemSignal) -> Void) -> () -> Void { events.subscribe(handler) }
     var canRetry: Bool { gate.canPresent }
     /// G3-116: the engine stopped on its own; Refresh retries it as it does a paused one.
     var engineStopped: Bool { worker.engineStopped }
