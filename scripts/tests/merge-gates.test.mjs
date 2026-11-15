@@ -919,3 +919,25 @@ test("an action_required run never ran: it is skipped when picking the latest ru
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "failure", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.FAILURE);
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "success", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.SUCCESS);
 });
+
+test("merge-group gate waits for the group's GUI job, fails closed, times out", () => {
+  const ok = { state: R.SUCCESS, why: "ok" };
+  const steps = [{ pr: 7, prResult: ok, mergeProof: { ok: true } }];
+  const runs = R.QUEUE_WORKFLOWS.map((path, i) => qrun(path, "success", 1, "completed", { check_suite_id: 100 + i, created_at: "2026-11-15T15:00:00Z" }));
+  const desktopSuite = 100 + R.QUEUE_WORKFLOWS.indexOf(".github/workflows/desktop.yml");
+  const gui = (status, conclusion = null) => ({ name: "native (macos-latest) / native (macos-latest)", status, conclusion, check_suite: { id: desktopSuite } });
+  const now = Date.parse("2026-11-15T15:31:00Z");
+  const ev = (checks, at = now) => R.evaluateGroup({ steps, queueRuns: runs, queueCheckRuns: checks, now: at });
+  assert.equal(ev([gui("completed", "success")]).state, R.SUCCESS);
+  assert.equal(ev([gui("completed", "skipped")]).state, R.SUCCESS, "skipped by design");
+  assert.equal(ev([]).state, R.SUCCESS, "no GUI job when desktop.yml scoped it out");
+  const queued = ev([gui("queued")]);
+  assert.equal(queued.state, R.PENDING);
+  assert.match(queued.why, /native \(macos-latest\)/);
+  assert.equal(ev([gui("in_progress")]).state, R.PENDING);
+  for (const c of ["failure", "cancelled", "timed_out"]) assert.equal(ev([gui("completed", c)]).state, R.FAILURE, c);
+  const late = ev([gui("queued")], now + R.GROUP_WAIT_MS + 60000);
+  assert.equal(late.state, R.FAILURE);
+  assert.match(late.why, /timed out/);
+  assert.equal(ev([{ ...gui("queued"), check_suite: { id: 9999 } }]).state, R.SUCCESS, "another suite's job is not the queue's");
+});

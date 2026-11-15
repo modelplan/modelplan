@@ -567,14 +567,41 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 // ---- One merge-group commit ----
 // steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}}.
 // queueRuns/queueStatuses: CI on the group commit itself; repo: the repository whose queue runs count.
-export function evaluateGroup({ steps, queueRuns, queueStatuses = [], repo = REPO }) {
+// queueCheckRuns: the group commit's check runs (GET /commits/{sha}/check-runs). A workflow run is only as current as
+// the run list read, and a reusable-workflow job (desktop.yml's GUI leg, "native (macos-latest) / native (macos-latest)")
+// can still be queued on the single GUI Mac while the list says otherwise (2026-11-15 incident: #803 and others merged
+// with that job queued). So every check run of a counted queue run must also be completed and green; it is read
+// per job, not through the run. Fail closed: failed, cancelled or timed-out jobs fail the group; unfinished ones keep
+// it pending, but past GROUP_WAIT_MS since the group's first run started it fails with a timeout, so it never hangs.
+// A workflow_run of desktop completing re-evaluates the group (merge-gates.yml), so no polling is needed.
+export const GROUP_WAIT_MS = 120 * 60 * 1000;
+const OK_CHECK = new Set(["success", "skipped", "neutral"]);
+export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO) {
+  const suites = new Set(latestRuns(queueRuns, queueRunScope(repo)).map((r) => r.check_suite_id).filter((x) => x != null));
+  const failed = [], waiting = [];
+  for (const c of queueCheckRuns) {
+    if (!suites.has(c.check_suite?.id)) continue;
+    if (c.status !== "completed") waiting.push(c.name);
+    else if (!OK_CHECK.has(c.conclusion)) failed.push(`${c.name} ${c.conclusion}`);
+  }
+  if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}` };
+  if (waiting.length) return { state: PENDING, why: `jobs not finished: ${waiting.join(", ")}` };
+  return { state: SUCCESS, why: "jobs green" };
+}
+
+export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], repo = REPO, now = Date.now() }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
   for (const s of steps) {
     const n = `#${s.pr}`;
     if (!s.mergeProof.ok) return { state: FAILURE, why: `${n}: ${s.mergeProof.why}` };
     if (s.prResult.state !== SUCCESS) return { state: s.prResult.state === PENDING ? FAILURE : s.prResult.state, why: `${n}: ${s.prResult.why}` };
   }
-  const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo) });
+  let ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo) });
+  if (ci.state === SUCCESS) ci = queueCheckState(queueRuns, queueCheckRuns, repo);
+  if (ci.state === PENDING) {
+    const starts = queueRuns.filter(queueRunScope(repo)).map((r) => Date.parse(r.created_at)).filter(Number.isFinite);
+    if (starts.length && now - Math.min(...starts) > GROUP_WAIT_MS) return { state: FAILURE, why: `group timed out after ${GROUP_WAIT_MS / 60000} min: ${ci.why}` };
+  }
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };
   return { state: SUCCESS, why: `group of ${steps.length}: gates pass` };
 }

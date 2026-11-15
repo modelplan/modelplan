@@ -123,11 +123,12 @@ async function evaluateGroupAndPost(groupSha) {
     c = p[0];
   }
   if (!G.isAncestor(cwd, c, MAIN)) return post(groupSha, { state: FAILURE, why: "group does not start on main within 10 PRs" });
-  const [queueRuns, combined] = await Promise.all([
+  const [queueRuns, combined, queueCheckRuns] = await Promise.all([
     gh.all(`/actions/runs?head_sha=${groupSha}`, "workflow_runs", 500),
     gh.get(`/commits/${groupSha}/status`),
+    gh.all(`/commits/${groupSha}/check-runs`, "check_runs", 1000),
   ]);
-  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], repo });
+  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, repo });
   await post(groupSha, { group: steps.map((s) => s.pr), ...result });
 }
 
