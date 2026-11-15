@@ -501,7 +501,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       let raw = try bridge.tick(nowUnixMs: deadlineNow(), reason: reason)
       guard let id = bridge.currentDeadlineTrigger else { throw CockpitBridgeError.unavailable }
       receiptWatchdog.wait(for: id)
-      send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentDeadlineTrigger(id) == true },
+      // Recovery step 3: a newer tick replaces a queued older one (only the latest trigger is current anyway).
+      send(raw, coalesce: "tick", isCurrent: { [weak self] in self?.bridge.isCurrentDeadlineTrigger(id) == true },
            onAccepted: { [weak self] in self?.tickRetries = 0 },
            onRejected: { [weak self] in self?.retryRejectedTick(reason) ?? false },
            dropped: { [weak self] in
@@ -570,6 +571,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     /// G3-86: the next this many submissions are refused as a full delivery queue refuses them.
     var verificationRefuseSubmissions = 0
+    /// Calls admitted to the ordered delivery and not completed yet, the active one included.
+    var verificationOutstanding: Int { orderedDelivery.outstanding }
+    /// A data-deadline tick for the given reason, as the deadline driver or a wake would send it.
+    func verificationFreshnessTick(_ reason: CockpitDeadlineReason) { sendFreshnessTick(reason) }
     /// Actions are admitted only from the key window (`CockpitVisibility.active`), so a window that is shown for
     /// an action test must be key; pass `key: false` for a shown-but-inactive window.
     func verificationConfirmVisible(key: Bool = true) throws {
@@ -885,7 +890,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       for path in dropped.prefix(8) { CockpitFailureLog.record("display-non-finite path=\(path) count=\(dropped.count)") }
       guard let id = bridge.currentDisplayRequest else { throw CockpitBridgeError.unavailable }
       if bridge.awaitsDisplayReceipt(id), renderWatchdog.currentID == nil { renderWatchdog.wait(for: id) }
-      send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentDisplay(id) == true }, onRejected: { [weak self] in
+      // Recovery step 3: one active display plus the latest replacement. A newer display replaces a queued older one
+      // at the back of the queue, so a reply stream never fills it; host sequence order is kept (the newest message
+      // carries the highest sequence).
+      send(raw, coalesce: "display", isCurrent: { [weak self] in self?.bridge.isCurrentDisplay(id) == true }, onRejected: { [weak self] in
         // Recovery contract: a refused display leaves the last rendered data in place; no receipt is awaited for it.
         guard let self else { return false }
         if self.receiptWatchdog.currentID == id { self.receiptWatchdog.cancel() }
@@ -1193,7 +1201,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       self.pageLate("visibilityReceipt")
     })
     do {
-      send(try bridge.setVisibility(value), isCurrent: { [weak self] in self?.visibilityFence.isCurrent(token) == true }, onAccepted: { [weak self] in
+      // Recovery step 3: the latest visibility replaces a queued older one (only the current fence token counts).
+      send(try bridge.setVisibility(value), coalesce: "visibility", isCurrent: { [weak self] in self?.visibilityFence.isCurrent(token) == true }, onAccepted: { [weak self] in
         guard let self else { return }
         #if MODELPLAN_TEST_ONLY_SPI
         if self.verificationHoldHiddenVisibilityReceipt, !visible { return }
