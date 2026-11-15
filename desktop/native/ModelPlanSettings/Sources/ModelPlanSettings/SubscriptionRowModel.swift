@@ -126,8 +126,11 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             let sub = byID[id]!
             let tool = sub.tool.lowercased()
             let toolFacts = facts[tool]
-            var code = actionableCode(sub.causeCode) ?? actionableCode(toolFacts?.code)
-            if code == nil, let state = toolFacts?.state {
+            // SET-9-34: a stale subscription keeps its own "last reading is old" status; a cause or state that belongs to the
+            // tool as a whole (another account's failure) must not replace it. Only the subscription's own cause counts.
+            let stale = sub.source == .stale
+            var code = actionableCode(sub.causeCode) ?? (stale ? nil : actionableCode(toolFacts?.code))
+            if code == nil, !stale, let state = toolFacts?.state {
                 if state == .needsKeychain { code = "keychain_unset" }
                 if state == .needsConsent { code = "consent_required" }
             }
