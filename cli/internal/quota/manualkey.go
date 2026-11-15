@@ -215,8 +215,66 @@ func SetManualKey(dir, provider, key, region string) error {
 		keys = map[string]ManualKey{}
 	}
 	keys[provider] = k
-	return writeManualKeys(dir, keys)
+	if err := writeManualKeys(dir, keys); err != nil {
+		return err
+	}
+	return afterManualKeyChange(dir, provider)
 }
+
+// manualKeyGenerationFile holds one counter per manual-key provider, bumped on every replace and remove. Refresh compares
+// it at its publish; both run under lockManualKeys (a short lock, never held across a network read).
+const manualKeyGenerationFile = "manual-key-generations.json"
+
+func manualKeyGenerationPath(dir string) string {
+	return filepath.Join(dir, "observed", manualKeyGenerationFile)
+}
+
+// manualKeyGenerations returns the current counters (empty when none was ever bumped).
+func manualKeyGenerations(dir string) map[string]uint64 {
+	out := map[string]uint64{}
+	if dir == "" {
+		return out
+	}
+	b, status := readBounded(manualKeyGenerationPath(dir), 4<<10)
+	if status != "" {
+		return out
+	}
+	_ = json.Unmarshal(b, &out)
+	return out
+}
+
+// afterManualKeyChange runs under lockManualKeys, after the key file changed: it bumps the provider's generation, so any
+// reading in flight or carried by a running refresh is dropped at its publish, and (OpenCode Go) removes the provider's
+// cached reading, read with the previous key and possibly another account's. The request-budget reservation is kept:
+// this never makes the provider due sooner.
+func afterManualKeyChange(dir, provider string) error {
+	// The cached reading goes first and the generation is bumped after it, both inside the lock; RefreshNative takes its
+	// generation snapshot and reads the cache under the same lock, so it sees either the state before this change or the
+	// one after it, never a mix.
+	// Only OpenCode Go: GLM's cached entry also carries the detected-key reference the "another key was found" line is
+	// worked out from, so dropping it would hide that line; GLM keeps its entry (a separate follow-up if needed).
+	if provider == "opencodego" {
+		if _, err := os.Stat(nativePath(dir)); err == nil {
+			_ = filterCachedSource(nativePath(dir), "native.json", provider, false, nil)
+		}
+	}
+	if manualKeyChangeHook != nil {
+		manualKeyChangeHook()
+	}
+	gens := manualKeyGenerations(dir)
+	gens[provider]++
+	b, _ := json.Marshal(gens)
+	if err := os.MkdirAll(filepath.Dir(manualKeyGenerationPath(dir)), 0o700); err != nil {
+		return errors.New("manual key generation not written")
+	}
+	if err := writeAtomic(manualKeyGenerationPath(dir), append(b, '\n')); err != nil {
+		return errors.New("manual key generation not written")
+	}
+	return nil
+}
+
+// manualKeyChangeHook is a test seam: it runs inside the change, between the cache removal and the generation bump.
+var manualKeyChangeHook func()
 
 // RemoveManualKey deletes the key for provider; removing an absent key succeeds.
 func RemoveManualKey(dir, provider string) error {
@@ -236,7 +294,10 @@ func RemoveManualKey(dir, provider string) error {
 		return nil
 	}
 	delete(keys, provider)
-	return writeManualKeys(dir, keys)
+	if err := writeManualKeys(dir, keys); err != nil {
+		return err
+	}
+	return afterManualKeyChange(dir, provider)
 }
 
 // Outcomes of a manual key test. Fixed words only.
