@@ -14,6 +14,8 @@ import AppKit
         if let view { view.apply(language: language); return }
         let next = try entry.makeFirstRunView(language: language)
         container.addArrangedSubview(next); view = next
+        // G3-25: the permissions column takes the page width, so its copy wraps inside it.
+        next.widthAnchor.constraint(equalTo: container.widthAnchor).isActive = true
     }
     public func apply(language: SettingsLanguage) { view?.apply(language: language) }
     public func suspend() {

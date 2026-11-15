@@ -9,19 +9,20 @@ import Darwin
 import Glibc
 #endif
 
-enum TestFailure: Error { case timeout, childFailed }
+enum TestFailure: Error { case timeout, childFailed, childExited(arguments: [String], status: Int32, stdout: String, stderr: String) }
 
 actor EventProbe: EngineClientEventConsumer {
     var events: [EngineClientEvent] = []
     var pauseClear = false
-    var pauseResponse = false
+    var pauseDiagnostics = false
     var responseWaiter: CheckedContinuation<Void, Never>?
     var clearWaiter: CheckedContinuation<Void, Never>?
     var timeline: [String] = []
     func consume(_ event: EngineClientEvent) async {
         events.append(event)
-        if case .response = event, pauseResponse {
-            pauseResponse = false
+        // Only the diagnostics reply: an unrelated reply landing first must not take the pause.
+        if case .response(_, .diagnostics) = event, pauseDiagnostics {
+            pauseDiagnostics = false
             await withCheckedContinuation { responseWaiter = $0 }
         }
         let dataRevision: UInt64?
@@ -42,7 +43,7 @@ actor EventProbe: EngineClientEventConsumer {
         }
         if case .clearPrivateViews(let value) = event { timeline.append("clear-ack:" + String(value.revision)) }
     }
-    func suspendNextResponse() { pauseResponse = true }
+    func suspendNextDiagnostics() { pauseDiagnostics = true }
     func responseIsPaused() -> Bool { responseWaiter != nil }
     func resumeResponse() { responseWaiter?.resume(); responseWaiter = nil }
     func suspendNextClear() { pauseClear = true }
@@ -93,7 +94,11 @@ final class RealBinaryTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return root
     }
-    func environment(_ home: URL) -> [String: String] { ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C"] }
+    // A temporary HOME does not hide machine-wide installs: the app-server's automatic refresh
+    // finds a real codex in /opt/homebrew/bin, /usr/local/bin or /Applications/Codex.app and runs
+    // it under the reader lock, which adds rows/changed events and delays revoke cleanup on a
+    // reused Mac. MODELPLAN_CODEX_ACCOUNT=off (an allowed child key) keeps Codex to its logs.
+    func environment(_ home: URL) -> [String: String] { ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C", "MODELPLAN_CODEX_ACCOUNT": "off"] }
     @discardableResult
     func cli(_ binary: URL, home: URL, arguments: [String], input: Data? = nil) throws -> Data {
         let process = Process(); let output = Pipe(); let errors = Pipe(); let stdin = Pipe()
@@ -105,7 +110,9 @@ final class RealBinaryTests: XCTestCase {
         let bytes = output.fileHandleForReading.readDataToEndOfFile()
         let errorBytes = errors.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        guard process.terminationStatus == 0, errorBytes.isEmpty else { throw TestFailure.childFailed }
+        guard process.terminationStatus == 0, errorBytes.isEmpty else {
+            throw TestFailure.childExited(arguments: arguments, status: process.terminationStatus, stdout: String(decoding: bytes.prefix(2000), as: UTF8.self), stderr: String(decoding: errorBytes.prefix(2000), as: UTF8.self))
+        }
         return bytes
     }
     func configuration(_ binary: URL, home: URL) -> EngineClientConfiguration {
@@ -294,6 +301,30 @@ extension RealBinaryTests {
         let observed12 = await probe.crashDelays().isEmpty
         XCTAssertTrue(observed12)
         do { _ = try await client.retry(); XCTFail("major mismatch restarted") } catch {}
+    }
+
+    func testMinimumCLIVersionAtRealHandshake() async throws {
+        for (mode, accepted) in [("server-too-old", false), ("server-malformed", false), ("server-malformed-metadata", false), ("server-supported", true)] {
+            let binary = try binary(); let home = try home(); let probe = EventProbe()
+            try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+            let executable = try proxy(home, binary: binary, mode: mode)
+            let config = EngineClientConfiguration(executableURL: executable, applicationVersion: "synthetic-u4b",
+                allowedEnvironment: environment(home), minimumServerVersion: "0.5.52")
+            let client = ProcessEngineClient(configuration: config, consumer: probe)
+            if accepted {
+                _ = try await client.start()
+                try await eventually { await probe.rowCount() > 0 }
+            } else {
+                do { _ = try await client.start(); XCTFail("unsupported helper was admitted") }
+                catch EngineClientError.protocolMismatch {} catch { XCTFail("unexpected error: \(error)") }
+                try await eventually { await probe.stopped(.protocolMismatch) }
+                let delays = await probe.crashDelays()
+                let rows = await probe.rowCount()
+                XCTAssertTrue(delays.isEmpty)
+                XCTAssertEqual(rows, 0)
+            }
+            await client.stop()
+        }
     }
 }
 

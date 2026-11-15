@@ -118,18 +118,3 @@ public struct SharedModelSelection: Equatable, Sendable {
     public var chartIDs: [String] { Array(fieldIDs.prefix(6)) }
     public var rowIDs: [String] { Array(chartIDs.prefix(3)) }
 }
-
-/// Highlight is independent of selection ordering. No click can promote a model into the first three.
-public struct ModelSelectionState: Equatable, Sendable {
-    public private(set) var selection: SharedModelSelection
-    public private(set) var selectedID: String?
-    public init(selection: SharedModelSelection) { self.selection = selection }
-    public mutating func replace(_ selection: SharedModelSelection) {
-        self.selection = selection
-        if let selectedID, !selection.orderedIDs.contains(selectedID) { self.selectedID = nil }
-    }
-    @discardableResult public mutating func select(_ id: String) -> Bool {
-        guard selection.orderedIDs.contains(id) else { return false }
-        selectedID = id; return true
-    }
-}

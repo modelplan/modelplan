@@ -76,6 +76,8 @@ type Window struct {
 	ElapsedPercent   *float64 `json:"elapsedPercent"`   // share of the window already elapsed
 	ProjectedPercent *float64 `json:"projectedPercent"` // share used at reset if the current pace holds
 	AgeMinutes       *int     `json:"ageMinutes"`
+	// Stale: this window's reading is older than ObservationFreshness; do not report it as current.
+	Stale bool `json:"stale,omitempty"`
 	// RecentPercentPerHour: how fast the window filled over the last readings (up to 45 minutes,
 	// at least 10), in percentage points per hour; nil without enough fresh readings.
 	RecentPercentPerHour *float64 `json:"recentPercentPerHour"`
@@ -176,6 +178,9 @@ func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Cr
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
 	ResetCards *rows.ResetCards `json:"-"`
+	// ReportedModels (D98): model ids the tool itself lists for this account (Codex model/list), native ids as
+	// the harness names them. Internal: it reaches the cockpit wire mapped to published ids, not this JSON.
+	ReportedModels []string `json:"-"`
 	Beta       bool             `json:"beta,omitempty"` // reader has not completed real-account verification
 	Source     string           `json:"source"`         // claude-code | codex | user | codexbar:<provider>
 	Plan       string           `json:"plan,omitempty"`
@@ -183,6 +188,8 @@ type Account struct {
 	Generation string           `json:"generation,omitempty"` // user: the plan's metering generation, as declared
 	ObservedAt time.Time        `json:"observedAt"`
 	Stale      bool             `json:"stale"`
+	// retained: the newest reading is one kept after a failed refresh; stale until a refresh succeeds.
+	retained   bool
 	Harness    *Harness         `json:"harness,omitempty"`
 	Windows    []Window         `json:"windows"`
 	Cards      []Card           `json:"cards,omitempty"`
@@ -283,13 +290,17 @@ type Report struct {
 	EvaluatedAt       time.Time      `json:"evaluatedAt"`
 	Accounts          []Account      `json:"accounts"`
 	Sources           []SourceStatus `json:"sources"`
-	Note              string         `json:"note"`
+	// Refresh: what `quota --refresh-account` did, so old figures never pass for a fresh reading.
+	Refresh *AccountRefresh `json:"refresh,omitempty"`
+	Note    string          `json:"note"`
 }
 
 const note = "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
 
-// staleAfter: a harness meter older than this may have moved; advice should say so.
-const staleAfter = 60 * time.Minute
+// ObservationFreshness is the age after which a harness observation may have moved.
+const ObservationFreshness = 60 * time.Minute
+
+const staleAfter = ObservationFreshness
 
 var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly": 43200}
 
@@ -303,8 +314,10 @@ type Paths struct {
 	CodexThread                 string                    // the calling Codex thread, when known (CODEX_THREAD_ID)
 	ClaudeSession               string                    // the calling Claude Code session, when known
 	ClaudeSessionRoot           string                    // transient locally admitted profile root, never persisted
+	ClaudeKeychainPending       bool                      // a Keychain-only Claude Code login awaits the user's choice (D41)
 	ClaudeSessionAccess         *localusage.HistoryAccess // explicit consent/profile scope for cache-only session projection
 	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
+	ZCodeNoProviderFile         bool                      // ZCode is present on the default route but keeps no provider file (G3-21)
 }
 
 // Read gathers every available source and evaluates it at now.
@@ -330,7 +343,7 @@ func Read(p Paths, now time.Time) Report {
 
 // Evaluate fills the derived fields and the account's headroom.
 func Evaluate(a *Account, now time.Time) {
-	a.Stale = !a.ObservedAt.IsZero() && now.Sub(a.ObservedAt) > staleAfter
+	a.Stale = a.retained || !a.ObservedAt.IsZero() && now.Sub(a.ObservedAt) > staleAfter
 	for i := range a.Windows {
 		a.Windows[i].evalRequests(now)
 		evalWindow(&a.Windows[i], now)
@@ -408,6 +421,7 @@ func evalWindow(w *Window, now time.Time) {
 		age := int(math.Max(0, now.Sub(w.ObservedAt).Minutes()))
 		w.AgeMinutes = &age
 	}
+	w.Stale = !w.ObservedAt.IsZero() && now.Sub(w.ObservedAt) > staleAfter
 	if w.WindowMinutes == 0 {
 		w.WindowMinutes = defaultMinutes[w.Kind]
 	}

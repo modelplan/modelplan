@@ -53,5 +53,3 @@
 :root[data-theme="night"] .ck-deck::before{background-image:var(--hull-console-gutter)}
 :root[data-theme="night"] .ck-tape::before{left:-26px;right:-26px;top:-11px;height:9px;background-image:var(--hull-record-gutter);background-size:636px 9px;background-position:center;background-repeat:no-repeat}
 
-:root[data-theme="night"] .bz-line{top:2px;height:6px;border-radius:0;background-color:transparent;background-image:var(--hull-mouth);background-position:center;background-size:81px 6px;background-repeat:no-repeat}
-:root[data-theme="night"] .bz-glow,:root[data-theme="night"] .bz:hover .bz-glow{box-shadow:none}

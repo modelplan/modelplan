@@ -75,6 +75,22 @@ test('same-floor invalidation and a new session cannot revive old deliveries',()
   assert.equal(f.bridge.clear(f.send('clear',{viewRevision:'6'}),source),false);
   assert.equal(f.bridge.receive(f.send('display',{viewRevision:'5',sessionId:pageId,data:capture()}),source),true);
 });
+test('openWebsite carries a typed page and value, never a URL (CKP-MFD-24)',()=>{
+  const f=fixture();
+  for(const bad of [undefined,'plans','plans/','/openai','home/x','plans/a b','plans/a?b=1','https://evil.example/x','plans/'+'x'.repeat(65)])assert.equal(f.bridge.action('openWebsite',bad),false,String(bad));
+  assert.equal(f.bridge.action('openWebsite','methodology/effort-ladder'),true);
+  const last=f.events.at(-1);assert.equal(last.action,'openWebsite');assert.equal(last.page,'methodology');assert.equal(last.value,'effort-ladder');assert.equal(last.url,undefined);
+});
+test('D63 openField may name the clicked rocket by its published display name, nothing else',()=>{
+  const f=fixture();
+  assert.equal(f.bridge.action('openField'),true);let last=f.events.at(-1);assert.equal(last.action,'openField');assert.equal(last.key,undefined);
+  for(const bad of ['',' ','x'.repeat(65),42])assert.equal(f.bridge.action('openField',bad),false,String(bad));
+  assert.equal(f.bridge.action('openField','Synthetic 5.5'),true);last=f.events.at(-1);assert.equal(last.action,'openField');assert.equal(last.key,'Synthetic 5.5');
+});
+test('openSettingsSubscriptions is one fixed action with no payload (CKP-SHELL-39)',()=>{
+  const f=fixture();assert.equal(f.bridge.action('openSettingsSubscriptions'),true);
+  const last=f.events.at(-1);assert.equal(last.action,'openSettingsSubscriptions');assert.equal(last.key,undefined);assert.equal(last.tool,undefined);
+});
 test('only fixed actions are emitted, history is limited to currently displayed rows',()=>{
   const f=fixture();assert.equal(f.bridge.action('openURL'),false);assert.equal(f.bridge.action('chooseSetup','x'),false);
   assert.equal(f.bridge.action('openHistory','unknown'),false);assert.equal(f.bridge.action('openSettings'),true);
@@ -116,7 +132,7 @@ test('v2 readiness, strict live appearance and native shell state',()=>{
   const f=fixture(), ready=f.events.find(e=>e.type==='ready');
   assert.equal(ready.appearanceVersion,2);
   assert.deepEqual(ready.capabilities,['appearanceUpdates','shellState','shellActions']);
-  const appearance={theme:'day',locale:'zh-CN',reduceMotion:true,reduceTransparency:false};
+  const appearance={theme:'day',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true};
   assert.equal(f.bridge.receive(f.send('appearance',appearance),source),true);
   assert.equal(f.bridge.receive(f.send('appearance',{...appearance,unknown:true}),source),false);
   assert.equal(f.bridge.receive(f.send('appearance',{...appearance,reduceMotion:'yes'}),source),false);
@@ -143,7 +159,7 @@ test('ready capabilities are present when DOM readiness follows load',()=>{
   const bridge=new CockpitBridge(pageId,source.origin,value=>events.push(JSON.parse(value)),view,()=>pageId),send=commands();
   assert.equal(bridge.receive(send('load',{appearance,shell}),source),true);assert.equal(events.length,0);bridge.ready();
   assert.equal(events[0].appearanceVersion,2);assert.deepEqual(events[0].capabilities,['appearanceUpdates','shellState','shellActions']);
-  const m=send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false});
+  const m=send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,showProjectNames:true});
   assert.equal(bridge.receive(m,{...source,isMainFrame:false}),false);assert.equal(bridge.receive(m,source),true);assert.equal(bridge.receive(m,source),false);
   assert.equal(bridge.receive(send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all',viewRevision:'4'}),source),false);
   assert.equal(bridge.receive(send('unload'),source),true);
@@ -153,7 +169,7 @@ test('ready capabilities are present when DOM readiness follows load',()=>{
 test('frozen v2 load requires exact initial appearance and tiered shell before ready',()=>{
   const calls=[],events=[],view={clear(){calls.push('clear');},render(){},configure(x){calls.push(['appearance',x]);},updateAppearance(){},shell(x){calls.push(['shell',x]);},active(){},dispose(){}};
   const b=new CockpitBridge(pageId,source.origin,s=>events.push(JSON.parse(s)),view,()=>pageId),send=commands();
-  const a={theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false};
+  const a={theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true};
   const shell={profile:'closed',attached:true,forcedClosed:true,tier:'compact',scope:'all'};
   const base=JSON.parse(send('load',{appearance:a,shell}));base.version=2;
   for(const bad of [{...base,version:1},{...base,shell:undefined},{...base,shell:{...shell,scope:undefined}},{...base,shell:{...shell,scope:'bad/path'}},{...base,appearance:{...a,profile:'full'}},{...base,shell:{...shell,tier:'full',scope:'all'}},{...base,shell:{...shell,profile:'compact'}},{...base,shell:{...shell,extra:true}}])assert.equal(b.receive(JSON.stringify(bad),source),false);
@@ -230,19 +246,19 @@ test('deadline reports echo the triggering display, appearance or tick request',
  const f=fixture(),display=JSON.parse(f.send('display',{data:capture()}));
  assert.equal(f.bridge.receive(JSON.stringify(display),source),true);
  const tail=f.events.slice(-2);assert.deepEqual(tail.map(x=>x.type),['rendered','nextDeadline']);assert.equal(tail[0].requestId,display.requestId);assert.equal(tail[1].requestId,display.requestId);assert.equal(BigInt(tail[1].sequence),BigInt(tail[0].sequence)+1n);assert.equal(tail[1].deadlineUnixMs,null);
- const appearance=JSON.parse(f.send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}));assert.equal(f.bridge.receive(JSON.stringify(appearance),source),true);assert.equal(f.events.at(-1).type,'nextDeadline');assert.equal(f.events.at(-1).requestId,appearance.requestId);assert.equal(f.events.at(-1).deadlineUnixMs,null);
+ const appearance=JSON.parse(f.send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false,showProjectNames:true}));assert.equal(f.bridge.receive(JSON.stringify(appearance),source),true);assert.equal(f.events.at(-1).type,'nextDeadline');assert.equal(f.events.at(-1).requestId,appearance.requestId);assert.equal(f.events.at(-1).deadlineUnixMs,null);
  const tick=JSON.parse(f.send('tick',{nowUnixMs:'1793620800000',reason:'wake'}));assert.equal(f.bridge.receive(JSON.stringify(tick),source),true);assert.equal(f.events.at(-1).type,'nextDeadline');assert.equal(f.events.at(-1).requestId,tick.requestId);
 });
 
 test('appearance and tick reports obey visibility, replay and generation fences',()=>{
  const f=fixture(),data=capture(),readings=()=>f.events.filter(x=>x.type==='nextDeadline'),render=JSON.parse(f.send('display',{data}));
  assert.equal(f.bridge.receive(JSON.stringify(render),source),true);const first=readings().at(-1);assert.equal(first.requestId,render.requestId);
- const older=JSON.parse(f.send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false})),newer=JSON.parse(f.send('tick',{nowUnixMs:'1793275320000',reason:'wake'}));
+ const older=JSON.parse(f.send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,showProjectNames:true})),newer=JSON.parse(f.send('tick',{nowUnixMs:'1793275320000',reason:'wake'}));
  assert.equal(f.bridge.receive(JSON.stringify(newer),source),true);const second=readings().at(-1);assert.equal(second.requestId,newer.requestId);assert.ok(BigInt(second.sequence)>BigInt(first.sequence));
  const count=readings().length;assert.equal(f.bridge.receive(JSON.stringify(older),source),false);assert.equal(f.bridge.receive(JSON.stringify(newer),source),false);assert.equal(readings().length,count);
- assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:false}),source),true);const hidden=JSON.parse(f.send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}));assert.equal(f.bridge.receive(JSON.stringify(hidden),source),true);assert.equal(readings().length,count);
- assert.equal(f.bridge.clear(f.send('clear',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'41',viewRevision:'3',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false}),source),false);assert.equal(readings().length,count);
- assert.equal(f.bridge.receive(f.send('unload',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'42',viewRevision:'4',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false}),source),false);assert.equal(readings().length,count);
+ assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:false}),source),true);const hidden=JSON.parse(f.send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false,showProjectNames:true}));assert.equal(f.bridge.receive(JSON.stringify(hidden),source),true);assert.equal(readings().length,count);
+ assert.equal(f.bridge.clear(f.send('clear',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'41',viewRevision:'3',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,showProjectNames:true}),source),false);assert.equal(readings().length,count);
+ assert.equal(f.bridge.receive(f.send('unload',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'42',viewRevision:'4',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,showProjectNames:true}),source),false);assert.equal(readings().length,count);
 });
 
 test('display and appearance receive the bridge clock, while ticks use the host-supplied instant',()=>{
@@ -260,7 +276,7 @@ test('display and appearance receive the bridge clock, while ticks use the host-
 test('redBelow is optional, validated and logged on load and appearance without weakening strict keys',()=>{
  const logs=[],original=console.warn;console.warn=(...args)=>logs.push(args);
  try{
-  for(const [input,expected,warn] of [[10,10,false],[16,16,false],[20,20,false],[25,25,false],[undefined,25,true],[17,25,true],['private-synthetic-value',25,true],[null,25,true],[{},25,true],[20.5,25,true]]){
+  for(const [input,expected,warn] of [[10,10,false],[15,15,false],[20,20,false],[25,25,false],[30,30,false],[40,40,false],[16,25,true],[undefined,25,true],[17,25,true],['private-synthetic-value',25,true],[null,25,true],[{},25,true],[20.5,25,true]]){
    const seen=[],view={clear(){},configure(_a,n){seen.push(n);},updateAppearance(_a,_now,n){seen.push(n);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
    const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
    const extra=input===undefined?{}:{redBelow:input},before=logs.length;
@@ -271,4 +287,86 @@ test('redBelow is optional, validated and logged on load and appearance without 
   }
   assert.ok(logs.every(args=>args.length===1&&args[0]==='Cockpit redBelow missing or invalid; using default 25.'));
  }finally{console.warn=original;}
+});
+
+test('showAllModels (D135) is an optional boolean on load and appearance; off by default; anything else is rejected',()=>{
+ const logs=[],original=console.warn;console.warn=(...args)=>logs.push(args);
+ try{
+  for(const [input,expected] of [[true,true],[false,false],[undefined,false]]){
+   const seen=[],view={clear(){},configure(_a,_n,_u,all){seen.push(all);},updateAppearance(_a,_now,_n,_u,all){seen.push(all);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+   const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
+   const extra=input===undefined?{}:{showAllModels:input};
+   assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,...extra}),source),true);
+   assert.equal(b.receive(send('appearance',{...appearance,redBelow:25,...extra}),source),true);
+   assert.deepEqual(seen,[expected,expected]);
+  }
+  for(const bad of ['yes',1,null,{}]){
+   const view={clear(){},configure(){},updateAppearance(){},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+   const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
+   assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,showAllModels:bad}),source),false);
+   assert.equal(b.receive(send('load',{appearance,shell,redBelow:25}),source),true);
+   assert.equal(b.receive(send('appearance',{...appearance,redBelow:25,showAllModels:bad}),source),false);
+   assert.equal(b.receive(send('appearance',{...appearance,redBelow:25,appearance:{showAllModels:true}}),source),false);
+  }
+ }finally{console.warn=original;}
+});
+
+test('pinnedModels (D136): restored from load before configure, reported after each long-press, strictly validated',()=>{
+ const order=[],events=[];
+ const view={clear(){},configure(){order.push('configure');},restorePins(ids){order.push(['pins',ids]);},updateAppearance(){},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+ const send=commands(),b=new CockpitBridge(pageId,source.origin,v=>events.push(JSON.parse(v)),view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
+ assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,pinnedModels:['model-b','model-a']}),source),true);
+ assert.deepEqual(order,[['pins',['model-b','model-a']],'configure']);
+ // Not active yet: the report is kept and sent when the page becomes active.
+ assert.equal(b.pinModels(['model-a']),false);
+ assert.equal(b.receive(send('visibility',{visible:true,occluded:false,key:true}),source),true);
+ let sent=events.filter(e=>e.type==='action'&&e.action==='pinnedModels');
+ assert.deepEqual(sent.map(e=>e.ids),[['model-a']]);
+ assert.equal(b.pinModels(['model-c','model-a']),true);
+ sent=events.filter(e=>e.type==='action'&&e.action==='pinnedModels');
+ assert.deepEqual(sent.map(e=>e.ids),[['model-a'],['model-c','model-a']]);
+ assert.equal(b.pinModels(['bad\u0007id']),false);
+ assert.equal(events.filter(e=>e.type==='action'&&e.action==='pinnedModels').length,2);
+ for(const bad of ['x',[1],[''],Array.from({length:65},(_,i)=>'m'+i),null]){
+  const b2=new CockpitBridge(pageId,source.origin,()=>{},{...view,restorePins(){}},()=>sessionId,()=>1000);b2.documentHidden(false);b2.ready();
+  assert.equal(b2.receive(send('load',{appearance,shell,redBelow:25,pinnedModels:bad}),source),false);
+ }
+});
+test('G3-66: a show tick before the page document event is accepted once the host says visible',()=>{
+  const f=fixture(),tick={nowUnixMs:'1793620800000',reason:'show'};
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  // A prewarmed page: its own visibilitychange has not fired yet, so the document still reports hidden.
+  f.bridge.documentHidden(true);
+  assert.equal(f.bridge.receive(f.send('visibility',{visible:true,occluded:false,key:true}),source),true);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),true);
+});
+test('G3-66: a tick refused while the document is hidden names its code, and the next tick is accepted',()=>{
+  const f=fixture(),tick={nowUnixMs:'1793620800000',reason:'show'};
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  f.bridge.documentHidden(true);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),false);
+  assert.equal(f.bridge.lastReject,'tick.documentHidden');
+  f.bridge.documentHidden(false);
+  assert.equal(f.bridge.receive(f.send('tick',tick),source),true);
+  assert.equal(f.bridge.lastReject,'none');
+});
+test('G3-66: reject codes are fixed code paths and never carry message data',()=>{
+  const f=fixture(),base=JSON.parse(f.send('display',{data:capture()}));
+  const secret='synthetic-secret-value';
+  const cases=[[{...base,data:{...base.data,accessToken:secret}},'data.schema'],[{...base,extra:secret},'display.keys'],[{...base,requestId:secret},'msg.header'],[{...base,type:secret},'msg.type']];
+  for(const [msg,code] of cases){assert.equal(f.bridge.receive(JSON.stringify(msg),source),false);assert.equal(f.bridge.lastReject,code);assert.ok(!f.bridge.lastReject.includes(secret));assert.match(f.bridge.lastReject,/^[a-z]+\.[A-Za-z]+$/);}
+  assert.equal(f.bridge.receive(' '.repeat(MAX_MESSAGE_BYTES+1),source),false);assert.equal(f.bridge.lastReject,'msg.size');
+});
+test('G3-96: reset events as CLI v0.5.59 emits them (kind, confirmedAt, confirmedAtBasis) are displayed, not rejected as data.schema',()=>{
+  // Build 14d: the CLI sets kind on every reset event and a confirmation time on a confirmed one. Their schema nodes
+  // carried an enum without a type, which the page's bounded validator refuses, so every display with a published
+  // reset event (the live Codex reset credit) failed with data.schema and the cockpit never opened.
+  // The events come from the real projector (resetevents.CaptureEvents via swiftwire), unedited: announced direct reset,
+  // announced reset credit and a confirmed credit. A field the producer adds shows up here without anyone transcribing it.
+  const f=fixture(),data=capture();
+  assert.deepEqual(data.details.resetEvents.map(e=>[e.kind,e.status,e.confirmedAtBasis??null]),[['reset_credit','confirmed','firstSeen'],['reset_credit','announced',null],['direct_reset','announced',null]]);
+  const accepted=f.bridge.receive(f.send('display',{data}),source);
+  assert.equal(f.bridge.lastReject,'none');
+  assert.equal(accepted,true);
+  assert.deepEqual(f.retained().details.resetEvents,data.details.resetEvents);
 });

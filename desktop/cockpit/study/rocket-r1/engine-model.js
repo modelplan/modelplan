@@ -17,11 +17,12 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // Width classes (spec 4), by the columns on the page: wide for 1–2 (cells ≥ 240 px: the bar with the number and one
 // compact line beside it; round D2 removed the road bar), medium for 3–4, narrow for 5–6 (one line over a full-width bar).
 export const widthClass = n => n <= 2 ? 'wide' : n <= 4 ? 'medium' : 'narrow';
-// Quota status (spec 2.1): ok ≥ 41 %, mid above threshold to 40 %, low at/below "turn red below" (settings, default 16); used up is low.
-export const levelOf = (r, redAt = 25) => r == null ? 'none' : r <= redAt ? 'low' : r < 41 ? 'mid' : 'ok';
+// Quota status (spec 2.1): ok above 50 %, mid above threshold through 50 %, low at/below "turn red below" (settings, default 25); used up is low.
+export const levelOf = (r, redAt = 25) => r == null ? 'none' : r <= redAt ? 'low' : r <= 50 ? 'mid' : 'ok';
 // Lit segments of the 10-segment bar: tens, rounded, but a window with anything left keeps one segment lit, so only a
 // used-up window shows an empty bar.
-export const litSegments = r => r == null || r <= 0 ? 0 : clamp(Math.round(r / 10), 1, 10);
+// In used mode (Settings "used", D130) the bar fills with what is used, 100 - r, by the same rule; colours stay keyed to r.
+export const litSegments = (r, used = false) => { const v = r == null ? null : used ? 100 - r : r; return v == null || v <= 0 ? 0 : clamp(Math.round(v / 10), 1, 10); };
 export const pageCount = n => Math.max(1, Math.ceil(n / PER));
 // An extra quota's period as the study's window kinds name it (the snapshot says weekly / monthly).
 const PERIODS = {'5h': '5h', day: 'day', daily: 'day', week: 'week', weekly: 'week', month: 'month', monthly: 'month'};
@@ -43,7 +44,7 @@ export const runOutWindow = a => a.forecast ? a.windows.find(w => w.trend != nul
 // added by the view and positional().
 function cellOf(a, w, ui, runOutW, grey) {
   const r = a.state === 'loading' || a.state === 'error' ? null : w.remaining ?? null, level = levelOf(r, ui.redAt);
-  return {focusIdentity: w.focusIdentity ?? null, kind: w.kind, period: PERIODS[w.kind] || w.kind, remaining: r, value: r == null ? null : ui.pctMode === 'used' ? 100 - r : r, level, lit: litSegments(r),
+  return {focusIdentity: w.focusIdentity ?? null, kind: w.kind, period: PERIODS[w.kind] || w.kind, remaining: r, value: r == null ? null : ui.pctMode === 'used' ? 100 - r : r, level, lit: litSegments(r, ui.pctMode === 'used'),
     drawing: r === 0 && !grey && !!a.credits?.drawing, noData: r == null && a.state === 'ok',
     runOutMin: w === runOutW && r != null && !grey ? a.forecast.runOutMin : null,
     timeLeft: grey || a.state === 'loading' || a.state === 'error' ? null : timeLeft(w),
@@ -81,7 +82,7 @@ function reserveOf(a, now) {
   const first = expiries.length ? Math.min(...expiries) : null;
   const count = cards.some(c => c.count === null) ? null : cards.reduce((n,c) => n + (c.count ?? 1), 0);
   return {cards: cards.length ? count : null, warn: expiries.some(v => (v - now) / H <= 48), firstExpiry: first,
-    credits: cr ? cr.balance : null, drawing: !!cr?.drawing};
+    credits: cr ? cr.balance : null, money: cr?.money ?? null, drawing: !!cr?.drawing};
 }
 function columnOf(a, i, ui, status, now) {
   const grey = GREY.has(a.state), st = grey ? null : status.get(a.id) || null;

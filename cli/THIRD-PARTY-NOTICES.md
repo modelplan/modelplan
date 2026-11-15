@@ -563,7 +563,7 @@ Licence: `MIT`.
 
 Copyright (c) 2026 Peter Steinberger
 
-Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files.
+Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files; Reader cause and sign-in command parity (D232), independent implementations citing CodexBar main 7447bc77c2497323d9c41e40164ce705533493c8.
 
 Source: https://github.com/steipete/CodexBar/releases/tag/v0.83.0
 
@@ -1082,7 +1082,7 @@ Licence: `Apache-2.0`.
 
 Copyright (c) 2026 qunqin24
 
-Used in: Native Dock shell and staged app-service adapters: PanelScreen, ActiveDisplayFollower, PanelPointerWatcher and PointerProbe, PointerEntryReporter, PanelPlacement, PulseDockPanel, PulseDockPresence and PulseLoginItem; Original Apache-2.0 headers and modification notices retained; per-file provenance is recorded in docs/borrowed/pulse/manifest.json; The pinned upstream has no literal NOTICE file; its complete THIRD_PARTY_NOTICES.md is retained as provenance, without importing Pulse icons, providers, tether, update stack or other components.
+Used in: Native Dock shell and staged app-service adapters: PanelScreen, ActiveDisplayFollower, PanelPointerWatcher and PointerProbe, PointerEntryReporter, PanelPlacement, PulseDockPanel, PulseDockPresence and PulseLoginItem; PulseDockPanel also ports the initial placement, order-in and replacement sequence and exposes the borrowed display identity to the Dock topology adapter; Original Apache-2.0 headers and modification notices retained; per-file provenance is recorded in docs/borrowed/pulse/manifest.json; The pinned upstream has no literal NOTICE file; its complete THIRD_PARTY_NOTICES.md is retained as provenance, without importing Pulse icons, providers, tether, update stack or other components.
 
 Source: https://github.com/qunqin24/Pulse/tree/7668384cbcf357bba7dee4af85b4052a59c6e35d
 

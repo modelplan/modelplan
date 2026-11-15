@@ -31,6 +31,28 @@ type Binding struct {
 	ObservedAt time.Time `json:"observedAt"`
 }
 
+// UniqueSubscriptionRefs is for the legacy source-level projection only. Two
+// distinct verified accounts must not overwrite each other. Activity observation
+// uses the stricter per-session ledger binding instead of this fallback.
+func UniqueSubscriptionRefs(accounts []Account) map[string]string {
+	refs := map[string]string{}
+	ambiguous := map[string]bool{}
+	for _, a := range accounts {
+		if a.Subscription == nil || a.Subscription.Status != "verified" || a.Subscription.Ref == "" {
+			continue
+		}
+		ref := a.Subscription.Ref
+		if old := refs[a.Source]; old != "" && old != ref {
+			ambiguous[a.Source] = true
+		}
+		refs[a.Source] = ref
+	}
+	for source := range ambiguous {
+		delete(refs, source)
+	}
+	return refs
+}
+
 const maxSubscriptions = 200
 
 type subscriptionMap struct {
@@ -164,6 +186,16 @@ func CodexSubscription(cache string, now time.Time) string {
 		return ""
 	}
 	return s.SubscriptionRef
+}
+
+// ZCodeSubscription: the account of the Coding Plan key ZCode is configured with, as the last
+// successful reading recorded it. Cache only; "" when ZCode has no such reading.
+func ZCodeSubscription(cache string) string {
+	s := loadZaiConfigState(cache)
+	if s.Good == nil || IdentityOff() {
+		return ""
+	}
+	return s.Good.SubscriptionRef
 }
 
 func ClaudeSubscription(cache string) string {

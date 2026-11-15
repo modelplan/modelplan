@@ -2,7 +2,7 @@
 
 Foundation-only native DTOs and one pure selector, with no dependency on Core, AppKit, WebKit or another lane. Inputs must already be validated and joined to canonical public model IDs by the assembly adapter. This module reads no files, starts no processes and has no model/effort write path.
 
-`ModelSelection.select(SelectionInput)` returns one `SharedModelSelection`. Its `orderedIDs` is the full eligible order; `fieldIDs`, `chartIDs` and `rowIDs` are the first **10 / 6 / 3** of that same order. M3 and field consumers inject this result rather than implementing another filter/order. `ModelSelectionState` stores only local highlight: selecting ranks 4–10 cannot promote them into the rows or change the chart/field prefix. Replacing scope recomputes its shared result; an unavailable highlight clears, and surviving highlights do not affect order.
+`ModelSelection.select(SelectionInput)` returns one `SharedModelSelection`. Its `orderedIDs` is the full eligible order; `fieldIDs`, `chartIDs` and `rowIDs` are the first **10 / 6 / 3** of that same order. M3 and field consumers inject this result rather than implementing another filter/order. Replacing scope recomputes its shared result.
 
 ## Inputs and abstention
 

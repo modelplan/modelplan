@@ -212,7 +212,7 @@ class AdhocBetaCandidate(unittest.TestCase):
         self.output = self.root / 'payload'
         self.info = {'CFBundleIdentifier': 'test.modelplan', 'CFBundleExecutable': 'ModelPlan',
                      'CFBundleVersion': '42', 'CFBundleShortVersionString': '0.1 & beta',
-                     'LSMinimumSystemVersion': '14.0', 'SUFeedURL': 'https://example.invalid/beta.xml',
+                     'LSMinimumSystemVersion': '15.0',
                      'SUPublicEDKey': base64.b64encode(bytes(32)).decode()}
         self.write_info()
         (self.resources / 'build-edition.json').write_text(json.dumps({'edition': 'official'}))
@@ -221,9 +221,9 @@ class AdhocBetaCandidate(unittest.TestCase):
         for name in ('LICENSE.txt', 'CLI-THIRD-PARTY-NOTICES.md', 'VISUAL-LICENSE.md'):
             (self.resources / name).write_text('synthetic notice')
         self.env = dict(AdhocBetaGates().configured(), GITHUB_SHA='a' * 40, RUNNER_TEMP=str(self.root),
-                        MACOS_BUNDLE_ID='test.modelplan', MACOS_BETA_FEED_URL=self.info['SUFeedURL'],
+                        MACOS_BUNDLE_ID='test.modelplan', MACOS_BETA_FEED_URL='https://example.invalid/beta.xml',
                         MACOS_FEED_URL='https://example.invalid/stable.xml',
-                        MACOS_UPDATE_URL='https://example.invalid/ModelPlan-beta-universal.zip',
+                        MACOS_UPDATE_URL='https://example.invalid/ModelPlan-beta-arm64.zip',
                         MACOS_RELEASE_NOTES_URL='https://example.invalid/notes/42')
         environment = patch.dict(release.os.environ, self.env, clear=True)
         environment.start(); self.addCleanup(environment.stop)
@@ -236,7 +236,7 @@ class AdhocBetaCandidate(unittest.TestCase):
     def fake_run(self, *args, input=None):
         self.calls.append((args, input))
         if args[:3] == ('xcrun', 'lipo', '-archs'):
-            return b'arm64 x86_64'
+            return b'arm64'
         if args[:4] == ('codesign', '--force', '--sign', '-') and args[-1] == str(self.app):
             info = plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())
             self.assertIs(info.get('zaiMarkEnabled'), True)
@@ -262,7 +262,7 @@ class AdhocBetaCandidate(unittest.TestCase):
         commands = [args for args, _ in self.calls]
         seal = commands.index(('codesign', '--force', '--sign', '-', str(self.app)))
         verify = commands.index(('codesign', '--verify', '--deep', '--strict', str(self.app)))
-        archive = self.output / 'ModelPlan-beta-universal.zip'
+        archive = self.output / 'ModelPlan-beta-arm64.zip'
         zip_index = commands.index(('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(self.app), str(archive)))
         self.assertLess(seal, verify); self.assertLess(verify, zip_index)
         self.assertFalse(any('--deep' in args and '--force' in args for args in commands if args[0] == 'codesign'))
@@ -279,7 +279,7 @@ class AdhocBetaCandidate(unittest.TestCase):
         item = xml.find('channel/item')
         self.assertEqual(xml.find('channel/link').text, self.env['MACOS_BETA_FEED_URL'])
         self.assertEqual(item.find(f'{{{release.NS}}}channel').text, 'beta')
-        self.assertEqual(item.find(f'{{{release.NS}}}minimumSystemVersion').text, '14.0.0')
+        self.assertEqual(item.find(f'{{{release.NS}}}minimumSystemVersion').text, '15.0.0')
         self.assertEqual(item.find(f'{{{release.NS}}}releaseNotesLink').text, self.env['MACOS_RELEASE_NOTES_URL'])
         self.assertEqual(item.find('enclosure').attrib[f'{{{release.NS}}}edSignature'], self.signature)
         self.assertEqual(item.find('enclosure').attrib['url'], self.env['MACOS_UPDATE_URL'])
@@ -291,7 +291,7 @@ class AdhocBetaCandidate(unittest.TestCase):
             checksum, name = line.split('  ')
             self.assertEqual(checksum, release.sha256(self.output / name))
         self.assertEqual({path.name for path in self.output.iterdir()},
-                         {'ModelPlan-beta-universal.zip', 'appcast-beta.xml', 'SHA256SUMS', 'draft-release.json',
+                         {'ModelPlan-beta-arm64.zip', 'appcast-beta.xml', 'SHA256SUMS', 'draft-release.json',
                           'RELEASE_NOTES.md', 'release-notes.html'})
         self.assertIn('Gatekeeper', (self.output / 'RELEASE_NOTES.md').read_text())
         self.assertIn('re-granting', (self.output / 'RELEASE_NOTES.md').read_text())
@@ -306,7 +306,7 @@ class AdhocBetaCandidate(unittest.TestCase):
             return value
         with patch.object(release, 'run', side_effect=corrupt), self.assertRaisesRegex(ValueError, 'changed after signing'):
             self.prepare()
-        self.assertFalse((self.output / 'ModelPlan-beta-universal.zip').exists())
+        self.assertFalse((self.output / 'ModelPlan-beta-arm64.zip').exists())
 
     def test_adhoc_post_sign_mismatch_fails_before_archive(self):
         def corrupt(*args, **kwargs):
@@ -316,7 +316,7 @@ class AdhocBetaCandidate(unittest.TestCase):
             return value
         with patch.object(release, 'run', side_effect=corrupt), self.assertRaisesRegex(Exception, 'helper-(size|hash)-mismatch'):
             self.prepare()
-        self.assertFalse((self.output / 'ModelPlan-beta-universal.zip').exists())
+        self.assertFalse((self.output / 'ModelPlan-beta-arm64.zip').exists())
 
     def test_signed_path_preserves_helper_and_detects_post_sign_tamper(self):
         env = dict(self.env, MACOS_SIGNING_IDENTITY='Developer ID Application: Synthetic',
@@ -355,21 +355,24 @@ class AdhocBetaCandidate(unittest.TestCase):
         with patch.dict(release.os.environ, env, clear=True), patch.object(release, 'run', side_effect=command), \
              self.assertRaisesRegex(Exception, 'helper-(size|hash)-mismatch'):
             release.notarize(self.app, self.output)
-        self.assertFalse((self.output / 'ModelPlan-universal.zip').exists())
+        self.assertFalse((self.output / 'ModelPlan-arm64.zip').exists())
 
     def test_invalid_candidate_is_refused_before_signing_or_output(self):
         # Exercise the real shared validation rather than replacing it with a successful stub.
         invalid = [('CFBundleIdentifier', 'wrong.bundle'), ('LSMinimumSystemVersion', '13.0'),
-                   ('CFBundleVersion', 'not-a-build'), ('SUPublicEDKey', ''),
+                   ('CFBundleVersion', 'not-a-build'),
                    ('SUFeedURL', self.env['MACOS_FEED_URL'])]
         for key, value in invalid:
             with self.subTest(key=key):
-                original = self.info[key]; self.info[key] = value; self.write_info()
+                original = self.info.get(key); self.info[key] = value; self.write_info()
                 with patch.object(release, 'run', side_effect=self.fake_run), self.assertRaises(ValueError):
                     self.prepare()
                 self.assertFalse(self.output.exists())
                 self.assertFalse(any(args[0] == 'codesign' for args, _ in self.calls))
-                self.info[key] = original; self.write_info(); self.calls.clear()
+
+                if original is None: self.info.pop(key)
+                else: self.info[key] = original
+                self.write_info(); self.calls.clear()
         for name, invalid_text in [('build-edition.json', '{"edition":"community"}'),
                                    ('release-provenance.json', '{"sourceCommit":"wrong"}'),
                                    ('modelplan.sha256', 'incorrect')]:
@@ -384,10 +387,21 @@ class AdhocBetaCandidate(unittest.TestCase):
             self.prepare()
         command.assert_not_called()
 
-    def test_nonuniversal_candidate_is_refused(self):
-        with patch.object(release, 'run', return_value=b'arm64'), self.assertRaisesRegex(ValueError, 'universal'):
+    def test_universal_candidate_is_refused(self):
+        with patch.object(release, 'run', return_value=b'arm64 x86_64'), self.assertRaisesRegex(ValueError, 'arm64'):
             self.prepare()
         self.assertFalse(self.output.exists())
+
+    def test_each_bundled_executable_rejects_a_universal_slice(self):
+        for relative in ('Contents/MacOS/ModelPlan', 'Contents/Helpers/modelplan'):
+            def inspect(*args, input=None):
+                if args[:3] == ('xcrun', 'lipo', '-archs'):
+                    return b'arm64 x86_64' if args[3].endswith(relative) else b'arm64'
+                return b''
+            with self.subTest(relative=relative), patch.object(release, 'run', side_effect=inspect):
+                with self.assertRaisesRegex(ValueError, 'exactly arm64'):
+                    release.validate_candidate(self.app, self.env['GITHUB_SHA'], self.env['MACOS_BUNDLE_ID'], None,
+                                               feed=self.env['MACOS_BETA_FEED_URL'])
 
     def test_signed_path_still_requires_valid_team(self):
         with patch.object(release, 'run', side_effect=self.fake_run), self.assertRaisesRegex(ValueError, 'source/team'):
@@ -483,7 +497,7 @@ class AppcastCandidate(unittest.TestCase):
             self.assertIsNone(item.find(f'{{{release.NS}}}channel'))
             self.assertIsNone(item.find(f'{{{release.NS}}}releaseNotesLink'))
             self.assertEqual(item.find(f'{{{release.NS}}}version').text, '42')
-            self.assertEqual(item.find(f'{{{release.NS}}}minimumSystemVersion').text, '14.0.0')
+            self.assertEqual(item.find(f'{{{release.NS}}}minimumSystemVersion').text, '15.0.0')
             self.assertEqual(item.find('enclosure').attrib['length'], str(archive.stat().st_size))
             self.assertIn('1.2.3 & test', item.find('title').text)
 
@@ -499,4 +513,20 @@ class AppcastCandidate(unittest.TestCase):
             with self.assertRaises(ValueError): release.appcast_bytes(info, archive, signature, 'https://example.invalid/a', 'https://example.invalid/feed')
 
 
-if __name__ == '__main__': unittest.main()
+class AppleSiliconArchitectureTests(unittest.TestCase):
+    def test_only_exact_arm64_is_accepted(self):
+        for output in (b'x86_64', b'arm64 x86_64', b'', b'arm64 arm64', b'arm64e'):
+            with self.subTest(output=output), patch.object(release, 'run', return_value=output):
+                with self.assertRaises(ValueError):
+                    release.require_arm64(Path('/synthetic/app'))
+        with patch.object(release, 'run', return_value=b'arm64\n'):
+            release.require_arm64(Path('/synthetic/app'))
+
+    def test_architecture_inspection_failure_is_not_accepted(self):
+        with patch.object(release, 'run', side_effect=RuntimeError('lipo failed')):
+            with self.assertRaises(RuntimeError):
+                release.require_arm64(Path('/synthetic/app'))
+
+
+if __name__ == '__main__':
+    unittest.main()

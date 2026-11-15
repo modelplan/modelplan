@@ -5,23 +5,21 @@ import XCTest
 final class RecordTests: XCTestCase {
     let now = Fixtures.now
 
-    func testF12ThreeFiveLinesRunningFirstAndOverflow() {
+    func testF12TimelineRunningFirstAndCompletedAge() {
         let sessions = [Fixtures.session("done", running: false, endedAt: now.addingTimeInterval(-360))] + (0..<6).map { Fixtures.session("run\($0)") }
-        for (height, count) in [(640.0, 3), (883.9, 3), (884, 5), (890, 5)] {
-            let strip = RecordStripPresentation(sessions: sessions, height: height, scope: .all, showProjectNames: true, now: now, language: .chinese)
-            XCTAssertEqual(strip.lines.count, count); XCTAssertEqual(strip.overflow, 7 - count)
-            XCTAssertTrue(strip.lines.allSatisfy(\.working)); XCTAssertEqual(strip.lines.first?.speed60s, 58)
-        }
-        let done = RecordStripPresentation(sessions: [sessions[0]], height: 890, scope: .all, showProjectNames: true, now: now, language: .chinese)
-        XCTAssertEqual(done.lines[0].age, "6m前"); XCTAssertEqual(done.lines[0].tool, "Claude")
+        let page = DestinationsPresentation(projects: [], sessions: sessions, scope: .all, timelineRange: .days7,
+            showProjectNames: true, now: now, calendar: Fixtures.calendar(), language: .chinese)
+        XCTAssertEqual(page.timeline.count, 7)
+        XCTAssertTrue(page.timeline.prefix(6).allSatisfy(\.working)); XCTAssertEqual(page.timeline.first?.speed60s, 58)
+        XCTAssertEqual(page.timeline.last?.age, "6m前"); XCTAssertEqual(page.timeline.last?.tool, "Claude")
     }
 
     func testF03OwnRateOnlyAndFreshnessBoundaries() {
         let sessions = [Fixtures.session("known"), Fixtures.session("unknown", rate: nil), Fixtures.session("expiredRate", lastAt: now.addingTimeInterval(-60)), Fixtures.session("expiredSession", lastAt: now.addingTimeInterval(-300))]
-        let strip = RecordStripPresentation(sessions: sessions, height: 890, scope: .all, showProjectNames: true, now: now, language: .english)
-        XCTAssertEqual(strip.lines.first { $0.id == "known" }?.speed60s, 58)
-        for id in ["unknown", "expiredRate", "expiredSession"] { XCTAssertNil(strip.lines.first { $0.id == id }?.speed60s) }
-        XCTAssertFalse(strip.lines.first { $0.id == "expiredSession" }!.working)
+        let page = DestinationsPresentation(projects: [], sessions: sessions, scope: .all, timelineRange: .days7, showProjectNames: true, now: now, calendar: Fixtures.calendar(), language: .english)
+        XCTAssertEqual(page.timeline.first { $0.id == "known" }?.speed60s, 58)
+        for id in ["unknown", "expiredRate", "expiredSession"] { XCTAssertNil(page.timeline.first { $0.id == id }?.speed60s) }
+        XCTAssertFalse(page.timeline.first { $0.id == "expiredSession" }!.working)
         XCTAssertNil(SessionRate(value: 30, lastAt: now, samples: 4, validSession60s: true).reading(now: now))
         XCTAssertNil(SessionRate(value: 30, lastAt: now, samples: 5, validSession60s: false).reading(now: now))
         XCTAssertNil(SessionRate(value: 30, lastAt: now.addingTimeInterval(1), samples: 5, validSession60s: true).reading(now: now))
@@ -30,8 +28,6 @@ final class RecordTests: XCTestCase {
 
     func testF12ScopeAndNamesOffEveryProjection() {
         let sessions = [Fixtures.session("a", project: "Secret project"), Fixtures.session("b", sub: "b"), Fixtures.session("unattributed", sub: nil)]
-        let strip = RecordStripPresentation(sessions: sessions, height: 890, scope: .subscription("a"), showProjectNames: false, now: now, language: .chinese)
-        XCTAssertEqual(strip.lines.map(\.id), ["a"]); XCTAssertNil(strip.lines[0].projectName)
         let projects = [InstrumentProject(id: "p", name: "Secret project", subscriptionIDs: ["a", "b"], combinedTokens: 100)]
         let page = DestinationsPresentation(projects: projects, sessions: sessions, scope: .subscription("a"), timelineRange: .today,
                                              showProjectNames: false, now: now, calendar: Fixtures.calendar(), language: .chinese)

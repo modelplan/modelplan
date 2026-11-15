@@ -98,6 +98,25 @@ do {
         _ = try state.step(input, at: 3, intent: .reveal); input.pointer = .unknown
         try expect(try state.step(input, at: 100).state == .expanded, "unknown pointer cannot be taken as outside")
     }
+    try test("edge: Option arrows follow the edge's axis (DOCK-3.6-13)") {
+        for edge in [DockEdge.bottom, .top] {
+            try expect(edge.optionArrowDelta(keyCode: 123) == -1 && edge.optionArrowDelta(keyCode: 124) == 1, "left and right move along a horizontal edge")
+            try expect(edge.optionArrowDelta(keyCode: 125) == nil && edge.optionArrowDelta(keyCode: 126) == nil, "up and down do nothing there")
+        }
+        for edge in [DockEdge.left, .right] {
+            try expect(edge.optionArrowDelta(keyCode: 126) == -1 && edge.optionArrowDelta(keyCode: 125) == 1, "up and down move along a side edge")
+            try expect(edge.optionArrowDelta(keyCode: 123) == nil && edge.optionArrowDelta(keyCode: 124) == nil, "left and right do nothing there")
+        }
+    }
+    try test("visibility: the inside area has 12 pt of slack (DOCK-3.6-03)") {
+        let area = DockPresenceArea(painted: [CGRect(x: 100, y: 100, width: 50, height: 200)], wake: .zero, card: nil,
+                                    display: CGRect(x: 0, y: 0, width: 1000, height: 800), edge: .right, outerEdge: false)
+        try expect(DockVisibilityPolicy().insideSlack == 12, "slack value")
+        try expect(area.region(at: CGPoint(x: 88, y: 200)) == .inside, "12 pt out is inside")
+        try expect(area.region(at: CGPoint(x: 87.5, y: 200)) != .inside, "past 12 pt is not")
+        try expect(area.region(at: CGPoint(x: 125, y: 312)) == .inside, "the slack holds on every side")
+        try expect(area.region(at: CGPoint(x: 125, y: 312.5)) != .inside, "past 12 pt is not")
+    }
     try test("visibility: stale locks expire but each real protection survives") {
         for lock in [DockRecordedLocks.drag, .menu, .keyboard] {
             var state = DockVisibilityState(), input = DockPresence(); input.pointer = .outside; input.recordedLocks = lock
@@ -123,7 +142,7 @@ do {
     try test("visibility: suppression, lifecycle and invalid clock/config") {
         for mode in 0..<4 {
             var state = DockVisibilityState(), input = DockPresence(); input.pointer = .wake
-            switch mode {case 0:input.enabled=false;case 1:input.cockpitClosed=false;case 2:input.allowedOverFullscreen=false;default:input.outerEdge=false}
+            switch mode {case 0:input.enabled=false;case 1:input.lifecycleActive=false;case 2:input.allowedOverFullscreen=false;default:input.outerEdge=false}
             let result=try state.step(input, at: 0, intent: .reveal)
             if case .suppressed = result.state {} else { throw CheckFailure(description:"suppression overrides reveal") }
             try expect(result.nextDeadline == nil, "no hidden timer")
@@ -170,9 +189,10 @@ do {
         s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(600))
         try expect(DockNoticeProjection.candidates(for:s,at:now).map(\.key.kind)==[.forecast,.resetAnnounced,.cardsExpiring,.credits],"priority order")
         s.forecast=nil;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"card expiry precedes announced reset")
-        let cards=s.cards;s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.shape == .hollow,"announced hollow blue")
+        let cards=s.cards;s.cards=[];let announced=DockNoticeProjection.selected(for:s,at:now)
+        try expect(announced?.shape == .hollow && announced?.tone == DockNotice.resetAnnouncedTone,"announced hollow, palette tone")
         s.reset=reset(confirmed:true);let confirmed=DockNoticeProjection.selected(for:s,at:now)
-        try expect(confirmed?.tone == .blue && confirmed?.shape == .solid,"confirmed solid blue, never credits white")
+        try expect(confirmed?.tone == DockNotice.resetConfirmedTone && confirmed?.shape == .solid && confirmed?.tone != .white,"confirmed solid, palette tone, never credits white")
         s.cards=cards;s.reset?.restartedReading=true;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"reading clears confirmed reset only")
         s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.tone == .white,"credits are white")
         s.creditsKnown=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"unknown credits not fabricated")
@@ -183,6 +203,9 @@ do {
         s.reset=DockResetSignal(id:"scheduled",status:.announced,scheduledThrough:now.addingTimeInterval(10))
         try expect(DockNoticeProjection.selected(for:s,at:now) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(10)) == nil,"scheduled end, not nominal 48h")
         s.reset=reset(confirmed:true);try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600))==nil,"confirmed 24h")
+        try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(3*3600-1)) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(3*3600))==nil,"D166: confirmed dot 3h")
+        s.reset?.confirmedDotUntil=now.addingTimeInterval(30*3600);try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600-1)) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600))==nil,"D166: a later dot bound is capped at 24h")
+        s.reset?.confirmedDotUntil=nil
         s.reset?.confirmedAt=now.addingTimeInterval(1);try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"future confirmation withheld")
         s.reset=nil;s.cards=[DockResetCardSignal(id:"expired",expiresAt:now),DockResetCardSignal(id:"boundary",expiresAt:now.addingTimeInterval(48*3600)),DockResetCardSignal(id:"late",expiresAt:now.addingTimeInterval(48*3600+1))]
         try expect(DockNoticeProjection.selected(for:s,at:now)?.key.sourceIDs == ["boundary"],"card 48h inclusive, zero excluded")
@@ -287,7 +310,7 @@ do {
         try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","shortest outer, weekly inner")
         try expect(result.readout=="20%" && result.selectedWindowID=="week" && result.litTimePoints(positions:37)==19,"selected tightest quota, clock actual time")
         input.selectedWindowID="5h";input.showUsedPercent=true;result=try DockInstrumentProjection.evaluate(input,now:now)
-        try expect(result.readout=="20%" && result.status == .normal && result.litTimePoints(positions:37)==15,"used display does not invert status or clock")
+        try expect(result.readout=="20%" && result.status == .normal && result.litTimePoints(positions:37)==23,"used display does not invert status; clock lights time elapsed (D129)")
         try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","pin never swaps quota rings")
         input.windows=[week]; result=try DockInstrumentProjection.evaluate(input,now:now)
         try expect(result.outer?.windowID=="week" && result.inner==nil,"one weekly window uses the outer ring only")
@@ -297,7 +320,7 @@ do {
         try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="month","when weekly is absent the inner ring uses the longest remaining window")
     }
     try test("B06 boundary status and unknown/stale/passed resets are not invented fuel") {
-        for (r,expected) in [(0.0,DockQuotaStatus.critical),(15.0,.critical),(16.0,.critical),(25.0,.critical),(25.01,.warning),(40.0,.warning),(41.0,.normal)] {
+        for (r,expected) in [(0.0,DockQuotaStatus.critical),(25.0,.critical),(25.01,.warning),(26.0,.warning),(50.0,.warning),(50.01,.normal),(51.0,.normal),(100.0,.normal)] {
             let w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:r,resetsAt:nil,durationSeconds:nil)
             var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
             let p=try DockInstrumentProjection.evaluate(i,now:now)
@@ -313,8 +336,48 @@ do {
         i.dataState = .fresh;i.windows[0].resetsAt=now
         try expect(try DockInstrumentProjection.evaluate(i,now:now).readout=="--","passed reset retires quota")
     }
+    try test("D129 clock dots follow the remaining/used choice") {
+        func lit(_ left:Double,used:Bool)throws->Int?{
+            let w=DockQuotaWindowInput(id:"w",period:.fiveHour,label:"5h",remainingPercent:50,resetsAt:now.addingTimeInterval(18000*left),durationSeconds:18000)
+            var i=DockInstrumentInput(id:"s",name:"Synthetic",windows:[w]);i.dataState = .fresh;i.showUsedPercent=used
+            return try DockInstrumentProjection.evaluate(i,now:now).litTimePoints(positions:37)
+        }
+        let a1:Int?=try lit(0.4,used:false), a2:Int?=try lit(0.4,used:true)
+        try expect(a1==15,"remaining mode lights time left")
+        try expect(a2==23,"used mode lights time elapsed")
+        let b1:Int?=try lit(1,used:false), b2:Int?=try lit(1,used:true)
+        try expect(b1==37 && b2==0,"full time left: all dots remaining, none used")
+        let c1:Int?=try lit(0.0001,used:false), c2:Int?=try lit(0.0001,used:true)
+        try expect(c1==1 && c2==37,"time almost gone: one dot remaining, all dots used")
+        let d1:Int?=try lit(0.5,used:false), d2:Int?=try lit(0.5,used:true)
+        try expect(d1==19 && d2==19,"half time lights the same count in both modes")
+    }
+    try test("D130 quota arcs follow the remaining/used choice; colours stay keyed to remaining") {
+        func reading(_ r:Double,used:Bool)throws->DockInstrumentReading{
+            let a=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"Short",remainingPercent:r,resetsAt:nil,durationSeconds:nil)
+            let b=DockQuotaWindowInput(id:"week",period:.week,label:"Long",remainingPercent:100-r,resetsAt:nil,durationSeconds:nil)
+            var i=DockInstrumentInput(id:"s",name:"Synthetic",windows:[a,b]);i.dataState = .fresh;i.showUsedPercent=used
+            return try DockInstrumentProjection.evaluate(i,now:now)
+        }
+        let levels:[Double]=[0,10,25,40,50,75,100]
+        for r in levels {
+            let rem=try reading(r,used:false),used=try reading(r,used:true)
+            let remOuter:Double=rem.outer?.fraction ?? -1, remInner:Double=rem.inner?.fraction ?? -1
+            let usedOuter:Double=used.outer?.fraction ?? -1, usedInner:Double=used.inner?.fraction ?? -1
+            let remTruth:Double=used.outer?.remainingFraction ?? -1
+            try expect(abs(remOuter-r/100)<1e-9 && abs(remInner-(100-r)/100)<1e-9,"remaining mode arcs = remaining")
+            try expect(abs(usedOuter-(1-r/100))<1e-9 && abs(usedInner-r/100)<1e-9,"used mode arcs = used")
+            try expect(rem.outer?.status==used.outer?.status && rem.inner?.status==used.inner?.status && rem.status==used.status,"colours identical across modes")
+            try expect(rem.outer?.remainingFraction==used.outer?.remainingFraction && abs(remTruth-r/100)<1e-9,"remaining truth identical across modes")
+        }
+        let empty=try reading(0,used:true),full=try reading(100,used:true)
+        try expect(empty.outer?.fraction==1 && empty.outer?.status == .critical && empty.outer?.remainingFraction==0,"0% remaining: full used arc, still critical and used-up")
+        try expect(full.outer?.fraction==0 && full.outer?.status == .normal && full.outer?.remainingFraction==1,"100% remaining: empty used arc, still normal")
+        let unknown=DockQuotaArc(windowID:"x",fraction:nil,status:.unknown)
+        try expect(unknown.remainingFraction==nil,"unknown stays unknown")
+    }
     try test("configured critical thresholds include equality for saved and new choices") {
-        for threshold in [10.0, 16, 20, 25] {
+        for threshold in [40.0, 30, 25, 20, 15, 10] {
             for remaining in [threshold - 0.01, threshold, threshold + 0.01] {
                 let window = DockQuotaWindowInput(id:"quota",period:.fiveHour,label:"Quota",remainingPercent:remaining,resetsAt:nil,durationSeconds:nil)
                 var input = DockInstrumentInput(id:"sub",name:"Synthetic",windows:[window]);input.dataState = .fresh
@@ -349,31 +412,13 @@ do {
         i.windows[0].remainingPercent=nil
         try expect(!(try DockInstrumentProjection.evaluate(i,now:now).jetEligible),"unknown selected status does not invent a jet colour")
     }
-    try test("task62 cockpit restore inserts the final state without an away reveal frame") {
-        for edge in ["left","right","bottom"] {for autoHide in [true,false] {for pointer in [DockPointerRegion.outside,.inside,.wake,.unknown] {
-            var state=DockVisibilityState(),input=DockPresence();input.autoHide=autoHide;input.cockpitClosed=false
-            _=try state.step(input,at:0);let oldGeneration=state.generation
-            input.cockpitClosed=true;input.pointer=pointer;input.recordedLocks=[.drag]
-            let change=try state.step(input,at:1,intent:.restoreFromCockpit)
-            let expanded = !autoHide || pointer == .inside || pointer == .wake
-            try expect(change.state == (expanded ? .expanded:.sliver),"\(edge) restore final state")
-            try expect(change.didReveal==expanded && !change.didCollapse,"no away reveal/collapse pair")
-            try expect(change.nextDeadline==nil && change.clearRecordedLocks == [.drag],"no stale grace or drag timer")
-            try rejects(.staleGeneration){_=try state.step(input,at:2,expectedGeneration:oldGeneration)}
-            if expanded{try expect(!state.acceptsPress(at:1.01),"restored visible instrument preserves arrival guard")}
-        }}}
-        var retained=DockVisibilityState(),input=DockPresence();input.pointer = .outside
-        _=try retained.step(input,at:0,intent:.reveal)
-        let restored=try retained.step(input,at:1,intent:.restoreFromCockpit)
-        try expect(restored.state == .sliver && !restored.didReveal && !restored.didCollapse,"restoration also avoids an animated collapse when the old hidden view retained expanded state")
-    }
     if let i=CommandLine.arguments.firstIndex(of:"--receipt"), i+1<CommandLine.arguments.count {
         let value:[String:Any]=["schemaVersion":1,"testGroups":groups,"assertions":assertions,"result":"passed","uiLaunched":false,"fixtureClock":"2023-11-14T22:13:20Z"]
         try JSONSerialization.data(withJSONObject:value,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:CommandLine.arguments[i+1]),options:.atomic)
     }
     func layouts(_ displays:[DockDisplayArea],scale:CGFloat=1)->[DockEdgeLayout]{
         displays.flatMap{d in DockEdgeGeometry.allowedEdges.map{edge in
-            let size=edge == .bottom ? CGSize(width:240*scale,height:80*scale):CGSize(width:80*scale,height:240*scale)
+            let size=edge.isHorizontal ? CGSize(width:240*scale,height:80*scale):CGSize(width:80*scale,height:240*scale)
             return DockEdgeLayout(displayID:d.id,edge:edge,expandedSize:size,sliverLength:240*scale,sliverThickness:3*scale,hoverRects:[CGRect(origin:.zero,size:size)])
         }}
     }
@@ -382,59 +427,67 @@ do {
         for scale in [CGFloat(0.8),1,1.3]{for edge in DockEdgeGeometry.allowedEdges{
             let p=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:edge),displays:[d],layouts:layouts([d],scale:scale),pointer:nil,primaryID:d.id)!
             try expect(d.usableFrame.contains(p.frame) && d.usableFrame.contains(p.sliverFrame) && d.usableFrame.contains(p.wakeFrame),"all painted/wake frames stay usable")
-            let thickness=edge == .bottom ? p.sliverFrame.height:p.sliverFrame.width
-            let wake=edge == .bottom ? p.wakeFrame.height:p.wakeFrame.width
+            let thickness=edge.isHorizontal ? p.sliverFrame.height:p.sliverFrame.width
+            let wake=edge.isHorizontal ? p.wakeFrame.height:p.wakeFrame.width
             try expect(abs(thickness-3*scale)<0.0001 && wake==20,"registered sliver scales, physical wake does not")
-            let along=edge == .bottom ? p.frame.minX-d.usableFrame.minX:p.frame.minY-d.usableFrame.minY
+            let along=edge.isHorizontal ? p.frame.minX-d.usableFrame.minX:p.frame.minY-d.usableFrame.minY
             try expect(along>=24,"physical hot-corner clearance")
-            try expect(p.edge != .top,"top never emitted")
+            try expect(p.edge == edge,"every allowed edge, the top one included, rests on itself")
+            if edge == .top { try expect(p.frame.maxY == d.usableFrame.maxY && p.sliverFrame.maxY == d.usableFrame.maxY,"the top edge rests flush with the usable top") }
         }}
     }
-    try test("B07 seams: partial, negative, above and fully surrounded fallback"){
+    try test("B07 Q8 seams: partial, negative, above and surrounded displays retain their edge"){
         let a=DockDisplayArea(id:"a",frame:CGRect(x:0,y:0,width:1000,height:800),visibleFrame:CGRect(x:0,y:0,width:1000,height:800))
         let b=DockDisplayArea(id:"b",frame:CGRect(x:1000,y:400,width:800,height:400),visibleFrame:CGRect(x:1000,y:400,width:800,height:400))
         let p=try DockEdgeGeometry.resolve(preference:.init(displayID:"a",edge:.right,alongFraction:0.9),displays:[a,b],layouts:layouts([a,b]),pointer:nil,primaryID:"a")!
-        try expect(p.edge == .right && p.frame.maxY<=400,"partial edge fits wholly below shared interval")
-        try expect(!DockEdgeGeometry.canWake(at:CGPoint(x:999,y:400),placement:p,displays:[a,b]),"exact seam endpoint cannot wake")
-        try expect(DockEdgeGeometry.canWake(at:CGPoint(x:999,y:399),placement:p,displays:[a,b]),"exposed wake remains available")
+        try expect(p.displayID == "a" && p.edge == .right && p.frame.minY >= 400 && p.frame.maxX == a.usableFrame.maxX,
+                   "the preferred anchor may place the panel along the shared interval")
+        let y = p.wakeFrame.midY
+        try expect(DockEdgeGeometry.canWake(at:CGPoint(x:999,y:y),placement:p,displays:[a,b]),"the strip wakes from inside its display")
+        try expect(!DockEdgeGeometry.canWake(at:CGPoint(x:1000,y:y),placement:p,displays:[a,b]),"the neighbouring side of the seam cannot wake it")
         let left=DockDisplayArea(id:"left",frame:CGRect(x:-1000,y:0,width:1000,height:800),visibleFrame:CGRect(x:-1000,y:0,width:1000,height:800))
         let q=try DockEdgeGeometry.resolve(preference:.init(displayID:"left",edge:.right),displays:[a,left],layouts:layouts([a,left]),pointer:nil,primaryID:"a")!
-        try expect(q.edge != .right,"negative-origin adjoining seam is not a placement")
+        try expect(q.displayID == left.id && q.edge == .right && q.frame.maxX == left.usableFrame.maxX,"negative-origin adjoining seam keeps its edge")
         let above=DockDisplayArea(id:"above",frame:CGRect(x:0,y:800,width:1000,height:800),visibleFrame:CGRect(x:0,y:800,width:1000,height:800))
         let r=try DockEdgeGeometry.resolve(preference:.init(displayID:"above",edge:.bottom),displays:[a,above],layouts:layouts([a,above]),pointer:nil,primaryID:"a")!
-        try expect(r.edge != .bottom,"above-screen bottom seam cannot reveal")
+        try expect(r.displayID == above.id && r.edge == .bottom && r.frame.minY == above.usableFrame.minY,"the upper display keeps its adjoining bottom edge")
         let right=DockDisplayArea(id:"right",frame:CGRect(x:1000,y:0,width:1000,height:800),visibleFrame:CGRect(x:1000,y:0,width:1000,height:800))
         let below=DockDisplayArea(id:"below",frame:CGRect(x:0,y:-800,width:1000,height:800),visibleFrame:CGRect(x:0,y:-800,width:1000,height:800))
         let all=[a,left,right,below]
-        let fallback=try DockEdgeGeometry.resolve(preference:.init(displayID:"a",edge:.right),displays:all,layouts:layouts(all),pointer:CGPoint(x:500,y:400),primaryID:"a")!
-        try expect(fallback.displayID != "a","fully surrounded display falls back without removing it from topology")
-        try expect(DockEdgeGeometry.canWake(at:CGPoint(x:fallback.wakeFrame.midX,y:fallback.wakeFrame.midY),placement:fallback,displays:all),"fallback remains exposed in full topology")
+        let retained=try DockEdgeGeometry.resolve(preference:.init(displayID:"a",edge:.right),displays:all,layouts:layouts(all),pointer:CGPoint(x:500,y:400),primaryID:"a")!
+        try expect(retained.displayID == a.id && retained.edge == .right,"a display bordered on all supported edges keeps the saved display and edge")
+        try expect(DockEdgeGeometry.canWake(at:CGPoint(x:retained.wakeFrame.midX,y:retained.wakeFrame.midY),placement:retained,displays:all),"the inner-edge wake region stays on the saved display")
     }
-    try test("B07 non-drag fallback preserves position while pointer moves"){
+    try test("B07 resting placement preserves position while pointer moves"){
         let a=DockDisplayArea(id:"a",frame:CGRect(x:0,y:0,width:1000,height:800),visibleFrame:CGRect(x:0,y:0,width:1000,height:800))
         let b=DockDisplayArea(id:"b",frame:CGRect(x:1000,y:0,width:1000,height:800),visibleFrame:CGRect(x:1000,y:0,width:1000,height:800))
-        // The preview registers its selected edge only. A's right edge is an internal seam.
+        // A missing saved display falls back to the primary display and keeps the registered edge.
         let selected=layouts([a,b]).filter{$0.edge == .right}
-        for pinned in [Optional("a"),nil]{
+        for pinned in [Optional("a"),Optional("removed"),nil]{
             let preference=DockEdgePreference(displayID:pinned,edge:.right,alongFraction:0.4)
             let lower=try DockEdgeGeometry.resolve(preference:preference,displays:[a,b],layouts:selected,pointer:CGPoint(x:500,y:180),primaryID:"a")!
             let upper=try DockEdgeGeometry.resolve(preference:preference,displays:[a,b],layouts:selected,pointer:CGPoint(x:500,y:620),primaryID:"a")!
-            try expect(lower.displayID == "b" && upper.displayID == "b","fallback uses an exposed registered display")
+            try expect(lower.displayID == "a" && upper.displayID == "a" && lower.edge == .right && upper.edge == .right,"a registered inner edge remains available on the intended display")
             try expect(lower.frame == upper.frame && lower.sliverFrame == upper.sliverFrame,"ordinary pointer motion must not vertically move expanded dock or sliver")
             try expect(abs(lower.alongFraction-0.4)<0.0001,"fallback preserves stored along-edge intent")
             let drop=try DockEdgeGeometry.resolve(preference:preference,displays:[a,b],layouts:selected,pointer:CGPoint(x:1999,y:620),primaryID:"a",nearest:true)!
             try expect(drop.frame != lower.frame,"an explicit nearest drag/drop may change along-edge position")
         }
     }
-    try test("B07 migration/drop: missing display, top normalization and no floating"){
+    try test("B07 migration/drop: missing display, top below the menu bar and no floating"){
         let f=CGRect(x:0,y:0,width:1000,height:800),d=DockDisplayArea(id:"primary",frame:f,visibleFrame:f)
         let top=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:.top),displays:[d],layouts:layouts([d]),pointer:nil,primaryID:d.id)!
-        try expect(top.edge == .right && top.frame.maxY==776,"top normalizes to nearest allowed registered position")
+        try expect(top.edge == .top && top.frame.maxY == 800 && top.wakeFrame.maxY == 800,"a saved top edge rests on the top edge (A-1106-4)")
+        let menuBar=DockDisplayArea(id:"primary",frame:f,visibleFrame:CGRect(x:0,y:0,width:1000,height:776))
+        let below=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:.top,alongFraction:0.5),displays:[menuBar],layouts:layouts([menuBar]),pointer:nil,primaryID:d.id)!
+        try expect(below.edge == .top && below.frame.maxY == 776 && menuBar.visibleFrame.contains(below.frame),"the top edge sits below the menu bar, inside visibleFrame")
+        let dropTop=try DockEdgeGeometry.resolve(preference:.init(displayID:"removed"),displays:[menuBar],layouts:layouts([menuBar]),pointer:CGPoint(x:450,y:770),primaryID:d.id,nearest:true)!
+        try expect(dropTop.edge == .top && dropTop.frame.maxY == 776,"a drop near the top snaps to the top edge")
         let bottom=try DockEdgeGeometry.resolve(preference:.init(displayID:"removed"),displays:[d],layouts:layouts([d]),pointer:CGPoint(x:450,y:5),primaryID:d.id,nearest:true)!
         try expect(bottom.edge == .bottom && bottom.frame.minY==0,"nearest drop snaps, never floats")
         let reserved=DockDisplayArea(id:"primary",frame:f,visibleFrame:CGRect(x:0,y:50,width:1000,height:724))
         let avoid=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:.bottom),displays:[reserved],layouts:layouts([reserved]),pointer:CGPoint(x:450,y:55),primaryID:d.id)!
-        try expect(avoid.edge != .bottom && avoid.frame.maxY<=reserved.visibleFrame.maxY,"visible system-Dock edge avoided when an alternative exists")
+        try expect(avoid.edge == .bottom && avoid.frame.minY == reserved.visibleFrame.minY && reserved.visibleFrame.contains(avoid.frame),"the saved bottom edge sits above the system Dock reservation")
         try expect(try DockEdgeGeometry.resolve(preference:.init(),displays:[],layouts:[],pointer:nil,primaryID:nil)==nil,"empty screens do not invent a frame")
     }
     try test("B07 registration: asymmetric full bounds keep the supplied sliver anchor"){
@@ -472,6 +525,17 @@ do {
         try expect(DockRefreshSweep.fraction(elapsed: 0.6, target: 0.75, reduceMotion: false) == 0.75, "ends at admitted value")
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: 0.75, reduceMotion: true) == 0.75, "Reduce Motion is static")
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: .nan, reduceMotion: false) == nil, "invalid values are rejected")
+        // G3-98: fade out, hidden until the result lands (cap 3 s), fade in; never counts; Reduce Motion never dims.
+        func al(_ e: Double, _ r: Double? = nil) -> Double { DockRefreshSweep.readoutAlpha(elapsed: e, resolvedAt: r, reduceMotion: false) }
+        try expect(al(0) == 1 && al(0.15) == 0, "fades out in 0.15 s")
+        try expect(al(1.2) == 0 && al(2.9) == 0, "stays hidden past the sweep while no result has landed")
+        try expect(abs(al(1.0, 0.8) - 1) < 0.000001, "fades in from the moment the result landed")
+        try expect(al(0.5, 0.3) > 0.999, "a quick result returns the number promptly")
+        try expect(al(0.15, 0.05) == 0 && abs(al(0.2, 0.05) - 1.0 / 3) < 0.000001 && al(0.4, 0.05) > 0.999, "an instant failure still completes the fade-out first")
+        try expect(al(3.0) == 0 && al(3.15) > 0.999, "timeout fades the number back in at 3 s")
+        try expect(abs(DockRefreshSweep.readoutEnd(resolvedAt: nil) - 3.15) < 0.000001 && DockRefreshSweep.readoutEnd(resolvedAt: 0.2) == 0.6, "loop end follows the result")
+        try expect(stride(from: 0.0, through: 3.2, by: 0.01).allSatisfy { (0...1).contains(al($0)) }, "alpha stays in range")
+        try expect(DockRefreshSweep.readoutAlpha(elapsed: 0.3, resolvedAt: nil, reduceMotion: true) == 1, "Reduce Motion swaps instantly, no fade")
     }
     try test("B08 independent card:leave and menu protection without a repeat loop"){
         var card=DockCardInteraction()
@@ -519,23 +583,43 @@ do {
         try expect(key.position==1 && key.proposed.orderedIDs(in:ids)==["b","a","c"],"Option-arrow moves one canonical place")
     }
     try test("B08 menu:optional Help and action-bound separators; acknowledge scopes stay distinct"){
-        let old=DockMenuModel.entries(hasHelp:false),full=DockMenuModel.entries(hasHelp:true)
-        try expect(old.count==7 && full.count==8,"callback omission preserves original menu")
-        try expect(full.map(\.command)==[.website,.methodology,.privacy,.checkForUpdates,.help,.settings,.about,.quit],"Help immediately above Settings")
-        try expect(full.filter(\.separatorBefore).map(\.command)==[.checkForUpdates,.quit] && old.filter(\.separatorBefore).count==2,"groups are not positional indices")
+        let withoutHelp = DockMenuModel.entries(hasHelp: false)
+        let withHelp = DockMenuModel.entries(hasHelp: true)
+        try expect(withoutHelp.map(\.command) == [.website, .methodology, .privacy, .settings, .about, .quit],
+                   "v1 omits updates even with legacy labels and no Help")
+        try expect(withHelp.map(\.command) == [.website, .methodology, .privacy, .help, .settings, .about, .quit],
+                   "Help immediately above Settings")
+        try expect(withHelp.filter(\.separatorBefore).map(\.command) == [.help, .quit] &&
+                   withoutHelp.filter(\.separatorBefore).map(\.command) == [.settings, .quit],
+                   "public links, app actions and Quit keep separate groups")
         var attention=DockAttentionState(),signal=fresh("a",.critical);signal.reset=reset()
         try attention.acknowledge(.cockpitOpening,signals:[signal],at:now)
         let afterCockpit=try attention.project([signal],stationBySubscription:["a":"a"],at:now)
         try expect(afterCockpit.menuNotice==nil && afterCockpit.dots.count==1 && afterCockpit.segments.count==1,"cockpit opens acknowledge menu only")
         try attention.acknowledge(.dockRevealed,signals:[signal],at:now)
         let afterDock=try attention.project([signal],stationBySubscription:["a":"a"],at:now)
-        try expect(afterDock.dots.isEmpty && afterDock.menuNotice==nil && afterDock.segments.count==1 && afterDock.segments.first?.severity == .critical,"genuine Dock reveal acknowledges notices while preserving current quota state")
+        try expect(afterDock.dots.isEmpty && afterDock.menuNotice==nil && afterDock.segments.count==1 && afterDock.segments.first?.severity == .critical,"genuine Dock reveal acknowledges strip dots while preserving current quota state")
     }
     try test("B08 card data uses canonical quota truth and retains unknown versus zero"){
         var input=DockInstrumentInput(id:"a",name:"Synthetic",windows:[.init(id:"five",period:.fiveHour,label:"Short",remainingPercent:0,resetsAt:now.addingTimeInterval(100),durationSeconds:18000),.init(id:"week",period:.week,label:"Long",remainingPercent:nil,resetsAt:nil,durationSeconds:nil)])
         input.dataState = .fresh;input.showUsedPercent=true
         let card=try DockCardProjection.content(input:input,at:now)
-        try expect(card.rows[0].value=="100%" && card.rows[0].remainingFraction==0 && card.rows[0].tone == .critical,"used display never reverses fuel/status truth")
+        try expect(card.rows[0].value=="100%" && card.rows[0].remainingFraction==0 && card.rows[0].tone == .critical,"used display never reverses status truth (tone and remaining truth)")
+        try expect(card.rows[0].fillFraction==1,"D130: the bar fills with used in used mode")
+        input.showUsedPercent=false
+        let remCard=try DockCardProjection.content(input:input,at:now)
+        try expect(remCard.rows[0].fillFraction==0 && remCard.rows[0].tone == .critical && remCard.rows[0].remainingFraction==0,"D130: remaining mode bar = remaining, same tone")
+        let cardLevels:[Double]=[0,30,60,100]
+        for r in cardLevels {
+            for used in [false,true] {
+                var i=DockInstrumentInput(id:"a",name:"S",windows:[.init(id:"five",period:.fiveHour,label:"Short",remainingPercent:r,resetsAt:nil,durationSeconds:nil)]);i.dataState = .fresh;i.showUsedPercent=used
+                let row=try DockCardProjection.content(input:i,at:now).rows[0]
+                let rowRem:Double=row.remainingFraction ?? -1, rowFill:Double=row.fillFraction ?? -1
+                let expectedFill:Double=used ? 1-r/100:r/100
+                try expect(abs(rowRem-r/100)<1e-9 && abs(rowFill-expectedFill)<1e-9,"D130 card bar fill, both modes, 0 and 100 boundaries")
+            }
+        }
+        input.showUsedPercent=true
         try expect(card.rows[1].value=="--" && card.rows[1].remainingFraction==nil,"missing is not zero")
         input.dataState = .stale
         let stale=try DockCardProjection.content(input:input,at:now)

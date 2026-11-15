@@ -4,9 +4,13 @@ package appserver
 import "github.com/modelplan/modelplan/cli/internal/consent"
 
 // liveRefreshScopes is a closed list of quota routes. In particular it does not
-// infer quota from local history, or treat an implicit runtime default as a grant.
-// Every caller must still recheck the fence, admission and provider-wide budget
-// at execution time.
+// infer quota from local history. Standard routes that the compiled policy turns
+// on by default (consent.ScopeDefinition.DefaultCheck, owner decision 2026-11-06:
+// a tool's own runtime/local sign-in is read without a consent click) are live
+// until the user turns them off; a recorded refusal, a tool-level denial,
+// RequireConsent and readers-off still win, through consent.AllowsScope. Every
+// caller must still recheck the fence, admission and provider-wide budget at
+// execution time.
 func liveRefreshScopes(state consent.State, mode string) []string {
 	candidates := []string{
 		consent.ScopeCodexRuntimeUsage,
@@ -24,8 +28,7 @@ func liveRefreshScopes(state consent.State, mode string) []string {
 	}
 	var scopes []string
 	for _, scope := range candidates {
-		record, decided := state.Scopes[scope]
-		if decided && record.Allowed && state.AllowsScope(scope, mode) {
+		if state.AllowsScope(scope, mode) {
 			scopes = append(scopes, scope)
 		}
 	}

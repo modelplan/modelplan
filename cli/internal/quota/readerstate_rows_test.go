@@ -893,3 +893,16 @@ func TestAllManagedReaderWindowSourcesAndObservationTimes(t *testing.T) {
 		})
 	}
 }
+
+// D41: the pending fact alone makes the Claude row ask for the Keychain, on every platform
+// the rows builder runs; no reader state is needed.
+func TestD41KeychainPendingReachesTheClaudeRow(t *testing.T) {
+	in := rows.Input{}
+	AppendManagedRows(&in, Paths{Cache: t.TempDir(), ReaderAccess: &ReaderAccess{Grants: map[string]ReaderGrant{}}, ClaudeKeychainPending: true})
+	if len(in.KeychainBlocks) != 1 || in.KeychainBlocks[0].ToolID != "claude" || in.KeychainBlocks[0].Status != "unset" || !in.KeychainBlocks[0].Blocked {
+		t.Fatalf("keychain blocks = %+v", in.KeychainBlocks)
+	}
+	if mapped, _ := rows.MapSignal(rows.SignalKeychain, in.KeychainBlocks[0].Status); mapped.State != rows.StateNeedsKeychain || mapped.Code != rows.CodeKeychainUnset || mapped.Action != rows.ActionOpenSettingsKeychain {
+		t.Fatalf("keychain status maps to %+v", mapped)
+	}
+}

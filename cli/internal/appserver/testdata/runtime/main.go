@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -42,7 +43,16 @@ func main() {
 		case "initialize":
 			result = map[string]any{"userAgent": "synthetic-runtime"}
 		case "account/rateLimits/read":
-			result = map[string]any{"rateLimitsByLimitId": map[string]any{"codex": map[string]any{"limitId": "codex", "planType": "pro", "primary": map[string]any{"usedPercent": 12, "windowDurationMins": 300, "resetsAt": time.Now().Add(3 * time.Hour).Unix()}}}}
+			// A fixed synthetic reset instant lets a test write session logs of the same meter.
+			reset := time.Now().Add(3 * time.Hour).Unix()
+			if v, err := strconv.ParseInt(os.Getenv("MODELPLAN_U3B_RUNTIME_RESETS_AT"), 10, 64); err == nil && v > 0 {
+				reset = v
+			}
+			plan := "pro"
+			if v := os.Getenv("MODELPLAN_U3B_RUNTIME_PLAN"); v != "" {
+				plan = v // a plan change (G3-20 upgrade) without a new login
+			}
+			result = map[string]any{"rateLimitsByLimitId": map[string]any{"codex": map[string]any{"limitId": "codex", "planType": plan, "primary": map[string]any{"usedPercent": 12, "windowDurationMins": 300, "resetsAt": reset}}}}
 		case "account/read":
 			var p map[string]any
 			if json.Unmarshal(request.Params, &p) != nil || p["refreshToken"] != false {

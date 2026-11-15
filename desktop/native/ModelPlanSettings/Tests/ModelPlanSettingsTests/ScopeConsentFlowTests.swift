@@ -26,6 +26,7 @@ import ModelPlanWire
         })
         let controller = ScopeConsentController(commands: commands)
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.choose(ScopeConsentFixtures.local, selected: true) // Settings no longer pre-selects (G3-67)
         let request = try XCTUnwrap(controller.requestAllow())
         await controller.confirm(request.id)
         if case .idle = controller.phase {} else { XCTFail("A local factory refusal cannot be a sent mutation") }
@@ -39,6 +40,7 @@ import ModelPlanWire
         let controller = ScopeConsentController(commands: commands)
         let original = try ScopeConsentFixtures.facts()
         controller.receiveAcceptedFacts(original)
+        controller.choose(ScopeConsentFixtures.local, selected: true) // Settings no longer pre-selects (G3-67)
         XCTAssertNotNil(controller.requestAllow())
         controller.receiveAcceptedFacts(try WireConsentFacts(consentTextVersion: original.consentTextVersion + 1, scopes: original.scopes))
         if case .idle = controller.phase {} else { XCTFail("A new consent text requires a new confirmation") }
@@ -50,7 +52,7 @@ import ModelPlanWire
         let controller = ScopeConsentController(commands: commands)
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts(cursorDefault: true))
         XCTAssertFalse(controller.selectedIDs.contains(ScopeConsentFixtures.cursor))
-        XCTAssertTrue(controller.selectedIDs.contains(ScopeConsentFixtures.local))
+        XCTAssertFalse(controller.selectedIDs.contains(ScopeConsentFixtures.local), "Settings does not pre-select a default path (G3-67)")
         let view = SettingsScopeConsentView(controller: controller, language: .english,buildSigning:.unsigned)
         XCTAssertTrue(viewTexts(view).contains { $0.localizedCaseInsensitiveContains("needs a signed build") })
         for signing in [ScopeConsentBuildSigning.signed,.unknown] {
@@ -108,6 +110,7 @@ import ModelPlanWire
         })
         let controller = ScopeConsentController(commands: commands)
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.choose(ScopeConsentFixtures.local, selected: true) // Settings no longer pre-selects (G3-67)
         let request = try XCTUnwrap(controller.requestAllow())
         let observer = controller.observe {
             if case .sending = controller.phase { controller.clearAcceptedPrivateState() }
@@ -126,6 +129,7 @@ import ModelPlanWire
         })
         let controller = ScopeConsentController(commands: commands)
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.choose(ScopeConsentFixtures.local, selected: true) // Settings no longer pre-selects (G3-67)
         let request = try XCTUnwrap(controller.requestAllow())
         let task = Task { await controller.confirm(request.id) }
         await engine.waitForGrantStart()
@@ -191,6 +195,7 @@ import ModelPlanWire
         })
         let controller = ScopeConsentController(commands: commands)
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.choose(ScopeConsentFixtures.local, selected: true) // Settings no longer pre-selects (G3-67)
         let view = SettingsScopeConsentView(controller: controller, language: .english)
         try await activate(view, "scope.allowSelected"); try await activate(view, "scope.confirm")
         XCTAssertFalse(try control(view, "scope.allowSelected").isEnabled)
@@ -312,6 +317,7 @@ import ModelPlanWire
         })
         let controller = ScopeConsentController(commands: commands)
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.choose(ScopeConsentFixtures.local, selected: true) // Settings no longer pre-selects (G3-67)
         let view = SettingsScopeConsentView(controller: controller, language: .english)
         try await activate(view, "scope.allowSelected")
         let old = try XCTUnwrap(control(view, "scope.confirm") as? ScopeConsentButton)
@@ -331,6 +337,7 @@ import ModelPlanWire
         })
         let controller = ScopeConsentController(commands: commands)
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.choose(ScopeConsentFixtures.local, selected: true) // Settings no longer pre-selects (G3-67)
         let request = try XCTUnwrap(controller.requestAllow())
         let changed = try ScopeConsentFixtures.facts(grantedGemini: true)
         var delivered = false
@@ -353,6 +360,7 @@ import ModelPlanWire
         })
         let controller = ScopeConsentController(commands: commands)
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.choose(ScopeConsentFixtures.local, selected: true) // Settings no longer pre-selects (G3-67)
         let view = SettingsScopeConsentView(controller: controller, language: .english)
         try await activate(view, "scope.allowSelected"); try await activate(view, "scope.confirm")
         XCTAssertTrue(viewTexts(view).contains { $0.contains("engine recorded the change") })
@@ -401,6 +409,7 @@ import ModelPlanWire
         })
         let controller = ScopeConsentController(commands: commands)
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.choose(ScopeConsentFixtures.local, selected: true) // Settings no longer pre-selects (G3-67)
         let view = SettingsScopeConsentView(controller: controller, language: .english)
         try await activate(view, "scope.allowSelected")
         let captured = try XCTUnwrap(control(view, "scope.confirm") as? ScopeConsentButton).invoke
@@ -457,8 +466,9 @@ import ModelPlanWire
         })
         let controller = ScopeConsentController(commands: commands)
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.choose(ScopeConsentFixtures.local, selected: true) // Settings no longer pre-selects (G3-67)
         let view = SettingsScopeConsentView(controller: controller, language: .english)
-        XCTAssertEqual(try control(view, "scope.allow." + ScopeConsentFixtures.local).state, .on)
+        XCTAssertEqual(try control(view, "scope.allow." + ScopeConsentFixtures.local).state, .on, "chosen above")
         XCTAssertEqual(try control(view, "scope.allow." + ScopeConsentFixtures.gemini).state, .off)
         XCTAssertEqual(try control(view, "scope.allow." + ScopeConsentFixtures.cursor).state, .off)
         let initial = await engine.recordedGrants(); XCTAssertTrue(initial.isEmpty)

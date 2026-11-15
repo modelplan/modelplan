@@ -31,6 +31,9 @@ type Ledger struct {
 	SchemaVersion int               `json:"schemaVersion"`
 	Rows          []Row             `json:"rows"`
 	Files         map[string]Cursor `json:"files,omitempty"` // by a hash of the log's path
+	Counted       []CountedRequest  `json:"counted,omitempty"`
+
+	cleared Cleared // while observing: the clear boundaries (cleared.go)
 }
 
 // Row is one local day of one configuration.
@@ -57,6 +60,55 @@ type Cursor struct {
 	Offset int64  `json:"offset"`
 	Seen   string `json:"seen"`           // local date of the last read
 	Skip   bool   `json:"skip,omitempty"` // a thread Codex runs by itself
+	// Source: the ledger source whose log this is, so clearing that tool removes its cursors.
+	Source string `json:"source,omitempty"`
+	// Total: Codex's cumulative token usage at Offset, so a cumulative-only usage record read in a
+	// later run still has the baseline its request's delta is taken from.
+	Total *cxUsage `json:"total,omitempty"`
+}
+
+// CountedRequest: a Claude Code request already counted, by a keyed hash of its id and the file
+// key of the transcript it was counted from. A resumed session copies its earlier messages into a
+// new transcript; observing that one skips the requests another transcript already counted.
+type CountedRequest struct {
+	ID   string `json:"id"`
+	File string `json:"file"`
+}
+
+// maxCounted: the most recent counted requests kept per ledger (about 200 KB).
+const maxCounted = 4096
+
+func requestKey(id string) string {
+	h := sha256.Sum256([]byte("claude-request\x00" + id))
+	return hex.EncodeToString(h[:8])
+}
+
+// claudeObserver: a Claude Code parser that skips the requests other transcripts already counted.
+func claudeObserver(now time.Time, counted []CountedRequest, path string, cleared Cleared) *claudeParser {
+	p, key := newClaude(now), fileKey(path)
+	p.cleared = cleared.floor("claude-code")
+	p.elsewhere = map[string]bool{}
+	for _, c := range counted {
+		if c.File != key {
+			p.elsewhere[c.ID] = true
+		}
+	}
+	return p
+}
+
+// addCounted records the requests p counted from path, keeping the most recent maxCounted.
+func addCounted(counted []CountedRequest, p *claudeParser, path string) []CountedRequest {
+	if len(p.counted) == 0 {
+		return counted
+	}
+	key := fileKey(path)
+	for _, id := range p.counted {
+		counted = append(counted, CountedRequest{ID: id, File: key})
+	}
+	if n := len(counted); n > maxCounted {
+		counted = append([]CountedRequest(nil), counted[n-maxCounted:]...)
+	}
+	return counted
 }
 
 // A sample is either one request or one finished turn of one configuration.
@@ -81,6 +133,7 @@ type turn struct {
 	all   []request
 	mixed bool
 	cwd   string // the working directory its log records, "" when none
+	np    nativeProject // the tool's own project, when its store names one
 }
 
 const (
@@ -120,7 +173,7 @@ func Load(cache string) Ledger {
 	}
 	var on Ledger
 	if json.Unmarshal(b, &on) == nil && on.SchemaVersion == 1 {
-		l.Rows, l.Files = on.Rows, on.Files
+		l.Rows, l.Files, l.Counted = on.Rows, on.Files, on.Counted
 	}
 	return l
 }
@@ -136,9 +189,17 @@ func ObserveClaude(cache, transcript string, often bool, in Ingest, now time.Tim
 			return nil
 		}
 	}
-	err := observe(cache, now, func(l *Ledger) bool { return l.scan(transcript, "claude-code", newClaude(now), now) })
+	err := observe(cache, now, func(l *Ledger) bool {
+		p := claudeObserver(now, l.Counted, transcript, l.cleared)
+		changed := l.scan(transcript, "claude-code", p, now)
+		l.Counted = addCounted(l.Counted, p, transcript)
+		return changed
+	})
 	return errors.Join(err, observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return l.scan(transcript, "claude-code", ParserClaude, newClaude(now), now)
+		p := claudeObserver(now, l.Counted, transcript, l.cleared)
+		changed := l.scan(transcript, "claude-code", ParserClaude, p, now)
+		l.Counted = addCounted(l.Counted, p, transcript)
+		return changed
 	}))
 }
 
@@ -163,7 +224,7 @@ func scanCodex(files map[string]Cursor, rollouts []string, background func(strin
 		key := fileKey(p)
 		c, seen := files[key]
 		if !seen && background(p) {
-			files[key] = Cursor{Seen: day(now), Skip: true}
+			files[key] = Cursor{Seen: day(now), Skip: true, Source: "codex"}
 			changed = true
 			continue
 		}
@@ -188,6 +249,7 @@ func observe(cache string, now time.Time, f func(*Ledger) bool) error {
 	if l.Files == nil {
 		l.Files = map[string]Cursor{}
 	}
+	l.cleared = LoadCleared(cache)
 	if !f(&l) {
 		return nil
 	}
@@ -203,9 +265,16 @@ type parser interface {
 	finish() (done []turn, commit int64)
 }
 
+// carrier: a parser that keeps state across runs in the log's cursor. resume gets the cursor the
+// read starts from (empty for a new or rewritten log); carry fills the next one, at commit.
+type carrier interface {
+	resume(c Cursor)
+	carry(next *Cursor, commit int64)
+}
+
 // scan reads one log from its cursor into the ledger.
 func (l *Ledger) scan(path, source string, p parser, now time.Time) bool {
-	done, changed := scanLog(l.Files, path, p, now)
+	done, changed := scanLog(l.Files, path, source, p, now)
 	for _, t := range done {
 		l.add(source, t)
 	}
@@ -214,7 +283,7 @@ func (l *Ledger) scan(path, source string, p parser, now time.Time) bool {
 
 // scanLog reads one log from its cursor in files and returns its finished turns. A log seen for
 // the first time is read from its last maxScan bytes; a log that shrank (rewritten) starts over.
-func scanLog(files map[string]Cursor, path string, p parser, now time.Time) ([]turn, bool) {
+func scanLog(files map[string]Cursor, path, source string, p parser, now time.Time) ([]turn, bool) {
 	fh, err := os.Open(path)
 	if err != nil {
 		return nil, false
@@ -230,12 +299,16 @@ func scanLog(files map[string]Cursor, path string, p parser, now time.Time) ([]t
 	if !seen && fi.Size() > maxScan {
 		start, partial = fi.Size()-maxScan, true
 	}
+	base := c
 	if start > fi.Size() {
-		start = 0
+		start, base = 0, Cursor{}
+	}
+	if !seen {
+		base = Cursor{}
 	}
 	if seen && start == fi.Size() {
-		if c.Seen != day(now) {
-			c.Seen = day(now)
+		if c.Seen != day(now) || c.Source != source {
+			c.Seen, c.Source = day(now), source
 			files[key] = c
 			return nil, true
 		}
@@ -243,6 +316,10 @@ func scanLog(files map[string]Cursor, path string, p parser, now time.Time) ([]t
 	}
 	if _, err := fh.Seek(start, io.SeekStart); err != nil {
 		return nil, false
+	}
+	cr, carries := p.(carrier)
+	if carries {
+		cr.resume(base)
 	}
 	r := bufio.NewReaderSize(io.LimitReader(fh, maxScan), 256<<10)
 	off := start
@@ -276,7 +353,11 @@ func scanLog(files map[string]Cursor, path string, p parser, now time.Time) ([]t
 			commit = start + maxScan
 		}
 	}
-	files[key] = Cursor{Offset: commit, Seen: day(now)}
+	next := Cursor{Offset: commit, Seen: day(now), Source: source}
+	if carries {
+		cr.carry(&next, commit)
+	}
+	files[key] = next
 	return done, true
 }
 
@@ -305,8 +386,8 @@ func readLine(r *bufio.Reader) ([]byte, int64, error) {
 }
 
 func (l *Ledger) add(source string, t turn) {
-	if t.cfg.model == "" || t.at.IsZero() {
-		return
+	if t.cfg.model == "" || t.at.IsZero() || t.at.Before(l.cleared.floor(source)) {
+		return // or from before the tool's history was cleared
 	}
 	r := l.row(day(t.at), source, t.cfg)
 	for _, q := range t.reqs {

@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,12 +20,25 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
+var cockpitSubscriptionRef = regexp.MustCompile(`^[a-f0-9]{16}$`)
+
 func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, admission queries.CockpitAdmission, groups map[string][]wire.CockpitAccount) (wire.CockpitDetails, error) {
 	result := wire.CockpitDetails{Version: 1, Sources: []string{"quota-reserve", "quota-thresholds"}, Subscriptions: []wire.CockpitSubscriptionDetails{}, Sessions: []wire.CockpitSession{}, SessionCoverage: "unavailable", ResetEvents: []rows.ResetEvent{}, Alerts: []wire.CockpitAlert{}}
 	current := consent.Capture()
 	f := current.Fence()
 	if f.StoreEpoch != admission.Stamp.Epoch || f.Generation != admission.Stamp.Generation {
 		return result, appserver.ProtocolError{Code: wire.CodeConsentChanged}
+	}
+	// Publication is public but still comes from the verified local cache. The
+	// enclosing cockpit query rechecks the consent fence before delivery.
+	published, err := loadCockpitPublication(ctx, s.publicationStore)
+	if err != nil {
+		return result, err
+	}
+	result.Publication = selectCockpitPublication(published, view.Projection, nil)
+	if appserver.CockpitModelsEnabled(ctx) {
+		result.PublishedModels = allCockpitModels(published)
+		result.PlanModels = cockpitPlanModels(published, result.PublishedModels)
 	}
 	now := time.Now()
 	redBelow := admission.RedBelow
@@ -66,6 +80,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		out := byRef[account.Subscription.Ref]
 		if out == nil {
 			continue
+		}
+		if len(account.ReportedModels) > 0 && len(result.PublishedModels) > 0 {
+			out.ReportedModels = reportedPublishedModels(published, reportedHarnessKey(account.Source), account.ReportedModels, result.PublishedModels)
 		}
 		for _, card := range account.Cards {
 			if card.ExpiresAt != nil && !now.Before(*card.ExpiresAt) {
@@ -138,7 +155,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 					continue
 				}
 				v := *window.RemainingPercent
-				if v < 0 || v > 100 || math.IsNaN(v) || v >= 41 {
+				if v < 0 || v > 50 || math.IsNaN(v) {
 					continue
 				}
 				severity := "warning"
@@ -148,6 +165,12 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 				result.Alerts = append(result.Alerts, wire.CockpitAlert{Source: row.ID, SubscriptionRef: *account.SubscriptionRef, WindowID: window.ID, Severity: severity, RemainingPercent: v})
 			}
 		}
+	}
+	if appserver.CockpitPeaksEnabled(ctx) {
+		result.Peaks = cockpitPeaks(published, view, now)
+	}
+	if appserver.CockpitForecastEnabled(ctx) {
+		result.Forecasts = wire.ProjectForecasts(view.Projection, func(ref string) bool { return byRef[ref] != nil }, now)
 	}
 	sort.Slice(result.Alerts, func(i, j int) bool {
 		a, b := result.Alerts[i], result.Alerts[j]
@@ -188,7 +211,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	result.SessionCoverage = "local-last-seen"
 	result.Sources = append(result.Sources, "local-history")
 	sort.Strings(result.Sources)
-	for _, today := range cockpitTodayTotals(view.QuotaReport.Accounts, perf) {
+	for _, today := range appserver.CockpitTodayTotals(view.QuotaReport.Accounts, perf) {
 		out := byRef[today.SubscriptionRef]
 		if out != nil && allowed[sourceScope[today.Source]] && len(out.Today) < 4 {
 			out.Today = append(out.Today, wire.CockpitToday{Source: today.Source, ObservedOutputTokens: today.OutputTokens, GenerationTps: today.GenerationTPS, BindingBasis: today.BindingBasis})
@@ -209,7 +232,10 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			v := session.Effort
 			effort = &v
 		}
-		if labels && session.ProjectRef != nil {
+		if labels && session.ProjectRef != nil && safeCockpitLabel(session.ProjectLabel) {
+			v := session.ProjectLabel
+			label = &v
+		} else if labels && session.ProjectRef != nil {
 			for _, saved := range perf.Ledger.Sessions {
 				if saved.Ref == session.Ref && saved.Source == session.Source && saved.ProjectRef == *session.ProjectRef && safeCockpitLabel(saved.ProjectLabel) {
 					v := saved.ProjectLabel
@@ -218,9 +244,41 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 				}
 			}
 		}
-		// The existing live ledger does not prove a per-session binding. #410 may
-		// supply that evidence; never substitute a source-wide current binding.
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
+		// G3-100: a real project whose records hold no readable name is not "no project"; glm-909-1: neither is
+		// one whose name `project-labels off` withholds. The state says which, so the strip never guesses.
+		state := wire.ProjectNone
+		switch {
+		case session.ProjectRef == nil:
+		case !labels:
+			state = wire.ProjectHidden
+		case label != nil:
+			state = wire.ProjectNamed
+		default:
+			state, label = wire.ProjectUnnamed, unnamedProjectLabel(*session.ProjectRef)
+		}
+		// The live record's account is the same evidence the working signal binds on. A reference
+		// outside this cockpit's subscriptions stays unbound; never substitute a source-wide one.
+		var subscription *string
+		if session.SubscriptionRef != nil && byRef[*session.SubscriptionRef] != nil {
+			subscription = session.SubscriptionRef
+		}
+		// CKP-FAD-11 / CKP-MFD-19: a recorded Fast session compares as Fast; any other mode stays unreported.
+		var fast *bool
+		if session.Speed == "fast" {
+			v := true
+			fast = &v
+		}
+		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, ProjectState: state, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast})
+	}
+	if appserver.CockpitSessionsEnabled(ctx) {
+		result.RecentSessions = cockpitRecentSessions(perf.Ledger.Sessions, allowed, sourceScope, byRef, labels, view.PublicModels, now)
+	}
+	inUse := map[string]bool{}
+	for _, session := range result.Sessions {
+		inUse[session.Model] = true
+	}
+	if len(inUse) > 0 {
+		result.Publication = selectCockpitPublication(published, view.Projection, inUse)
 	}
 	return result, ctx.Err()
 }
@@ -250,4 +308,11 @@ func cockpitModelID(raw, source string, models []digest.Model) string {
 		}
 	}
 	return "unknown"
+}
+
+// unnamedProjectLabel: the label of a project that has a reference but no readable name. The page shows it
+// in the viewer's language (prototype-tape.ts matches this exact text).
+func unnamedProjectLabel(string) *string {
+	v := "Unnamed project"
+	return &v
 }

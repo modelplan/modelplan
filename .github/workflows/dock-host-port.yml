@@ -1,5 +1,6 @@
 name: Dock host port seam
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'desktop/native/ModelPlanAppIntegration/**'
@@ -14,10 +15,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: dock-host-port-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: dock-host-port-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   contracts:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-15
     timeout-minutes: 20
     steps:
