@@ -19,7 +19,7 @@ extension ProcessEngineClient {
                 DiagnosticsLog.shared.record("engine", reason == .requested ? .info : .error, "connection stopped reason=\(reason) \(tag)")
             }
         case .clearPrivateViews(let invalidation):
-            DiagnosticsLog.shared.info("engine", "clear private views reason=\(invalidation.reason) revision=\(invalidation.revision) \(tag)")
+            DiagnosticsLog.shared.info("engine", "clear views reason=\(invalidation.reason) revision=\(invalidation.revision) \(tag)")
         case .featureFailure(let feature, let error):
             DiagnosticsLog.shared.notice("engine", "feature failure feature=\(feature) error=\(DiagnosticsLog.errorName(error)) \(tag)")
         default: break

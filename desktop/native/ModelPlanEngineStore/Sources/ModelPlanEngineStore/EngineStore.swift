@@ -90,9 +90,9 @@ struct ReaderStateLog {
             let value = "state=" + DiagnosticsLog.safeID(row.state.rawValue) + " cause=" + DiagnosticsLog.safeID(row.reason.code.rawValue)
             if next[tool] != nil { continue }
             next[tool] = value
-            if last[tool] != value { lines.append("reader " + tool + " " + value + (last[tool].map { " was " + $0 } ?? "")) }
+            if last[tool] != value { lines.append("reader tool=" + tool + " " + value + (last[tool].map { " was " + $0 } ?? "")) }
         }
-        for tool in last.keys.sorted() where next[tool] == nil { lines.append("reader " + tool + " gone") }
+        for tool in last.keys.sorted() where next[tool] == nil { lines.append("reader tool=" + tool + " gone") }
         last = next
         return lines
     }

@@ -49,7 +49,8 @@ public enum DiagnosticsBundle {
     public static let readmeName = "README.txt", versionsName = "versions.txt", doctorName = "doctor-readers.json"
     public static let logsFolder = "logs", crashFolder = "crash-reports"
     static let maxTextBytes = 8 * 1024 * 1024
-    static let crashExtensions: Set<String> = ["ips", "crash", "diag", "hang", "spin"]
+    /// Only `.ips` JSON reports: their fields can be projected to an allowlist (`DiagnosticsBundleFilter.crashReport`).
+    static let crashExtensions: Set<String> = ["ips"]
 
     public static func defaultName(_ date: Date = Date()) -> String {
         let formatter = DateFormatter()
@@ -91,13 +92,15 @@ public enum DiagnosticsBundle {
         #else
         let architecture = "x86_64"
         #endif
-        try put("generated=\(stamp)\nappBundle=\(bundleVersion.isEmpty ? "unknown" : bundleVersion)\n\(inputs.summary)\nmacOSBuild=\(osBuild)\narch=\(architecture)\n", versionsName)
+        try put(DiagnosticsBundleFilter.versions("generated=\(stamp)\nappBundle=\(bundleVersion.isEmpty ? "unknown" : bundleVersion)\n\(inputs.summary)\nmacOSBuild=\(osBuild)\narch=\(architecture)\n"), versionsName)
 
         var seen = Set<String>()
         for url in inputs.logFiles where seen.insert(url.lastPathComponent).inserted {
             guard let text = readText(url) else { continue }
-            // engine.log is projected again on the way out, so a file written by an older build holds no free text.
-            try put(url.lastPathComponent.hasPrefix("engine") ? projectEngineLog(text) : text, logsFolder + "/" + url.lastPathComponent)
+            // Every log is reduced to its closed grammar on the way out, so a file written by an older build (or a
+            // line no rule anticipated) holds no free text.
+            let filtered = url.lastPathComponent.hasPrefix("engine") ? DiagnosticsBundleFilter.engineLog(text) : DiagnosticsBundleFilter.appLog(text)
+            try put(filtered, logsFolder + "/" + url.lastPathComponent)
         }
 
         let cutoff = inputs.now.addingTimeInterval(-inputs.crashReportMaxAge)
@@ -112,13 +115,15 @@ public enum DiagnosticsBundle {
             .sorted { $0.1 > $1.1 }
             .prefix(inputs.maxCrashReports)
         for (url, _) in reports {
-            if let text = readText(url) { try put(text, crashFolder + "/" + url.lastPathComponent) }
+            if let text = readText(url) { try put(DiagnosticsBundleFilter.crashReport(text), crashFolder + "/" + url.lastPathComponent) }
         }
 
         if let helper = inputs.helper {
             let result = runDoctor(helper: helper, environment: inputs.helperEnvironment, timeout: inputs.doctorTimeout)
-            if let output = result.output { try put(output, doctorName) }
-            else { try put("doctor readers unavailable: \(result.status)\n", "doctor-readers.txt") }
+            if let output = result.output {
+                if let kept = DiagnosticsBundleFilter.doctor(output) { try put(kept, doctorName) }
+                else { try put("doctor readers unavailable: not_json\n", "doctor-readers.txt") }
+            } else { try put("doctor readers unavailable: \(result.status)\n", "doctor-readers.txt") }
         }
         return written.sorted()
     }
@@ -153,26 +158,18 @@ public enum DiagnosticsBundle {
         return files
     }
 
-    /// Each `<timestamp> pid=N <stderr line>` keeps only its crash structure (`EngineStderrProjection`); the
-    /// app's own `--- started` / `--- exited` lines and anything not in that form pass through the redactor only.
-    static func projectEngineLog(_ text: String) -> String {
-        text.split(separator: "\n", omittingEmptySubsequences: false).map { raw -> String in
-            let line = String(raw)
-            guard let pid = line.range(of: #"^\S+ pid=-?\d+ "#, options: .regularExpression) else { return line }
-            let payload = String(line[pid.upperBound...])
-            if payload.hasPrefix("--- ") { return line }
-            return String(line[..<pid.upperBound]) + EngineStderrProjection.project(payload)
-        }.joined(separator: "\n")
-    }
-
     static func readme(generated: String) -> String {
         """
         ModelPlan diagnostics (generated \(generated))
 
         \(versionsName)       app, engine and macOS versions; reader ids and error codes
-        \(logsFolder)/              ModelPlan.log (app events) and engine.log (engine start, exit, and only the structure of a crash: panic kind, goroutines, stack frames, file:line; every other engine line and every panic message is replaced by its length), with rotated copies
-        \(crashFolder)/     ModelPlan crash reports from the last 14 days, if any
-        \(doctorName)  `modelplan doctor readers --json`: reader states and fixed error codes
+        \(logsFolder)/              ModelPlan.log: app events (fixed event words and key=value codes; any other word is shown as ·)
+                           engine.log: engine start and exit, and only the structure of a crash (panic kind, goroutines,
+                           stack frames, file:line); every other engine line and every panic message is replaced by its length
+                           (both with rotated copies)
+        \(crashFolder)/     ModelPlan .ips crash reports from the last 14 days, reduced to identity and versions, exception
+                           type and codes, threads with stack frames, and binary images; application text and paths are dropped
+        \(doctorName)  `modelplan doctor readers --json`: reader states and fixed error codes only
 
         Never included: API keys, tokens, cookies, prompt or reply text, account emails or ids.
         Every file was passed through a redaction step that replaces anything shaped like a key, token,
