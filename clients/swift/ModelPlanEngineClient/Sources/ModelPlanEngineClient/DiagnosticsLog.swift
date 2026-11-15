@@ -134,7 +134,9 @@ public enum EngineStderrProjection {
     /// placeholder, a Go type name or a fixed runtime phrase.
     private static let projected: [NSRegularExpression] = {
         let fixed = fixedPrefixes.map { NSRegularExpression.escapedPattern(for: $0.trimmingCharacters(in: .whitespaces)) }.joined(separator: "|")
-        let type = #"\*?[A-Za-z_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z_][A-Za-z0-9_]*"#
+        // Strict Go type grammar, at most 80 characters: pointer or slice prefixes, then a package path and a name.
+        // Spaces, quotes, URL or e-mail characters and long text never fit, so such a line is projected again.
+        let type = #"(?=[^ ]{1,80} )(?:\*|\[\])*[A-Za-z_][A-Za-z0-9_-]*(?:[./][A-Za-z0-9_-]+)*\.[A-Za-z_][A-Za-z0-9_]*"#
         let head = #"^(?:panic|fatal error):"#, tail = #"(?: \[recovered\])?$"#
         let placeholder = #" <message redacted, \d+ bytes>"#
         return [head + "(?: (?:" + fixed + ")| type=" + type + ")?" + placeholder + tail,  // a message was cut

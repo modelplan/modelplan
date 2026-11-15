@@ -194,6 +194,24 @@ final class DiagnosticsBundleTests: XCTestCase {
                        stamp + "panic: <message redacted, 45 bytes>")
     }
 
+    /// macrevb-992-1: free text in the type slot of a record that imitates the projected grammar is not kept.
+    func testExportReprojectsHostileTypeSlotText() {
+        let stamp = "2026-11-14T20:14:13.400-08:00 pid=4242 "
+        let long = String(repeating: "a", count: 90) + ".T"
+        let hostile = ["two words.here", "\"quoted.text\"", "https://private.example/path.x", "person@private.example",
+                       "a'b.c", long, "x<y.z"]
+        for type in hostile {
+            let raw = "panic: type=\(type) <message redacted, 3 bytes>"
+            let out = DiagnosticsBundleFilter.engineLog(stamp + raw)
+            XCTAssertFalse(out.contains(type), "\(type) survived: \(out)")
+            XCTAssertEqual(out, stamp + "panic: <message redacted, \(raw.utf8.count - "panic: ".utf8.count) bytes>")
+        }
+        for type in ["*errors.errorString", "*[]pkg.T", "runtime.boundsError", "github.com/x/y.T"] {
+            let line = stamp + "panic: type=\(type) <message redacted, 9 bytes>"
+            XCTAssertEqual(DiagnosticsBundleFilter.engineLog(line), line)
+        }
+    }
+
     func testDoctorOutputWrittenInChunksIsKeptWhole() throws {
         let chunked = try script("""
         printf '{"readers":['
