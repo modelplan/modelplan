@@ -392,12 +392,26 @@ jobs:
           classes=full
           run=true
           if [ "$EVENT" = schedule ]; then
-            # Nothing new on main since a green nightly, or another nightly at the same commit is still queued or
-            # running: do not take the GUI Mac for the same commit twice. An unreadable answer runs the nightly.
-            held=$(gh api "repos/$REPO/actions/workflows/desktop.yml/runs?event=schedule&head_sha=$GITHUB_SHA&per_page=50" \
-              --jq '[.workflow_runs[] | select((.id | tostring) != env.GITHUB_RUN_ID)
-                | select(.conclusion == "success" or .status != "completed")] | length') || held=0
-            [ "$held" = 0 ] || { run=false; echo "a nightly at $GITHUB_SHA already passed or is still running"; }
+            # Another nightly at the same commit is still queued or running, or one already passed its GUI leg there:
+            # do not take the GUI Mac for the same commit twice. A green run counts only when its GUI leg ran and
+            # passed (native, or the hosted pair native-hosted + native-owner-gui), not a run that skipped its GUI
+            # legs because it saw another nightly (macrevb-866-1). Any unreadable answer runs the nightly.
+            runs="repos/$REPO/actions/workflows/desktop.yml/runs?event=schedule&head_sha=$GITHUB_SHA&per_page=50"
+            active=$(gh api "$runs" --jq '[.workflow_runs[] | select((.id | tostring) != env.GITHUB_RUN_ID)
+              | select(.status != "completed")] | length') || active=0
+            green=$(gh api "$runs" --jq '.workflow_runs[] | select((.id | tostring) != env.GITHUB_RUN_ID)
+              | select(.conclusion == "success") | .id') || green=
+            passed=
+            for id in $green; do
+              [[ $id =~ ^[0-9]+$ ]] || continue
+              ok=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.conclusion == "success") | .name] as $ok
+                | if any($ok[]; test("^native \\([^)]*\\) / native \\("))
+                    or (any($ok[]; test("^native-hosted \\([^)]*\\) / native-hosted-gui \\(")) and any($ok[]; test("^native-owner-gui \\([^)]*\\) / native-owner-gui \\(")))
+                  then "yes" else "no" end') || ok=no
+              [ "$ok" = yes ] && { passed=$id; break; }
+            done
+            if [ "$active" != 0 ]; then run=false; echo "another nightly at $GITHUB_SHA is still queued or running"
+            elif [ -n "$passed" ]; then run=false; echo "nightly run $passed already passed its GUI leg at $GITHUB_SHA"; fi
           elif [ "$EVENT" = workflow_dispatch ] && [ "$GUI_FULL" != true ] && [[ $REF == refs/heads/* ]] \
             && [ "$REF" != refs/heads/main ] && [[ $REF != refs/heads/release* ]]; then
             changed="$RUNNER_TEMP/d169-gui-changed.txt"
