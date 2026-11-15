@@ -420,7 +420,9 @@ extension RealBinaryTests {
         XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - began, 3)
         let rows = await probe.rowCount(); XCTAssertEqual(rows, 0)
     }
-    func testRealStalledConsumerIsBoundedAndCannotRestartItself() async throws {
+    /// Recovery contract (step 5): a stalled consumer still stops its session (no second callback overlaps it), and once
+    /// the stalled consume returns, a fresh session starts by itself through the supervisor.
+    func testRealStalledConsumerIsBoundedAndRecoversOnceItReturns() async throws {
         let binary = try binary(); let home = try home(); let probe = EventProbe()
         try cli(binary, home: home, arguments: ["consent", "init", "--json"])
         var runtime = ClientRuntime(); runtime.consumerTimeout = .milliseconds(200)
@@ -437,7 +439,51 @@ extension RealBinaryTests {
         do { _ = try await client.retry(); XCTFail("stalled consumer admitted another session") } catch {}
         await probe.resumeClear()
         try await eventually { await probe.stopped(.consumerUnavailable) }
-        XCTAssertFalse(client.isCurrent(original), "a late clear acknowledgement cannot restore a stopped client")
+        XCTAssertFalse(client.isCurrent(original), "a late clear acknowledgement cannot restore the stalled session")
+        try await eventually({ await probe.readyContexts().contains { $0.sessionID != original.sessionID } }, timeout: 15)
+        let contexts = await probe.readyContexts()
+        let fresh = try XCTUnwrap(contexts.last)
+        XCTAssertNotEqual(fresh.sessionID, original.sessionID, "a fresh session, never the stalled one")
+        XCTAssertTrue(client.isCurrent(fresh))
+    }
+    /// Recovery contract (step 5): five crashes inside the window no longer stop the engine for good. After the cooldown
+    /// one half-open attempt runs by itself and a fresh session becomes ready. Sleeps are injected, so nothing waits.
+    func testRealCrashLimitCoolsDownAndRecoversByItself() async throws {
+        let binary = try binary(); let home = try home(); let probe = EventProbe()
+        try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+        var runtime = ClientRuntime(); runtime.sleep = { _ in await Task.yield() }
+        let client = ProcessEngineClient(configuration: configuration(binary, home: home), consumer: probe, runtime: runtime)
+        addTeardownBlock { await client.stop() }
+        _ = try await client.start()
+        for index in 0..<5 {
+            let ownedPID = await client.processIdentifier
+            let pid = try XCTUnwrap(ownedPID)
+            XCTAssertEqual(kill(pid, SIGKILL), 0)
+            try await eventually({ await probe.readyContexts().count >= index + 2 }, timeout: 15)
+        }
+        let cooled = await probe.stopped(.crashLimit); XCTAssertTrue(cooled, "the fifth crash starts the cooldown")
+        let delays = await probe.crashDelays(); XCTAssertEqual(delays, [1, 2, 4, 8])
+        let sessions = await probe.readyContexts().map(\.sessionID)
+        XCTAssertEqual(Set(sessions).count, 6, "the half-open attempt after the cooldown is a fresh session")
+        let current = try await client.start()
+        XCTAssertTrue(client.isCurrent(current), "start() works again once the half-open attempt is ready")
+    }
+    /// Recovery contract (step 5): a lost epoch probe no longer leaves the delivery gate closed for good; it is asked
+    /// again with backoff and the confirmed epoch opens the gate.
+    func testRealLostEpochProbeIsRetriedAndTheGateReopens() async throws {
+        let binary = try binary(); let home = try home(); let probe = EventProbe()
+        try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+        var runtime = ClientRuntime(); runtime.requestTimeout = .seconds(2); runtime.sleep = { _ in await Task.yield() }
+        let client = ProcessEngineClient(configuration: configuration(try proxy(home, binary: binary, mode: "probe-fails-once"), home: home), consumer: probe, runtime: runtime)
+        addTeardownBlock { await client.stop() }
+        let original = try await client.start()
+        do { _ = try await client.diagnostics(); XCTFail("unconfirmed epoch was delivered") } catch {}
+        XCTAssertFalse(client.isCurrent(original))
+        try await eventually({ !(await client.gateClosed) }, timeout: 15)
+        let confirmed = await client.context
+        XCTAssertNotNil(confirmed)
+        XCTAssertNotEqual(confirmed?.floor.storeEpoch, original.floor.storeEpoch, "the confirmed epoch is the new one")
+        XCTAssertTrue(client.isCurrent(try XCTUnwrap(confirmed)))
     }
 }
 
