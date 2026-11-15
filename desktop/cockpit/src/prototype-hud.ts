@@ -5,7 +5,7 @@
 import type {WireCockpitData} from '../generated/wire.js';
 import {FIELD_LIMIT,fieldModel,type FieldModel} from './field-model.js';
 import {cockpitMembers} from './members.js';
-import {memberPlanModels} from './plan-models.js';
+import {memberModelList} from './plan-models.js';
 import {sessionMember} from './session-binding.js';
 import {shortLabel} from '../study/rocket-r1/short-label.js';
 
@@ -32,8 +32,8 @@ export function publishedFleet(data:WireCockpitData|null|undefined,scope='all',n
  const owned=member?[member]:members;
  const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt),bound=sessionMember(members,s);return (member?bound?.key===member.key:bound!==null&&bound!==undefined)&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
  const latest=new Map<string,string|null>();for(const s of recent)if(!latest.has(s.model))latest.set(s.model,s.effort);
- // A published plan model list, when the member's plan matches one, decides for that subscription; otherwise its developer does.
- const lists=data?owned.map(m=>({list:memberPlanModels(data,m.row.id,m.account.plan.id),developer:toolDevelopers[m.row.id]})):[];
+ // The models the tool reports for the account (D98), else a published plan model list the member's plan matches, decide for that subscription; otherwise its developer does.
+ const lists=data?owned.map(m=>({list:memberModelList(data,m.row.id,m.account.plan.id,m.account.subscriptionRef),developer:toolDevelopers[m.row.id]})):[];
  const usable=(id:string)=>lists.some(l=>l.list?l.list.has(id):l.developer!==undefined&&l.developer===developerOf.get(id));
  const candidates=published.flatMap(m=>{const f=fieldModel(m,shortLabel);return f&&(usable(m.id)||latest.has(m.id))?[f]:[];});
  const beaten=(m:FieldModel)=>candidates.some(n=>n.id!==m.id&&n.sel[2]>0&&m.sel[2]>0&&n.sel[1]>=m.sel[1]&&n.sel[2]<=m.sel[2]&&(n.sel[1]>m.sel[1]||n.sel[2]<m.sel[2]));

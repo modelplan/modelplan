@@ -36,10 +36,17 @@ label, so GUI jobs serialize without cancelling pending checks. Other jobs can
 use both ordinary `modelplan-mac` instances. This label is a routing capability,
 not permission to approve system prompts or access real user data.
 
-Since D62 (2026-11-08) every non-GUI task (`native-headless`, `transport`, `sequences`, `probe`, `u11-native`)
+Since D62 (2026-11-08) every non-GUI task (`transport`, `sequences`, `probe`, `u11-native`)
 asks for `modelplan-mac-nongui` instead of the plain `modelplan-mac`, and refuses to start on a runner whose
 name contains `gui`. The GUI Mac also carries `modelplan-mac`, so the plain label used to send headless jobs
 there while GUI jobs waited. Only the non-GUI Macs carry `modelplan-mac-nongui`.
+
+D198 (2026-11-12): `native-headless` is the exception. It runs on a GitHub-hosted Mac (`macos-latest`, from
+the caller's `os` input) for pull_request, push, workflow_dispatch and merge_group alike, because the
+self-hosted non-GUI pool was too slow to carry the PR-time leg. The shared `runs-on` expression excludes
+the task from the owner-Mac branch (`inputs.task != 'native-headless'`). The D94 "Refuse the GUI Mac" step
+stays; it is harmless on a hosted runner. Only the GUI legs (`native`, `native-owner-gui`, `gui-probe`) use
+the GUI Mac.
 
 ### Lending gui-2 to non-GUI jobs (D94)
 
@@ -53,7 +60,7 @@ step line for line, so a wider pattern, a default-on switch or a missing V1 refu
 The coordinator's lending script runs every 5 minutes. When no GUI job is queued or running and at least
 three non-GUI jobs are queued, it sets `MAC_GUI_LEND=enabled` and adds the `modelplan-mac-nongui` label to
 `modelplan-mac-gui-2` (runner id 263). As soon as a GUI job is queued it removes the label and sets
-`MAC_GUI_LEND=disabled`; a non-GUI job already running there finishes (at most 25 minutes). It never touches
+`MAC_GUI_LEND=disabled`; a non-GUI job already running there finishes (at most 30 minutes, the longest non-GUI job timeout). It never touches
 `modelplan-mac-arm64-1` (runner id 76). Changing labels needs an org runner-admin token, which the
 coordinator holds; GitHub Actions never sees it.
 
@@ -64,7 +71,7 @@ until the PR has merged, and merge it with a merge commit so the pinned commit s
 
 The native suite runs as two parallel legs. `task: native` keeps the GUI
 label and runs everything that may need a window server. `task: native-headless`
-uses the ordinary label and runs the app-integration XCTest classes listed in
+runs on a hosted Mac (D198) and runs the app-integration XCTest classes listed in
 `desktop/native/tools/ci/native-test-partition.json`, plus the pure contract,
 logic and packaging-binary checks. The list is opt-in: a new class runs on the
 GUI leg until it is added. `native_test_partition.py check` (Linux and both Mac
@@ -126,10 +133,46 @@ and `transport-fuzz` workflows to pass there (`QUEUE_WORKFLOWS` in `scripts/merg
 `merge_group` has no paths filter, and skips the jobs when the group changes none
 of those paths or its tree equals the PR head. Otherwise `app`, `shell`,
 `native-partition`, `app-smoke` and `native-headless` run on the group commit. The
-pinned `trusted-mac.yml` has no `merge_group` route to the self-hosted group, so
-`native-headless` falls through to a hosted Mac there. Routing it to the dedicated
-group needs a new pin and a runner-group update together, as above. The GUI leg does not run
-in the queue; the five Linux workflows have their own `queue-scope` job and no Mac job.
+pinned `trusted-mac.yml` routes only the GUI tasks of a `merge_group` run to the self-hosted
+group; `native-headless` is hosted everywhere (D198). The full GUI leg runs in the
+queue whenever the group changes a desktop path, even when its tree equals the PR head (D169,
+below); the five Linux workflows have their own `queue-scope` job and no Mac job.
+
+## Affected GUI tests on PRs, full suite in the queue and nightly (D169)
+
+Owner decision D169 (2026-11-11). `pull_request` events never start a GUI leg; a ready PR head gets
+`native-headless`, `app-smoke` and the Linux jobs. The coordinator's dispatcher starts the GUI leg
+with a `desktop` dispatch (`gui=true`), one at a time. On an ordinary branch that dispatch runs
+only the app-integration GUI classes related to the branch's changes against its merge base with
+`main`: `desktop/native/tools/ci/gui_test_selection.py` (tests: `test_gui_test_selection.py`)
+selects the classes declared in or extended by a changed test file, the classes whose test files
+name a top-level declaration of a changed Swift file, and the classes whose test files spell a
+changed repository path. Anything it cannot place selects the full share: workflow files, any
+`Package.swift`/`Package.resolved`, the partition and the selector, test fixtures, deleted Swift
+files, non-Swift files in the Swift package graph, a Swift file no GUI test names (headless-only users do
+not count), a selection that
+covers 60% or more of the GUI classes, an empty diff, or any selector error. `gui_full=true` on the
+dispatch forces the full share. The other GUI-job steps (native package tests, settings tests, Dock,
+window and shell checks) always run whole.
+
+The narrowed list reaches `trusted-mac.yml` as the `gui_classes` input. The reusable workflow
+accepts it only on a `workflow_dispatch` of a branch other than `main` or `release*`, checks it
+against `full`, `none` or a comma-separated list of identifiers, and passes it to
+`native_test_partition.py --only`, which keeps the leg's own share of the list (it never widens the
+leg) and verifies that exactly that narrowed share ran. Every other run (merge queue, nightly,
+push, `main`/release dispatch) runs and verifies the whole share whatever the caller passes.
+
+A selection is a speed-up for the PR round, not the merge gate. The merge queue runs the full GUI
+leg on the group commit, and `desktop` must pass there before anything reaches `main`; the
+coordinator's gate still requires a successful GUI leg at the PR head. A `schedule` run at 09:23
+UTC runs the full GUI leg on `main` (and nothing else); it is skipped when a nightly at the same `main`
+commit already passed or is still queued or running. `trusted-mac.yml` admits `merge_group` (queue branches of `main`) and
+`schedule` (`main`) runs to the owner's Macs for the GUI tasks only, under the same owner gate.
+
+Non-UI Swift tests are not skipped on the strength of a Mac compile lane's earlier pass at the same
+head (D169 item 3 was dropped): those lanes run on agent-operated machines, and nothing they report
+(a comment, a file, or a signature made with a key on that machine) can be verified as untampered
+by CI. Only GitHub-produced results count.
 
 ## Migration
 
