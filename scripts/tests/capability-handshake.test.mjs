@@ -30,6 +30,7 @@ const CLIENT_ONLY = new Map([
   ["publication", "plain capability name gating publication/get on the client side"],
   ["plugin_install", "plain capability name gating plugin/install on the client side"],
   ["history_import_v1", "plain capability name gating the history/import_* methods on the client side"],
+  ["reader_key", "plain capability name gating the readerkey/* methods on the client side"],
   ["memberRefreshV1", "client opt-in the server reads from clientCapabilities, not an advertised feature"],
 ]);
 
