@@ -41,7 +41,9 @@ type SharedConfig struct {
 	Cleanup        func(string, bool) error
 	// Granted runs after each committed, not replayed, consent change (optional); the history
 	// import retry hangs off it (G3-112).
-	Granted           func()
+	Granted func()
+	// ManualKeyPresent reports whether the user saved a manual key for a provider (D90). Optional.
+	ManualKeyPresent  func(provider string) bool
 	Offline, ReadOnly bool
 }
 
@@ -449,6 +451,16 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 			_, record.KeyEnv, _ = quota.NativeReader(definition.Tool)
 			if record.KeyEnv == "" {
 				return consent.Record{}, errors.New("reader_unavailable")
+			}
+			// D90: saving a manual GLM key allows this scope too. Where ZCode's own provider file is the detected
+			// source, the record must not name an environment key: that would count as a chosen source and switch ZCode's
+			// default route off, so removing the manual key would leave GLM unread. The manual key still wins first.
+			if definition.Tool == "zai" && b.config.ManualKeyPresent != nil && b.config.ManualKeyPresent("zai") {
+				if home, err := os.UserHomeDir(); err == nil {
+					if fi, err := os.Lstat(quota.ZCodeProviderConfig(home)); err == nil && fi.Mode().IsRegular() {
+						record.KeyEnv = ""
+					}
+				}
 			}
 		}
 		return record, nil

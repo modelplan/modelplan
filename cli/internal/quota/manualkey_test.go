@@ -551,3 +551,45 @@ func TestUnsafeSavedKeyFileDoesNotAffectProvidersWithoutManualKeys(t *testing.T)
 		t.Fatal("zai must still fail closed on an unsafe file")
 	}
 }
+
+// Post-merge #795 (2): replacing or removing an OpenCode Go key drops its cached reading (it was read with the previous
+// key, possibly another account); other providers' readings stay.
+func TestReplacingOrRemovingAKeyDropsOnlyThatProvidersCachedReading(t *testing.T) {
+	dir := t.TempDir()
+	write := func() {
+		s := &nativeSnap{SchemaVersion: 1, ObservedAt: time.Now().UTC(), Providers: []codexbarEntry{
+			{Provider: "opencodego", Status: "ok", ObservedAt: time.Now().UTC()},
+			{Provider: "zai", Status: "ok", ObservedAt: time.Now().UTC()},
+		}}
+		b, _ := json.Marshal(s)
+		if err := os.MkdirAll(filepath.Dir(nativePath(dir)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(nativePath(dir), b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	providers := func() map[string]bool {
+		out := map[string]bool{}
+		if s := loadNative(dir); s != nil {
+			for _, e := range s.Providers {
+				out[e.Provider] = true
+			}
+		}
+		return out
+	}
+	write()
+	if err := SetManualKey(dir, "opencodego", fakeGoKey, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := providers(); got["opencodego"] || !got["zai"] {
+		t.Fatalf("saving a key must drop only that provider's cached reading: %v", got)
+	}
+	write()
+	if err := RemoveManualKey(dir, "opencodego"); err != nil {
+		t.Fatal(err)
+	}
+	if got := providers(); got["opencodego"] || !got["zai"] {
+		t.Fatalf("removing a key must drop only that provider's cached reading: %v", got)
+	}
+}

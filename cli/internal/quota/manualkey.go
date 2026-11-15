@@ -215,7 +215,32 @@ func SetManualKey(dir, provider, key, region string) error {
 		keys = map[string]ManualKey{}
 	}
 	keys[provider] = k
-	return writeManualKeys(dir, keys)
+	if err := writeManualKeys(dir, keys); err != nil {
+		return err
+	}
+	invalidateNativeReading(dir, provider)
+	return nil
+}
+
+// invalidateNativeReading drops the provider's cached reading after its key was replaced or removed, so quota read with
+// the previous key (possibly another account's) is not shown as the new key's until its deadline. The request-budget
+// reservation is kept: this never makes the provider due sooner. Best effort and under the refresh lock; a refresh that
+// is running now reads the new key and publishes its own result.
+func invalidateNativeReading(dir, provider string) {
+	// Only OpenCode Go: GLM's cached entry also carries the detected-key reference the "another key was found" line is
+	// worked out from, so dropping it would hide that line; GLM keeps its entry (a separate follow-up if needed).
+	if provider != "opencodego" {
+		return
+	}
+	if _, err := os.Stat(nativePath(dir)); err != nil {
+		return
+	}
+	unlock, ok := lockFile(filepath.Join(dir, "observed", "native.lock"), time.Now(), nativeTimeout)
+	if !ok {
+		return
+	}
+	defer unlock()
+	_ = filterCachedSource(nativePath(dir), "native.json", provider, false, nil)
 }
 
 // RemoveManualKey deletes the key for provider; removing an absent key succeeds.
@@ -236,7 +261,11 @@ func RemoveManualKey(dir, provider string) error {
 		return nil
 	}
 	delete(keys, provider)
-	return writeManualKeys(dir, keys)
+	if err := writeManualKeys(dir, keys); err != nil {
+		return err
+	}
+	invalidateNativeReading(dir, provider)
+	return nil
 }
 
 // Outcomes of a manual key test. Fixed words only.
