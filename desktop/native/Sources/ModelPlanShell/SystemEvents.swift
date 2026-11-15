@@ -3,6 +3,17 @@ import AppKit
 import CoreGraphics
 import ModelPlanCore
 
+/// Native-shell spec item 2: one typed fan-out of the OS edges, independent of the gate. The gate is a pause/resume
+/// reason set (it coalesces and can stay closed for another reason), so "gate opened" is not "this Mac just woke";
+/// subscribers get the raw edge exactly once per notification, after the gate has been updated.
+public enum SystemSignal: Equatable, Sendable {
+    case wake, screensWake, unlock, clockChanged, timeZoneChanged
+    /// Every display-parameter notification.
+    case displaysChanged
+    /// Once, 750 ms after the LAST display-parameter notification of a burst (CodexBar `MenuBarVisibilityWatcher`).
+    case displaysSettled
+}
+
 /// AppKit notifications feed the same lifecycle transaction exercised by contract checks.
 /// Screen-lock distributed notification names are best-effort OS conventions, not a security ACL.
 @MainActor public final class SystemEvents {
@@ -15,6 +26,12 @@ import ModelPlanCore
     private let displaysAsleep: @MainActor (Set<UInt32>) -> Bool
     private var previousDisplays: Set<UInt32> = []
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
+    public typealias Schedule = @MainActor (_ milliseconds: UInt64, _ fire: @escaping @MainActor () -> Void) -> () -> Void
+    public static let displaysSettleMilliseconds: UInt64 = 750
+    private let schedule: Schedule
+    private var subscribers: [(id: UInt64, handler: @MainActor (SystemSignal) -> Void)] = []
+    private var nextSubscriber: UInt64 = 0
+    private var cancelSettle: (() -> Void)?
     public init(gate: LifecycleCoordinator, workspace: NotificationCenter = NSWorkspace.shared.notificationCenter,
                 local: NotificationCenter = .default, distributed: NotificationCenter = DistributedNotificationCenter.default(),
                 displayIDs: @escaping @MainActor () -> Set<UInt32> = { SystemEvents.currentDisplayIDs() },
@@ -22,7 +39,8 @@ import ModelPlanCore
                     (CGSessionCopyCurrentDictionary() as? [String: Any])?[kCGSessionOnConsoleKey as String] as? Bool
                 }, displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool = { ids in
                     !ids.isEmpty && ids.allSatisfy { CGDisplayIsAsleep($0) != 0 }
-                }) {
+                }, schedule: @escaping Schedule = SystemEvents.sleepSchedule) {
+        self.schedule = schedule
         self.gate = gate; self.workspace = workspace; self.local = local
         self.distributed = distributed; self.displayIDs = displayIDs; self.onConsole = onConsole; self.displaysAsleep = displaysAsleep
     }
@@ -43,15 +61,33 @@ import ModelPlanCore
             (NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification, .systemSleep),
             (NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification, .screenSleep),
             (NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification, .sessionInactive)]
+        let resumeSignals: [Notification.Name: SystemSignal] = [NSWorkspace.didWakeNotification: .wake,
+                                                                NSWorkspace.screensDidWakeNotification: .screensWake]
         for (pause, resume, reason) in pairs {
             observe(workspace, pause) { [weak gate] in gate?.set(reason, blocked: true) }
-            observe(workspace, resume) { [weak gate] in gate?.set(reason, blocked: false) }
+            let signal = resumeSignals[resume]
+            observe(workspace, resume) { [weak self, weak gate] in
+                gate?.set(reason, blocked: false)
+                if let signal { self?.emit(signal) }
+            }
         }
         observe(distributed, Notification.Name("com.apple.screenIsLocked")) { [weak gate] in gate?.set(.screenLocked, blocked: true) }
-        observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { [weak gate] in gate?.set(.screenLocked, blocked: false) }
-        observe(local, .NSSystemClockDidChange) { [weak gate] in gate?.clockChanged() }
-        observe(local, .NSSystemTimeZoneDidChange) { [weak gate] in gate?.clockChanged() }
-        observe(local, NSApplication.didChangeScreenParametersNotification) { [weak self] in self?.screensChanged() }
+        observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { [weak self, weak gate] in
+            gate?.set(.screenLocked, blocked: false); self?.emit(.unlock)
+        }
+        observe(local, .NSSystemClockDidChange) { [weak self, weak gate] in gate?.clockChanged(); self?.emit(.clockChanged) }
+        observe(local, .NSSystemTimeZoneDidChange) { [weak self, weak gate] in gate?.clockChanged(); self?.emit(.timeZoneChanged) }
+        observe(local, NSApplication.didChangeScreenParametersNotification) { [weak self] in
+            guard let self else { return }
+            self.screensChanged()
+            self.emit(.displaysChanged)
+            self.cancelSettle?()
+            self.cancelSettle = self.schedule(Self.displaysSettleMilliseconds) { [weak self] in
+                guard let self else { return }
+                self.cancelSettle = nil
+                self.emit(.displaysSettled)
+            }
+        }
         // Public on-console/display-asleep queries seed state when launched during a paused session.
         if let onConsole = onConsole() { gate.set(.sessionInactive, blocked: !onConsole) }
         gate.set(.screenSleep, blocked: displaysAsleep(previousDisplays))
@@ -60,6 +96,30 @@ import ModelPlanCore
     public func stop() {
         for (center, token) in tokens { center.removeObserver(token) }
         tokens.removeAll()
+        cancelSettle?(); cancelSettle = nil
+        subscribers.removeAll()
+    }
+    /// Subscribers run synchronously on the main actor, in subscription order, after the gate update. The returned
+    /// closure unsubscribes (idempotent).
+    public func subscribe(_ handler: @escaping @MainActor (SystemSignal) -> Void) -> () -> Void {
+        nextSubscriber &+= 1
+        let id = nextSubscriber
+        subscribers.append((id, handler))
+        return { [weak self] in
+            MainActor.assumeIsolated { self?.subscribers.removeAll { $0.id == id } }
+        }
+    }
+    private func emit(_ signal: SystemSignal) {
+        // A snapshot: a subscriber may unsubscribe (a cockpit closing on wake) while this runs.
+        for entry in subscribers { entry.handler(signal) }
+    }
+    public static func sleepSchedule(_ milliseconds: UInt64, _ fire: @escaping @MainActor () -> Void) -> () -> Void {
+        let task = Task { @MainActor in
+            do { try await Task.sleep(for: .milliseconds(Int64(milliseconds))) } catch { return }
+            guard !Task.isCancelled else { return }
+            fire()
+        }
+        return { task.cancel() }
     }
     deinit { for (center, token) in tokens { center.removeObserver(token) } }
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ action: @escaping @MainActor () -> Void) {
