@@ -248,6 +248,19 @@ func manualKeyGenerations(dir string) map[string]uint64 {
 // cached reading, read with the previous key and possibly another account's. The request-budget reservation is kept:
 // this never makes the provider due sooner.
 func afterManualKeyChange(dir, provider string) error {
+	// The cached reading goes first and the generation is bumped after it, both inside the lock; RefreshNative takes its
+	// generation snapshot and reads the cache under the same lock, so it sees either the state before this change or the
+	// one after it, never a mix.
+	// Only OpenCode Go: GLM's cached entry also carries the detected-key reference the "another key was found" line is
+	// worked out from, so dropping it would hide that line; GLM keeps its entry (a separate follow-up if needed).
+	if provider == "opencodego" {
+		if _, err := os.Stat(nativePath(dir)); err == nil {
+			_ = filterCachedSource(nativePath(dir), "native.json", provider, false, nil)
+		}
+	}
+	if manualKeyChangeHook != nil {
+		manualKeyChangeHook()
+	}
 	gens := manualKeyGenerations(dir)
 	gens[provider]++
 	b, _ := json.Marshal(gens)
@@ -257,15 +270,11 @@ func afterManualKeyChange(dir, provider string) error {
 	if err := writeAtomic(manualKeyGenerationPath(dir), append(b, '\n')); err != nil {
 		return errors.New("manual key generation not written")
 	}
-	// Only OpenCode Go: GLM's cached entry also carries the detected-key reference the "another key was found" line is
-	// worked out from, so dropping it would hide that line; GLM keeps its entry (a separate follow-up if needed).
-	if provider == "opencodego" {
-		if _, err := os.Stat(nativePath(dir)); err == nil {
-			_ = filterCachedSource(nativePath(dir), "native.json", provider, false, nil)
-		}
-	}
 	return nil
 }
+
+// manualKeyChangeHook is a test seam: it runs inside the change, between the cache removal and the generation bump.
+var manualKeyChangeHook func()
 
 // RemoveManualKey deletes the key for provider; removing an absent key succeeds.
 func RemoveManualKey(dir, provider string) error {

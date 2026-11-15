@@ -836,3 +836,42 @@ func TestKeyChangeBetweenThePublishCheckAndTheWriteLeavesNoOldReading(t *testing
 		})
 	}
 }
+
+// macrev2-993-1 (last ordering): a refresh that begins while Save is between removing the cache and bumping the
+// generation must not carry the old OpenCode Go reading and write it back. The refresh takes its snapshot under the
+// same lock Save holds, so it sees the state before or after the change, never a mix.
+func TestRefreshBeginningInTheMiddleOfAKeyChangeDoesNotWriteTheOldReadingBack(t *testing.T) {
+	isolateHome(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(goOKBody)) }))
+	t.Cleanup(srv.Close)
+	useClient(t, srv, "opencode.ai")
+	p := nativePaths(t)
+	if err := SetManualKey(p.Cache, "opencodego", fakeGoKey, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "opencodego", Backend: BackendNative, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := RefreshNative(context.Background(), p, now); err != nil {
+		t.Fatal(err)
+	}
+	if !cachedProviders(t, p.Cache)["opencodego"] {
+		t.Fatal("the first refresh did not cache OpenCode Go")
+	}
+	refreshed := make(chan error, 1)
+	manualKeyChangeHook = func() {
+		go func() { refreshed <- RefreshNative(context.Background(), p, now.Add(time.Minute)) }() // not due: it carries the cache
+		time.Sleep(300 * time.Millisecond)
+	}
+	t.Cleanup(func() { manualKeyChangeHook = nil })
+	if err := SetManualKey(p.Cache, "opencodego", "fake-opencode-key-0009", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-refreshed; err != nil {
+		t.Fatal(err)
+	}
+	if cachedProviders(t, p.Cache)["opencodego"] {
+		t.Fatal("the old key's reading was carried and written back by a refresh that began in the middle of the key change")
+	}
+}

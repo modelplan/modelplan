@@ -273,6 +273,12 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 	// The key generations before anything is read or carried over from the cache. A key replaced or removed after this
 	// (manualkey.go bumps its provider's generation under the short snapshot-write lock) invalidates every reading of
 	// that provider in this refresh, fresh or carried; the publish below compares under the same lock.
+	// The generations and the cache are read together under lockManualKeys (short, no network), so they come from one
+	// consistent state: a key change in progress holds the same lock for its whole cache removal and generation bump.
+	unlockSnapshot, lockErr := lockManualKeys(p.Cache)
+	if lockErr != nil {
+		return lockErr
+	}
 	generations := manualKeyGenerations(p.Cache)
 	previous := map[string]codexbarEntry{}
 	if old := loadNative(p.Cache); old != nil {
@@ -280,6 +286,7 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 			previous[entry.Provider] = entry
 		}
 	}
+	unlockSnapshot()
 	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
 	if selected != nil {
 		ids := []string{}
