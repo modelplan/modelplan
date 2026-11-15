@@ -27,6 +27,12 @@ public enum SettingsLanguage: String, Codable, CaseIterable, Sendable { case chi
 extension SettingsLanguage {
     /// The one fallback every path uses when no supported language is known (SET-9-39).
     public static let fallback: SettingsLanguage = .english
+    /// What a saved file without a `language` key meant when it was written (sampling #873). Builds before the
+    /// Follow System change defaulted to Chinese, and the sparse writer (SET-9-43) left the key out when it equalled
+    /// that default, so a missing key is a stored Chinese choice. Such files never carry `followsSystemLanguage`.
+    /// A file that does carry `followsSystemLanguage: true` but no `language` came from a build whose default was
+    /// already `fallback`, and launch re-resolves it from the macOS list anyway. Every save now writes both keys.
+    static func storedWithoutKey(followsSystem: Bool) -> SettingsLanguage { followsSystem ? fallback : .chinese }
     /// The Settings choice value that means "follow the macOS list".
     public static let followSystemValue = "system"
     /// Walks the whole macOS preferred-language list: the first zh* or en* entry wins (Traditional Chinese
@@ -158,8 +164,10 @@ public struct SettingsPreferences: Codable, Sendable {
         openAtLogin = try value(.openAtLogin, openAtLogin)
         automaticUpdates = try value(.automaticUpdates, automaticUpdates)
         menuDisplay = try value(.menuDisplay, menuDisplay); openShortcut = try value(.openShortcut, openShortcut)
-        dockShortcut = try value(.dockShortcut, dockShortcut); language = try value(.language, language)
+        dockShortcut = try value(.dockShortcut, dockShortcut)
         followsSystemLanguage = try value(.followsSystemLanguage, followsSystemLanguage)
+        // Never the struct default: an upgraded Chinese user must not see English (sampling #873).
+        language = try value(.language, SettingsLanguage.storedWithoutKey(followsSystem: followsSystemLanguage))
         opening = try value(.opening, opening); cockpitSize = try value(.cockpitSize, cockpitSize); beatMilliseconds = try value(.beatMilliseconds, beatMilliseconds)
         showProjectNames = try value(.showProjectNames, showProjectNames); notifications = try value(.notifications, notifications)
         subscriptions = try value(.subscriptions, subscriptions); subscriptionSettings = try value(.subscriptionSettings, subscriptionSettings)
@@ -197,13 +205,16 @@ public struct SettingsSnapshot: Sendable {
 /// every other key is kept as stored. A later explicit choice is written with the marker and stays.
 enum SettingsSparseFile {
     static let marker = "sparse"
-    /// The encoded preferences without the keys that equal a default-constructed value.
+    /// Keys written even when they equal the default. The language default changed once (Chinese to English, #873),
+    /// and a missing `language` key is read as the old default, so the choice is always stored explicitly.
+    static let alwaysWritten: Set<String> = ["language", "followsSystemLanguage"]
+    /// The encoded preferences without the keys that equal a default-constructed value (except `alwaysWritten`).
     static func sparse(_ preferences: SettingsPreferences) throws -> [String: Any] {
         guard let values = try JSONSerialization.jsonObject(with: JSONEncoder().encode(preferences)) as? [String: Any],
               let defaults = try JSONSerialization.jsonObject(with: JSONEncoder().encode(SettingsPreferences())) as? [String: Any]
         else { throw SettingsError.invalidPreference }
         return values.filter { key, value in
-            guard let base = defaults[key] else { return true }
+            guard !alwaysWritten.contains(key), let base = defaults[key] else { return true }
             return !(value as AnyObject).isEqual(base)
         }
     }
