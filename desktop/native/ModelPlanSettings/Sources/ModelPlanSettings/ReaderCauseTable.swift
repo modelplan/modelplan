@@ -71,8 +71,8 @@ public enum ReaderCauseTable {
                          action: .init("Allow it again in Settings", "在设置重新允许"), target: .openSettings)
         case "key_missing":
             if isGLM(tool) {
-                return .init(reason: .init("Sign in to the GLM Coding Plan in ZCode", "在 ZCode 里登录 GLM 编程套餐"),
-                             action: .init("Open ZCode and sign in", "打开 ZCode 并登录"), target: .guidance)
+                return .init(reason: .init("No GLM key found on this Mac", "本机没有找到 GLM 密钥"),
+                             action: .init("Sign in to ZCode, or add a key in Settings", "在 ZCode 里登录，或在设置里添加密钥"), target: .openSettings)
             }
             return .init(reason: .init("A key is needed", "需要配置密钥"),
                          action: .init("Open Settings", "在设置查看"), target: .openSettings)
