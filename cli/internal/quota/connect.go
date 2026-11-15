@@ -551,6 +551,7 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, legacy 
 		}
 		doc["coverage"], _ = json.Marshal(coverage)
 	}
+
 	b, _ = json.Marshal(doc)
 	if err := replace(path, append(b, '\n')); err != nil {
 		return err

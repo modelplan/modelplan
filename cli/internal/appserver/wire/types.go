@@ -326,7 +326,9 @@ type ReaderKeyResult struct {
 	Provider      ReaderKeyProvider `json:"provider"`
 	Region        ReaderKeyRegion   `json:"region"`
 	Present       bool              `json:"present"`
-	Outcome       ReaderKeyOutcome  `json:"outcome"`
+	// OtherKeyFound (owner 2026-11-14): the entered key is in use and a different key was also detected.
+	OtherKeyFound bool             `json:"otherKeyFound"`
+	Outcome       ReaderKeyOutcome `json:"outcome"`
 }
 
 // HistoryImportStartParams starts the local usage-history import (metadata only, from the

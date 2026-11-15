@@ -73,7 +73,9 @@ import ModelPlanSettings
         defer { host.close() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("h33-host-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+        let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
         await app.reload()
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         let value = try snapshot(connections: [["id": "codex", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "missing"]]])
@@ -111,7 +113,9 @@ import ModelPlanSettings
         defer { withExtendedLifetime(delegate) {} }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("h33-factory-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+        let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
         await app.reload()
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         host.render(snapshot: try snapshot(connections: [["id": "codex", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "missing"]]]), diagnostics: diagnostics)
@@ -136,7 +140,9 @@ import ModelPlanSettings
                 defer { host.close() }
                 let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-failure-host-" + UUID().uuidString)
                 defer { try? FileManager.default.removeItem(at: root) }
-                let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+                let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+                try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+                let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
                 await app.reload()
                 var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
                 host.updateDockConsent(try consent(["claude"]))
@@ -272,7 +278,9 @@ import ModelPlanSettings
         defer { host.close() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("h37-grok-host-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+        let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
         await app.reload()
         var opens = 0; host.showSettings = { opens += 1 }
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
@@ -303,7 +311,9 @@ import ModelPlanSettings
         defer { host.close() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("d87-codex-host-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+        let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
         await app.reload() // same host wiring as the Grok host-card test beside it
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         host.updateDockConsent(try consent(["codex"])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
@@ -342,7 +352,9 @@ import ModelPlanSettings
             defer { host.close() }
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("human-source-" + UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: root) }
-            let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+            let chineseStore = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+            try await chineseStore.update { $0.language = .chinese } // the default is English now (SET-9-39); these tests read Chinese
+            let app = SettingsApplicationCoordinator(store: chineseStore) { host.apply($0) }
             await app.reload()
             var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
             host.updateDockConsent(try consent([provider])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)

@@ -50,11 +50,13 @@ import ModelPlanWire
     private var mountedKeyEntries: Set<ReaderKeyProvider> = []
     /// What the app can do for a row: visibility, order and the two fixes that need the engine.
     public var rowActions = SubscriptionRowActions()
+    /// The accepted rows the key entries last refreshed their status for.
+    private var keyStatusRowsRevision = 0
     /// D90: the optional manual key area. Set by the app when the engine supports it.
     public var readerKeys: ReaderKeyBackend? {
         didSet { if keySection != nil { keySection?.dismiss(); keySection = nil }; render() }
     }
-    public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
+    public init(controller: ScopeConsentController, language: SettingsLanguage = .fallback,
                 buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false,
                 markImage: (@MainActor (String) -> NSImage?)? = nil, compactTools: Bool = false) {
         self.controller = controller; self.language = language;self.buildSigning=buildSigning; self.firstRun = firstRun
@@ -323,6 +325,8 @@ import ModelPlanWire
                 line(Self.unreadableLine, id: prefix + "status." + id)
             }
         }
+        // D90 / FR-9-05: first run keeps its single consent; a detected key-only tool says where a key can be added later.
+        if ReaderKeyProvider(rawValue: id) != nil, tool.detected { line(Self.firstRunKeyLine, id: prefix + "keylater." + id) }
         let right = NSStackView(); right.orientation = .vertical; right.alignment = .trailing; right.spacing = 2
         right.translatesAutoresizingMaskIntoConstraints = false
         right.widthAnchor.constraint(equalToConstant: Self.cardRightWidth).isActive = true
@@ -411,7 +415,7 @@ import ModelPlanWire
         if let provider = ReaderKeyProvider(rawValue: id), tool.detected {
             if let keyEntry {
                 // D90 / SET-9-41: a detected key-only tool that is not being read says why and offers the one
-                // optional key entry right here; detected sign-ins and environment keys are still used first.
+                // optional key entry right here; an entered key wins over a detected one (owner 2026-11-14).
                 // A saved key with reading off is not "no key found" (GLMREV Q2): say reading is off instead.
                 if !controller.isToolReading(id) {
                     if keyEntry.entry.status.present {
@@ -561,6 +565,9 @@ import ModelPlanWire
         rowsView?.retire(); rowsView = nil
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         wrappingLabels = []
+        if let keySection, controller.rowsRevision != keyStatusRowsRevision {
+            keyStatusRowsRevision = controller.rowsRevision; keySection.refreshStatus()
+        }
         if firstRun { renderFirstRunChooser(); return }
         let rowsMode = compactTools && rowsContext != nil
         if rowsMode, let context = rowsContext { renderSubscriptionRows(context); gap() }

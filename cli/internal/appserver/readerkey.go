@@ -64,7 +64,8 @@ func ReaderKeyHandlers(c ReaderKeyConfig) map[string]Handler {
 			outcome := run(ctx, p, region)
 			provider := string(p.Provider)
 			result := wire.ReaderKeyResult{SchemaVersion: 1, Provider: p.Provider, Outcome: outcome,
-				Present: quota.ManualKeyPresent(c.Dir, provider), Region: wireRegion(quota.ManualKeyRegion(c.Dir, provider))}
+				Present: quota.ManualKeyPresent(c.Dir, provider), Region: wireRegion(quota.ManualKeyRegion(c.Dir, provider)),
+				OtherKeyFound: quota.ManualKeyOtherKeyFound(c.Dir, provider)}
 			return Reply{Stamp: stamp, Data: result, Receipt: true}, nil
 		}}
 	}

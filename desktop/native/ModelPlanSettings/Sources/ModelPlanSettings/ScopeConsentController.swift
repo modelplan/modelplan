@@ -249,7 +249,10 @@ public struct FirstRunReading: Sendable, Equatable {
         guard diagnosticsToken == token else { return }
         diagnosticsToken = nil; changed()
     }
+    /// Counts accepted row snapshots (each is a new reading), so Settings can refresh what depends on one.
+    public private(set) var rowsRevision = 0
     public func receiveAcceptedRows(_ value: WireRowsSnapshot) {
+        rowsRevision &+= 1
         rowsSummary = value.projection.rowsSummary
         claudeRowState = value.projection.rows.first { $0.id == "claude" }?.state
         var consents: [String: RowsConsent] = [:]
@@ -462,10 +465,13 @@ public struct FirstRunReading: Sendable, Equatable {
         let states = entry.scopes.compactMap { id in facts?.scopes.first { $0.scope == id }?.state }
         return !states.allSatisfy { $0 == .denied }
     }
-    /// Settings: a tool reads when every standard path of it is read (explicitly allowed or on by default).
+    /// Settings: a tool reads when any standard path of it is read (explicitly allowed or on by default).
+    /// Sampling #954: requiring every path showed Off while the history was still read (Off, then On while the
+    /// OpenCode Go key was absent, then the key returns still refused), and the next click sent Allow instead of a stop.
+    /// Off refuses every path (`requestToolChoice`), so On here always means one click stops all reading.
     public func isToolReading(_ tool: String) -> Bool {
         guard let entry = firstRunTools.first(where: { $0.tool == tool }), entry.canRead else { return false }
-        return entry.scopes.allSatisfy { isReading($0) }
+        return entry.scopes.contains { isReading($0) }
     }
     /// Settings: turn a whole tool on or off with one confirmed choice (the same grant the first-run Done sends).
     /// #910-1: Off refuses every saved or default-on path of the tool, not only the paths detected now. A path

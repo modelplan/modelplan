@@ -155,6 +155,7 @@ import AppKit
         case .privacyLink: action = .request(.openLink(.privacy))
         case .repositoryLink: action = .request(.openLink(.repository))
         case .updateStatus: action = .request(.checkForUpdates)
+        case .exportDiagnostics: action = .request(.exportDiagnostics)
         case .loginSystemSettings: action = .request(.openSystemSettings(.loginItems))
         case .notificationSystemSettings: action = .request(.openSystemSettings(.notifications))
         default: action = nil
@@ -169,6 +170,7 @@ import AppKit
             surfaceAction?.isEnabled = !saving && (key == .diagnostics || (hasHost && row.availability == .available))
                 && (key != .clearAppCache || context.capabilities.appCacheClearAvailable)
                 && (key != .updateStatus || context.capabilities.updateServiceAvailable)
+                && (key != .exportDiagnostics || context.capabilities.diagnosticsExportAvailable)
             if key == .updateStatus {
                 let words: (String, String)
                 switch context.updateState {

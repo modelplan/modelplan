@@ -498,6 +498,8 @@ public enum RowsCode: Codable, Sendable, Equatable {
     case `rpcError`
     case `closed`
     case `regionRefused`
+    case `codexCustomProvider`
+    case `teamUnsupported`
     case `noPlan`
     case `other`
     case `readersOff`
@@ -557,6 +559,8 @@ public enum RowsCode: Codable, Sendable, Equatable {
         case "rpc_error": self = .`rpcError`
         case "closed": self = .`closed`
         case "region_refused": self = .`regionRefused`
+        case "codex_custom_provider": self = .`codexCustomProvider`
+        case "team_unsupported": self = .`teamUnsupported`
         case "no_plan": self = .`noPlan`
         case "other": self = .`other`
         case "readers_off": self = .`readersOff`
@@ -618,6 +622,8 @@ public enum RowsCode: Codable, Sendable, Equatable {
         case .`rpcError`: return "rpc_error"
         case .`closed`: return "closed"
         case .`regionRefused`: return "region_refused"
+        case .`codexCustomProvider`: return "codex_custom_provider"
+        case .`teamUnsupported`: return "team_unsupported"
         case .`noPlan`: return "no_plan"
         case .`other`: return "other"
         case .`readersOff`: return "readers_off"
@@ -784,6 +790,47 @@ public struct RowsFailure: Codable, Sendable {
     }
 }
 
+public struct RowsHint: Codable, Sendable {
+    public let `signInCommand`: String?
+    public let `installCommand`: String?
+    public let `installUrl`: String?
+    public let `text`: RowsText
+    private enum CodingKeys: String, CodingKey {
+        case `signInCommand`
+        case `installCommand`
+        case `installUrl`
+        case `text`
+    }
+    public init(`signInCommand`: String? = nil, `installCommand`: String? = nil, `installUrl`: String? = nil, `text`: RowsText) throws {
+        self.`signInCommand` = `signInCommand`
+        self.`installCommand` = `installCommand`
+        self.`installUrl` = `installUrl`
+        self.`text` = `text`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`signInCommand`), try c.decodeNil(forKey: .`signInCommand`) { throw WireDecodeError.invalidIdentity }
+        self.`signInCommand` = try? c.decodeIfPresent(String.self, forKey: .`signInCommand`)
+        if c.contains(.`installCommand`), try c.decodeNil(forKey: .`installCommand`) { throw WireDecodeError.invalidIdentity }
+        self.`installCommand` = try? c.decodeIfPresent(String.self, forKey: .`installCommand`)
+        if c.contains(.`installUrl`), try c.decodeNil(forKey: .`installUrl`) { throw WireDecodeError.invalidIdentity }
+        self.`installUrl` = try? c.decodeIfPresent(String.self, forKey: .`installUrl`)
+        self.`text` = try c.decode(RowsText.self, forKey: .`text`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`signInCommand`, forKey: .`signInCommand`)
+        try c.encodeIfPresent(`installCommand`, forKey: .`installCommand`)
+        try c.encodeIfPresent(`installUrl`, forKey: .`installUrl`)
+        try c.encode(`text`, forKey: .`text`)
+    }
+    private func validate() throws {
+    }
+}
+
 public enum RowsKind: Codable, Sendable, Equatable {
     case `tool`
     case `declared`
@@ -867,17 +914,20 @@ public struct RowsNextStep: Codable, Sendable {
     public let `text`: RowsText
     public let `availableAt`: WireTimestamp?
     public let `disabledReason`: RowsDisabledReason?
+    public let `hint`: RowsHint?
     private enum CodingKeys: String, CodingKey {
         case `action`
         case `text`
         case `availableAt`
         case `disabledReason`
+        case `hint`
     }
-    public init(`action`: RowsAction, `text`: RowsText, `availableAt`: WireTimestamp? = nil, `disabledReason`: RowsDisabledReason? = nil) throws {
+    public init(`action`: RowsAction, `text`: RowsText, `availableAt`: WireTimestamp? = nil, `disabledReason`: RowsDisabledReason? = nil, `hint`: RowsHint? = nil) throws {
         self.`action` = `action`
         self.`text` = `text`
         self.`availableAt` = `availableAt`
         self.`disabledReason` = `disabledReason`
+        self.`hint` = `hint`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -886,6 +936,8 @@ public struct RowsNextStep: Codable, Sendable {
         self.`text` = try c.decode(RowsText.self, forKey: .`text`)
         self.`availableAt` = try? c.decodeIfPresent(WireTimestamp.self, forKey: .`availableAt`)
         self.`disabledReason` = try? c.decodeIfPresent(RowsDisabledReason.self, forKey: .`disabledReason`)
+        if c.contains(.`hint`), try c.decodeNil(forKey: .`hint`) { throw WireDecodeError.invalidIdentity }
+        self.`hint` = try? c.decodeIfPresent(RowsHint.self, forKey: .`hint`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -895,6 +947,7 @@ public struct RowsNextStep: Codable, Sendable {
         try c.encode(`text`, forKey: .`text`)
         try c.encodeIfPresent(`availableAt`, forKey: .`availableAt`)
         try c.encodeIfPresent(`disabledReason`, forKey: .`disabledReason`)
+        try c.encodeIfPresent(`hint`, forKey: .`hint`)
     }
     private func validate() throws {
     }
@@ -2222,6 +2275,7 @@ public struct WireCockpitDetails: Codable, Sendable {
     public let `resetEvents`: [RowsResetEvent]
     public let `alerts`: [WireCockpitAlert]
     public let `publishedModels`: [WireCockpitPublicationModel]?
+    public let `planModels`: [WireCockpitPlanModels]?
     public let `forecasts`: [WireCockpitForecast]?
     public let `recentSessions`: [WireCockpitRecentSession]?
     public let `peaks`: [WireCockpitPeak]?
@@ -2235,11 +2289,12 @@ public struct WireCockpitDetails: Codable, Sendable {
         case `resetEvents`
         case `alerts`
         case `publishedModels`
+        case `planModels`
         case `forecasts`
         case `recentSessions`
         case `peaks`
     }
-    public init(`publication`: WireCockpitPublication? = nil, `version`: Int, `sources`: [String], `subscriptions`: [WireCockpitSubscriptionDetails], `sessions`: [WireCockpitSession], `sessionCoverage`: String, `resetEvents`: [RowsResetEvent], `alerts`: [WireCockpitAlert], `publishedModels`: [WireCockpitPublicationModel]? = nil, `forecasts`: [WireCockpitForecast]? = nil, `recentSessions`: [WireCockpitRecentSession]? = nil, `peaks`: [WireCockpitPeak]? = nil) throws {
+    public init(`publication`: WireCockpitPublication? = nil, `version`: Int, `sources`: [String], `subscriptions`: [WireCockpitSubscriptionDetails], `sessions`: [WireCockpitSession], `sessionCoverage`: String, `resetEvents`: [RowsResetEvent], `alerts`: [WireCockpitAlert], `publishedModels`: [WireCockpitPublicationModel]? = nil, `planModels`: [WireCockpitPlanModels]? = nil, `forecasts`: [WireCockpitForecast]? = nil, `recentSessions`: [WireCockpitRecentSession]? = nil, `peaks`: [WireCockpitPeak]? = nil) throws {
         self.`publication` = `publication`
         self.`version` = `version`
         self.`sources` = `sources`
@@ -2249,6 +2304,7 @@ public struct WireCockpitDetails: Codable, Sendable {
         self.`resetEvents` = `resetEvents`
         self.`alerts` = `alerts`
         self.`publishedModels` = `publishedModels`
+        self.`planModels` = `planModels`
         self.`forecasts` = `forecasts`
         self.`recentSessions` = `recentSessions`
         self.`peaks` = `peaks`
@@ -2267,6 +2323,8 @@ public struct WireCockpitDetails: Codable, Sendable {
         self.`alerts` = try c.decode([WireCockpitAlert].self, forKey: .`alerts`)
         if c.contains(.`publishedModels`), try c.decodeNil(forKey: .`publishedModels`) { throw WireDecodeError.invalidIdentity }
         self.`publishedModels` = try c.decodeIfPresent([WireCockpitPublicationModel].self, forKey: .`publishedModels`)
+        if c.contains(.`planModels`), try c.decodeNil(forKey: .`planModels`) { throw WireDecodeError.invalidIdentity }
+        self.`planModels` = try c.decodeIfPresent([WireCockpitPlanModels].self, forKey: .`planModels`)
         if c.contains(.`forecasts`), try c.decodeNil(forKey: .`forecasts`) { throw WireDecodeError.invalidIdentity }
         self.`forecasts` = try c.decodeIfPresent([WireCockpitForecast].self, forKey: .`forecasts`)
         if c.contains(.`recentSessions`), try c.decodeNil(forKey: .`recentSessions`) { throw WireDecodeError.invalidIdentity }
@@ -2287,6 +2345,7 @@ public struct WireCockpitDetails: Codable, Sendable {
         try c.encode(`resetEvents`, forKey: .`resetEvents`)
         try c.encode(`alerts`, forKey: .`alerts`)
         try c.encodeIfPresent(`publishedModels`, forKey: .`publishedModels`)
+        try c.encodeIfPresent(`planModels`, forKey: .`planModels`)
         try c.encodeIfPresent(`forecasts`, forKey: .`forecasts`)
         try c.encodeIfPresent(`recentSessions`, forKey: .`recentSessions`)
         try c.encodeIfPresent(`peaks`, forKey: .`peaks`)
@@ -2593,6 +2652,45 @@ public struct WireCockpitPeak: Codable, Sendable {
         try c.encode(`startsAt`, forKey: .`startsAt`)
         try c.encode(`endsAt`, forKey: .`endsAt`)
         try c.encode(`status`, forKey: .`status`)
+    }
+    private func validate() throws {
+    }
+}
+
+public struct WireCockpitPlanModels: Codable, Sendable {
+    public let `planId`: String
+    public let `generation`: String?
+    public let `basis`: String
+    public let `modelIds`: [String]
+    private enum CodingKeys: String, CodingKey {
+        case `planId`
+        case `generation`
+        case `basis`
+        case `modelIds`
+    }
+    public init(`planId`: String, `generation`: String? = nil, `basis`: String, `modelIds`: [String]) throws {
+        self.`planId` = `planId`
+        self.`generation` = `generation`
+        self.`basis` = `basis`
+        self.`modelIds` = `modelIds`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`planId` = try c.decode(String.self, forKey: .`planId`)
+        if c.contains(.`generation`), try c.decodeNil(forKey: .`generation`) { throw WireDecodeError.invalidIdentity }
+        self.`generation` = try c.decodeIfPresent(String.self, forKey: .`generation`)
+        self.`basis` = try c.decode(String.self, forKey: .`basis`)
+        self.`modelIds` = try c.decode([String].self, forKey: .`modelIds`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`planId`, forKey: .`planId`)
+        try c.encodeIfPresent(`generation`, forKey: .`generation`)
+        try c.encode(`basis`, forKey: .`basis`)
+        try c.encode(`modelIds`, forKey: .`modelIds`)
     }
     private func validate() throws {
     }
@@ -5236,19 +5334,22 @@ public struct WireReaderKeyResult: Codable, Sendable {
     public let `provider`: WireReaderKeyProvider
     public let `region`: WireReaderKeyRegion
     public let `present`: Bool
+    public let `otherKeyFound`: Bool
     public let `outcome`: WireReaderKeyOutcome
     private enum CodingKeys: String, CodingKey {
         case `schemaVersion`
         case `provider`
         case `region`
         case `present`
+        case `otherKeyFound`
         case `outcome`
     }
-    public init(`schemaVersion`: Int, `provider`: WireReaderKeyProvider, `region`: WireReaderKeyRegion, `present`: Bool, `outcome`: WireReaderKeyOutcome) throws {
+    public init(`schemaVersion`: Int, `provider`: WireReaderKeyProvider, `region`: WireReaderKeyRegion, `present`: Bool, `otherKeyFound`: Bool, `outcome`: WireReaderKeyOutcome) throws {
         self.`schemaVersion` = `schemaVersion`
         self.`provider` = `provider`
         self.`region` = `region`
         self.`present` = `present`
+        self.`otherKeyFound` = `otherKeyFound`
         self.`outcome` = `outcome`
         try validate()
     }
@@ -5258,6 +5359,7 @@ public struct WireReaderKeyResult: Codable, Sendable {
         self.`provider` = try c.decode(WireReaderKeyProvider.self, forKey: .`provider`)
         self.`region` = try c.decode(WireReaderKeyRegion.self, forKey: .`region`)
         self.`present` = try c.decode(Bool.self, forKey: .`present`)
+        self.`otherKeyFound` = try c.decode(Bool.self, forKey: .`otherKeyFound`)
         self.`outcome` = try c.decode(WireReaderKeyOutcome.self, forKey: .`outcome`)
         try validate()
     }
@@ -5268,6 +5370,7 @@ public struct WireReaderKeyResult: Codable, Sendable {
         try c.encode(`provider`, forKey: .`provider`)
         try c.encode(`region`, forKey: .`region`)
         try c.encode(`present`, forKey: .`present`)
+        try c.encode(`otherKeyFound`, forKey: .`otherKeyFound`)
         try c.encode(`outcome`, forKey: .`outcome`)
     }
     private func validate() throws {

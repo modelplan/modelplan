@@ -10,7 +10,7 @@ private let fakeKey = "fake-test-key-0001"
     struct Call: Equatable { let verb: String; let key: String?; let region: ReaderKeyRegion? }
     private(set) var calls: [Call] = []
     private(set) var allowed: [ReaderKeyProvider] = []
-    private var stored: ReaderKeyStatus
+    var stored: ReaderKeyStatus
     var testOutcome: ReaderKeyOutcome = .ok
     var allowResult = true
     init(stored: ReaderKeyStatus = .init(present: false, region: nil)) { self.stored = stored }
@@ -138,7 +138,7 @@ private let fakeKey = "fake-test-key-0001"
     func testHelpLineAndBothLanguages() {
         let zh = made(.zai, FakeKeyBackend(), language: .chinese)
         let help = descendants(zh).compactMap { ($0 as? NSTextField)?.stringValue }
-        XCTAssertTrue(help.contains("保存在本机，只发送到 api.z.ai / open.bigmodel.cn 用于读取套餐用量"))
+        XCTAssertTrue(help.contains("保存在本机，只发送到智谱的官方站点用于读取套餐用量"))
         XCTAssertEqual(button(zh, "save").title, "保存")
         let go = made(.opencodego, FakeKeyBackend(), language: .english)
         XCTAssertTrue(descendants(go).compactMap { ($0 as? NSTextField)?.stringValue }.contains("Stored on this Mac and sent only to opencode.ai to read plan usage"))
@@ -169,6 +169,39 @@ private let fakeKey = "fake-test-key-0001"
         XCTAssertTrue(line.english.contains("OPENCODE_API_KEY") && line.english.contains("add a key below"), line.english)
         XCTAssertFalse(line.english.contains("Sign in to OpenCode"), line.english)
         XCTAssertFalse(line.chinese.contains("登录"), line.chinese)
+    }
+    /// Owner decision 2026-11-14: one row; the entered key wins, and the row says another key was also found.
+    func testRowSaysAnotherKeyWasAlsoFound() async {
+        for (other, language) in [(true, SettingsLanguage.english), (true, .chinese), (false, .english)] {
+            let view = made(.zai, FakeKeyBackend(stored: .init(present: true, region: .global, otherKeyFound: other)), language: language)
+            await view.entry.load()
+            let line = find(view, "readerkey.zai.otherkey", as: NSTextField.self)
+            if other {
+                XCTAssertEqual(line?.isHidden, false)
+                XCTAssertEqual(line?.stringValue, language == .english ? "Another key was also found; using the key you entered."
+                                                                       : "还检测到另一个密钥，当前使用你手动填写的密钥。")
+            } else {
+                XCTAssertTrue(line?.isHidden ?? true)
+            }
+        }
+    }
+    /// macrevd-795-1: a reading after Save changes the engine's answer; the reused entry picks it up and keeps
+    /// what is being typed.
+    func testRefreshAfterAReadingUpdatesTheOtherKeyLineAndKeepsTheTypedText() async {
+        let backend = FakeKeyBackend(stored: .init(present: true, region: .global, otherKeyFound: false))
+        let section = ReaderKeySection(backend: backend, language: .english)
+        let view = section.inlineEntry(for: .zai)
+        await view.entry.load()
+        let line = { self.find(view, "readerkey.zai.otherkey", as: NSTextField.self) }
+        XCTAssertTrue(line()?.isHidden ?? true)
+        type(view, "fake-half-typed")
+        backend.stored = .init(present: true, region: .global, otherKeyFound: true)
+        await view.entry.refreshStatus()
+        XCTAssertEqual(line()?.isHidden, false)
+        XCTAssertEqual(find(view, "readerkey.zai.field", as: NSSecureTextField.self)?.stringValue, "fake-half-typed")
+        backend.stored = .init(present: true, region: .global, otherKeyFound: false)
+        await view.entry.refreshStatus()
+        XCTAssertTrue(line()?.isHidden ?? true)
     }
     func testDismissClearsTheTypedKey() {
         let view = made(.zai, FakeKeyBackend())

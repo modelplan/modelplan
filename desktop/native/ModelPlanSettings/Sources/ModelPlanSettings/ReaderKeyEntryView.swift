@@ -12,6 +12,7 @@ import AppKit
     private let picker = NSPopUpButton(frame: .zero, pullsDown: false)
     private let help = NSTextField(wrappingLabelWithString: "")
     private let result = NSTextField(wrappingLabelWithString: "")
+    private let otherKey = NSTextField(wrappingLabelWithString: "")
     private var test: ConnectionButton!
     private var save: ConnectionButton!
     private var remove: ConnectionButton!
@@ -38,6 +39,7 @@ import AppKit
         picker.target = self; picker.action = #selector(regionChanged)
         help.font = .systemFont(ofSize: 11); help.textColor = .secondaryLabelColor
         result.font = .systemFont(ofSize: 12); result.setAccessibilityIdentifier(id + ".result")
+        otherKey.font = .systemFont(ofSize: 12); otherKey.textColor = .secondaryLabelColor; otherKey.setAccessibilityIdentifier(id + ".otherkey")
         test = ConnectionButton(title: "", identifier: id + ".test") { [weak self] in
             guard let entry = self?.entry else { return }; Task { @MainActor in await entry.test() }
         }
@@ -48,6 +50,7 @@ import AppKit
             guard let entry = self?.entry else { return }; Task { @MainActor in await entry.remove() }
         }
         addArrangedSubview(title)
+        addArrangedSubview(otherKey)
         if entry.provider.hasRegion { addArrangedSubview(picker) }
         addArrangedSubview(field)
         addArrangedSubview(NSStackView(views: [test, save, remove]))
@@ -90,6 +93,8 @@ import AppKit
         help.stringValue = entry.provider.help.value(language)
         result.stringValue = entry.isBusy ? (language == .english ? "Checking…" : "检查中…") : (entry.message?.value(language) ?? "")
         result.isHidden = result.stringValue.isEmpty
+        otherKey.stringValue = entry.status.present && entry.status.otherKeyFound ? ReaderKeyStatus.otherKeyLine.value(language) : ""
+        otherKey.isHidden = otherKey.stringValue.isEmpty
     }
 }
 
@@ -133,11 +138,16 @@ import AppKit
         let model = view.entry; Task { @MainActor in await model.load() }
         return view
     }
+    /// macrev2/macrevd-795-1: after each accepted reading the inline entries ask the engine again, so the
+    /// "another key" line follows a detected key that appeared, changed or went away.
+    func refreshStatus() {
+        for view in inlineEntries.values { let model = view.entry; Task { @MainActor in await model.refreshStatus() } }
+    }
     func dismiss() { for entry in entries { entry.entry.dismiss() }; for entry in inlineEntries.values { entry.entry.dismiss() } }
     private func refresh() {
         heading.stringValue = language == .english ? "Add a key (optional)" : "添加密钥（可选）"
         note.stringValue = language == .english
-            ? "Sign-ins found on this Mac are used first. Enter a key only when none is found."
-            : "会先使用本机上已找到的登录；没有可用登录时再输入密钥。"
+            ? "A key you enter here is used instead of one found on this Mac."
+            : "在这里填写的密钥会优先于本机找到的密钥使用。"
     }
 }

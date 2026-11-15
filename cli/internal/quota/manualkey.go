@@ -118,6 +118,21 @@ func loadManualKey(dir, provider string) (ManualKey, bool) {
 	return k, ok
 }
 
+// loadManualKeyChecked is loadManualKey that keeps the difference between "no saved key" and "a saved
+// file that is unsafe or unreadable". A refresh must fail closed on the latter, not use another key.
+func loadManualKeyChecked(dir, provider string) (ManualKey, bool, error) {
+	if !ManualKeyProvider(provider) {
+		// Providers without a manual key file never look at it: a bad file must not affect them.
+		return ManualKey{}, false, nil
+	}
+	keys, err := loadManualKeys(dir)
+	if err != nil {
+		return ManualKey{}, false, err
+	}
+	k, ok := keys[provider]
+	return k, ok, nil
+}
+
 // ManualKeyPresent: whether a key is stored for provider. It never returns the key.
 func ManualKeyPresent(dir, provider string) bool {
 	_, ok := loadManualKey(dir, provider)
@@ -247,14 +262,44 @@ func fetchManualKey(ctx context.Context, c *http.Client, provider string, k Manu
 	return codexbarEntry{Status: "error", ErrorCode: "other", ObservedAt: now.UTC()}
 }
 
-// manualKeyFallback: the detected sources' outcomes after which a key the user entered is tried. Only a missing,
-// unreadable, relay or refused detected key; a working key, a lapsed plan, an outage or a rate limit is final.
-func manualKeyFallback(code string) bool {
-	switch code {
-	case "no_key", "file_missing", "file_unreadable", "parse_error", "not_signed_in", "not_found", "region_refused", "unsupported_login", "http_401":
-		return true
+// detectedZaiKey: the key the detected GLM source would use (the consented configuration file, else
+// Z_AI_API_KEY), read on this Mac only to compare with the entered key. "" when there is none.
+func detectedZaiKey(p Paths, x Selection) string {
+	if g, ok := p.ReaderAccessGrant("zai"); ok && g.ConfigSource != nil {
+		_, key, state, _ := zaiConfiguredKeyCode(*g.ConfigSource)
+		if state != "" {
+			return ""
+		}
+		return strings.TrimSpace(key)
 	}
-	return false
+	return strings.TrimSpace(os.Getenv(x.KeyEnv))
+}
+
+// zaiKeyBasis: the identity basis of a GLM key, shared by every GLM source (nativeIdentityBasis, ZaiConfig).
+const zaiKeyBasis = "api-key:zai"
+
+// ManualKeyOtherKeyFound (owner decision 2026-11-14): a key is entered for provider and the GLM key detected
+// at the latest reading is a different key. It is worked out on every call from the key saved now (its
+// keyed-hash reference, looked up without writing anything) and the detected key's reference, so it follows
+// Save, Remove and a change of the detected key at the next reading. Only a boolean leaves this function.
+// With MODELPLAN_IDENTITY=off no reference exists and the line is not shown.
+func ManualKeyOtherKeyFound(dir, provider string) bool {
+	if provider != "zai" || IdentityOff() {
+		return false
+	}
+	mk, ok := loadManualKey(dir, provider)
+	if !ok {
+		return false
+	}
+	detected := ""
+	if s := loadNative(dir); s != nil {
+		for _, e := range s.Providers {
+			if e.Provider == provider {
+				detected = e.DetectedKeyRef
+			}
+		}
+	}
+	return detected != "" && lookupSubscription(dir, zaiKeyBasis, mk.Key) != detected
 }
 
 // manualKeyOutcome turns a reader entry into one outcome word.

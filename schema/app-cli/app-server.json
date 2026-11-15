@@ -527,6 +527,13 @@
           "maxItems": 32,
           "type": "array"
         },
+        "planModels": {
+          "items": {
+            "$ref": "#/$defs/CockpitPlanModels"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
         "publication": {
           "anyOf": [
             {
@@ -907,6 +914,38 @@
         "startsAt",
         "endsAt",
         "status"
+      ],
+      "type": "object"
+    },
+    "CockpitPlanModels": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "maxLength": 16,
+          "type": "string"
+        },
+        "generation": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "modelIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "planId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "planId",
+        "basis",
+        "modelIds"
       ],
       "type": "object"
     },
@@ -2374,6 +2413,8 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "codex_custom_provider",
+            "team_unsupported",
             "no_plan",
             "other",
             "readers_off",
@@ -2438,6 +2479,31 @@
         "storeEpoch",
         "consentGeneration",
         "data"
+      ],
+      "type": "object"
+    },
+    "Hint": {
+      "additionalProperties": false,
+      "properties": {
+        "installCommand": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "installUrl": {
+          "maxLength": 128,
+          "pattern": "^https://",
+          "type": "string"
+        },
+        "signInCommand": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "text": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "required": [
+        "text"
       ],
       "type": "object"
     },
@@ -3020,6 +3086,16 @@
                 "offline"
               ],
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Hint"
             },
             {
               "type": "null"
@@ -3665,6 +3741,9 @@
     "ReaderKeyResult": {
       "additionalProperties": false,
       "properties": {
+        "otherKeyFound": {
+          "type": "boolean"
+        },
         "outcome": {
           "enum": [
             "saved",
@@ -3709,6 +3788,7 @@
         "provider",
         "region",
         "present",
+        "otherKeyFound",
         "outcome"
       ],
       "type": "object"
@@ -3800,6 +3880,8 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "codex_custom_provider",
+            "team_unsupported",
             "no_plan",
             "other",
             "readers_off",
@@ -5201,6 +5283,8 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "codex_custom_provider",
+            "team_unsupported",
             "no_plan",
             "other",
             "readers_off",

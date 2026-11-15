@@ -40,7 +40,7 @@ import ModelPlanWire
     }
     private func reply(_ result: WireReaderKeyResult?, fallback: ReaderKeyOutcome = .failed) -> ReaderKeyReply {
         guard let result else { return .init(outcome: fallback, status: .init(present: false, region: nil)) }
-        return .init(outcome: outcome(result.outcome), status: .init(present: result.present, region: region(result.region)))
+        return .init(outcome: outcome(result.outcome), status: .init(present: result.present, region: region(result.region), otherKeyFound: result.otherKeyFound))
     }
 
     func status(_ provider: ReaderKeyProvider) async -> ReaderKeyStatus {

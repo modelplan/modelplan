@@ -19,7 +19,7 @@ public enum ReaderKeyProvider: String, CaseIterable, Sendable {
     public var help: SettingsText {
         switch self {
         case .zai: return .init("Stored on this Mac and sent only to api.z.ai / open.bigmodel.cn to read plan usage",
-                                "保存在本机，只发送到 api.z.ai / open.bigmodel.cn 用于读取套餐用量")
+                                "保存在本机，只发送到智谱的官方站点用于读取套餐用量")
         case .opencodego: return .init("Stored on this Mac and sent only to opencode.ai to read plan usage",
                                        "保存在本机，只发送到 opencode.ai 用于读取套餐用量")
         }
@@ -29,7 +29,7 @@ public enum ReaderKeyProvider: String, CaseIterable, Sendable {
 public enum ReaderKeyRegion: String, CaseIterable, Sendable {
     case global, china
     public var title: SettingsText {
-        self == .global ? .init("Global (z.ai)", "国际站（z.ai）") : .init("China (bigmodel.cn)", "国内站（bigmodel.cn）")
+        self == .global ? .init("Global (z.ai)", "国际站") : .init("China (bigmodel.cn)", "国内站")
     }
 }
 
@@ -71,7 +71,14 @@ public enum ReaderKeyOutcome: Equatable, Sendable {
 public struct ReaderKeyStatus: Equatable, Sendable {
     public let present: Bool
     public let region: ReaderKeyRegion?
-    public init(present: Bool, region: ReaderKeyRegion?) { self.present = present; self.region = region }
+    /// Owner decision 2026-11-14: the entered key is in use and a different key was also detected.
+    public let otherKeyFound: Bool
+    public init(present: Bool, region: ReaderKeyRegion?, otherKeyFound: Bool = false) {
+        self.present = present; self.region = region; self.otherKeyFound = otherKeyFound
+    }
+    /// The short line on the row when another key was also found (one row; the entered key wins).
+    public static let otherKeyLine = SettingsText("Another key was also found; using the key you entered.",
+                                                  "还检测到另一个密钥，当前使用你手动填写的密钥。")
 }
 
 public struct ReaderKeyReply: Equatable, Sendable {
@@ -124,6 +131,13 @@ public struct ReaderKeyReply: Equatable, Sendable {
         status = current
         if let saved = current.region { region = saved }
         onChange?()
+    }
+    /// After a new reading: take the engine's current answer for the saved key (present, region, whether
+    /// another key was also found). What is typed, the picker and any message stay as they are.
+    public func refreshStatus() async {
+        let current = await backend.status(provider)
+        guard current != status else { return }
+        status = current; onChange?()
     }
     public func test() async {
         guard canTest else { return }

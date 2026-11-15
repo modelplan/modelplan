@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// G3-56 / CKP-STRIP-06: a new caution blinks until pressed or ten seconds; pressing acknowledges it. Only a red
+// G3-56 / CKP-STRIP-06: a new caution blinks three times (or until pressed), then stays lit; pressing acknowledges it. Only a red
 // escalation or a true recurrence (the condition cleared on a real reading and came back) blinks again. Changing
 // numbers, a refresh, a close/reopen, a pending read or an app restart never re-blink. Built page, synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';

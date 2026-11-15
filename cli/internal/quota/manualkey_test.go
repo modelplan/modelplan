@@ -225,39 +225,21 @@ func refreshWith(t *testing.T, p Paths, provider string) (Report, string) {
 	return r, string(b) + string(cache)
 }
 
-// SET-9-41 / D90: auto-detect first, the manual key only when no detected source gives a usable key.
-func TestDetectedSourceComesBeforeTheManualKeyForZai(t *testing.T) {
-	isolateHome(t)
-	ks := &keyServer{body: zaiOKBody}
-	useClient(t, ks.serve(t), "api.z.ai", "open.bigmodel.cn")
-	p := nativePaths(t)
-	t.Setenv("Z_AI_API_KEY", fakeOtherKey)
-	if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "china"); err != nil {
-		t.Fatal(err)
-	}
-	_, out := refreshWith(t, p, "zai")
-	if a := ks.seen(); len(a) != 1 || a[0] != "Bearer "+fakeOtherKey {
-		t.Fatalf("a working detected key must be used and the manual key not sent: %v", a)
-	}
-	for _, key := range []string{fakeZaiKey, fakeOtherKey} {
-		if strings.Contains(out, key) {
-			t.Fatal("a key reached the cache or the report")
-		}
-	}
-}
-
-func TestManualKeyIsUsedWhenTheDetectedKeyIsMissingOrRefused(t *testing.T) {
+// D90, owner decision 2026-11-14: the entered key wins over a detected one and is the only key sent. One row;
+// when a different key is also detected ManualKeyOtherKeyFound says so (a boolean, never the key);
+// the same key detected and entered is simply one row without the flag.
+func TestEnteredKeyWinsAndADifferentDetectedKeyIsFlagged(t *testing.T) {
 	for _, c := range []struct {
-		name string
-		env  string
-		want []string
+		name, env string
+		other     bool
 	}{
-		{"no detected key", "", []string{"Bearer " + fakeZaiKey}},
-		{"detected key refused", fakeOtherKey, []string{"Bearer " + fakeOtherKey, "Bearer " + fakeZaiKey}},
+		{"different detected key", fakeOtherKey, true},
+		{"same key detected and entered", fakeZaiKey, false},
+		{"nothing detected", "", false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			isolateHome(t)
-			ks := &keyServer{body: zaiOKBody, bodyFor: map[string]string{"Bearer " + fakeOtherKey: `{"code":1001,"success":false}`}}
+			ks := &keyServer{body: zaiOKBody}
 			useClient(t, ks.serve(t), "api.z.ai", "open.bigmodel.cn")
 			p := nativePaths(t)
 			t.Setenv("Z_AI_API_KEY", c.env)
@@ -265,17 +247,116 @@ func TestManualKeyIsUsedWhenTheDetectedKeyIsMissingOrRefused(t *testing.T) {
 				t.Fatal(err)
 			}
 			r, out := refreshWith(t, p, "zai")
-			if a := ks.seen(); !reflect.DeepEqual(a, c.want) {
-				t.Fatalf("requests = %v, want %v", a, c.want)
+			if a := ks.seen(); len(a) != 1 || a[0] != "Bearer "+fakeZaiKey {
+				t.Fatalf("only the entered key is sent: %v", a)
 			}
-			ok := false
+			if got := ManualKeyOtherKeyFound(p.Cache, "zai"); got != c.other {
+				t.Fatalf("OtherKeyFound = %v, want %v", got, c.other)
+			}
+			n := 0
 			for _, s := range r.Sources {
-				ok = ok || (s.Source == "native:zai" && s.Status != "unavailable")
+				if s.Source == "native:zai" {
+					n++
+				}
 			}
-			if !ok || strings.Contains(out, fakeZaiKey) || strings.Contains(out, fakeOtherKey) {
-				t.Fatalf("want a reading from the manual key and no key in the output: %+v", r.Sources)
+			if n != 1 {
+				t.Fatalf("one GLM row, got %d: %+v", n, r.Sources)
+			}
+			for _, key := range []string{fakeZaiKey, fakeOtherKey} {
+				if strings.Contains(out, key) {
+					t.Fatal("a key reached the cache or the report")
+				}
 			}
 		})
+	}
+	// A refused entered key is not replaced by the detected one (the entered key stays the only source).
+	isolateHome(t)
+	ks := &keyServer{body: zaiOKBody, bodyFor: map[string]string{"Bearer " + fakeZaiKey: `{"code":1001,"success":false}`}}
+	useClient(t, ks.serve(t), "api.z.ai", "open.bigmodel.cn")
+	p := nativePaths(t)
+	t.Setenv("Z_AI_API_KEY", fakeOtherKey)
+	if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "china"); err != nil {
+		t.Fatal(err)
+	}
+	refreshWith(t, p, "zai")
+	if a := ks.seen(); len(a) != 1 || a[0] != "Bearer "+fakeZaiKey {
+		t.Fatalf("a refused entered key is reported, not swapped: %v", a)
+	}
+	// Removing the entered key goes back to the detected one, and the flag goes with it.
+	if err := RemoveManualKey(p.Cache, "zai"); err != nil {
+		t.Fatal(err)
+	}
+	if ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("no entered key, no flag")
+	}
+	ks2 := &keyServer{body: zaiOKBody}
+	useClient(t, ks2.serve(t), "api.z.ai")
+	if err := RefreshNative(context.Background(), p, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if a := ks2.seen(); len(a) != 1 || a[0] != "Bearer "+fakeOtherKey {
+		t.Fatalf("detected key after removal: %v", a)
+	}
+}
+
+// macrevd-795-1: the "another key" answer follows the key saved now, not a flag from an older reading.
+// Detected B read first; save A -> shown at once; save B (the detected key) -> gone at once; a reading with A
+// and then B detected again keeps it right; remove -> gone; the detected key going away -> gone at the next reading.
+func TestOtherKeyFoundFollowsTheSavedKey(t *testing.T) {
+	isolateHome(t)
+	ks := &keyServer{body: zaiOKBody}
+	useClient(t, ks.serve(t), "api.z.ai", "open.bigmodel.cn")
+	p := nativePaths(t)
+	t.Setenv("Z_AI_API_KEY", fakeOtherKey) // detected B
+	now := time.Now()
+	refreshWith(t, p, "zai")
+	if ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("no entered key, no line")
+	}
+	if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil { // A
+		t.Fatal(err)
+	}
+	if !ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("A saved while B is detected: the line shows at once")
+	}
+	if err := SetManualKey(p.Cache, "zai", fakeOtherKey, "global"); err != nil { // the detected key itself
+		t.Fatal(err)
+	}
+	if ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("the saved key is the detected one: no line, without waiting for a reading")
+	}
+	if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RefreshNative(context.Background(), p, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if !ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("after a reading with A, B is still detected")
+	}
+	t.Setenv("Z_AI_API_KEY", "")
+	if err := RefreshNative(context.Background(), p, now.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("no detected key any more: no line")
+	}
+	t.Setenv("Z_AI_API_KEY", fakeOtherKey)
+	if err := RefreshNative(context.Background(), p, now.Add(3*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveManualKey(p.Cache, "zai"); err != nil {
+		t.Fatal(err)
+	}
+	if ManualKeyOtherKeyFound(p.Cache, "zai") {
+		t.Fatal("removed: no line")
+	}
+	b, _ := os.ReadFile(nativePath(p.Cache))
+	m, _ := os.ReadFile(subscriptionsPath(p.Cache))
+	for _, key := range []string{fakeZaiKey, fakeOtherKey} {
+		if strings.Contains(string(b)+string(m), key) {
+			t.Fatal("a key reached the cache or the identity map")
+		}
 	}
 }
 
@@ -349,7 +430,7 @@ func openCodeSavedLogin(t *testing.T) func() map[string]string {
 	}
 }
 
-// D90 + D230: OPENCODE_API_KEY first, then the key the user entered. OpenCode's own saved login is never read,
+// D90 + D230 (owner 2026-11-14): the key the user entered first, then OPENCODE_API_KEY. OpenCode's own saved login is never read,
 // copied or sent (detection only checks that it exists), whatever else is or is not set (macrev2-795-10).
 func TestOpenCodeGoSourceOrder(t *testing.T) {
 	for _, c := range []struct {
@@ -357,7 +438,7 @@ func TestOpenCodeGoSourceOrder(t *testing.T) {
 		manual, env bool
 		want        []string
 	}{
-		{"env beats manual", true, true, []string{"Bearer " + fakeOtherKey}},
+		{"manual beats env", true, true, []string{"Bearer " + fakeZaiKey}},
 		{"manual when no env", true, false, []string{"Bearer " + fakeZaiKey}},
 		{"saved login alone sends nothing", false, false, nil},
 	} {
@@ -432,5 +513,41 @@ func TestRelayBaseURLKeyIsNeverSent(t *testing.T) {
 	}
 	if got := ks.seen(); len(got) != 0 {
 		t.Fatalf("a relay key was sent: %v", got)
+	}
+}
+
+// macrev2-795-11 / glm-795-6: an unsafe saved-key file fails the provider closed; a detected key is not used.
+func TestUnsafeSavedKeyFileFailsRefreshClosedWithoutAnyRequest(t *testing.T) {
+	isolateHome(t)
+	ks := &keyServer{body: zaiOKBody}
+	useClient(t, ks.serve(t), "api.z.ai", "open.bigmodel.cn")
+	p := nativePaths(t)
+	t.Setenv("Z_AI_API_KEY", fakeOtherKey)
+	if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(p.Cache, manualKeyFileName), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refreshWith(t, p, "zai")
+	if a := ks.seen(); len(a) != 0 {
+		t.Fatalf("an unsafe saved-key file must send no request with either key: %v", a)
+	}
+}
+
+// macrevd-795-2 / glm-795-9: the saved-key file check applies only to providers that have a manual key.
+func TestUnsafeSavedKeyFileDoesNotAffectProvidersWithoutManualKeys(t *testing.T) {
+	dir := t.TempDir()
+	if err := SetManualKey(dir, "zai", fakeZaiKey, "global"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(ManualKeyPath(dir), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := loadManualKeyChecked(dir, "minimax"); err != nil {
+		t.Fatalf("a provider without manual keys must ignore the file: %v", err)
+	}
+	if _, _, err := loadManualKeyChecked(dir, "zai"); err == nil {
+		t.Fatal("zai must still fail closed on an unsafe file")
 	}
 }
