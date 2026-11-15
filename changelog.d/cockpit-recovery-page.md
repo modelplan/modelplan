@@ -1,0 +1,1 @@
+When the cockpit page cannot draw one update, it now keeps showing the last readings and stays open instead of unloading itself; the same broken update sent again is refused at once, and the next good update is drawn normally.
