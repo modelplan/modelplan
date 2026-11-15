@@ -38,14 +38,16 @@
       "name": "widget",
       "paths": [
         "^desktop/native/ModelPlanDock/",
-        "^desktop/native/ModelPlanAppIntegration/.*/(StaticDockPreviewHost|StaticDockPreviewApplication|DockEdgeController|DockCard|DockInteraction|CommunityPlacement)[^/]*\\.swift$"
+        "^desktop/native/ModelPlanAppIntegration/.*/(StaticDockPreviewHost|StaticDockPreviewApplication|DockEdgeController|DockCard|DockInteraction|CommunityPlacement)[^/]*\\.swift$",
+        "^desktop/native/Sources/ModelPlanShell/Pulse/"
       ],
       "apps": [
         "Pulse"
       ],
       "dirs": [
         "desktop/native/ModelPlanDock",
-        "desktop/native/ModelPlanAppIntegration"
+        "desktop/native/ModelPlanAppIntegration",
+        "desktop/native/Sources/ModelPlanShell/Pulse"
       ],
       "hint": "widget and Dock interaction (Dock host, edge, drag, card and placement files)"
     },
@@ -54,7 +56,9 @@
       "paths": [
         "^desktop/native/ModelPlanAppIntegration/.*/(CommunityMenuBar|EngineMenuBarTitle|LivePrivateMenus|CockpitContextMenu|EngineDockMenu[^/]*|U6StatusItem[^/]*|EngineLifecycleController|HelpOverlayRouter|HintExecutionHost|Dock(Requested)?Help[^/]*)\\.swift$",
         "^desktop/native/ModelPlanCockpitShell/Sources/",
-        "^desktop/native/ModelPlanCockpitWeb/Sources/.*/CockpitWindowController\\.swift$"
+        "^desktop/native/ModelPlanCockpitWeb/Sources/.*/CockpitWindowController\\.swift$",
+        "^desktop/native/Sources/ModelPlanShell/(SystemEvents|StatusItemPlacement|DisplayChangeRecheck|MainThreadHangWatchdog)\\.swift$",
+        "^desktop/native/Sources/ModelPlanCommunityHost/(CommunityDelegate|CommunityMenuBarPresentation)\\.swift$"
       ],
       "apps": [
         "CodexBar",
@@ -65,9 +69,11 @@
       "dirs": [
         "desktop/native/ModelPlanCockpitShell",
         "desktop/native/ModelPlanCockpitWeb",
-        "desktop/native/ModelPlanAppIntegration"
+        "desktop/native/ModelPlanAppIntegration",
+        "desktop/native/Sources/ModelPlanShell",
+        "desktop/native/Sources/ModelPlanCommunityHost"
       ],
-      "hint": "menu bar and native shell (status item and menus, cockpit window controller, help and hint panels, engine lifecycle wake/unlock/display handling)"
+      "hint": "menu bar and native shell (status item and menus, cockpit window controller, help and hint panels, engine lifecycle wake/unlock/display handling); in Sources/ModelPlanShell and Sources/ModelPlanCommunityHost: SystemEvents, StatusItemPlacement, DisplayChangeRecheck, CommunityDelegate and CommunityMenuBarPresentation"
     }
   ]
 }

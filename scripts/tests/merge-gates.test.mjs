@@ -979,10 +979,13 @@ test("D239: widget, menu-bar and native-shell PRs name an allowed reference (ref
   const shell = [file(`${AI}EngineLifecycleController.swift`)];
   const names = (p) => R.referenceGroups([p]).map((g) => g.name);
   for (const p of ["desktop/native/ModelPlanDock/Logic/DockEdgeGeometry.swift", `${AI}DockEdgeControllerBinding.swift`, `${AI}DockInteractionHostPort.swift`,
-    `${AI}CommunityPlacementBinding.swift`, `${AI}StaticDockPreviewApplication.swift`]) assert.deepEqual(names(p), ["widget"], p);
+    `${AI}CommunityPlacementBinding.swift`, `${AI}StaticDockPreviewApplication.swift`,
+    "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift"]) assert.deepEqual(names(p), ["widget"], p);
   for (const p of [`${AI}CommunityMenuBar.swift`, `${AI}U6StatusItemFrameSampler.swift`, `${AI}HelpOverlayRouter.swift`, `${AI}DockHelpPresenter.swift`,
     "desktop/native/ModelPlanCockpitShell/Sources/ModelPlanCockpitShell/CockpitWindowState.swift",
-    "desktop/native/ModelPlanCockpitWeb/Sources/ModelPlanCockpitWeb/CockpitWindowController.swift"]) assert.deepEqual(names(p), ["menu-bar and native shell"], p);
+    "desktop/native/ModelPlanCockpitWeb/Sources/ModelPlanCockpitWeb/CockpitWindowController.swift",
+    "desktop/native/Sources/ModelPlanShell/SystemEvents.swift", "desktop/native/Sources/ModelPlanShell/StatusItemPlacement.swift",
+    "desktop/native/Sources/ModelPlanCommunityHost/CommunityDelegate.swift", "desktop/native/Sources/ModelPlanCommunityHost/CommunityMenuBarPresentation.swift"]) assert.deepEqual(names(p), ["menu-bar and native shell"], p);
   for (const p of [`${AI}CommunityCockpitFactory.swift`, "desktop/native/ModelPlanSelection/Sources/a.swift", "docs/readers/integration-standard.md"]) assert.deepEqual(names(p), [], p);
 
   for (const files of [widget, widgetHost, shell]) {
