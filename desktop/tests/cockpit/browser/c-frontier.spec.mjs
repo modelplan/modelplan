@@ -15,7 +15,7 @@ async function open(page,published) {
  expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
- await page.getByRole('button',{name:'Effort',exact:true}).click();
+ await page.getByRole('button',{name:'Models',exact:true}).click();
 }
 test('D-B the frontier plots published points, stars each model and dims the dominated one',async({page})=>{
  await open(page,models);

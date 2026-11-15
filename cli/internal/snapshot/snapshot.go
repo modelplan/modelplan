@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/localday"
 	"sort"
 	"time"
 
@@ -472,7 +473,7 @@ func validUntil(in Input, s Snapshot) *time.Time {
 	for _, usage := range in.LocalUsage {
 		if usage.Enabled {
 			l := in.Now.Local()
-			ts = append(ts, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, l.Location()))
+			ts = append(ts, localday.Next(l))
 			break
 		}
 	}
@@ -489,7 +490,7 @@ func validUntil(in Input, s Snapshot) *time.Time {
 	}
 	if len(s.Measured) > 0 {
 		l := in.Now.Local()
-		ts = append(ts, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, time.Local))
+		ts = append(ts, localday.Next(l))
 	}
 	sort.Slice(ts, func(i, j int) bool { return ts[i].Before(ts[j]) })
 	for _, t := range ts {

@@ -48,6 +48,8 @@ struct ClientDelivery {
 /// App-side protocol client. UI state and Security.framework remain with its consumers.
 public actor ProcessEngineClient: EngineClient {
     nonisolated let deliveryAuthority = DeliveryAuthority()
+    /// Tells this client's lines apart in the app log (the cockpit and the rows each run their own engine child).
+    nonisolated let logTag = String(UUID().uuidString.prefix(8)).lowercased()
     let configuration: EngineClientConfiguration
     let consumer: any EngineClientEventConsumer
     let credentialAgent: (any CredentialAgent)?
@@ -202,7 +204,7 @@ public actor ProcessEngineClient: EngineClient {
     /// feature the app renders must be listed here. scripts/tests/capability-handshake.test.mjs checks this list
     /// against the server's advertised capabilities.
     static func declaredCapabilities(withCredentials: Bool) -> [String] {
-        ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "cockpitDetailsV1", "cockpitForecastV1", "cockpitHistoryV1", "cockpitModelsV1", "cockpitSessionsV1", "cockpitPeaksV1", "publication", "plugin_install", "history_import_v1", "resetEvents", "memberRefreshV1", "windowSourcesV1", "resetEventLinksV1", "accountTodayV1"] + (withCredentials ? ["credentials"] : [])
+        ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "cockpitDetailsV1", "cockpitForecastV1", "cockpitHistoryV1", "cockpitModelsV1", "cockpitSessionsV1", "cockpitPeaksV1", "publication", "plugin_install", "history_import_v1", "reader_key", "resetEvents", "memberRefreshV1", "windowSourcesV1", "resetEventLinksV1", "accountTodayV1"] + (withCredentials ? ["credentials"] : [])
     }
 
     func launch() {
@@ -415,7 +417,7 @@ public actor ProcessEngineClient: EngineClient {
 
     func request<T: Encodable & Sendable>(_ method: String, _ params: T, timeout: Duration?, grant: WireConsentGrantParams? = nil, userAction: EngineUserAction? = nil, pluginTool: WirePluginTool? = nil, prepared: (@Sendable (WireRequestID) async -> Void)? = nil) async throws -> EngineRequestCompletion {
         guard handshaken, child != nil, epochProbe == nil, !epochUncertain else { throw EngineClientError.notReady }
-        if let capability = ["rows/subscribe": "rows", "consent/get": "consent", "consent/grant": "consent", "history/query": "history", "cockpit/query": "cockpit", "publication/get": "publication", "plugin/install": "plugin_install", "history/import_start": "history_import_v1", "history/import_status": "history_import_v1", "history/import_cancel": "history_import_v1", "history/import_remove": "history_import_v1", "refresh/request": "refresh", "diagnostics/get": "diagnostics"][method], !capabilities.contains(capability) { throw EngineClientError.unsupportedCapability }
+        if let capability = ["rows/subscribe": "rows", "consent/get": "consent", "consent/grant": "consent", "history/query": "history", "cockpit/query": "cockpit", "publication/get": "publication", "plugin/install": "plugin_install", "readerkey/set": "reader_key", "readerkey/test": "reader_key", "readerkey/remove": "reader_key", "readerkey/status": "reader_key", "history/import_start": "history_import_v1", "history/import_status": "history_import_v1", "history/import_cancel": "history_import_v1", "history/import_remove": "history_import_v1", "refresh/request": "refresh", "diagnostics/get": "diagnostics"][method], !capabilities.contains(capability) { throw EngineClientError.unsupportedCapability }
         if Task.isCancelled { throw EngineClientError.interrupted(.notSent) }
         let maximum: Duration = method == "plugin/install" ? .seconds(120) : runtime.requestTimeout
         let bound = min(timeout ?? maximum, maximum)
@@ -449,7 +451,20 @@ public actor ProcessEngineClient: EngineClient {
     }
     public func subscribeRows(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("rows/subscribe", WireEmpty(), timeout: timeout) }
     public func consent(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("consent/get", WireEmpty(), timeout: timeout) }
-    public func grant(_ value: WireConsentGrantParams, userAction: EngineUserAction? = nil, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("consent/grant", value, timeout: timeout, grant: value, userAction: userAction) }
+    public func grant(_ value: WireConsentGrantParams, userAction: EngineUserAction? = nil, timeout: Duration? = nil) async throws -> EngineRequestCompletion {
+        // Scope ids only: no account, key or keychain value.
+        func ids(_ list: [String]?) -> String { "[" + (list ?? []).map(DiagnosticsLog.safeID).joined(separator: ",") + "]" }
+        let scopes = "allow=\(ids(value.allow)) deny=\(ids(value.deny)) forget=\(ids(value.forget)) client=\(logTag)"
+        DiagnosticsLog.shared.notice("consent", "grant requested " + scopes)
+        do {
+            let completion = try await request("consent/grant", value, timeout: timeout, grant: value, userAction: userAction)
+            DiagnosticsLog.shared.notice("consent", "grant accepted " + scopes)
+            return completion
+        } catch {
+            DiagnosticsLog.shared.notice("consent", "grant failed error=\(DiagnosticsLog.errorName(error)) " + scopes)
+            throw error
+        }
+    }
     public func refresh(_ value: WireRefreshRequestParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("refresh/request", value, timeout: timeout) }
     public func refresh(_ value: WireRefreshRequestParams, timeout: Duration? = nil,
                         prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion {
@@ -460,6 +475,9 @@ public actor ProcessEngineClient: EngineClient {
     public func cockpit(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("cockpit/query", WireEmpty(), timeout: timeout) }
     public func pluginInstall(_ value: WirePluginInstallParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion {
         try await request("plugin/install", value, timeout: timeout, pluginTool: value.tool)
+    }
+    public func readerKey(_ method: EngineReaderKeyMethod, _ params: WireReaderKeyParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion {
+        try await request(method.rawValue, params, timeout: timeout)
     }
     public func publication(timeout: Duration? = nil) async throws -> EngineRequestCompletion {
         try await request("publication/get", WireEmpty(), timeout: timeout)

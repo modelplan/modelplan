@@ -56,6 +56,9 @@ type Span struct {
 	// Retry: logs inside the span that could not be read. The span still counts as covered, but
 	// each of these files is read again, alone, on the next import (HIST-IMP-12).
 	Retry []RetryFile `json:"retry,omitempty"`
+	// Archived: the Codex span also covers archived threads (archived_sessions). An older span
+	// without it is imported again from both folders, replacing its rows (glm-967-2).
+	Archived bool `json:"archived,omitempty"`
 }
 
 // RetryFile is one log whose read failed and the turn spans it still owes.
@@ -84,9 +87,22 @@ type ImportLedger struct {
 	SchemaVersion int `json:"schemaVersion"`
 	// AutoRan: when the first-run import ran (also when it skipped every source), so it is not
 	// repeated; the Settings action stays available.
-	AutoRan  *time.Time      `json:"autoRan,omitempty"`
-	Coverage map[string]Span `json:"coverage,omitempty"`
-	Rows     []PerfRow       `json:"rows"`
+	AutoRan *time.Time `json:"autoRan,omitempty"`
+	// AutoRequested: when a first-run import was last asked for. With no AutoRan it is owed: the
+	// run failed, was interrupted or found no grant, and the engine retries it at launch (G3-112).
+	AutoRequested *time.Time `json:"autoRequested,omitempty"`
+	// Removed: the grant each source's history was imported under when the user removed it
+	// ("Remove imported history"). Under that grant it is not owed again; a revoke and a new
+	// grant are a new epoch and owe it again (macrevd-967-1).
+	Removed map[string]*GrantMark `json:"removed,omitempty"`
+	// Attempts: automatic retries of a source not yet imported, under one grant. They back off
+	// and stop at OwedRetryMax; an import of the source or a new grant clears them.
+	Attempts map[string]ImportAttempt `json:"attempts,omitempty"`
+	// Cancelled: the grant each source was under when the user cancelled an import; no automatic
+	// import of it starts again under that grant (macrevd-967-4).
+	Cancelled map[string]*GrantMark `json:"cancelled,omitempty"`
+	Coverage  map[string]Span       `json:"coverage,omitempty"`
+	Rows      []PerfRow             `json:"rows"`
 }
 
 // ImportPath is the ledger file.
@@ -109,6 +125,192 @@ func LoadImported(cache string) (l ImportLedger, ok bool) {
 		l.Rows = []PerfRow{}
 	}
 	return l, true
+}
+
+// GrantMark names one recorded history grant: the scope's epoch and the time the user allowed it.
+// A Cancel or Remove made under it suppresses automatic imports until a different grant: a revoke
+// and a new allow (new epoch), or a first explicit allow of a scope nobody had answered (new
+// time; macrevd-967-6).
+type GrantMark struct {
+	Epoch *GrantEpoch `json:"epoch"`
+	At    time.Time   `json:"at"`
+}
+
+// recordedMark: the mark of source's recorded allow in force, or nil (undecided, refused or off).
+func recordedMark(a consent.Admission, source string) *GrantMark {
+	state := a.State()
+	r, decided := state.Scopes[sourceScope(source)]
+	epoch := currentEpoch(a, source)
+	if !decided || !r.Allowed || epoch == nil {
+		return nil
+	}
+	return &GrantMark{Epoch: epoch, At: r.At.UTC()}
+}
+
+func (m *GrantMark) same(o *GrantMark) bool {
+	return m != nil && o != nil && sameEpoch(m.Epoch, o.Epoch) && m.At.Equal(o.At)
+}
+
+// ImportAttempt is one source's automatic retry count, when the next may start, and the grant
+// they were made under.
+type ImportAttempt struct {
+	N     int         `json:"n"`
+	Next  time.Time   `json:"next"`
+	Epoch *GrantEpoch `json:"epoch,omitempty"`
+}
+
+// The owner's condition for the retry (2026-11-14): it never disturbs. A source that keeps failing
+// is retried at most OwedRetryMax times, OwedRetryBase, then twice as long after each attempt.
+const (
+	OwedRetryMax  = 5
+	OwedRetryBase = time.Hour
+)
+
+// OwedSources is OwedSourcesAt now.
+func OwedSources(cache string, a consent.Admission) []string {
+	return OwedSourcesAt(cache, a, time.Now())
+}
+
+// MarkOwedAttempt records an automatic retry of sources: the count under the current grant and
+// the backoff before the next one.
+func MarkOwedAttempt(cache string, sources []string, a consent.Admission, now time.Time) error {
+	unlock, ok := lockWait(cache, "perf.lock")
+	if !ok {
+		return errors.New("readings busy; retry the import")
+	}
+	defer unlock()
+	led, ok := LoadImported(cache)
+	if !ok {
+		return errors.New("imported history unreadable; left as it is")
+	}
+	if led.Attempts == nil {
+		led.Attempts = map[string]ImportAttempt{}
+	}
+	for _, source := range sources {
+		epoch := currentEpoch(a, source)
+		at := led.Attempts[source]
+		if !sameEpoch(at.Epoch, epoch) {
+			at = ImportAttempt{}
+		}
+		at.N++
+		at.Epoch = epoch
+		at.Next = now.UTC().Add(OwedRetryBase << (at.N - 1))
+		led.Attempts[source] = at
+	}
+	return writeImported(cache, led)
+}
+
+// OwedSourcesAt: the history sources the engine still owes an import (G3-112). The first-run import
+// was requested (or ran under an older build), and the source holds a recorded grant (never a
+// default-on scope the user has not answered) but no span under that grant, or a Codex span
+// from before archived threads were read. A fresh profile owes nothing.
+func OwedSourcesAt(cache string, a consent.Admission, now time.Time) []string {
+	var owed []string
+	for _, source := range []string{"claude-code", "codex"} {
+		if at, ok := owedAt(cache, a, source); ok && !now.Before(at) {
+			owed = append(owed, source)
+		}
+	}
+	return owed
+}
+
+// NextOwedAt: the earliest time an owed source may be retried (now or later); ok is false when
+// no source will be (macrevd-967-5: a running engine wakes for it).
+func NextOwedAt(cache string, a consent.Admission, now time.Time) (time.Time, bool) {
+	var next time.Time
+	found := false
+	for _, source := range []string{"claude-code", "codex"} {
+		if at, ok := owedAt(cache, a, source); ok {
+			if at.Before(now) {
+				at = now
+			}
+			if !found || at.Before(next) {
+				next, found = at, true
+			}
+		}
+	}
+	return next, found
+}
+
+// owedAt: when source may next be imported automatically (zero: any time); ok is false when it is
+// not owed at all: no request, no recorded grant, removed or cancelled by the user under this
+// grant, retries used up, or imported.
+func owedAt(cache string, a consent.Admission, source string) (time.Time, bool) {
+	if Off() {
+		return time.Time{}, false
+	}
+	l, ok := LoadImported(cache)
+	if !ok || (l.AutoRequested == nil && l.AutoRan == nil) {
+		return time.Time{}, false
+	}
+	mark := recordedMark(a, source)
+	if mark == nil {
+		return time.Time{}, false
+	}
+	epoch := mark.Epoch
+	if l.Removed[source].same(mark) {
+		return time.Time{}, false // removed by the user under this grant
+	}
+	if l.Cancelled[source].same(mark) {
+		return time.Time{}, false // the user cancelled an import under this grant
+	}
+	c, has := l.Coverage[source]
+	if has && !c.From.IsZero() && sameEpoch(c.Epoch, epoch) && (source != "codex" || c.Archived) {
+		return time.Time{}, false // imported
+	}
+	if at, tried := l.Attempts[source]; tried && sameEpoch(at.Epoch, epoch) {
+		if at.N >= OwedRetryMax {
+			return time.Time{}, false // given up under this grant
+		}
+		return at.Next, true
+	}
+	return time.Time{}, true
+}
+
+// MarkOwedCancelled: the user cancelled an import, so no automatic import of a source with a
+// recorded grant starts again under that grant (macrevd-967-4). A new grant, or an import of the
+// source, lifts it.
+func MarkOwedCancelled(cache string, a consent.Admission) error {
+	unlock, ok := lockWait(cache, "perf.lock")
+	if !ok {
+		return errors.New("readings busy; retry")
+	}
+	defer unlock()
+	led, ok := LoadImported(cache)
+	if !ok {
+		return errors.New("imported history unreadable; left as it is")
+	}
+	changed := false
+	for _, source := range []string{"claude-code", "codex"} {
+		// Only a recorded allow is marked: an undecided default-on scope was never read
+		// automatically, and its later first allow must not be blocked (macrevd-967-6).
+		if mark := recordedMark(a, source); mark != nil {
+			if led.Cancelled == nil {
+				led.Cancelled = map[string]*GrantMark{}
+			}
+			led.Cancelled[source], changed = mark, true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return writeImported(cache, led)
+}
+
+// MarkAutoRequested records that the first-run import was asked for (kept until it completes).
+func MarkAutoRequested(cache string, now time.Time) error {
+	unlock, ok := lockWait(cache, "perf.lock")
+	if !ok {
+		return errors.New("readings busy; retry the import")
+	}
+	defer unlock()
+	led, ok := LoadImported(cache)
+	if !ok || led.AutoRan != nil {
+		return nil
+	}
+	t := now.UTC().Truncate(time.Second)
+	led.AutoRequested = &t
+	return writeImported(cache, led)
 }
 
 // NeedsAutoImport: the first-run import has not run yet and recording is on.
@@ -146,6 +348,8 @@ type ImportOptions struct {
 	// Progress, when set, is called with the number of log files read so far and the total to read
 	// (counted before the first read), from the importing goroutine.
 	Progress func(done, total int)
+	// Pause between logs, so an automatic retry stays a light background read (owner condition).
+	Pause time.Duration
 	// Guard runs a source's write under the caller's consent fence (consent.LocalWrite); nil runs
 	// it directly.
 	Guard func(source string, write func() error) error
@@ -170,9 +374,12 @@ type span struct{ lo, hi time.Time }
 func (s span) has(t time.Time) bool { return !t.Before(s.lo) && t.Before(s.hi) }
 
 type importJob struct {
+	pause  time.Duration
 	source string
 	root   *ImportRoot
-	dir    string // under the root
+	dirs   []string // under the root
+	// reread: the source's older span is replaced, rows included, by this run's (glm-967-2).
+	reread bool
 	prefix string // file name prefix, "" for any
 	newP   func() parser
 	parser string
@@ -221,8 +428,9 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		live = consent.Capture
 	}
 	jobs := []*importJob{
-		{source: "claude-code", root: o.Claude, dir: "projects", newP: func() parser { return newClaude(now) }, parser: ParserClaude},
-		{source: "codex", root: o.Codex, dir: "sessions", prefix: "rollout-", newP: func() parser { return newCodex() }, parser: ParserCodex},
+		{source: "claude-code", root: o.Claude, dirs: []string{"projects"}, newP: func() parser { return newClaude(now) }, parser: ParserClaude},
+		// G3-112: Codex moves archived threads to archived_sessions; their turns are history too.
+		{source: "codex", root: o.Codex, dirs: []string{"sessions", "archived_sessions"}, prefix: "rollout-", newP: func() parser { return newCodex() }, parser: ParserCodex},
 	}
 	if Off() {
 		for _, j := range jobs {
@@ -251,14 +459,22 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 		if !sameEpoch(c.Epoch, currentEpoch(adm, j.source)) {
 			c = Span{}
 		}
-		j.cleared = clr.tool(j.source)
 		jfrom := from
+		if j.source == "codex" && !c.From.IsZero() && !c.Archived {
+			// Written before archived threads were read: import the whole span again from both
+			// folders and replace its rows, so each turn counts once wherever its log now lies.
+			if c.From.Before(jfrom) {
+				jfrom = c.From
+			}
+			c, j.reread = Span{}, true
+		}
+		j.cleared = clr.tool(j.source)
 		if j.cleared.After(jfrom) {
 			jfrom = j.cleared // a cleared history is not imported again
 		}
 		j.ranges = missing(c, jfrom, cutoff)
 		j.pend = c.Retry
-		j.epoch, j.live = currentEpoch(adm, j.source), live
+		j.epoch, j.live, j.pause = currentEpoch(adm, j.source), live, o.Pause
 		active = append(active, j)
 	}
 	// One pass per source: files that may hold turns of a missing range.
@@ -367,7 +583,15 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 	if res.Cancelled {
 		return res, nil
 	}
-	if !committed && o.Auto {
+	// G3-112: a first-run import that could read no source (no history grant yet) stays pending, so
+	// it runs when a grant arrives; once a source was admitted the first run is done.
+	// glm-967-4: only a source that finished under its grant completes it; a run whose every
+	// source was withdrawn before its commit stays owed.
+	finished := false
+	for _, j := range active {
+		finished = finished || !j.withdrawn
+	}
+	if !committed && o.Auto && finished {
 		return res, markAutoRan(cache, now)
 	}
 	return res, nil
@@ -482,6 +706,13 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 			}
 			return err
 		}
+		if j.pause > 0 && i > 0 {
+			select { // a light background read: yield between logs
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(j.pause):
+			}
+		}
 		if j.root.Background != nil && j.source == "codex" && j.root.Background(p) {
 			continue
 		}
@@ -553,12 +784,23 @@ func (j *importJob) files(since time.Time) []string {
 // walk is files plus whether the scan saw every log: false when a folder could not be listed or the
 // scan stopped at its cap. A missing root is complete (there are no logs).
 func (j *importJob) walk(since time.Time) ([]string, bool) {
-	root := filepath.Join(j.root.Dir, j.dir)
-	if !filepath.IsAbs(root) {
-		return nil, true
-	}
 	var out []string
 	visited, complete := 0, true
+	for _, dir := range j.dirs {
+		var ok bool
+		out, visited, ok = j.walkDir(filepath.Join(j.root.Dir, dir), since, out, visited)
+		complete = complete && ok
+	}
+	sort.Strings(out)
+	return out, complete
+}
+
+// walkDir adds one folder's logs to out; visited counts entries across all of a source's folders.
+func (j *importJob) walkDir(root string, since time.Time, out []string, visited int) ([]string, int, bool) {
+	if !filepath.IsAbs(root) {
+		return out, visited, true
+	}
+	complete := true
 	_ = importWalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if visited++; visited > maxImportFiles {
 			complete = false
@@ -585,8 +827,7 @@ func (j *importJob) walk(since time.Time) ([]string, bool) {
 		out = append(out, path)
 		return nil
 	})
-	sort.Strings(out)
-	return out, complete
+	return out, visited, complete
 }
 
 // readWhole streams one log line by line through a parser and returns its finished turns. A line
@@ -647,7 +888,7 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		led.Coverage = map[string]Span{}
 	}
 	c := led.Coverage[j.source]
-	if !sameEpoch(c.Epoch, epoch) { // an older grant's rows and span are not ours to extend
+	if !sameEpoch(c.Epoch, epoch) || j.reread { // an older grant's (or a re-read span's) rows are replaced
 		kept := led.Rows[:0]
 		for _, r := range led.Rows {
 			if r.Source != j.source {
@@ -673,6 +914,7 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		}
 	}
 	c.Epoch = epoch
+	c.Archived = j.source == "codex"
 	// Every pending log was tried this run: the ones that read are done, the ones that failed
 	// again (and new failures) are in j.failed.
 	tried := map[string]bool{}
@@ -699,6 +941,9 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 	}
 	c.Retry = retry
 	led.Coverage[j.source] = c
+	delete(led.Removed, j.source) // imported again on purpose
+	delete(led.Attempts, j.source)
+	delete(led.Cancelled, j.source)
 	if auto && led.AutoRan == nil {
 		t := now.UTC().Truncate(time.Second)
 		led.AutoRan = &t
@@ -739,7 +984,10 @@ func writeImported(cache string, led ImportLedger) error {
 
 // RemoveImported deletes exactly the imported rows and their coverage ("Remove imported history").
 // The first-run marker stays so the import is not started again on its own.
-func RemoveImported(cache string) error {
+func RemoveImported(cache string) error { return RemoveImportedUnder(cache, consent.Capture()) }
+
+// RemoveImportedUnder is RemoveImported under the consent a.
+func RemoveImportedUnder(cache string, a consent.Admission) error {
 	unlock, ok := lockWait(cache, "perf.lock")
 	if !ok {
 		return errors.New("readings busy; retry")
@@ -749,16 +997,28 @@ func RemoveImported(cache string) error {
 	if !ok {
 		return os.Remove(ImportPath(cache))
 	}
-	if len(led.Rows) == 0 && len(led.Coverage) == 0 {
+	if len(led.Rows) == 0 && len(led.Coverage) == 0 && led.AutoRan == nil && led.AutoRequested == nil {
 		return nil
 	}
-	if led.AutoRan == nil {
+	if led.AutoRan == nil && led.AutoRequested == nil {
 		if err := os.Remove(ImportPath(cache)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		return nil
 	}
-	return writeImported(cache, ImportLedger{SchemaVersion: 1, AutoRan: led.AutoRan, Rows: []PerfRow{}})
+	// Every source with a recorded allow now is marked, imported or still owed: the user asked
+	// for no imported history under these grants (macrevd-967-1).
+	removed := led.Removed
+	for _, source := range []string{"claude-code", "codex"} {
+		if mark := recordedMark(a, source); mark != nil {
+			if removed == nil {
+				removed = map[string]*GrantMark{}
+			}
+			removed[source] = mark
+		}
+	}
+	// The user's earlier Cancel and the retry counts stay: a removal never re-arms an import.
+	return writeImported(cache, ImportLedger{SchemaVersion: 1, AutoRan: led.AutoRan, AutoRequested: led.AutoRequested, Removed: removed, Cancelled: led.Cancelled, Attempts: led.Attempts, Rows: []PerfRow{}})
 }
 
 // merge adds a row's sums into the ledger's row of the same configuration.
@@ -864,6 +1124,25 @@ type ImportState struct {
 	AutoRan  bool
 	Rows     int
 	Coverage []ImportCoverage
+}
+
+// ImportedCoverage is one source's coverage end and imported row count; ok is false when the
+// source has none. It reads imported.json only.
+func ImportedCoverage(cache, source string) (through time.Time, rows int, ok bool) {
+	l, readable := LoadImported(cache)
+	if !readable {
+		return time.Time{}, 0, false
+	}
+	c, has := l.Coverage[source]
+	if !has || c.Through.IsZero() {
+		return time.Time{}, 0, false
+	}
+	for _, r := range l.Rows {
+		if r.Source == source {
+			rows++
+		}
+	}
+	return c.Through, rows, true
 }
 
 // ImportStatus reads imported.json only.

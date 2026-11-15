@@ -68,6 +68,9 @@
             "generationTps": 42.5,
             "bindingBasis": "synthetic"
           }
+        ],
+        "reportedModels": [
+          "synthetic"
         ]
       }
     ],
@@ -174,6 +177,16 @@
             "cost": 2,
             "time": 1.2
           }
+        ]
+      }
+    ],
+    "planModels": [
+      {
+        "planId": "synthetic",
+        "generation": "synthetic",
+        "basis": "synthetic",
+        "modelIds": [
+          "synthetic"
         ]
       }
     ],
