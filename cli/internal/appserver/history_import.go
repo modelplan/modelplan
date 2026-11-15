@@ -271,12 +271,14 @@ func HistoryImportHandlers(c *ImportController) map[string]Handler {
 			running := c.phase == wire.ImportRunning
 			if running {
 				c.cancelAsked = true // recorded with the run, before its result settles
-				// The user stopped importing: no scheduled retry (launch, grant or backoff) starts
-				// afterwards, and none under the current grants until a new one (macrevd-967-4).
-				c.stopRetriesLocked()
 			}
+			// The user stopped importing, whether or not a run is active (a retry may be waiting
+			// for its delay or backoff, or the run settled just before this request): no scheduled
+			// retry starts afterwards, and none under the current grants until a new one
+			// (macrevd-967-4).
+			c.stopRetriesLocked()
 			c.mu.Unlock()
-			if s, ok := c.engine.(OwedScheduler); ok && running {
+			if s, ok := c.engine.(OwedScheduler); ok {
 				s.CancelOwed()
 			}
 			if running && cancel != nil {

@@ -137,11 +137,11 @@ func TestRemovedImportIsNotOwedUntilGrantedAgain(t *testing.T) {
 	if _, err := Import(context.Background(), f.cache, ImportOptions{Now: f.now, Codex: &ImportRoot{Dir: f.home}, Admission: both(), Auto: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := RemoveImported(f.cache); err != nil {
+	if err := RemoveImportedUnder(f.cache, *both()); err != nil {
 		t.Fatal(err)
 	}
-	if got := OwedSources(f.cache, *both()); len(got) != 1 || got[0] != "claude-code" {
-		t.Fatalf("after remove owed %v, want only the never-imported claude-code", got)
+	if got := OwedSources(f.cache, *both()); len(got) != 0 {
+		t.Fatalf("after remove owed %v, want none (removal covers every recorded grant)", got)
 	}
 	state := consent.Empty()
 	state.StoreEpoch = "0123456789abcdef0123456789abcdef"
@@ -240,10 +240,36 @@ func TestRemoveKeepsTheUsersCancel(t *testing.T) {
 	if err := MarkOwedCancelled(f.cache, adm); err != nil {
 		t.Fatal(err)
 	}
-	if err := RemoveImported(f.cache); err != nil {
+	if err := RemoveImportedUnder(f.cache, adm); err != nil {
 		t.Fatal(err)
 	}
 	if got := OwedSourcesAt(f.cache, adm, f.now.Add(100*time.Hour)); len(got) != 0 {
 		t.Fatalf("owed after Cancel then Remove: %v", got)
+	}
+}
+
+// macrevd-967-6: a Cancel made while a scope was undecided does not block its later first
+// explicit allow; it never marks an undecided scope.
+func TestCancelDoesNotBlockALaterFirstGrant(t *testing.T) {
+	f := newFixture(t)
+	claudeOnly := func() consent.Admission {
+		state := consent.Empty()
+		state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+		state.Scopes[consent.ScopeClaudeLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, At: t0}
+		return consent.NewAdmission(state, consent.Automatic) // codex undecided (default-on)
+	}()
+	if err := MarkAutoRequested(f.cache, f.now); err != nil {
+		t.Fatal(err)
+	}
+	if err := MarkOwedCancelled(f.cache, claudeOnly); err != nil {
+		t.Fatal(err)
+	}
+	state := consent.Empty()
+	state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+	state.Scopes[consent.ScopeClaudeLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, At: t0}
+	state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, At: t0.Add(time.Hour)}
+	later := consent.NewAdmission(state, consent.Automatic)
+	if got := OwedSourcesAt(f.cache, later, f.now); len(got) != 1 || got[0] != "codex" {
+		t.Fatalf("first explicit Codex allow after a Cancel: owed %v, want [codex]", got)
 	}
 }

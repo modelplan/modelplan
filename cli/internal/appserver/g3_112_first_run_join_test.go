@@ -274,3 +274,24 @@ func TestCancelStopsScheduledRetries(t *testing.T) {
 		t.Fatalf("Cancel was followed by %d automatic imports", n)
 	}
 }
+
+// macrevd-967-4 (no active run): Cancel during a retry's delay or backoff stops it and records
+// the cancel.
+func TestCancelWithoutARunStopsAPendingRetry(t *testing.T) {
+	e := &scheduledOwed{base: time.Hour}
+	c := NewImportController(e)
+	defer c.Close()
+	c.StartOwedAfter(80*time.Millisecond, 30)
+	if _, err := call(t, HistoryImportHandlers(c), "history/import_cancel", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(160 * time.Millisecond)
+	if n := len(e.runs()); n != 0 {
+		t.Fatalf("Cancel during the delay still started %d automatic imports", n)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if !e.cancelled {
+		t.Fatal("Cancel without a run was not recorded")
+	}
+}

@@ -94,15 +94,15 @@ type ImportLedger struct {
 	// Removed: the grant each source's history was imported under when the user removed it
 	// ("Remove imported history"). Under that grant it is not owed again; a revoke and a new
 	// grant are a new epoch and owe it again (macrevd-967-1).
-	Removed map[string]*GrantEpoch `json:"removed,omitempty"`
+	Removed map[string]*GrantMark `json:"removed,omitempty"`
 	// Attempts: automatic retries of a source not yet imported, under one grant. They back off
 	// and stop at OwedRetryMax; an import of the source or a new grant clears them.
 	Attempts map[string]ImportAttempt `json:"attempts,omitempty"`
 	// Cancelled: the grant each source was under when the user cancelled an import; no automatic
 	// import of it starts again under that grant (macrevd-967-4).
-	Cancelled map[string]*GrantEpoch `json:"cancelled,omitempty"`
-	Coverage  map[string]Span        `json:"coverage,omitempty"`
-	Rows      []PerfRow              `json:"rows"`
+	Cancelled map[string]*GrantMark `json:"cancelled,omitempty"`
+	Coverage  map[string]Span       `json:"coverage,omitempty"`
+	Rows      []PerfRow             `json:"rows"`
 }
 
 // ImportPath is the ledger file.
@@ -125,6 +125,30 @@ func LoadImported(cache string) (l ImportLedger, ok bool) {
 		l.Rows = []PerfRow{}
 	}
 	return l, true
+}
+
+// GrantMark names one recorded history grant: the scope's epoch and the time the user allowed it.
+// A Cancel or Remove made under it suppresses automatic imports until a different grant: a revoke
+// and a new allow (new epoch), or a first explicit allow of a scope nobody had answered (new
+// time; macrevd-967-6).
+type GrantMark struct {
+	Epoch *GrantEpoch `json:"epoch"`
+	At    time.Time   `json:"at"`
+}
+
+// recordedMark: the mark of source's recorded allow in force, or nil (undecided, refused or off).
+func recordedMark(a consent.Admission, source string) *GrantMark {
+	state := a.State()
+	r, decided := state.Scopes[sourceScope(source)]
+	epoch := currentEpoch(a, source)
+	if !decided || !r.Allowed || epoch == nil {
+		return nil
+	}
+	return &GrantMark{Epoch: epoch, At: r.At.UTC()}
+}
+
+func (m *GrantMark) same(o *GrantMark) bool {
+	return m != nil && o != nil && sameEpoch(m.Epoch, o.Epoch) && m.At.Equal(o.At)
 }
 
 // ImportAttempt is one source's automatic retry count, when the next may start, and the grant
@@ -219,16 +243,15 @@ func owedAt(cache string, a consent.Admission, source string) (time.Time, bool) 
 	if !ok || (l.AutoRequested == nil && l.AutoRan == nil) {
 		return time.Time{}, false
 	}
-	state := a.State()
-	r, decided := state.Scopes[sourceScope(source)]
-	epoch := currentEpoch(a, source)
-	if !decided || !r.Allowed || epoch == nil {
+	mark := recordedMark(a, source)
+	if mark == nil {
 		return time.Time{}, false
 	}
-	if removed := l.Removed[source]; removed != nil && sameEpoch(removed, epoch) {
+	epoch := mark.Epoch
+	if l.Removed[source].same(mark) {
 		return time.Time{}, false // removed by the user under this grant
 	}
-	if cancelled := l.Cancelled[source]; cancelled != nil && sameEpoch(cancelled, epoch) {
+	if l.Cancelled[source].same(mark) {
 		return time.Time{}, false // the user cancelled an import under this grant
 	}
 	c, has := l.Coverage[source]
@@ -259,11 +282,13 @@ func MarkOwedCancelled(cache string, a consent.Admission) error {
 	}
 	changed := false
 	for _, source := range []string{"claude-code", "codex"} {
-		if epoch := currentEpoch(a, source); epoch != nil {
+		// Only a recorded allow is marked: an undecided default-on scope was never read
+		// automatically, and its later first allow must not be blocked (macrevd-967-6).
+		if mark := recordedMark(a, source); mark != nil {
 			if led.Cancelled == nil {
-				led.Cancelled = map[string]*GrantEpoch{}
+				led.Cancelled = map[string]*GrantMark{}
 			}
-			led.Cancelled[source], changed = epoch, true
+			led.Cancelled[source], changed = mark, true
 		}
 	}
 	if !changed {
@@ -959,7 +984,10 @@ func writeImported(cache string, led ImportLedger) error {
 
 // RemoveImported deletes exactly the imported rows and their coverage ("Remove imported history").
 // The first-run marker stays so the import is not started again on its own.
-func RemoveImported(cache string) error {
+func RemoveImported(cache string) error { return RemoveImportedUnder(cache, consent.Capture()) }
+
+// RemoveImportedUnder is RemoveImported under the consent a.
+func RemoveImportedUnder(cache string, a consent.Admission) error {
 	unlock, ok := lockWait(cache, "perf.lock")
 	if !ok {
 		return errors.New("readings busy; retry")
@@ -969,22 +997,24 @@ func RemoveImported(cache string) error {
 	if !ok {
 		return os.Remove(ImportPath(cache))
 	}
-	if len(led.Rows) == 0 && len(led.Coverage) == 0 {
+	if len(led.Rows) == 0 && len(led.Coverage) == 0 && led.AutoRan == nil && led.AutoRequested == nil {
 		return nil
 	}
-	if led.AutoRan == nil {
+	if led.AutoRan == nil && led.AutoRequested == nil {
 		if err := os.Remove(ImportPath(cache)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		return nil
 	}
+	// Every source with a recorded allow now is marked, imported or still owed: the user asked
+	// for no imported history under these grants (macrevd-967-1).
 	removed := led.Removed
-	for source, c := range led.Coverage {
-		if c.Epoch != nil {
+	for _, source := range []string{"claude-code", "codex"} {
+		if mark := recordedMark(a, source); mark != nil {
 			if removed == nil {
-				removed = map[string]*GrantEpoch{}
+				removed = map[string]*GrantMark{}
 			}
-			removed[source] = c.Epoch
+			removed[source] = mark
 		}
 	}
 	// The user's earlier Cancel and the retry counts stay: a removal never re-arms an import.
