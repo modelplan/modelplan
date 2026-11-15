@@ -4,21 +4,21 @@
 export type Shade={readonly colour:string;readonly alt:string;readonly altFrom:'shared'|'derived'|'app';readonly rocket?:string};
 /** Makers of the shared table: real brand colour (black-and-white makers a light neutral) and one alternate shade. */
 export const MAKERS:Readonly<Record<string,Shade>>={
- openai:{colour:'#10a37f',alt:'#064837',altFrom:'derived',rocket:'#ececec'},
- anthropic:{colour:'#d97757',alt:'#7a2502',altFrom:'derived'},
- alibaba:{colour:'#ff6a00',alt:'#803100',altFrom:'derived'},
- xiaomi:{colour:'#ff6900',alt:'#803100',altFrom:'derived'},
- google:{colour:'#4285f4',alt:'#003384',altFrom:'derived'},
- kimi:{colour:'#007cff',alt:'#98c2fe',altFrom:'derived'},
- minimax:{colour:'#e73562',alt:'#faa9b2',altFrom:'derived'},
- zhipuai:{colour:'#3859ff',alt:'#8dabfd',altFrom:'app',rocket:'#b9c2cc'},
- xai:{colour:'#f5e642',alt:'#978c0d',altFrom:'app',rocket:'#8f96a0'},
- meta:{colour:'#0467df',alt:'#76acfc',altFrom:'derived'},
- deepseek:{colour:'#4d6bfe',alt:'#a2b8fb',altFrom:'derived'},
+ openai:{colour:'#6aa8ff',alt:'#1352a1',altFrom:'derived',rocket:'#ececec'},
+ anthropic:{colour:'#ff9a6a',alt:'#a0440a',altFrom:'derived',rocket:'#d97757'},
+ alibaba:{colour:'#4ab89a',alt:'#025e4b',altFrom:'derived',rocket:'#ff6a00'},
+ xiaomi:{colour:'#e89700',alt:'#794e08',altFrom:'derived',rocket:'#ff6900'},
+ google:{colour:'#4eccd3',alt:'#0b7176',altFrom:'derived',rocket:'#4285f4'},
+ kimi:{colour:'#ff8fcf',alt:'#a03878',altFrom:'derived',rocket:'#007cff'},
+ minimax:{colour:'#f16f7e',alt:'#900d30',altFrom:'derived',rocket:'#e73562'},
+ zhipuai:{colour:'#8f7dff',alt:'#4422a0',altFrom:'derived',rocket:'#b9c2cc'},
+ xai:{colour:'#8594a4',alt:'#374452',altFrom:'derived',rocket:'#8f96a0'},
+ meta:{colour:'#a6dcff',alt:'#5084a4',altFrom:'derived',rocket:'#0467df'},
+ deepseek:{colour:'#00aad6',alt:'#0e5166',altFrom:'derived',rocket:'#4d6bfe'},
 };
 /** App-only accents of tool vendors that have no maker row (COL-2.1-15). */
 export const TOOLS:Readonly<Record<string,Shade>>={
- cursor:{colour:'#f79dcb',alt:'#9a4875',altFrom:'derived'},
+ cursor:{colour:'#eef2f6',alt:'#6f7782',altFrom:'app',rocket:'#f79dcb'},
  copilot:{colour:'#c08cff',alt:'#6c35a1',altFrom:'derived'},
  opencode:{colour:'#b5d65a',alt:'#647c04',altFrom:'derived'},
 };

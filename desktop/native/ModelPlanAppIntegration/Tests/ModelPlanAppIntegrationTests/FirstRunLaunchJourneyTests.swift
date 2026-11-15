@@ -254,7 +254,10 @@ private actor LaunchEngine: EngineClient {
         let done = try XCTUnwrap(find("firstRun.done", in: window, as: NSButton.self))
         try await wait { done.isEnabled }
         done.performClick(nil)
-        try await wait { !app.setupActive }
+        // The saved mark flips `setupActive` before the editor delivers its commit and dispatches the Done effects
+        // (`firstRunCompleted`, which sets `pendingFirstWidget`); the page closes only after that dispatch.
+        try await wait { self.firstRunWindows().isEmpty }
+        XCTAssertFalse(app.setupActive)
         XCTAssertNotNil(app.pendingFirstWidget, "owner 11-12 answer 2: nothing is read, so the widget waits")
         XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
         XCTAssertFalse(try menuTitles(app).contains("ModelPlan is setting up\u{2026}"), "the icon is back to normal")

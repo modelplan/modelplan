@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver"
@@ -15,6 +16,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -69,12 +71,20 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	}
 	rawPaths := func(a consent.Admission) quota.Paths { return quota.ProductionPathsWithAdmission(st.Dir, version, a) }
 	detectTools := func() detect.Report { return detection(st) }
+	// D238: tool ids only; a read-only engine keeps the ledger in memory.
+	seen := detect.NewSeenLedger(filepath.Join(st.Dir, "detected-tools.json"), options.ReadOnly)
 	if sources.Detect != nil {
 		detectTools = sources.Detect(detectTools)
 	}
 	broker := &appserver.CredentialBroker{PathsFor: rawPaths, Offline: options.Offline, ReadOnly: options.ReadOnly}
 	paths := broker.Paths
+	var importer *appserver.ImportController
 	shared, err := appserver.NewSharedBackend(appserver.SharedConfig{
+		Granted: func() {
+			if importer != nil {
+				importer.StartOwedAfter(owedGrantDelay, speed.ImportDefaultDays)
+			}
+		},
 		Activity: appActivity(st.Dir),
 		Reported: func(report quota.Report, now time.Time) {
 			if !options.ReadOnly {
@@ -82,7 +92,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			}
 		},
 		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.Load(st); return d, err },
-		Detect:           detectTools, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
+		Detect:           detectTools, LaterInstalled: seen.Observe, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
 		Cleanup: func(scope string, forget bool) error {
 			return quota.EraseScope(quota.ProductionPaths(st.Dir, version), scope, forget)
 		},
@@ -97,12 +107,14 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		return nil, func() {}, err
 	}
 	handlers["publication/get"] = publication
-	var importer *appserver.ImportController
 	if !options.ReadOnly {
 		importer = appserver.NewImportController(importEngine{st: st})
 		for method, h := range appserver.HistoryImportHandlers(importer) {
 			handlers[method] = h
 		}
+		// G3-112: an import still owed (failed, interrupted, withdrawn, or cleared and granted
+		// again) is retried at start and after each committed grant. A fresh profile owes nothing.
+		importer.StartOwedAfter(owedLaunchDelay, speed.ImportDefaultDays)
 	}
 	closeBackend := func() {}
 	var scheduler *appserver.RefreshScheduler

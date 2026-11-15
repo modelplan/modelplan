@@ -414,7 +414,9 @@ extension CommunityCockpitEntryTests {
             let scale = page.verificationLayout?.scale ?? 1
             var target = before
             func click() throws {
-                let content = try XCTUnwrap(window.contentView), h = content.bounds.height
+                // G3-108: the page is top-anchored in the web view, which keeps the open canvas on the window's bottom
+                // edge; closed, the window leaves out the band above the slab, so page y counts from the web view's top.
+                let content = try XCTUnwrap(window.contentView), h = web.frame.maxY
                 let p = content.convert(CGPoint(x: (target["x"] as! Double) * scale, y: h - (target["y"] as! Double) * scale), to: nil)
                 for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                     window.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
@@ -437,6 +439,8 @@ extension CommunityCockpitEntryTests {
                 XCTAssertEqual(drawn?["pressed"] as? String, String(closed), "\(name): the page shows the shutter \(closed ? "closed" : "open")")
                 XCTAssertEqual(drawn?["root"] as? Double ?? 0, Double(expectedRoot), accuracy: 0.5, "\(name): the page root follows")
                 if let drawn { target = drawn }
+                // G3-108: the shutter's window motion (250 ms) settles before the next click.
+                try await Task.sleep(for: .milliseconds(400))
             }
         }
     }

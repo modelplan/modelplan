@@ -172,9 +172,16 @@ import ModelPlanShell
             XCTAssertTrue(orders.isEmpty)
         }
 
+        // D244 (owner 2026-11-13): rings never reorder; the order is set in Settings › Subscriptions.
         XCTAssertTrue(controller.beginNozzle(id: "a", along: 0))
         controller.moveNozzle(along: 6)
-        XCTAssertEqual(controller.presentation?.reorder?.order, ["b", "a"])
+        XCTAssertNil(controller.presentation?.reorder, "D244: a moved ring press previews no order")
+        controller.endNozzle(insideMain: true, overSameSource: false)
+        XCTAssertTrue(orders.isEmpty, "D244: dropping a moved ring inside the widget saves no order")
+        XCTAssertTrue(refreshes.isEmpty)
+
+        XCTAssertTrue(controller.beginNozzle(id: "a", along: 0))
+        controller.moveNozzle(along: 6)
         controller.cancelNozzle()
         XCTAssertNil(controller.presentation?.reorder)
         XCTAssertTrue(orders.isEmpty, "Escape must leave the order unchanged")

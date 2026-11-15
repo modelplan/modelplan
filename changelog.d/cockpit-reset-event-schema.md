@@ -1,1 +1,0 @@
-The cockpit opens again while a reset announcement or reset credit is published. Since CLI v0.5.59 every reset event carries its kind, and the page refused those events, so the cockpit showed "Cockpit unavailable" on every open (G3-96).

@@ -1,1 +1,0 @@
-Closing the cockpit from the menu bar icon keeps shrinking back into the icon when the display arrangement changes or the cockpit size is changed during the close, instead of jumping back to full size before it disappears.
