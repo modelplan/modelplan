@@ -104,7 +104,18 @@ private actor KeyEngine: EngineClient {
         object["scopes"] = [scope]
         let facts = try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: object))
         let rowsData = try Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))
-        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: rowsData)
+        // The engine's own answer for a detected ZCode with no key: a needs-action row with the key_missing cause. The Settings
+        // row offers Add key from that cause (SubscriptionRowModel), so the journey starts from it, as production does.
+        var rowsObject = try XCTUnwrap(JSONSerialization.jsonObject(with: rowsData) as? [String: Any])
+        var projection = try XCTUnwrap(rowsObject["projection"] as? [String: Any])
+        var needsKey = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
+        needsKey["id"] = "zai"; needsKey["vendorKey"] = "zai"; needsKey["name"] = ["en": "ZCode / GLM", "zh": "ZCode / GLM"]
+        needsKey["state"] = "needs_action"; needsKey["consent"] = "implicit"; needsKey["surfaces"] = ["menu", "settings"]
+        needsKey["accounts"] = [[String: Any]]()
+        needsKey["reason"] = ["code": "key_missing", "text": ["en": "engine text", "zh": "engine text"]]
+        needsKey["expiresAt"] = "2099-01-01T00:00:00Z"; needsKey.removeValue(forKey: "stateAfterExpiry"); needsKey.removeValue(forKey: "nextStep")
+        projection["rows"] = [needsKey]; rowsObject["projection"] = projection
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: rowsObject))
         let zaiText = String(decoding: rowsData, as: UTF8.self).replacingOccurrences(of: "\"codex\"", with: "\"zai\"")
         let rowsWithZai = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(zaiText.utf8))
         var engine: KeyEngine?
@@ -132,8 +143,9 @@ private actor KeyEngine: EngineClient {
         addKey.performClick(nil)
         for _ in 0..<200 { if find(pane, "readerkey.zai.field", as: NSSecureTextField.self) != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
         let field = try XCTUnwrap(find(pane, "readerkey.zai.field", as: NSSecureTextField.self), "Add key mounts the secure field on the row")
-        let ids = { app.composition.store.snapshot.rows?.projection.rows.map(\.id) ?? [] }
-        XCTAssertFalse(ids().contains("zai"), "no row before a key is saved")
+        let zaiState = { app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "zai" }.map { String(describing: $0.state) } }
+        let stateBeforeSave = zaiState()
+        XCTAssertNotNil(stateBeforeSave, "the engine's needs-key row is there before a key is saved")
 
         // First run does not dead-end for it: the row stays a normal choice and says where a key can be added later.
         let firstRun = try app.scopeConsentEntry.makeFirstRunView(language: .english)
@@ -153,8 +165,8 @@ private actor KeyEngine: EngineClient {
         XCTAssertEqual(result(), ReaderKeyOutcome.ok.message.english)
         // Save.
         try XCTUnwrap(find(pane, "readerkey.zai.save", as: ConnectionButton.self)).invoke?()
-        for _ in 0..<500 { if ids().contains("zai") { break }; try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertTrue(ids().contains("zai"), "after Test and Save the provider's row appears")
+        for _ in 0..<500 { if zaiState() != stateBeforeSave { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotEqual(zaiState(), stateBeforeSave, "after Test and Save the provider's row is read")
 
         let engineValue = try XCTUnwrap(engine)
         let calls = await engineValue.recordedKeyCalls()

@@ -388,7 +388,7 @@ private actor G345Engine: EngineClient {
         let retry = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.fix.grok1" } as? NSButton, "Retry is offered")
         XCTAssertEqual(retry.title, "Retry now"); XCTAssertTrue(retry.isEnabled)
         let before = await engine.refreshCount()
-        retry.performClick(nil)
+        press(retry)
         var after = before
         for _ in 0..<300 where after == before { try await Task.sleep(for: .milliseconds(10)); after = await engine.refreshCount() }
         XCTAssertEqual(after, before + 1, "one press, one engine refresh")

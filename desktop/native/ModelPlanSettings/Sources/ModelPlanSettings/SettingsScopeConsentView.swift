@@ -327,6 +327,12 @@ import ModelPlanWire
         }
         // D90 / FR-9-05: first run keeps its single consent; a detected key-only tool says where a key can be added later.
         if ReaderKeyProvider(rawValue: id) != nil, tool.detected { line(Self.firstRunKeyLine, id: prefix + "keylater." + id) }
+        // D87 slice 8: what the tool still needs, from the same table as the Subscriptions rows (the card replaced toolRow here).
+        if tool.detected, tool.block == nil {
+            let pre = SubscriptionRowModel.prerequisite(tool: tool, name: Self.toolName(id).english,
+                                                        facts: controller.toolRowFacts[id], keyEntryAvailable: readerKeys != nil)
+            line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
+        }
         let right = NSStackView(); right.orientation = .vertical; right.alignment = .trailing; right.spacing = 2
         right.translatesAutoresizingMaskIntoConstraints = false
         right.widthAnchor.constraint(equalToConstant: Self.cardRightWidth).isActive = true

@@ -257,7 +257,8 @@ private actor G1SettingsEngine: EngineClient {
                 guard let field = field as? NSTextField, !field.isHiddenOrHasHiddenAncestor else { return nil }
                 return field.stringValue
             }
-            XCTAssertTrue(subscriptionLabels.contains { isHeading($0, order) }, "D87: Settings > Subscriptions has the Order section (\(locale))")
+            // D87/D89: the Order section is replaced by the order controls on the Subscriptions rows; the legacy heading is gone there too.
+            XCTAssertFalse(subscriptionLabels.contains { isHeading($0, order) }, "D87: Subscriptions shows order on its rows, not a separate Order section (\(locale))")
         }
     }
 
@@ -418,7 +419,6 @@ private actor G1SettingsEngine: EngineClient {
         // D87 item 1 (G3-68, #788) and slice 6: the order and visibility controls live in Settings > Subscriptions. This
         // journey presses the production window's own buttons; nothing here replaces the rows context or its actions.
         let window = try await settings(app, pane: "subscriptions")
-        try assertControls(["settings.order.list"], in: window)
         let editor = app.settingsHost.application.editor
         var ids: [String] = []
         for _ in 0..<500 {
