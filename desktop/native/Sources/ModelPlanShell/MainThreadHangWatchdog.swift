@@ -111,7 +111,7 @@ public final class MainThreadHangWatchdog: @unchecked Sendable {
     }
 
     /// A test process (XCTest loaded) never gets the thread, whatever the build configuration.
-    static var runningUnderXCTest: Bool { NSClassFromString("XCTestCase") != nil }
+    public static var runningUnderXCTest: Bool { NSClassFromString("XCTestCase") != nil }
 
     public var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return running }
 
@@ -157,8 +157,9 @@ public final class MainThreadHangWatchdog: @unchecked Sendable {
                     perform(action)
                 }
             }
-            // A healthy main thread is pinged a few times a second, not continuously.
-            Thread.sleep(forTimeInterval: 0.25)
+            // macrev2-976-4: the next ping goes out one ping interval (25 ms) after the answer, as in the reference, so a
+            // 150 ms stall cannot fall between two pings.
+            Thread.sleep(forTimeInterval: Double(MainThreadHangDetector.pingMilliseconds) / 1_000)
         }
     }
 

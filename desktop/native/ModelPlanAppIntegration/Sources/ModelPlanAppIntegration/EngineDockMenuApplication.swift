@@ -740,6 +740,37 @@ struct StatusNoticePresentation {
     private var forceStatusRewrite = false
     /// G3-122: decides the shown title; a projection gap keeps the last number.
     private var statusTitle = StatusTitleKeeper()
+    /// macrev2-976-2: arms `fire` after `seconds`; the result cancels it. Test seam with a fake clock.
+    var statusHoldSchedule: @MainActor (_ seconds: TimeInterval, _ fire: @escaping @MainActor () -> Void) -> () -> Void = { seconds, fire in
+        let task = Task { @MainActor in
+            do { try await Task.sleep(for: .milliseconds(Int64((max(0, seconds) * 1_000).rounded(.up)))) } catch { return }
+            guard !Task.isCancelled else { return }
+            fire()
+        }
+        return { task.cancel() }
+    }
+    private var statusHoldArmedFor: Date?
+    private var cancelStatusHold: (() -> Void)?
+    /// The kept number has a hard end: at the hold deadline one render runs, which drops it if the gap is still open.
+    /// A new value, a definitive icon-only state or termination cancels the wake-up.
+    private func armStatusHoldExpiry(now: Date) {
+        let deadline = terminating ? nil : statusTitle.holdDeadline
+        guard deadline != statusHoldArmedFor else { return }
+        cancelStatusHold?(); cancelStatusHold = nil; statusHoldArmedFor = deadline
+        guard let deadline else { return }
+        cancelStatusHold = statusHoldSchedule(deadline.timeIntervalSince(now)) { [weak self] in
+            guard let self, !self.terminating else { return }
+            self.cancelStatusHold = nil; self.statusHoldArmedFor = nil
+            self.statusHoldExpired()
+        }
+    }
+    /// The hold deadline passed: re-render the item (and a detached test button through the same writer).
+    func statusHoldExpired() {
+        renderMenu()
+        onStatusHoldExpired?()
+    }
+    /// Test seam: a caller rendering a detached button re-applies it here.
+    var onStatusHoldExpired: (() -> Void)?
     private var lastStatusRewrite = Date.distantPast
     /// At most one forced rewrite every two seconds: a rewrite re-measures the item, which must not feed back into itself.
     func rewriteStatusContent(now: Date = Date()) {
@@ -1080,6 +1111,7 @@ struct StatusNoticePresentation {
         if setUp { title = "\u{00B7}\u{00B7}\u{00B7}" } else {
             let reading = composition.menuTitleReading, now = composition.currentDate()
             title = statusTitle.resolve(reading, now: now)
+            armStatusHoldExpiry(now: now)
         }
         if button.alphaValue != (setUp ? 0.5 : 1) { button.alphaValue = setUp ? 0.5 : 1 }
         // Never let the item collapse to zero width when the template image is unavailable.
@@ -1296,6 +1328,7 @@ struct StatusNoticePresentation {
         interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
         statusMenuComponent?.dispose(); statusMenuComponent = nil; liveStatusMenu = nil
         displayRecheck.cancel()
+        cancelStatusHold?(); cancelStatusHold = nil; statusHoldArmedFor = nil
         if let statusScreenObserver { NotificationCenter.default.removeObserver(statusScreenObserver); self.statusScreenObserver = nil }
         MainThreadHangWatchdog.shared.stop()
     }

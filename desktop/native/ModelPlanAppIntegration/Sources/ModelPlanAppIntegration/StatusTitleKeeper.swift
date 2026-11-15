@@ -29,6 +29,13 @@ struct StatusTitleKeeper {
     private var lastValue: String?
     private var unavailableSince: Date?
 
+    /// While a gap holds the last number: when the hold ends (macrev2-976-2). The owner arms a wake-up for it, so the
+    /// number goes at the limit even when nothing else renders (a paused engine, a suspended projection).
+    var holdDeadline: Date? {
+        guard lastValue != nil, let since = unavailableSince else { return nil }
+        return since.addingTimeInterval(Self.holdLimit)
+    }
+
     /// The title to show now. Pure in its inputs and the injected time; never returns a different title for a
     /// `.unavailable` reading inside the hold.
     mutating func resolve(_ reading: StatusTitleReading, now: Date) -> String {

@@ -145,4 +145,48 @@ import ModelPlanWire
         XCTAssertFalse(app.statusRenderHeld)
         XCTAssertEqual(menu.items.map(\.title), before, "one render after close rebuilt the menu")
     }
+
+    /// macrev2-976-2: a kept number ends at the hold limit by itself, with no other render: the projection is suspended
+    /// (engine paused), the injected clock passes 600 s, and the armed wake-up clears the title. A fresh value cancels
+    /// the wake-up (positive control).
+    func testTheKeptNumberEndsAtTheHoldLimitWithoutAnotherRender() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-122-expiry-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let fixture = try HostPairedProjectionTests.rows(weekly: 15)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.tightest))
+        var armed: [(seconds: TimeInterval, fire: @MainActor () -> Void)] = [], cancelled = 0
+        app.statusHoldSchedule = { seconds, fire in armed.append((seconds, fire)); return { cancelled += 1 } }
+        let button = NSButton(frame: .zero)
+        EngineDockMenuApplication.configureStatusButton(button, image: NSImage(size: .init(width: 16, height: 16)), barThickness: 22)
+        app.onStatusHoldExpired = { app.applyStatusContent(to: button, detail: "") }
+        app.applyStatusContent(to: button, detail: "")
+        XCTAssertEqual(button.title, "15%"); XCTAssertTrue(armed.isEmpty, "nothing is armed while a value is shown")
+
+        // Positive control: a gap, then a fresh value before the limit cancels the wake-up.
+        app.composition.suspendDeadlines()
+        app.applyStatusContent(to: button, detail: "")
+        XCTAssertEqual(button.title, "15%", "the gap keeps the number")
+        XCTAssertEqual(armed.count, 1); XCTAssertEqual(armed.first?.seconds ?? 0, StatusTitleKeeper.holdLimit, accuracy: 0.001)
+        app.composition.resumeDeadlines()
+        app.applyStatusContent(to: button, detail: "")
+        XCTAssertEqual(button.title, "15%"); XCTAssertEqual(cancelled, 1, "a fresh value cancels the expiry")
+
+        // The real case: the engine pauses and nothing renders again.
+        app.composition.suspendDeadlines()
+        app.applyStatusContent(to: button, detail: "")
+        XCTAssertEqual(armed.count, 2)
+        wall = wall.addingTimeInterval(StatusTitleKeeper.holdLimit)
+        armed[1].fire()
+        XCTAssertEqual(button.title, "", "the wake-up at the limit takes the number away")
+        XCTAssertEqual(button.imagePosition, .imageOnly)
+        XCTAssertEqual(armed.count, 2, "nothing more is armed once the number is gone")
+    }
 }
