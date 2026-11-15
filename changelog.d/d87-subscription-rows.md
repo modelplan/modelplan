@@ -1,0 +1,1 @@
+Settings > Subscriptions now lists one row per subscription with its status, one fix action, a display-only visibility switch and up/down; detected tools that are not added get an Add button, and tools this Mac does not have are listed under a collapsed section. A widget card's reason opens its Subscriptions row.

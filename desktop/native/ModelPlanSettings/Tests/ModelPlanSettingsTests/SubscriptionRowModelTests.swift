@@ -57,6 +57,28 @@ final class SubscriptionRowModelTests: XCTestCase {
         XCTAssertEqual(model.added[0].state, .needsKeychain)
     }
 
+    /// SET-9-34 (DESIGN 95a7e3b8): a stale subscription shows its stale status, not a tool-level cause or state of the tool.
+    /// Fails on the previous model, which let the stale row inherit the tool's key_missing / needs-keychain facts.
+    func testStaleSubscriptionKeepsItsStaleStatusInsteadOfAToolLevelCause() {
+        let facts = ["zai": ToolRowFacts(consent: .allowed, state: .needsKeychain, code: "key_missing")]
+        let model = build([sub("zai", vendor: "zai", source: .stale)], order: ["zai"], tools: [], facts: facts, keys: true)
+        XCTAssertEqual(model.added[0].status, SettingsText("The last reading is old", "上次读数已过期"))
+        XCTAssertNil(model.added[0].fix)
+        XCTAssertFalse(model.added[0].needsAttention)
+        // Its own cause still wins over staleness.
+        let own = build([sub("zai", vendor: "zai", source: .stale, cause: "timeout")], order: ["zai"], tools: [], facts: facts, keys: true)
+        XCTAssertEqual(own.added[0].fix?.target, .retry)
+    }
+
+    /// SET-9-41 (DESIGN 95a7e3b8): a third-party relay cause still offers Add key on a key-only provider's row.
+    func testRelayCauseOffersAddKeyWhenTheKeyEntryExists() {
+        let withKeys = build([sub("zai", vendor: "zai", source: .unavailable, cause: "region_refused")], order: ["zai"], tools: [], keys: true)
+        XCTAssertEqual(withKeys.added[0].fix?.target, .addKey)
+        XCTAssertEqual(withKeys.added[0].status.english, "This address is a third-party relay, so its quota can't be read")
+        let without = build([sub("zai", vendor: "zai", source: .unavailable, cause: "region_refused")], order: ["zai"], tools: [], keys: false)
+        XCTAssertEqual(without.added[0].fix?.target, .explain, "no key area: the plain explanation stays")
+    }
+
     func testDetectedNotAddedAndNotInstalledSections() {
         let tools = [tool("claude"), tool("codex"), tool("cursor"), tool("grok", block: .notSignedIn, readable: false), tool("gemini", detected: false)]
         let model = build([sub("claude", vendor: "claude")], order: ["claude"], tools: tools, reading: ["codex"])
