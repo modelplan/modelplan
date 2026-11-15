@@ -289,6 +289,9 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 			s.Providers = append(s.Providers, previous[provider])
 		}
 	}
+	// What each provider's saved key was when it was read: checked again at the publish point (below), because a key can
+	// change while a later provider is still being read.
+	manualAtRead := map[string]manualKeyRead{}
 	for _, x := range on {
 		if !consent.CurrentFence(state.Fence()) {
 			return errors.New("consent changed; refresh stopped")
@@ -322,6 +325,7 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		key := os.Getenv(x.KeyEnv)
 		readerCtx := productionReaderContext(ctx, p, x.Provider)
 		mk, hasManual, manualErr := loadManualKeyChecked(p.Cache, x.Provider)
+		manualAtRead[x.Provider] = manualKeyRead{key: mk, has: hasManual, failed: manualErr != nil}
 		if manualErr != nil {
 			// The saved key file is unsafe or unreadable: fail this provider closed. Neither the saved key
 			// nor a detected key is sent anywhere, so a different account's usage cannot be shown.
@@ -388,14 +392,36 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		s.Providers = append(s.Providers, e)
 	}
-	b, _ := json.MarshalIndent(s, "", "  ")
 	if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0o700); err != nil {
 		return err
 	}
-	if err := consent.Publish(state.Fence(), func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) }); err != nil {
+	if err := consent.Publish(state.Fence(), func() error {
+		// D90: drop a reading whose provider's saved key changed after it was read (another provider's slower read can
+		// finish after the user replaced or removed the key). Checked here, at the write, not earlier.
+		kept := s.Providers[:0]
+		for _, e := range s.Providers {
+			if at, ok := manualAtRead[e.Provider]; ok {
+				now, has, err := loadManualKeyChecked(p.Cache, e.Provider)
+				if (err != nil) != at.failed || has != at.has || now != at.key {
+					continue
+				}
+			}
+			kept = append(kept, e)
+		}
+		s.Providers = kept
+		b, _ := json.MarshalIndent(s, "", "  ")
+		return writeAtomic(nativePath(p.Cache), append(b, '\n'))
+	}); err != nil {
 		return err
 	}
 	return refreshErr
+}
+
+// manualKeyRead is a provider's saved key as it was when its reading started.
+type manualKeyRead struct {
+	key    ManualKey
+	has    bool
+	failed bool
 }
 
 // getJSON: one GET with the key as a bearer token, bounded, decoded into v. The error names the

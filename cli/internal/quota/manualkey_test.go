@@ -657,3 +657,60 @@ func TestInFlightReadWithTheOldKeyIsNotCachedAfterTheKeyChanges(t *testing.T) {
 		}
 	}
 }
+
+// macrev2-993-1 (third round): OpenCode Go is read and finished, a later provider (GLM) is still held, the OpenCode Go key
+// changes, then the whole snapshot is published. The finished OpenCode Go reading belongs to the old key and must not be
+// published; GLM's, whose key did not change, is.
+func TestFinishedReadIsNotPublishedWhenItsKeyChangesWhileALaterProviderIsHeld(t *testing.T) {
+	isolateHome(t)
+	arrived, release := make(chan struct{}, 1), make(chan struct{})
+	var once sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer "+fakeZaiKey {
+			once.Do(func() { arrived <- struct{}{}; <-release })
+			w.Write([]byte(zaiOKBody))
+			return
+		}
+		w.Write([]byte(goOKBody))
+	}))
+	t.Cleanup(srv.Close)
+	useClient(t, srv, "opencode.ai", "api.z.ai", "open.bigmodel.cn")
+	p := nativePaths(t)
+	if err := SetManualKey(p.Cache, "opencodego", fakeGoKey, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+		t.Fatal(err)
+	}
+	for _, provider := range []string{"opencodego", "zai"} {
+		if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: provider, Backend: BackendNative, Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	done := make(chan error, 1)
+	go func() { done <- RefreshNative(context.Background(), p, time.Now().Add(time.Hour)) }()
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the held read did not start")
+	}
+	if err := SetManualKey(p.Cache, "opencodego", "fake-opencode-key-0009", ""); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	if s := loadNative(p.Cache); s != nil {
+		for _, e := range s.Providers {
+			got[e.Provider] = true
+		}
+	}
+	if got["opencodego"] {
+		t.Fatal("the old key's finished OpenCode Go reading was published after its key changed")
+	}
+	if !got["zai"] {
+		t.Fatalf("GLM's reading (its key unchanged) should still be published: %v", got)
+	}
+}
