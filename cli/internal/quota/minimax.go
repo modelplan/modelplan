@@ -119,6 +119,9 @@ func parseMiniMax(b []byte, now time.Time) (codexbarEntry, bool) {
 			}
 			if *code != 0 {
 				e.Error = "MiniMax rejected the quota request; verify the selected region and plan key"
+				if *code == 1004 { // recognized auth rejection: the key, not the schema
+					e.ErrorCode = "http_401"
+				}
 				return e, *code == 1004
 			}
 		}

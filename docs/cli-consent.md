@@ -70,7 +70,8 @@ reader after consent. Passive permits credential-free local/session or tool
 runtime reads and explicitly configured keys; it blocks automatic tool credential
 and Keychain import and the generic helper. `MODELPLAN_READERS=passive` further
 restricts the persisted choice; `MODELPLAN_READERS=off` stops personal readers.
-Presence detection and public data are unaffected. Unknown nonempty overrides
+Presence detection and public data are unaffected: the publication carries no
+account data, so the app fetches it without a grant. Unknown nonempty overrides
 fail closed. Existing explicit native connections remain available until revoked;
 legacy helper settings still require an audited current access class and cannot
 acquire browser permission. Catalogue consent never silently broadens them.

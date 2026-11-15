@@ -23,6 +23,24 @@ public struct CockpitQueryTicket: Equatable, Sendable {
   public let context: CockpitEngineContext
   public let viewRevision: UInt64
 }
+/// CKP-SHELL-40 (owner D205): v1 is night-only. The cockpit renders the night look whatever the macOS
+/// appearance or the saved theme; the day paths in the page and in this module stay intact behind this one
+/// switch. v1.1 turns the day cockpit back on by setting `dayCockpit` (default off) at launch.
+public enum CockpitDayPolicy {
+  private static let lock = NSLock()
+  private static var enabled = false
+  /// Off in v1. Tests flip it and restore it; nothing else writes it.
+  public static var dayCockpit: Bool {
+    get { lock.lock(); defer { lock.unlock() }; return enabled }
+    set { lock.lock(); defer { lock.unlock() }; enabled = newValue }
+  }
+  /// The theme the cockpit may show for a requested one.
+  public static func resolve(_ requested: CockpitAppearance.Theme) -> CockpitAppearance.Theme {
+    dayCockpit ? requested : .night
+  }
+  /// The same pin for the field page's own theme enum.
+  public static func resolveField(dark: Bool) -> Bool { dayCockpit ? dark : true }
+}
 public struct CockpitAppearance: Equatable, Sendable {
   public enum Theme: String, Sendable { case day, night }
   public enum Locale: String, Sendable {
@@ -33,8 +51,22 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let theme: Theme, locale: Locale, profile: Profile
   public let reduceMotion: Bool, reduceTransparency: Bool, shutterClosed: Bool, detached: Bool
   public let redBelow: Int
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil) {
-    if let redBelow, [10, 16, 20, 25].contains(redBelow) {
+  /// Settings "Project names": off withholds project labels from every cockpit surface.
+  public let showProjectNames: Bool
+  /// Settings "Percentage mode" = used (SET-9-10): the engine table shows used, text and bars.
+  public let showUsedPercent: Bool
+  /// Settings "Show all models" (D135): the fader deck lifts the own-plans filter and the 12-fader cap.
+  public let showAllModels: Bool
+  /// Settings "Cockpit size": native window geometry only, never sent to the page.
+  public let size: CockpitSize
+  /// D244 (owner 2026-11-13): the saved subscription order from Settings › Subscriptions, shared with the
+  /// widget. Members it names come first in this order; the rest follow in the engine's order. Empty = default.
+  public let memberOrder: [String]
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true, showUsedPercent: Bool = false, showAllModels: Bool = false, size: CockpitSize = .standard, memberOrder: [String] = []) {
+    self.showProjectNames = showProjectNames; self.showUsedPercent = showUsedPercent; self.showAllModels = showAllModels; self.size = size
+    var seen = Set<String>()
+    self.memberOrder = Array(memberOrder.filter { $0 != "all" && CockpitMemberScopes.isValidKey($0) && seen.insert($0).inserted }.prefix(256))
+    if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
       self.redBelow = redBelow
     } else {
       self.redBelow = 25
@@ -72,9 +104,36 @@ public struct CockpitVisibility: Equatable, Sendable {
   var active: Bool { visible && !occluded && key }
 }
 public enum CockpitIntent: Equatable, Sendable {
-  case chooseSetup, openSettings, close, detach, putBack, shutterToggle
+  case chooseSetup, openSettings, openSettingsSubscriptions, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
+  /// D63: open the enlarged field focused on the rocket with this published display name (resolved by the host).
+  case openFieldAt(String)
   case scopeSelect(String)
+  /// G3-56: the caution identities the owner has acknowledged by pressing the lamp. The coordinator keeps them.
+  case cautionAck([String])
+  /// D136: the favourite (long-press pinned) model ids, most recent first. The coordinator keeps them across restarts.
+  case pinnedModels([String])
+  case openWebsite(CockpitWebsiteLink)
+}
+/// A typed public page, never a URL from the page: native builds the address from these fields.
+public struct CockpitWebsiteLink: Equatable, Sendable {
+  public enum Page: String, Sendable { case plans, effort, methodology }
+  public let page: Page, value: String
+  public init?(page: String?, value: String?) {
+    guard let page = page.flatMap(Page.init(rawValue:)), let value, (1...64).contains(value.utf8.count),
+      value.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 95].contains($0) })
+    else { return nil }
+    self.page = page; self.value = value
+  }
+  public var url: URL {
+    var parts = URLComponents(); parts.scheme = "https"; parts.host = "modelplan.ai"; parts.path = "/" + page.rawValue
+    switch page {
+    case .plans: parts.queryItems = [.init(name: "seller", value: value)]
+    case .effort: parts.queryItems = [.init(name: "model", value: value)]
+    case .methodology: parts.fragment = value
+    }
+    return parts.url!
+  }
 }
 public enum CockpitReceipt: Equatable {
   case ready, rendered, cleared
@@ -90,7 +149,8 @@ public struct CockpitMessageSource {
   }
 }
 
-// Replies have scalar fields plus one bounded three-string capabilities array.
+// Replies have scalar fields plus two bounded flat string arrays: the three-string `capabilities` of `ready` and the
+// `ids` (at most CockpitCautionIdentities.maxCount) of `cautionAck`. No other key may carry an array.
 // Reject nesting/duplicate keys before JSONSerialization can collapse them.
 enum FlatReply {
   static func parse(_ raw: String) throws -> [String: Any] {
@@ -136,11 +196,13 @@ enum FlatReply {
       white()
       if i < a.count, a[i] == 34 {
         _ = try string()
-      } else if key == "capabilities", i < a.count, a[i] == 91 {
+      } else if key == "capabilities" || key == "ids", i < a.count, a[i] == 91 {
+        // Flat arrays of strings only: the ready capabilities and the cautionAck identities (G3-56).
+        let limit = key == "ids" ? CockpitCautionIdentities.maxCount : 3
         i += 1; white()
         var count = 0
         while i < a.count, a[i] != 93 {
-          guard count < 3 else { throw CockpitBridgeError.limit }
+          guard count < limit else { throw CockpitBridgeError.limit }
           _ = try string(); count += 1; white()
           guard i < a.count else { throw CockpitBridgeError.invalidMessage }
           if a[i] == 93 { break }
@@ -172,6 +234,14 @@ enum FlatReply {
   }
 }
 
+/// The page sends opaque caution identities (a member reference, a window id and a severity). Bounded and printable only.
+public enum CockpitCautionIdentities {
+  public static let maxCount = 64, maxBytes = 200
+  public static func valid(_ ids: [String]) -> Bool {
+    ids.count <= maxCount && ids.allSatisfy { !$0.isEmpty && $0.utf8.count <= maxBytes && $0.utf8.allSatisfy { $0 >= 32 && $0 != 127 } }
+  }
+}
+
 public final class CockpitBridgeState {
   public let pageID: UUID
   public private(set) var context: CockpitEngineContext
@@ -182,10 +252,14 @@ public final class CockpitBridgeState {
   public private(set) var appearanceVersion: Int?
   public var supportsAppearance: Bool { ready && readyCapabilities == Self.requiredCapabilities && appearanceVersion == 2 }
   private var authoritative = true
+  /// G3-56: set before `load`; the page restores its acknowledged cautions from it.
+  public var ackedCautions: [String] = []
+  /// D136: favourite model ids restored from the app's own file; sent on load.
+  public var pinnedModels: [String] = []
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
   private var retiredSessions = Set<UUID>(), retiredEpochs = Set<String>(),
-    historyTools = Set<String>(), actionRequests = Set<UUID>()
+    historyTools = Set<String>()
   private struct Pending {
     let kind: String
     let sequence: UInt64
@@ -238,24 +312,32 @@ public final class CockpitBridgeState {
     guard !loaded else { throw CockpitBridgeError.unavailable }
     guard CockpitMemberScopes.isValidKey(shell.scope) else { throw CockpitBridgeError.invalidMessage }
     loaded = true
-    return try envelope(
-      "load",
-      extra: [
-        "appearance": [
-          "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
-          "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
-        ],
-        "shell": shell.fields, "redBelow": appearance.redBelow,
-      ], receipt: "ready")
+    var extra: [String: Any] = [
+      "appearance": [
+        "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
+        "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
+        "showProjectNames": appearance.showProjectNames,
+      ],
+      "shell": shell.fields, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent, "showAllModels": appearance.showAllModels,
+    ]
+    // G3-56: sent only when there is something to restore, so a page that has none sees the unchanged contract.
+    if CockpitCautionIdentities.valid(ackedCautions), !ackedCautions.isEmpty { extra["ackedCautions"] = ackedCautions }
+    if CockpitCautionIdentities.valid(pinnedModels), Set(pinnedModels).count == pinnedModels.count, !pinnedModels.isEmpty { extra["pinnedModels"] = pinnedModels }
+    // D244: likewise the saved member order; absent means the engine's default order.
+    if !appearance.memberOrder.isEmpty { extra["memberOrder"] = appearance.memberOrder }
+    return try envelope("load", extra: extra, receipt: "ready")
   }
   public func setAppearance(_ appearance: CockpitAppearance, deadlineEligible: Bool = false) throws -> String {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
     let correlated = deadlineEligible && visibility.visible && !visibility.occluded
-    return try envelope("appearance", extra: [
+    var extra: [String: Any] = [
       "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
       "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
-      "redBelow": appearance.redBelow,
-    ], appearanceDeadline: correlated)
+      "showProjectNames": appearance.showProjectNames, "redBelow": appearance.redBelow, "showUsedPercent": appearance.showUsedPercent, "showAllModels": appearance.showAllModels,
+    ]
+    // D244: absent means the default order, so a reset in Settings reaches an open page too.
+    if !appearance.memberOrder.isEmpty { extra["memberOrder"] = appearance.memberOrder }
+    return try envelope("appearance", extra: extra, appearanceDeadline: correlated)
   }
   public func setShell(_ shell: CockpitShellState) throws -> String {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
@@ -266,9 +348,41 @@ public final class CockpitBridgeState {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
     // A newer display retires all prior unacknowledged display receipts.
     pending = pending.filter { $0.value.kind != "rendered" }
-    let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(data))
+    let (object, dropped) = try Self.finiteObject(data)
+    lastNonFinitePaths = dropped
     let tools = Set(data.projection.rows.filter { $0.kind == .tool && !$0.invalid }.map { $0.id })
     return try envelope("display", extra: ["data": object], receipt: "rendered", tools: tools, members: CockpitMemberScopes.keys(data))
+  }
+  /// G3-86: JSON has no NaN or infinity, so one such number made the whole display unencodable. It is sent
+  /// as null (the page shows that value as unavailable); the controller logs the field paths, never the values.
+  public private(set) var lastNonFinitePaths: [String] = []
+  private static let nonFiniteMarker = "\u{0}modelplan.nonfinite.7f1c2a"
+  static func finiteObject(_ data: WireCockpitData) throws -> (Any, [String]) {
+    let encoder = JSONEncoder()
+    encoder.nonConformingFloatEncodingStrategy = .convertToString(
+      positiveInfinity: nonFiniteMarker, negativeInfinity: nonFiniteMarker, nan: nonFiniteMarker)
+    var dropped: [String] = []
+    let object = replacingNonFinite(try JSONSerialization.jsonObject(with: encoder.encode(data)), path: "data", dropped: &dropped)
+    return (object, dropped)
+  }
+  private static func replacingNonFinite(_ value: Any, path: String, dropped: inout [String]) -> Any {
+    if let text = value as? String, text == nonFiniteMarker { dropped.append(path); return NSNull() }
+    if let object = value as? [String: Any] {
+      var out: [String: Any] = [:]
+      for (key, child) in object { out[key] = replacingNonFinite(child, path: path + "." + key, dropped: &dropped) }
+      return out
+    }
+    if let array = value as? [Any] {
+      return array.enumerated().map { replacingNonFinite($0.element, path: path + "[\($0.offset)]", dropped: &dropped) }
+    }
+    return value
+  }
+  /// G3-86: a display the delivery queue refused never reaches the page, so no receipt is awaited for it.
+  /// The page keeps the last display it rendered until the refresh that replaces this one.
+  func abandonDisplay(_ id: UUID) {
+    guard pending[id]?.kind == "rendered" else { return }
+    pending[id] = nil
+    if earlyDeadline?.requestID == id { earlyDeadline = nil }
   }
   func cancelDeadlineReports() {
     deadlineReportRequest = nil; appearanceAwaitingAck = nil; earlyDeadline = nil; bufferedDeadline = nil
@@ -358,7 +472,6 @@ public final class CockpitBridgeState {
     historyTools.removeAll()
     scopeMembers.removeAll()
     pending.removeAll()
-    actionRequests.removeAll()
     latestDisplayRequest = nil; cancelDeadlineReports()
     retiredEpochs.removeAll()
     retiredSessions.removeAll()
@@ -423,25 +536,44 @@ public final class CockpitBridgeState {
       return .deadlinePending(id)
     }
     if type == "action" {
+      // Strict page sequence rejects replays without a lifetime action cap.
       if let earlyDisplay, sequence <= earlyDisplay.sequence { throw CockpitBridgeError.invalidMessage }
       let action = m["action"] as? String
-      let history = action == "openHistory", scope = action == "scopeSelect"
-      let extra:Set<String> = history ? ["action","tool"] : scope ? ["action","key"] : ["action"]
+      let history = action == "openHistory", scope = action == "scopeSelect", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
+      let focusedField = action == "openField" && m["key"] != nil
+      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack ? ["action","ids"] : ["action"]
       guard Set(m.keys) == base.union(extra), ready, !blocked,
-        visibility.active, actionRequests.count < 1024, !actionRequests.contains(id)
+        visibility.active
       else { throw CockpitBridgeError.invalidMessage }
       let intent: CockpitIntent
       switch action {
       case "chooseSetup": intent = .chooseSetup
       case "openSettings": intent = .openSettings
+      // CKP-SHELL-39: the empty engine screen's one button; it opens the Subscriptions pane and carries nothing.
+      case "openSettingsSubscriptions": intent = .openSettingsSubscriptions
       case "scopeSelect":
         guard let key=m["key"] as? String, scopeMembers.contains(key),
           earlyDisplay.map({ pending[$0.requestID]?.members.contains(key) == true }) ?? true else { throw CockpitBridgeError.invalidMessage }
         intent = .scopeSelect(key)
+      case "openWebsite":
+        guard let link = CockpitWebsiteLink(page: m["page"] as? String, value: m["value"] as? String) else { throw CockpitBridgeError.invalidMessage }
+        intent = .openWebsite(link)
+      case "cautionAck":
+        guard let ids = m["ids"] as? [String], CockpitCautionIdentities.valid(ids) else { throw CockpitBridgeError.invalidMessage }
+        intent = .cautionAck(ids)
+      case "pinnedModels":
+        guard let ids = m["ids"] as? [String], CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { throw CockpitBridgeError.invalidMessage }
+        intent = .pinnedModels(ids)
       case "close": intent = .close
       case "detach": intent = .detach
       case "putBack": intent = .putBack
       case "shutterToggle": intent = .shutterToggle
+      case "openField":
+        if focusedField {
+          guard let key = m["key"] as? String, (1...64).contains(key.count),
+            !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw CockpitBridgeError.invalidMessage }
+          intent = .openFieldAt(key)
+        } else { intent = .openField }
       case "openHistory":
         guard let tool = m["tool"] as? String, historyTools.contains(tool),
           earlyDisplay.map({ pending[$0.requestID]?.tools.contains(tool) == true }) ?? true else {
@@ -450,7 +582,6 @@ public final class CockpitBridgeState {
         intent = .openHistory(tool)
       default: throw CockpitBridgeError.invalidMessage
       }
-      actionRequests.insert(id)
       pageSequence = sequence
       return .action(intent)
     }

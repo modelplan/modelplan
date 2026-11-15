@@ -128,6 +128,18 @@ class LaunchSupervisionTests(unittest.TestCase):
         child = Mock(); child.poll.return_value = 0
         self.assertIsNone(launch.supervise(child, self.config(self.lease(), False)))
 
+    def test_child_closed_by_the_guardian_between_polls_is_a_supervised_stop(self):
+        # The guardian closes the subject on STOP before supervise's next poll sees the file: the
+        # controller must report the stop (exit 3), not a child that ended by itself (exit 0).
+        c = self.config(self.lease(), False)
+        child = Mock()
+        def gone():
+            Path(c['stopPath']).write_text('{}')  # STOP published, subject already closed
+            return -15
+        child.poll.side_effect = gone
+        self.assertEqual(launch.supervise(child, c, sleep=lambda s: None), 'stop-file')
+        child.terminate.assert_not_called()
+
 
 class OwnedSubjectTests(unittest.TestCase):
     def setUp(self):

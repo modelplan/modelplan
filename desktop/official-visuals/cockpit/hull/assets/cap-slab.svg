@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="16" viewBox="0 0 620 16">
+  <!-- Private official visual. New slab contour; c01 metal is the material reference. -->
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="0.7" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#292a2c"/>
+      <stop offset=".12" stop-color="#bbc3cc"/>
+      <stop offset=".26" stop-color="#afb8c0"/>
+      <stop offset=".43" stop-color="#343436"/>
+      <stop offset=".70" stop-color="#6e737a"/>
+      <stop offset="1" stop-color="#4c4e51"/>
+    </linearGradient>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency=".45 .75" numOctaves="2" seed="69"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".13"/></feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="soft-light"/>
+      <feComposite in2="SourceGraphic" operator="in"/>
+    </filter>
+  </defs>
+  <path d="M8 0H612L620 8V16H0V8Z" fill="url(#metal)" filter="url(#grain)"/>
+  <path d="M.5 8.2L8.2 .5H611.8L619.5 8.2" fill="none" stroke="#d6dee0" stroke-opacity=".55"/>
+</svg>

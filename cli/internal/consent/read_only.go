@@ -16,5 +16,5 @@ func ReadOnly(file string) (State, error) {
 			setToolScopes(&s, tool, record)
 		}
 	}
-	return s, nil
+	return narrowForVerification(s), nil
 }

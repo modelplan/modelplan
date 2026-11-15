@@ -128,6 +128,7 @@ public enum FoundationSettingsMigration {
         guard let data = try bytes(input, limit: SettingsStore.maximumBytes) else { return nil }
         let envelope = try legacyObject(data)
         guard var values = envelope["preferences"] as? [String: Any] else { throw Failure.invalidPreferences }
+        SettingsSparseFile.migrate(&values, isSparse: envelope[SettingsSparseFile.marker] as? Bool == true)
         let edgeDefaulted: Bool
         if let value = values["dockEdge"] {
             edgeDefaulted = (value as? String).flatMap(SettingsDockEdge.init(rawValue:)) == nil
@@ -157,8 +158,10 @@ public enum FoundationSettingsMigration {
                                   selection: Selection, issues: [Issue]) throws -> Candidate {
         guard var values = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any]
         else { throw Failure.invalidPreferences }
+        // The marker records that `loadSettings` already applied the old-file rule to `settings`; without it Document.decode
+        // would apply the rule a second time and drop an icon the user chose after the change (macrevc-884-1).
         values = values.filter { migratedSettingsFields.contains($0.key) }
-        let data = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "settings": values, "core": core], options: [.sortedKeys])
+        let data = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, SettingsSparseFile.marker: true, "settings": values, "core": core], options: [.sortedKeys])
         return .init(document: data, selection: selection, issues: issues)
     }
 }

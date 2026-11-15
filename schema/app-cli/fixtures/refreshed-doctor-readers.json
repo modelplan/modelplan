@@ -35,9 +35,39 @@
       "admitted": "no",
       "beta": true,
       "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "claude:history",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
       "detected": "yes",
       "last": "unknown",
       "provider": "claude:session",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": false,
+      "consent": "granted",
+      "detected": "yes",
+      "last": "unknown",
+      "provider": "codex",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "granted",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "codex:history",
       "state": "unavailable:not_admitted",
       "windows": 0
     },

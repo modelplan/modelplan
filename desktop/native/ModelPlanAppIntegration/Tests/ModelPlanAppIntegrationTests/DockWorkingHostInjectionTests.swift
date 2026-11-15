@@ -65,4 +65,31 @@ import XCTest
         host.setPresentationAllowed(false)
         XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty); XCTAssertEqual(pool.activeLeaseCount, 0)
     }
+
+    /// MOT-2.3-10 through the production host: flames step at half rate on battery and return
+    /// to normal on AC, at the next signal change.
+    func testMOT_2_3_10FlamesThrottleOnBattery() async throws {
+        _ = NSApplication.shared
+        let now = Date(timeIntervalSince1970: 1_792_506_300)
+        let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1470, height: 956), visibleFrame: .init(x: 0, y: 0, width: 1470, height: 930))
+        let environment = DockEdgeEnvironment(displays: [display], layouts: [], primaryDisplayID: "synthetic")
+        let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
+        defer { host.close() }
+        host.setDockContentProvider(WorkingFixture(now: now))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("working-battery-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await store.update { $0.autoHide = false }
+        let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
+        await coordinator.reload(); host.setPresentationAllowed(true)
+        var battery = true
+        host.installWorkingEffectsForChecks(pool: EffectResourcePool(), provider: WorkingFixtureFrames(), systemReduceMotion: { false }, onBattery: { battery })
+        func signal(_ output: Bool) -> DockWorkingSignal { .init(subscriptionID: "synthetic", bindingVerified: true, fresh: true, observedOutput: output) }
+        try host.setWorkingSignals([signal(true)])
+        XCTAssertEqual(host.animatingWorkingEffectIDs, ["synthetic"], "throttled flames still move")
+        XCTAssertEqual(host.workingEffectCycleSeconds["synthetic"], 2)
+        battery = false
+        try host.setWorkingSignals([signal(false)]); try host.setWorkingSignals([signal(true)])
+        XCTAssertEqual(host.workingEffectCycleSeconds["synthetic"], 1)
+    }
 }

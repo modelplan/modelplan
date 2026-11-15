@@ -20,51 +20,71 @@ import ModelPlanSettings
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("show-widget-unloaded-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let editor = SettingsEditor(store: try SettingsStore(url: root.appendingPathComponent("settings.json")))
-        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor, expectedRevision: 0)
+        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor)
         XCTAssertEqual(outcome, .unavailable)
     }
     func testHiddenWidgetCommitsOnlyAfterExplicitRequest() async throws {
         let editor = try await makeEditor()
-        let revision = try XCTUnwrap(editor.snapshot?.revision)
-        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor, expectedRevision: revision)
+        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor)
         XCTAssertEqual(outcome, .ready)
         let saved = await editor.store.snapshot()
         XCTAssertTrue(saved.preferences.showDock)
     }
-    func testStaleRequestDoesNotOverwriteLaterUserChoice() async throws {
+    /// G3-17/G3-18: the Help host saves its hint ledger through the same store while the
+    /// widget is hidden. An unrelated write that the editor has not reloaded yet must not
+    /// turn an explicit Show into "Settings changed"; it is kept and Show is saved on top.
+    func testUnrelatedWriteBeforeShowIsKeptAndShowStillWins() async throws {
         let editor = try await makeEditor()
-        let revision = try XCTUnwrap(editor.snapshot?.revision)
-        _ = try await editor.store.update { $0.dockEdge = .bottom; $0.showDock = false }
-        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor, expectedRevision: revision)
-        XCTAssertEqual(outcome, .changed)
+        _ = try await editor.store.update { $0.dockEdge = .bottom }
+        let moved = await editor.store.snapshot()
+        XCTAssertNotEqual(editor.snapshot?.revision, moved.revision, "Precondition: the editor has not reloaded the write")
+        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor)
+        XCTAssertEqual(outcome, .ready)
         let saved = await editor.store.snapshot()
-        XCTAssertFalse(saved.preferences.showDock); XCTAssertEqual(saved.preferences.dockEdge, .bottom)
+        XCTAssertTrue(saved.preferences.showDock); XCTAssertEqual(saved.preferences.dockEdge, .bottom)
         XCTAssertEqual(editor.snapshot?.revision, saved.revision)
     }
-    func testConcurrentWriteDuringCommitIsNotRetriedOrOverwritten() async throws {
+    func testConcurrentWriteDuringCommitIsReadAgainNotOverwritten() async throws {
         let editor = try await makeEditor()
-        let revision = try XCTUnwrap(editor.snapshot?.revision)
         var attempts = 0
-        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor, expectedRevision: revision) { editor in
+        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor) { editor in
             attempts += 1
-            _ = try await editor.store.update { $0.dockEdge = .left; $0.showDock = false }
+            if attempts == 1 { _ = try await editor.store.update { $0.dockEdge = .left } }
             return try await editor.commit(SettingsB21Edit.showDock(true))
         }
-        XCTAssertEqual(outcome, .changed); XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(outcome, .ready); XCTAssertEqual(attempts, 2)
         let saved = await editor.store.snapshot()
-        XCTAssertFalse(saved.preferences.showDock); XCTAssertEqual(saved.preferences.dockEdge, .left)
+        XCTAssertTrue(saved.preferences.showDock); XCTAssertEqual(saved.preferences.dockEdge, .left)
+    }
+    func testRetriesAreBounded() async throws {
+        let editor = try await makeEditor()
+        var attempts = 0
+        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor) { editor in
+            attempts += 1
+            _ = try await editor.store.update { $0.dockEdge = attempts.isMultiple(of: 2) ? .left : .bottom }
+            return try await editor.commit(SettingsB21Edit.showDock(true))
+        }
+        XCTAssertEqual(outcome, .changed); XCTAssertEqual(attempts, ShowQuotaWidgetRequest.attemptLimit)
+        let saved = await editor.store.snapshot(); XCTAssertFalse(saved.preferences.showDock)
+        XCTAssertEqual(editor.snapshot?.revision, saved.revision)
+    }
+    func testHideUsesTheSameRereadPath() async throws {
+        let editor = try await makeEditor(hidden: false)
+        _ = try await editor.store.update { $0.helpHints = .init(seen: [.findWidget]) }
+        let outcome = await ShowQuotaWidgetRequest.setVisible(false, editor: editor)
+        XCTAssertEqual(outcome, .ready)
+        let saved = await editor.store.snapshot()
+        XCTAssertFalse(saved.preferences.showDock); XCTAssertEqual(saved.preferences.helpHints, .init(seen: [.findWidget]))
     }
     func testSaveFailureIsReportedWithoutPretendingToShow() async throws {
         let editor = try await makeEditor()
-        let revision = try XCTUnwrap(editor.snapshot?.revision)
-        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor, expectedRevision: revision) { _ in throw SyntheticFailure() }
+        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor) { _ in throw SyntheticFailure() }
         XCTAssertEqual(outcome, .failed)
         let saved = await editor.store.snapshot(); XCTAssertFalse(saved.preferences.showDock)
     }
     func testUserHideAfterCommitPreventsReveal() async throws {
         let editor = try await makeEditor()
-        let revision = try XCTUnwrap(editor.snapshot?.revision)
-        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor, expectedRevision: revision) { editor in
+        let outcome = await ShowQuotaWidgetRequest.perform(editor: editor) { editor in
             let receipt = try await editor.commit(SettingsB21Edit.showDock(true))
             _ = try await editor.store.update { $0.showDock = false }
             return receipt

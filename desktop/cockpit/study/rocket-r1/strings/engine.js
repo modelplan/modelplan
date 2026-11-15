@@ -12,6 +12,8 @@ register('eng', {
   today: ['silk', '今日', 'Today'],
   speed: ['silk', '速度', 'Speed'],
   reserve: ['silk', '储备', 'Reserve'],
+  // Owner D76: what the Reserve row holds, as a hover hint on its label (not drawn otherwise).
+  reserveHint: ['aria', '储备：还能用的额外重置次数和剩余点数', 'Reserve: extra resets you can still use and remaining credits'],
   row5h: ['lcd', '5小时', '5h'],
   rowDay: ['lcd', '每日', 'Daily'],
   rowWeek: ['lcd', '每周', 'Weekly'],
@@ -29,6 +31,7 @@ register('eng', {
   resetCompactOne: ['lcd', '重置1次', '1 reset'],
   resetsWords: ['lcd', '重置 {n} 次', {"one": "{n} reset", "other": "{n} resets"}],
   resetsCompact: ['lcd', '重置{n}次', {"one": "{n} reset", "other": "{n} resets"}],
+  balance: ['lcd', '余额 {v}', 'Balance {v}'], // G3-109: a money balance in the reserve row
   creditWords: ['lcd', '{n} 点', {"one": "{n} credit", "other": "{n} credits"}],
   other: ['silk', '其他', 'Other'], // all nonmatching general windows and scoped quotas
   // round D2: each quota cell's period tag (the extras use extra.name: Fable·周)

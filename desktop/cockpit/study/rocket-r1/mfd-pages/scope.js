@@ -10,7 +10,9 @@ const midnight = now => { const x = new Date(now); x.setHours(0, 0, 0, 0); retur
 // Sessions in scope: today (since local midnight) or the last 7 days.
 export function sessionsIn(d, ui, period = 'today') {
   const ids = new Set(accountsIn(d, ui).map(a => a.id)), from = period === '7d' ? d.now - 7 * 864e5 : midnight(d.now);
-  return d.sessionRanking.filter(x => ids.has(x.sub) && (x.running || x.endedAt >= from || x.startedAt >= from));
+  // Public port: a session the producer could not bind to a subscription still belongs to 全部 / All; a last-seen
+  // session (lastAt) counts by its last observation, which is not an end time.
+  return d.sessionRanking.filter(x => (ids.has(x.sub) || (!ui.scope && x.sub == null)) && (x.running || (x.lastAt ?? x.endedAt) >= from || x.startedAt >= from));
 }
 // The effort the latest session of a model in scope used (white = real, spec 2.1), or null.
 export function currentOf(d, ui, modelId) {

@@ -1,0 +1,10 @@
+{
+  "inputTokens": 1,
+  "outputTokens": 1,
+  "cacheReadTokens": 1,
+  "cacheWriteTokens": 1,
+  "cacheHitRatio": 42.5,
+  "generationTps": 42.5,
+  "observedRequests": 1,
+  "eligibleRequests": 1
+}

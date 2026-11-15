@@ -388,6 +388,8 @@ type codexbarEntry struct {
 	// SubscriptionRef: the account's reference (identity.go), from CodexBar's account id or, for a
 	// native reader, the API key; neither is kept.
 	SubscriptionRef string `json:"subscriptionRef,omitempty"`
+	// ReportedModels (D99): model slugs the tool itself lists for the signed-in account; slugs only.
+	ReportedModels []string `json:"reportedModels,omitempty"`
 
 	identity string
 }

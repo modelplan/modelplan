@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/profile"
 )
 
 const TextVersion = 2
@@ -75,11 +77,19 @@ var toolID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
 func ValidTool(id string) bool { return toolID.MatchString(id) }
 func Path() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "modelplan", "consent.json")
+	return profile.ConfigFile(home, "consent.json")
 }
 func Empty() State {
 	return State{SchemaVersion: 2, Privacy: Automatic, Tools: map[string]Record{}, Scopes: map[string]Record{}, Revoked: map[string]uint64{}, Hinted: map[string]bool{}}
 }
+
+// ErrNewerStore: a newer ModelPlan (the app bundles its own CLI) wrote the file. It reads as
+// no consent, like any file this CLI cannot trust, but the reason differs for the user.
+var ErrNewerStore = errors.New("consent written by a newer ModelPlan")
+
+// NewerStore reports that this CLI reads nothing because of ErrNewerStore.
+func NewerStore() bool { _, err := Load(Path()); return errors.Is(err, ErrNewerStore) }
+
 func loadRaw(file string) (State, []byte, error) {
 	s := Empty()
 	f, err := os.Open(file)
@@ -93,6 +103,12 @@ func loadRaw(file string) (State, []byte, error) {
 	b, err := io.ReadAll(io.LimitReader(f, (256<<10)+1))
 	if err != nil || len(b) > 256<<10 {
 		return s, nil, errors.New("consent too large or unreadable")
+	}
+	var v struct {
+		SchemaVersion int `json:"schemaVersion"`
+	}
+	if json.Unmarshal(b, &v) == nil && v.SchemaVersion > 2 {
+		return Empty(), nil, ErrNewerStore
 	}
 	if json.Unmarshal(b, &s) != nil || (s.SchemaVersion != 1 && s.SchemaVersion != 2) || (s.Privacy != Automatic && s.Privacy != Passive) || s.Tools == nil {
 		return Empty(), nil, errors.New("invalid consent state")
@@ -356,6 +372,19 @@ type Fence struct {
 func (s State) Fence() Fence    { return Fence{s.StoreEpoch, s.Generation} }
 func CurrentFence(f Fence) bool { s, err := Load(Path()); return err == nil && s.Fence() == f }
 
+// lockConsent takes the consent lock for something the user asked for. A background reader can
+// be saving a finished read, so a brief hold must not fail the request; it waits as publish does.
+func lockConsent(file string) (func(), error) {
+	deadline := time.Now().Add(time.Second)
+	for {
+		unlock, err := lockFile(file + ".lock")
+		if err == nil || !errors.Is(err, ErrBusy) || time.Now().After(deadline) {
+			return unlock, err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // ReaderLock coordinates refresh/snapshot writers with Forget readings. A
 // revoked provider is reselected only after this lock, never from a stale list.
 func ReaderLock() (func(), error) {
@@ -364,6 +393,21 @@ func ReaderLock() (func(), error) {
 		return nil, err
 	}
 	return lockFile(file)
+}
+
+// ReaderLockWait is ReaderLock for a user-requested erase (revoke or forget). A
+// background reader or snapshot commit holds the lock only briefly, and failing
+// fast here would leave a durable revocation with unfinished cleanup, so wait up
+// to two seconds for it, as the consent writers do.
+func ReaderLockWait() (func(), error) {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		unlock, err := ReaderLock()
+		if err == nil || !errors.Is(err, ErrBusy) || time.Now().After(deadline) {
+			return unlock, err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // ErrReaderBusy distinguishes admission contention from collection failures.
@@ -410,7 +454,8 @@ var (
 // Publish serializes generation validation and the short cache commit with
 // consent changes. No credential or provider I/O belongs inside this callback.
 func Publish(f Fence, write func() error) error {
-	return publish(context.Background(), f, write, false)
+	// Every caller is saving a finished read: a brief hold must not lose it.
+	return publish(context.Background(), f, write, true)
 }
 
 // PublishContext waits at most one second for the lock, without retrying write.

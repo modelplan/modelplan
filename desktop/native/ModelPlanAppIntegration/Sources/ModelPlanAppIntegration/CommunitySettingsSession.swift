@@ -4,7 +4,8 @@ import ModelPlanSettings
 import ModelPlanCommunityHost
 
 /// Concrete retained integration passed to the Community host. No second editor/store, service or reader.
-@MainActor public final class CommunitySettingsSession: CommunitySettingsIntegration {
+@MainActor public final class CommunitySettingsSession: CommunityLanguageReporting {
+    public var prefersChinese: Bool { (windowHost.application.editor.snapshot?.preferences.language ?? .fallback) == .chinese }
     public let windowHost: SettingsWindowHost
     public let settingsMenuItem: NSMenuItem
     public private(set) var helpComposition: InstrumentHelpComposition?
@@ -21,7 +22,7 @@ import ModelPlanCommunityHost
         self.makeHelp = makeHelp
         windowHost = SettingsWindowHost(application: application, canPresent: canPresent,
             environment: environment, activate: activate, makeSurface: makeSurface)
-        settingsMenuItem = windowHost.menuItem(title: SettingsText("Settings…", "设置…").value(application.editor.snapshot?.preferences.language ?? .chinese))
+        settingsMenuItem = windowHost.menuItem(title: SettingsText("Settings…", "设置…").value(application.editor.snapshot?.preferences.language ?? .fallback))
         menuLanguageObserver = application.editor.observeChanges { [weak self] in self?.refreshMenuLanguage() }
     }
     deinit {

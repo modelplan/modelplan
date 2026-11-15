@@ -108,6 +108,8 @@ func main() {
 	}
 	args := append([]string{"app-server"}, os.Args[2:]...)
 	child := exec.Command(p.plan.Binary, args...)
+	// The client refuses this key, so the proxy keeps the engine off the public publication host.
+	child.Env = append(os.Environ(), "MODELPLAN_BASE=http://127.0.0.1:1")
 	child.Stderr = io.Discard
 	input, e := child.StdinPipe()
 	if e != nil {
@@ -202,6 +204,19 @@ func main() {
 			continue
 		}
 		notification, _ := m["method"].(string)
+		if method == "initialize" && m["result"] != nil {
+			data := object(object(m["result"])["data"])
+			switch p.plan.Mode {
+			case "server-too-old":
+				data["serverVersion"] = "0.5.49"
+			case "server-malformed":
+				data["serverVersion"] = "unknown"
+			case "server-malformed-metadata":
+				data["serverVersion"] = "0.5.52+a..b"
+			case "server-supported":
+				data["serverVersion"] = "0.5.52"
+			}
+		}
 		if (p.plan.Mode == "initialize-error-once" || p.plan.Mode == "initialize-unavailable-once") && method == "initialize" {
 			// Keep the ordinary Go child and proxy alive after the injected
 			// failure. Only the first supervised launch fails; its successor

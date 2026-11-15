@@ -38,7 +38,7 @@ import AppKit
     private var committed = "", cancelled = false
     private var unconfirmedText: String?
     var hasUnsavedDraft: Bool { unconfirmedText != nil }
-    private var language: SettingsLanguage = .chinese
+    private var language: SettingsLanguage = .fallback
     var onFinish: ((SettingsAliasControl, AliasDraft) -> Void)?
     var onDraftCleared: ((SettingsAliasControl) -> Void)?
     init(subscriptionID: String) {
@@ -105,7 +105,7 @@ import AppKit
     private(set) var isRetired = false
     private(set) var recording = false
     private var chord: ShortcutChord
-    private var language: SettingsLanguage = .chinese
+    private var language: SettingsLanguage = .fallback
     var onRecord: ((SettingsShortcutControl, ShortcutChord) -> Void)?
     override var acceptsFirstResponder: Bool { !isRetired && isEnabled }
     init(key: SettingKey, chord: ShortcutChord) {
@@ -119,7 +119,7 @@ import AppKit
         if !recording { title = Self.label(chord, language: language) }
         setAccessibilityLabel(settingKey == .openShortcut
             ? (language == .english ? "Open cockpit shortcut" : "打开驾驶舱快捷键")
-            : (language == .english ? "Toggle Quota Widget shortcut" : "显示隐藏额度挂件快捷键"))
+            : (language == .english ? "Find Quota Widget shortcut" : "找到额度挂件快捷键"))
         setAccessibilityValueDescription(Self.label(chord, language: language))
         setAccessibilityHelp(language == .english ? "Press to record a shortcut. Escape cancels." : "按下以录制快捷键；Escape 取消。")
     }

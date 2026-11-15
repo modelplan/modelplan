@@ -4,7 +4,7 @@
   "copyright": "Copyright (c) 2026 ModelPlan. All rights reserved.",
   "trademarkNotice": "ModelPlan and Model Plan are marks of ModelPlan. No trademark rights are granted.",
   "fileCount": 980,
-  "pngBytes": 3441609,
+  "pngBytes": 3425673,
   "defaultProjectionId": "4ff2bad27654",
   "files": [
     {
@@ -2597,8 +2597,8 @@
     {
       "file": "assets/projected/0ef342d844aa-haiku-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "c9227383532ee50480e4539acfe757057f64bdd6f00a8ec1781d35976511ec3b",
-      "bytes": 186,
+      "sha256": "bad3decc937900e870090b7d114e226272dc5e0695bcef8b28bd7ef9e4ff3c59",
+      "bytes": 211,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
@@ -2610,8 +2610,8 @@
     {
       "file": "assets/projected/0ef342d844aa-haiku-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "6ea7aea336e1de7c79907945d10bcf853f293cbd298d6292f27d23114e3059d0",
-      "bytes": 323,
+      "sha256": "d7bfddc6d430417bf7f3fe30f5435bf49802a69d0f867fbbe9090ebafe7ba00d",
+      "bytes": 324,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -2623,8 +2623,8 @@
     {
       "file": "assets/projected/0ef342d844aa-haiku-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "64368edca47334880c5deb8d91bfecbba3790300c263e37552520d27282716a9",
-      "bytes": 199,
+      "sha256": "5353874b2169ffc0f1371aa4d7348aefa3d29eafb950e59ffd2d7c28ca33780c",
+      "bytes": 195,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 4,
@@ -2636,8 +2636,8 @@
     {
       "file": "assets/projected/0ef342d844aa-haiku-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "29017a8fe6492a5f83495573f1037af19a3567ca12545dfc9181eb71e79e0276",
-      "bytes": 337,
+      "sha256": "381e418c970f7c70adce7be68226932ee65adb0074292883259c482793af7b2b",
+      "bytes": 302,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -2675,12 +2675,12 @@
     {
       "file": "assets/projected/0ef342d844aa-opus-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "fb4861bf8fcb5756ea789f4f56f3bff899a2232fb25a6c962386fce468294c0e",
-      "bytes": 219,
+      "sha256": "fa77f2a65617769394954ab148bbed4ccaace659e2ba64f12647558325821b7e",
+      "bytes": 214,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
-        "height": 9
+        "height": 8
       },
       "theme": "night",
       "scale": 1
@@ -2688,12 +2688,12 @@
     {
       "file": "assets/projected/0ef342d844aa-opus-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "cf61177873b49e7c2413127bb92d3b90dc20bf0d4842d523f672403b3683411f",
-      "bytes": 358,
+      "sha256": "b437ba2712c8a30dd927cf28c174eab4d3241c64feba0a50199792492abcf3cb",
+      "bytes": 356,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
-        "height": 18
+        "height": 16
       },
       "theme": "night",
       "scale": 2
@@ -2701,12 +2701,12 @@
     {
       "file": "assets/projected/0ef342d844aa-opus-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "126aba60c29997cfeda75824a8900633eeba1f390b711b2948dc05a1f6dc725e",
-      "bytes": 267,
+      "sha256": "02ce3d8bb4df5dc21dbf587e8b69b2a04bb5e340a42f3ce8126d433a09b108ba",
+      "bytes": 279,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 7,
-        "height": 12
+        "height": 11
       },
       "theme": "night",
       "scale": 1
@@ -2714,12 +2714,12 @@
     {
       "file": "assets/projected/0ef342d844aa-opus-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "a7d3cfb2ef0f94a9d22de6e10389344f344ddb28529b80fc76e8b00c8139892e",
-      "bytes": 523,
+      "sha256": "b4cd32a838fc13635ace029d230e00c88f6ccdbaebfc50d4462e1cb0afff9395",
+      "bytes": 485,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 14,
-        "height": 24
+        "height": 22
       },
       "theme": "night",
       "scale": 2
@@ -2753,8 +2753,8 @@
     {
       "file": "assets/projected/0ef342d844aa-sonnet-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "4c8007185fe714929b07c9f065c59c35543775b68f092c8f685f123bc7c29536",
-      "bytes": 183,
+      "sha256": "3e046a6d65be2a95034a4815bd3cab14002e3319a759bc4986eda97d1d188d74",
+      "bytes": 197,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 4,
@@ -2766,8 +2766,8 @@
     {
       "file": "assets/projected/0ef342d844aa-sonnet-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "45f06d1419fb6b358aa7c49e0d3d40d4bb43e5d29219f422df31794ecaf0c7fc",
-      "bytes": 309,
+      "sha256": "2dbf67a06731e5bcca93bee8e6fe0c7b96ec82d0cf98bba2fd2ed3b4d45d5a7e",
+      "bytes": 304,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -2779,8 +2779,8 @@
     {
       "file": "assets/projected/0ef342d844aa-sonnet-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "4f96176de46c681a7e72855a0965262883f7788e62b05f9783a051c6fe37c775",
-      "bytes": 269,
+      "sha256": "cc5094a0edaf2f0483acb0a54c6e7f79bd14c6476f40b4fc29149bc3c80061a9",
+      "bytes": 225,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -2792,8 +2792,8 @@
     {
       "file": "assets/projected/0ef342d844aa-sonnet-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "7edd6347869ae3b2f4f022ee5ea8b3800e070811838e364de0979090ce74e019",
-      "bytes": 487,
+      "sha256": "00d4b329016da6ccf74965b8e41d80447d29344ea999706b6a5a1729bb5503ab",
+      "bytes": 314,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 16,
@@ -2831,12 +2831,12 @@
     {
       "file": "assets/projected/19217f2e8a89-astra-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "b7affbd775ae5f863934d071d48bd28452a25eade4924d62cc1b89dca3b80c09",
-      "bytes": 212,
+      "sha256": "811e8d014c092d6f16dd94f77dcfdf3eb894f411b7257d318a8e8eb579c9e42b",
+      "bytes": 205,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
-        "height": 8
+        "height": 7
       },
       "theme": "night",
       "scale": 1
@@ -2844,12 +2844,12 @@
     {
       "file": "assets/projected/19217f2e8a89-astra-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "a89497370bc79f3bd3f8154cae56a618575c618aa9a5cd58be1b9c1a3c6f99b9",
-      "bytes": 364,
+      "sha256": "13038957cd906b49817e34b30dd566105e8420fb8e30a97bc7dcca8eee6cb12d",
+      "bytes": 315,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
-        "height": 16
+        "height": 14
       },
       "theme": "night",
       "scale": 2
@@ -2857,8 +2857,8 @@
     {
       "file": "assets/projected/19217f2e8a89-astra-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "533f6bf75de366fe72b20a02d857152653bf426fbcb054677b662b845b9c7a04",
-      "bytes": 241,
+      "sha256": "eaac2b9c670d79ea0c95c53555b69efb4acba6264ab8a43d1ce34d5565c6afa3",
+      "bytes": 234,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
@@ -2870,8 +2870,8 @@
     {
       "file": "assets/projected/19217f2e8a89-astra-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "07a0bd2a0e90e34635f93effdee6a3278617586fa2d14f15d6b557bfe6f70663",
-      "bytes": 400,
+      "sha256": "8422cc64a559db62f79ae07a5edecbefe01525696f50b4d4699bca80d600064b",
+      "bytes": 395,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -2922,11 +2922,11 @@
     {
       "file": "assets/projected/19217f2e8a89-luna-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "3a46e291b4a69b8461d4519e653d6c915ef9bed03119d752b9d4e7e8d3001489",
-      "bytes": 213,
+      "sha256": "d26e9e89af47ba77efa8e807aed020b48330e4142c27dda52d63ef5be9b2d651",
+      "bytes": 206,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 6,
+        "width": 5,
         "height": 7
       },
       "theme": "night",
@@ -2935,11 +2935,11 @@
     {
       "file": "assets/projected/19217f2e8a89-luna-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "a2c9f219e696f1408a1daeeebc5b56330b2facb9604d941b3c150b58c157c0da",
-      "bytes": 360,
+      "sha256": "d89cf2aca494ef21bd82cfa128f45402677a076fb23bac3d739c249889cc5cdd",
+      "bytes": 331,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
+        "width": 10,
         "height": 14
       },
       "theme": "night",
@@ -2948,8 +2948,8 @@
     {
       "file": "assets/projected/19217f2e8a89-luna-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "ba66553cdf9d44b31b9745ac649bc372bf012b1a19aa606ed949f7eae2b29d05",
-      "bytes": 243,
+      "sha256": "6863e0ffe858920964eba3c36bc83b24d84eb63f2d079857f204864a35fb7085",
+      "bytes": 199,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
@@ -2961,8 +2961,8 @@
     {
       "file": "assets/projected/19217f2e8a89-luna-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "7512f1293fd6e1e00bd2a4cad664bdb82f5a5e51614da5768206480bf1805939",
-      "bytes": 426,
+      "sha256": "41f5717c397c6b7c0f9c4d97a7d0402668eba3daa15582e655f38de0bbf99046",
+      "bytes": 312,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -3000,8 +3000,8 @@
     {
       "file": "assets/projected/19217f2e8a89-sol-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "e48ecf2ea959cac77f1036fc8f983495e7f9a5290a41bcedb010c6438781e029",
-      "bytes": 179,
+      "sha256": "0da7c69d7ab5a4411381c66690037d541cde5a5e42c5a4d3c4a993ea068b03aa",
+      "bytes": 186,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 4,
@@ -3013,8 +3013,8 @@
     {
       "file": "assets/projected/19217f2e8a89-sol-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "5fcb393f4f21b99bbe4fd4ba3bcd49e6fd7d6a35de911c9259d68430303407cb",
-      "bytes": 274,
+      "sha256": "e8499bdc157ace80ce7595bcbf131ec5a573df8869db2dd78ff3eec9e224b51f",
+      "bytes": 295,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -3026,12 +3026,12 @@
     {
       "file": "assets/projected/19217f2e8a89-sol-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "c7d1826dfc7f359f5c5891dafea81c183548fc896c565931ee26d6c9be04b15a",
-      "bytes": 239,
+      "sha256": "0612730e4359b5e571bb386242346179bd1508c743b88876847dda09a7402831",
+      "bytes": 192,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
-        "height": 10
+        "height": 9
       },
       "theme": "night",
       "scale": 1
@@ -3039,12 +3039,12 @@
     {
       "file": "assets/projected/19217f2e8a89-sol-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "6d60da1d3e227d86477801e7a5f2f342c7615048469a2016bbd516a23645f7d6",
-      "bytes": 417,
+      "sha256": "7eefaefb5686ce3dde19c3cfda46131f273ccb32450ebb05e270dc4e0e8f2ff0",
+      "bytes": 285,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 16,
-        "height": 20
+        "height": 18
       },
       "theme": "night",
       "scale": 2
@@ -4131,11 +4131,11 @@
     {
       "file": "assets/projected/306bdee30163-haiku-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "7995925658457c488963f8981ccad62e67547f99abef78236cbe50061a3fa14b",
-      "bytes": 736,
+      "sha256": "66439422b5c01faef6ec45ec3a451e626ac5bbb181c447a101261611d9cb3c96",
+      "bytes": 751,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
+        "width": 11,
         "height": 26
       },
       "theme": "night",
@@ -4144,11 +4144,11 @@
     {
       "file": "assets/projected/306bdee30163-haiku-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "4b526987a1c94fc8ff207b3c7b70a7fa67fba79e6b93260e54edfd95e7381323",
-      "bytes": 1460,
+      "sha256": "2cde43097ca3fb353066e3422755e6d00e7a6f64e5c2d1c7812f407e3ab436f1",
+      "bytes": 1483,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 24,
+        "width": 22,
         "height": 52
       },
       "theme": "night",
@@ -4157,12 +4157,12 @@
     {
       "file": "assets/projected/306bdee30163-haiku-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "a32be1279816cd3150b8248205388cfc13850d8b306c678302153f1a4ef85224",
-      "bytes": 1367,
+      "sha256": "c17a520c85eb05d344c83443a4d1ca885f6ae9d02e76165d505c3a19209d000e",
+      "bytes": 888,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 15,
-        "height": 49
+        "width": 13,
+        "height": 43
       },
       "theme": "night",
       "scale": 1
@@ -4170,12 +4170,12 @@
     {
       "file": "assets/projected/306bdee30163-haiku-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "00424fa5ef4723f814c91ceebf8e60fdab3c8e80d0371d64007c752d686aec54",
-      "bytes": 2328,
+      "sha256": "27202fc0bdd54ae3ff408534c66734c407923755815e27200055558d97d2226a",
+      "bytes": 1928,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 30,
-        "height": 98
+        "width": 26,
+        "height": 86
       },
       "theme": "night",
       "scale": 2
@@ -4209,12 +4209,12 @@
     {
       "file": "assets/projected/306bdee30163-opus-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "05398333247cf402ac0fadc348bd8d8864daff97e6f7bd87bb19b89d1770c793",
-      "bytes": 1147,
+      "sha256": "64823df5b396e923a7423f95cc3adbdcf05de9c70c2588e9889d3406a5931ebd",
+      "bytes": 1137,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
-        "height": 31
+        "width": 13,
+        "height": 28
       },
       "theme": "night",
       "scale": 1
@@ -4222,12 +4222,12 @@
     {
       "file": "assets/projected/306bdee30163-opus-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "6d70b9e6d585799a424ccb3ec21371c15ba577e22abd0294476da9b9b534dc9c",
-      "bytes": 1697,
+      "sha256": "5137f6b4860d75b6e126ec80c7b4c4647c7e535bf3c9c18fdb16747cdadee392",
+      "bytes": 1720,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 24,
-        "height": 62
+        "width": 26,
+        "height": 56
       },
       "theme": "night",
       "scale": 2
@@ -4235,12 +4235,12 @@
     {
       "file": "assets/projected/306bdee30163-opus-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "0f6dbe86d8614dada84ad55bf955bc81b2838807dbfb3e92012b3bd1b31539a5",
-      "bytes": 1771,
+      "sha256": "780c8a6834891f9dea8d7dc68a929a1e88cdfd33493d4c8c75a96486e9086c3b",
+      "bytes": 1379,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 28,
-        "height": 55
+        "width": 23,
+        "height": 52
       },
       "theme": "night",
       "scale": 1
@@ -4248,12 +4248,12 @@
     {
       "file": "assets/projected/306bdee30163-opus-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "36ef70339e79ccb26525893a74dbf180ec38232b240638340b2bd53c5927378e",
-      "bytes": 2866,
+      "sha256": "6472ebbc1a430b56e93b96382e4b6203b06a79ec183a72dd19e2c9c49988891c",
+      "bytes": 2350,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 56,
-        "height": 110
+        "width": 46,
+        "height": 104
       },
       "theme": "night",
       "scale": 2
@@ -4287,11 +4287,11 @@
     {
       "file": "assets/projected/306bdee30163-sonnet-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "c9d481c62ddd975490777cabe6f0c1ad1ad86cc6f404a9864bd1aac361540348",
-      "bytes": 907,
+      "sha256": "c31331032f28ff24811ee12422d2671b0c7ae08a254b26464f87686c74018e3a",
+      "bytes": 795,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 10,
+        "width": 12,
         "height": 25
       },
       "theme": "night",
@@ -4300,11 +4300,11 @@
     {
       "file": "assets/projected/306bdee30163-sonnet-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "cf343e6ab5658f165a723f8e4676f584c7ff6f0316e33223f213bc5ea55d6fa5",
-      "bytes": 1532,
+      "sha256": "64bf4f2a1fdd18e2fe77a0dc589698e2c77230fe75da93b741b76ce3b4625fbd",
+      "bytes": 1528,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 20,
+        "width": 24,
         "height": 50
       },
       "theme": "night",
@@ -4313,12 +4313,12 @@
     {
       "file": "assets/projected/306bdee30163-sonnet-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "0f37f6a1d5953109ac03b50879d0945da5b27d5979181791034d072eb7420e01",
-      "bytes": 1326,
+      "sha256": "69311d22b49e95d78f66308ff14ec8c01e20ad88e810bb368cdb60a91d729daa",
+      "bytes": 1045,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 28,
-        "height": 46
+        "width": 16,
+        "height": 42
       },
       "theme": "night",
       "scale": 1
@@ -4326,12 +4326,12 @@
     {
       "file": "assets/projected/306bdee30163-sonnet-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "2064f3b104de3a81a0e2a0804511ab245e56a3c2cc3406e007936774d076c6d2",
-      "bytes": 2349,
+      "sha256": "9a362e78af4b67b2adc0fdb5d03a61539db702b7d97e19d7bd03da5424a53a4f",
+      "bytes": 1971,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 56,
-        "height": 92
+        "width": 32,
+        "height": 84
       },
       "theme": "night",
       "scale": 2
@@ -4378,12 +4378,12 @@
     {
       "file": "assets/projected/3486f2a61abe-glm-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "ab83b8273aec8c11a1bd9c7769e0c8622580ca5f2834b70e4affd83fb20bd7ad",
-      "bytes": 858,
+      "sha256": "05d196a105e73cafc3c09854032e046128c3b850c969a4da6c0c3cbbe78da80f",
+      "bytes": 906,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 10,
-        "height": 24
+        "width": 11,
+        "height": 25
       },
       "theme": "night",
       "scale": 1
@@ -4391,12 +4391,12 @@
     {
       "file": "assets/projected/3486f2a61abe-glm-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "860b39ee0a67abe78cf9a5c584f2c9eea2601a89b6be94f8f87272018306c9b5",
-      "bytes": 1579,
+      "sha256": "46d00fc90462fa9ad1aa6d2eef1c21b1f4e53348e982a5f87bb39e92e21c2119",
+      "bytes": 1625,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 20,
-        "height": 48
+        "width": 22,
+        "height": 50
       },
       "theme": "night",
       "scale": 2
@@ -4404,12 +4404,12 @@
     {
       "file": "assets/projected/3486f2a61abe-glm-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "b1e2383d376c15903cad7f5ec742c10007e7fe18267a8d6dc37f03e44823df57",
-      "bytes": 861,
+      "sha256": "649cceea853eec4e3961befdc9135f60194ef8f25933720ddcecd0a366470071",
+      "bytes": 755,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 17,
-        "height": 29
+        "width": 11,
+        "height": 28
       },
       "theme": "night",
       "scale": 1
@@ -4417,12 +4417,12 @@
     {
       "file": "assets/projected/3486f2a61abe-glm-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "1e54cde4d007c466c086fe826953b5425836a11332d1156a577e5d0655fb4313",
-      "bytes": 1843,
+      "sha256": "77cfbd78598d263c495d3ab2ce4558d18fd0b1edec311faecfa13ab6b08035d0",
+      "bytes": 1708,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 34,
-        "height": 58
+        "width": 22,
+        "height": 56
       },
       "theme": "night",
       "scale": 2
@@ -4456,11 +4456,11 @@
     {
       "file": "assets/projected/3486f2a61abe-haiku-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "f5981e697328ec364125edb9f7d4b5c6d240b3932dcfb5b07d4481ae6471b553",
-      "bytes": 771,
+      "sha256": "e23b26561fc6786b080537a3a78b9a7eaf7607c8eedaa094c2fee02ae329eb36",
+      "bytes": 728,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 9,
+        "width": 12,
         "height": 26
       },
       "theme": "night",
@@ -4469,11 +4469,11 @@
     {
       "file": "assets/projected/3486f2a61abe-haiku-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "f50ca67e2b6794dc4c40eafec0507aaba5342e2502a42717571ccff9a4a0176b",
-      "bytes": 1479,
+      "sha256": "2eabaec14db879ded73d5030ffbd612e3c199b33408950598434f4a32fd36325",
+      "bytes": 1470,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 18,
+        "width": 24,
         "height": 52
       },
       "theme": "night",
@@ -4482,12 +4482,12 @@
     {
       "file": "assets/projected/3486f2a61abe-haiku-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "80a7e9be206a0c4aa3fb726456d0a5cb3531d93780d3bd4b4c0bdae0a0ed3949",
-      "bytes": 1310,
+      "sha256": "fa717b06dfc9241e6839d7be47bb4b91979ff10dcff4f99db58623874f285325",
+      "bytes": 912,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 14,
-        "height": 42
+        "width": 12,
+        "height": 43
       },
       "theme": "night",
       "scale": 1
@@ -4495,12 +4495,12 @@
     {
       "file": "assets/projected/3486f2a61abe-haiku-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "f31c9fef637da4e02ac4ca319ab7d238f3229eb2e1779e0189c64e73e1e78515",
-      "bytes": 2271,
+      "sha256": "d43323a83b5563a0ddfe583b7e2c096d8f70ae8939dd6030317933a376ece41d",
+      "bytes": 1939,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 28,
-        "height": 84
+        "width": 24,
+        "height": 86
       },
       "theme": "night",
       "scale": 2
@@ -4534,12 +4534,12 @@
     {
       "file": "assets/projected/3486f2a61abe-opus-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "58c33c301729be843b2ad64a0a20ed5bcc0a0aee4e7d446cbac44e335194bb80",
-      "bytes": 1140,
+      "sha256": "08c3f9700399d30fc54c399130b53d08519639ab688cf95df5b199aaea341f33",
+      "bytes": 1133,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
-        "height": 31
+        "width": 13,
+        "height": 28
       },
       "theme": "night",
       "scale": 1
@@ -4547,12 +4547,12 @@
     {
       "file": "assets/projected/3486f2a61abe-opus-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "2391f197d2bd01612771dd263453566e7a1af710fffd67b989046bdf7f6cee98",
-      "bytes": 1704,
+      "sha256": "0aacb718fecedf369348872c17f9228660f63df2df66fa0582b880f8421e5c0a",
+      "bytes": 1720,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 24,
-        "height": 62
+        "width": 26,
+        "height": 56
       },
       "theme": "night",
       "scale": 2
@@ -4560,12 +4560,12 @@
     {
       "file": "assets/projected/3486f2a61abe-opus-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "cd5b733e500bf6bf3c1b0f45db2acb93aab5706752d193f5b25638b40c045a62",
-      "bytes": 1774,
+      "sha256": "2611d73244bbb50d9f7b134bfe7c1fb6f8983022acfb38598e7fe5b8fd92973a",
+      "bytes": 1521,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 28,
-        "height": 51
+        "width": 27,
+        "height": 50
       },
       "theme": "night",
       "scale": 1
@@ -4573,12 +4573,12 @@
     {
       "file": "assets/projected/3486f2a61abe-opus-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "966738279b06a636cccaf682b6fbd16bcbe2814e558ae78814e9f0d8a6fd435a",
-      "bytes": 2836,
+      "sha256": "0841b2a2eabd2734f6c538a5e6c9368a9d0fc1937c9a94bbe8ea114ec00cac56",
+      "bytes": 2527,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 56,
-        "height": 102
+        "width": 54,
+        "height": 100
       },
       "theme": "night",
       "scale": 2
@@ -4612,11 +4612,11 @@
     {
       "file": "assets/projected/3486f2a61abe-sonnet-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "038c2c52f02a668f291529acdd6dacbc8a7aaa720a1f18775ebbe094f5d4b858",
-      "bytes": 881,
+      "sha256": "f6bd88162015a0523a6cc9f614c171fa0027988eb005b1fa7d8c7914d696970b",
+      "bytes": 690,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 9,
+        "width": 12,
         "height": 25
       },
       "theme": "night",
@@ -4625,11 +4625,11 @@
     {
       "file": "assets/projected/3486f2a61abe-sonnet-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "2d40f5b8f4b9708b3e06fc2ddac20053366f7e522241fd24264e37d239301287",
-      "bytes": 1550,
+      "sha256": "5d617d28491f994209ca525b77f0bc960b60c19aa068443a955c4812af7823cd",
+      "bytes": 1533,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 18,
+        "width": 24,
         "height": 50
       },
       "theme": "night",
@@ -4638,12 +4638,12 @@
     {
       "file": "assets/projected/3486f2a61abe-sonnet-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "256f187a682a6a78d43d4926f6b4e3e62e439552fbf2310c2cc7ea51241c7ddb",
-      "bytes": 1332,
+      "sha256": "b8cfd2fac3fcde1103982143aa01431bfb8a3a70fe48f2940df22849c9853237",
+      "bytes": 891,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 27,
-        "height": 48
+        "width": 15,
+        "height": 41
       },
       "theme": "night",
       "scale": 1
@@ -4651,12 +4651,12 @@
     {
       "file": "assets/projected/3486f2a61abe-sonnet-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "5638d9aea098b153a63f945f0a1f3a3d340291d64fc87edde736d197c79a43e5",
-      "bytes": 2341,
+      "sha256": "938b16569d4af044bdf9d6e66a1c0a70088ee834e44e82a013774aa51f8f545c",
+      "bytes": 1853,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 54,
-        "height": 96
+        "width": 30,
+        "height": 82
       },
       "theme": "night",
       "scale": 2
@@ -4690,12 +4690,12 @@
     {
       "file": "assets/projected/3918fdc04666-astra-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "ce2b01054ec05074034529795834219275516029da306e1d4d79ad0404fdaee6",
-      "bytes": 945,
+      "sha256": "a865d45d105ab561fd35afdc82137c0d2d567c6648837f7395fd0b5ef8515e37",
+      "bytes": 1019,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 11,
-        "height": 28
+        "width": 13,
+        "height": 26
       },
       "theme": "night",
       "scale": 1
@@ -4703,12 +4703,12 @@
     {
       "file": "assets/projected/3918fdc04666-astra-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "67a12deaf5d4f7aa40fc3738c673d5fd894e1f54c8d31d4c1a3e14622694b572",
-      "bytes": 1621,
+      "sha256": "7e10d1229f17f6f0048d720cccf15e975d65d05637ce5dfa0c61208a253b7374",
+      "bytes": 1646,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 22,
-        "height": 56
+        "width": 26,
+        "height": 52
       },
       "theme": "night",
       "scale": 2
@@ -4716,12 +4716,12 @@
     {
       "file": "assets/projected/3918fdc04666-astra-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "5f048a3808baa537f8796e78db04cd6ee3c652d7d4ac17946c5cfdb9e0314b9f",
-      "bytes": 1715,
+      "sha256": "c5a29081928bd289bf64adf4693af332458d5471caef2ec2cf5992e32ce4115c",
+      "bytes": 1165,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 25,
-        "height": 54
+        "width": 14,
+        "height": 48
       },
       "theme": "night",
       "scale": 1
@@ -4729,12 +4729,12 @@
     {
       "file": "assets/projected/3918fdc04666-astra-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "64c55533932012d40cb8ed086727535441d368a21de0c3969564bd5785b79717",
-      "bytes": 2820,
+      "sha256": "1eb4e79e23ed010f7234aec2cb7ec1717235f62de4f61aed8e3df52ad4a8855d",
+      "bytes": 2130,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 50,
-        "height": 108
+        "width": 28,
+        "height": 96
       },
       "theme": "night",
       "scale": 2
@@ -4781,11 +4781,11 @@
     {
       "file": "assets/projected/3918fdc04666-luna-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "ce3d1644524e8bbe6637c83e6d86664de227e5c1d39c6b38d1a04ef7882f1c22",
-      "bytes": 1070,
+      "sha256": "20982689e8309688df924ede063eb032d1a6979d0a2098213aec1b2cb6609da1",
+      "bytes": 1013,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 14,
+        "width": 12,
         "height": 26
       },
       "theme": "night",
@@ -4794,11 +4794,11 @@
     {
       "file": "assets/projected/3918fdc04666-luna-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "06c8a8c59edc293cf1719737f21e55dfa92de5635cbccb8efd150bb2e3dd0060",
-      "bytes": 1686,
+      "sha256": "9db676db97121fa6457cdc5350ba245dc544aad5d001574749073727399c815f",
+      "bytes": 1687,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 28,
+        "width": 24,
         "height": 52
       },
       "theme": "night",
@@ -4807,12 +4807,12 @@
     {
       "file": "assets/projected/3918fdc04666-luna-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "fb29e84d7b3b34ca890ab10143c9c9a25e7972dbc23312af0f5bcd021c0266e2",
-      "bytes": 1290,
+      "sha256": "ab97a9073a793a4b36f46d8834c5b7f3ef95a2e45df1f483acadd6e65d8cfc3d",
+      "bytes": 1066,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 15,
-        "height": 39
+        "width": 14,
+        "height": 40
       },
       "theme": "night",
       "scale": 1
@@ -4820,12 +4820,12 @@
     {
       "file": "assets/projected/3918fdc04666-luna-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "5541f1ef2a7dbd2c67cba6372fc4895d9b560a24ebf521ca992fffafa2866b88",
-      "bytes": 2237,
+      "sha256": "dce5bbcef7b3fcc8db825f2816a3761104734a8a15b91f16f334ceccee399a4d",
+      "bytes": 2021,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 30,
-        "height": 78
+        "width": 28,
+        "height": 80
       },
       "theme": "night",
       "scale": 2
@@ -4859,12 +4859,12 @@
     {
       "file": "assets/projected/3918fdc04666-sol-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "855e772f7efea79afec1a28197ea3facbc9e9213e89693df2bd0e452075a45cc",
-      "bytes": 746,
+      "sha256": "458d104509708b58444da7eb9490ed422c21c47e0709e221535f9837bb804038",
+      "bytes": 737,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 10,
-        "height": 25
+        "width": 9,
+        "height": 26
       },
       "theme": "night",
       "scale": 1
@@ -4872,12 +4872,12 @@
     {
       "file": "assets/projected/3918fdc04666-sol-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "d3a49ab6f5617e868375667535d332b82105f4885c23a4f0f4b29a5bfa8e6bea",
-      "bytes": 1456,
+      "sha256": "de8d57f0ac9b7fb2b3edf314451b8507b47d3b2c0bd1d9783e77023df893a880",
+      "bytes": 1528,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 20,
-        "height": 50
+        "width": 18,
+        "height": 52
       },
       "theme": "night",
       "scale": 2
@@ -4885,11 +4885,11 @@
     {
       "file": "assets/projected/3918fdc04666-sol-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "0bf06c40b5157a1a346bf428e53cef7edabf7e085cbec88b9ea898d57440e9da",
-      "bytes": 951,
+      "sha256": "a4524f8d068b51c771716d3c7d906568cdbfd282b7c342e63e3137eabbaafa7b",
+      "bytes": 732,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 19,
+        "width": 8,
         "height": 40
       },
       "theme": "night",
@@ -4898,11 +4898,11 @@
     {
       "file": "assets/projected/3918fdc04666-sol-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "93654fc4a31d344ac69b075654d693337540a6467ce4bd2bab0e7aae1f22ec17",
-      "bytes": 2099,
+      "sha256": "f420dbc8e522c8aecca2bd64e56ecc8b2520e1882a0658049b9e13684ce72904",
+      "bytes": 1722,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 38,
+        "width": 16,
         "height": 80
       },
       "theme": "night",
@@ -5275,12 +5275,12 @@
     {
       "file": "assets/projected/4996478d09de-glm-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "e550057bdda89dcff9ebe67f510550f407fb6f3580cd3714f6c01b1a762aeefa",
-      "bytes": 1439,
+      "sha256": "867c4352c4739663ae7b1a595e7e69e84d39aeaec9739ddcc983f9569e43ed6e",
+      "bytes": 1499,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 15,
-        "height": 39
+        "width": 16,
+        "height": 36
       },
       "theme": "night",
       "scale": 1
@@ -5288,12 +5288,12 @@
     {
       "file": "assets/projected/4996478d09de-glm-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "7104335fb57c37c639f4a539fecdbcfa88c87bbddc900f99658223888dd33be8",
-      "bytes": 2003,
+      "sha256": "b55af477f1365acb6601fff5cdb69549f1c9d2dbd5e8da53827e02af1795fd89",
+      "bytes": 2039,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 30,
-        "height": 78
+        "width": 32,
+        "height": 72
       },
       "theme": "night",
       "scale": 2
@@ -5301,12 +5301,12 @@
     {
       "file": "assets/projected/4996478d09de-glm-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "07ffae358ae2da2d52668cb04096c3fd0c1a4559125223320a1ab0daabf17082",
-      "bytes": 2017,
+      "sha256": "d33643ecaed478b35f45bbaa6bce9099bbc189d661b1278d878a8fbd10e08fbf",
+      "bytes": 1673,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 33,
-        "height": 68
+        "width": 15,
+        "height": 64
       },
       "theme": "night",
       "scale": 1
@@ -5314,12 +5314,12 @@
     {
       "file": "assets/projected/4996478d09de-glm-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "a3a1417499e3a69a84bf7c54f2080b40213af02d53c1f2ed9131637a171f15f0",
-      "bytes": 3560,
+      "sha256": "02b140d27628cccb1f9569555087796122cfd2a33a167bf43b8fa8d8b7038598",
+      "bytes": 2802,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 66,
-        "height": 136
+        "width": 30,
+        "height": 128
       },
       "theme": "night",
       "scale": 2
@@ -5353,8 +5353,8 @@
     {
       "file": "assets/projected/4e791f3b8ced-astra-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "923f545f35c7e112af9104fddb44f8ef404ffbc2e9ccca3b768b9468b95bd646",
-      "bytes": 201,
+      "sha256": "9252a4ec533314e7f0c15ecdfab76dabed9cb39fa26c5c69fae7feff9357ce5b",
+      "bytes": 205,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
@@ -5366,8 +5366,8 @@
     {
       "file": "assets/projected/4e791f3b8ced-astra-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "553c9d7dd6c900ff49a9c5a598983bc1e155826ab502acd6a9ff4e6a09b3494b",
-      "bytes": 377,
+      "sha256": "1172aa36243aae128163bf3089c34ecfff0dae0657e58a0fcd8e7614c9a76ddf",
+      "bytes": 360,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -5379,8 +5379,8 @@
     {
       "file": "assets/projected/4e791f3b8ced-astra-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "61e610071208fd1bfbab8dffa3e89df8ac1dfc4c036e186bde27603b2b201529",
-      "bytes": 254,
+      "sha256": "3caa60400331c0da7f53baa05c14fad5db9a3caf445a7248258ba7948fa38386",
+      "bytes": 260,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 6,
@@ -5392,8 +5392,8 @@
     {
       "file": "assets/projected/4e791f3b8ced-astra-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "b094c6427e56c591d44908a9038b1a88bb2547a789ca6b51b5d0ae0449d4764c",
-      "bytes": 478,
+      "sha256": "1454df406c88ab503809074da9ea60ffa5031ceb7e2808e1ff3b3af4041d1ad6",
+      "bytes": 413,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 12,
@@ -5444,12 +5444,12 @@
     {
       "file": "assets/projected/4e791f3b8ced-glm-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "af19fdb9a35a6445a30089bfabddaf5b59b46c612ffb31fee2eebafd7efc8b8d",
-      "bytes": 195,
+      "sha256": "bc7d71455f0b47270979aaaa49501bdd8d9aea6bffb28ba792798df08e991561",
+      "bytes": 209,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 5,
-        "height": 8
+        "width": 6,
+        "height": 7
       },
       "theme": "night",
       "scale": 1
@@ -5457,12 +5457,12 @@
     {
       "file": "assets/projected/4e791f3b8ced-glm-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "0d8d78a614e9104be21c1285c688dbbc1652834e357a6caec9379b24b0e7e1cc",
-      "bytes": 285,
+      "sha256": "6ef90118e894c48cbdb877bd889bf38b3d17b584b84a58dd8a1e7554ae15e9f6",
+      "bytes": 301,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 10,
-        "height": 16
+        "width": 12,
+        "height": 14
       },
       "theme": "night",
       "scale": 2
@@ -5470,8 +5470,8 @@
     {
       "file": "assets/projected/4e791f3b8ced-glm-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "9e63a92f046f332b8af93f6fc2319b058b791d60f5ee51858d4379d23317dd06",
-      "bytes": 176,
+      "sha256": "643eb2c15196e0d17ec4e26973424fce8f40714fa0f64be4cabf0e6e5bc7a9ec",
+      "bytes": 157,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 4,
@@ -5483,8 +5483,8 @@
     {
       "file": "assets/projected/4e791f3b8ced-glm-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "20e957932b6a6e3c3bfbe74dec5f54e20f8545553b3d8b63483ad2f018ed26f3",
-      "bytes": 272,
+      "sha256": "3ec75c5e32a1a04d2756e28e0749e532eaa1ef65bed239a04387af8b48fe1ae8",
+      "bytes": 217,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -5522,8 +5522,8 @@
     {
       "file": "assets/projected/4e791f3b8ced-luna-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "790568f8e1e23e1abc642221d67ea29b6ac07b7f0ac1f3dc9b5e148221543442",
-      "bytes": 201,
+      "sha256": "4bcb23eaf75aba4a281305155dede14171b97627db1c23d9a22dc9bcabe103db",
+      "bytes": 205,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
@@ -5535,8 +5535,8 @@
     {
       "file": "assets/projected/4e791f3b8ced-luna-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "49171bdcbc0f61720108f29cb550c42f4cad192bae53c3eec78c473731d526db",
-      "bytes": 370,
+      "sha256": "9c5f3425f6eb2312bdd43a07778a6167c20c93d11a933e3d24d345a4844d184f",
+      "bytes": 379,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -5548,12 +5548,12 @@
     {
       "file": "assets/projected/4e791f3b8ced-luna-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "1fbf99660ca22c0c2f21a0068ebc6ffda1f24dcc28cfa3ed70de1d746f9d11e4",
-      "bytes": 229,
+      "sha256": "44071109669b56f0125a7d205231a80ebff9b94a7ae30b1a311f4a68848f8f75",
+      "bytes": 215,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
-        "height": 8
+        "height": 9
       },
       "theme": "night",
       "scale": 1
@@ -5561,12 +5561,12 @@
     {
       "file": "assets/projected/4e791f3b8ced-luna-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "98374df79e477a1a122205a20678957579c45f26300c16b461d5282ce8c4a406",
-      "bytes": 432,
+      "sha256": "8731a2698f6ac4bd8a7bd63d3a9e6a7e9ebb8e9b2388e8fd99f381b3d03a7583",
+      "bytes": 345,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
-        "height": 16
+        "height": 18
       },
       "theme": "night",
       "scale": 2
@@ -5600,8 +5600,8 @@
     {
       "file": "assets/projected/4e791f3b8ced-sol-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "9d8be3364f72789982097b0ccf953d57245ecf32845036d3b14bfd1a231784bd",
-      "bytes": 194,
+      "sha256": "fbe19ef5c07e706adb4c0ed0458b5f15d34b1db155a459e5c873a5a20dce68d0",
+      "bytes": 189,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 4,
@@ -5613,8 +5613,8 @@
     {
       "file": "assets/projected/4e791f3b8ced-sol-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "f15ffe555800b18c2d96617eefcc56319d7c8a5f7f93495da03ca94fbf36ec47",
-      "bytes": 306,
+      "sha256": "6b07ffe3d8b423db79b47ac377f5a2c28f6341968e9f22f49c6cc6cb883e2261",
+      "bytes": 318,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -5626,12 +5626,12 @@
     {
       "file": "assets/projected/4e791f3b8ced-sol-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "1de64984ad06915b87d3b2dace72a502571147b8574a6448ef9154ef8ba0a70d",
-      "bytes": 250,
+      "sha256": "b659582427b18d373503ff81604252c80eb7b95a48e4daf1837ea91a97a3cfc4",
+      "bytes": 225,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 7,
-        "height": 10
+        "height": 11
       },
       "theme": "night",
       "scale": 1
@@ -5639,12 +5639,12 @@
     {
       "file": "assets/projected/4e791f3b8ced-sol-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "48206f20c42fc5e575e1be04a64bc0efb998e9f6aee1cac8652a62549b559330",
-      "bytes": 426,
+      "sha256": "045f9983a770dffeec6b801709f9a84686ed9fca13e088cb54f77149b68aaee7",
+      "bytes": 364,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 14,
-        "height": 20
+        "height": 22
       },
       "theme": "night",
       "scale": 2
@@ -5678,12 +5678,12 @@
     {
       "file": "assets/projected/4ff2bad27654-astra-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "76b2df77a2d5594dc10ffe1091c300191588de00cb505fedc7163e96a454b058",
-      "bytes": 843,
+      "sha256": "8bf6a86cdd97221426d1240e448acf8c6a5b435a2967dc9bae3767d287f73cb3",
+      "bytes": 783,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 9,
-        "height": 24
+        "width": 10,
+        "height": 25
       },
       "theme": "night",
       "scale": 1
@@ -5691,12 +5691,12 @@
     {
       "file": "assets/projected/4ff2bad27654-astra-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "9ce4249fe0b61a2ebbc0ee0cc4cd2a384f6f657bcad24cf895b9c4a652e72da9",
-      "bytes": 1566,
+      "sha256": "4cb9862ec9267988119160835bd390f3d9c10b51ae26a58fc9a22694139e30b2",
+      "bytes": 1522,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 18,
-        "height": 48
+        "width": 20,
+        "height": 50
       },
       "theme": "night",
       "scale": 2
@@ -5704,11 +5704,11 @@
     {
       "file": "assets/projected/4ff2bad27654-astra-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "e3c23a55c84d8efee17ba68a93a312c7cdf8d1d9d83cb4adf7c25cc06882e78c",
-      "bytes": 1072,
+      "sha256": "a8a2c9f8479cb5c24f2553fe3a88c1c41ccaad0478d56742d70045166b245054",
+      "bytes": 1037,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 29,
+        "width": 28,
         "height": 41
       },
       "theme": "night",
@@ -5717,11 +5717,11 @@
     {
       "file": "assets/projected/4ff2bad27654-astra-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "e1a3eb95bb75ef6fb5028501cecd47517f0f406b114e9ab49ef98a3dec464000",
-      "bytes": 2166,
+      "sha256": "b92c27b0ce46a492c952315cb11c1f32c94635b262044b8abdf45274565cfb7e",
+      "bytes": 2101,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 58,
+        "width": 56,
         "height": 82
       },
       "theme": "night",
@@ -5769,12 +5769,12 @@
     {
       "file": "assets/projected/4ff2bad27654-glm-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "f493aefe3a93e9dae1456db923085077db171cd493363f3385ed437957b816f2",
-      "bytes": 843,
+      "sha256": "8297950158d0121312c9fe6d1d3729fa6a6c178a8d8c0002532cb77fe6386b90",
+      "bytes": 867,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 10,
-        "height": 25
+        "width": 11,
+        "height": 24
       },
       "theme": "night",
       "scale": 1
@@ -5782,12 +5782,12 @@
     {
       "file": "assets/projected/4ff2bad27654-glm-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "3d50c2dee26b9b40ce05edc3d5d2ebef9e5b1278fa6e6c747e995b36d5981d76",
-      "bytes": 1544,
+      "sha256": "7e9a11ac8606192d3c36bad6d4c9180cb802d9853eb1ed089dc4c5fd1e22ce43",
+      "bytes": 1579,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 20,
-        "height": 50
+        "width": 22,
+        "height": 48
       },
       "theme": "night",
       "scale": 2
@@ -5795,12 +5795,12 @@
     {
       "file": "assets/projected/4ff2bad27654-glm-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "b977abbc39eba72771637257b3d16a592e804040c83951a63a5f32ac9ac3ded7",
-      "bytes": 999,
+      "sha256": "4859e9d1040c4886d2f1ba4c1dd6ed1e0cefe85bb1b740d44896914df26e6bad",
+      "bytes": 849,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 25,
-        "height": 33
+        "width": 24,
+        "height": 27
       },
       "theme": "night",
       "scale": 1
@@ -5808,12 +5808,12 @@
     {
       "file": "assets/projected/4ff2bad27654-glm-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "661bc6c94508fe40cd8de71e31a2d63a8778144232872ca02f4829a27f4f83e4",
-      "bytes": 2060,
+      "sha256": "9c1ac24839995e8f899537a88527bdae8d0552399917335bb810be59df65d896",
+      "bytes": 1894,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 50,
-        "height": 66
+        "width": 48,
+        "height": 54
       },
       "theme": "night",
       "scale": 2
@@ -5847,11 +5847,11 @@
     {
       "file": "assets/projected/4ff2bad27654-haiku-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "17b265fa89ebb5c7ca0f54180ac8ba67236fb0e1fa413f93445da6f3491d7cb4",
-      "bytes": 844,
+      "sha256": "4cb4096e1feb04a12a5c2380c404adbfd48209c2812c2d0ec93b56670e99af3b",
+      "bytes": 767,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 10,
+        "width": 11,
         "height": 25
       },
       "theme": "night",
@@ -5860,11 +5860,11 @@
     {
       "file": "assets/projected/4ff2bad27654-haiku-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "75c4999d45e9802ed6cc5b10611e6d766975b449f578482cdc48822d1a0a4e1e",
-      "bytes": 1518,
+      "sha256": "57ac64e9848147302ebdf9bfc8a4b1be676c5105a006b983d27e5a4c9edb5937",
+      "bytes": 1487,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 20,
+        "width": 22,
         "height": 50
       },
       "theme": "night",
@@ -5873,11 +5873,11 @@
     {
       "file": "assets/projected/4ff2bad27654-haiku-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "06966d9802221126590caf4d4cecbd542cad232f6d09be856f8f921ae8671bbb",
-      "bytes": 762,
+      "sha256": "70d109ea660ddcbbe227f56a59b535a9b217d6276022015b6b482cf3a89f60ab",
+      "bytes": 827,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 8,
+        "width": 10,
         "height": 41
       },
       "theme": "night",
@@ -5886,11 +5886,11 @@
     {
       "file": "assets/projected/4ff2bad27654-haiku-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "ee0fdd74d42f5301a794427893aa40d2c71401e784abfbb2f47c17803f857577",
-      "bytes": 1774,
+      "sha256": "2bfe19bfd695237935af2ff77da3270be94610cf5944b1d76e9df0889580c086",
+      "bytes": 1756,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 16,
+        "width": 20,
         "height": 82
       },
       "theme": "night",
@@ -5925,11 +5925,11 @@
     {
       "file": "assets/projected/4ff2bad27654-luna-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "6e95a41a6a764702b36d2fb75fbe25c71a5165fd6a7c90b570853012669a5994",
-      "bytes": 918,
+      "sha256": "046009824ba95af9ad16f52ad6f8d18d2e5228e24aefeeb1ed1a35bf4dcea032",
+      "bytes": 753,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 14,
+        "width": 9,
         "height": 26
       },
       "theme": "night",
@@ -5938,11 +5938,11 @@
     {
       "file": "assets/projected/4ff2bad27654-luna-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "f25b59d4a405e2b4c3e5d6041feba0565a309f44236db24f342660e5f1472644",
-      "bytes": 1557,
+      "sha256": "304b953e5eb2aff7e2ce6609703749ccca3b3d8bb990ce7eb1220f7789f32d9a",
+      "bytes": 1510,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 28,
+        "width": 18,
         "height": 52
       },
       "theme": "night",
@@ -5951,12 +5951,12 @@
     {
       "file": "assets/projected/4ff2bad27654-luna-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "26484e9f30ae93b08dfe262465f0254e7442188d7c5cebc89d5adff3c754eab5",
-      "bytes": 898,
+      "sha256": "1db966dc386f10638d6f19b6c3e4163a8cfa21b54ff2c9902ebdae1099f2e313",
+      "bytes": 770,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
-        "height": 41
+        "width": 8,
+        "height": 40
       },
       "theme": "night",
       "scale": 1
@@ -5964,12 +5964,12 @@
     {
       "file": "assets/projected/4ff2bad27654-luna-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "49ef7ec24d4de1b5867328e255c8c738df0eb3c8eaa06ea28b709951ff184fed",
-      "bytes": 1953,
+      "sha256": "1448c6906482d1ebf479dec4e2ff8c0cc152edd7e1b862e6b7e19aef186998fa",
+      "bytes": 1720,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 24,
-        "height": 82
+        "width": 16,
+        "height": 80
       },
       "theme": "night",
       "scale": 2
@@ -6003,12 +6003,12 @@
     {
       "file": "assets/projected/4ff2bad27654-opus-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "9686a25629b7b2d797dfd5ba5a638d1b1f4e8f38d19ca18f4c8804a638da0c6d",
-      "bytes": 1060,
+      "sha256": "63e75c28c067158d62bc78778898fb38bb033cbff3ba2b3006f65ae54b6f539c",
+      "bytes": 1176,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
-        "height": 29
+        "width": 13,
+        "height": 28
       },
       "theme": "night",
       "scale": 1
@@ -6016,12 +6016,12 @@
     {
       "file": "assets/projected/4ff2bad27654-opus-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "637b057370aa740596ae43992a4bb1c93d72b1c26ce15bdc87b6e478f39fdae7",
-      "bytes": 1688,
+      "sha256": "2212459e1bd51c767b918b1ae22d0b6fcaa848b3b7e174522f1b7ee8b60a966d",
+      "bytes": 1743,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 24,
-        "height": 58
+        "width": 26,
+        "height": 56
       },
       "theme": "night",
       "scale": 2
@@ -6029,12 +6029,12 @@
     {
       "file": "assets/projected/4ff2bad27654-opus-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "a7d803fa2d5798254145f600d3f768de32b370f5f7b20205e510d0d759e836f9",
-      "bytes": 1775,
+      "sha256": "5dd40c096b9ee3ca7cd33d96add03b24fcefe83706f69502dc3e410839941a7d",
+      "bytes": 1821,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 27,
-        "height": 52
+        "width": 30,
+        "height": 51
       },
       "theme": "night",
       "scale": 1
@@ -6042,12 +6042,12 @@
     {
       "file": "assets/projected/4ff2bad27654-opus-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "b334c19c986f656641d4ef936decc5455e034c897c7bd879ea8d19234e550b2d",
-      "bytes": 2954,
+      "sha256": "024567adb0f2069edb10612d3d623fc793fd7870dcf0085bb03e40bef5c10290",
+      "bytes": 3001,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 54,
-        "height": 104
+        "width": 60,
+        "height": 102
       },
       "theme": "night",
       "scale": 2
@@ -6081,11 +6081,11 @@
     {
       "file": "assets/projected/4ff2bad27654-sol-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "f7789d8a582214e2205cc6a7e4d3b553763b57bd1b7ffbd72d84549c76638abf",
-      "bytes": 740,
+      "sha256": "997bee85b95df9e1cd891324675647bbcaa9a5d4e0802eb6984fb4112395e119",
+      "bytes": 704,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
+        "width": 10,
         "height": 25
       },
       "theme": "night",
@@ -6094,11 +6094,11 @@
     {
       "file": "assets/projected/4ff2bad27654-sol-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "e842313189dd2334c4dc7a768d69b63ff88a9b143e35fb5c56e7c7e3027861fc",
-      "bytes": 1499,
+      "sha256": "659bd4f4cce4fb36e0b558767518fa6322657fa80fa5431cd1da038a231157a5",
+      "bytes": 1451,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 24,
+        "width": 20,
         "height": 50
       },
       "theme": "night",
@@ -6107,12 +6107,12 @@
     {
       "file": "assets/projected/4ff2bad27654-sol-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "f3b73e585bebdb1a7b6e431697dfc6d41678e66d9f87ecb9d297b9d44d6a1e28",
-      "bytes": 984,
+      "sha256": "4aee6c7edae8c61592c57786b0cdce7cffe13d2c4e8341afae3c9465f7709c30",
+      "bytes": 913,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 12,
-        "height": 41
+        "height": 39
       },
       "theme": "night",
       "scale": 1
@@ -6120,12 +6120,12 @@
     {
       "file": "assets/projected/4ff2bad27654-sol-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "645b22a5fc524b2fee7d25e25f3152ad70a3930d8f5e06e841e09cc9d93f4a8c",
-      "bytes": 2074,
+      "sha256": "2af8a0c5c1e00ea6cd26546986ad36f32a9dbba1dff752cb6bdb436b88aea528",
+      "bytes": 1871,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 24,
-        "height": 82
+        "height": 78
       },
       "theme": "night",
       "scale": 2
@@ -6159,12 +6159,12 @@
     {
       "file": "assets/projected/4ff2bad27654-sonnet-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "04a8bd4bfaee68bc4ccf216898336c593748ef55ea5c44fad6e38c54bfbf7645",
-      "bytes": 912,
+      "sha256": "ced154ae1019dab08ee0d036da8bdd4016988ed1bfebe01d1b9e83ae23e7b6bd",
+      "bytes": 694,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 10,
-        "height": 26
+        "width": 8,
+        "height": 25
       },
       "theme": "night",
       "scale": 1
@@ -6172,12 +6172,12 @@
     {
       "file": "assets/projected/4ff2bad27654-sonnet-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "ce2106812d9cace4deb5ff96143367cc3888827fa909e46c3d0fa76df309689f",
-      "bytes": 1578,
+      "sha256": "3662bf02ef7cf90ece1596e3f7b52da301d268ced1dae14e798efcc7a421bd82",
+      "bytes": 1469,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 20,
-        "height": 52
+        "width": 16,
+        "height": 50
       },
       "theme": "night",
       "scale": 2
@@ -6185,12 +6185,12 @@
     {
       "file": "assets/projected/4ff2bad27654-sonnet-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "0615e99379f8b1599c07effe7682c33e5d7eebe24daceed422443c9ef5c8c9d1",
-      "bytes": 1117,
+      "sha256": "5127ede9efe41cb9dc65501d960322a87e360dc593827abbc69fe64ecfeb434d",
+      "bytes": 958,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 26,
-        "height": 37
+        "width": 29,
+        "height": 39
       },
       "theme": "night",
       "scale": 1
@@ -6198,12 +6198,12 @@
     {
       "file": "assets/projected/4ff2bad27654-sonnet-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "f91e43b114c0611e229486953b78c0c815721ccae21bc92f275ef0fcdbd1ea12",
-      "bytes": 2114,
+      "sha256": "6f7539cf38bdcace7a4848d9c2a76d95f7b74018d4385e5821ede86b228edde1",
+      "bytes": 1908,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 52,
-        "height": 74
+        "width": 58,
+        "height": 78
       },
       "theme": "night",
       "scale": 2
@@ -7524,12 +7524,12 @@
     {
       "file": "assets/projected/6f86d31fa206-astra-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "a330657a27664c4d7a92ac231ec2f277016cf4fa0e96a5c2bc93eb50c44ff0ad",
-      "bytes": 201,
+      "sha256": "791557cd89b5841d8f8331fd03fd13dde286ded97c38904bc019ab2ea0bb0569",
+      "bytes": 214,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
-        "height": 7
+        "height": 8
       },
       "theme": "night",
       "scale": 1
@@ -7537,12 +7537,12 @@
     {
       "file": "assets/projected/6f86d31fa206-astra-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "16331d5f8d9ab31aed974958cd7abc4d215b86de16431ddc807e1774c7425581",
-      "bytes": 314,
+      "sha256": "f84c88e3e713c40e678c67fb8e5f716469c2238df12f02fdbe0e19cda2ab3a87",
+      "bytes": 305,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
-        "height": 14
+        "height": 16
       },
       "theme": "night",
       "scale": 2
@@ -7550,8 +7550,8 @@
     {
       "file": "assets/projected/6f86d31fa206-astra-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "a3570def0e86fab395d99c4048d70cea14f662b0afec5f49d947850968efcb01",
-      "bytes": 214,
+      "sha256": "0021f5b76cbe851df0e70481d04c7e95d0fa15c479989b75d1972ae65e5810d6",
+      "bytes": 197,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 7,
@@ -7563,8 +7563,8 @@
     {
       "file": "assets/projected/6f86d31fa206-astra-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "99080ecc83b0de0eb8ef59ec3a894cefaa15c207295ebce5954d7fdcf4754cd3",
-      "bytes": 370,
+      "sha256": "34981cf8ddb1f5f5e3d0023afcdc6e6e2b54b367395ed7e368259890ba54a424",
+      "bytes": 275,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 14,
@@ -7615,11 +7615,11 @@
     {
       "file": "assets/projected/6f86d31fa206-haiku-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "de5b9e587a47d9b6aea695c4cfcef15353dcdf9727ef7400d382ebb4a0c230ce",
-      "bytes": 195,
+      "sha256": "85540e8de2ffed94992279d4fc5fcd5d9198c9ab8b61d2d3c0588b8a64920541",
+      "bytes": 180,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 5,
+        "width": 4,
         "height": 8
       },
       "theme": "night",
@@ -7628,11 +7628,11 @@
     {
       "file": "assets/projected/6f86d31fa206-haiku-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "7e6676f561d9f15884f29edddc7dfd7e64516e70da0efad7adbe4f58e94f6fb5",
-      "bytes": 286,
+      "sha256": "37fcf7e193852443b7aa520e2c77fae4483ea743f102106415c1585e1fc03a9a",
+      "bytes": 290,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 10,
+        "width": 8,
         "height": 16
       },
       "theme": "night",
@@ -7641,8 +7641,8 @@
     {
       "file": "assets/projected/6f86d31fa206-haiku-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "cbcd1fb496c08fb8a018a9db3f3884f15d72ef7554c483467ab5e2cec7e8d14c",
-      "bytes": 241,
+      "sha256": "43821484919f3a545fe09b6719e3b43cf1ffec99d8d64048ac78fcd36bf9a1cf",
+      "bytes": 213,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 6,
@@ -7654,8 +7654,8 @@
     {
       "file": "assets/projected/6f86d31fa206-haiku-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "c7c3b5c22f84fd13ef8f59178d87ee120c714917cea468e99ea098c3c2c2e109",
-      "bytes": 460,
+      "sha256": "9d99dc3470bf991f2af399fd58c86a7ee1b9b1fad375d70cdb82160e196cde64",
+      "bytes": 307,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 12,
@@ -7693,8 +7693,8 @@
     {
       "file": "assets/projected/6f86d31fa206-luna-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "6d435da14753dc575bc7cd1aac405b7c47c531811d7f66e7f3a34688f13f5577",
-      "bytes": 218,
+      "sha256": "085d753025adc28b98f7f35ec411fd2b2c49a4a6327ed731dad1a8492d356d33",
+      "bytes": 222,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 6,
@@ -7706,8 +7706,8 @@
     {
       "file": "assets/projected/6f86d31fa206-luna-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "2afab19f0e6df3826c4a6314f4dd4919e458ef36e2eb6e2fd9ebcdb21b7f0a27",
-      "bytes": 354,
+      "sha256": "6337d5111e2945aacd010fa02663cce3e255a2e13510e0a71ce507af561a8e6e",
+      "bytes": 330,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 12,
@@ -7719,8 +7719,8 @@
     {
       "file": "assets/projected/6f86d31fa206-luna-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "f21dcb71970d517b3f26a196aec1852e3bb050eacedd1112f32cf032e7567c4c",
-      "bytes": 224,
+      "sha256": "8023abb2e986eada83709ed3ea5593b3d6b49bdd271ae7f3c946a46ecbc21bbf",
+      "bytes": 200,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
@@ -7732,8 +7732,8 @@
     {
       "file": "assets/projected/6f86d31fa206-luna-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "88ca4ccb8cc3622de9aad5e538d50cdc214bfb3c4108dc6375c2b9e33a9bde59",
-      "bytes": 415,
+      "sha256": "9a3d6ba905b2ae0be6c1a715cb1ba9cbe50c7f1295e2134744ac285776d01c79",
+      "bytes": 309,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -7771,12 +7771,12 @@
     {
       "file": "assets/projected/6f86d31fa206-opus-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "94583c29e5d8e2a7f135512628c5963d3da2f6cb5d18154449da33554cdae752",
-      "bytes": 231,
+      "sha256": "ac79caae54bf800117725233691d37ac40387f7b3b80af094b3728b508d2324b",
+      "bytes": 195,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 6,
-        "height": 8
+        "width": 5,
+        "height": 7
       },
       "theme": "night",
       "scale": 1
@@ -7784,12 +7784,12 @@
     {
       "file": "assets/projected/6f86d31fa206-opus-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "d46c16ed8b6bffe581983004e07b01bd6a445b4670cc9ec1f13be4ca08fe4960",
-      "bytes": 383,
+      "sha256": "c0f4736202b55717f2918f0e79656c7b1bcb61c6fc9b790b64c56ac3f8c41db8",
+      "bytes": 325,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
-        "height": 16
+        "width": 10,
+        "height": 14
       },
       "theme": "night",
       "scale": 2
@@ -7797,8 +7797,8 @@
     {
       "file": "assets/projected/6f86d31fa206-opus-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "d73a5b599fa1e8575bf5cc67de3cec9320366ef56da6b1828f4ee7681261b95e",
-      "bytes": 256,
+      "sha256": "50ed8d05d586cd71be5cd0fcac14792bfb84baaaa1f65f5ef25379a27dcf43ea",
+      "bytes": 264,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 7,
@@ -7810,8 +7810,8 @@
     {
       "file": "assets/projected/6f86d31fa206-opus-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "c7825cb5b03dee2759f020cbb3dfe63cb3cdae57f820de011a4be7a788a0ccc8",
-      "bytes": 434,
+      "sha256": "643329c40966de8ee21068f2432c9e79881912a6a279bf1ebda3e48d4b0bfbf7",
+      "bytes": 466,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 14,
@@ -7849,11 +7849,11 @@
     {
       "file": "assets/projected/6f86d31fa206-sol-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "4c2151f1c38017b4db97f7a036704b3b0da8c3c5b9ef7d8c7212acc9a371035a",
-      "bytes": 187,
+      "sha256": "7f8f30f6e0d8060993edebb525cf07e02ee290227195d9673facbf8891c3a822",
+      "bytes": 207,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 4,
+        "width": 5,
         "height": 8
       },
       "theme": "night",
@@ -7862,11 +7862,11 @@
     {
       "file": "assets/projected/6f86d31fa206-sol-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "efcdb31a61e44ab24ff86b36bbe41c7eafdd771b91df6fe5986939e4f64a54ae",
-      "bytes": 306,
+      "sha256": "82438633560b3a12ad5573fee2b58c56be4c0079589b8c953ef718840f437235",
+      "bytes": 309,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 8,
+        "width": 10,
         "height": 16
       },
       "theme": "night",
@@ -7875,8 +7875,8 @@
     {
       "file": "assets/projected/6f86d31fa206-sol-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "677e69db87dc4a74a9cee0a153f7540b59eddc3b85255d468235a131398fb3d7",
-      "bytes": 256,
+      "sha256": "af5c2f11f4afddcfdcb3805f836202eb02dee5a99ade3959ba11a457125672ad",
+      "bytes": 228,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -7888,8 +7888,8 @@
     {
       "file": "assets/projected/6f86d31fa206-sol-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "de91e90797177154b95c2d80a7fa7c7306afc6c5d0bc016e3178e127fda93852",
-      "bytes": 403,
+      "sha256": "9fed8f7327b9cff11cdda2aeecc9c4f30eef67d62a4d57018b06ed23a25ec2db",
+      "bytes": 335,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 16,
@@ -7927,8 +7927,8 @@
     {
       "file": "assets/projected/6f86d31fa206-sonnet-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "2ab5280e17b0e8dedda4a8768ba59b2b0c2fbcf17cdcfadec488a8f883acffa3",
-      "bytes": 200,
+      "sha256": "f42fb5028448f0615b282163bfe99197c795ff52e3dd6e6852bfebfe4531ceae",
+      "bytes": 213,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
@@ -7940,8 +7940,8 @@
     {
       "file": "assets/projected/6f86d31fa206-sonnet-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "80530e53abdf08836c4b7723382b78a95765a5405f0f50ed3a3e90a2f1a5e057",
-      "bytes": 340,
+      "sha256": "a697dad9b2988471482df02d94410c6d62bbd85fe550e97d0fcb6536bb41b164",
+      "bytes": 324,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -7953,7 +7953,7 @@
     {
       "file": "assets/projected/6f86d31fa206-sonnet-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "a6111035105de9f82e1782e59721cc9bafaff6da36954936e6db72cd2e2cfc64",
+      "sha256": "7c00de758c12b7342bab217c8442b3a090bad22195c7699c4c6dcf959b07ddd0",
       "bytes": 221,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
@@ -7966,8 +7966,8 @@
     {
       "file": "assets/projected/6f86d31fa206-sonnet-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "9ba1a715fa1a418c49a1ec9088ad8bc99e1248340d07f7a322a7c9b97e8b1800",
-      "bytes": 381,
+      "sha256": "39cf6c615689fdc575548d1d62405cb36ab727a222ea19965c5814e7595a00ae",
+      "bytes": 309,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 18,
@@ -8577,12 +8577,12 @@
     {
       "file": "assets/projected/9b5c04263dca-astra-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "4d604b04b564cb4bce0896674c68b0c527b264cef5d4f5911df9de49cfde9407",
-      "bytes": 1002,
+      "sha256": "52615ed34c18de8c885d183748151d64a239f7aadc0390b63f04ba3902a84b10",
+      "bytes": 1081,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 12,
-        "height": 30
+        "height": 28
       },
       "theme": "night",
       "scale": 1
@@ -8590,12 +8590,12 @@
     {
       "file": "assets/projected/9b5c04263dca-astra-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "0c35fc0e0cfb0e0c1ef5bd6b14fd9ac551564e83c6431212d5137d32e6a33534",
-      "bytes": 1660,
+      "sha256": "ef84e8d4f405fc5f9a232e443cf06cccb1eecad11eef75dbccc7c941c1e82aa8",
+      "bytes": 1695,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 24,
-        "height": 60
+        "height": 56
       },
       "theme": "night",
       "scale": 2
@@ -8603,12 +8603,12 @@
     {
       "file": "assets/projected/9b5c04263dca-astra-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "516165b45544bd2bc0c3f1d4b3ed14a44837533a5274161c8fe70839dd9682ab",
-      "bytes": 1686,
+      "sha256": "fd39b71208e4b4569631c36227dcb4c70302103a5cf79641474bb88d809c7bdf",
+      "bytes": 1436,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 20,
-        "height": 51
+        "width": 19,
+        "height": 47
       },
       "theme": "night",
       "scale": 1
@@ -8616,12 +8616,12 @@
     {
       "file": "assets/projected/9b5c04263dca-astra-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "622d8a0973481a13ad9100f25acd61d39d485a2d2c1c0e815e6012029d8e1b90",
-      "bytes": 2669,
+      "sha256": "15f41136493ba6809ed95063672aeffa121fff12a0753bdfac0cecded3a043cf",
+      "bytes": 2427,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 40,
-        "height": 102
+        "width": 38,
+        "height": 94
       },
       "theme": "night",
       "scale": 2
@@ -8668,11 +8668,11 @@
     {
       "file": "assets/projected/9b5c04263dca-glm-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "4d3d2d343f9f724996c16a8cee36d6f71e5e0d57f8a10e54bc7cd7d2cbea64cd",
-      "bytes": 726,
+      "sha256": "0a02fd8422ff1ec1c5070a0a3c5c589ce0b8e27692f42123848845c726760eea",
+      "bytes": 838,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 9,
+        "width": 10,
         "height": 23
       },
       "theme": "night",
@@ -8681,11 +8681,11 @@
     {
       "file": "assets/projected/9b5c04263dca-glm-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "f8e34cde02dd4823224babccccfc5feb1a46358c4c5faa654bbc81b868c69b32",
-      "bytes": 1515,
+      "sha256": "ec36f0b678f48669efbc98fc7ea298ece3e575973c5c77ef8d3b60eaf36c3575",
+      "bytes": 1557,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 18,
+        "width": 20,
         "height": 46
       },
       "theme": "night",
@@ -8694,12 +8694,12 @@
     {
       "file": "assets/projected/9b5c04263dca-glm-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "43c090b2e6f4634e3f33aae9b8c66f1a52c63db3db8fb7b28fc9c5b3adff31fb",
-      "bytes": 762,
+      "sha256": "236e3ab49d5a82227652102fbfa6c396a634810be64d1d0c1f8c09ef411d7d2f",
+      "bytes": 748,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 11,
-        "height": 46
+        "width": 13,
+        "height": 37
       },
       "theme": "night",
       "scale": 1
@@ -8707,12 +8707,12 @@
     {
       "file": "assets/projected/9b5c04263dca-glm-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "acf25cefa46bdc910f66ed0704aca721847bf2d384ded319b294d0834cbd83ce",
-      "bytes": 1836,
+      "sha256": "8d1430ff357e6091052562d2839ade1932d05fca3cdf89c476b59024e920cbc3",
+      "bytes": 1686,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 22,
-        "height": 92
+        "width": 26,
+        "height": 74
       },
       "theme": "night",
       "scale": 2
@@ -8746,12 +8746,12 @@
     {
       "file": "assets/projected/9b5c04263dca-luna-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "9fc4594f37eb2ebdfb7fb971e54e93c1372f7e04a3be12fc14b31c75d543f904",
-      "bytes": 1104,
+      "sha256": "438a9fdaeb98a4d227c1b5fb959b33de42ecc733b064d5ac6b817e8075d8e3e3",
+      "bytes": 938,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 13,
-        "height": 26
+        "width": 11,
+        "height": 25
       },
       "theme": "night",
       "scale": 1
@@ -8759,12 +8759,12 @@
     {
       "file": "assets/projected/9b5c04263dca-luna-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "6d6c069746f7cf04e819337769b1dcee54cc3aeb6794ceee05db1d33ab3c0b10",
-      "bytes": 1702,
+      "sha256": "93f715413a5cf3eff33ad06803cb14bab60c81efe66796c447064a817ec13fc1",
+      "bytes": 1634,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 26,
-        "height": 52
+        "width": 22,
+        "height": 50
       },
       "theme": "night",
       "scale": 2
@@ -8772,8 +8772,8 @@
     {
       "file": "assets/projected/9b5c04263dca-luna-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "1c0096f411056ac5e30f6f3c7f6e9a4640cfe93e8362642a6888c4e3052c0251",
-      "bytes": 1361,
+      "sha256": "a3d3387a63947b04d6e85aa8bea98d4f76d7cabfcff2279f008bb54987be63a0",
+      "bytes": 1003,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 14,
@@ -8785,8 +8785,8 @@
     {
       "file": "assets/projected/9b5c04263dca-luna-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "8c011cd5835c54cc45ca938d46241ce2cc6a351c2a3757da32e34c1b6edb8742",
-      "bytes": 2291,
+      "sha256": "dbfd40122f4488a4394f2faf1bf89aa19a1b9312dbda5f106f8ebc02543bff65",
+      "bytes": 1915,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 28,
@@ -8824,8 +8824,8 @@
     {
       "file": "assets/projected/9b5c04263dca-sol-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "6bcf2388940e35d23b7ff4b06a89294bbe4f08fa9dd7a0ad1e44dcba1cb944bd",
-      "bytes": 731,
+      "sha256": "915e44e17df0a367da63d4e499f87834d21d493039f11b118e2c6d8a9eaa90b7",
+      "bytes": 741,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -8837,8 +8837,8 @@
     {
       "file": "assets/projected/9b5c04263dca-sol-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "e83280a73df8413e95a79c05174d7881a104d4de49185ed1c7cbce14b1e3ac67",
-      "bytes": 1466,
+      "sha256": "39cff6939a6279bc9ede7c107124093451d29433b1b5174e0a8a416f276cef77",
+      "bytes": 1537,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 20,
@@ -8850,11 +8850,11 @@
     {
       "file": "assets/projected/9b5c04263dca-sol-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "70ef18be8a54bccb201b139cf34d9afcc6d01a2599db087fee1c2019de8c0767",
-      "bytes": 892,
+      "sha256": "81e69a7ae0e0a59df4a21c96fbd447bff6fe7555d90a9b9a39ff1d119c1196c7",
+      "bytes": 773,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 16,
+        "width": 13,
         "height": 39
       },
       "theme": "night",
@@ -8863,11 +8863,11 @@
     {
       "file": "assets/projected/9b5c04263dca-sol-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "d64c1c7f38edcb2d74aa146db5a513baa5c456df6dd4e18f681fc67afc0bcfb5",
-      "bytes": 2078,
+      "sha256": "9dcba9dc408032104c916dd6ac8fd305701348e850bfafbaf420cb163342b2f1",
+      "bytes": 1821,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 32,
+        "width": 26,
         "height": 78
       },
       "theme": "night",
@@ -9240,8 +9240,8 @@
     {
       "file": "assets/projected/a54ef328825c-glm-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "32584001e106fd8f14659511cbeb09cf15e78725efa3ff229cdc50096ef68262",
-      "bytes": 273,
+      "sha256": "befecb9261d6005e72c63eeb35218fd1ae06d7aabed380c3327c6f80f8753f29",
+      "bytes": 274,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 6,
@@ -9253,8 +9253,8 @@
     {
       "file": "assets/projected/a54ef328825c-glm-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "b668ec3027e5ecf2e6505153f7a879acf0d4d34a17c05dfe8d1c537075c1c575",
-      "bytes": 472,
+      "sha256": "ebb86828472bbf7c32f90b7daa8b26d6ddb951768f9791589c85361e37979c50",
+      "bytes": 437,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 12,
@@ -9266,8 +9266,8 @@
     {
       "file": "assets/projected/a54ef328825c-glm-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "877630861ae6943df2cec138cafb10c5dff41ab1bccc48a0f5cd197a9ce1c36f",
-      "bytes": 352,
+      "sha256": "0eb7368a1a98d90031343adec807e7427e6237a9b68f8643ac70a3379ad08738",
+      "bytes": 314,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 6,
@@ -9279,8 +9279,8 @@
     {
       "file": "assets/projected/a54ef328825c-glm-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "058ea9428b772b8ca020dbb6454c1cb844e20a6a9d9a19f53d177d15ac4f3200",
-      "bytes": 679,
+      "sha256": "f865ae49fb40525e11e589cbfe380af72908a0ef1270c55b3832baaa5d1873d3",
+      "bytes": 614,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 12,
@@ -9565,12 +9565,12 @@
     {
       "file": "assets/projected/a92b7ce62cfe-astra-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "24e488959ca73788c494a3925e8f1f649e9201f97cf33392bb91596dcf1b4924",
-      "bytes": 201,
+      "sha256": "d5224e99ad7d5b077459abd8ea31eb9bac9ae3eb4d80ac44191928d95950402c",
+      "bytes": 214,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
-        "height": 7
+        "height": 8
       },
       "theme": "night",
       "scale": 1
@@ -9578,12 +9578,12 @@
     {
       "file": "assets/projected/a92b7ce62cfe-astra-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "3622b6ab4e125c8123203f5fd49727b4dad876c02d4ced1e019c377f47e6d3d1",
-      "bytes": 314,
+      "sha256": "0e39dde3ded1852c336fff33218470cf46349a7eba9a2911c38a2be259db3d11",
+      "bytes": 326,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
-        "height": 14
+        "height": 16
       },
       "theme": "night",
       "scale": 2
@@ -9591,8 +9591,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-astra-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "87af1da4200c3642959c477bde7fb046328e484302fe0786180ebe7d47149685",
-      "bytes": 182,
+      "sha256": "84de962c7f56813633e804b77bc3a5755dd2fa1cb76743761ca4fa2dd789c1c8",
+      "bytes": 174,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
@@ -9604,8 +9604,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-astra-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "613a1efedf853d9595793d409f27246da30a9d590b3d651dc84671efb262884b",
-      "bytes": 282,
+      "sha256": "12e31a21e0a50971df4d2c501c8c6c1fffc7066e79e98ff0c780a12975fa1927",
+      "bytes": 235,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -9656,12 +9656,12 @@
     {
       "file": "assets/projected/a92b7ce62cfe-glm-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "5644bcb98b63153d1fa6a89489c72778f5305157843b93599482c9772b9025e2",
-      "bytes": 196,
+      "sha256": "dda4d2b5b7a0446447e0b07f73bb25c9ea3cb93638834b00de985b872e4c84e2",
+      "bytes": 218,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
-        "height": 7
+        "height": 8
       },
       "theme": "night",
       "scale": 1
@@ -9669,12 +9669,12 @@
     {
       "file": "assets/projected/a92b7ce62cfe-glm-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "c6f9d285bc2140db419d7163a19bfd457356b160698d419e498fd1aca40ce98e",
-      "bytes": 301,
+      "sha256": "33aa67a3ab8a2489ed52c7d97573ed2846f78816632645e9bc29766b808f244b",
+      "bytes": 349,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
-        "height": 14
+        "height": 16
       },
       "theme": "night",
       "scale": 2
@@ -9682,12 +9682,12 @@
     {
       "file": "assets/projected/a92b7ce62cfe-glm-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "b6e976f562c5caa27ea43587e481f64afead64fe38dff4ff52e0fe08cc58d285",
-      "bytes": 183,
+      "sha256": "0ea25ddebdd448c1542e8d3fc70d4cbff27fca862ada4fb5bfcc6fce763d3995",
+      "bytes": 180,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 6,
-        "height": 5
+        "width": 7,
+        "height": 6
       },
       "theme": "night",
       "scale": 1
@@ -9695,12 +9695,12 @@
     {
       "file": "assets/projected/a92b7ce62cfe-glm-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "6fbe420f572066014c19014dbc9729ae4f3f06206a3fa887ad3095c51f5dc87d",
-      "bytes": 249,
+      "sha256": "7e90b8632cf089bfeefd0a4bf71926bbc0748f205637c822244d7db223f031a6",
+      "bytes": 236,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
-        "height": 10
+        "width": 14,
+        "height": 12
       },
       "theme": "night",
       "scale": 2
@@ -9734,8 +9734,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-haiku-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "6cbc9433b832e46ee2a71dcb8e092911c0620e464d5cdb9a6cdc5fe86f7a8bd6",
-      "bytes": 176,
+      "sha256": "efb83bfa1fb562de471c57c2c2b1775cac5e8a68bc597a9cbe63db915eade6d9",
+      "bytes": 180,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 4,
@@ -9747,8 +9747,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-haiku-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "cc49810a1748027d4ff48862b8067ca110dcf19d821a2558a9341b613c8e1547",
-      "bytes": 280,
+      "sha256": "d838eb39222bcf753b3f1d741afed1bedbaeb5e6e630203b1a518a9edfe30a78",
+      "bytes": 290,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -9760,8 +9760,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-haiku-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "b8d1d00f1af3d404271ec980ec1807ac94403a1a43e138003ca924c286ca6306",
-      "bytes": 234,
+      "sha256": "5eebe93261a6f29632689d6e6254f04a5e65c7a53893bf3eb2572f45915bb7da",
+      "bytes": 209,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 6,
@@ -9773,8 +9773,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-haiku-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "62be1ce27866f0ead57e00d874eb5ccf039fb53e3c2b461619e26abfe5a63092",
-      "bytes": 470,
+      "sha256": "60cdf09509e1c7e75646c9ff6b70c126ef4336dcbee8b7f82c04544c2e44a122",
+      "bytes": 313,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 12,
@@ -9812,11 +9812,11 @@
     {
       "file": "assets/projected/a92b7ce62cfe-luna-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "7060df0a57faa1e92ac50f678b34fb5475e01acf0d9545bb3a900915338909e1",
-      "bytes": 200,
+      "sha256": "954d0bd9f78b7b0ea871bf0052c230e602678f41b655f26f5f8d5fd07f5a5dec",
+      "bytes": 191,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 6,
+        "width": 5,
         "height": 8
       },
       "theme": "night",
@@ -9825,11 +9825,11 @@
     {
       "file": "assets/projected/a92b7ce62cfe-luna-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "c3eb35bf0dd96e79dbb3deca072d3046397335db7c858a7784aa741c1599b137",
-      "bytes": 298,
+      "sha256": "2605793ef5b03f48aa056c2be67da31a279c23858f7156b3dc492560ef47c981",
+      "bytes": 314,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
+        "width": 10,
         "height": 16
       },
       "theme": "night",
@@ -9838,8 +9838,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-luna-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "7eacd091c906d265345d5fac926e6c649c502b69368fe7840827f3516c194152",
-      "bytes": 216,
+      "sha256": "e200acc284c340f2d1501cdb101f43932e165f399bb420b1af71249b6669a902",
+      "bytes": 204,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
@@ -9851,8 +9851,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-luna-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "05e70e7556d3c0489e8e25a02a3f186ca5e1bc2d2947641decf39f3560a4a7b1",
-      "bytes": 406,
+      "sha256": "ce84d82527b469a86baaee76556017bedc51a1f5c876aa9079255896537a83a8",
+      "bytes": 295,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -9890,12 +9890,12 @@
     {
       "file": "assets/projected/a92b7ce62cfe-opus-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "fd269b632f1229cd7779895746b1351f832753d7221501fcb7db9cb4259aa563",
-      "bytes": 231,
+      "sha256": "dd762d6e31acaa453c9572b68824ced415eaf4baab7fe8530c94e153951eb7f1",
+      "bytes": 195,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 6,
-        "height": 8
+        "width": 5,
+        "height": 7
       },
       "theme": "night",
       "scale": 1
@@ -9903,12 +9903,12 @@
     {
       "file": "assets/projected/a92b7ce62cfe-opus-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "a80f441d9e28f186389bda432f9d311828722f94717ef96806f8e95f41a24c10",
-      "bytes": 387,
+      "sha256": "2f21ac2920b5617c35bb5ae1d0de7375cc4c961f6ecc0d8ffbcc6fa41696250c",
+      "bytes": 346,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
-        "height": 16
+        "width": 10,
+        "height": 14
       },
       "theme": "night",
       "scale": 2
@@ -9916,8 +9916,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-opus-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "3f05c2cf0f3c9cabce21ec25f0dac8a025b827e6f4b1ba2d41b669030aba4513",
-      "bytes": 242,
+      "sha256": "b6694c85c3d682c28a8aec2ea5570d96cde48d5e3c0062f6562e972d235cb59a",
+      "bytes": 269,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 7,
@@ -9929,8 +9929,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-opus-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "eafe624f5361b74d01cea07ce4123254df3c804f3941273c4176e76dc033b5d6",
-      "bytes": 415,
+      "sha256": "4e88717c09c6e4010e6d3f1493e1296d59499fa3f40fb3230f42dd6f7773f2ca",
+      "bytes": 440,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 14,
@@ -9968,11 +9968,11 @@
     {
       "file": "assets/projected/a92b7ce62cfe-sol-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "4c2151f1c38017b4db97f7a036704b3b0da8c3c5b9ef7d8c7212acc9a371035a",
-      "bytes": 187,
+      "sha256": "7f8f30f6e0d8060993edebb525cf07e02ee290227195d9673facbf8891c3a822",
+      "bytes": 207,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 4,
+        "width": 5,
         "height": 8
       },
       "theme": "night",
@@ -9981,11 +9981,11 @@
     {
       "file": "assets/projected/a92b7ce62cfe-sol-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "efcdb31a61e44ab24ff86b36bbe41c7eafdd771b91df6fe5986939e4f64a54ae",
-      "bytes": 306,
+      "sha256": "82438633560b3a12ad5573fee2b58c56be4c0079589b8c953ef718840f437235",
+      "bytes": 309,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 8,
+        "width": 10,
         "height": 16
       },
       "theme": "night",
@@ -9994,8 +9994,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-sol-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "2bf655c85ffaedb4343f3241fa5d56572475fd6b74a0e83de10207bf5d098d9d",
-      "bytes": 251,
+      "sha256": "4d3b261bbd96e9ca415717d85bf96b82bdc945a80231d37fac9a6373f9600923",
+      "bytes": 229,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -10007,8 +10007,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-sol-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "f59f9bd59ea3fb9e20355fe9910e205d1931ac535d457fb5f378f12de8be0b30",
-      "bytes": 401,
+      "sha256": "d8eb64b91eb52b3e7fdf92966b243237e1efabbe994c381249b52e386a8f4250",
+      "bytes": 328,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 16,
@@ -10046,8 +10046,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-sonnet-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "5e0ae7c0f5544f2abfe3f14389c290d332f3e2019aed5b58fd21ba392a30b6a3",
-      "bytes": 200,
+      "sha256": "74c57dcbd1173e3c4bbfab0bdedf69f579e87014c2777dc56e11ed4ae17827b0",
+      "bytes": 213,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
@@ -10059,8 +10059,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-sonnet-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "6e21e27e94978eb272feffe1e4eb5a442b28c7c6cf6d2b8a11477eddfbf21eae",
-      "bytes": 344,
+      "sha256": "dba38e91575ec80184db63bca7369b55df9aed515120f217cc454025ae441149",
+      "bytes": 314,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
@@ -10072,8 +10072,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-sonnet-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "42dc93ed11fb87493fa39f97c363c2e60a30b967e9a35c21ef86561d5a3fe811",
-      "bytes": 224,
+      "sha256": "fae707ef088478b1d01d8394622fb93854ba42afb0dbae6bb2ace7e35a3166a7",
+      "bytes": 204,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 9,
@@ -10085,8 +10085,8 @@
     {
       "file": "assets/projected/a92b7ce62cfe-sonnet-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "0922a97e962112e71e9a46984097549cfa1889ad68a3b772618316e45e9e4a94",
-      "bytes": 366,
+      "sha256": "43dd7fc53a041592ac9b070b66433c8eee57296eb462b4cea088c4cf1622ead8",
+      "bytes": 313,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 18,
@@ -10137,11 +10137,11 @@
     {
       "file": "assets/projected/e7e920ef9be1-glm-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "74423c07f172838ac48870e46ba86de2aed6182425d9aa52e30501b9521d1780",
-      "bytes": 187,
+      "sha256": "131fe43a2889fdaa421c91dd8bb96328cf2bf3d0674118de5e169dbc29f12772",
+      "bytes": 200,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 4,
+        "width": 5,
         "height": 8
       },
       "theme": "night",
@@ -10150,11 +10150,11 @@
     {
       "file": "assets/projected/e7e920ef9be1-glm-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "2699b5265b150e14288fe64af707ca150a99e4044a136fb7566667d2250728b6",
-      "bytes": 304,
+      "sha256": "97bec305598ac2229f15844e412b67295a2204195a7e987867dc124025878fff",
+      "bytes": 356,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 8,
+        "width": 10,
         "height": 16
       },
       "theme": "night",
@@ -10163,8 +10163,8 @@
     {
       "file": "assets/projected/e7e920ef9be1-glm-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "24a795eede8aafa12a34083d25b1f37895de50cf42cec6df53797bf90607022d",
-      "bytes": 219,
+      "sha256": "e75e94b07e25e3bb0fdfae2d45c753e5348beffc2a1bb45eb71354e3263756ba",
+      "bytes": 208,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 6,
@@ -10176,8 +10176,8 @@
     {
       "file": "assets/projected/e7e920ef9be1-glm-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "e6053718d67c8a93bbd37cdcf54e6ca40332c62979155eda48cd6d0867e5130a",
-      "bytes": 398,
+      "sha256": "0127fe9c310d8f5056492a6eb2df3c5fdf6e77bf6eada64124110552cc211670",
+      "bytes": 310,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 12,
@@ -10215,11 +10215,11 @@
     {
       "file": "assets/projected/e7e920ef9be1-haiku-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "403c3b1047e731494090cc454ed27004a28f2b0914dddb090be70c95ddd04043",
-      "bytes": 202,
+      "sha256": "7da472eadd14e1ed6fef0e606c1a82c3018d483cb02d627fd21999b816042ed9",
+      "bytes": 212,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 6,
+        "width": 5,
         "height": 8
       },
       "theme": "night",
@@ -10228,11 +10228,11 @@
     {
       "file": "assets/projected/e7e920ef9be1-haiku-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "19b354432a6c3fc089fee310f4c625051e87c64c274e1efd2cd194a3f91f0bbc",
-      "bytes": 310,
+      "sha256": "6c319d4556bae2493ccf6b1ef2db83a3db6cfe540ef3b632e74e29e8890c36ed",
+      "bytes": 343,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
+        "width": 10,
         "height": 16
       },
       "theme": "night",
@@ -10241,8 +10241,8 @@
     {
       "file": "assets/projected/e7e920ef9be1-haiku-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "8ddde93dbc1efe6cd54f194f72acb589fe5e16a42385a5ad781fd29fc57fa5b2",
-      "bytes": 205,
+      "sha256": "66d6db04733f8e746f34ec4b216aeea742ec9f9b96c18a4da12439cc5959132e",
+      "bytes": 202,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 4,
@@ -10254,8 +10254,8 @@
     {
       "file": "assets/projected/e7e920ef9be1-haiku-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "b0b7040eeaef4c451792d2308fb772cf9fc710790739b32adae55e657400e7d0",
-      "bytes": 354,
+      "sha256": "83164a38d568921adb1ba5e8403d65d8dab9ca1799a3968d06b75be510287949",
+      "bytes": 308,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -10293,12 +10293,12 @@
     {
       "file": "assets/projected/e7e920ef9be1-opus-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "e729bb1d74c6147e81aaeeec865bf808b4e8ddedfd496a4e48dcb77183dc7d3c",
-      "bytes": 219,
+      "sha256": "fa1a780e6ce3550465be4ea82222c55e718aef63b4813e6c6b55f182feee5b42",
+      "bytes": 214,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 5,
-        "height": 9
+        "height": 8
       },
       "theme": "night",
       "scale": 1
@@ -10306,12 +10306,12 @@
     {
       "file": "assets/projected/e7e920ef9be1-opus-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "fe61b9f1aa969307ce147eee468133af4e225793229526c453f4c43712b5aa42",
-      "bytes": 367,
+      "sha256": "3826a01379fed967f0ad5044bc6eb57525ce588d843b8278c7aedd4e0f816f19",
+      "bytes": 384,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
-        "height": 18
+        "height": 16
       },
       "theme": "night",
       "scale": 2
@@ -10319,12 +10319,12 @@
     {
       "file": "assets/projected/e7e920ef9be1-opus-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "c7a62af91d2db9347b05744dc3d39f80c42505ab578432e91972093f34d02d09",
-      "bytes": 265,
+      "sha256": "210de388b10b937223be284cc9e33a7afd7581d6e86748fd15638cc86ce744f2",
+      "bytes": 271,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 7,
-        "height": 12
+        "height": 11
       },
       "theme": "night",
       "scale": 1
@@ -10332,12 +10332,12 @@
     {
       "file": "assets/projected/e7e920ef9be1-opus-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "bdea273ed3b7f385fd28fd342fdfcee45d0a49c12b7ba6a9994fdeafc4ecaeb4",
-      "bytes": 490,
+      "sha256": "47ee36dcd14d22510b833b49738a33676b91437cf01a9b0f839a6caf7ec9bdc7",
+      "bytes": 491,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 14,
-        "height": 24
+        "height": 22
       },
       "theme": "night",
       "scale": 2
@@ -10371,7 +10371,7 @@
     {
       "file": "assets/projected/e7e920ef9be1-sonnet-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "1bff7ffe679d0e03136d886348b99c1f940f9fc26d43f8631617a67c02ae4af6",
+      "sha256": "771a5462307ac5afb6c5419a6e8f5c7d2aacda2821eb3e109a258a263b69c948",
       "bytes": 187,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
@@ -10384,8 +10384,8 @@
     {
       "file": "assets/projected/e7e920ef9be1-sonnet-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "8f94ee52f7da14e252d6b217dde4d14a68476953189484594fb4ff43e53f5389",
-      "bytes": 309,
+      "sha256": "f8cce918d52446cec80059f855841b8eab37a4876668b8fb79fd2d315c666cf5",
+      "bytes": 280,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -10397,8 +10397,8 @@
     {
       "file": "assets/projected/e7e920ef9be1-sonnet-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "24c6519c18adf9239ba8c98d2b72dd4b2c25665bf48c3d0b32ff9e5ec65a207d",
-      "bytes": 256,
+      "sha256": "ae84f491621d54a5fc885c68a907940135cb9faa50723c0b55ba44fc7379405f",
+      "bytes": 228,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 8,
@@ -10410,8 +10410,8 @@
     {
       "file": "assets/projected/e7e920ef9be1-sonnet-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "75f7e49b8f340da4b9aa79e542f99c9aa573f94d1fa22bc02bd022a776eb4f3e",
-      "bytes": 479,
+      "sha256": "b53d83b81e17c90f8edbda8d88172b491cc9b54f7babcd012a2f29cdf1c4b333",
+      "bytes": 308,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 16,
@@ -11021,12 +11021,12 @@
     {
       "file": "assets/projected/f87e4058a747-astra-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "7cc154a6871d0a4a3434f63c639c6c0caed48c86909c3497ed9acb8b96e7fc5c",
-      "bytes": 825,
+      "sha256": "c24fe4e075c15ae84f50a4aa7fd53aac4a14d2fc6cbe8ae712446657691979df",
+      "bytes": 710,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 9,
-        "height": 24
+        "height": 25
       },
       "theme": "night",
       "scale": 1
@@ -11034,12 +11034,12 @@
     {
       "file": "assets/projected/f87e4058a747-astra-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "9a2002eea27bb33e82125c2c84170185f561e7bd7d7e21c5c9e5632ca3524d87",
-      "bytes": 1571,
+      "sha256": "0a03ffea3e3de6791f39d6fd1cf492ba76e3f73da3d42f7856e3da487c896ade",
+      "bytes": 1499,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 18,
-        "height": 48
+        "height": 50
       },
       "theme": "night",
       "scale": 2
@@ -11047,12 +11047,12 @@
     {
       "file": "assets/projected/f87e4058a747-astra-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "723cdb763f1270802d2f79289e286c0824260631d58b6c8192cef98038f2c6e5",
-      "bytes": 1073,
+      "sha256": "bb3b037bdb07823778a6413bafedc30a7adffc1f38d0f9ba2d6e2de961694588",
+      "bytes": 844,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 26,
-        "height": 31
+        "height": 33
       },
       "theme": "night",
       "scale": 1
@@ -11060,12 +11060,12 @@
     {
       "file": "assets/projected/f87e4058a747-astra-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "b50fd96e0e30f6c3613cd130d865000790ad124414899f2df95ca2d9aadc35f6",
-      "bytes": 2106,
+      "sha256": "602696d5d3bc74bc46b60b1b3143e51a904209ff1aa6ca52d09d0c3f80d2466c",
+      "bytes": 1792,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 52,
-        "height": 62
+        "height": 66
       },
       "theme": "night",
       "scale": 2
@@ -11112,8 +11112,8 @@
     {
       "file": "assets/projected/f87e4058a747-haiku-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "fca6dfa45026b1e38421c8eb29d2d27c1b30c07930757afaff8cffbfb78fe8a6",
-      "bytes": 839,
+      "sha256": "41d8bbb2850c81c9678ceef87b92163bde3991924809e69dfce3f2f07db3963f",
+      "bytes": 776,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 11,
@@ -11125,8 +11125,8 @@
     {
       "file": "assets/projected/f87e4058a747-haiku-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "41aca2b81aa6e97fb55c0fff58cbb502b32e83e7b515de4dede6a900003c59ec",
-      "bytes": 1515,
+      "sha256": "0dec96e38b27e2cb528e54ba781cb5a6e57b5d2078d6834bc9108dc4c92ce25e",
+      "bytes": 1462,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 22,
@@ -11138,12 +11138,12 @@
     {
       "file": "assets/projected/f87e4058a747-haiku-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "68f0b8befacd2c2e137bbb8b7b5281746b301aaa8923d9ee26ed5a14c9421577",
-      "bytes": 724,
+      "sha256": "5ca6fc183071947aec8b7af9b6b9a156bb01e72c4772426c645b18fb4e306aea",
+      "bytes": 817,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 10,
-        "height": 40
+        "width": 8,
+        "height": 41
       },
       "theme": "night",
       "scale": 1
@@ -11151,12 +11151,12 @@
     {
       "file": "assets/projected/f87e4058a747-haiku-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "fdf295290f151da73e54cdb154f515db250a599d2eee599d44c246752905689b",
-      "bytes": 1797,
+      "sha256": "b20a478f38198e0120f7188652fa4d1561c85b2bade7ebbd4d20ebb57806099b",
+      "bytes": 1724,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 20,
-        "height": 80
+        "width": 16,
+        "height": 82
       },
       "theme": "night",
       "scale": 2
@@ -11190,11 +11190,11 @@
     {
       "file": "assets/projected/f87e4058a747-luna-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "6d6a1e137173f13eb1dc9168728e32701ca02dd19c1170e65c9376f7ffd764ad",
-      "bytes": 1166,
+      "sha256": "1f362cab9853dea884f82e42f1fa092e0a2b18dd074cf619ba8acb8e8edac470",
+      "bytes": 1096,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 14,
+        "width": 12,
         "height": 26
       },
       "theme": "night",
@@ -11203,11 +11203,11 @@
     {
       "file": "assets/projected/f87e4058a747-luna-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "c15d6b0a3802f1aef2dd7ea80cc93afd8e608d24c936db9bd4d971480d8c191f",
-      "bytes": 1724,
+      "sha256": "e55b211b821abfc9ad88a9fc1983b83bbb8082f7e3bc2a05fb5d1180b1faafd4",
+      "bytes": 1770,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 28,
+        "width": 24,
         "height": 52
       },
       "theme": "night",
@@ -11216,8 +11216,8 @@
     {
       "file": "assets/projected/f87e4058a747-luna-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "2af3517d7c43fea398b9b6e5bd71c84fc77179e9cd2d75a057ae0211417af0e3",
-      "bytes": 1269,
+      "sha256": "d8f99e234143737194fba80d9c82bb5f5d21fab034536945279dba3989de9e1b",
+      "bytes": 1109,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 14,
@@ -11229,8 +11229,8 @@
     {
       "file": "assets/projected/f87e4058a747-luna-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "0533d83b76015abb0b5643e7c5b8a802417e7b967cf026f04ea20cb24ceb59f6",
-      "bytes": 2200,
+      "sha256": "b7bc23a347e201e399fb99ec420c4252683869748241c6380cbc7b14236e676f",
+      "bytes": 2028,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 28,
@@ -11268,12 +11268,12 @@
     {
       "file": "assets/projected/f87e4058a747-opus-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "851c1721e1ee48780ea64ab9dbaa520bb352e8c3fde88ca7a832ff84a0e48859",
-      "bytes": 1057,
+      "sha256": "b61d39b4141c59790c954f849b8a656d570abde4bb7c9ba546fb3e6aa4f8d832",
+      "bytes": 1187,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
-        "height": 29
+        "width": 13,
+        "height": 28
       },
       "theme": "night",
       "scale": 1
@@ -11281,12 +11281,12 @@
     {
       "file": "assets/projected/f87e4058a747-opus-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "4700c0bc0822338497a2ea698b834aeeb62321f1a7719f8305f28fcaaa5e65c8",
-      "bytes": 1679,
+      "sha256": "e4dcdc82b712cdd2f04755b9292dbf3696601875a322e7be8bafd44f178630cd",
+      "bytes": 1746,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 24,
-        "height": 58
+        "width": 26,
+        "height": 56
       },
       "theme": "night",
       "scale": 2
@@ -11294,12 +11294,12 @@
     {
       "file": "assets/projected/f87e4058a747-opus-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "dd9b3c7934dc2a9c1213578afce5f0aa83c004c78e068ab0478508f341bf5af6",
-      "bytes": 1764,
+      "sha256": "0004a697dcba69daa0b1289e5e2874f32b6876f2db78b8595a8a5452924f8ae5",
+      "bytes": 1762,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 27,
-        "height": 49
+        "width": 29,
+        "height": 48
       },
       "theme": "night",
       "scale": 1
@@ -11307,12 +11307,12 @@
     {
       "file": "assets/projected/f87e4058a747-opus-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "845b00784104b7722a12df2fecc4af422e3d84db6f83fd11264ec39aab864714",
-      "bytes": 2804,
+      "sha256": "40b366b4fa3935da70ac07a1f057de50c4b27d473a7b3a56a51e1fb51e34de07",
+      "bytes": 2839,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 54,
-        "height": 98
+        "width": 58,
+        "height": 96
       },
       "theme": "night",
       "scale": 2
@@ -11346,11 +11346,11 @@
     {
       "file": "assets/projected/f87e4058a747-sol-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "f7789d8a582214e2205cc6a7e4d3b553763b57bd1b7ffbd72d84549c76638abf",
-      "bytes": 740,
+      "sha256": "997bee85b95df9e1cd891324675647bbcaa9a5d4e0802eb6984fb4112395e119",
+      "bytes": 704,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 12,
+        "width": 10,
         "height": 25
       },
       "theme": "night",
@@ -11359,11 +11359,11 @@
     {
       "file": "assets/projected/f87e4058a747-sol-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "e842313189dd2334c4dc7a768d69b63ff88a9b143e35fb5c56e7c7e3027861fc",
-      "bytes": 1499,
+      "sha256": "659bd4f4cce4fb36e0b558767518fa6322657fa80fa5431cd1da038a231157a5",
+      "bytes": 1451,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 24,
+        "width": 20,
         "height": 50
       },
       "theme": "night",
@@ -11372,12 +11372,12 @@
     {
       "file": "assets/projected/f87e4058a747-sol-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "818a5185ec5b05a15cc493a1e2b6fbf1782d9217e8bd914258540e07839cb7a8",
-      "bytes": 975,
+      "sha256": "0513d5961a4f2288aad150a57559e3497a26b53b369d648da618065f19f37aae",
+      "bytes": 929,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 12,
-        "height": 41
+        "height": 39
       },
       "theme": "night",
       "scale": 1
@@ -11385,12 +11385,12 @@
     {
       "file": "assets/projected/f87e4058a747-sol-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "490138fbe7ac5b9ab42ad7c5b8d45a4378a6869b8886d2a6e0e6b4aa24dee138",
-      "bytes": 2061,
+      "sha256": "4558ac248298490b9932d2761ab31a4c3a8c9afde1cf9b26e6752b10084cda07",
+      "bytes": 1877,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 24,
-        "height": 82
+        "height": 78
       },
       "theme": "night",
       "scale": 2
@@ -11424,12 +11424,12 @@
     {
       "file": "assets/projected/f87e4058a747-sonnet-body-1x.png",
       "kind": "porthole-body",
-      "sha256": "de806e9580c42b6ffc2af8f82be375809a326a31b24cd6b560d6eaec212de8fb",
-      "bytes": 900,
+      "sha256": "124c039c1111f0244bd2d0dce886f2e0b7018aab860ab79fc81075623ef4e35c",
+      "bytes": 741,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 10,
-        "height": 26
+        "height": 25
       },
       "theme": "night",
       "scale": 1
@@ -11437,12 +11437,12 @@
     {
       "file": "assets/projected/f87e4058a747-sonnet-body-2x.png",
       "kind": "porthole-body",
-      "sha256": "9e3f5197126d390b109c69ee75e4ae7d165884545d5a5ceccf8447d7c6cd4f5b",
-      "bytes": 1580,
+      "sha256": "a3e4bf1c1693e78f190f6898b9de4884b3128ee8f54cbe4c815eae79a859672c",
+      "bytes": 1505,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 20,
-        "height": 52
+        "height": 50
       },
       "theme": "night",
       "scale": 2
@@ -11450,12 +11450,12 @@
     {
       "file": "assets/projected/f87e4058a747-sonnet-flame-1x.png",
       "kind": "porthole-flame",
-      "sha256": "e403ae0e85d8050266adeccb6308379ac161e13247ee2f86244d2ac01b003e26",
-      "bytes": 1030,
+      "sha256": "4855e59291d0a6eed227497ef379485027df463d1d1b486ba9b474f52a63a71b",
+      "bytes": 1000,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 29,
-        "height": 41
+        "width": 27,
+        "height": 40
       },
       "theme": "night",
       "scale": 1
@@ -11463,12 +11463,12 @@
     {
       "file": "assets/projected/f87e4058a747-sonnet-flame-2x.png",
       "kind": "porthole-flame",
-      "sha256": "d2ef8786f293a8e2c4a2b629d663e6cea8482eb969aae8ac386bff10c2e16e8c",
-      "bytes": 2095,
+      "sha256": "098e4a95fe78927094f8a031c4094238fb9097f2395607c5f102754946b8ad67",
+      "bytes": 1963,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
-        "width": 58,
-        "height": 82
+        "width": 54,
+        "height": 80
       },
       "theme": "night",
       "scale": 2
@@ -16266,9 +16266,9 @@
             "y": 93.40916895806083
           },
           "body": {
-            "left": 400,
+            "left": 402,
             "top": 70,
-            "width": 12,
+            "width": 10,
             "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -16279,7 +16279,7 @@
             "left": 399,
             "top": 70,
             "width": 12,
-            "height": 41,
+            "height": 39,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -16316,20 +16316,20 @@
             "y": 69.6606504663831
           },
           "body": {
-            "left": 443,
+            "left": 442,
             "top": 47,
-            "width": 10,
-            "height": 25,
+            "width": 11,
+            "height": 24,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/4ff2bad27654-glm-body-2x.png",
             "file1x": "assets/projected/4ff2bad27654-glm-body-1x.png"
           },
           "flame": {
-            "left": 434,
-            "top": 57,
-            "width": 25,
-            "height": 33,
+            "left": 435,
+            "top": 62,
+            "width": 24,
+            "height": 27,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -16366,10 +16366,10 @@
             "y": 59.4804600178655
           },
           "body": {
-            "left": 440,
+            "left": 439,
             "top": 33,
-            "width": 12,
-            "height": 29,
+            "width": 13,
+            "height": 28,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/4ff2bad27654-opus-body-2x.png",
@@ -16377,9 +16377,9 @@
           },
           "flame": {
             "left": 431,
-            "top": 32,
-            "width": 27,
-            "height": 52,
+            "top": 33,
+            "width": 30,
+            "height": 51,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -16416,9 +16416,9 @@
             "y": 127.6887381815715
           },
           "body": {
-            "left": 380,
+            "left": 383,
             "top": 104,
-            "width": 14,
+            "width": 9,
             "height": 26,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -16426,10 +16426,10 @@
             "file1x": "assets/projected/4ff2bad27654-luna-body-1x.png"
           },
           "flame": {
-            "left": 381,
+            "left": 383,
             "top": 104,
-            "width": 12,
-            "height": 41,
+            "width": 8,
+            "height": 40,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -16468,18 +16468,18 @@
           "body": {
             "left": 431,
             "top": 53,
-            "width": 10,
-            "height": 26,
+            "width": 8,
+            "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/4ff2bad27654-sonnet-body-2x.png",
             "file1x": "assets/projected/4ff2bad27654-sonnet-body-1x.png"
           },
           "flame": {
-            "left": 424,
+            "left": 421,
             "top": 58,
-            "width": 26,
-            "height": 37,
+            "width": 29,
+            "height": 39,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -16516,19 +16516,19 @@
             "y": 66.43928308014833
           },
           "body": {
-            "left": 444,
-            "top": 44,
-            "width": 9,
-            "height": 24,
+            "left": 445,
+            "top": 43,
+            "width": 10,
+            "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/4ff2bad27654-astra-body-2x.png",
             "file1x": "assets/projected/4ff2bad27654-astra-body-1x.png"
           },
           "flame": {
-            "left": 435,
+            "left": 436,
             "top": 48,
-            "width": 29,
+            "width": 28,
             "height": 41,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -16566,9 +16566,9 @@
             "y": 95.46410379403461
           },
           "body": {
-            "left": 413,
+            "left": 412,
             "top": 72,
-            "width": 10,
+            "width": 11,
             "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -16576,9 +16576,9 @@
             "file1x": "assets/projected/4ff2bad27654-haiku-body-1x.png"
           },
           "flame": {
-            "left": 414,
+            "left": 412,
             "top": 72,
-            "width": 8,
+            "width": 10,
             "height": 41,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -16628,18 +16628,18 @@
           },
           "body": {
             "left": 403,
-            "top": 62,
-            "width": 10,
-            "height": 25,
+            "top": 61,
+            "width": 9,
+            "height": 26,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/3918fdc04666-sol-body-2x.png",
             "file1x": "assets/projected/3918fdc04666-sol-body-1x.png"
           },
           "flame": {
-            "left": 396,
+            "left": 404,
             "top": 62,
-            "width": 19,
+            "width": 8,
             "height": 40,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -16677,20 +16677,20 @@
             "y": 57.04050133754775
           },
           "body": {
-            "left": 443,
+            "left": 442,
             "top": 32,
-            "width": 11,
-            "height": 28,
+            "width": 13,
+            "height": 26,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/3918fdc04666-astra-body-2x.png",
             "file1x": "assets/projected/3918fdc04666-astra-body-1x.png"
           },
           "flame": {
-            "left": 435,
-            "top": 25,
-            "width": 25,
-            "height": 54,
+            "left": 440,
+            "top": 32,
+            "width": 14,
+            "height": 48,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -16727,9 +16727,9 @@
             "y": 123.10523121656892
           },
           "body": {
-            "left": 381,
+            "left": 382,
             "top": 100,
-            "width": 14,
+            "width": 12,
             "height": 26,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -16739,8 +16739,8 @@
           "flame": {
             "left": 380,
             "top": 100,
-            "width": 15,
-            "height": 39,
+            "width": 14,
+            "height": 40,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -16790,8 +16790,8 @@
           "body": {
             "left": 432,
             "top": 37,
-            "width": 12,
-            "height": 31,
+            "width": 13,
+            "height": 28,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/306bdee30163-opus-body-2x.png",
@@ -16799,9 +16799,9 @@
           },
           "flame": {
             "left": 424,
-            "top": 36,
-            "width": 28,
-            "height": 55,
+            "top": 37,
+            "width": 23,
+            "height": 52,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -16838,9 +16838,9 @@
             "y": 86.5256397997927
           },
           "body": {
-            "left": 421,
+            "left": 420,
             "top": 63,
-            "width": 10,
+            "width": 12,
             "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -16848,10 +16848,10 @@
             "file1x": "assets/projected/306bdee30163-sonnet-body-1x.png"
           },
           "flame": {
-            "left": 411,
+            "left": 416,
             "top": 64,
-            "width": 28,
-            "height": 46,
+            "width": 16,
+            "height": 42,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -16890,7 +16890,7 @@
           "body": {
             "left": 397,
             "top": 87,
-            "width": 12,
+            "width": 11,
             "height": 26,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -16898,10 +16898,10 @@
             "file1x": "assets/projected/306bdee30163-haiku-body-1x.png"
           },
           "flame": {
-            "left": 394,
-            "top": 81,
-            "width": 15,
-            "height": 49,
+            "left": 396,
+            "top": 87,
+            "width": 13,
+            "height": 43,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -16951,18 +16951,18 @@
           "body": {
             "left": 397,
             "top": 21,
-            "width": 15,
-            "height": 39,
+            "width": 16,
+            "height": 36,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/4996478d09de-glm-body-2x.png",
             "file1x": "assets/projected/4996478d09de-glm-body-1x.png"
           },
           "flame": {
-            "left": 389,
-            "top": 17,
-            "width": 33,
-            "height": 68,
+            "left": 397,
+            "top": 21,
+            "width": 15,
+            "height": 64,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -17010,9 +17010,9 @@
             "y": 22.05332941777089
           },
           "body": {
-            "left": 436,
+            "left": 435,
             "top": 16,
-            "width": 4,
+            "width": 5,
             "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -17061,9 +17061,9 @@
           },
           "body": {
             "left": 443,
-            "top": 13,
+            "top": 12,
             "width": 5,
-            "height": 7,
+            "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/a92b7ce62cfe-glm-body-2x.png",
@@ -17072,8 +17072,8 @@
           "flame": {
             "left": 441,
             "top": 16,
-            "width": 6,
-            "height": 5,
+            "width": 7,
+            "height": 6,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -17112,8 +17112,8 @@
           "body": {
             "left": 442,
             "top": 10,
-            "width": 6,
-            "height": 8,
+            "width": 5,
+            "height": 7,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/a92b7ce62cfe-opus-body-2x.png",
@@ -17160,9 +17160,9 @@
             "y": 28.284790469366555
           },
           "body": {
-            "left": 431,
+            "left": 432,
             "top": 22,
-            "width": 6,
+            "width": 5,
             "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -17261,9 +17261,9 @@
           },
           "body": {
             "left": 443,
-            "top": 12,
+            "top": 11,
             "width": 5,
-            "height": 7,
+            "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/a92b7ce62cfe-astra-body-2x.png",
@@ -17382,9 +17382,9 @@
           },
           "flame": {
             "left": 432,
-            "top": 15,
+            "top": 16,
             "width": 8,
-            "height": 10,
+            "height": 9,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -17422,9 +17422,9 @@
           },
           "body": {
             "left": 443,
-            "top": 9,
+            "top": 10,
             "width": 5,
-            "height": 8,
+            "height": 7,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/19217f2e8a89-astra-body-2x.png",
@@ -17471,9 +17471,9 @@
             "y": 27.471030900761058
           },
           "body": {
-            "left": 431,
+            "left": 432,
             "top": 22,
-            "width": 6,
+            "width": 5,
             "height": 7,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -17535,7 +17535,7 @@
             "left": 441,
             "top": 10,
             "width": 5,
-            "height": 9,
+            "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/0ef342d844aa-opus-body-2x.png",
@@ -17543,9 +17543,9 @@
           },
           "flame": {
             "left": 439,
-            "top": 10,
+            "top": 11,
             "width": 7,
-            "height": 12,
+            "height": 11,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19242,9 +19242,9 @@
             "y": 93.40916895806083
           },
           "body": {
-            "left": 400,
+            "left": 402,
             "top": 70,
-            "width": 12,
+            "width": 10,
             "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -19255,7 +19255,7 @@
             "left": 399,
             "top": 70,
             "width": 12,
-            "height": 41,
+            "height": 39,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19292,10 +19292,10 @@
             "y": 59.4804600178655
           },
           "body": {
-            "left": 440,
+            "left": 439,
             "top": 33,
-            "width": 12,
-            "height": 29,
+            "width": 13,
+            "height": 28,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/f87e4058a747-opus-body-2x.png",
@@ -19303,9 +19303,9 @@
           },
           "flame": {
             "left": 431,
-            "top": 32,
-            "width": 27,
-            "height": 49,
+            "top": 33,
+            "width": 29,
+            "height": 48,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19342,9 +19342,9 @@
             "y": 127.6887381815715
           },
           "body": {
-            "left": 380,
+            "left": 381,
             "top": 104,
-            "width": 14,
+            "width": 12,
             "height": 26,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -19392,10 +19392,10 @@
             "y": 76.43472556605295
           },
           "body": {
-            "left": 431,
+            "left": 430,
             "top": 53,
             "width": 10,
-            "height": 26,
+            "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/f87e4058a747-sonnet-body-2x.png",
@@ -19403,9 +19403,9 @@
           },
           "flame": {
             "left": 421,
-            "top": 56,
-            "width": 29,
-            "height": 41,
+            "top": 55,
+            "width": 27,
+            "height": 40,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19442,10 +19442,10 @@
             "y": 66.43928308014833
           },
           "body": {
-            "left": 444,
-            "top": 44,
+            "left": 446,
+            "top": 43,
             "width": 9,
-            "height": 24,
+            "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/f87e4058a747-astra-body-2x.png",
@@ -19453,9 +19453,9 @@
           },
           "flame": {
             "left": 438,
-            "top": 55,
+            "top": 54,
             "width": 26,
-            "height": 31,
+            "height": 33,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19504,8 +19504,8 @@
           "flame": {
             "left": 414,
             "top": 72,
-            "width": 10,
-            "height": 40,
+            "width": 8,
+            "height": 41,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19553,7 +19553,7 @@
             "y": 86.24955247741762
           },
           "body": {
-            "left": 405,
+            "left": 404,
             "top": 63,
             "width": 10,
             "height": 25,
@@ -19565,7 +19565,7 @@
           "flame": {
             "left": 401,
             "top": 63,
-            "width": 16,
+            "width": 13,
             "height": 39,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -19605,7 +19605,7 @@
           "body": {
             "left": 441,
             "top": 39,
-            "width": 9,
+            "width": 10,
             "height": 23,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -19613,10 +19613,10 @@
             "file1x": "assets/projected/9b5c04263dca-glm-body-1x.png"
           },
           "flame": {
-            "left": 440,
-            "top": 32,
-            "width": 11,
-            "height": 46,
+            "left": 438,
+            "top": 41,
+            "width": 13,
+            "height": 37,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19653,17 +19653,17 @@
             "y": 124.28805080613803
           },
           "body": {
-            "left": 382,
+            "left": 383,
             "top": 101,
-            "width": 13,
-            "height": 26,
+            "width": 11,
+            "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/9b5c04263dca-luna-body-2x.png",
             "file1x": "assets/projected/9b5c04263dca-luna-body-1x.png"
           },
           "flame": {
-            "left": 382,
+            "left": 381,
             "top": 101,
             "width": 14,
             "height": 40,
@@ -19706,17 +19706,17 @@
             "left": 446,
             "top": 32,
             "width": 12,
-            "height": 30,
+            "height": 28,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/9b5c04263dca-astra-body-2x.png",
             "file1x": "assets/projected/9b5c04263dca-astra-body-1x.png"
           },
           "flame": {
-            "left": 440,
-            "top": 29,
-            "width": 20,
-            "height": 51,
+            "left": 439,
+            "top": 33,
+            "width": 19,
+            "height": 47,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19764,20 +19764,20 @@
             "y": 77.63104640313726
           },
           "body": {
-            "left": 437,
-            "top": 56,
-            "width": 10,
-            "height": 24,
+            "left": 436,
+            "top": 55,
+            "width": 11,
+            "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/3486f2a61abe-glm-body-2x.png",
             "file1x": "assets/projected/3486f2a61abe-glm-body-1x.png"
           },
           "flame": {
-            "left": 434,
-            "top": 68,
-            "width": 17,
-            "height": 29,
+            "left": 436,
+            "top": 69,
+            "width": 11,
+            "height": 28,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19816,8 +19816,8 @@
           "body": {
             "left": 432,
             "top": 37,
-            "width": 12,
-            "height": 31,
+            "width": 13,
+            "height": 28,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/3486f2a61abe-opus-body-2x.png",
@@ -19825,9 +19825,9 @@
           },
           "flame": {
             "left": 424,
-            "top": 36,
-            "width": 28,
-            "height": 51,
+            "top": 37,
+            "width": 27,
+            "height": 50,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19864,9 +19864,9 @@
             "y": 86.5256397997927
           },
           "body": {
-            "left": 421,
+            "left": 420,
             "top": 63,
-            "width": 9,
+            "width": 12,
             "height": 25,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -19874,10 +19874,10 @@
             "file1x": "assets/projected/3486f2a61abe-sonnet-body-1x.png"
           },
           "flame": {
-            "left": 412,
-            "top": 62,
-            "width": 27,
-            "height": 48,
+            "left": 417,
+            "top": 64,
+            "width": 15,
+            "height": 41,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19914,9 +19914,9 @@
             "y": 111.16399359496091
           },
           "body": {
-            "left": 398,
+            "left": 397,
             "top": 87,
-            "width": 9,
+            "width": 12,
             "height": 26,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -19924,10 +19924,10 @@
             "file1x": "assets/projected/3486f2a61abe-haiku-body-1x.png"
           },
           "flame": {
-            "left": 395,
+            "left": 396,
             "top": 87,
-            "width": 14,
-            "height": 42,
+            "width": 12,
+            "height": 43,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -19975,9 +19975,9 @@
             "y": 22.05332941777089
           },
           "body": {
-            "left": 436,
+            "left": 435,
             "top": 16,
-            "width": 4,
+            "width": 5,
             "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -20027,8 +20027,8 @@
           "body": {
             "left": 442,
             "top": 10,
-            "width": 6,
-            "height": 8,
+            "width": 5,
+            "height": 7,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/6f86d31fa206-opus-body-2x.png",
@@ -20176,9 +20176,9 @@
           },
           "body": {
             "left": 443,
-            "top": 12,
+            "top": 11,
             "width": 5,
-            "height": 7,
+            "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/6f86d31fa206-astra-body-2x.png",
@@ -20225,9 +20225,9 @@
             "y": 22.428774940287504
           },
           "body": {
-            "left": 437,
+            "left": 438,
             "top": 16,
-            "width": 5,
+            "width": 4,
             "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -20297,9 +20297,9 @@
           },
           "flame": {
             "left": 433,
-            "top": 16,
+            "top": 15,
             "width": 7,
-            "height": 10,
+            "height": 11,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -20338,8 +20338,8 @@
           "body": {
             "left": 442,
             "top": 10,
-            "width": 5,
-            "height": 8,
+            "width": 6,
+            "height": 7,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/4e791f3b8ced-glm-body-2x.png",
@@ -20399,7 +20399,7 @@
             "left": 432,
             "top": 23,
             "width": 5,
-            "height": 8,
+            "height": 9,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -20499,7 +20499,7 @@
           "body": {
             "left": 442,
             "top": 13,
-            "width": 4,
+            "width": 5,
             "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,
@@ -20550,7 +20550,7 @@
             "left": 441,
             "top": 10,
             "width": 5,
-            "height": 9,
+            "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "file": "assets/projected/e7e920ef9be1-opus-body-2x.png",
@@ -20558,9 +20558,9 @@
           },
           "flame": {
             "left": 439,
-            "top": 10,
+            "top": 11,
             "width": 7,
-            "height": 12,
+            "height": 11,
             "pixelScale": 2,
             "pixelScale1x": 1,
             "blend": "plus-lighter",
@@ -20647,9 +20647,9 @@
             "y": 25.290335147425488
           },
           "body": {
-            "left": 434,
+            "left": 435,
             "top": 19,
-            "width": 6,
+            "width": 5,
             "height": 8,
             "pixelScale": 2,
             "pixelScale1x": 1,

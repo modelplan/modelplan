@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
@@ -36,6 +37,11 @@ while IFS= read -r line; do
   case "$line" in
     *'"id":1,'*) echo '{"id":1,"result":{"userAgent":"x"}}' ;;
     *'"method":"account/read"'*) echo '{"id":3,"result":{"account":{"type":"chatgpt","email":"Someone@Example.com","planType":"pro"},"requiresOpenaiAuth":true}}' ;;
+    *'"method":"model/list"'*)
+      case "$line" in
+        *'"cursor"'*) echo "$line" | sed -n 's/.*"id":\([0-9]*\).*/{"id":\1,"result":{"data":[{"id":"p3","model":"native-c","hidden":false}],"nextCursor":null}}/p' ;;
+        *) echo "$line" | sed -n 's/.*"id":\([0-9]*\).*/{"id":\1,"result":{"data":[{"id":"p1","model":"native-b","hidden":false},{"id":"p2","model":"native-hidden","hidden":true},{"id":"p1","model":"native-b","hidden":false},{"id":"p4","model":"native-a","hidden":false}],"nextCursor":"next"}}/p' ;;
+      esac ;;
     *'"method":"account/rateLimits/read"'*) printf '{"id":2,"result":%s}\n' '` + strings.ReplaceAll(result, "\n", "") + `' ;;
   esac
 done
@@ -57,7 +63,7 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls, _ := os.ReadFile(log)
-	if got := strings.Fields(string(calls)); strings.Join(got, ",") != "initialize,initialized,account/rateLimits/read,account/read" {
+	if got := strings.Fields(string(calls)); strings.Join(got, ",") != "initialize,initialized,account/rateLimits/read,account/read,model/list,model/list" {
 		t.Fatalf("calls = %v", got)
 	}
 	b, _ := os.ReadFile(accountPath(cache))
@@ -75,6 +81,10 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 	if s.Status != "ok" || s.Plan != "pro" || len(s.Windows) != 2 || s.Credits.Count != 2 || len(s.Credits.Expiries) != 2 {
 		t.Fatalf("snap = %+v", s)
 	}
+	// D98: the models Codex lists for the account, ids only, paged, hidden and duplicate ones dropped.
+	if got := strings.Join(s.ReportedModels, ","); got != "native-a,native-b,native-c" {
+		t.Fatalf("reportedModels = %q", got)
+	}
 	if AccountDue(cache, acctNow.Add(4*time.Minute)) || !AccountDue(cache, acctNow.Add(5*time.Minute)) {
 		t.Fatal("refresh at most every 5 minutes")
 	}
@@ -84,6 +94,9 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 	}
 	r := Report{}
 	applyAccount(&r, cache, acctNow.Add(2*time.Hour))
+	if got := strings.Join(r.Accounts[0].ReportedModels, ","); got != "native-a,native-b,native-c" {
+		t.Fatalf("account reportedModels = %q", got)
+	}
 	if s := r.Accounts[0].Subscription; s == nil || s.Ref != ref || s.Status != "verified" || s.Basis != "codex-account" {
 		t.Fatalf("binding = %+v", s)
 	}
@@ -92,6 +105,9 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 func TestFailedRefreshWaitsLongerAndOffMeansOff(t *testing.T) {
 	isolateHome(t)
 	cache := t.TempDir()
+	if err := save(cache, &accountSnap{SchemaVersion: 1, ObservedAt: acctNow.Add(-time.Hour), Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := RefreshCodexAccount(context.Background(), cache, "", acctNow); err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +394,9 @@ func TestAccountMergeRequiresVerifiedMatchingBinding(t *testing.T) {
 		{"matching", "0123456789abcdef", "verified", 1},
 		{"different", "fedcba9876543210", "verified", 2},
 		{"unverified", "0123456789abcdef", "unverified", 2},
-		{"missing", "", "", 2},
+		// An unbound session-log account is not a second source while the live reading is
+		// available (owner decision 2026-11-06, G3-20 option B).
+		{"missing", "", "", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cache := t.TempDir()
@@ -452,9 +470,162 @@ func TestCodexRuntimeNeverMergesUnverifiedOrDifferentAccount(t *testing.T) {
 	for _, binding := range []*Binding{nil, {Ref: snap.SubscriptionRef, Status: "unverified"}, {Ref: "fedcba9876543210", Status: "verified"}} {
 		r := Report{Accounts: []Account{{Source: "codex", Subscription: binding, ObservedAt: acctNow.Add(-time.Hour), Windows: []Window{{Kind: "weekly", ObservedAt: acctNow.Add(-time.Hour)}}}}}
 		applyAccount(&r, cache, acctNow)
+		if binding == nil {
+			// Owner decision B: an unbound session-log reading is not shown beside the live
+			// reading and gives it nothing.
+			if len(r.Accounts) != 1 || r.Accounts[0].Via != "codex-account" || len(r.Accounts[0].Windows) != 2 {
+				t.Fatalf("live reading with an unbound log: %+v", r.Accounts)
+			}
+			continue
+		}
 		if len(r.Accounts) != 2 || r.Accounts[0].Via == "codex-account" || r.Accounts[1].Via != "codex-account" {
 			t.Fatalf("unbound readings were combined: %+v", r.Accounts)
 
 		}
+	}
+}
+
+// A brief hold on the consent lock must not lose a finished reading: the failed save used
+// to leave no snapshot and pushed the next read out by the failure wait.
+func TestRefreshKeepsTheReadingThroughABriefConsentLock(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	bin, _ := fakeCodex(t, acctResponse)
+	state, _ := consent.Current()
+	held, done := make(chan struct{}), make(chan error, 1)
+	go func() {
+		done <- consent.Publish(state.Fence(), func() error { close(held); time.Sleep(700 * time.Millisecond); return nil })
+	}()
+	<-held
+	if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
+		t.Fatalf("a brief consent lock lost the reading: %v", err)
+	}
+	if s := loadAccount(cache); s == nil || s.Status != "ok" {
+		t.Fatalf("snapshot = %+v", s)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// D98: a Codex that never answers model/list (or answers with an error) still gives the quota reading.
+func TestModelListIsBestEffort(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "codex")
+	script := `#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *'"id":1,'*) echo '{"id":1,"result":{}}' ;;
+    *'"method":"account/rateLimits/read"'*) printf '{"id":2,"result":%s}\n' '` + strings.ReplaceAll(acctResponse, "\n", "") + `' ;;
+    *'"method":"account/read"'*) echo '{"id":3,"result":{"account":{"type":"apiKey"}}}' ;;
+    *'"method":"model/list"'*) echo '{"id":4,"error":{"code":-32601,"message":"method not found"}}' ;;
+  esac
+done
+`
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 15*time.Second {
+		t.Fatalf("refresh took %s: the fake must answer every request, so a model/list error must not wait for a timeout", d)
+	}
+	if s := loadAccount(cache); s.Status != "ok" || len(s.Windows) != 2 || len(s.ReportedModels) != 0 {
+		t.Fatalf("snap = %+v", s)
+	}
+}
+
+// D98 (macrevd P2): the reported list is all or nothing. When page one lists a model and a cursor but
+// a later page errors, is malformed or never comes (the app-server exits), the partial list is not
+// advertised (the cockpit falls back to the published plan list) and the quota reading stays ok.
+func TestModelListLaterPageFailureAdvertisesNoPartialList(t *testing.T) {
+	page1 := `{"id":4,"result":{"data":[{"id":"p1","model":"native-a","hidden":false}],"nextCursor":"next"}}`
+	for name, page2 := range map[string]string{
+		"error":     `echo '{"id":5,"error":{"code":-32603,"message":"internal"}}'`,
+		"malformed": `echo '{"id":5,"result":{"data":"not-a-list"}}'`,
+		"no data":   `echo '{"id":5,"result":{}}'`,
+		"null data": `echo '{"id":5,"result":{"data":null}}'`,
+		"null":      `echo '{"id":5,"result":null}'`,
+		"eof":       `exit 0`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			isolateHome(t)
+			cache := t.TempDir()
+			bin := filepath.Join(t.TempDir(), "codex")
+			script := `#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *'"id":1,'*) echo '{"id":1,"result":{}}' ;;
+    *'"method":"account/rateLimits/read"'*) printf '{"id":2,"result":%s}\n' '` + strings.ReplaceAll(acctResponse, "\n", "") + `' ;;
+    *'"method":"account/read"'*) echo '{"id":3,"result":{"account":{"type":"apiKey"}}}' ;;
+    *'"method":"model/list"'*'"cursor"'*) ` + page2 + ` ;;
+    *'"method":"model/list"'*) echo '` + page1 + `' ;;
+  esac
+done
+`
+			if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
+				t.Fatal(err)
+			}
+			s := loadAccount(cache)
+			if s == nil || s.Status != "ok" || len(s.Windows) != 2 {
+				t.Fatalf("the quota reading must survive: snap = %+v", s)
+			}
+			if len(s.ReportedModels) != 0 {
+				t.Fatalf("incomplete list advertised instead of fallback: %v", s.ReportedModels)
+			}
+			r := Report{}
+			applyAccount(&r, cache, acctNow)
+			if len(r.Accounts) == 0 || len(r.Accounts[0].ReportedModels) != 0 {
+				t.Fatalf("report carries a partial list: %+v", r.Accounts)
+			}
+		})
+	}
+}
+
+// The list longer than the caps is not advertised either: a truncated list would hide models.
+func TestModelListOverTheCapsIsNotAdvertised(t *testing.T) {
+	page := func(p int, n int, next bool) json.RawMessage {
+		var d []map[string]any
+		for i := 0; i < n; i++ {
+			d = append(d, map[string]any{"id": "x", "model": "m-" + strconv.Itoa(p) + "-" + strconv.Itoa(i)})
+		}
+		r := map[string]any{"data": d, "nextCursor": nil}
+		if next {
+			r["nextCursor"] = "c"
+		}
+		b, _ := json.Marshal(r)
+		return b
+	}
+	send := func(any) error { return nil }
+	// Every page has a cursor: the page cap runs out before the list ends.
+	if got := askCodexModels(send, func(id int) (json.RawMessage, error) { return page(id, 1, true), nil }); got != nil {
+		t.Fatalf("page cap: %v", got)
+	}
+	// One page with more ids than the size cap.
+	if got := askCodexModels(send, func(id int) (json.RawMessage, error) { return page(id, modelListMax+1, false), nil }); got != nil {
+		t.Fatalf("size cap: %d ids", len(got))
+	}
+	// An explicit empty data array is a legitimate page; a page without one is malformed.
+	if got := askCodexModels(send, func(id int) (json.RawMessage, error) {
+		if id == 4 {
+			return page(id, 1, true), nil
+		}
+		return json.RawMessage(`{"data":[],"nextCursor":null}`), nil
+	}); strings.Join(got, ",") != "m-4-0" {
+		t.Fatalf("empty last page = %v", got)
+	}
+	if got := askCodexModels(send, func(int) (json.RawMessage, error) { return json.RawMessage(`{"nextCursor":null}`), nil }); got != nil {
+		t.Fatalf("page without data = %v", got)
+	}
+	// A complete two-page list is kept.
+	if got := askCodexModels(send, func(id int) (json.RawMessage, error) { return page(id, 2, id == 4), nil }); strings.Join(got, ",") != "m-4-0,m-4-1,m-5-0,m-5-1" {
+		t.Fatalf("complete list = %v", got)
 	}
 }

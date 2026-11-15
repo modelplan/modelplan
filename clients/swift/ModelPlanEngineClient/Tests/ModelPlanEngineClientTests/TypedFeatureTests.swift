@@ -311,7 +311,7 @@ extension RealBinaryTests {
         addTeardownBlock { await probe.resumeResponse(); await client.stop() }
         let original = try await client.start()
         try await eventually { await probe.rowCount() > 0 }
-        await probe.suspendNextResponse()
+        await probe.suspendNextDiagnostics()
         let control = Task { try await client.diagnostics() }
         try await eventually { await probe.responseIsPaused() }
         let query = Task { try await client.cockpit() }

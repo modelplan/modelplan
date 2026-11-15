@@ -49,6 +49,10 @@ import XCTest
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         try await S4QuotaJourney.resetEvents(capture:capture)
     }
+    func testNormalEntryForecastNotice() async throws {
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        try await S4QuotaJourney.forecastNotice(capture:capture)
+    }
     func testNormalEntryRolesAndGeneralTightest() async throws {
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         try await S4QuotaJourney.roles(capture:capture)

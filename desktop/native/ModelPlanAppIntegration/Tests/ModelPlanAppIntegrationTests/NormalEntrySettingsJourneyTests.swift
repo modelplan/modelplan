@@ -28,7 +28,7 @@ actor SettingsJourneyClient: EngineClient {
     func retry() async throws -> EngineDeliveryContext { try await start() }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-rows")) }
     func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
-    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { grantCalls += 1; throw EngineClientError.unsupportedCapability }
+    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { grantCalls += 1; return .init(requestID: .string(request.requestId)) }
     func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-refresh")) }
     func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
@@ -76,6 +76,95 @@ actor SettingsJourneyClient: EngineClient {
 }
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
+    /// SET-9-43 / MENU-05 (G3-93): untouched settings follow the current default. A profile written by an older build stored
+    /// every key at once, including the then-default "icon"; that value is dropped once. A choice made after the change stays.
+    func testSET_9_43DefaultsFollowTheCurrentDefaultAndOnlyAChosenIconStays() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g393-sparse-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        func open() throws -> SettingsStore { try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]) }
+        // Fresh profile: the tightest number.
+        var store = try open()
+        var shown = await store.snapshot().preferences.menuDisplay
+        XCTAssertEqual(shown, .tightest, "a fresh profile shows the percentage")
+        try FileManager.default.removeItem(at: profile)
+        // An old profile: every key written, menuDisplay "icon" only because it was the default then.
+        var old = SettingsPreferences(); old.menuDisplay = .icon; old.theme = .night
+        let values = try JSONSerialization.jsonObject(with: JSONEncoder().encode(old))
+        let core = try JSONSerialization.jsonObject(with: JSONEncoder().encode(FoundationCorePreferences()))
+        let location = try FoundationPreferenceLocation(applicationSupport: profile, product: .community)
+        try FileManager.default.createDirectory(at: location.directory, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "settings": values, "core": core]).write(to: location.target)
+        store = try open()
+        shown = await store.snapshot().preferences.menuDisplay
+        XCTAssertEqual(shown, .tightest, "the auto-written icon is dropped by the one-time migration")
+        let theme = await store.snapshot().preferences.theme
+        XCTAssertEqual(theme, .night, "every other stored value is kept")
+        // The user chooses icon after the change: it is written and stays, and untouched keys are not written.
+        _ = try await store.update { $0.menuDisplay = .icon }
+        store = try open()
+        shown = await store.snapshot().preferences.menuDisplay
+        XCTAssertEqual(shown, .icon, "an explicit icon choice stays")
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: location.target)) as? [String: Any])
+        let settings = try XCTUnwrap(saved["settings"] as? [String: Any])
+        XCTAssertEqual(settings["menuDisplay"] as? String, "icon")
+        XCTAssertNil(settings["automaticUpdates"], "an untouched key is not written")
+        // Choosing the default again stops pinning it.
+        _ = try await store.update { $0.menuDisplay = .tightest }
+        let again = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: location.target)) as? [String: Any])
+        XCTAssertNil((again["settings"] as? [String: Any])?["menuDisplay"])
+    }
+
+    /// macrevc-884-1 / -2: the first import of an old settings-v1.json goes through the same rule once. A marked (sparse)
+    /// legacy file keeps its explicit icon and its other values; an unmarked one loses only the auto-written icon.
+    /// The published file carries the marker so the rule does not run a second time on the next open.
+    func testSET_9_43LegacyImportKeepsAMarkedIconAndDropsAnUnmarkedOne() async throws {
+        for (marked, expected) in [(true, MenuDisplay.icon), (false, .tightest)] {
+            let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g393-import-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: profile) }
+            let location = try FoundationPreferenceLocation(applicationSupport: profile, product: .community)
+            let legacy = location.directory.appendingPathComponent("Native/settings-v1.json")
+            try FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
+            var envelope: [String: Any] = ["schemaVersion": 1, "preferences": ["menuDisplay": "icon", "theme": "night"]]
+            if marked { envelope["sparse"] = true }
+            try JSONSerialization.data(withJSONObject: envelope).write(to: legacy)
+            for _ in 0..<2 {
+                let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+                let preferences = await store.snapshot().preferences
+                XCTAssertEqual(preferences.menuDisplay, expected, "marked: \(marked)")
+                XCTAssertEqual(preferences.theme, .night, "other stored values survive the import")
+            }
+            let published = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: location.target)) as? [String: Any])
+            XCTAssertEqual(published["sparse"] as? Bool, true, "the imported file carries the marker")
+        }
+    }
+
+    func testV17NormalEntryDefaultsToTightestAndRetainsExplicitMenuChoice() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("v17-settings-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
+            bundleURL: profile.appendingPathComponent("Synthetic.app"), dockEnvironment: normalEntryTestEnvironment,
+            activateSettings: {})
+        await app.prepare()
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor
+        XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.menuDisplay, .tightest,
+                       "A fresh normal entry must select the tightest reading")
+        for choice in [MenuDisplay.icon, .twoWindows, .tightest] {
+            _ = try await store.update { $0.menuDisplay = choice }
+            let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            let relaunched = EngineRowsEntry.make(configuration: config, settingsStore: reopened, createsNativePanels: false,
+                bundleURL: profile.appendingPathComponent("Synthetic.app"), dockEnvironment: normalEntryTestEnvironment,
+                activateSettings: {})
+            await relaunched.prepare()
+            XCTAssertEqual(try XCTUnwrap(relaunched.settingsHost.application.editor.snapshot).preferences.menuDisplay,
+                           choice, "Explicit choices must survive reconstruction through the normal entry")
+            relaunched.composition.dock.close()
+        }
+    }
+
     func testFoundationStoreFinishesFirstRunWithCheckedReaderWithoutSavingConsent() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-foundation-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
@@ -120,15 +209,12 @@ actor SettingsJourneyClient: EngineClient {
         let first = try makeApp(); defer { first.composition.dock.close() }
         await first.prepare(); first.allowDockPresentation()
         await first.composition.start()
-        try select("Hide Quota Widget", in: first.composition.dock.menu())
-        try await waitFor(first, shown: false)
+        try await chooseShowQuotaWidget(first, checked: true)
         XCTAssertFalse(first.composition.dock.interactionEnvironment().active)
-        try await showFromStatusMenu(first)
-        try await waitFor(first, shown: true)
+        try await chooseShowQuotaWidget(first, checked: false)
         XCTAssertTrue(first.composition.dock.interactionEnvironment().active)
 
-        try select("Hide Quota Widget", in: first.composition.dock.menu())
-        try await waitFor(first, shown: false)
+        try await chooseShowQuotaWidget(first, checked: true)
         let editor = first.settingsHost.application.editor
         let snapshot = try XCTUnwrap(editor.snapshot)
         let settingsRows = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context, paneID: nil)
@@ -136,8 +222,7 @@ actor SettingsJourneyClient: EngineClient {
         _ = try await editor.commit(SettingsB21Edit.showDock(true))
         XCTAssertTrue(first.composition.dock.interactionEnvironment().active)
 
-        try select("Hide Quota Widget", in: first.composition.dock.menu())
-        try await waitFor(first, shown: false)
+        try await chooseShowQuotaWidget(first, checked: true)
         await first.composition.stop()
         first.composition.dock.close()
         let reopened = try makeApp(); await reopened.prepare(); reopened.allowDockPresentation()

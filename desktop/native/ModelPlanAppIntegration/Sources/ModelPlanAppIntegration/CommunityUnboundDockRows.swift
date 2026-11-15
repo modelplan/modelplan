@@ -6,21 +6,34 @@ import ModelPlanSettings
 
 /// Presentation locators never assert a subscription ref or verified account join.
 public enum DockCardReadingState: Equatable, Sendable { case ok, loading, stale, errorLastGood, error }
+public struct DockWindowObservation: Sendable {
+    public let sourceName: String
+    public let observedAt: Date?
+    // Retained provenance conveys neither a numeric reading nor an active reset deadline.
+    var verifiedRetained = false
+}
+
 public struct DockContentRow: Sendable {
     public let input: DockInstrumentInput
     public let reason: String
     public let nextStep: String
+    /// D41: the label of a local action the card offers for this row; empty when none.
+    public var actionLabel = ""
     public let originalObservedAt: Date?
     public let plan:String, sourceName:String
     public let resetTimes:[String:Date]
     public let windowDescriptions:[String:String]
     public let additionalRows:[DockCardRow]
+    let resetCountExpiry: Date?
+    public let links: [DockCardLink]
+    public let windowObservations: [String: DockWindowObservation]?
     public let cardReadingState: DockCardReadingState
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
-                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],cardReadingState:DockCardReadingState?=nil) {
+                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],resetCountExpiry: Date? = nil,links:[DockCardLink]=[],windowObservations:[String:DockWindowObservation]?=nil,cardReadingState:DockCardReadingState?=nil) {
         self.input = input; self.reason = reason; self.nextStep = nextStep
         self.originalObservedAt = originalObservedAt
-        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows
+        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows;self.resetCountExpiry=resetCountExpiry;self.links=links
+        self.windowObservations = windowObservations
         self.cardReadingState = cardReadingState ?? {
             switch input.dataState { case .fresh: return .ok; case .loading: return .loading; case .stale: return .stale; case .unavailable: return .error }
         }()
@@ -28,10 +41,24 @@ public struct DockContentRow: Sendable {
     private func cardAge(at now:Date,english:Bool) -> String {
         CommunityObservationAge.cardText(observedAt: originalObservedAt, now: now, english: english)
     }
-    public func cardSourceAndAge(at now:Date,english:Bool) -> String {
+    public func cardSourceAndAge(at now:Date,english:Bool,selectedWindowID:String?=nil) -> String {
+        if let selectedWindowID, windowObservations != nil {
+            return observationText(for: selectedWindowID, at: now, english: english)
+        }
         let age = cardAge(at: now, english: english)
         return sourceName.isEmpty ? age : sourceName + " · " + age
     }
+    private func observationText(for windowID: String?, at now: Date, english: Bool) -> String {
+        let fact = windowID.flatMap { id -> DockWindowObservation? in
+            guard let window = input.windows.first(where: { $0.id == id }) else { return nil }
+            if case .verifiedCurrent(let until) = window.validity, now >= until { return nil }
+            return windowObservations?[id]
+        }
+        let source = fact?.sourceName ?? (english ? "Unknown source" : "未知来源")
+        let age = CommunityObservationAge.cardText(observedAt: fact?.observedAt, now: now, english: english)
+        return source + " · " + age
+    }
+
     public func cardBadge(at now:Date,english:Bool) -> String {
         let age=cardAge(at:now,english:english)
         switch cardReadingState {
@@ -42,12 +69,71 @@ public struct DockContentRow: Sendable {
         case .error: return reason.isEmpty ? (english ? "Read failed · no reading" : "读取失败 · 无可用读数") : reason
         }
     }
-    public func resetDetails(at now:Date,english:Bool) -> [String:String] {
-        input.windows.reduce(into:[:]) { result,window in
+    /// card.js: one reserve line, reset cards and credits on the left and the earliest expiry on the right.
+    func cardAdditionalRows(at now: Date, english: Bool) -> [DockCardRow] {
+        let count = additionalRows.first { $0.id == "reset-count" }, credits = additionalRows.first { $0.id == "credits" }
+        guard count != nil || credits != nil else { return additionalRows }
+        var expiryText = ""
+        if let expiry = resetCountExpiry, count != nil {
+            let seconds = expiry.timeIntervalSince(now)
+            if seconds.isFinite, seconds < Double(Int.max) {
+                if seconds <= 0 { expiryText = english ? "expired" : "已到期" }
+                else {
+                    let duration = Self.expiryDuration(Int(ceil(seconds / 60)))
+                    expiryText = english ? "exp in " + duration : duration + " 后到期"
+                }
+            }
+        }
+        // The count and the credits can carry the same note; the folded line says it once.
+        var seen = Set<String>()
+        let notes = ([expiryText] + [count?.detail ?? "", credits?.detail ?? ""].flatMap { $0.components(separatedBy: " · ") })
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+        // The line is plain labelled text ("Resets 1 · Credits 19,614"), never an icon plus bare figures and never swapped on hover.
+        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: english ? "Reserve" : "储备",
+            value: Self.reserveText(resets: count?.value, credits: credits?.value, creditsClass: credits?.hint ?? "", creditsLabel: credits?.label ?? "", english: english),
+            detail: notes.joined(separator: " · "))
+        var placed = false
+        return additionalRows.flatMap { row -> [DockCardRow] in
+            guard row.id == "reset-count" || row.id == "credits" else { return [row] }
+            if placed { return [] }
+            placed = true
+            return [reserve]
+        }
+    }
+    /// The reserve line's text with each figure named. `resets` is the reset-count row's value ("↺1");
+    /// `creditsClass` is the producer's classification on the credits row ("credits", "money" or "" when the unit is unclassified).
+    /// Only a classified figure is called Credits or Balance; an unclassified unit keeps the row's own neutral name and its unit text.
+    static func reserveText(resets: String?, credits: String?, creditsClass: String = "", creditsLabel: String = "", english: Bool) -> String {
+        var parts = [String]()
+        if let resets {
+            let number = String(resets.drop { $0 == "↺" })
+            parts.append((english ? "Resets " : "重置次数 ") + (number.isEmpty ? "--" : number))
+        }
+        if let credits {
+            switch creditsClass {
+            case "money": parts.append((english ? "Balance " : "余额 ") + credits)
+            case "credits":
+                let number = credits.replacingOccurrences(of: english ? " credits" : " 点数", with: "")
+                parts.append((english ? "Credits " : "点数 ") + number)
+            default: parts.append(creditsLabel.isEmpty ? credits : creditsLabel + " " + credits)
+            }
+        }
+        return parts.joined(separator: " · ")
+    }
+    public func resetDetails(at now:Date,english:Bool,selectedWindowID:String?=nil) -> [String:String] {
+        let selectedObservation = selectedWindowID.map { observationText(for: $0, at: now, english: english) }
+        return input.windows.reduce(into:[:]) { result,window in
             let reset=Self.resetDetail(resetTimes[window.id] ?? window.resetsAt,now:now,english:english)
-            if let description=windowDescriptions[window.id],!description.isEmpty,description != window.label {
-                result[window.id]=description+" · "+reset
-            } else { result[window.id]=reset }
+            var detail = reset
+            if let description = windowDescriptions[window.id], !description.isEmpty, description != window.label {
+                detail = description + " · " + detail
+            }
+            // The header names the selected window's source and age; a row repeats it only when it differs.
+            if windowObservations != nil {
+                let own = observationText(for: window.id, at: now, english: english)
+                if own != selectedObservation { detail += " · " + own }
+            }
+            result[window.id] = detail
         }
     }
     private static func resetDetail(_ reset:Date?,now:Date,english:Bool) -> String {
@@ -55,12 +141,21 @@ public struct DockContentRow: Sendable {
         let seconds=reset.timeIntervalSince(now)
         guard seconds.isFinite,seconds < Double(Int.max/60) else { return "--" }
         guard seconds > 0 else { return english ? "Reset time passed":"已过重置时间" }
-        let minutes=Int(ceil(seconds/60)),days=minutes/1440,hours=(minutes%1440)/60,rest=minutes%60
-        let value:String
-        if days > 0 { value=english ? "\(days)d \(hours)h":"\(days)天\(hours)小时" }
-        else if hours > 0 { value=english ? "\(hours)h \(rest)m":"\(hours)小时\(rest)分" }
-        else { value=english ? "\(rest)m":"\(rest)分" }
-        return english ? "Resets in "+value:value+"后重置"
+        // D40: the card's compact form, so it fits the 85 pt column: "18m", "3h18", "5d20h";
+        // "5d20h 后重置" / "resets 5d20h". Prototype: opus-r7/src/rocket-r1/window-time.js:6
+        // (duration, imported as dhm by card.js:46) and strings/card.js:13 (card.resetIn).
+        let minutes=Int(ceil(seconds/60))
+        return english ? "resets "+compactDuration(minutes):compactDuration(minutes)+" 后重置"
+    }
+    /// card.js expiryDuration: an expiry under two days stays in hours, "30h", "30h05".
+    static func expiryDuration(_ minutes:Int) -> String {
+        guard minutes >= 60, minutes < 48*60 else { return compactDuration(minutes) }
+        return "\(minutes/60)h"+(minutes%60 == 0 ? "":String(format:"%02d",minutes%60))
+    }
+    static func compactDuration(_ minutes:Int) -> String {
+        if minutes < 60 { return "\(minutes)m" }
+        if minutes < 1440 { return "\(minutes/60)h"+String(format:"%02d",minutes%60) }
+        return "\(minutes/1440)d\(minutes%1440/60)h"
     }
     public func sourceAndAge(at now: Date) -> String {
         CommunityObservationAge.text(observedAt: originalObservedAt, now: now)
@@ -70,7 +165,12 @@ typealias CommunityUnboundDockRow = DockContentRow
 
 enum CommunityUnboundDockRows {
     static func make(_ snapshot: JoinedSnapshot, diagnostics: StoreDiagnostics, now: Date,
-                     canonicalConsent: ConsentPreview? = nil) -> [CommunityUnboundDockRow] {
+                     canonicalConsent: ConsentPreview? = nil, language: SettingsLanguage? = nil) -> [CommunityUnboundDockRow] {
+        /// One language when the caller knows the choice; both at once only for callers that do not (legacy probes).
+        func both(_ english: String, _ chinese: String) -> String {
+            guard let language else { return english + " / " + chinese }
+            return language == .english ? english : chinese
+        }
         let readable = CommunityReaderReason.isReadable(snapshot, diagnostics: diagnostics, now: now)
         let allowed = Set((canonicalConsent?.mode == .off ? [] : canonicalConsent?.tools ?? []).filter(\.allowed).map { canonical($0.id) })
         let connections = snapshot.personal.connections ?? []
@@ -79,7 +179,8 @@ enum CommunityUnboundDockRows {
             let source = sources.first { $0.source == "native:" + provider }
             let connection = connections.first { canonical($0.id) == provider }
             let pendingCodes: Set<String> = ["missing", "no-reading", "not-enabled", "not read yet", "not-read-yet", "not_read_yet", "pending"]
-            let machineCodes = pendingCodes.union(["consent_required", "keychain_choice_needed", "keychain_denied", "not_detected", "expired", "stale", "unsupported_schema", "reader_error", "parse_error", "timeout", "runtime_missing", "error", "unavailable"])
+            let extraCodes: Set<String> = ["consent_required", "keychain_choice_needed", "keychain_denied", "not_detected", "expired", "stale", "unsupported_schema", "reader_error", "parse_error", "timeout", "runtime_missing", "not_found", "rpc_error", "closed", "region_refused", "no_key", "key_missing", "error", "unavailable"]
+            let machineCodes: Set<String> = pendingCodes.union(extraCodes)
             let reasonCode = (source?.reason).flatMap { machineCodes.contains($0) ? $0 : nil }
             func next(_ fallback: String) -> String {
                 let nativeRemedy = source.flatMap { value -> String? in
@@ -92,25 +193,40 @@ enum CommunityUnboundDockRows {
                       !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return fallback }
                 return text
             }
-            if current { return ("Local account reading / 本地账户读数", next("Check connected tools in Settings / 在设置检查已连接工具")) }
+            // D87 slice 4: the shared table names the cause and its one action; no lumped line.
+            func causeResult(_ code: String?) -> (String, String)? {
+                guard let code, let entry = ReaderCauseTable.entry(code: code, tool: provider, toolName: title(provider, language)) else { return nil }
+                return (both(entry.reason.english, entry.reason.chinese), next(both(entry.action.english, entry.action.chinese)))
+            }
+            if current { return (both("Local account reading", "本地账户读数"), next(both("Check connected tools in Settings", "在设置检查已连接工具"))) }
             let status = source?.status ?? connection?.quota?.status
             let nativeFailure = source.map { ["consent_required", "unavailable", "error", "stale", "expired", "unsupported_schema", "keychain_choice_needed", "keychain_denied"].contains($0.status) || reasonCode.map { !pendingCodes.contains($0) } == true } ?? false
             let code = nativeFailure ? reasonCode ?? source?.status : reasonCode ?? connection?.quota?.reason ?? connection?.quotaAccess?.blocked ?? status
+            // The engine's own failure code (Codex's account snapshot reports `codex-account`) beats a generic status.
+            var causeCode: String? = source?.errorCode
+            if causeCode == nil, provider == "codex" {
+                causeCode = sources.first(where: { $0.source == "codex-account" })?.errorCode
+            }
+            if let causeCode, causeCode != "other", let result = causeResult(causeCode) { return result }
             if provider == "claude", ["consent_required", "keychain_choice_needed", "keychain_denied"].contains(code ?? "") {
-                return (code == "keychain_denied" ? "Keychain permission denied / 钥匙串许可被拒绝" : "Keychain permission required / 需要钥匙串许可",
-                        next("Allow Keychain for Claude Code in Settings / 在设置允许Claude Code使用钥匙串"))
+                return (code == "keychain_denied" ? both("Keychain permission denied", "钥匙串许可被拒绝") : both("Keychain permission required", "需要钥匙串许可"),
+                        next(both("Allow Keychain for Claude Code in Settings", "在设置允许Claude Code使用钥匙串")))
             }
             if !nativeFailure, allowed.contains(provider),
                ["missing", "no-reading", "not-enabled", "not read yet", "not-read-yet", "not_read_yet", "pending"].contains(status ?? "") || ["missing", "not read yet", "not-read-yet", "not_read_yet", "pending"].contains(code ?? "") || code == nil {
-                return ("Waiting for first reading / 等待首次读取", next("Check this tool in Settings / 在设置检查此工具"))
+                return (both("Waiting for first reading", "等待首次读取"), next(both("Check this tool in Settings", "在设置检查此工具")))
             }
             switch code {
-            case "consent_required": return ("Reader permission required / 需要读取许可", next("Review consent in Settings / 在设置检查授权"))
-            case "not_detected": return ("Reader not detected / 未检测到读取组件", next("Sign in to the tool, then check Settings / 登录工具后在设置检查"))
-            case "expired", "stale": return ("Reading expired / 读数已过期", next("Check this tool in Settings / 在设置检查此工具"))
-            case "unsupported_schema": return ("Reader update required / 需要更新读取组件", next("Check component updates in Settings / 在设置检查组件更新"))
-            case "reader_error", "parse_error", "timeout", "runtime_missing", "error", "unavailable": return ("Reading unavailable / 读取暂不可用", next("Check reader status in Settings / 在设置检查读取状态"))
-            default: return ("No current reading / 暂无当前读数", next("Check connected tools in Settings / 在设置检查已连接工具"))
+            case "consent_required": return (both("Reader permission required", "需要读取许可"), next(both("Review consent in Settings", "在设置检查授权")))
+            case "not_detected": return (both("Reader not detected", "未检测到读取组件"), next(both("Sign in to the tool, then check Settings", "登录工具后在设置检查")))
+            case "expired", "stale": return (both("Reading expired", "读数已过期"), next(both("Check this tool in Settings", "在设置检查此工具")))
+            case "unsupported_schema": return (both("Reader update required", "需要更新读取组件"), next(both("Check component updates in Settings", "在设置检查组件更新")))
+            case "not_found", "rpc_error", "closed", "region_refused", "no_key", "key_missing":
+                return causeResult(code) ?? (both("Reading unavailable", "读取暂不可用"), next(both("Check reader status in Settings", "在设置检查读取状态")))
+            // A bare `timeout` or `runtime_missing` reason string (no engine errorCode) stays the generic line; the
+            // specific cause above comes from the engine's errorCode.
+            case "reader_error", "parse_error", "timeout", "runtime_missing", "error", "unavailable": return (both("Reading unavailable", "读取暂不可用"), next(both("Check reader status in Settings", "在设置检查读取状态")))
+            default: return (both("No current reading", "暂无当前读数"), next(both("Check connected tools in Settings", "在设置检查已连接工具")))
             }
         }
         var result: [CommunityUnboundDockRow] = [], represented = Set<String>(), emitted = Set<String>()
@@ -135,10 +251,10 @@ enum CommunityUnboundDockRows {
             else { id = locator("presentation.account.\(index)") }
             guard emitted.insert(id).inserted else { continue }
             let (reason, next) = guidance(provider, current: current)
-            var input = DockInstrumentInput(id: id, name: title(provider), windows: values)
+            var input = DockInstrumentInput(id: id, name: title(provider, language), windows: values)
             input.vendorResourceKey = provider == "codex" ? "openai" : provider == "claude" ? "claude" : nil
             input.dataState = current ? .fresh : .unavailable
-            if !current { input.alias = title(provider) + " · " + reason }
+            if !current { input.alias = title(provider, language) + " · " + reason }
             result.append(.init(input: input, reason: reason, nextStep: next, originalObservedAt: account.observedAt?.date))
         }
         var providers: [String] = []
@@ -153,8 +269,8 @@ enum CommunityUnboundDockRows {
         }
         for (index, provider) in providers.enumerated() where !represented.contains(provider) {
             let (reason, next) = guidance(provider, current: false)
-            var input = DockInstrumentInput(id: locator("presentation.connection.\(index)"), name: title(provider), windows: [])
-            input.alias = title(provider) + " · " + reason; input.dataState = .unavailable
+            var input = DockInstrumentInput(id: locator("presentation.connection.\(index)"), name: title(provider, language), windows: [])
+            input.alias = title(provider, language) + " · " + reason; input.dataState = .unavailable
             result.append(.init(input: input, reason: reason, nextStep: next, originalObservedAt: connections.first { canonical($0.id) == provider }?.quota?.at?.date))
         }
         return result
@@ -164,7 +280,7 @@ enum CommunityUnboundDockRows {
         for prefix in ["native:", "codexbar:"] where id.hasPrefix(prefix) { id = String(id.dropFirst(prefix.count)) }
         return id == "claude-code" ? "claude" : id == "openai" ? "codex" : id
     }
-    private static func title(_ id: String) -> String {
-        SettingsConnectionTool(rawValue: id)?.title ?? (id == "amp" ? "Amp" : "Reader / 用量读取")
+    private static func title(_ id: String, _ language: SettingsLanguage?) -> String {
+        SettingsConnectionTool(rawValue: id)?.title ?? (id == "amp" ? "Amp" : (language.map { $0 == .english ? "Reader" : "用量读取" } ?? "Reader / 用量读取"))
     }
 }

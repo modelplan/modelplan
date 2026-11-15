@@ -4,9 +4,15 @@
 // one merge-group commit from the per-PR states plus the group's own proofs. evaluate.mjs feeds them.
 //
 // The rules are a port of the coordinator's landing scripts (tier, trusted-author, verdict, carry, GLM,
-// design and stale-base checks). Deliberate differences are marked "Stricter:"; none of them relaxes a gate.
+// and design checks). Deliberate differences are marked "Stricter:". D243 (owner 2026-11-13, process audit steps 2
+// and 5) made the gate lean: one GPT review verdict, green CI, exact head and the queue decide. Scenario evidence,
+// Scenarios lines, trains, GLMREV, DESIGN and non-GPT verdict blocks are still read but only reported (the status
+// description's "info:" part); device evidence moved to the build gate. There is no stale-base check (owner 2026-11-07): a PR need not contain the latest main, because the queue's own CI on
+// the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
 export const CONTEXT = "modelplan-gates";
+// The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
+export const REPO = "modelplan/modelplan";
 // Every lane posts through this account; anybody can comment on a public repo, so nothing else counts.
 // The numeric id is checked too, so a renamed or recycled login never inherits the trust.
 export const TRUSTED = Object.freeze({ login: "guanbear", id: 11829005 });
@@ -15,8 +21,16 @@ export const SELF_WORKFLOWS = Object.freeze([".github/workflows/merge-gates.yml"
 // A head counts as CI-checked only once this workflow has run; every other run of the same push is created
 // with it, so its completion means the head's run list is complete.
 export const ANCHOR_WORKFLOW = ".github/workflows/ci.yml";
-// Workflows that must pass on the merge-group commit itself (they have a merge_group trigger).
-export const QUEUE_WORKFLOWS = Object.freeze([".github/workflows/ci.yml"]);
+// Workflows that must pass on the merge-group commit itself (they have a merge_group trigger). desktop.yml
+// carries the Mac build and native-headless checks; its queue-scope job skips them for a group outside its paths.
+// The Linux-only path-filtered workflows (D112, 11-09: #801 + #764 each passed alone and broke main's U11 cockpit
+// web together) run in the queue too; each has a queue-scope job with its pull_request path list, so it always
+// produces a run (skipped jobs count as green) and no group can finish before it has started.
+export const QUEUE_WORKFLOWS = Object.freeze([
+  ".github/workflows/ci.yml", ".github/workflows/desktop.yml",
+  ".github/workflows/u11-cockpit.yml", ".github/workflows/official-visuals.yml", ".github/workflows/u11a-aggregate.yml",
+  ".github/workflows/u14-harness.yml", ".github/workflows/transport-fuzz.yml",
+]);
 const SHA = /^[0-9a-f]{40}$/;
 
 export const PENDING = "pending";
@@ -46,8 +60,10 @@ const TEST_RE = /(^|\/)Tests\/|^desktop\/tests\/|(^|\/)tests?\/|_test\.go$|\.(te
 const TIER2_RE = /^schema\/app-cli\/|^cli\/internal\/appserver\/wire\/|^cli\/internal\/swiftwire\/|^clients\/swift\/|keychain|consent|credential|secret|privacy|signing|codesign|notari[sz]|sparkle|\.github\/workflows\/[^/]*(release|packag|candidate|sign|notar|distribution)[^/]*$|desktop\/native\/tools\/[^/]*(identity|sign|seal|bundle)[^/]*$|^scripts\/release|^cli\/internal\/(quota|readers|connections)\/|^desktop\/native\/ModelPlan(EngineStore|EngineClient|CockpitWeb)\/|^desktop\/cockpit\/src\/bridge/i;
 const TIER0_RE = /^docs\/|\.md$|^NOTICE|^LICEN|\.(png|jpe?g|svg|webp|woff2?|ttf|otf)$|^desktop\/official-visuals\/|^desktop\/third-party\/|^scripts\/check-[a-z-]+\.mjs$|^scripts\/tests\/(check-|[a-z-]+-pack\.test\.mjs$)|^\.github\/|^source-policy\.json$/;
 // Stricter: the gate's own rules and workflows are tier 2, so a PR cannot loosen the gate that judges it
-// with less review than a seam change gets.
-const GATE_SELF_RE = /^scripts\/merge-gates\/|^\.github\/workflows\/merge-gates[^/]*$/;
+// with less review than a seam change gets. The tier table counts too: it decides which scenarios need evidence.
+// So does the workflow reviewer (pr-review.yml and scripts/pr-review/): it writes verdicts and runs next to the
+// owner's Codex login.
+const GATE_SELF_RE = /^scripts\/merge-gates\/|^\.github\/workflows\/merge-gates[^/]*$|^desktop\/native\/verification\/scenario-tiers\.tsv$|^\.github\/workflows\/pr-review\.yml$|^scripts\/pr-review\//;
 
 export function tierOverride(items) {
   let t = null;
@@ -151,14 +167,22 @@ export function carryChain(edges, head, verified = () => false) {
 }
 
 // ---- Verdicts ----
+// GPT reviewer lanes (owner D149): Sol = tier 2 (and tier 1), Terra = tier 1 only. macrevd is the third Sol lane
+// (owner 2026-11-12, until the v1 candidate).
+export const SOL_LANES = Object.freeze(["(macrev2)", "(macrevb)", "(macrevd)"]);
+// (gh-terra) is the GitHub workflow reviewer (pr-review.yml, owner 2026-11-15 pilot): the same Terra model run by a
+// workflow on the owner's review runner instead of an interactive pane. Its shadow name (gh-terra-shadow) counts
+// for nothing, like any other named lane. A Sol workflow lane, (gh-sol), joins SOL_LANES only after the pilot.
+export const TERRA_LANES = Object.freeze(["(macrevc)", "(macrev)", "(gh-terra)"]);
 // "VERDICT: merge|block @ <40 hex> (<lane>)" on its own line, case-insensitive, in trusted comments and
-// reviews. Counts for the head or a carried head; per lane the latest wins.
+// reviews. Counts for the head or a carried head; per lane the latest wins. A lane name is lower-case letters,
+// digits and inner hyphens; any other parenthesised suffix leaves the verdict unnamed.
 export function verdicts(items, head, carried) {
   const at = new Set([head, ...carried]);
   const lanes = new Map();
   for (const x of items)
     for (const l of lines(x.body)) {
-      const m = /^VERDICT: (merge|block) @ ([0-9a-f]{40})\b(?: \(([a-z0-9]+)\))?/i.exec(l);
+      const m = /^VERDICT: (merge|block) @ ([0-9a-f]{40})\b(?: \(([a-z0-9]+(?:-[a-z0-9]+)*)\))?/i.exec(l);
       if (!m) continue;
       const sha = m[2].toLowerCase();
       if (at.has(sha)) lanes.set(m[3] ? `(${m[3].toLowerCase()})` : "(unnamed)", m[1].toLowerCase());
@@ -166,18 +190,51 @@ export function verdicts(items, head, carried) {
   return lanes;
 }
 
+// ---- GLM-out fallback (owner 2026-11-09: "GLM fails -> there must be a fallback; mix them") ----
+// D243: GLMREV and DESIGN no longer gate. The rules below still decide which marker the description reports.
+// While the GLM quota is out, a Claude Sonnet reviewer stands in for GLM under its own label:
+// "DESIGN (sonnet): pass|fail @ <sha>" and "GLMREV (sonnet): OK|ISSUES @ <sha>". A (sonnet) pass/OK counts only
+// inside a time-boxed window (the repository variable GLM_FALLBACK_UNTIL, the GLM reset time) and only when it was
+// posted before the window closed; a (sonnet) fail/ISSUES always counts. Outside the window, only GLM markers count.
+export const GLM_FALLBACK_MAX_MS = 8 * 24 * 3600 * 1000;
+// parseFallbackUntil("2026-11-14T12:17:50Z", now) -> epoch ms, or null when unset, malformed or too far ahead.
+export function parseFallbackUntil(value, now) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value)) return null;
+  const t = Date.parse(value);
+  if (!Number.isFinite(t) || t > now + GLM_FALLBACK_MAX_MS) return null;
+  return t;
+}
+// fb: {until: epoch ms | null, now: epoch ms, used: [] (markers that counted are pushed here)}.
+const fallbackCounts = (fb, x) => !!fb && fb.until != null && fb.now < fb.until && Date.parse(x.at) < fb.until;
+
+// Mixing rules (review of #813): a (sonnet) pass/OK counts only at the EXACT head (never over a carry edge), only
+// inside the window, and never over a fail/ISSUES from either reviewer seen earlier at that head. A (sonnet)
+// fail/ISSUES always counts and stays blocking against a later GLM pass/OK; only GLMREV-ACCEPTED (the coordinator's
+// explicit lift) clears an ISSUES. GLM-only sequences keep "latest wins".
+
 // "DESIGN: pass|fail @ <40 hex>" counts only in a trusted comment or review whose body starts with
 // "Design-conformance review"; latest wins; carries over the same verified edges as verdicts.
-export function designVerdict(items, head, carried) {
+// "DESIGN (sonnet): ..." is the GLM-out fallback form (see above).
+export function designVerdict(items, head, carried, fb = null) {
   const at = new Set([head, ...carried]);
-  let r = null;
+  let r = null, src = null, failSeen = false, sonnetFail = false;
+  const lift = new RegExp(`^DESIGN-ACCEPTED @ ${head}(\\s|$)`);
   for (const x of items) {
+    // Coordinator lift (owner decision 2026-11-09): a trusted comment that starts with "DESIGN-ACCEPTED @ <head>"
+    // clears every earlier GLM or (sonnet) fail at that exact head (never carried); a later fail wins again.
+    if (x.kind === "comment" && lift.test(x.body)) { r = "pass"; src = "accepted"; failSeen = sonnetFail = false; continue; }
     if (!x.body.startsWith("Design-conformance review")) continue;
     for (const l of lines(x.body)) {
-      const m = /^DESIGN: (pass|fail) @ ([0-9a-f]{40})\b/.exec(l);
-      if (m && at.has(m[2])) r = m[1];
+      const m = /^DESIGN( \(sonnet\))?: (pass|fail) @ ([0-9a-f]{40})\b/.exec(l);
+      if (!m || !at.has(m[3])) continue;
+      const sonnet = !!m[1];
+      if (m[2] === "fail") { r = "fail"; src = sonnet ? "sonnet" : "glm"; failSeen = true; sonnetFail ||= sonnet; continue; }
+      if (sonnet ? m[3] !== head || failSeen || !fallbackCounts(fb, x) : sonnetFail) continue;
+      r = "pass"; src = sonnet ? "sonnet" : "glm";
     }
   }
+  if (r === "pass" && src === "sonnet") fb?.used?.push("DESIGN (sonnet)");
+  if (r === "pass" && src === "accepted") fb?.used?.push("DESIGN-ACCEPTED");
   return r;
 }
 
@@ -186,36 +243,189 @@ export function designVerdict(items, head, carried) {
 const GLM_SCOPE_RE = /^(desktop\/native\/|cli\/|clients\/swift\/|schema\/app-cli\/)/;
 export const glmInScope = (paths) => paths.some((p) => GLM_SCOPE_RE.test(p));
 
-export function glmVerdict(items, head) {
-  let r = null;
-  const re = new RegExp(`^(GLMREV: (OK|ISSUES)|GLMREV-ACCEPTED) @ ${head}(\\s|$)`);
+// "GLMREV (sonnet): OK|ISSUES @ <head>" is the GLM-out fallback form (see the mixing rules above).
+export function glmVerdict(items, head, fb = null) {
+  let r = null, src = null, issuesSeen = false, sonnetIssues = false;
+  const re = new RegExp(`^(GLMREV( \\(sonnet\\))?: (OK|ISSUES)|GLMREV-ACCEPTED) @ ${head}(\\s|$)`);
   for (const x of items) if (x.kind === "comment") {
     const m = re.exec(x.body);
-    if (m) r = m[2] === "ISSUES" ? "issues" : "ok";
+    if (!m) continue;
+    const sonnet = !!m[2];
+    if (m[3] === "ISSUES") { r = "issues"; src = sonnet ? "sonnet" : "glm"; issuesSeen = true; sonnetIssues ||= sonnet; continue; }
+    if (!m[3]) { r = "ok"; src = "glm"; issuesSeen = sonnetIssues = false; continue; }   // GLMREV-ACCEPTED lifts
+    if (sonnet ? issuesSeen || !fallbackCounts(fb, x) : sonnetIssues) continue;
+    r = "ok"; src = sonnet ? "sonnet" : "glm";
   }
+  if (r === "ok" && src === "sonnet") fb?.used?.push("GLMREV (sonnet)");
   return r;
 }
 
+// ---- Exact-head scenario evidence (evidence-gate.sh); advisory since D243 ----
+const SCENARIO_LINE = /^\s*\**Scenarios:?\**:?/i;
+// Two digits, or three without a leading zero: ledger rows passed G3-99 (G3-100 and up were rejected as malformed).
+const SCENARIO_ID = /^[A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})$/;
+
+// The first matching body line is the declaration. It is either "none" (a bracketed note may follow) or spec
+// scenario IDs separated by commas, semicolons or "and", each with an optional bracketed note. Anything else
+// (requirement IDs, free text, an empty line) is malformed and reported as unreadable; it never fails (D243).
+export function parseScenarios(body) {
+  const line = lines(body ?? "").find((l) => SCENARIO_LINE.test(l));
+  if (line === undefined) return { declared: false, ids: [], malformed: null };
+  const rest = line.replace(SCENARIO_LINE, "").replace(/\*+\s*$/, "").trim();
+  if (/^none\s*(\(.*\))?$/i.test(rest)) return { declared: true, ids: [], malformed: null };
+  let bare = rest;
+  for (let prev = null; prev !== bare;) { prev = bare; bare = bare.replace(/\([^()]*\)/g, " "); }
+  const tokens = bare.split(/[,;\s]+/).filter((t) => t && t !== "and");
+  // A note stays free text, but cannot hide a mistyped ID.
+  const shaped = rest.match(/\b[A-Za-z][A-Za-z0-9-]*[0-9][A-Za-z0-9-]*\b/g) ?? [];
+  const bad = [...tokens, ...shaped].filter((t) => !SCENARIO_ID.test(t));
+  if (bad.length || !tokens.length)
+    return { declared: true, ids: [], malformed: `Scenarios line must be spec scenario IDs or none${bad.length ? `, not: ${bad.slice(0, 3).join(" ")}` : ""}` };
+  return { declared: true, ids: [...new Set(rest.match(/\b[A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})\b/g))].sort(), malformed: null };
+}
+
+// Lowest sufficient evidence per scenario (verification plan v2). Read from the default branch, never from a PR.
+export const TIER_TABLE = "desktop/native/verification/scenario-tiers.tsv";
+const CI_TIER = /^(T0|T1|T1P|T2|T2a|T2b)$/;
+
+export function parseTiers(text) {
+  const tiers = new Map();
+  for (const l of lines(text)) {
+    const [id, tier] = l.split("\t");
+    if (SCENARIO_ID.test(id) && /^T[0-9][A-Za-z0-9]*$/.test(tier ?? "")) tiers.set(id, tier);
+  }
+  return tiers;
+}
+
+// A table that cannot be read comes back empty, so every scenario then needs evidence.
+export function tiersFrom(read) {
+  try { return parseTiers(read()); } catch { return new Map(); }
+}
+
+// D97 (owner 2026-11-09, changes R13): a ledger PR may land on its automated gates. The coordinator checks them
+// (auto-verify.sh) and posts a trusted comment whose FIRST line is
+//   AUTO-VERIFIED: <scenario IDs, comma or space separated> @ <40-hex head sha> gates=<gates that applied>
+// The gate list is in canonical order and always starts ci,gui,review; design follows when the PR is design-touching
+// (required then, as in evidence-gate.sh), visual when it is visual-touching. The older form with walkthrough still
+// parses. It satisfies exactly the listed IDs (G3 rows and real-Mac tiers included) at that exact head; never carried.
+const AUTO_VERIFIED = /^AUTO-VERIFIED: ([A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})(?:[, ]+[A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2}))*) @ ([0-9a-f]{40}) gates=([a-z,]+)$/;
+export const AUTO_VERIFIED_GATES = Object.freeze(["ci,gui,review", "ci,gui,review,design", "ci,gui,review,visual",
+  "ci,gui,review,design,visual", "ci,gui,review,design,visual,walkthrough"]);
+
+// The IDs one comment body's first line auto-verifies at `head`, or [] when it is not a valid AUTO-VERIFIED line.
+export function autoVerified(body, head, { designTouching = false } = {}) {
+  const m = AUTO_VERIFIED.exec(lines(body ?? "")[0] ?? "");
+  if (!m || m[2] !== head || !AUTO_VERIFIED_GATES.includes(m[3])) return [];
+  if (designTouching && !m[3].split(",").includes("design")) return [];
+  return m[1].split(/[, ]+/).filter(Boolean);
+}
+
+// Only trusted issue comments count. Evidence is tied to the actual head and is never carried across a merge
+// or other commit. As in evidence-gate.sh (D21): every scenario that is not on a CI tier needs a line, so real-Mac
+// tiers, G3 rows and IDs missing from `tiers` all do. A CI-tier scenario needs no line because evaluatePr requires
+// green CI at the head anyway. D243: the result is never FAILURE (a malformed line is PENDING with its reason), and
+// the ledger rule (a "g3-NN" anywhere in title, body or branch forced a Scenarios line) is gone: it fired on
+// incidental mentions and caught nothing.
+export function evidenceState(pr, items, head, tiers = new Map(), { designTouching = false } = {}) {
+  const { ids: scenarios, malformed } = parseScenarios(pr.body ?? "");
+  if (malformed) return { state: PENDING, why: malformed };
+  if (!scenarios.length) return { state: SUCCESS, why: "not an evidence-tier-1 PR" };
+  const verified = new Set();
+  for (const item of items) if (item.kind === "comment") {
+    for (const id of autoVerified(item.body, head, { designTouching })) verified.add(id);
+    for (const line of lines(item.body)) {
+      const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
+      if (match && match[2] === head) verified.add(match[1]);
+      // Owner 2026-11-07: device evidence runs once after v1 development. An exact-head deferral lets the PR land;
+      // #470 stays open until every deferred scenario has real evidence, so this is never a VERIFIED line.
+      const deferred = /^EVIDENCE-DEFERRED: ([A-Z][A-Z0-9]{0,3}-(?:[0-9]{2}|[1-9][0-9]{2})) @ ([0-9a-f]{40}) issue=470$/.exec(line);
+      if (deferred && deferred[2] === head) verified.add(deferred[1]);
+    }
+  }
+  const onCi = (id) => CI_TIER.test(tiers.get(id) ?? "");
+  const missing = scenarios.filter((id) => !verified.has(id) && !onCi(id));
+  return missing.length ? { state: PENDING, why: `evidence pending: ${missing.join(", ")}` }
+    : { state: SUCCESS, why: "scenario evidence verified" };
+}
+
+// ---- Trains ----
+// A train lands many PRs under one Scenarios line, and only that line is checked for evidence, so a member's
+// scenario missing from it would land unaccounted for (#650 dropped seven). evaluate.mjs reads members only for
+// a PR that looks like a train: "train" in the title, a b/ branch, or a Supersedes section.
+export const isTrain = (pr) => /\btrain\b/i.test(pr.title ?? "") || (pr.head.ref ?? "").startsWith("b/") || /^#{2,3}\s*Supersedes\b/im.test(pr.body ?? "");
+
+// The PR numbers in the body's Supersedes section.
+export function supersededPrs(body) {
+  const section = /^#{2,3}\s*Supersedes\b.*\n((?:(?!#{1,3}\s).*(?:\n|$))*)/im.exec(body ?? "");
+  return [...new Set([...(section?.[1] ?? "").matchAll(/#([0-9]+)/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+}
+
+// based: PRs into the train's branch; open: open PRs into main; superseded: the PRs named in Supersedes;
+// commits: the train head's commits that main lacks. A PR merged through GitHub or carried at its exact head is
+// a member; a PR the train says it supersedes is one by declaration, unless it already landed on main under its
+// own gate.
+export function trainMembers(pr, { based, open, superseded, commits }) {
+  const members = new Map();
+  for (const p of [...based, ...open]) if (p.merged_at || commits.has(p.head.sha)) members.set(p.number, p);
+  for (const p of superseded) if (!(p.merged_at && p.base?.ref === "main")) members.set(p.number, p);
+  return [...members.values()].filter((p) => p.head.sha !== pr.head.sha).sort((a, b) => a.number - b.number);
+}
+
+// members: [{number, body}].
+export function trainScenarioGap(pr, members) {
+  const own = new Set(parseScenarios(pr.body).ids);
+  const gaps = [];
+  for (const m of members) {
+    const { ids, malformed } = parseScenarios(m.body);
+    if (malformed) gaps.push(`#${m.number}: unreadable Scenarios line`);
+    const lost = ids.filter((id) => !own.has(id));
+    if (lost.length) gaps.push(`#${m.number}: ${lost.join(" ")}`);
+  }
+  return gaps.length ? `train Scenarios line misses ${gaps.join("; ")}` : null;
+}
+
 // ---- CI at one commit (merge-when.sh) ----
-// runs: Actions workflow runs whose head_sha is the commit. Only the newest run per workflow counts, so a
+// runs: Actions workflow runs whose head_sha is the commit. A head sha is not unique to us: a fork can open a PR
+// with the same head and produce its own runs, which the head_sha listing returns too. So only runs that
+// `scope` accepts count (prRunScope / queueRunScope below), and of those only the newest run per workflow, so a
 // superseded or re-triggered run never blocks. A run GitHub rejected at parse time (startup_failure) has no
-// jobs and is caught here too. statuses: commit statuses at the commit other than our own context.
+// jobs and is caught here too, and so is a cancelled run (a job past its timeout cancels the whole run): when
+// it is the newest run for the head, the head fails rather than waiting. statuses: commit statuses at the
+// commit other than our own context.
 const OK_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
-export function latestRuns(runs) {
+export function latestRuns(runs, scope = () => true) {
   const by = new Map();
   for (const r of runs) {
-    if (SELF_WORKFLOWS.includes(r.path)) continue;
+    if (SELF_WORKFLOWS.includes(r.path) || !scope(r)) continue;
+    // action_required: GitHub holds the run for approval (a bot-opened or fork PR) and never executes it, so it
+    // proves nothing and must not displace a real run; with no executed run the workflow stays "waiting to start".
+    if (r.status === "completed" && r.conclusion === "action_required") continue;
     const prev = by.get(r.workflow_id);
     if (!prev || r.id > prev.id) by.set(r.workflow_id, r);
   }
   return [...by.values()];
 }
 
-export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW] } = {}) {
-  const latest = latestRuns(runs);
+// A PR head's runs: made in this repository (never a fork's run for the same sha) and owned by this PR. A
+// same-repository run lists its PRs; one that lists none (a manual run on the branch) must be on the PR's branch.
+export function prRunScope(pr) {
+  const repo = pr.base.repo.full_name;
+  return (r) => r.head_repository?.full_name === repo
+    && (r.pull_requests?.length ? r.pull_requests.some((p) => p.number === pr.number) : r.head_branch === pr.head.ref);
+}
+
+// A merge-group commit's runs: the queue's own merge_group runs in this repository.
+export function queueRunScope(repo) {
+  return (r) => r.head_repository?.full_name === repo && r.event === "merge_group"
+    && String(r.head_branch).startsWith("gh-readonly-queue/main/");
+}
+
+export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW], scope } = {}) {
+  const latest = latestRuns(runs, scope);
   const failed = [], waiting = [];
   for (const r of latest) {
     if (r.status !== "completed") waiting.push(r.name);
+    else if (r.conclusion === "cancelled") failed.push(`${r.name} cancelled upstream (timed out or stopped; re-run it)`);
     else if (!OK_CONCLUSIONS.has(r.conclusion)) failed.push(`${r.name} ${r.conclusion}`);
   }
   for (const s of statuses) {
@@ -230,75 +440,141 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW] } = 
   return { state: SUCCESS, why: "checks green" };
 }
 
+// A finished cancelled run re-evaluates its PR only while its head is still the PR head; a run cancelled because
+// a newer push replaced it is skipped, since the newer head's own runs re-evaluate (#767).
+export function cancelledRunSuperseded(run, prHead) {
+  return run.conclusion === "cancelled" && run.head_sha !== prHead;
+}
+
+// ---- Data-sync admission ----
+// .github/workflows/data-sync.yml opens a PR as the github-actions bot. That PR is admitted, instead of failing
+// the trusted-same-repository rule, only when every check below holds; the verdict and CI rules still apply.
+// pr.user is the PR author. `sync` is read by evaluate.mjs: {run: the workflow run named by the branch, commit:
+// the head commit}. A PR that does not pass stays "not a trusted same-repository PR" as before.
+export const DATA_SYNC = Object.freeze({
+  bot: { login: "github-actions[bot]", id: 41898282 },
+  workflow: ".github/workflows/data-sync.yml",
+  repoChecks: ".github/workflows/repo-checks.yml",
+  branch: /^data\/sync-[0-9A-Za-z._+-]+-([0-9]+)$/,
+  runEvents: ["schedule", "workflow_dispatch"],
+});
+const isBot = (u) => !!u && u.login === DATA_SYNC.bot.login && u.id === DATA_SYNC.bot.id;
+
+// The run id the branch name claims, or null when the PR does not look like a data-sync PR at all.
+export function dataSyncRunId(pr) {
+  if (!isBot(pr.user)) return null;
+  const m = DATA_SYNC.branch.exec(pr.head?.ref ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+// Returns null when the PR is an admitted data-sync PR, else the first reason it is not.
+export function dataSyncProblem({ pr, files, items, sync }) {
+  const repo = pr.base?.repo?.full_name;
+  if (!isBot(pr.user)) return "author is not the github-actions bot";
+  if (repo !== REPO || pr.head?.repo?.full_name !== REPO) return `head and base must both be ${REPO}`;
+  if (pr.base.ref !== "main") return "base is not main";
+  const runId = dataSyncRunId(pr);
+  if (!runId) return "branch is not data/sync-<version>-<run id>";
+  const paths = prPaths(files);
+  if (files.length >= FILE_LIST_LIMIT) return "file list may be truncated (API cap)";
+  if (!files.length || paths.some((f) => !f.startsWith("data/") || f.split("/").includes(".."))) return "a changed file is outside data/";
+  const { run, commit } = sync ?? {};
+  if (!run) return "the data-sync run could not be read";
+  if (run.id !== runId || String(run.path ?? "").split("@")[0] !== DATA_SYNC.workflow) return "branch run is not a data-sync.yml run";
+  if (run.repository?.full_name !== REPO || run.head_repository?.full_name !== REPO) return "data-sync run is not from this repository";
+  if (!DATA_SYNC.runEvents.includes(run.event) || run.head_branch !== "main") return "data-sync run was not a scheduled or manual run on main";
+  if (!run.head_sha || !run.created_at || !run.updated_at || !pr.created_at || pr.created_at < run.created_at || pr.created_at > run.updated_at)
+    return "PR was not opened while the data-sync run was running";
+  if (!commit || commit.sha !== pr.head.sha) return "head commit could not be read";
+  if (!isBot(commit.author) || (commit.parents ?? []).length !== 1) return "head commit is not a single commit authored by github-actions";
+  // The commit sits directly on the main commit the run checked out (this also rules out a tag or branch that merely
+  // shares the name "main").
+  if (commit.parents[0].sha !== run.head_sha) return "head commit is not on the commit the data-sync run checked out";
+  if (![...verdicts(items, pr.head.sha, []).values()].includes("merge")) return "needs a trusted VERDICT: merge @ the exact head";
+  return null;
+}
+
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
-// verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf }) {
+// verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
+// tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
+// glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
   if (pr.state !== "open") return res(FAILURE, `PR is ${pr.state}`);
   if (pr.base.ref !== "main") return res(FAILURE, `base is ${pr.base.ref}, not main; coordinator decides`);
   // Only the trusted account's own same-repository PRs land; a stranger's or a fork PR waits for the coordinator.
-  if (!isTrusted(pr.user) || pr.head.repo?.full_name !== pr.base.repo.full_name)
-    return res(FAILURE, "not a trusted same-repository PR; coordinator decides");
-  if (pr.draft) return res(PENDING, "draft");
-
+  // Narrow exception: a data-sync PR from the github-actions bot (dataSyncProblem); the gates below still apply.
+  let dataSync = false;
+  if (!isTrusted(pr.user) || pr.head.repo?.full_name !== pr.base.repo.full_name) {
+    const problem = dataSyncRunId(pr) ? dataSyncProblem({ pr, files, items, sync }) : "not data-sync";
+    if (problem) return res(FAILURE, dataSyncRunId(pr) ? `data-sync PR not admitted: ${problem}` : "not a trusted same-repository PR; coordinator decides");
+    dataSync = true;
+  }
+  const design = designTouch(files, conf);
   const paths = prPaths(files);
   const override = tierOverride(items);
   const tier = override ?? pathTier(paths);
-  const design = designTouch(files, conf);
   const carried = carryChain(carryEdges(items), head, verifiedEdge);
-  const extra = { tier, design: design.touching ? design.surfaces : [], carried };
+  const fb = { until: glmFallbackUntil, now, used: [] };
 
-  let lanes = verdicts(items, head, carried);
-  // Owner 2026-11-04 tier split: on tier 2 a macrev (Terra) verdict is advice, not a gate.
-  if (tier === 2) lanes = new Map([...lanes].filter(([l]) => l !== "(macrev)"));
-  // Stricter: a trusted block stops every tier, tier 0 included.
+  // One review gate (D243 step 5; amends R1/R4/R13/R14/R16 and the D161/D235 lifts). Tier 2 needs a Sol verdict
+  // (macrev2, macrevb or macrevd); tier 1 a Terra (macrevc, legacy macrev) or Sol one (owner D149). Owner 2026-11-04
+  // tier split: on tier 2 a macrev (Terra) verdict is advice. A block from a counting GPT lane, or an unnamed one, at the
+  // head (or a verified carried head) stops every tier, tier 0 included. GLM, (sonnet) and other lanes are input.
+  const allLanes = verdicts(items, head, carried);
+  const gptLanes = tier === 2 ? [...SOL_LANES, "(unnamed)"] : [...SOL_LANES, ...TERRA_LANES, "(unnamed)"];
+  const lanes = new Map([...allLanes].filter(([l]) => gptLanes.includes(l)));
+  // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
+  const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
+  if (tier !== 0 && glmInScope(paths)) {
+    const g = glmVerdict(items, head, fb);
+    if (g) notes.push(`GLMREV ${g}`);
+  }
+  if (design.touching) {
+    const d = designVerdict(items, head, carried, fb);
+    if (d) notes.push(`DESIGN ${d}`);
+  }
+  // D243 step 2 (amends D2/D3/D97 at PR level): device evidence moved to the build gate; a missing or unreadable
+  // Scenarios line or evidence line is reported only.
+  const evidence = evidenceState(pr, items, head, tiers, { designTouching: design.touching });
+  if (evidence.state !== SUCCESS) notes.push(evidence.why);
+  const gap = trainScenarioGap(pr, members);
+  if (gap) notes.push(gap);
+  const extra = { tier, design: design.touching ? design.surfaces : [], carried, glmFallback: fb.used, notes };
+  const say = (why) => (notes.length ? `${why}; info: ${notes.join("; ")}` : why);
+  if (pr.draft) return res(PENDING, say("draft"), extra);
+
   const blocked = [...lanes].filter(([, v]) => v === "block").map(([l]) => l);
-  if (blocked.length) return res(FAILURE, `VERDICT block ${blocked.join(" ")}`, extra);
+  if (blocked.length) return res(FAILURE, say(`VERDICT block ${blocked.join(" ")}`), extra);
 
   const missing = [];
-  if (tier === 2 && lanes.get("(macrev2)") !== "merge") missing.push("VERDICT (macrev2) merge");
-  if (tier === 1 && ![...lanes.values()].includes("merge")) missing.push("a VERDICT merge");
-  if (design.touching) {
-    const d = designVerdict(items, head, carried);
-    if (d === "fail") return res(FAILURE, `DESIGN fail (${design.surfaces.join(",")})`, extra);
-    if (d !== "pass") missing.push("DESIGN pass");
-  }
-  if (tier !== 0 && glmInScope(paths)) {
-    const g = glmVerdict(items, head);
-    if (g === "issues") return res(FAILURE, "GLMREV ISSUES at head", extra);
-    if (g !== "ok") missing.push("GLMREV OK or ACCEPTED");
-  }
-  const ci = ciState(runs, statuses);
-  if (ci.state === FAILURE) return res(FAILURE, ci.why, extra);
-  if (missing.length) return res(PENDING, `tier ${tier}: needs ${missing.join(", ")}`, extra);
-  if (ci.state === PENDING) return res(PENDING, ci.why, extra);
-  return res(SUCCESS, `tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`, extra);
-}
-
-// ---- Stale-base guard (merge-when.sh) ----
-// Checks that do not run in the merge queue only saw the PR head. If the base gained changes in the same
-// component (first two path segments) since the head forked, those checks never saw the combination.
-const component = (p) => p.split("/").slice(0, 2).join("/");
-export function staleOverlap(prFiles, baseFiles) {
-  const mine = new Set(prFiles.map(component));
-  return [...new Set(baseFiles.map(component))].filter((c) => mine.has(c) && !/^(docs|README\.md|NOTICE)/.test(c)).sort();
+  const merged = (names) => names.some((n) => lanes.get(n) === "merge");
+  if (tier === 2 && !merged(SOL_LANES)) missing.push(`VERDICT ${SOL_LANES.join(" or ")} merge`);
+  if (tier === 1 && !dataSync && !merged([...SOL_LANES, ...TERRA_LANES])) missing.push(`VERDICT ${[...TERRA_LANES, ...SOL_LANES].join(" or ")} merge`);
+  // A PR opened with the workflow token starts no pull_request run, so data-sync.yml dispatches ci.yml and
+  // repo-checks.yml on the branch; prRunScope accepts those same-repository runs on the PR's branch. Both are
+  // required before an admitted PR can pass.
+  const ci = ciState(runs, statuses, { scope: prRunScope(pr), ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
+  if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
+  if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
+  return res(SUCCESS, say(`tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`), extra);
 }
 
 // ---- One merge-group commit ----
-// steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}, overlap: [...]}.
-// queueRuns/queueStatuses: CI on the group commit itself.
-export function evaluateGroup({ steps, queueRuns, queueStatuses = [] }) {
+// steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}}.
+// queueRuns/queueStatuses: CI on the group commit itself; repo: the repository whose queue runs count.
+export function evaluateGroup({ steps, queueRuns, queueStatuses = [], repo = REPO }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
   for (const s of steps) {
     const n = `#${s.pr}`;
     if (!s.mergeProof.ok) return { state: FAILURE, why: `${n}: ${s.mergeProof.why}` };
     if (s.prResult.state !== SUCCESS) return { state: s.prResult.state === PENDING ? FAILURE : s.prResult.state, why: `${n}: ${s.prResult.why}` };
-    if (s.overlap.length) return { state: FAILURE, why: `${n}: stale base, main changed ${s.overlap.slice(0, 4).join(" ")}; merge main into the branch` };
   }
-  const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS });
+  const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo) });
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };
   return { state: SUCCESS, why: `group of ${steps.length}: gates pass` };
 }

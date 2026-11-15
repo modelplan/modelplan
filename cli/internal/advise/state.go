@@ -118,6 +118,11 @@ func (s *State) SaveWithLockWait(cache string, now time.Time, wait time.Duration
 		return err
 	}
 	defer unlock()
+	return s.saveLocked(cache, now)
+}
+
+// saveLocked merges what is on disk and writes; the caller holds the state lock.
+func (s *State) saveLocked(cache string, now time.Time) error {
 	disk := Load(cache)
 	for k, t := range disk.Seen {
 		if _, ok := s.Seen[k]; !ok {
@@ -150,6 +155,7 @@ func (s *State) SaveWithLockWait(cache string, now time.Time, wait time.Duration
 		if q.At.After(local.At) {
 			local.At = q.At
 		}
+		local.Spend = max(local.Spend, q.Spend)
 		s.Quotas[k] = local
 	}
 	keys := map[string]bool{}

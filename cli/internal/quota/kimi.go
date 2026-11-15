@@ -24,7 +24,11 @@ import (
 // Original implementation. The legacy explicit-key route is separate from the
 // consent-admitted, China-only saved-login route below; neither refreshes auth.
 var kimiHosts = map[string]string{"china": "https://api.kimi.com", "international": "https://api.kimi.ai"}
-var kimiReader = &nativeReader{Name: "Kimi Code", Regions: []string{"china", "international"}, KeyEnv: "KIMI_CODE_API_KEY", Fetch: fetchKimi, Managed: collectKimiLogin, Profiles: kimiLoginProfiles, Budget: &nativeReadBudget{Due: kimiBudgetDue, Reserve: kimiReserve, Finish: kimiFinish}}
+var kimiReader = &nativeReader{Name: "Kimi Code", Regions: []string{"china", "international"}, KeyEnv: "KIMI_CODE_API_KEY", Fetch: fetchKimi, Managed: collectKimiLogin, Profiles: kimiLoginProfiles, Budget: &nativeReadBudget{Due: kimiBudgetDue, Reserve: kimiReserve, Finish: kimiFinish}, LoginFiles: kimiLoginFiles}
+
+func kimiLoginFiles(profile ReaderProfile) []string {
+	return []string{filepath.Join(profile.Root, "credentials", "kimi-code.json")}
+}
 
 const KimiEndpointNotice = "Undocumented compatibility endpoint: GET /coding/v1/usages. Only the selected environment key is read; its value is never printed or stored. No Kimi credentials are refreshed or rewritten."
 
@@ -348,7 +352,24 @@ func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) read
 		}
 	}
 	// Device ID is transport metadata, never proof of an account or subscription.
-	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta}}
+	// D99: the model list on the same host with the same login; best effort, 3 s.
+	reported := reportedModelsGET(ctx, c, kimiLoginHost+"/coding/v1/models", kimiHeaders(credential.Access, device))
+	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta, ReportedModels: reported}}
+}
+
+// kimiHeaders are the reader's own headers, shared by the usage call and the D99 model list.
+func kimiHeaders(token, device string) map[string]string {
+	return map[string]string{
+		"Authorization":      "Bearer " + token,
+		"Accept":             "application/json",
+		"User-Agent":         "modelplan",
+		"X-Msh-Platform":     "kimi_code_cli",
+		"X-Msh-Version":      "modelplan-native-beta",
+		"X-Msh-Device-Id":    device,
+		"X-Msh-Device-Name":  "ModelPlan usage reader",
+		"X-Msh-Device-Model": runtime.GOOS + "/" + runtime.GOARCH,
+		"X-Msh-Os-Version":   runtime.GOOS,
+	}
 }
 
 func kimiLoginGet(ctx context.Context, c *http.Client, token, device string, out any, now time.Time) (string, time.Time, string) {
@@ -356,15 +377,9 @@ func kimiLoginGet(ctx context.Context, c *http.Client, token, device string, out
 	if err != nil {
 		return "unavailable", time.Time{}, "other"
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "modelplan")
-	req.Header.Set("X-Msh-Platform", "kimi_code_cli")
-	req.Header.Set("X-Msh-Version", "modelplan-native-beta")
-	req.Header.Set("X-Msh-Device-Id", device)
-	req.Header.Set("X-Msh-Device-Name", "ModelPlan usage reader")
-	req.Header.Set("X-Msh-Device-Model", runtime.GOOS+"/"+runtime.GOARCH)
-	req.Header.Set("X-Msh-Os-Version", runtime.GOOS)
+	for k, v := range kimiHeaders(token, device) {
+		req.Header.Set(k, v)
+	}
 	client := *c
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

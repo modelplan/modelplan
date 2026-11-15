@@ -7,7 +7,7 @@ retain their owners' rights; they are identification, not ModelPlan artwork or
 endorsement. No ModelPlan reserved-visual license applies to these assets.
 
 The seven marks are original unaltered bytes from the approved source set;
-`Resources/Marks/SOURCES.md` records their origins. The Z.ai mark is beta-only.
+`Resources/Marks/SOURCES.md` records their origins. The white Z.ai mark is beta-only; the other marks are not.
 The consumer must explicitly choose the beta policy; the standard manifest
 excludes that mark pending the separate public-release decision.
 

@@ -29,5 +29,15 @@ import ModelPlanDock
             card.dispose()
         }
     }
+    /// D37 (11-06): the production card style shows no footer actions at all.
+    func testCardWithoutActionsHasNoButtons() throws {
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        var style = DockCardStyle(); style.showsActions = false
+        let card = DockCardView(frame: .zero)
+        try card.apply(.init(subscriptionID: "synthetic", revision: 1, name: "Synthetic", rows: [], enterLabel: "Settings", dismissLabel: "Close"), style: style)
+        XCTAssertTrue(descendants(card).compactMap { $0 as? NSButton }.isEmpty)
+        XCTAssertFalse(descendants(card).compactMap { $0 as? NSTextField }.contains { $0.stringValue == "Settings" || $0.stringValue == "Close" })
+        card.dispose()
+    }
 
 }
