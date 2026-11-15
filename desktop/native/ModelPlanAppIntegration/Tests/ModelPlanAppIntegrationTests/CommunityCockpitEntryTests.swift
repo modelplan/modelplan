@@ -1120,6 +1120,70 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(parts.dropFirst().first,"rec","the recommended-effort star marker is on the fader (\(result))")
         XCTAssertEqual(parts.last,"k","and sits at a numeric travel position (\(result))")
     }
+    /// Cockpit recovery step 1 (G3-96, G3-116; CKP-SHELL-27, #470 staging) through the normal entry: the Dock's console
+    /// button opens the cockpit through the real composition with the cockpit entry enabled, and the coordinator presents
+    /// real CockpitWindowController pages. A late render receipt keeps the presented page and marks the reading delayed;
+    /// a page whose content process ends is rebuilt after 1 s, then 4 s, silently; only the third dead page inside the
+    /// budget brings the generic notice, never the repair one. The console runs on a fake scheduler, so no rebuild waits.
+    @MainActor func testRecoveryThroughTheNormalEntryKeepsASlowPageAndRebuildsADeadOneWithinTheBudget() async throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        let client=RouteClient(),clock=FakeRecoveryClock()
+        var pages:[CockpitWindowController]=[],notices:[CockpitUnavailableNotice]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)},
+                    now:{clock.now},schedule:{clock.arm($0,$1)})
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let first=try XCTUnwrap(pages.first)
+        XCTAssertTrue(coordinator.presented,"the normal entry presented the real page")
+        // The presented page, driven through its own bridge with a held delivery and fake receipt timers.
+        var sent:[(String,(CockpitDeliveryResult)->Void)]=[],timers:[(UInt64,@MainActor ()->Void)]=[]
+        first.verificationNoWindowDelivery={ raw,complete in sent.append((raw,complete)) }
+        first.verificationNoWindowArm={ delay,fire in timers.append((delay,fire));return {} }
+        first.verificationNoWindowClock={ 1_000 }
+        let shell=CockpitShellState(closed:false,attached:true,forcedClosed:false,tier:.tall)
+        first.verificationNoWindowShell=shell
+        var ready=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(first.bridge.load(owner.appearance,shell:shell).utf8)) as? [String:Any])
+        for key in ["appearance","shell","redBelow","showUsedPercent","showAllModels","ackedCautions","pinnedModels","memberOrder"] { ready[key]=nil }
+        ready["type"]="ready";ready["sequence"]="1";ready["appearanceVersion"]=2;ready["capabilities"]=["appearanceUpdates","shellState","shellActions"]
+        _=try first.bridge.accept(String(decoding:JSONSerialization.data(withJSONObject:ready),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"))
+        try first.verificationConfirmVisible()
+        let capture=Self.repoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        first.display(try WireDecoder.decode(WireCockpitData.self,from:Data(contentsOf:capture)),ticket:try XCTUnwrap(first.queryTicket))
+        try XCTUnwrap(sent.last).1(.accepted) // the page took the call; its rendered receipt is late
+        try XCTUnwrap(timers.last { $0.0 == CockpitPageHealth.delayedAfterMs }).1()
+        XCTAssertTrue(first.readingDelayed,"a late receipt marks the reading delayed")
+        XCTAssertFalse(first.bridge.disposed,"and keeps the presented page")
+        XCTAssertTrue(coordinator.presented)
+        // The content process ends: a dead page, rebuilt after 1 s, then 4 s, without a notice.
+        first.webViewWebContentProcessDidTerminate(try XCTUnwrap(first.verificationWebView))
+        XCTAssertTrue(first.bridge.disposed)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("page-rebuild attempt=1 delayMs=1000 after=page.contentTerminated") },lines.joined(separator:"\n"))
+        clock.advance(by:999);XCTAssertEqual(pages.count,1)
+        clock.advance(by:1);XCTAssertEqual(pages.count,2,"the first rebuild opens a new real page after 1 s")
+        let second=try XCTUnwrap(pages.last)
+        second.webViewWebContentProcessDidTerminate(try XCTUnwrap(second.verificationWebView))
+        clock.advance(by:3_999);XCTAssertEqual(pages.count,2)
+        clock.advance(by:1);XCTAssertEqual(pages.count,3,"the second after 4 s")
+        XCTAssertTrue(notices.isEmpty,"rebuilds inside the budget are silent")
+        let third=try XCTUnwrap(pages.last)
+        third.webViewWebContentProcessDidTerminate(try XCTUnwrap(third.verificationWebView))
+        XCTAssertEqual(notices.count,1,"the third dead page in 10 minutes is announced")
+        XCTAssertFalse(notices.first?.bundleProblem ?? true,"with the generic notice, never the repair one")
+        XCTAssertFalse(lines.contains { $0.contains("page-failure failure=bundleResource") },lines.joined(separator:"\n"))
+        app.toggleConsole();await coordinator.shutdown();await app.composition.stop()
+    }
     /// Cockpit recovery step 3 (G3-96, G3-116; CKP-SHELL-27, #470 staging) through the normal entry: the Dock's console
     /// button opens the cockpit on the real composition with the cockpit entry enabled and the coordinator presents a
     /// real CockpitWindowController. Behind one call that never completes, a stream of replies keeps one display in

@@ -115,6 +115,9 @@ jobs:
           PR: ${{ needs.plan.outputs.pr }}
           SHA: ${{ needs.plan.outputs.sha }}
           PLAN: ${{ needs.plan.outputs.plan }}
+          # A cold per-PR scratch build of ModelPlanAppIntegration alone took 12.7 min on these runners (11-15), which
+          # left too little of a 25-minute budget for its ~930 tests (#981/#795 stopped at exit 143 with 0 failures).
+          PACKAGE_MINUTES: "45"
         run: |
           set -eu
           [ "$(git rev-parse HEAD)" = "$SHA" ] || { echo "::error::checked out $(git rev-parse HEAD), expected $SHA"; exit 1; }

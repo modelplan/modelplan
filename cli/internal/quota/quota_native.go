@@ -321,11 +321,22 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		key := os.Getenv(x.KeyEnv)
 		readerCtx := productionReaderContext(ctx, p, x.Provider)
-		if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
+		mk, hasManual, manualErr := loadManualKeyChecked(p.Cache, x.Provider)
+		if manualErr != nil {
+			// The saved key file is unsafe or unreadable: fail this provider closed. Neither the saved key
+			// nor a detected key is sent anywhere, so a different account's usage cannot be shown.
+			e = codexbarEntry{Status: "error", ErrorCode: "file_unreadable", ObservedAt: now.UTC()}
+		} else if hasManual {
+			// D90, owner decision 2026-11-14: a key the user entered wins over any detected key and is
+			// the only one used; it goes only to the compiled official host of its region.
+			e, key = fetchManualKey(ctx, nativeClient, x.Provider, mk, now), mk.Key
+		} else if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
 			e = collectZaiConfig(readerCtx, nativeClient, p.Cache, now)
 		} else if n.Collect != nil {
 			e = n.Collect(readerCtx, nativeClient, p.Cache, now)
 		} else {
+			// D230: for OpenCode Go only OPENCODE_API_KEY is a detected key; OpenCode's own saved
+			// login is checked for existence by detection and never read here.
 			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
 		}
 		if e.Status == "ok" {
@@ -343,6 +354,12 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		if x.Provider == "copilot" {
 			e.Source = "runtime"
+		}
+		if x.Provider == "zai" && !IdentityOff() {
+			// One row (owner 2026-11-14): Settings says when the entered key differs from a detected one.
+			// Only the detected key's local reference is kept (the keyed-hash identity map, as for every
+			// subscription); the key itself is read on this Mac, never sent, logged or stored.
+			e.DetectedKeyRef = assignSubscription(p.Cache, zaiKeyBasis, detectedZaiKey(p, x), now)
 		}
 		if e.Status == "ok" && key != "" && !IdentityOff() {
 			e.SubscriptionRef = assignSubscription(p.Cache, nativeIdentityBasis(x), key, now) // a key is one subscription
@@ -521,7 +538,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			if x.Provider == "cursor" {
 				basis = "cursor-auth"
 			}
-			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding(basis)})
+			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding(basis), ReportedModels: e.ReportedModels})
 		}
 		r.Sources = append(r.Sources, st)
 	}
