@@ -79,6 +79,37 @@ test('a failure that persists in the MFD/record surface keeps every committed co
   const later=capture();later.projection.rows[0].name={en:'Recovered',zh:'已恢复'};
   expect(await receive(send('display',{data:later}))).toBe(true);
 });
+test('after a refused render the deck, tape and lamp repaint only committed data (glm-990-1)',async({page})=>{
+  const NOW=Date.UTC(2026,9,29,12,30);await page.clock.setFixedTime(new Date(NOW));
+  const {send,receive}=await open(page);
+  expect(await receive(send('display',{data:capture()}))).toBe(true);
+  const mfd=()=>page.evaluate(()=>document.querySelector('.mfd-screen')?.innerHTML??'none');
+  const tape=()=>page.evaluate(()=>document.querySelector('.ck-tape')?.innerHTML??'none');
+  const committed={mfd:await mfd(),tape:await tape()};
+  const next=capture();
+  for(const row of next.projection.rows)row.name={en:'Replaced',zh:'已替换'};
+  for(const group of next.subscriptions)for(const member of group.accounts)member.account.plan.name={en:'Replaced',zh:'已替换'};
+  for(const session of next.details?.recentSessions??[])if('project' in session)session.project='Replaced';
+  // The first attempt fails in the HUD, after the deck and tape took the new data; the repaint of the committed data
+  // fails at its first DOM write, before it reaches them. Only the snapshot rollback is left.
+  const refused=await page.evaluate(raw=>{
+    const append=Element.prototype.append,replace=Element.prototype.replaceChildren;let stage=0;
+    const gate=function(original){return function(...nodes){
+      if(stage===0&&this.closest?.('.hud')){stage=1;throw Error('synthetic HUD failure');}
+      if(stage===1){stage=2;throw Error('synthetic repaint failure');}
+      return original.apply(this,nodes);};};
+    Element.prototype.append=gate(append);Element.prototype.replaceChildren=gate(replace);
+    try{return {accepted:window.modelPlanCockpit.receive(raw),reject:window.modelPlanCockpit.reject(),stage};}
+    finally{Element.prototype.append=append;Element.prototype.replaceChildren=replace;}
+  },send('display',{data:next}));
+  expect(refused).toEqual({accepted:false,reject:'display.render',stage:2});
+  expect(await mfd()).toBe(committed.mfd);
+  // A deadline tick repaints the deck and the lamp from their own state: it must be the committed data.
+  expect(await receive(send('tick',{nowUnixMs:String(NOW),reason:'deadline'}))).toBe(true);
+  expect(await mfd()).toBe(committed.mfd);
+  expect(await tape()).toBe(committed.tape);
+  expect(await page.evaluate(()=>document.getElementById('cockpit').innerText.includes('Replaced'))).toBe(false);
+});
 test('the correlated probe answers only for its own page',async({page})=>{
   await open(page);
   expect(await page.evaluate(id=>window.modelPlanCockpit.state(id),pageId)).toBe('ready');

@@ -187,6 +187,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
    return {element,children:[...element.childNodes],attributes:[...element.attributes].map(a=>[a.name,a.value] as const),handlers,form};
   });
   const saved={applyScope,refreshEngine,localiseEngine,quotaFocusIdentity,nativeShell,lastData,lastRenderedAt};
+  // The deck, tape and lamp keep render state of their own (glm-990-1): it is put back with the view.
+  const modules=[deck.checkpoint(),tape.checkpoint(),cautions.checkpoint()];
   return ()=>{
    for(const {element,children,attributes,handlers,form} of elements){
     element.replaceChildren(...children);
@@ -196,6 +198,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
     if(form&&element instanceof HTMLInputElement){element.value=form.value;element.checked=form.checked;}
    }
    ({applyScope,refreshEngine,localiseEngine,quotaFocusIdentity,nativeShell,lastData,lastRenderedAt}=saved);
+   for(const restore of modules)restore();
   };
  }
  function renderData(data:WireCockpitData,now:number){

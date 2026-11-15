@@ -49,5 +49,8 @@ export function mountPrototypeTape(root:HTMLElement,link?:TapeLink){
   host.addEventListener('focusin',e=>link.hover(sessionAt(e.target)));host.addEventListener('focusout',()=>link.hover(null));
   host.addEventListener('click',e=>{const session=sessionAt(e.target);if(e.isTrusted&&session)link.select(session);});
  }
- paint();return {locale(value:Locale){locale=value;paint();},layout(value:number){count=value===5?5:3;root.style.setProperty('--tape-lines',String(count));paint();},render(value:WireCockpitData,namesShown=true){data=value;named=namesShown;paint();},clear(){data=null;paint();}};
+ paint();return {
+  /** Recovery contract: the tape's own render state, restored with the view after a refused render (glm-990-1). */
+  checkpoint(){const saved={data,named};return ()=>{({data,named}=saved);};},
+  locale(value:Locale){locale=value;paint();},layout(value:number){count=value===5?5:3;root.style.setProperty('--tape-lines',String(count));paint();},render(value:WireCockpitData,namesShown=true){data=value;named=namesShown;paint();},clear(){data=null;paint();}};
 }
