@@ -54,6 +54,31 @@ test('when the repaint of the last data fails too, the previous view is put back
   const after=capture();after.projection.rows[0].name={en:'Recovered',zh:'已恢复'};
   expect(await receive(send('display',{data:after}))).toBe(true);
 });
+test('a failure that persists in the MFD/record surface keeps every committed control (macrev2-990-1, macrevb-990-1)',async({page})=>{
+  const {send,receive}=await open(page);
+  expect(await receive(send('display',{data:capture()}))).toBe(true);
+  const view=()=>page.evaluate(()=>({footer:document.querySelector('.mfd-ok')?.innerHTML??'none',controls:document.querySelectorAll('.mfd-ok > *').length,
+    cockpit:document.getElementById('cockpit').innerHTML}));
+  const before=await view();
+  expect(before.controls).toBeGreaterThan(0);
+  const next=capture();next.projection.rows[0].name={en:'Replaced',zh:'已替换'};
+  // Every append into the MFD footer throws for the whole delivery: the render, the repaint of the last data and
+  // anything after them hit the same failure.
+  const refused=await page.evaluate(raw=>{
+    const original=Element.prototype.append;let hits=0;
+    Element.prototype.append=function(...nodes){if(this.classList?.contains('mfd-ok')){hits++;throw Error('synthetic MFD failure');}return original.apply(this,nodes);};
+    try{return {accepted:window.modelPlanCockpit.receive(raw),reject:window.modelPlanCockpit.reject(),hit:hits>0};}
+    finally{Element.prototype.append=original;}
+  },send('display',{data:next}));
+  expect(refused).toEqual({accepted:false,reject:'display.render',hit:true});
+  expect(await page.evaluate(()=>window.modelPlanCockpit.state())).toBe('ready');
+  const after=await view();
+  expect(after.controls).toBe(before.controls);
+  expect(after.footer).toBe(before.footer);
+  expect(after.cockpit).toBe(before.cockpit);
+  const later=capture();later.projection.rows[0].name={en:'Recovered',zh:'已恢复'};
+  expect(await receive(send('display',{data:later}))).toBe(true);
+});
 test('the correlated probe answers only for its own page',async({page})=>{
   await open(page);
   expect(await page.evaluate(id=>window.modelPlanCockpit.state(id),pageId)).toBe('ready');
