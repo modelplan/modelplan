@@ -310,6 +310,8 @@ public enum EngineDeadlineFacts {
                 windowObservations: observations, cardReadingState: cardState)
             reasons[member.id] = presentation
             if needsKeychain { reasons[member.id]?.actionLabel = english ? "Allow reading" : "允许读取" }
+            // D87 slice 9: any other named cause links to that subscription's row in Settings.
+            else if cause != nil { reasons[member.id]?.actionLabel = english ? "Open in Settings" : "在设置中处理" }
         }
         let status: String
         switch value.status {
@@ -339,7 +341,7 @@ public enum EngineDeadlineFacts {
                 name: .init(member.name(english: true), member.name(english: false)),
                 plan: planName, vendor: member.row.vendorKey ?? "",
                 source: sourceState(member, now: context.now), isUnstable: !member.isStable,
-                causeCode: causeCode)
+                causeCode: causeCode, tool: member.row.id)
         }
         let content = DockContent(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
