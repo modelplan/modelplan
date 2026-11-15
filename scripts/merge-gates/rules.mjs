@@ -572,9 +572,11 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 // can still be queued on the single GUI Mac while the list says otherwise (2026-11-15 incident: #803 and others merged
 // with that job queued). So every check run of a counted queue run must also be completed and green; it is read
 // per job, not through the run. Fail closed: failed, cancelled or timed-out jobs fail the group; unfinished ones keep
-// it pending, but past GROUP_WAIT_MS since the group's first run started it fails with a timeout, so it never hangs.
+// it pending, but past GROUP_WAIT_MS (85 min by default) since the group's first run started it fails with a timeout, so it never hangs.
 // A workflow_run of desktop completing re-evaluates the group (merge-gates.yml), so no polling is needed.
-export const GROUP_WAIT_MS = 120 * 60 * 1000;
+// Coupling: the repository ruleset's merge-queue check_response_timeout is 90 min; GitHub drops a group after that, so
+// this default (85 min) must stay below it or the gate's timeout never fires. Override with env GROUP_WAIT_MINUTES.
+export const GROUP_WAIT_MS = (Number(process.env.GROUP_WAIT_MINUTES) > 0 ? Number(process.env.GROUP_WAIT_MINUTES) : 85) * 60 * 1000;
 const OK_CHECK = new Set(["success", "skipped", "neutral"]);
 export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO) {
   const suites = new Set(latestRuns(queueRuns, queueRunScope(repo)).map((r) => r.check_suite_id).filter((x) => x != null));
