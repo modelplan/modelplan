@@ -1,10 +1,12 @@
 name: U4 Swift wire
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - cli/internal/appserver/wire/**
       - cli/internal/appserver/wireschema/**
       - cli/internal/rows/**
+      - cli/internal/resetevents/**
       - cli/internal/swiftwire/**
       - schema/app-cli/app-server.json
       - schema/app-cli/captures/**
@@ -16,6 +18,7 @@ on:
       - cli/internal/appserver/wire/**
       - cli/internal/appserver/wireschema/**
       - cli/internal/rows/**
+      - cli/internal/resetevents/**
       - cli/internal/swiftwire/**
       - schema/app-cli/app-server.json
       - schema/app-cli/captures/**
@@ -24,8 +27,9 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: u4-swift-wire-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: u4-swift-wire-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   generated-contract:
     runs-on: ubuntu-24.04
@@ -57,6 +61,7 @@ jobs:
           node-version: '24'
       - run: node scripts/check-source-policy.mjs
   swift-decoder:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

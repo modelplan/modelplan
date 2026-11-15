@@ -71,6 +71,9 @@ type Server struct {
 	stop                                            context.CancelFunc
 	started                                         time.Time
 	credentials                                     map[string]*credentialOperation
+	credentialReads                                 map[string]int
+	credentialReadEnded                             map[string]time.Time
+	credentialGrants                                map[string]int
 }
 
 func New(config Config) *Server {
@@ -298,6 +301,7 @@ func (s *Server) dispatch(r wire.Request) {
 		}
 		control := len(p.Deny) > 0 || len(p.Forget) > 0
 		s.start(r, false, control, false, func(ctx context.Context) (Reply, error) {
+			defer s.holdCredentialForGrant(p)()
 			result, err := s.backend.Grant(ctx, p)
 			if err != nil && !result.Receipt.Committed {
 				stamp := result.Stamp
@@ -310,13 +314,13 @@ func (s *Server) dispatch(r wire.Request) {
 			}
 			// Even a canceled request returns a committed receipt, including cleanup.
 			reply := Reply{Stamp: result.Stamp, Data: result.Receipt}
-			s.scheduleRefresh()
 			for _, need := range result.Credentials {
 				if need.Interactive && p.Keychain[need.Scope] != wire.KeychainAllow {
 					continue
 				}
 				_, _ = s.requestCredential(need, true)
 			}
+			s.scheduleRefresh()
 			return reply, nil
 		})
 		return
@@ -456,6 +460,12 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 	base = context.WithValue(base, resetEventsContextKey{}, s.clientCapabilities[CapabilityResetEvents])
 	base = context.WithValue(base, resetEventLinksContextKey{}, s.clientCapabilities[CapabilityResetEventLinksV1])
 	base = context.WithValue(base, cockpitDetailsContextKey{}, s.clientCapabilities[CapabilityCockpitDetailsV1])
+	base = context.WithValue(base, cockpitForecastContextKey{}, s.clientCapabilities[CapabilityCockpitForecastV1])
+	base = context.WithValue(base, cockpitModelsContextKey{}, s.clientCapabilities[CapabilityCockpitModelsV1])
+	base = context.WithValue(base, cockpitSessionsContextKey{}, s.clientCapabilities[CapabilityCockpitSessionsV1])
+	base = context.WithValue(base, cockpitPeaksContextKey{}, s.clientCapabilities[CapabilityCockpitPeaksV1])
+	base = context.WithValue(base, cockpitHistoryContextKey{}, s.clientCapabilities[CapabilityCockpitHistoryV1])
+	base = context.WithValue(base, accountTodayContextKey{}, s.clientCapabilities[CapabilityAccountTodayV1])
 	ctx, cancel := context.WithTimeout(base, timeout)
 	s.active[key] = activeRequest{cancel: cancel}
 	if control {
@@ -524,7 +534,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 				if reply.subscribe {
 					s.subscribed = true
 					reply.Scopes = s.view.Scopes
-					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents], s.clientCapabilities[CapabilityWindowSources], s.clientCapabilities[CapabilityMemberRefresh], s.clientCapabilities[CapabilityResetEventLinksV1])}
+					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents], s.clientCapabilities[CapabilityWindowSources], s.clientCapabilities[CapabilityMemberRefresh], s.clientCapabilities[CapabilityResetEventLinksV1], s.clientCapabilities[CapabilityAccountTodayV1], s.clientCapabilities[CapabilityCockpitForecastV1])}
 				}
 				s.out.dataMessage(success(session, r.ID, reply.Stamp, reply.Scopes, reply.Data), reply.Stamp, true, func(err error) { s.sendError(r.ID, errorCode(err)) })
 				return nil
@@ -691,6 +701,8 @@ func (s *Server) readView(ctx context.Context) error {
 	sourcesEnabled := s.clientCapabilities[CapabilityWindowSources]
 	membersEnabled := s.clientCapabilities[CapabilityMemberRefresh]
 	linksEnabled := s.clientCapabilities[CapabilityResetEventLinksV1]
+	todayEnabled := s.clientCapabilities[CapabilityAccountTodayV1]
+	forecastEnabled := s.clientCapabilities[CapabilityCockpitForecastV1]
 	for key, op := range s.credentials {
 		if op.stamp != v.Stamp {
 			op.timer.Stop()
@@ -712,7 +724,7 @@ func (s *Server) readView(ctx context.Context) error {
 				s.rowsPending = false
 			}
 			s.mu.Unlock()
-			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled, sourcesEnabled, membersEnabled, linksEnabled)}), v.Stamp, func(error) {
+			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled, sourcesEnabled, membersEnabled, linksEnabled, todayEnabled, forecastEnabled)}), v.Stamp, func(error) {
 				s.mu.Lock()
 				if s.sequence == seq {
 					s.rowsPending = true

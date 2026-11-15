@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 
-public enum SettingsDockEdge: String, Codable, CaseIterable, Sendable { case right, bottom, left }
+public enum SettingsDockEdge: String, Codable, CaseIterable, Sendable {
+    /// The Quota Widget rests on all four edges; the top edge sits below the menu bar (A-1106-4).
+    case right, bottom, left, top
+    public var isHorizontal: Bool { self == .bottom || self == .top }
+}
 public enum SettingsReaderID: String, Codable, CaseIterable, Sendable { case codex, claude, gemini, cursor }
 public enum OptionalReaderID: String, Codable, CaseIterable, Sendable { case gemini, cursor }
 /// Consent is an app choice, not proof a reader is enabled or a command to enable one.
@@ -39,15 +43,17 @@ public struct ReaderSetting: Equatable, Sendable {
 }
 /// Confirmed task65 homes shared by the current data table; not a visual/layout implementation.
 public enum Settings65Homes {
-    public static let general = SettingsGroupDefinition(id: "general", keys: [.login,.automaticUpdates,.language,.menuDisplay,.openShortcut,.dockShortcut,.resetHints])
+    public static let general = SettingsGroupDefinition(id: "general", keys: [.login,.automaticUpdates,.language,.menuDisplay,.openShortcut,.dockShortcut,.resetHints,.loginSystemSettings])
     public static let dock: [SettingsGroupDefinition] = [
         .init(id: "display", title: .init("Display", "显示"), keys: [.showDock,.autoHide,.reveal,.magnification,.size]),
         .init(id: "numbers", title: .init("Numbers", "数字"), keys: [.showPercentages,.percentageMode,.percentagePin,.redBelow,.sliverAlert]),
         .init(id: "location", title: .init("Position", "位置"), keys: [.dockDisplay,.dockEdge,.dockPosition,.fullscreen,.captureHiding,.activeDisplay]),
-        .init(id: "sequence", title: .init("Order", "顺序"), keys: [.order]),
     ]
-    public static let cockpit = SettingsGroupDefinition(id: "cockpit", keys: [.opening,.countdown])
+    public static let cockpit = SettingsGroupDefinition(id: "cockpit", keys: [.cockpitSize,.opening,.countdown,.showAllModels])
     public static let appearance = SettingsGroupDefinition(id: "appearance", keys: [.theme,.motion,.transparency])
+    /// D87 item 1 / G3-68: the one shared order (widget, cockpit) is edited here, not in the Quota Widget pane.
+    /// Requirement SET-9-13 (drag, up/down, reset) is unchanged; only the home moved to Settings > Subscriptions.
+    public static let subscriptionOrder = SettingsGroupDefinition(id: "sequence", title: .init("Order", "顺序"), keys: [.order])
     public static let subscriptions = SettingsGroupDefinition(id: "subscriptions", keys: [.visible,.alias,.detectedReaders,.optionalReaders])
     public static let paneCountPending = false
 }

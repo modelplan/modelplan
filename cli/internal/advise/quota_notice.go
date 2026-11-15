@@ -2,6 +2,8 @@ package advise
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,7 +15,12 @@ import (
 type QuotaSession struct {
 	At      time.Time            `json:"at"`
 	Windows map[string]QuotaMark `json:"windows"`
+	// Spend: how many spend warnings (a low notice when the thread spawns subagents) went out.
+	Spend int `json:"spend,omitempty"`
 }
+
+// MaxSpendWarnings caps the spend warnings per thread; the prompt's own notices are not counted.
+const MaxSpendWarnings = 3
 
 // QuotaMark is what one thread was told about one window cycle (ResetAt names the cycle).
 type QuotaMark struct {
@@ -53,6 +60,8 @@ type QuotaNotice struct {
 	RateOver  string // day | recent
 	Down      *Step
 	Cheaper   *Step
+	// Other: another connected plan with room, named beside a low notice (OtherPlan).
+	Other *OtherPlan
 }
 
 // Low notices fire once per threshold and cycle, for the lowest one reached.
@@ -120,6 +129,60 @@ func noticeKey(a *quota.Account, w *quota.Window) string {
 // cycle with a low notice, one reset notice. A reset needs a reading with a later reset boundary
 // and more than half left; a rising percentage alone does not establish it.
 func (s *State) QuotaNotices(thread string, a *quota.Account, now time.Time) []QuotaNotice {
+	return s.quotaNotices(thread, a, now, false)
+}
+
+// SpendNotices are the low notices due when the thread is about to spawn subagents: the same
+// thresholds and marks as QuotaNotices, so a level told on a prompt is not told again and the
+// next prompt does not repeat what this one said. Reset and surplus lines wait for the prompt.
+// At most MaxSpendWarnings per thread; past that nothing is marked either.
+func (s *State) SpendNotices(thread string, a *quota.Account, now time.Time) []QuotaNotice {
+	if !noticeAccount(thread, a) || s.Quotas[thread].Spend >= MaxSpendWarnings {
+		return nil
+	}
+	out := s.quotaNotices(thread, a, now, true)
+	if len(out) > 0 {
+		q := s.Quotas[thread]
+		q.Spend++
+		s.Quotas[thread] = q
+		s.changed = true
+	}
+	return out
+}
+
+// ClaimSpendNotices decides and records the spend warnings in one step under the state lock:
+// Claude Code runs the hooks of spawns started together in parallel, and each must see what
+// the others claimed. When the lock stays busy for wait, or the record cannot be written,
+// nothing is said, so a warning is never repeated.
+func ClaimSpendNotices(cache, thread string, a *quota.Account, now time.Time, wait time.Duration) []QuotaNotice {
+	if !noticeAccount(thread, a) {
+		return nil
+	}
+	if wait < 0 {
+		wait = 0
+	} else if wait > stateLockWait {
+		wait = stateLockWait
+	}
+	if os.MkdirAll(filepath.Dir(path(cache)), 0o700) != nil {
+		return nil
+	}
+	unlock, err := lockState(path(cache), wait)
+	if err != nil {
+		return nil
+	}
+	defer unlock()
+	s := Load(cache)
+	out := s.SpendNotices(thread, a, now)
+	if !s.changed {
+		return out
+	}
+	if s.saveLocked(cache, now) != nil {
+		return nil
+	}
+	return out
+}
+
+func (s *State) quotaNotices(thread string, a *quota.Account, now time.Time, lowOnly bool) []QuotaNotice {
 	if !noticeAccount(thread, a) {
 		return nil
 	}
@@ -151,6 +214,7 @@ func (s *State) QuotaNotices(thread string, a *quota.Account, now time.Time) []Q
 				mark.Level = level
 			}
 			mark.Pace = mark.Pace || runout != nil
+		case lowOnly:
 		case mark.WasLow && !mark.Recovered && mark.Level == 0 && !mark.Pace && left > 50:
 			n.Kind, mark.Recovered = "reset", true
 		case level == 0 && !mark.Surplus && a.Headroom == "spend" && resetSoonSurplus(a, w):

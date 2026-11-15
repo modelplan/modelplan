@@ -38,7 +38,11 @@ import AppKit
     }
     static func scrub(_ menu: NSMenu) {
         menu.cancelTrackingWithoutAnimation()
-        // Wipe the retained items too, not just the next menu or the menu's item array.
+        scrubItems(menu)
+        menu.removeAllItems()
+    }
+    static func scrubItems(_ menu: NSMenu) {
+        // Clearing the array alone leaves retained NSMenuItems actionable.
         for item in menu.items {
             if let child = item.submenu { scrub(child) }
             item.title = ""; item.attributedTitle = nil; item.toolTip = nil
@@ -46,6 +50,5 @@ import AppKit
             item.identifier = nil
             item.target = nil; item.action = nil; item.isEnabled = false
         }
-        menu.removeAllItems()
     }
 }

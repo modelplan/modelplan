@@ -70,7 +70,8 @@ class EngineProcess:
         self.stderr_digest = hashlib.sha256()
         self.process = None
         self.environment = {'HOME': str(self.home), 'PATH': str(self.home / 'bin'),
-                            'TMPDIR': str(self.home / '.u14-tmp'), 'LANG': 'C.UTF-8'}
+                            'TMPDIR': str(self.home / '.u14-tmp'), 'LANG': 'C.UTF-8',
+                            'MODELPLAN_BASE': 'http://127.0.0.1:1'}
         (self.home / '.u14-tmp').mkdir(mode=0o700, exist_ok=True)
 
     def __enter__(self):
@@ -130,10 +131,10 @@ class EngineProcess:
         except (BrokenPipeError, OSError) as exc:
             raise EngineFailure('input-pipe-closed') from exc
 
-    def request(self, method, params=None):
+    def request(self, method, params=None, timeout=5):
         self.counter += 1
         self.send(self.counter, method, {} if params is None else params)
-        return self.response(self.counter)
+        return self.response(self.counter, timeout)
 
     def _bytes_ready(self, timeout):
         with selectors.DefaultSelector() as selector:

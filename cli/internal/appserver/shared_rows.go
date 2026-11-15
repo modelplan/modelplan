@@ -82,7 +82,7 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 		}
 		value.ResetCards = account.ResetCards
 		if account.Credits != nil {
-			value.Credits = &rows.CreditsInput{Balance: account.Credits.Balance, Unit: account.Credits.Unit}
+			value.Credits = &rows.CreditsInput{Balance: account.Credits.Balance, Unit: account.Credits.Unit, Currency: account.Credits.Currency}
 		}
 		for _, window := range account.Windows {
 			source := rows.WindowSourceOther
@@ -103,7 +103,7 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 					source = rows.WindowSourceAPIKey
 				}
 			}
-			raw := rows.WindowInput{Source: source, Kind: window.Kind, Limit: window.Limit, ModelIDs: window.ModelIDs, Pool: account.Pool, ResetMode: window.ResetMode, RemainingPercent: window.RemainingPercent, ResetsAt: window.ResetsAt, ObservedAt: timePointer(window.ObservedAt)}
+			raw := rows.WindowInput{Source: source, Kind: window.Kind, Limit: window.Limit, ModelIDs: window.ModelIDs, Pool: account.Pool, ResetMode: window.ResetMode, RemainingPercent: window.RemainingPercent, ResetsAt: window.ResetsAt, ObservedAt: timePointer(window.ObservedAt), Forecast: window.RunOutForecast()}
 			if window.WindowMinutes > 0 {
 				duration := int64(window.WindowMinutes) * 60
 				raw.DurationSeconds = &duration
@@ -116,9 +116,15 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 			profile.FreshUntil = &until
 		}
 		for _, source := range report.Sources {
-			if rows.CanonicalTool(source.Source) == tool && source.ErrorCode != "" {
+			matches := rows.CanonicalTool(source.Source) == tool
+			if source.Source == "codex-account" {
+				// Codex's account reading fails under its own source name: its failure belongs to the
+				// runtime account only, never to an independent local-history account.
+				matches = account.Source == "codex" && account.Via == "codex-account"
+			}
+			if matches && source.ErrorCode != "" {
 				profile.LatestAttempt = rows.AttemptResultFailed
-				profile.LastFailure = &rows.FailureInput{Code: source.ErrorCode}
+				profile.LastFailure = &rows.FailureInput{Code: source.ErrorCode, At: timePointer(report.EvaluatedAt)}
 			}
 		}
 		if account.Source == "codex" && account.Via == "codex-account" {

@@ -6,6 +6,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -258,5 +262,249 @@ func TestRefreshUsesBoundCredentialAgentWithoutSecondOperation(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("agent-backed reader did not run")
+	}
+}
+
+func TestCredentialHoldKeepsAutomaticReadsOffAndDelaysRequestedOnes(t *testing.T) {
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic",
+			Credential: func(context.Context) ([]byte, string) { return nil, "unavailable" },
+			Profiles:   []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	var active atomic.Bool
+	active.Store(true)
+	ran := make(chan struct{}, 2)
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		CredentialHold: func(string) (bool, time.Time) { return active.Load(), time.Time{} },
+		Run: func(context.Context, quota.Paths, string, time.Time) error {
+			ran <- struct{}{}
+			return nil
+		},
+	})
+	defer scheduler.Close()
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	if result, _, err := scheduler.request(context.Background(), params, true); err != nil || result[0].DisabledReason != nil {
+		t.Fatal("automatic read was not scheduled", result, err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		scheduler.mu.Lock()
+		_, pending := scheduler.pending["claude"]
+		until := scheduler.autoNext["claude"]
+		scheduler.mu.Unlock()
+		if !pending && until.After(time.Now().Add(10*time.Second)) && until.Before(time.Now().Add(time.Minute)) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("automatic read was not held: pending=%v until=%v", pending, until)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// The held read leaves no job in the way of one the user asks for.
+	if result, _, err := scheduler.Request(context.Background(), params); err != nil || result[0].DisabledReason != nil {
+		t.Fatal("requested read was refused", result, err)
+	}
+	select {
+	case <-ran:
+		t.Fatal("requested read ran during the operation")
+	case <-time.After(3 * credentialHoldPoll):
+	}
+	active.Store(false)
+	select {
+	case <-ran:
+	case <-time.After(time.Second):
+		t.Fatal("requested read did not run after the operation")
+	}
+}
+
+func TestHeldAutomaticReadIsReportedDeferred(t *testing.T) {
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic",
+			Credential: func(context.Context) ([]byte, string) { return nil, "unavailable" },
+			Profiles:   []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		CredentialHold: func(string) (bool, time.Time) { return true, time.Time{} },
+		Run:            func(context.Context, quota.Paths, string, time.Time) error { return nil },
+	})
+	defer scheduler.Close()
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	if result, _, err := scheduler.request(context.Background(), params, true); err != nil || result[0].DisabledReason != nil {
+		t.Fatal("automatic read was not scheduled", result, err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		decisions := scheduler.Decisions()
+		if len(decisions) > 0 {
+			last := decisions[len(decisions)-1]
+			if last.Outcome != wire.RefreshDecisionOutcome(refreshDeferred) || last.Reason != wire.RefreshDecisionReason(refreshInFlight) {
+				t.Fatalf("held read reported as %+v", last)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no decision for the held read")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func heldReadScheduler(t *testing.T, hold func(string) (bool, time.Time), plan func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)) (*RefreshScheduler, chan struct{}) {
+	t.Helper()
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic",
+			Credential: func(context.Context) ([]byte, string) { return nil, "unavailable" },
+			Profiles:   []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	ran := make(chan struct{}, 2)
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Plan: plan, CredentialHold: hold,
+		Run: func(context.Context, quota.Paths, string, time.Time) error {
+			ran <- struct{}{}
+			return nil
+		},
+	})
+	t.Cleanup(scheduler.Close)
+	return scheduler, ran
+}
+
+func expectRead(t *testing.T, ran chan struct{}) {
+	t.Helper()
+	select {
+	case <-ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the requested read was lost to a held automatic one")
+	}
+}
+
+// A refresh the user asks for while an automatic job holds the provider's slot must not vanish
+// with that job when it is held.
+func TestRequestedRefreshSurvivesAutomaticJobInTheQueue(t *testing.T) {
+	at := time.Now().Add(150 * time.Millisecond)
+	scheduler, ran := heldReadScheduler(t, func(string) (bool, time.Time) { return false, time.Now().Add(time.Minute) },
+		func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error) {
+			return quota.ScopeRefreshPlan{Provider: "claude", At: at, BudgetKnown: true, Admitted: true}, nil
+		})
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	if _, _, err := scheduler.request(context.Background(), params, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := scheduler.Request(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+	expectRead(t, ran)
+}
+
+func TestRequestedRefreshSurvivesAutomaticJobBeingHeld(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	scheduler, ran := heldReadScheduler(t, func(string) (bool, time.Time) {
+		once.Do(func() { close(entered); <-release })
+		return false, time.Now().Add(time.Minute)
+	}, nil)
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	if _, _, err := scheduler.request(context.Background(), params, true); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	if _, _, err := scheduler.Request(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	expectRead(t, ran)
+}
+
+// The request lands between the worker's last look at the flag and its release of the slot. The
+// clock is the seam: the third reading after the hold is the one in that gap on the old code.
+func TestRequestedRefreshInHeldJobCleanupIsNotLost(t *testing.T) {
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic",
+			Credential: func(context.Context) ([]byte, string) { return nil, "unavailable" },
+			Profiles:   []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	var readings atomic.Int32
+	var scheduler *RefreshScheduler
+	ran := make(chan struct{}, 2)
+	ready, fired := make(chan struct{}), make(chan struct{})
+	reader, slotTaken := "", false
+	scheduler = NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		CredentialHold: func(string) (bool, time.Time) {
+			readings.CompareAndSwap(0, 1)
+			return false, time.Now().Add(time.Minute)
+		},
+		Now: func() time.Time {
+			if readings.Load() > 0 && readings.Add(1) == 4 {
+				<-ready
+				// The caller's frame: Now's closure, RefreshScheduler.now, then the reader.
+				pc, _, _, _ := runtime.Caller(2)
+				reader = runtime.FuncForPC(pc).Name()
+				result, _, err := scheduler.Request(context.Background(), params)
+				if err != nil {
+					t.Error(err)
+				}
+				slotTaken = len(result) == 1 && result[0].DisabledReason != nil
+				close(fired)
+			}
+			return time.Now()
+		},
+		Run: func(context.Context, quota.Paths, string, time.Time) error {
+			ran <- struct{}{}
+			return nil
+		},
+	})
+	t.Cleanup(scheduler.Close)
+	close(ready)
+	if _, _, err := scheduler.request(context.Background(), params, true); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("seam moved: the clock was not read a third time after the hold")
+	}
+	if !strings.HasSuffix(reader, ".(*RefreshScheduler).run.func1") || !slotTaken {
+		t.Fatalf("seam moved: the request fired from %q with slot taken=%v, not in the held job's cleanup", reader, slotTaken)
+	}
+	expectRead(t, ran)
+	scheduler.mu.Lock()
+	defer scheduler.mu.Unlock()
+	if scheduler.requested["claude"] {
+		t.Fatal("stale requested flag")
 	}
 }

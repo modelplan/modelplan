@@ -38,20 +38,33 @@ actor EmptyCLI: CLITransport {
         workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
         check(!gate.canPresent && store.idle, "observer teardown restarted work")
 
-        let surface = NeutralSurfaceProvider().makeOverview()
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 210), styleMask: [.titled], backing: .buffered, defer: false)
-        window.appearance = NSAppearance(named: .aqua)
-        window.contentView = surface.view
-        window.orderFront(nil)
+        // The neutral surface shows one language, taken from the macOS preferred-language list (#873); there is no
+        // bilingual line any more. Each check pins the language it asserts on, so the runner's language never matters.
+        let diagnostics: StoreDiagnostics = { var value = StoreDiagnostics(); value.personal = "personal-read-unavailable"; return value }()
+        func renderedLabels(_ languages: [String]) async throws -> (surface: any NativeOverviewSurface, window: NSWindow, labels: [String]) {
+            let surface = NeutralSurfaceProvider(preferredLanguages: languages).makeOverview()
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 210), styleMask: [.titled], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: .aqua)
+            window.contentView = surface.view
+            window.orderFront(nil)
+            surface.render(snapshot: nil, diagnostics: diagnostics)
+            surface.view.layoutSubtreeIfNeeded()
+            try await Task.sleep(nanoseconds: 100_000_000)
+            surface.view.display()
+            let labels = (surface.view.subviews.first as? NSStackView)?.arrangedSubviews.compactMap { ($0 as? NSTextField)?.stringValue } ?? []
+            return (surface, window, labels)
+        }
+        let chinese = try await renderedLabels(["zh-Hans"])
+        chinese.window.orderOut(nil)
+        check(chinese.labels.contains("本地数据不可用"), "denial/error must be visible (Chinese)")
+        check(chinese.labels.contains("Intel 未测试，3D 效果可能卡顿"), "Intel warning (Chinese)")
+        check(!chinese.labels.contains { $0.contains("Intel untested") }, "one language per surface (Chinese)")
+        let english = try await renderedLabels(["en"])
+        let surface = english.surface, window = english.window
         defer { window.orderOut(nil) }
-        var diagnostics = StoreDiagnostics(); diagnostics.personal = "personal-read-unavailable"
-        surface.render(snapshot: nil, diagnostics: diagnostics)
-        surface.view.layoutSubtreeIfNeeded()
-        try await Task.sleep(nanoseconds: 100_000_000)
-        surface.view.display()
-        let labels = (surface.view.subviews.first as? NSStackView)?.arrangedSubviews.compactMap { ($0 as? NSTextField)?.stringValue } ?? []
-        check(labels.contains("Local data unavailable"), "denial/error must be visible")
-        check(labels.contains { $0.contains("Intel 未测试") && $0.contains("Intel untested") }, "bilingual warning")
+        check(english.labels.contains("Local data unavailable"), "denial/error must be visible")
+        check(english.labels.contains("Intel untested; 3D may stutter"), "Intel warning (English)")
+        check(!english.labels.contains { $0.contains("Intel 未测试") }, "one language per surface (English)")
         if let output = CommandLine.arguments.dropFirst().first {
             let pdf = surface.view.dataWithPDF(inside: surface.view.bounds)
             guard let provider = CGDataProvider(data: pdf as CFData), let page = CGPDFDocument(provider)?.page(at: 1),
@@ -62,7 +75,7 @@ actor EmptyCLI: CLITransport {
             guard let image = context.makeImage() else { fatalError("own-view bitmap failed") }
             try NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: output))
         }
-        print("PASS AppKit adapter notification delivery, removal/recovery/teardown; neutral error surface and bilingual warning")
+        print("PASS AppKit adapter notification delivery, removal/recovery/teardown; neutral error surface and Intel warning in English and Chinese")
         print("Injected centers and own-view rendering only; no physical lock/hot-plug/input or minimum-runtime claim")
     }
 }

@@ -63,8 +63,11 @@ var ampArtifact = ampVerifiedArtifact
 
 type ampArtifactKey struct{}
 
+// ampUsageTimeout bounds one `amp usage` run; a variable so tests about output, not speed, can widen it.
+var ampUsageTimeout = 8 * time.Second
+
 func runAmpUsage(ctx context.Context, bin string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, ampUsageTimeout)
 	defer cancel()
 	artifact, ok := ctx.Value(ampArtifactKey{}).(*os.File)
 	if !ok || artifact == nil || ampExecPath() == "" {

@@ -32,11 +32,9 @@ final class T2GeometryTests: XCTestCase {
                     XCTAssertEqual(geometry.outlineLocal.count, 962)
                     XCTAssertEqual(geometry.shown.map(\.id) + geometry.overflow.map(\.id), rows.map(\.id))
                     if edge == .right {
-                        XCTAssertEqual(geometry.stations[0].centre.x,
-                            1470 - (diameter / 2 + 14 * diameter / 52), accuracy: 0.000001)
+                        XCTAssertEqual(geometry.stations[0].centre.x, 1470 - geometry.freeDepth / 2, accuracy: 0.000001)
                     } else {
-                        XCTAssertEqual(geometry.stations[0].centre.y,
-                            956 - (diameter / 2 + 14 * diameter / 52), accuracy: 0.000001)
+                        XCTAssertEqual(geometry.stations[0].centre.y, 956 - geometry.freeDepth / 2, accuracy: 0.000001)
                     }
                     XCTAssertEqual(geometry.buttonOverhang, 0.4, accuracy: 1.0 / 4096)
                     XCTAssertEqual(geometry.clockRadius, diameter / 2 + 3 * diameter / 52)
@@ -45,6 +43,49 @@ final class T2GeometryTests: XCTestCase {
             }
         }
         XCTAssertEqual(T2GeometryConstants.wakeDepth, 20)
+    }
+
+    /// DOCK-3.1-05/-06/-07a/-08: the outline the packaged-app visual gate compares at S, M and L.
+    /// Five rings (4 declared + Codex, the walkthrough seed) on a 1920x1080 screen.
+    /// `study` = the pinned geometry.js (sha256 77e2294f..., see geometry-oracle.json) run with
+    /// the same input; `prototype` = the opus-r7 baseline's `.dk-hull-body` rect (CSS px, rounded).
+    func testFiveRingOutlineMatchesTheStudyAtEverySizeOnBothSideEdges() throws {
+        let expected: [(diameter: CGFloat, study: CGSize, prototype: CGSize)] = [
+            (36, CGSize(width: 55.713, height: 329.254), CGSize(width: 56, height: 329)),
+            (44, CGSize(width: 68.094, height: 402.421), CGSize(width: 68, height: 402)),
+            (52, CGSize(width: 80.475, height: 475.589), CGSize(width: 80, height: 476))
+        ]
+        let rows = (0..<5).map { T2Subscription(id: "synthetic-\($0)") }
+        for size in expected {
+            var boxes = [CGRect]()
+            for edge in [T2Edge.left, .right] {
+                let c = T2EdgeCoordinates(edge: edge, width: 1920, height: 1080, menuBarExclusion: 25)
+                let g = try T2Geometry.make(subscriptions: rows,
+                    input: T2GeometryInput(coordinates: c, diameter: size.diameter))
+                XCTAssertEqual(g.shown.count, 5)
+                XCTAssertTrue(g.overflow.isEmpty)
+                let xs = g.outline.map(\.x), ys = g.outline.map(\.y)
+                let box = CGRect(x: xs.min()!, y: ys.min()!,
+                                 width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+                boxes.append(box)
+                let label = "D\(size.diameter) \(edge)"
+                // Width = face depth plus the mid-face arc bulge; height = the whole run of stations.
+                XCTAssertEqual(box.width, size.study.width, accuracy: 0.001, label)
+                XCTAssertEqual(box.height, size.study.height, accuracy: 0.001, label)
+                XCTAssertEqual(box.width, size.prototype.width, accuracy: 1, label)
+                XCTAssertEqual(box.height, size.prototype.height, accuracy: 1, label)
+                // Flat side on the screen edge, bulge on the free side, tapered ends.
+                XCTAssertEqual(edge == .left ? box.minX : box.maxX, edge == .left ? 0 : 1920, accuracy: 1e-9, label)
+                XCTAssertGreaterThan(box.width, g.freeDepth, label)
+                let ends = g.outline.filter { abs($0.y - box.midY) > box.height * 0.45 }
+                let endDepth = ends.map { edge == .left ? $0.x : 1920 - $0.x }.max()!
+                XCTAssertLessThan(endDepth, box.width - 1, label)
+            }
+            // The right edge is the mirror image of the left one.
+            XCTAssertEqual(boxes[0].width, boxes[1].width, accuracy: 1e-9)
+            XCTAssertEqual(boxes[0].height, boxes[1].height, accuracy: 1e-9)
+            XCTAssertEqual(boxes[0].minY, boxes[1].minY, accuracy: 1e-9)
+        }
     }
 
     func testOverflowPreservesIdentityRatherThanShrinkingStations() throws {
@@ -82,6 +123,54 @@ final class T2GeometryTests: XCTestCase {
                     XCTAssertThrowsError(try geometry.consoleButtonRect(in:
                         CGRect(x: geometry.button.x, y: geometry.button.y, width: 1, height: 1)))
                 }
+            }
+        }
+    }
+
+    /// DOCK-3.1-15: readouts stay upright. On every edge the readout is an axis-aligned, wider-than-tall box
+    /// (56 x 16 u, never swapped for a rotated arc), centred on the station's readout anchor; under the ring
+    /// on the side edges, beside it on the bottom and top.
+    func testReadoutsStayUprightOnEveryEdge() throws {
+        for edge in [T2Edge.right, .left, .bottom, .top] {
+            for diameter in [CGFloat(36), 44, 52] {
+                let unit = diameter / 52
+                let geometry = try T2Geometry.make(subscriptions: (0..<4).map { .init(id: "member-\($0)") }, input: .init(coordinates: .init(edge: edge, width: 1470, height: 956, menuBarExclusion: 26), diameter: diameter))
+                let skin = try T2DockSkin.make(geometry: geometry, rows: [], showsPercentages: true)
+                XCTAssertEqual(skin.stations.count, geometry.stations.count)
+                for (recipe, station) in zip(skin.stations, geometry.stations) {
+                    let label = "\(edge) D\(diameter)"
+                    XCTAssertEqual(recipe.readout.width, 56 * unit, accuracy: 1e-6, label)
+                    XCTAssertEqual(recipe.readout.height, 16 * unit, accuracy: 1e-6, label)
+                    XCTAssertGreaterThan(recipe.readout.width, recipe.readout.height, label)
+                    XCTAssertEqual(recipe.readout.midX, station.readoutCentre.x, accuracy: 1e-6, label)
+                    XCTAssertEqual(recipe.readout.midY, station.readoutCentre.y, accuracy: 1e-6, label)
+                    if edge == .left || edge == .right {
+                        XCTAssertEqual(station.readoutCentre.x, station.centre.x, accuracy: 1e-6, label)
+                        XCTAssertGreaterThan(station.readoutCentre.y, station.centre.y, label)
+                    } else {
+                        XCTAssertEqual(station.readoutCentre.y, station.centre.y, accuracy: 1e-6, label)
+                        XCTAssertGreaterThan(station.readoutCentre.x, station.centre.x, label)
+                    }
+                }
+            }
+        }
+    }
+
+    /// DOCK-3.1-19: an empty Dock reserves one empty slot (a dashed "?" station), never zero and never more.
+    func testEmptyDockReservesOneEmptySlot() throws {
+        for edge in [T2Edge.right, .left, .bottom, .top] {
+            for diameter in [CGFloat(36), 44, 52] {
+                let geometry = try T2Geometry.make(subscriptions: [], input: .init(coordinates: .init(edge: edge, width: 1470, height: 956, menuBarExclusion: 26), diameter: diameter))
+                let label = "\(edge) D\(diameter)"
+                XCTAssertEqual(geometry.stations.count, 1, label)
+                XCTAssertTrue(try XCTUnwrap(geometry.stations.first).isEmpty, label)
+                XCTAssertFalse(geometry.stations[0].isOverflow, label)
+                XCTAssertTrue(geometry.shown.isEmpty && geometry.overflow.isEmpty, label)
+                XCTAssertFalse(geometry.outline.isEmpty, label)
+                let skin = try T2DockSkin.make(geometry: geometry, rows: [], showsPercentages: true)
+                XCTAssertEqual(skin.stations.count, 1, label)
+                XCTAssertEqual(skin.stations[0].placeholderLabel, "?", label)
+                XCTAssertNil(skin.stations[0].subscriptionID, label)
             }
         }
     }

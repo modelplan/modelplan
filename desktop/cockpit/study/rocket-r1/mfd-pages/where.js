@@ -24,7 +24,7 @@ function projects(d, ui) {
 
 export function sessionRows(d, ui) {
   const list = sessionsIn(d, ui, ui.time === '7d' ? '7d' : 'today');
-  const run = list.filter(x => x.running).sort((a, b) => b.startedAt - a.startedAt), done = list.filter(x => !x.running).sort((a, b) => b.endedAt - a.endedAt);
+  const run = list.filter(x => x.running).sort((a, b) => (b.startedAt ?? b.lastAt) - (a.startedAt ?? a.lastAt)), done = list.filter(x => !x.running).sort((a, b) => (b.lastAt ?? b.endedAt) - (a.lastAt ?? a.endedAt));
   return {run, done};
 }
 function timeline(d, ui) {
@@ -32,10 +32,10 @@ function timeline(d, ui) {
   if (!run.length && !done.length) return `<p class="mp-empty">${t('mfd.noSessions')}</p>`;
   const row = x => {
     const a = accountOf(d, x.sub), m = modelOf(d, x.model);
-    const time = x.running ? `▶${dhm((d.now - x.startedAt) / 6e4)}` : stamp(x.endedAt, ui);
-    return `<button class="ws ${x.running ? 'run' : ''}" data-mfd="session:${x.ref}" data-tip="${esc(`${x.tool} · ${x.project}`)}">${chip(a?.colour || 'var(--lcd-muted)')}<span class="ws-m">${esc(m?.short || x.model)} ${esc(x.effort || '--')}${x.fast ? ` ${bolt(t('mfd.fastRow'))}` : ''}</span><span class="ws-p">${esc(x.project)}</span><span class="ws-at">${time}</span><span class="ws-tk">${tok(x.tokens)}</span></button>`;
+    const time = x.running ? (x.startedAt == null ? '▶' : `▶${dhm((d.now - x.startedAt) / 6e4)}`) : stamp(x.lastAt ?? x.endedAt, ui);
+    return `<button class="ws ${x.running ? 'run' : ''}" type="button" aria-disabled="true" tabindex="-1" data-mfd="session:${x.ref}" data-tip="${esc(`${x.tool} · ${x.project}`)}">${chip(a?.colour || 'var(--lcd-muted)')}<span class="ws-m">${esc(m?.short || x.model)} ${esc(x.effort || '--')}${x.fast ? ` ${bolt(t('mfd.fastRow'))}` : ''}</span><span class="ws-p">${esc(x.project)}</span><span class="ws-at">${time}</span><span class="ws-tk">${tok(x.tokens)}</span></button>`;
   };
-  return `<div class="ws-list" tabindex="0">${run.length ? `<div class="ws-h">${t('mfd.running')} ${run.length}</div>${run.map(row).join('')}` : ''}${done.length ? `<div class="ws-h">${t('mfd.ended')} ${done.length}</div>${done.map(row).join('')}` : ''}</div>`;
+  return `<div class="ws-list" tabindex="0">${run.length ? `<div class="ws-h">${t('mfd.running')} ${run.length}</div>${run.map(row).join('')}` : ''}${done.length ? `<div class="ws-h">${t(done.every(x => x.lastAt != null) ? 'mfd.lastSeen' : 'mfd.ended')} ${done.length}</div>${done.map(row).join('')}` : ''}</div>`;
 }
 
 export const where = {

@@ -290,10 +290,19 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 	}
 	var billing grokBilling
 	state, retry, code := grokBillingGet(ctx, c, auth, &billing, r.Now)
+	// D232 (CodexBar GrokWebBillingFetcher.swift and GrokAuth.isTeamPrincipal at 7447bc7):
+	// a team login's usage is not on the personal billing surface. An auth refusal keeps
+	// its own code; any other failed or empty reading for a team principal says so.
+	team := strings.EqualFold(strings.TrimSpace(auth.PrincipalType), "team")
 	if state != "" {
 		out := fail(state, "Grok Build usage temporarily unavailable")
 		if state == "expired" || state == "denied" {
 			out.Entry.NextStep = "Open Grok Build to refresh"
+		}
+		if team && grokTeamUnsupported(code) {
+			out.Entry.Status, out.Entry.ErrorCode, out.Entry.Notice, out.Entry.NextStep = "unavailable", "team_unsupported", "Grok team usage is not available from this billing surface", ""
+			out.RetryAfter = retry
+			return out
 		}
 		out.Invalidate = changed
 		out.Entry.ErrorCode = code
@@ -301,6 +310,9 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 		return out
 	}
 	a, ok := parseGrokBilling(billing, r.Now)
+	if team && (!ok || (len(a.Windows) == 0 && a.Credits == nil)) {
+		return readerOutcome{Entry: readerEntry{Status: "unavailable", ErrorCode: "team_unsupported", Notice: "Grok team usage is not available from this billing surface"}, Invalidate: changed}
+	}
 	if !ok {
 		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Grok Build billing format is not supported yet"}, Invalidate: changed}
 	}
@@ -317,7 +329,15 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 	if a.SharedPool != nil {
 		notice = "Shared-pool link unverified"
 	}
-	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Notice: notice, Metadata: readerMetadata{CredentialKey: credentialKey, AccountKey: accountKey, VerifiedAt: r.Now.UTC(), Plan: a.Plan}}}
+	// D99: the session-scoped model list on the same host with the same headers; best effort, 3 s.
+	reported := reportedModelsGET(ctx, c, grokHost+"/v1/models", grokHeaders(auth))
+	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Notice: notice, ReportedModels: reported, Metadata: readerMetadata{CredentialKey: credentialKey, AccountKey: accountKey, VerifiedAt: r.Now.UTC(), Plan: a.Plan}}}
+}
+
+// grokTeamUnsupported: the billing call refused the request itself (a 4xx other than the
+// auth codes and rate limiting, or a missing path) rather than failing in transit.
+func grokTeamUnsupported(code string) bool {
+	return code == "other" || code == "schema_changed"
 }
 
 type grokCent struct {
@@ -448,16 +468,33 @@ func parseGrokBilling(b grokBilling, now time.Time) (*Account, bool) {
 		if !ok {
 			return nil, false
 		}
-		w := Window{Kind: "spend", Limit: "Additional usage", UsedUSD: used, LimitUSD: cap, ObservedAt: now.UTC(), ResetMode: "unknown"}
-		if used != nil && cap != nil && *cap > 0 {
-			pct := 100 * *used / *cap
-			w.UsedPercent = &pct
+		// D228: no cap (or a zero cap) means additional usage is not set up; a window with
+		// nothing to measure would only draw a "--" row on the card.
+		if cap != nil && *cap > 0 {
+			w := Window{Kind: "spend", Limit: "Additional usage", UsedUSD: used, LimitUSD: cap, ObservedAt: now.UTC(), ResetMode: "unknown"}
+			if used != nil {
+				pct := 100 * *used / *cap
+				w.UsedPercent = &pct
+			}
+			a.Windows = append(a.Windows, w)
 		}
-		a.Windows = append(a.Windows, w)
 	}
 	// A valid reset-past capture may retain a separately observed wallet. No
 	// period is rolled over and missing wallets are never interpreted as zero.
 	return a, len(a.Windows) > 0 || a.Credits != nil || (cfg.Percent != nil && reset != nil)
+}
+
+// grokHeaders are the reader's own headers, shared by the billing call and the D99 model list.
+func grokHeaders(auth grokAuth) map[string]string {
+	return map[string]string{
+		"Authorization":         "Bearer " + auth.Key,
+		"X-XAI-Token-Auth":      "xai-grok-cli",
+		"x-userid":              auth.User,
+		"x-grok-client-version": "0.0.0-modelplan-native-beta",
+		"x-grok-client-mode":    "headless",
+		"User-Agent":            "modelplan",
+		"Accept":                "application/json",
+	}
 }
 
 func grokBillingGet(ctx context.Context, c *http.Client, auth grokAuth, out any, now time.Time) (string, time.Time, string) {
@@ -465,13 +502,9 @@ func grokBillingGet(ctx context.Context, c *http.Client, auth grokAuth, out any,
 	if err != nil {
 		return "unavailable", time.Time{}, "other"
 	}
-	req.Header.Set("Authorization", "Bearer "+auth.Key)
-	req.Header.Set("X-XAI-Token-Auth", "xai-grok-cli")
-	req.Header.Set("x-userid", auth.User)
-	req.Header.Set("x-grok-client-version", "0.0.0-modelplan-native-beta")
-	req.Header.Set("x-grok-client-mode", "headless")
-	req.Header.Set("User-Agent", "modelplan")
-	req.Header.Set("Accept", "application/json")
+	for k, v := range grokHeaders(auth) {
+		req.Header.Set(k, v)
+	}
 	client := *c
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

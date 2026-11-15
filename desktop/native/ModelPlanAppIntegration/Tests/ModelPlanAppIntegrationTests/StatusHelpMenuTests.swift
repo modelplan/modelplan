@@ -3,14 +3,15 @@ import AppKit
 import XCTest
 import ModelPlanSettings
 import ModelPlanEngineClient
+@_spi(DockResourceChecks) import ModelPlanDock
 @testable import ModelPlanAppIntegration
 
 @MainActor final class StatusHelpMenuTests: XCTestCase {
-    private func application(language: String = "en") async throws -> EngineDockMenuApplication {
+    private func application(language: String = "en", cockpitEnabled: Bool? = nil) async throws -> EngineDockMenuApplication {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-help-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: [language])
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, activateSettings: {})
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: [language])
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, cockpitEntryEnabled: cockpitEnabled, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
         await app.prepare()
         return app
     }
@@ -23,10 +24,15 @@ import ModelPlanEngineClient
         let app = try await application()
         defer { app.composition.dock.close() }
         let expected = app.composition.menuPresentation.title
-        // A concurrent preference writer makes the explicit Show request stale.
         _ = try await app.foundationStore.update { $0.showDock = false; $0.dockEdge = .left }
+        await app.settingsHost.application.editor.reload()
+        // The settings folder becomes read-only, so the explicit Show cannot be saved.
+        let status = await app.foundationStore.foundationStatus()
+        let folder = try XCTUnwrap(status).path.deletingLastPathComponent()
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
         try invoke("Show Quota Widget", on: app)
-        let feedback = "Settings changed. Choose Show Quota Widget again."
+        let feedback = "Could not change Show Quota Widget. Check Settings and try again."
         for _ in 0..<250 {
             if app.liveStatusMenu?.items.contains(where: { $0.title == feedback }) == true { break }
             try await Task.sleep(for: .milliseconds(20))
@@ -42,6 +48,127 @@ import ModelPlanEngineClient
         XCTAssertEqual(button.toolTip, feedback)
         let saved = await app.foundationStore.snapshot()
         XCTAssertFalse(saved.preferences.showDock, "Failed Show must not pretend to reveal the widget")
+    }
+    func testS06HelpHasAStableMenuActionIdentifier() async throws {
+        let app = try await application()
+        defer { app.composition.dock.close() }
+        let help = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Help…" })
+        XCTAssertEqual(help.accessibilityIdentifier(), "status.help")
+        app.requestHelpMap = { true }
+        try invoke("Help…", on: app)
+        let request = try XCTUnwrap(app.statusHelpRequestID)
+        app.statusHelpDidDismiss(UUID())
+        XCTAssertEqual(app.statusHelpRequestID, request)
+        app.statusHelpDidDismiss(request)
+        XCTAssertNil(app.statusHelpRequestID)
+        XCTAssertFalse(app.statusHelpButtonFocused, "A detached view cannot report native status focus")
+    }
+
+    func testS07NormalEntryIgnitionReportsItsOwnFocus() async throws {
+        let app = try await application(cockpitEnabled: true)
+        let dock = app.composition.dock
+        defer { dock.close() }
+        app.allowDockPresentation()
+        let container = try XCTUnwrap(dock.dockView.superview)
+        let label = EngineRowsText.openCockpit.value(.english)
+        let ignition = try XCTUnwrap(container.subviews.compactMap { $0 as? NSButton }
+            .first { $0.accessibilityLabel() == label })
+        XCTAssertTrue(ignition.isEnabled)
+        XCTAssertFalse(ignition.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(ignition.bounds.isEmpty)
+        XCTAssertNil(dock.focusedDockHelpAnchorID)
+
+        ignition.setAccessibilityFocused(true)
+        XCTAssertEqual(dock.focusedDockHelpAnchorID, "dock.ignition")
+        ignition.setAccessibilityFocused(false)
+        XCTAssertNil(dock.focusedDockHelpAnchorID)
+
+        ignition.setAccessibilityFocused(true)
+        dock.cockpitEntryEnabled = false
+        XCTAssertNil(dock.focusedDockHelpAnchorID)
+        ignition.setAccessibilityFocused(true)
+        dock.cockpitEntryEnabled = true
+        XCTAssertNil(dock.focusedDockHelpAnchorID, "A disabled ignition cannot carry stale focus into the enabled state")
+
+        ignition.setAccessibilityFocused(true)
+        XCTAssertEqual(dock.focusedDockHelpAnchorID, "dock.ignition")
+        dock.setPresentationAllowed(false)
+        XCTAssertNil(dock.focusedDockHelpAnchorID)
+    }
+
+    func testS10NormalEntryRegistersThePaintedGripAsADragTarget() async throws {
+        let app = try await application()
+        defer { app.composition.dock.close() }
+        app.allowDockPresentation()
+        let view = app.composition.dock.dockView
+        let regions = try XCTUnwrap(view.registeredDragRegions(excluding: []))
+        let grip = try XCTUnwrap(regions.grips.first, "The painted grip needs an explicit event target")
+        let point = CGPoint(x: grip.boundingBox.midX, y: grip.boundingBox.midY)
+        XCTAssertTrue(view.isPainted(atLocal: point))
+        XCTAssertTrue(view.backgroundDragDelegate?.backgroundCanDrag(local: point) == true)
+        let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: 0, windowNumber: 0, context: nil, characters: "\t",
+            charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48))
+        view.keyDown(with: key)
+        XCTAssertEqual(view.focusedGripIndex, 0)
+        // R64 D-5: the outline hugs the painted art inside the larger hit target.
+        let art = try XCTUnwrap(view.registeredGripArtRects.first)
+        XCTAssertEqual(view.emphasizedGripFrameForChecks, art)
+        // G3-11: the prototype's warm ring and glow (rocket.css:53), plus its gold keyboard outline (rocket.css:30).
+        func rgba(_ colour: CGColor?) -> [Int] { (colour?.components ?? []).map { Int(($0 * 255).rounded()) } }
+        XCTAssertEqual(rgba(view.gripRingInkForChecks), [0xdf, 0x60, 0x4c, 0x99])
+        XCTAssertEqual(rgba(view.gripGlowInkForChecks), [0xdf, 0x60, 0x4c, 0x55])
+        XCTAssertEqual(rgba(view.gripFocusInkForChecks), [0xd4, 0xb9, 0x94, 0xff])
+        XCTAssertTrue(grip.boundingBox.contains(art))
+        // Side edge: the hit box is the prototype's 44 x 30 (.dk-cap), scaled with the dock (rocket.css:44-46).
+        if let stationDiameter = view.presentedSkinForChecks?.stations.first?.diameter, view.bounds.width < view.bounds.height {
+            let unit = stationDiameter / 52
+            XCTAssertEqual(grip.boundingBox.height, 30 * unit, accuracy: 1)
+            XCTAssertLessThanOrEqual(grip.boundingBox.width, 44 * unit + 1)
+            XCTAssertGreaterThan(grip.boundingBox.width, 30 * unit)
+            XCTAssertEqual(art.width, 12 * unit, accuracy: 0.5); XCTAssertEqual(art.height, 24 * unit, accuracy: 0.5)
+        }
+        _ = view.resignFirstResponder()
+        XCTAssertNil(view.emphasizedGripFrameForChecks)
+        XCTAssertNil(view.gripFocusInkForChecks)
+    }
+
+    /// G3-12 (owner: Help missing or inactive). Help is chosen from the menu bar while the
+    /// widget is turned off from the status menu. Help must show the widget again and then present
+    /// the map over it, instead of reporting "Help unavailable".
+    func testG312HelpShowsAHiddenWidgetThenPresentsTheMap() async throws {
+        for (language, title, failure) in [("en", "Help…", "Help unavailable. Try again when the Quota Widget is visible."),
+                                           ("zh-CN", "说明…", "说明暂不可用，请在额度挂件可见时重试。")] {
+            let app = try await application(language: language)
+            defer { app.composition.dock.close() }
+            app.allowDockPresentation()
+            let dock = app.composition.dock
+            for _ in 0..<250 where dock.edgePresentation?.state != .expanded { try await Task.sleep(for: .milliseconds(20)) }
+            XCTAssertEqual(dock.edgePresentation?.state, .expanded, "precondition: first show, " + language)
+            // Turn the widget off from the status menu's checkable item (G3-18 path, owner 11-06).
+            try await chooseShowQuotaWidget(app, checked: true, title: language == "en" ? "Show Quota Widget" : "显示额度挂件")
+            let editor = app.settingsHost.application.editor
+            XCTAssertFalse(dock.interactionEnvironment().active, "precondition: the widget is hidden, " + language)
+            // The map can only be drawn over a shown, painted, expanded widget. Without native
+            // panels the edge state stays expanded, so the shown state is the host's own gate.
+            var requests = 0, presented = 0
+            app.requestHelpMap = {
+                requests += 1
+                guard dock.interactionEnvironment().active, dock.edgePresentation?.state == .expanded,
+                      dock.edgePresentation?.paintedFrame != nil else { return false }
+                presented += 1
+                return true
+            }
+            try invoke(title, on: app)
+            for _ in 0..<250 where presented == 0 { try await Task.sleep(for: .milliseconds(20)) }
+            XCTAssertEqual(presented, 1, "Help shows the widget and then presents the map, " + language)
+            XCTAssertGreaterThanOrEqual(requests, 2, language)
+            XCTAssertTrue(dock.interactionEnvironment().active, language)
+            let saved = await app.foundationStore.snapshot()
+            XCTAssertTrue(saved.preferences.showDock, "Help shows the widget the same way Show Quota Widget does, " + language)
+            XCTAssertNotNil(app.statusHelpRequestID, "The presented map keeps the status request for focus return, " + language)
+            XCTAssertFalse(app.liveStatusMenu?.items.contains(where: { $0.title == failure }) == true, language)
+        }
     }
     func testHelpMenuRequestsExistingMapAndReportsFailureInBothLanguages() async throws {
         for (language, title, failure) in [("en", "Help…", "Help unavailable. Try again when the Quota Widget is visible."), ("zh-CN", "说明…", "说明暂不可用，请在额度挂件可见时重试。")] {
@@ -61,4 +188,47 @@ import ModelPlanEngineClient
             XCTAssertFalse(app.liveStatusMenu?.items.contains(where: { $0.title == failure }) == true)
         }
     }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testNativeJourneyCleanupRetiresTheStatusMenu() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-teardown-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        await app.prepare()
+        app.renderMenu()
+        let retired = try XCTUnwrap(app.liveStatusMenu)
+        XCTAssertFalse(retired.items.isEmpty)
+        await app.stopNativeDockJourney()
+        XCTAssertNil(app.liveStatusMenu)
+        XCTAssertTrue(retired.items.isEmpty)
+    }
+
+    func testS14NormalLaunchDoesNotOverrideSystemAppearance() async throws {
+        let application = NSApplication.shared
+        let previousAppearance = application.appearance
+        let previousPolicy = application.activationPolicy()
+        defer {
+            application.appearance = previousAppearance
+            application.setActivationPolicy(previousPolicy)
+        }
+        // Restore inheritance within the test process only.
+        application.appearance = nil
+        let systemDark = SettingsWindowController.systemEnvironment().darkAppearance
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("system-appearance-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = try await expandedWidgetSettingsStore(applicationSupport: root)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
+            createsNativePanels: false, bundleURL: root.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        app.setActivityPaused(true)
+        app.applicationDidFinishLaunching(.init(name: NSApplication.didFinishLaunchingNotification, object: application))
+        XCTAssertNil(application.appearance, "The normal launch must inherit rather than pin an appearance")
+        XCTAssertEqual(SettingsWindowController.systemEnvironment().darkAppearance, systemDark)
+        await app.stopNativeDockJourney()
+    }
+    #endif
+
 }

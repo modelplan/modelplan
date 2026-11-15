@@ -192,11 +192,14 @@ func TestAutomaticRefreshSyntheticClockProviders(t *testing.T) {
 	}
 }
 
-func TestAutomaticNeverSchedulesImplicitGrant(t *testing.T) {
+// Owner decision 2026-11-06: Codex's runtime is read by default, but a profile that requires
+// consent (a reset store) schedules nothing until the user decides.
+func TestAutomaticNeverSchedulesWhenConsentRequired(t *testing.T) {
 	backend, paths, _ := refreshFixture(t, consent.ScopeCodexRuntimeUsage)
 	if err := consent.Change(consent.Path(), func(state *consent.State) error {
 		state.Scopes = map[string]consent.Record{}
 		state.Tools = map[string]consent.Record{}
+		state.RequireConsent = true
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -211,7 +214,7 @@ func TestAutomaticNeverSchedulesImplicitGrant(t *testing.T) {
 	s.StartAutomatic()
 	select {
 	case <-calls:
-		t.Fatal("implicit consent scheduled a live read")
+		t.Fatal("a profile requiring consent scheduled a live read")
 	case <-time.After(100 * time.Millisecond):
 	}
 }
@@ -243,5 +246,52 @@ func TestAutomaticFallsBackToGrantedCodexHistory(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("local fallback was not scheduled")
+	}
+}
+
+func TestAutomaticSchedulesDefaultCodexRuntimeWithoutDecision(t *testing.T) {
+	backend, paths, _ := refreshFixture(t, consent.ScopeCodexRuntimeUsage)
+	if err := consent.Change(consent.Path(), func(state *consent.State) error {
+		state.Scopes = map[string]consent.Record{}
+		state.Tools = map[string]consent.Record{}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	backend.view.Stamp = stampOfFence(consent.Capture().Fence())
+	backend.view.Scopes = []string{consent.ScopeCodexRuntimeUsage}
+	calls := make(chan string, 8)
+	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		Run: func(_ context.Context, _ quota.Paths, scope string, _ time.Time) error { calls <- scope; return nil },
+	})
+	defer s.Close()
+	s.StartAutomatic()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case scope := <-calls:
+			if scope == consent.ScopeCodexRuntimeUsage {
+				return
+			}
+		case <-deadline:
+			t.Fatal("default Codex runtime was not scheduled on an undecided profile")
+		}
+	}
+}
+
+// Each scheduler pass repeats the scopes that cannot run; a real outcome must survive them.
+func TestRepeatedNotAttemptedDecisionsKeepRealOutcomesInTheRing(t *testing.T) {
+	var ring refreshDecisionRing
+	at := time.Unix(1_800_000_000, 0)
+	ring.add(at, consent.ScopeMiniMaxAccountUsageAPIKey, refreshSucceeded, refreshCompleted)
+	for i := 0; i < 50; i++ {
+		ring.add(at.Add(time.Duration(i)*time.Second), consent.ScopeZaiAccountUsageAPIKey, refreshNotAttempted, refreshUnavailable)
+		ring.add(at.Add(time.Duration(i)*time.Second), consent.ScopeCopilotRuntimeUsage, refreshNotAttempted, refreshUnavailable)
+	}
+	if ring.count != 3 {
+		t.Fatalf("decisions = %d: %+v", ring.count, ring.items[:ring.count])
+	}
+	if ring.items[0].scope != consent.ScopeMiniMaxAccountUsageAPIKey || ring.items[1].at != at.Add(49*time.Second) {
+		t.Fatalf("items = %+v", ring.items[:3])
 	}
 }

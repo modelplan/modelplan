@@ -102,6 +102,9 @@ type RowsSnapshot struct {
 // The standalone desktop projection retains its independent legacy contract.
 type RowsProjection struct {
 	ResetEvents *[]rows.ResetEvent `json:"resetEvents,omitempty" null:"forbidden"`
+	// Forecasts is present only for a client that negotiated cockpitForecastV1, so the App can
+	// notify while the cockpit is closed.
+	Forecasts   *[]CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
 	RowsVersion int                `json:"rowsVersion"`
 	Rows        []rows.Row         `json:"rows"`
 	RowsSummary rows.RowsSummary   `json:"rowsSummary"`
@@ -110,7 +113,12 @@ type RowsProjection struct {
 func ProjectWithEvents(value rows.Projection, events *[]rows.ResetEvent, enabled bool, sourceEnabled ...bool) RowsProjection {
 	expose := len(sourceEnabled) > 0 && sourceEnabled[0]
 	members := len(sourceEnabled) > 1 && sourceEnabled[1]
-	result := project(value, expose, members)
+	today := len(sourceEnabled) > 3 && sourceEnabled[3]
+	result := project(value, expose, members, today)
+	if len(sourceEnabled) > 4 && sourceEnabled[4] {
+		forecasts := ProjectForecasts(value, func(string) bool { return true }, time.Now())
+		result.Forecasts = &forecasts
+	}
 	if enabled {
 		if events != nil {
 			projected := ProjectResetEventLinks(*events, len(sourceEnabled) > 2 && sourceEnabled[2])
@@ -133,11 +141,11 @@ func ProjectResetEventLinks(events []rows.ResetEvent, enabled bool) []rows.Reset
 	return out
 }
 
-func Project(value rows.Projection) RowsProjection { return project(value, false, false) }
+func Project(value rows.Projection) RowsProjection { return project(value, false, false, false) }
 
-func project(value rows.Projection, expose, members bool) RowsProjection {
+func project(value rows.Projection, expose, members, today bool) RowsProjection {
 	result := RowsProjection{RowsVersion: value.RowsVersion, Rows: append([]rows.Row{}, value.Rows...), RowsSummary: value.RowsSummary}
-	if expose && members {
+	if expose && members && today {
 		return result
 	}
 	for i := range result.Rows {
@@ -147,6 +155,9 @@ func project(value rows.Projection, expose, members bool) RowsProjection {
 		result.Rows[i].Accounts = append([]rows.Account{}, result.Rows[i].Accounts...)
 		for j := range result.Rows[i].Accounts {
 			account := &result.Rows[i].Accounts[j]
+			if !today {
+				account.Today = nil
+			}
 			if !members {
 				account.RefreshNotBefore = nil
 			}
@@ -297,4 +308,46 @@ type Health struct {
 type PluginInstallParams struct {
 	Tool    PluginTool `json:"tool"`
 	Offline bool       `json:"offline,omitempty" null:"coalesced"`
+}
+
+// HistoryImportStartParams starts the local usage-history import (metadata only, from the
+// harness logs on this machine). Days is 7, 30 or 90 (1..371 accepted); FirstRun marks the import
+// that follows the first-run consent, which runs once.
+type HistoryImportStartParams struct {
+	Days     int  `json:"days" schema:"minimum=1,maximum=371"`
+	FirstRun bool `json:"firstRun"`
+}
+
+// HistoryImportSource is one source's outcome; it carries no path or id.
+type HistoryImportSource struct {
+	Source string                    `json:"source"`
+	Status HistoryImportSourceStatus `json:"status"`
+	Turns  int                       `json:"turns" schema:"minimum=0"`
+}
+
+// HistoryImportCoverage is what imported.json covers for one source, in local days.
+type HistoryImportCoverage struct {
+	Source  string `json:"source"`
+	From    string `json:"from"`
+	Through string `json:"through"`
+	Rows    int    `json:"rows" schema:"minimum=0"`
+}
+
+// HistoryImportStatus is the read-only progress and state of the import. Files counts log files
+// read so far of those to read; it never names one.
+type HistoryImportStatus struct {
+	SchemaVersion int                     `json:"schemaVersion" schema:"minimum=1,maximum=1"`
+	Phase         HistoryImportPhase      `json:"phase"`
+	Days          int                     `json:"days" schema:"minimum=0,maximum=371"`
+	FilesDone     int                     `json:"filesDone" schema:"minimum=0"`
+	FilesTotal    int                     `json:"filesTotal" schema:"minimum=0"`
+	FirstRunDone  bool                    `json:"firstRunDone"`
+	ImportedRows  int                     `json:"importedRows" schema:"minimum=0"`
+	Coverage      []HistoryImportCoverage `json:"coverage"`
+	Sources       []HistoryImportSource   `json:"sources"`
+	// Revision changes exactly when an import operation that can change imported history ends: a run
+	// settling (done, cancelled or failed) or a removal. It counts from 0 per engine process. A client
+	// that refreshes imported-history views on a new revision never misses a fast run whose start
+	// reply is already done. Older engines omit it.
+	Revision *int `json:"revision,omitempty" null:"coalesced" schema:"minimum=0"`
 }

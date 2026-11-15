@@ -57,13 +57,13 @@ public struct DockCardInteraction:Sendable {
 public enum DockCardPlacement {
     public static func frame(anchor:CGRect,size:CGSize,edge:DockEdge,usable:CGRect,gap:CGFloat)throws->CGRect?{
         guard [anchor.minX,anchor.minY,anchor.width,anchor.height,size.width,size.height,usable.minX,usable.minY,usable.width,usable.height,gap].allSatisfy({$0.isFinite}),size.width>0,size.height>0,gap>=0 else{throw DockEdgeError.invalidGeometry}
-        guard edge != .top,size.width<=usable.width,size.height<=usable.height else{return nil}
+        guard size.width<=usable.width,size.height<=usable.height else{return nil}
         let x:CGFloat,y:CGFloat
         switch edge{
         case .left:x=anchor.maxX+gap;y=anchor.midY-size.height/2
         case .right:x=anchor.minX-gap-size.width;y=anchor.midY-size.height/2
         case .bottom:x=anchor.midX-size.width/2;y=anchor.maxY+gap
-        case .top:return nil
+        case .top:x=anchor.midX-size.width/2;y=anchor.minY-gap-size.height
         }
         return CGRect(x:max(usable.minX,min(usable.maxX-size.width,x)),y:max(usable.minY,min(usable.maxY-size.height,y)),width:size.width,height:size.height)
     }

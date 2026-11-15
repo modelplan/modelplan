@@ -46,6 +46,10 @@ The release scan covers Swift, Go, Objective-C and cgo under `desktop/native` an
 the code from release; `DEBUG`, test directory names and `flag || platform` are
 not exceptions. This literal-source guard does not resolve computed selectors.
 
+### Changelog entries
+
+Do not edit `CHANGELOG.md` in a PR: add one small file under `changelog.d/` instead, so parallel PRs do not conflict. Entries are English only; see `changelog.d/README.md`. CI runs `node scripts/changelog.mjs --check`.
+
 ### Releasing
 
 Release notes for every release must be English only: do not include Chinese lines or bilingual pairs. Prepare and review the English notes before publication. If the release workflow generates notes, replace them with the reviewed English notes after publication and verify the published text.
@@ -53,7 +57,7 @@ Release notes for every release must be English only: do not include Chinese lin
 The plugins bring their own CLI: each pins one release in `cli-pin.json` (version and per-platform SHA-256) and fetches it with `hooks/fetch-cli.sh`. So a CLI change ships in two steps:
 
 1. Merge the CLI change and push the tag `vX.Y.Z` on the merge commit; the release workflow builds the archives and `checksums.txt`.
-2. Run `node scripts/pin-cli.mjs vX.Y.Z` (writes both plugins' `cli-pin.json`), bump both plugin versions, open a PR. CI runs `node scripts/pin-cli.mjs --check` against the published release.
+2. Run `node scripts/pin-cli.mjs vX.Y.Z` (writes both plugins' `cli-pin.json`) and `node scripts/changelog.mjs --collate vX.Y.Z` (moves the `Unreleased` entries and `changelog.d/` fragments under a version heading and deletes the fragments), bump both plugin versions, open a PR. CI runs `node scripts/pin-cli.mjs --check` against the published release.
 
 The CLI itself pins the CodexBar CLI release that `modelplan codexbar` fetches, in `cli/internal/quota/codexbar-pin.json`. The weekly `codexbar-pin` workflow runs `node scripts/pin-codexbar.mjs --latest` and the live contract test, then opens a PR. Close and reopen that PR to run CI; a new pin ships with the next CLI release.
 
@@ -67,6 +71,8 @@ By contributing you agree that your contribution is licensed under the [MIT Lice
 
 **Bug 与想法**：bug 请注明客户端（Skill、命令行、Claude Code 插件、Codex 插件）、版本和复现步骤；想法请说明你当时想做什么决定：用哪个模型、开哪一档、买哪个套餐。
 
-**发版**：所有版本的发布说明只使用英文，不写中文或中英对照；发布前准备并审核英文说明，若流程自动生成说明，发布后须替换为已审核的英文说明并核验发布内容。插件自带 CLI，各自在 `cli-pin.json` 里锁定一个版本和各平台的 SHA-256。所以 CLI 的改动分两步发：先合并并在合并提交上打 `vX.Y.Z` 标签，等发版流程生成程序包和 `checksums.txt`；再运行 `node scripts/pin-cli.mjs vX.Y.Z` 写入两个插件的 `cli-pin.json`，升两个插件的版本号并开 PR，CI 会用 `node scripts/pin-cli.mjs --check` 对照已发布的版本核验。CLI 自己锁定 `modelplan codexbar` 下载的 CodexBar CLI 版本，写在 `cli/internal/quota/codexbar-pin.json`。每周的 `codexbar-pin` 流程会运行 `node scripts/pin-codexbar.mjs --latest` 和实时格式检查，再开 PR；关闭并重新打开这个 PR 才会跑 CI，新锁定的版本随下一次 CLI 发版生效。
+**更新日志**：PR 不直接改 `CHANGELOG.md`，而是在 `changelog.d/` 下新增一个小文件，这样并行的 PR 不会冲突。条目只用英文，详见 `changelog.d/README.md`；CI 运行 `node scripts/changelog.mjs --check`。
+
+**发版**：所有版本的发布说明只使用英文，不写中文或中英对照；发布前准备并审核英文说明，若流程自动生成说明，发布后须替换为已审核的英文说明并核验发布内容。插件自带 CLI，各自在 `cli-pin.json` 里锁定一个版本和各平台的 SHA-256。所以 CLI 的改动分两步发：先合并并在合并提交上打 `vX.Y.Z` 标签，等发版流程生成程序包和 `checksums.txt`；再运行 `node scripts/pin-cli.mjs vX.Y.Z` 写入两个插件的 `cli-pin.json`，运行 `node scripts/changelog.mjs --collate vX.Y.Z` 把 `Unreleased` 条目和 `changelog.d/` 片段移到版本标题下并删除片段，升两个插件的版本号并开 PR，CI 会用 `node scripts/pin-cli.mjs --check` 对照已发布的版本核验。CLI 自己锁定 `modelplan codexbar` 下载的 CodexBar CLI 版本，写在 `cli/internal/quota/codexbar-pin.json`。每周的 `codexbar-pin` 流程会运行 `node scripts/pin-codexbar.mjs --latest` 和实时格式检查，再开 PR；关闭并重新打开这个 PR 才会跑 CI，新锁定的版本随下一次 CLI 发版生效。
 
 **Pull request**：按上表在本地跑对应检查。客户端不自己排名、只读匿名不上传、从不替用户切换模型或档位、中英文同步更新。提交即表示你同意以 [MIT 许可](LICENSE)发布你的贡献。`desktop/official-visuals/` 里的官方视觉例外：它有自己的[许可](desktop/official-visuals/LICENSE.md)，外部修改需要另签书面协议。

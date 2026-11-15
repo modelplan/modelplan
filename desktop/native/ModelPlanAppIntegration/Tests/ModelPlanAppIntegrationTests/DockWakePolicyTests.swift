@@ -25,7 +25,7 @@ import ModelPlanSettings
             let factor = size.nozzleDiameter / 44
             let host = StaticDockPreviewHost(appearance: { view, rows, _ in
                 try view.applyCommunity(rows)
-                view.setFrameSize(edge == .bottom ? CGSize(width: 180 * factor, height: 80 * factor)
+                view.setFrameSize(edge.isHorizontal ? CGSize(width: 180 * factor, height: 80 * factor)
                                                   : CGSize(width: 80 * factor, height: 180 * factor))
                 return .init(hoverRects: [CGRect(x: 30 * factor, y: 30 * factor, width: 10 * factor, height: 30 * factor)],
                              sliverLength: 160 * factor, sliverThickness: 4 * factor)
@@ -38,18 +38,33 @@ import ModelPlanSettings
             let c = SettingsApplicationCoordinator(store: store) { host.apply($0) }
             await c.reload(); host.setPresentationAllowed(true)
             let placement = try XCTUnwrap(host.edgePresentation?.placement)
-            XCTAssertEqual(edge == .bottom ? placement.wakeFrame.height : placement.wakeFrame.width, 20)
+            XCTAssertEqual(edge.isHorizontal ? placement.wakeFrame.height : placement.wakeFrame.width, 20)
             switch edge {
-            case .left: pointer = CGPoint(x: placement.wakeFrame.minX + 20, y: placement.wakeFrame.midY)
-            case .right: pointer = CGPoint(x: placement.wakeFrame.maxX - 20, y: placement.wakeFrame.midY)
-            case .bottom: pointer = CGPoint(x: placement.wakeFrame.midX, y: placement.wakeFrame.minY + 20)
+            case .left: pointer = CGPoint(x: placement.wakeFrame.minX + 19, y: placement.wakeFrame.midY)
+            case .right: pointer = CGPoint(x: placement.wakeFrame.maxX - 19, y: placement.wakeFrame.midY)
+            case .bottom: pointer = CGPoint(x: placement.wakeFrame.midX, y: placement.wakeFrame.minY + 19)
+            case .top: pointer = CGPoint(x: placement.wakeFrame.midX, y: placement.wakeFrame.maxY - 19)
             }
             XCTAssertTrue(DockEdgeGeometry.canWake(at: pointer, placement: placement, displays: [screen]))
+            var beyondDepth = pointer, beyondEnd = pointer
+            switch edge {
+            case .left: beyondDepth.x += 2; beyondEnd.y = placement.wakeFrame.maxY + 19
+            case .right: beyondDepth.x -= 2; beyondEnd.y = placement.wakeFrame.maxY + 19
+            case .bottom: beyondDepth.y += 2; beyondEnd.x = placement.wakeFrame.maxX + 19
+            case .top: beyondDepth.y -= 2; beyondEnd.x = placement.wakeFrame.maxX + 19
+            }
+            XCTAssertFalse(DockEdgeGeometry.canWake(at: beyondDepth, placement: placement, displays: [screen]))
+            XCTAssertFalse(DockEdgeGeometry.canWake(at: beyondEnd, placement: placement, displays: [screen]))
             host.refreshPresence()
             elapsed = 0.15; host.refreshPresence()
             XCTAssertEqual(host.edgePresentation?.state, .expanded, "the outer 16–20 pt band must reveal")
             elapsed = 1; host.refreshPresence()
             XCTAssertEqual(host.edgePresentation?.state, .expanded, "the full 20 pt wake stays inside after reveal")
+            let inside = pointer
+            pointer = CGPoint(x: -10_000, y: -10_000)
+            elapsed = 1.5; host.refreshPresence()
+            elapsed = 1.9; pointer = inside; host.refreshPresence()
+            XCTAssertEqual(host.edgePresentation?.state, .expanded)
             pointer = CGPoint(x: -10_000, y: -10_000)
             elapsed = 2; host.refreshPresence()
             elapsed = 2.5; host.refreshPresence()

@@ -252,13 +252,16 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "ZaiConfig attempt gate unavailable"}
 	}
 	zaiConfigAttempts.Store(cache, now)
-	e := fetchZaiConfig(ctx, nativeClient, "local", "", now)
+	e, key := fetchZaiConfigKey(ctx, nativeClient, now)
 	// CLIJIT cancels in-flight reads on revocation. Never republish their result.
 	if _, blocked := zaiConfigAdmission(ctx); ctx.Err() != nil || blocked != "" {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext("consent_required")}
 	}
 	if e.Status == "ok" {
 		e.Admission = access.Admission
+		if key != "" && !IdentityOff() {
+			e.SubscriptionRef = assignSubscription(cache, "api-key:zai", key, now) // a key is one subscription
+		}
 		s.Good = &e
 		s.GoodGeneration = access.LoginGeneration
 		s.Failures = 0

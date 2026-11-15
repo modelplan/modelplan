@@ -1,0 +1,12 @@
+{
+  "entities": 1,
+  "totalObservedOutputTokens": 1,
+  "top": [
+    {
+      "name": "synthetic",
+      "observedRequests": 1,
+      "observedOutputTokens": 1,
+      "share": 42.5
+    }
+  ]
+}
