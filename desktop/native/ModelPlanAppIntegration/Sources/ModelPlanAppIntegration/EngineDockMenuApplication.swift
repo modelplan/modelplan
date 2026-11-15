@@ -7,6 +7,7 @@ import ModelPlanEngineClient
 import ModelPlanDock
 import ModelPlanEngineStore
 import ModelPlanSettings
+import os
 #if MODELPLAN_U6_DRIVE
 import ModelPlanMenuVerification
 #endif
@@ -145,6 +146,10 @@ struct StatusNoticePresentation {
     public var openPublicURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Injection point for the cache action; the normal entry clears the app's own folder.
     public var clearAppCache: () -> Void = { EngineAppCache.clearCurrentApp() }
+    /// Settings → Diagnostics → Export diagnostics…. The normal entry (a real .app) shows what is included, a save
+    /// panel, and writes the zip; nil hides the row (v1 shows no dead control). Tests inject a recorder.
+    public var exportDiagnostics: (@MainActor (SettingsLanguage, SettingsAbout) -> Void)?
+    private let engineConfiguration: EngineClientConfiguration
     /// Injection point for global shortcuts; the normal entry supplies the system registrar.
     var shortcutRegistrar: (any EngineShortcutRegistering)?
     private let notificationConsumer = SettingsNotificationConsumer()
@@ -166,6 +171,7 @@ struct StatusNoticePresentation {
                 activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) {
         let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient)
         self.composition = composition
+        self.engineConfiguration = configuration
         self.scopeBinding = EngineScopeConsentBinding(composition: composition)
         self.foundationStore = settingsStore
         self.appBundleURL = bundleURL
@@ -424,6 +430,16 @@ struct StatusNoticePresentation {
            bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL, bundle.bundleURL.pathExtension == "app" {
             shortcutRegistrar = CarbonShortcutRegistrar()
         }
+        if exportDiagnostics == nil, let bundle = Bundle(url: appBundleURL),
+           bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL, bundle.bundleURL.pathExtension == "app" {
+            let helper = engineConfiguration.executableURL, environment = engineConfiguration.allowedEnvironment
+            exportDiagnostics = { language, about in
+                let summary = about.diagnosticText
+                DiagnosticsExportFlow.present(language: language) {
+                    DiagnosticsBundleInputs.live(helper: helper, helperEnvironment: environment, summary: summary)
+                }
+            }
+        }
         let observedAuthorization = await notificationAuthorizationService?.authorization() ?? .unavailable
         guard !terminating else { return }
         notificationConsumer.observeAuthorization(observedAuthorization)
@@ -436,6 +452,7 @@ struct StatusNoticePresentation {
         composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
         context.loginServiceObserved = true
         context.notificationServiceObserved = true
+        context.capabilities.diagnosticsExportAvailable = exportDiagnostics != nil
         // The choice stays visible; a service macOS refuses gets an honest reason and the fallback row.
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
         else if context.capabilities.loginNotInApplications { context.unavailableControls[.login] = .init("ModelPlan isn't in the Applications folder (for example opened from Downloads), so it can't be a login item.", "ModelPlan 不在“应用程序”文件夹里（例如从“下载”直接打开），所以不能设为登录项。") }
@@ -635,6 +652,9 @@ struct StatusNoticePresentation {
         case .openPublicLink(let link): openPublicURL(link.url)
         case .openSystemSettings(let pane): openSystemSettings(pane.url)
         case .action(.clearAppCache): clearAppCache()
+        case .exportDiagnostics:
+            guard let exportDiagnostics, let preferences = settings.editor.snapshot?.preferences else { return }
+            exportDiagnostics(preferences.language, settings.editor.context.about)
         case .shortcutPreferencesChanged(let openCockpit, let toggleDock):
             registerShortcuts(openCockpit: openCockpit, toggleDock: toggleDock)
         case .firstRunCompleted(let effects, _):
@@ -681,6 +701,8 @@ struct StatusNoticePresentation {
     /// The same restore used by the real launch; it never grants access itself.
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        // Spec 5.3 D: off unless MODELPLAN_MAIN_THREAD_HANG_WATCHDOG=1 (or the debug default); never in test runs.
+        MainThreadHangWatchdog.shared.startIfEnabled()
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = applicationMenu
         if accessibilityObserver == nil {
@@ -735,10 +757,44 @@ struct StatusNoticePresentation {
     /// leaves the other display's copy of the item with stale content, which the unchanged-value gates would never fix).
     private var appliedStatusLength: CGFloat?
     private var forceStatusRewrite = false
+    /// G3-122: decides the shown title; a projection gap keeps the last number.
+    private var statusTitle = StatusTitleKeeper()
+    /// macrev2-976-2: arms `fire` after `seconds`; the result cancels it. Test seam with a fake clock.
+    var statusHoldSchedule: @MainActor (_ seconds: TimeInterval, _ fire: @escaping @MainActor () -> Void) -> () -> Void = { seconds, fire in
+        let task = Task { @MainActor in
+            do { try await Task.sleep(for: .milliseconds(Int64((max(0, seconds) * 1_000).rounded(.up)))) } catch { return }
+            guard !Task.isCancelled else { return }
+            fire()
+        }
+        return { task.cancel() }
+    }
+    private var statusHoldArmedFor: Date?
+    private var cancelStatusHold: (() -> Void)?
+    /// The kept number has a hard end: at the hold deadline one render runs, which drops it if the gap is still open.
+    /// A new value, a definitive icon-only state or termination cancels the wake-up.
+    private func armStatusHoldExpiry(now: Date) {
+        let deadline = terminating ? nil : statusTitle.holdDeadline
+        guard deadline != statusHoldArmedFor else { return }
+        cancelStatusHold?(); cancelStatusHold = nil; statusHoldArmedFor = deadline
+        guard let deadline else { return }
+        cancelStatusHold = statusHoldSchedule(deadline.timeIntervalSince(now)) { [weak self] in
+            guard let self, !self.terminating else { return }
+            self.cancelStatusHold = nil; self.statusHoldArmedFor = nil
+            self.statusHoldExpired()
+        }
+    }
+    /// The hold deadline passed: re-render the item (and a detached test button through the same writer).
+    func statusHoldExpired() {
+        renderMenu()
+        onStatusHoldExpired?()
+    }
+    /// Test seam: a caller rendering a detached button re-applies it here.
+    var onStatusHoldExpired: (() -> Void)?
     private var lastStatusRewrite = Date.distantPast
     /// At most one forced rewrite every two seconds: a rewrite re-measures the item, which must not feed back into itself.
     func rewriteStatusContent(now: Date = Date()) {
         guard now.timeIntervalSince(lastStatusRewrite) >= 2 else { return }
+        MainThreadActivityBreadcrumb.push("rewriteStatusContent"); defer { MainThreadActivityBreadcrumb.pop() }
         lastStatusRewrite = now; forceStatusRewrite = true; renderMenu()
     }
     /// G3-57: with more than one display macOS keeps a status-item window per display's menu bar, and the button's
@@ -764,8 +820,8 @@ struct StatusNoticePresentation {
                 if window.occlusionState.contains(.visible) { self.rewriteStatusContent() }
             }
         }
-        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.rewriteStatusContent(); self?.checkStatusItemVisibility() }
+        statusScreenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.displayParametersChanged() }
         }
         // Give the menu bar a few seconds to lay the item out before telling the user.
         Task { @MainActor [weak self] in
@@ -773,9 +829,29 @@ struct StatusNoticePresentation {
             self?.checkStatusItemVisibility()
         }
     }
+    private var statusScreenObserver: NSObjectProtocol?
+    /// Spec 5.3 B: the re-verify after a display change runs on settled frames (750 ms after the last change, then once
+    /// more 2 s later), not on every notification of the burst. Test seam: `displayRecheckSchedule`.
+    var displayRecheckSchedule: DisplayChangeRecheck.Schedule = DisplayChangeRecheck.sleepSchedule
+    private lazy var displayRecheck = DisplayChangeRecheck(schedule: { [weak self] delay, fire in
+        self?.displayRecheckSchedule(delay, fire) ?? {}
+    }, settled: { [weak self] in
+        guard let self, !self.terminating else { return }
+        self.rewriteStatusContent(); self.checkStatusItemVisibility()
+    }, followUp: { [weak self] in
+        guard let self, !self.terminating else { return }
+        self.checkStatusItemVisibility()
+    })
+    /// One display-parameter notification: the next render rewrites the item's content (G3-57), the check waits.
+    func displayParametersChanged() {
+        guard !terminating else { return }
+        forceStatusRewrite = true
+        displayRecheck.displaysChanged()
+    }
     /// Shows the one-line notice in the widget menu and Settings while the item is covered; clears it when visible.
     func checkStatusItemVisibility() {
         guard !terminating else { return }
+        MainThreadActivityBreadcrumb.push("checkStatusItemVisibility"); defer { MainThreadActivityBreadcrumb.pop() }
         let visible = statusItemVisibility.map { $0() } ?? Self.anyWindowVisible(statusWindowVisibilities?() ?? realStatusWindowVisibilities())
         let hidden = visible == false
         guard hidden != statusItemHidden else { return }
@@ -790,14 +866,42 @@ struct StatusNoticePresentation {
     /// A caller supplying no autosave name owns a temporary, non-persisted item.
     func installStatusItem(autosaveName: NSStatusItem.AutosaveName? = nil) {
         guard status == nil, !terminating else { return }
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let autosaveName { item.autosaveName = autosaveName }
+        let item = Self.vendStatusItem(autosaveName: autosaveName, steps: StatusItemVendingSteps<NSStatusItem>(
+            preflight: { name in
+                if StatusItemPlacement.clearImplausiblePosition(autosaveName: name, screenWidths: NSScreen.screens.map { Double($0.frame.width) }) {
+                    let key = StatusItemPlacement.key(autosaveName: name)
+                    Logger(subsystem: "org.modelplan.community", category: "status-item").info("cleared an implausible stored menu-bar position \(key, privacy: .public)")
+                }
+            },
+            create: { NSStatusBar.system.statusItem(withLength: $0) },
+            name: { vended, name in vended.autosaveName = name },
+            length: { $0.length }, setLength: { vended, length in vended.length = length }))
         item.isVisible = true
         status = item
         statusClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
             let handled = MainActor.assumeIsolated { self?.handleStatusClick(event) ?? false }
             return handled ? nil : event
         }
+    }
+
+    /// The steps of creating the status item, injectable so the order is testable without the menu bar.
+    struct StatusItemVendingSteps<Item> {
+        var preflight: (String) -> Void
+        var create: (CGFloat) -> Item
+        var name: (Item, String) -> Void
+        var length: (Item) -> CGFloat
+        var setLength: (Item, CGFloat) -> Void
+    }
+    /// Spec 5.3 A (CodexBar `makeStatusItem` order, own code): drop an implausible stored position first, then create
+    /// the item at zero length, name it (AppKit restores the saved position for that name), and only then give it its
+    /// variable length, so it never registers a transient width under a stale position. A length someone already set
+    /// during naming is kept.
+    static func vendStatusItem<Item>(autosaveName: String?, steps: StatusItemVendingSteps<Item>) -> Item {
+        if let autosaveName { steps.preflight(autosaveName) }
+        let item = steps.create(0)
+        if let autosaveName { steps.name(item, autosaveName) }
+        if steps.length(item) == 0 { steps.setLength(item, NSStatusItem.variableLength) }
+        return item
     }
 
     /// D44: a plain left click opens the cockpit, and closes it again while it is open (G3-40). The menu stays attached to the status item, so
@@ -845,6 +949,12 @@ struct StatusNoticePresentation {
             isVisible: status.isVisible && windowVisible && noticeIndicator.notice != nil && !noticeIndicator.isHiddenOrHasHiddenAncestor)
     }
 
+    /// G3-122: a render that arrived while the status menu was open.
+    private(set) var statusRenderHeld = false
+    func renderHeldStatusMenu() {
+        guard statusRenderHeld, statusMenuComponent?.isActuallyOpen != true else { return }
+        renderMenu()
+    }
     func renderMenu() {
         guard !terminating else { return }
         let language = composition.latestSettings?.effective.language ?? .fallback
@@ -855,12 +965,23 @@ struct StatusNoticePresentation {
             component.onMenuActuallyOpen = { [weak self] open in
                 guard let self else { return }
                 // D88: menu tracking clears the icon's highlight; restore it while the attached cockpit is open.
-                guard open else { Task { @MainActor [weak self] in self?.refreshStatusTooltip() }; return }
+                // G3-122: a render held back while the menu was open runs once, in the next turn (never inside
+                // menuDidClose's tracking teardown).
+                guard open else { Task { @MainActor [weak self] in self?.refreshStatusTooltip(); self?.renderHeldStatusMenu() }; return }
                 guard let menu = self.liveStatusMenu else { return }
                 self.menuWillOpen(menu)
             }
             statusMenuComponent = component
         }
+        // G3-122 / spec 5.3 C (CodexBar `deferMergedIconRenderDuringMenuTrackingIfNeeded` and
+        // `scheduleDeferredMenuInteractionRefreshIfNeeded`): never mutate the open menu, nor the item's title or length,
+        // which re-anchors it. The open menu keeps its numbers until it closes. A privacy clear is never held back.
+        if component.isActuallyOpen, composition.provider.dockContent.status != .cleared {
+            statusRenderHeld = true
+            return
+        }
+        statusRenderHeld = false
+        MainThreadActivityBreadcrumb.push("renderMenu"); defer { MainThreadActivityBreadcrumb.pop() }
         let menu = component.menu
         let canRetry = lifecyclePaused && (lifecycleController?.canRetry ?? false)
         let helpError = helpMapUnavailable ? SettingsText("Help unavailable. Try again when the Quota Widget is visible.", "说明暂不可用，请在额度挂件可见时重试。").value(language) : nil
@@ -965,16 +1086,8 @@ struct StatusNoticePresentation {
         if let button = status?.button {
             Self.configureStatusButton(button,image:CommunityMenuBarResources.templateImage(),barThickness:NSStatusBar.system.thickness); button.contentTintColor = nil
         }
-        if let button = status?.button {
-            applyStatusContent(to: button, detail: detail)
-            // G3-22: an icon-only item takes the square menu-bar length (was 32 pt for a 16 pt image);
-            // a percentage title keeps a variable length. The autosave name keeps a ⌘-dragged position.
-            let iconOnly = button.title.isEmpty && button.image != nil
-            let position: NSControl.ImagePosition = iconOnly ? .imageOnly : .imageLeading
-            if forceStatusRewrite || button.imagePosition != position { button.imagePosition = position }
-            let length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
-            if forceStatusRewrite || appliedStatusLength != length || status?.length != length { status?.length = length; appliedStatusLength = length }
-            forceStatusRewrite = false
+        if let status, let button = status.button {
+            applyStatusContent(to: button, item: status, detail: detail)
             // MENU-06: place the dot after the title is set, against the icon, not the text end.
             noticeIndicator.attach(to: button)
         }
@@ -1004,19 +1117,36 @@ struct StatusNoticePresentation {
     }
     /// Shared by the native status item and detached presentation checks.
     /// Feedback belongs to the menu/accessibility detail; the title remains the quota value.
-    func applyStatusContent(to button: NSButton, detail: String) {
+    /// G3-122: the one owner of the status item's title, image position and length. Every render path (engine
+    /// deliveries, Settings, occlusion and display re-verify, tooltip, setup) comes through here, the title is
+    /// decided by `statusTitle` from the admitted reading, and only a changed value is written (the G3-57 forced
+    /// rewrite excepted). `item` is nil for a detached button (tests, the presentation checks).
+    func applyStatusContent(to button: NSButton, item: NSStatusItem? = nil, detail: String) {
         // Owner 11-12 (E6): while setup is not finished the same icon is dimmed with three small dots; no number.
         let setUp = setupActive
-        let title = setUp ? "\u{00B7}\u{00B7}\u{00B7}" : composition.menuPresentation.title
+        // Read first: reading the projection can re-render (a stale cache is replaced synchronously), which resolves
+        // its own title; the keeper is only touched after that, never re-entrantly.
+        let title: String
+        if setUp { title = "\u{00B7}\u{00B7}\u{00B7}" } else {
+            let reading = composition.menuTitleReading, now = composition.currentDate()
+            title = statusTitle.resolve(reading, now: now)
+            armStatusHoldExpiry(now: now)
+        }
         if button.alphaValue != (setUp ? 0.5 : 1) { button.alphaValue = setUp ? 0.5 : 1 }
         // Never let the item collapse to zero width when the template image is unavailable.
         // Only changed values are written: re-setting the same title or position makes the item re-measure itself.
         let shownTitle = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
         if forceStatusRewrite || button.title != shownTitle { button.title = shownTitle }
         // With no image the fallback title is the whole item; image-only would hide it.
-        if button.image != nil {
-            let position: NSControl.ImagePosition = title.isEmpty ? .imageOnly : .imageLeading
-            if button.imagePosition != position { button.imagePosition = position }
+        let iconOnly = button.image != nil && title.isEmpty
+        let position: NSControl.ImagePosition = iconOnly ? .imageOnly : .imageLeading
+        if button.image != nil, forceStatusRewrite || button.imagePosition != position { button.imagePosition = position }
+        if let item {
+            // G3-22: an icon-only item takes the square menu-bar length (was 32 pt for a 16 pt image);
+            // a percentage title keeps a variable length. The autosave name keeps a ⌘-dragged position.
+            let length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
+            if forceStatusRewrite || appliedStatusLength != length || item.length != length { item.length = length; appliedStatusLength = length }
+            forceStatusRewrite = false
         }
         // A11Y: an icon-only status item has no text, so AX clients (VoiceOver, the MacCI verification agent) found no
         // labelled button under AXExtrasMenuBar. Label it "ModelPlan" plus the remaining quota and keep the button role.
@@ -1216,6 +1346,10 @@ struct StatusNoticePresentation {
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
         interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
         statusMenuComponent?.dispose(); statusMenuComponent = nil; liveStatusMenu = nil
+        displayRecheck.cancel()
+        cancelStatusHold?(); cancelStatusHold = nil; statusHoldArmedFor = nil
+        if let statusScreenObserver { NotificationCenter.default.removeObserver(statusScreenObserver); self.statusScreenObserver = nil }
+        MainThreadHangWatchdog.shared.stop()
     }
 
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

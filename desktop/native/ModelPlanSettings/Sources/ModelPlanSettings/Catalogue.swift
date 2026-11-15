@@ -13,7 +13,7 @@ public enum SettingKey: String, CaseIterable, Sendable {
     case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints, cockpitSize
     case notificationConsent, forecast, reset, official, expiring, stale
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
-    case appVersion, cliStatus, architecture, diagnostics, readerDetails, refreshHistory, feedback, licenses, consentHelp
+    case appVersion, cliStatus, architecture, diagnostics, exportDiagnostics, readerDetails, refreshHistory, feedback, licenses, consentHelp
     case dockEdge, dockDisplay, dockPosition, detectedReaders, optionalReaders
     case updateStatus, websiteLink, methodologyLink, privacyLink, repositoryLink
     case loginSystemSettings, notificationSystemSettings
@@ -289,6 +289,7 @@ public enum SettingsCatalogue {
         .init(.cliStatus,"CLI status","CLI状态","Read-only CLI availability.","CLI可用性的只读状态。"),
         .init(.architecture,"Architecture","架构","Intel is untested; 3D may stutter.","Intel未测试，3D效果可能卡顿。"),
         .init(.diagnostics,"Copy diagnostics","复制诊断","Versions, macOS, reader identifiers and error codes only.","仅含版本、macOS、读取器标识和错误代码。"),
+        .init(.exportDiagnostics,"Export diagnostics…","导出诊断包…","App and engine logs, crash reports and reader status in one file you save yourself. Nothing is uploaded.","把应用与引擎日志、崩溃报告和读取状态存成一个文件，由你自己保存，不会上传。"),
         .init(.readerDetails,"Reader status","读取状态","Source and reading times for admitted readers.","已授权读取器的来源与读取时间。"),
         .init(.refreshHistory,"Recent refreshes","最近刷新","Recent admitted refresh outcomes.","最近的已授权刷新结果。"),
         .init(.feedback,"Feedback","反馈","Open the public issue template; nothing is submitted automatically.","打开公开问题模板，不自动提交内容。"),
@@ -330,6 +331,8 @@ public enum SettingsCatalogue {
                     // engine reports its forecast producer, and is hidden until then.
                     if c.v1NormalEntry && key == .forecast && !c.capabilities.forecastProducerAvailable { return nil }
                     if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) && (!c.capabilities.updateServiceAvailable || c.unavailableControls[key] != nil) { return nil }
+                    // No dead control: the export row appears once the app can write the file.
+                    if c.v1NormalEntry && key == .exportDiagnostics && !c.capabilities.diagnosticsExportAvailable { return nil }
                     guard let d = byKey[key] else { return nil }
                     let baseMatches = query.isEmpty || [d.key.rawValue, d.title.english, d.title.chinese,
                         d.subtitle.english, d.subtitle.chinese, pane.title.english, pane.title.chinese,
@@ -366,6 +369,7 @@ public enum SettingsCatalogue {
         case .login: return .available // The local choice stays editable even when service actions are unavailable.
         case .clearAppCache: return c.capabilities.appCacheClearAvailable ? .available : .cacheUnavailable
         case .updateStatus: return c.capabilities.updateServiceAvailable ? .available : .serviceUnavailable
+        case .exportDiagnostics: return c.capabilities.diagnosticsExportAvailable ? .available : .serviceUnavailable
         default: return .available
         }
     }
@@ -466,6 +470,7 @@ public enum SettingsCatalogue {
         case .privacyLink: return .link(SettingsPublicLink.privacy.url)
         case .repositoryLink: return .link(SettingsPublicLink.repository.url)
         case .updateStatus: return .text(c.updateState.rawValue)
+        case .exportDiagnostics: return .action(nil)
         }
     }
     private static func shortcut(_ chord: ShortcutChord) -> String {

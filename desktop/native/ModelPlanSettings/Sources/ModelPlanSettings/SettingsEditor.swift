@@ -211,6 +211,9 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         case .previewFirstRun:
             guard context.capabilities.firstRunPreviewAvailable else { throw SettingsEditorError.actionUnavailable }
             intent = .previewFirstRun
+        case .exportDiagnostics:
+            guard context.capabilities.diagnosticsExportAvailable else { throw SettingsEditorError.actionUnavailable }
+            intent = .exportDiagnostics
         }
         onHostRequest(.init(revision: snapshot.revision, intent: intent))
     }

@@ -51,7 +51,7 @@ func TestDoctorReadersProductionInventoryAndBudgets(t *testing.T) {
 			cache := t.TempDir()
 			paths := func() Paths { return ProductionPaths(cache, "1.0.0") }
 			rows := ReaderDiagnostics(paths(), at)
-			if len(rows) != len(nativeReaders)+len(localusage.HistoryProviders())+2 {
+			if len(rows) != len(nativeReaders)+len(localusage.HistoryProviders())+4 { // codex, claude:session, codex:history, claude:history
 				t.Fatal("incomplete inventory", rows)
 			}
 			for _, tool := range localusage.HistoryProviders() {
@@ -188,7 +188,7 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 						switch key {
 						case "provider":
 							id := value.(string)
-							if nativeReaders[id] == nil && id != "claude:session" && id != "codex" {
+							if nativeReaders[id] == nil && id != "claude:session" && id != "codex" && id != "codex:history" && id != "claude:history" {
 								found := false
 								for _, tool := range localusage.HistoryProviders() {
 									if id == tool+":history" {

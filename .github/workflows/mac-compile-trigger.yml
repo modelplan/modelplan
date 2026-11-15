@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: MIT
+# Trigger for mac-compile.yml (owner 2026-11-15). A pull_request run executes the PR's own copy of a workflow, so
+# the compile Macs are never reached from here: this run only records "a PR head changed desktop/native" on a
+# GitHub-hosted runner, with no token permissions, no checkout and nothing uploaded. Its completion starts
+# mac-compile.yml through workflow_run, which always runs main's definition and re-checks the PR itself.
+name: mac-compile trigger
+on:
+  pull_request:
+    branches: [main]
+    paths: ["desktop/native/**"]
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions: {}
+concurrency:
+  group: mac-compile-trigger-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  trigger:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo "PR #${{ github.event.pull_request.number }} head ${{ github.event.pull_request.head.sha }} changed desktop/native"

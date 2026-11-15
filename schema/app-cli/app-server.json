@@ -527,6 +527,13 @@
           "maxItems": 32,
           "type": "array"
         },
+        "planModels": {
+          "items": {
+            "$ref": "#/$defs/CockpitPlanModels"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
         "publication": {
           "anyOf": [
             {
@@ -907,6 +914,38 @@
         "startsAt",
         "endsAt",
         "status"
+      ],
+      "type": "object"
+    },
+    "CockpitPlanModels": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "maxLength": 16,
+          "type": "string"
+        },
+        "generation": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "modelIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "planId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "planId",
+        "basis",
+        "modelIds"
       ],
       "type": "object"
     },

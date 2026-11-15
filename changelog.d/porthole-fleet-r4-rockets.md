@@ -1,1 +1,0 @@
-The cockpit's small porthole now shows the website's fleet round-four rockets in their maker liveries at night (official edition), rendered from the same 3D models with the porthole's own camera; the approved background and glow are unchanged.

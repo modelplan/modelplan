@@ -50,7 +50,7 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "subscriptions", title: .init("Subscriptions", "订阅"), groups: [Settings65Homes.subscriptionOrder, Settings65Homes.subscriptions]),
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.notificationSystemSettings,.forecast,.reset,.official,.expiring,.stale])]),
         .init(id: "privacy", title: .init("Data & Privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
-        .init(id: "diagnostics", title: .init("Diagnostics", "诊断"), groups: [.init(id: "main", keys: [.source,.readerDetails,.refreshHistory,.diagnostics])]),
+        .init(id: "diagnostics", title: .init("Diagnostics", "诊断"), groups: [.init(id: "main", keys: [.source,.readerDetails,.refreshHistory,.diagnostics,.exportDiagnostics])]),
         .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.feedback,.licenses])]),
     ])
     /// Historical input only; not the default. Retained for generic compatibility/regression tests.
@@ -63,7 +63,7 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.notificationSystemSettings,.forecast,.reset,.official,.expiring,.stale])]),
         .init(id: "subscriptions", title: .init("Subscriptions", "每个订阅"), groups: [.init(id: "main", keys: [.visible,.alias,.detectedReaders,.optionalReaders])]),
         .init(id: "privacy", title: .init("Data and privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
-        .init(id: "diagnostics", title: .init("Diagnostics", "诊断"), groups: [.init(id: "main", keys: [.source,.readerDetails,.refreshHistory,.diagnostics])]),
+        .init(id: "diagnostics", title: .init("Diagnostics", "诊断"), groups: [.init(id: "main", keys: [.source,.readerDetails,.refreshHistory,.diagnostics,.exportDiagnostics])]),
         .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.feedback,.licenses])]),
     ])
 }
