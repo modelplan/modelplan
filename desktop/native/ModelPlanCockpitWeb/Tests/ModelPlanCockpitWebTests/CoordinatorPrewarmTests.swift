@@ -92,7 +92,34 @@ private actor CountingClient: EngineClient {
   func failWhileHidden() { discard() }
 }
 
+/// Recovery contract: a page whose only job is to report verified renders.
+@MainActor private final class RenderProbe: CockpitPageSurface {
+  var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?, onRenderVerified: (() -> Void)?
+  var queryTicket: CockpitQueryTicket? { nil }
+  func open() {}
+  func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {}
+  func clearPrivateViews(adopting: CockpitEngineContext?) async {}
+  func discard() { onClosed?() }
+}
+
 final class CoordinatorPrewarmTests: XCTestCase {
+  /// macrevb-981-2: the console's rebuild budget counts health from verified renders; the coordinator forwards them only
+  /// from the page it presents, and a closed page's late receipt counts for nothing.
+  @MainActor func testOnlyThePresentedPagesVerifiedRenderReachesTheCoordinator() async {
+    var pages: [RenderProbe] = [], verified = 0
+    let coordinator = EngineCockpitCoordinator { _ in let page = RenderProbe(); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.onRenderVerified = { verified += 1 }
+    await coordinator.consume(.context(delivery()))
+    coordinator.open()
+    XCTAssertEqual(pages.count, 1)
+    pages[0].onRenderVerified?()
+    XCTAssertEqual(verified, 1)
+    coordinator.close()
+    pages[0].onRenderVerified?()
+    XCTAssertEqual(verified, 1, "A page that is no longer presented reports nothing")
+    await coordinator.shutdown(); await client.complete()
+  }
   private func delivery(generation: UInt64 = 3) -> EngineDeliveryContext {
     EngineDeliveryContext(sessionID: "s-" + UUID().uuidString.lowercased(),
       floor: .init(storeEpoch: "synthetic", generation: generation), revision: 2)
@@ -238,7 +265,7 @@ final class CoordinatorPrewarmTests: XCTestCase {
       coordinator.open()
       XCTAssertEqual(pages.count, round, "each rebuild opens a new page")
       XCTAssertEqual(opened, round)
-      pages[round - 1].discard() // what a page failure does (appearanceWaitTimeout and the like)
+      pages[round - 1].discard() // what a page failure does (a dead page: contentTerminated, unresponsive and the like)
       XCTAssertFalse(coordinator.presented)
       XCTAssertTrue(coordinator.diagnosticState.contains("client=true delivery=true"),
         "a rebuild keeps the engine client and delivery: \(coordinator.diagnosticState)")
