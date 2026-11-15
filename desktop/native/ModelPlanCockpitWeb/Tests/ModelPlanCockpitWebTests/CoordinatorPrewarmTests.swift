@@ -238,7 +238,7 @@ final class CoordinatorPrewarmTests: XCTestCase {
       coordinator.open()
       XCTAssertEqual(pages.count, round, "each rebuild opens a new page")
       XCTAssertEqual(opened, round)
-      pages[round - 1].discard() // what a page failure does (appearanceWaitTimeout and the like)
+      pages[round - 1].discard() // what a page failure does (a dead page: contentTerminated, unresponsive and the like)
       XCTAssertFalse(coordinator.presented)
       XCTAssertTrue(coordinator.diagnosticState.contains("client=true delivery=true"),
         "a rebuild keeps the engine client and delivery: \(coordinator.diagnosticState)")
