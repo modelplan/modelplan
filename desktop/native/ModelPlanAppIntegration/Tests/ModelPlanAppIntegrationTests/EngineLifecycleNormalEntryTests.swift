@@ -30,7 +30,22 @@ private actor LifecycleEngine: EngineClient {
     private var needsRetry = false, retries = 0
     func requireRetry() { needsRetry = true }
     func retryCount() -> Int { retries }
+    /// Recovery step 6: the next start fails as a child that crashed during its handshake does.
+    private var failNext: EngineClientError?
+    func failNextStart(_ error: EngineClientError) { failNext = error }
+    /// Recovery step 6: the supervisor (step 5) restarts the engine by itself: a stop of its own, the clear, then a
+    /// fresh session that becomes ready and publishes its rows, as ProcessEngineClient's own bootstrap does.
+    func supervisorRestart(after reason: EngineStopReason = .crashLimit) async throws {
+        await store.consume(.connection(.stopped(reason)))
+        await store.consume(.clearPrivateViews(.init(revision: UInt64(starts + 100), reason: .connectionLost, previous: current, nextFloor: nil)))
+        starts += 1
+        let value = EngineDeliveryContext(sessionID: "synthetic-\(starts)", floor: .init(storeEpoch: "synthetic-\(starts)", generation: 1), revision: UInt64(starts + 200))
+        current = value
+        await store.consume(.connection(.ready(value))); await store.consume(.context(value))
+        try await publish(value)
+    }
     func start() async throws -> EngineDeliveryContext {
+        if let failNext { self.failNext = nil; throw failNext }
         if needsRetry { throw EngineClientError.notReady }
         starts += 1
         let value = EngineDeliveryContext(sessionID: "synthetic-\(starts)", floor: .init(storeEpoch: "synthetic-\(starts)", generation: 1), revision: UInt64(starts))
@@ -131,6 +146,76 @@ private actor LifecycleEngine: EngineClient {
     /// G3-116 (build 14f): the engine crashed past its restart budget, so the client accepts only an explicit retry.
     /// Each later wake or unlock resumed the lifecycle with start(), which failed at once ("Engine restart or consent
     /// failed" at 20:48 and 20:50), and the widget kept "?" until the app was quit. A resume retries instead.
+    /// Recovery step 6: waits on the app's own state, yielding to the lifecycle tasks; never a fixed sleep.
+    private func until(_ condition: @MainActor () -> Bool, _ message: String) async {
+        for _ in 0..<20_000 where !condition() { await Task.yield() }
+        XCTAssertTrue(condition(), message)
+    }
+    private func supervisedApp(_ root: URL, rows: WireRowsSnapshot) async throws -> (EngineDockMenuApplication, LifecycleEngine) {
+        var client: LifecycleEngine?
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"]), createsNativePanels: false, makeClient: { _, store in let value = LifecycleEngine(store: store, rows: rows); client = value; return value }, activateSettings: {})
+        await app.prepare()
+        return (app, try XCTUnwrap(client))
+    }
+    private func rowsFixture() throws -> WireRowsSnapshot {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        return try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+    }
+    /// Recovery step 6: the resume's own start failed (a child that crashed during its handshake), so the readings are
+    /// withdrawn. The supervisor then brings a fresh session up by itself: the lifecycle adopts it and the readings come
+    /// back without Refresh, without another start, and without showing the failed session's data.
+    func testASessionTheSupervisorBringsUpAfterAFailedResumeRestoresTheReadings() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-supervised-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (app, engine) = try await supervisedApp(root, rows: try rowsFixture())
+        await engine.failNextStart(.interrupted(.connectionLost))
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        await until({ app.lifecyclePaused }, "the failed start withdraws the readings")
+        for _ in 0..<200 { await Task.yield() }
+        XCTAssertTrue(app.lifecyclePaused, "nothing else brings them back on its own (before the supervisor)")
+        try await engine.supervisorRestart()
+        await until({ !app.lifecyclePaused }, "the supervisor's fresh session restores the readings")
+        let counts = await engine.counts(); XCTAssertEqual(counts.0, 1, "adopted, not started again")
+        XCTAssertEqual(app.composition.store.snapshot.delivery?.sessionID, "synthetic-1")
+        await app.stopLifecycle()
+    }
+    /// Recovery step 6: a crash while awake (crash limit, cooldown, half-open attempt) ends in the supervisor's new
+    /// session; the lifecycle publishes its rows and the engine is no longer reported stopped, with no Refresh.
+    func testACrashWhileAwakeEndsInTheSupervisorsNewSession() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-crash-awake-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (app, engine) = try await supervisedApp(root, rows: try rowsFixture())
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        await until({ !app.lifecyclePaused }, "the first session shows the readings")
+        try await engine.supervisorRestart(after: .crashLimit)
+        await until({ app.composition.store.snapshot.delivery?.sessionID == "synthetic-2" }, "the new session's rows reach the store")
+        await until({ !app.lifecyclePaused }, "and are shown")
+        XCTAssertEqual(app.lifecycleEngineStopped, false, "the engine is no longer reported stopped")
+        let counts = await engine.counts(); XCTAssertEqual(counts.0, 2, "the first start and the supervisor's own restart; the lifecycle started nothing")
+        XCTAssertEqual(counts.1, 0, "and stopped nothing")
+        let retries = await engine.retryCount(); XCTAssertEqual(retries, 0)
+        await app.stopLifecycle()
+    }
+    /// Recovery step 6: a pause reason (sleep) still wins. A session the supervisor brings up while the app sleeps is
+    /// not adopted and shows nothing; the wake's own resume brings the readings back.
+    func testASupervisedSessionWhileAsleepIsNotShown() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-supervised-asleep-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (app, engine) = try await supervisedApp(root, rows: try rowsFixture())
+        let workspace = NotificationCenter()
+        app.startLifecycle(workspace: workspace, local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        await until({ !app.lifecyclePaused }, "awake: readings shown")
+        workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
+        XCTAssertTrue(app.lifecyclePaused)
+        try await engine.supervisorRestart()
+        for _ in 0..<500 { await Task.yield() }
+        XCTAssertTrue(app.lifecyclePaused, "a supervised session is never shown while a pause reason holds")
+        workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
+        for _ in 0..<20_000 { if await engine.counts().0 >= 3 { break }; await Task.yield() }
+        try await engine.publishFresh() // the wake's own session publishes its rows
+        await until({ !app.lifecyclePaused }, "the wake's resume shows fresh readings")
+        await app.stopLifecycle()
+    }
     func testResumeRetriesAnEngineThatNeedsAnExplicitRetry() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-retry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -63,6 +63,8 @@ struct StatusNoticePresentation {
     public let cockpitEntryEnabled: Bool
     private var terminating = false
     private var lifecycleController: EngineLifecycleController?
+    /// Recovery step 6: the engine stopped on its own and the supervisor has not brought it back yet.
+    var lifecycleEngineStopped: Bool { lifecycleController?.engineStopped ?? false }
     private var activityPaused = false
     private(set) var lifecyclePaused = false
     private var accessibilityObserver: NSObjectProtocol?

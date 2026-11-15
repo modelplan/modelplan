@@ -18,7 +18,10 @@ import ModelPlanShell
     private var generation: UInt64 = 0
     private var expected: EngineDeliveryContext?, fresh: EngineDeliveryContext?
     private var startTask: Task<Void, Never>?, stopTask: Task<Void, Never>?
-    /// G3-116: the engine stopped on its own (crash limit, cleanup failure) and waits for an explicit retry.
+    /// The resume's own start and subscriptions are in flight; the session they bring up is adopted there.
+    private var starting = false
+    /// G3-116 / recovery step 6: the engine stopped on its own (crash limit cooldown, cleanup failure, stall). The
+    /// supervisor brings it back by itself (step 5); Refresh and the next resume reconcile with it sooner.
     private(set) var engineStopped = false
     private static let log = Logger(subsystem: "org.modelplan.community", category: "lifecycle")
     /// The error's case name only, never associated values.
@@ -34,7 +37,7 @@ import ModelPlanShell
     func suspend() {
         if desired { DiagnosticsLog.shared.info("lifecycle", "engine suspend") }
         if !desired, stopTask != nil { onPause(); return }
-        generation &+= 1; desired = false; subscriptionReady = false; delivered = false
+        generation &+= 1; desired = false; subscriptionReady = false; delivered = false; starting = false
         expected = nil; fresh = nil; startTask?.cancel(); onPause()
         let prior = stopTask, client = composition.client
         stopTask = Task { await prior?.value; await client.stop() }
@@ -44,20 +47,22 @@ import ModelPlanShell
         DiagnosticsLog.shared.info("lifecycle", "engine resume retry=\(manualRetry)")
         desired = true; generation &+= 1; let token = generation
         let useRetry = manualRetry; manualRetry = false
-        subscriptionReady = false; delivered = false; expected = nil; fresh = nil
+        subscriptionReady = false; delivered = false; expected = nil; fresh = nil; starting = true
         let prior = stopTask
         startTask = Task { @MainActor [weak self] in
             await prior?.value
             guard let self, self.desired, self.generation == token, !Task.isCancelled else { return }
+            defer { if self.generation == token { self.starting = false } }
             do {
                 let context: EngineDeliveryContext
                 do { context = try await (useRetry ? self.composition.client.retry() : self.composition.client.start()) }
                 catch EngineClientError.notReady where !useRetry {
-                    // G3-116: after the engine crashed past its restart budget the client takes only an explicit
-                    // retry, so every later wake or unlock failed here at once and the widget kept "?" until quit.
-                    // A resume is that explicit moment: retry once.
+                    // Recovery step 6 (replaces #959's one-shot workaround): the supervisor is cooling down after its
+                    // crash limit, or waiting for a stalled consumer. A resume (wake, unlock, display wake) is the moment
+                    // to reconcile: retry() skips the cooldown. If it still refuses, the supervisor's own half-open
+                    // attempt is adopted when it becomes ready (acceptedEvent).
                     guard self.desired, self.generation == token, !Task.isCancelled else { return }
-                    Self.log.error("Engine start needs a retry; retrying")
+                    DiagnosticsLog.shared.info("lifecycle", "engine reconcile retry after notReady")
                     context = try await self.composition.client.retry()
                 }
                 guard self.desired, self.generation == token, !Task.isCancelled else { return }
@@ -83,6 +88,15 @@ import ModelPlanShell
     }
     func clockOrTimeZoneChanged() { if desired { suspend(); resume() } }
     func retryPending() { if desired && !delivered { suspend(); manualRetry = true; resume() } }
+    /// Recovery step 6: a session the supervisor brought up by itself (after a crash, a cooldown, a stall, or after the
+    /// resume's own start failed) is the lifecycle's session from now on. The client subscribes rows and consent on
+    /// every fresh session itself, so its rows publish the readings again; nothing is restarted for it.
+    private func adoptSupervisedSession(_ context: EngineDeliveryContext) {
+        guard desired, !starting, expected?.sessionID != context.sessionID else { return }
+        DiagnosticsLog.shared.info("lifecycle", "engine session adopted from the supervisor")
+        expected = context; subscriptionReady = true; delivered = false
+        publishIfFresh()
+    }
     func clearPrivateViews(_ invalidation: EngineInvalidation) { fresh = nil }
     func apply(_ snapshot: EngineStoreSnapshot) { publishIfFresh() }
     func acceptedEvent(_ event: EngineClientEvent) {
@@ -95,9 +109,11 @@ import ModelPlanShell
             Self.log.error("Engine connection lost; restart attempt=\(attempt, privacy: .public)")
         case .connection(.stopped(let reason)) where reason != .requested:
             Self.log.error("Engine stopped reason=\(String(describing: reason), privacy: .public)")
-            // Nothing restarts it on its own now: let Refresh (retryPending) and the next resume retry it.
+            // The supervisor brings it back by itself (step 5); Refresh (retryPending) and the next resume do so sooner.
             engineStopped = true; delivered = false
-        case .connection(.ready): engineStopped = false
+        case .connection(.ready(let context)):
+            engineStopped = false
+            adoptSupervisedSession(context)
         default: break
         }
     }
