@@ -226,14 +226,22 @@ private actor D41Engine: EngineClient {
         XCTAssertFalse(app.scopeConsentEntry.controller.needsKeychainAccess, "this card is not the Keychain card")
         XCTAssertNotNil(app.composition.dock.cardActionRequested, "the card action is wired")
         let member = try XCTUnwrap(app.composition.accountMembers.members.first?.id)
-        let settings = app.scopeConsentEntry.view
-        settings.apply(language: .english)
-        settings.setSubscriptionRows(SubscriptionRowsContext(
-            subscriptions: [SettingsSubscription(id: member, name: .init("Claude Code", "Claude Code"), vendor: "claude", source: .unavailable, causeCode: "timeout")],
-            orderedIDs: [member], hiddenIDs: [], canSave: true))
-        settings.revealSubscriptionRow(member)
-        XCTAssertNotNil(view("subscriptions.row." + member, in: settings), "the row the card links to exists")
-        XCTAssertEqual((view("subscriptions.status." + member, in: settings) as? NSTextField)?.stringValue, "The reading timed out; it will retry on its own")
+        // SET-9-34 / SET-9-42: press the card's own action (the production closure the Dock calls) and observe the real
+        // Settings window; the row and its reason come from the app's own rows projection, not an injected context.
+        let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+        let requested = try XCTUnwrap(app.composition.dock.cardActionRequested, "the card action is wired")
+        requested(member)
+        var found: NSWindow?
+        for _ in 0..<500 {
+            found = NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible }
+            if let found, view("subscriptions.row." + member, in: try XCTUnwrap(found.contentView)) != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let window = try XCTUnwrap(found, "the card action opens Settings")
+        addTeardownBlock { @MainActor in window.close() }
+        let root = try XCTUnwrap(window.contentView)
+        XCTAssertNotNil(view("subscriptions.row." + member, in: root), "the row the card links to exists in the Settings window")
+        XCTAssertEqual((view("subscriptions.status." + member, in: root) as? NSTextField)?.stringValue, "The reading timed out; it will retry on its own")
         let grants = await engine.recorded()
         XCTAssertTrue(grants.isEmpty, "linking to a row asks the system for nothing")
     }
