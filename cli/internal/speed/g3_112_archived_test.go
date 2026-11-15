@@ -196,3 +196,54 @@ func TestOwedRetryBacksOffAndStopsAfterTheCap(t *testing.T) {
 		t.Fatalf("a successful import kept the attempt count: %+v", l.Attempts)
 	}
 }
+
+// macrevd-967-5: the next due retry time is known, so a running engine can wake for it; nothing is
+// due once the cap is reached, the source is cancelled or removed under this grant, or covered.
+func TestNextOwedAtFollowsTheBackoff(t *testing.T) {
+	f := newFixture(t)
+	adm := *admitted(consent.ScopeCodexLocalHistory)
+	if _, ok := NextOwedAt(f.cache, adm, f.now); ok {
+		t.Fatal("fresh profile has a due retry")
+	}
+	if err := MarkAutoRequested(f.cache, f.now); err != nil {
+		t.Fatal(err)
+	}
+	if at, ok := NextOwedAt(f.cache, adm, f.now); !ok || !at.Equal(f.now) {
+		t.Fatalf("owed now: %v %v", at, ok)
+	}
+	if err := MarkOwedAttempt(f.cache, []string{"codex"}, adm, f.now); err != nil {
+		t.Fatal(err)
+	}
+	if at, ok := NextOwedAt(f.cache, adm, f.now); !ok || !at.Equal(f.now.UTC().Add(OwedRetryBase)) {
+		t.Fatalf("after one attempt: %v %v", at, ok)
+	}
+	if err := MarkOwedCancelled(f.cache, adm); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := NextOwedAt(f.cache, adm, f.now); ok {
+		t.Fatal("a cancelled source still has a due retry")
+	}
+	if got := OwedSourcesAt(f.cache, adm, f.now.Add(100*time.Hour)); len(got) != 0 {
+		t.Fatalf("a cancelled source is owed: %v", got)
+	}
+}
+
+// Self-check of the retry state machine: removing imported history keeps an earlier Cancel, so a
+// cancelled source never becomes owed again through a removal.
+func TestRemoveKeepsTheUsersCancel(t *testing.T) {
+	f := newFixture(t)
+	adm := *both()
+	f.claudeLog("a.jsonl", -3)
+	if _, err := Import(context.Background(), f.cache, ImportOptions{Now: f.now, Claude: &ImportRoot{Dir: f.claude}, Admission: &adm, Auto: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := MarkOwedCancelled(f.cache, adm); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveImported(f.cache); err != nil {
+		t.Fatal(err)
+	}
+	if got := OwedSourcesAt(f.cache, adm, f.now.Add(100*time.Hour)); len(got) != 0 {
+		t.Fatalf("owed after Cancel then Remove: %v", got)
+	}
+}

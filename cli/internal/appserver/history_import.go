@@ -42,8 +42,10 @@ type ImportController struct {
 	// cancelAsked: the user cancelled the current run; no queued follow-up starts after it,
 	// whatever the run's own result (macrevd-967-3). Reset when a run starts.
 	cancelAsked bool
-	// timers: retries waiting for their delay; Close stops them.
-	timers []*time.Timer
+	// timers: retries waiting for their delay; Cancel and Close stop them. retryGen: bumped by
+	// Cancel and Close, so a timer already firing from before does nothing (macrevd-967-4).
+	timers   []*time.Timer
+	retryGen int
 }
 
 func NewImportController(e ImportEngine) *ImportController {
@@ -54,10 +56,7 @@ func NewImportController(e ImportEngine) *ImportController {
 func (c *ImportController) Close() {
 	c.mu.Lock()
 	c.closed = true
-	for _, t := range c.timers {
-		t.Stop()
-	}
-	c.timers = nil
+	c.stopRetriesLocked()
 	cancel := c.cancel
 	c.mu.Unlock()
 	if cancel != nil {
@@ -103,22 +102,63 @@ type OwedRunner interface {
 	RunOwed(ctx context.Context, days int, progress func(done, total int)) ([]wire.HistoryImportSource, error)
 }
 
+// OwedScheduler is the optional engine side of the retry schedule: when the next owed retry is
+// due (after its backoff), and the user's Cancel that stops automatic imports under the current
+// grants (macrevd-967-4/-5).
+type OwedScheduler interface {
+	NextOwedAt(now time.Time) (time.Time, bool)
+	CancelOwed()
+}
+
 // StartOwedAfter checks for an owed import after delay, off the launch or grant path (owner
-// condition: the retry never disturbs). Close stops a retry still waiting.
+// condition: the retry never disturbs). Cancel and Close stop a retry still waiting.
 func (c *ImportController) StartOwedAfter(delay time.Duration, days int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
 		return
 	}
-	c.timers = append(c.timers, time.AfterFunc(delay, func() { c.StartOwed(days) }))
+	gen := c.retryGen
+	c.timers = append(c.timers, time.AfterFunc(delay, func() {
+		c.mu.Lock()
+		stale := c.closed || gen != c.retryGen
+		c.mu.Unlock()
+		if !stale {
+			c.StartOwed(days)
+		}
+	}))
+}
+
+// stopRetriesLocked stops every scheduled retry and invalidates one already firing.
+func (c *ImportController) stopRetriesLocked() {
+	for _, t := range c.timers {
+		t.Stop()
+	}
+	c.timers, c.owedPending = nil, 0
+	c.retryGen++
+}
+
+// scheduleNext wakes for the next owed retry once its backoff ends (macrevd-967-5).
+func (c *ImportController) scheduleNext(days int) {
+	s, ok := c.engine.(OwedScheduler)
+	if !ok {
+		return
+	}
+	now := time.Now()
+	if at, due := s.NextOwedAt(now); due {
+		c.StartOwedAfter(at.Sub(now), days)
+	}
 }
 
 // StartOwed starts the owed import in the background when one is owed and none is running. It is
 // quiet: a failure leaves the reported state as it was (the ledger keeps the attempt).
 func (c *ImportController) StartOwed(days int) {
 	r, ok := c.engine.(OwedRunner)
-	if !ok || !r.Owed() {
+	if !ok {
+		return
+	}
+	if !r.Owed() {
+		c.scheduleNext(days) // owed later: wake when its backoff ends
 		return
 	}
 	_ = c.startRunQuiet(days, func(ctx context.Context, progress func(int, int)) ([]wire.HistoryImportSource, error) {
@@ -184,12 +224,16 @@ func (c *ImportController) startRunQuiet(days int, run func(context.Context, fun
 		// or grant; the ledger still owes it).
 		again := c.owedPending
 		c.owedPending = 0
-		if errors.Is(err, context.Canceled) || c.closed || c.cancelAsked {
+		stopped := errors.Is(err, context.Canceled) || c.closed || c.cancelAsked
+		if stopped {
 			again = 0
 		}
 		c.mu.Unlock()
-		if again > 0 {
+		switch {
+		case again > 0:
 			c.StartOwed(again)
+		case quiet && !stopped:
+			c.scheduleNext(days) // the next attempt after this one's backoff
 		}
 	}()
 	return nil
@@ -227,8 +271,14 @@ func HistoryImportHandlers(c *ImportController) map[string]Handler {
 			running := c.phase == wire.ImportRunning
 			if running {
 				c.cancelAsked = true // recorded with the run, before its result settles
+				// The user stopped importing: no scheduled retry (launch, grant or backoff) starts
+				// afterwards, and none under the current grants until a new one (macrevd-967-4).
+				c.stopRetriesLocked()
 			}
 			c.mu.Unlock()
+			if s, ok := c.engine.(OwedScheduler); ok && running {
+				s.CancelOwed()
+			}
 			if running && cancel != nil {
 				cancel()
 				c.wg.Wait() // the run has stopped and written nothing when this answers

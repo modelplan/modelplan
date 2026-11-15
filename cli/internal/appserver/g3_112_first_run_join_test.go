@@ -4,6 +4,7 @@ package appserver
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -174,5 +175,102 @@ func TestOwedRetryIsDelayedAndFailsQuietly(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 	if e2.runs.Load() != 0 {
 		t.Fatal("a retry started after Close")
+	}
+}
+
+// scheduledOwed is an engine whose owed source fails every attempt and backs off like the ledger
+// (base doubling, capped), on a short synthetic base.
+type scheduledOwed struct {
+	settlesOK
+	mu        sync.Mutex
+	base      time.Duration
+	n         int
+	next      time.Time
+	at        []time.Time
+	cancelled bool
+}
+
+func (s *scheduledOwed) owedAt() (time.Time, bool) {
+	if s.cancelled || s.n >= 5 {
+		return time.Time{}, false
+	}
+	return s.next, true
+}
+func (s *scheduledOwed) Owed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, ok := s.owedAt()
+	return ok && !time.Now().Before(at)
+}
+func (s *scheduledOwed) NextOwedAt(now time.Time) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, ok := s.owedAt()
+	if ok && at.Before(now) {
+		at = now
+	}
+	return at, ok
+}
+func (s *scheduledOwed) CancelOwed() {
+	s.mu.Lock()
+	s.cancelled = true
+	s.mu.Unlock()
+}
+func (s *scheduledOwed) RunOwed(ctx context.Context, days int, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.n++
+	s.at = append(s.at, time.Now())
+	s.next = time.Now().Add(s.base << (s.n - 1))
+	return nil, errors.New("synthetic failure")
+}
+func (s *scheduledOwed) runs() []time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]time.Time(nil), s.at...)
+}
+
+// macrevd-967-5: with no restart and no new grant, a failing owed source is retried when each
+// backoff ends (doubling), and not after the cap.
+func TestOwedRetryWakesForEachBackoffUntilTheCap(t *testing.T) {
+	e := &scheduledOwed{base: 30 * time.Millisecond}
+	c := NewImportController(e)
+	defer c.Close()
+	c.StartOwed(30)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && len(e.runs()) < 5 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(600 * time.Millisecond) // past where a sixth attempt would come
+	at := e.runs()
+	if len(at) != 5 {
+		t.Fatalf("attempts %d, want exactly 5 (the cap)", len(at))
+	}
+	for i := 1; i < len(at); i++ {
+		if gap, want := at[i].Sub(at[i-1]), e.base<<(i-1); gap < want {
+			t.Fatalf("attempt %d came %v after the previous, before its %v backoff", i+1, gap, want)
+		}
+	}
+}
+
+// macrevd-967-4: Cancel stops retries already scheduled (launch, grant or backoff), including one
+// whose timer is due, and none starts afterwards under the same grant.
+func TestCancelStopsScheduledRetries(t *testing.T) {
+	e := &scheduledOwed{base: time.Hour}
+	e.owed.Store(true)
+	c := NewImportController(e)
+	defer c.Close()
+	h := HistoryImportHandlers(c)
+	if _, err := call(t, h, "history/import_start", `{"days":30,"firstRun":false}`); err != nil {
+		t.Fatal(err)
+	}
+	c.StartOwedAfter(80*time.Millisecond, 30) // a launch retry due soon
+	c.StartOwedAfter(0, 30)                   // and one whose timer fires at once
+	if _, err := call(t, h, "history/import_cancel", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := len(e.runs()); n != 0 {
+		t.Fatalf("Cancel was followed by %d automatic imports", n)
 	}
 }

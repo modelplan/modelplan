@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/appserver"
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
@@ -178,6 +179,15 @@ const (
 	owedImportPause = 20 * time.Millisecond
 )
 
+// NextOwedAt: when the next owed retry is due (the running engine wakes for it).
+func (e importEngine) NextOwedAt(now time.Time) (time.Time, bool) {
+	return speed.NextOwedAt(e.st.Dir, consent.Capture(), now)
+}
+
+// CancelOwed: the user cancelled an import; no automatic import starts again under the current
+// grants. A failure to record it is left to the in-memory stop (Cancel already stopped the timers).
+func (e importEngine) CancelOwed() { _ = speed.MarkOwedCancelled(e.st.Dir, consent.Capture()) }
+
 // Owed: some history source is owed an import (see RunOwed).
 func (e importEngine) Owed() bool { return len(owedHistoryTools(e.st.Dir)) > 0 }
 
@@ -217,3 +227,8 @@ func guardLocalWrite(tool string, write func() error) error {
 	}
 	return err
 }
+
+var (
+	_ appserver.OwedRunner    = importEngine{}
+	_ appserver.OwedScheduler = importEngine{}
+)

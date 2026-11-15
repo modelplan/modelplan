@@ -98,8 +98,11 @@ type ImportLedger struct {
 	// Attempts: automatic retries of a source not yet imported, under one grant. They back off
 	// and stop at OwedRetryMax; an import of the source or a new grant clears them.
 	Attempts map[string]ImportAttempt `json:"attempts,omitempty"`
-	Coverage map[string]Span          `json:"coverage,omitempty"`
-	Rows     []PerfRow                `json:"rows"`
+	// Cancelled: the grant each source was under when the user cancelled an import; no automatic
+	// import of it starts again under that grant (macrevd-967-4).
+	Cancelled map[string]*GrantEpoch `json:"cancelled,omitempty"`
+	Coverage  map[string]Span        `json:"coverage,omitempty"`
+	Rows      []PerfRow              `json:"rows"`
 }
 
 // ImportPath is the ledger file.
@@ -178,33 +181,95 @@ func MarkOwedAttempt(cache string, sources []string, a consent.Admission, now ti
 // default-on scope the user has not answered) but no span under that grant, or a Codex span
 // from before archived threads were read. A fresh profile owes nothing.
 func OwedSourcesAt(cache string, a consent.Admission, now time.Time) []string {
-	if Off() {
-		return nil
-	}
-	l, ok := LoadImported(cache)
-	if !ok || (l.AutoRequested == nil && l.AutoRan == nil) {
-		return nil
-	}
-	state := a.State()
 	var owed []string
 	for _, source := range []string{"claude-code", "codex"} {
-		r, decided := state.Scopes[sourceScope(source)]
-		epoch := currentEpoch(a, source)
-		if !decided || !r.Allowed || epoch == nil {
-			continue
-		}
-		if removed := l.Removed[source]; removed != nil && sameEpoch(removed, epoch) {
-			continue // removed by the user under this grant
-		}
-		if at, tried := l.Attempts[source]; tried && sameEpoch(at.Epoch, epoch) && (at.N >= OwedRetryMax || now.Before(at.Next)) {
-			continue // backing off, or given up under this grant
-		}
-		c, has := l.Coverage[source]
-		if !has || c.From.IsZero() || !sameEpoch(c.Epoch, epoch) || (source == "codex" && !c.Archived) {
+		if at, ok := owedAt(cache, a, source); ok && !now.Before(at) {
 			owed = append(owed, source)
 		}
 	}
 	return owed
+}
+
+// NextOwedAt: the earliest time an owed source may be retried (now or later); ok is false when
+// no source will be (macrevd-967-5: a running engine wakes for it).
+func NextOwedAt(cache string, a consent.Admission, now time.Time) (time.Time, bool) {
+	var next time.Time
+	found := false
+	for _, source := range []string{"claude-code", "codex"} {
+		if at, ok := owedAt(cache, a, source); ok {
+			if at.Before(now) {
+				at = now
+			}
+			if !found || at.Before(next) {
+				next, found = at, true
+			}
+		}
+	}
+	return next, found
+}
+
+// owedAt: when source may next be imported automatically (zero: any time); ok is false when it is
+// not owed at all: no request, no recorded grant, removed or cancelled by the user under this
+// grant, retries used up, or imported.
+func owedAt(cache string, a consent.Admission, source string) (time.Time, bool) {
+	if Off() {
+		return time.Time{}, false
+	}
+	l, ok := LoadImported(cache)
+	if !ok || (l.AutoRequested == nil && l.AutoRan == nil) {
+		return time.Time{}, false
+	}
+	state := a.State()
+	r, decided := state.Scopes[sourceScope(source)]
+	epoch := currentEpoch(a, source)
+	if !decided || !r.Allowed || epoch == nil {
+		return time.Time{}, false
+	}
+	if removed := l.Removed[source]; removed != nil && sameEpoch(removed, epoch) {
+		return time.Time{}, false // removed by the user under this grant
+	}
+	if cancelled := l.Cancelled[source]; cancelled != nil && sameEpoch(cancelled, epoch) {
+		return time.Time{}, false // the user cancelled an import under this grant
+	}
+	c, has := l.Coverage[source]
+	if has && !c.From.IsZero() && sameEpoch(c.Epoch, epoch) && (source != "codex" || c.Archived) {
+		return time.Time{}, false // imported
+	}
+	if at, tried := l.Attempts[source]; tried && sameEpoch(at.Epoch, epoch) {
+		if at.N >= OwedRetryMax {
+			return time.Time{}, false // given up under this grant
+		}
+		return at.Next, true
+	}
+	return time.Time{}, true
+}
+
+// MarkOwedCancelled: the user cancelled an import, so no automatic import of a source with a
+// recorded grant starts again under that grant (macrevd-967-4). A new grant, or an import of the
+// source, lifts it.
+func MarkOwedCancelled(cache string, a consent.Admission) error {
+	unlock, ok := lockWait(cache, "perf.lock")
+	if !ok {
+		return errors.New("readings busy; retry")
+	}
+	defer unlock()
+	led, ok := LoadImported(cache)
+	if !ok {
+		return errors.New("imported history unreadable; left as it is")
+	}
+	changed := false
+	for _, source := range []string{"claude-code", "codex"} {
+		if epoch := currentEpoch(a, source); epoch != nil {
+			if led.Cancelled == nil {
+				led.Cancelled = map[string]*GrantEpoch{}
+			}
+			led.Cancelled[source], changed = epoch, true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return writeImported(cache, led)
 }
 
 // MarkAutoRequested records that the first-run import was asked for (kept until it completes).
@@ -853,6 +918,7 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 	led.Coverage[j.source] = c
 	delete(led.Removed, j.source) // imported again on purpose
 	delete(led.Attempts, j.source)
+	delete(led.Cancelled, j.source)
 	if auto && led.AutoRan == nil {
 		t := now.UTC().Truncate(time.Second)
 		led.AutoRan = &t
@@ -921,7 +987,8 @@ func RemoveImported(cache string) error {
 			removed[source] = c.Epoch
 		}
 	}
-	return writeImported(cache, ImportLedger{SchemaVersion: 1, AutoRan: led.AutoRan, AutoRequested: led.AutoRequested, Removed: removed, Rows: []PerfRow{}})
+	// The user's earlier Cancel and the retry counts stay: a removal never re-arms an import.
+	return writeImported(cache, ImportLedger{SchemaVersion: 1, AutoRan: led.AutoRan, AutoRequested: led.AutoRequested, Removed: removed, Cancelled: led.Cancelled, Attempts: led.Attempts, Rows: []PerfRow{}})
 }
 
 // merge adds a row's sums into the ledger's row of the same configuration.
