@@ -33,6 +33,28 @@ public enum CommunityConsentBundleIdentity {
             return pinsMatch(bundled, pin, actual)
         } catch { return false }
     }
+    /// Owner D39/D-E: an owner test build (package-neutral.sh --owner-test) carries the unverified consent identity,
+    /// often with a helper built from source, so it cannot match the released helper identity above. Its cockpit page
+    /// is admitted only when the sealed Info.plist names it an owner test build with the entry open and the bundled
+    /// helper still matches both of its pins. Release and smoke packages never write the marker (preflight PF-08), so
+    /// `matches(bundle:)` alone keeps governing them.
+    public static func matchesOwnerTest(bundle: URL) -> Bool {
+        do {
+            let root = bundle.standardizedFileURL
+            guard root.path == root.resolvingSymlinksInPath().path else { return false }
+            let infoBytes = try read(root.appendingPathComponent("Contents/Info.plist"), limit: 65536)
+            guard let info = try PropertyListSerialization.propertyList(from: infoBytes, format: nil) as? [String: Any],
+                  info[ownerTestKey] as? Bool == true, info["ModelPlanCockpitEntryEnabled"] as? Bool == true,
+                  let publicSource = info["ModelPlanPublicSource"] as? String, hex(publicSource, count: 40),
+                  let bundled = info["ModelPlanBundledHelperSHA256"] as? String else { return false }
+            let pinBytes = try read(root.appendingPathComponent("Contents/Resources/modelplan.sha256"), limit: 256)
+            guard let text = String(data: pinBytes, encoding: .utf8) else { return false }
+            let helper = try read(root.appendingPathComponent("Contents/Helpers/modelplan"), limit: 128 * 1024 * 1024)
+            let actual = SHA256.hash(data: helper).map { String(format: "%02x", $0) }.joined()
+            return pinsMatch(bundled, text.trimmingCharacters(in: .whitespacesAndNewlines), actual)
+        } catch { return false }
+    }
+    public static let ownerTestKey = "ModelPlanOwnerTestBuild"
     private static func pinsMatch(_ bundled: String, _ resource: String, _ actual: String) -> Bool {
         hex(bundled, count: 64) && hex(resource, count: 64) && hex(actual, count: 64)
             && bundled == actual && resource == actual

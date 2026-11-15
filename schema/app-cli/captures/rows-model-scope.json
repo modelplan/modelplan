@@ -22,7 +22,7 @@
         "code": "ok",
         "text": {
           "en": "Reading available",
-          "zh": "读数可用"
+          "zh": "已读到用量"
         }
       },
       "nextStep": null,
@@ -40,8 +40,8 @@
           "plan": {
             "id": "pro",
             "name": {
-              "en": "Pro",
-              "zh": "Pro"
+              "en": "Pro 200",
+              "zh": "Pro 200"
             }
           },
           "beta": false,

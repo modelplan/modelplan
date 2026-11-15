@@ -129,7 +129,7 @@ func cockpitParams(raw json.RawMessage, enabled bool) (int, error) {
 		return 0, protocol(wire.CodeInvalidParams)
 	}
 	switch p.RedBelow {
-	case 10, 16, 20, 25:
+	case 10, 15, 20, 25, 30, 40:
 		return p.RedBelow, nil
 	}
 	return 0, protocol(wire.CodeInvalidParams)

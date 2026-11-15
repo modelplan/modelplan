@@ -52,7 +52,7 @@ func EnsureStore(file string) (State, error) {
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return Empty(), err
 	}
-	unlock, err := lockFile(file + ".lock")
+	unlock, err := lockConsent(file)
 	if err != nil {
 		return Empty(), err
 	}
@@ -281,7 +281,12 @@ func (a Admission) ScopeFacts(detected map[string]bool) []ScopeFact {
 		if !known {
 			d.Tool, _, _ = strings.Cut(id, ".")
 		}
-		fact := ScopeFact{Scope: id, Tool: d.Tool, Route: d.Route, Detected: detected[d.Tool], Retired: !known, State: "unset", DefaultCheck: d.DefaultCheck, CleanupPending: a.cleanup[id]}
+		// A scope-id key narrows its tool's detection (D230: OpenCode installed, no OpenCode Go key).
+		det := detected[d.Tool]
+		if own, ok := detected[id]; ok {
+			det = det && own
+		}
+		fact := ScopeFact{Scope: id, Tool: d.Tool, Route: d.Route, Detected: det, Retired: !known, State: "unset", DefaultCheck: d.DefaultCheck, CleanupPending: a.cleanup[id]}
 		if d.Keychain {
 			v := "unset"
 			fact.Keychain = &v

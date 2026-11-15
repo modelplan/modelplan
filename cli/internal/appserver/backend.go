@@ -154,10 +154,71 @@ func ResetEventLinksEnabled(ctx context.Context) bool {
 // CapabilityCockpitDetailsV1 opts in to the versioned local details projection.
 const CapabilityCockpitDetailsV1 = "cockpitDetailsV1"
 
+const CapabilityAccountTodayV1 = "accountTodayV1"
+
+type accountTodayContextKey struct{}
+
+func AccountTodayEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(accountTodayContextKey{}).(bool)
+	return enabled
+}
+
 type cockpitDetailsContextKey struct{}
 
 func CockpitDetailsEnabled(ctx context.Context) bool {
 	enabled, _ := ctx.Value(cockpitDetailsContextKey{}).(bool)
+	return enabled
+}
+
+// CapabilityCockpitModelsV1 opts in to every published model's public data in the cockpit
+// details, for the launch field and the frontier. The three-model publication field is unchanged.
+const CapabilityCockpitModelsV1 = "cockpitModelsV1"
+
+type cockpitModelsContextKey struct{}
+
+func CockpitModelsEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(cockpitModelsContextKey{}).(bool)
+	return enabled
+}
+
+// CapabilityCockpitSessionsV1 opts in to the past seven days of recorded sessions in the cockpit
+// details (details.recentSessions), for the Breakdown page's 7-day time view.
+const CapabilityCockpitSessionsV1 = "cockpitSessionsV1"
+
+type cockpitSessionsContextKey struct{}
+
+func CockpitSessionsEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(cockpitSessionsContextKey{}).(bool)
+	return enabled
+}
+
+// CapabilityCockpitPeaksV1 opts in to the declared plans' peak-rate windows in the cockpit details
+// (details.peaks), for the alert list's peak-hours line.
+const CapabilityCockpitPeaksV1 = "cockpitPeaksV1"
+
+type cockpitPeaksContextKey struct{}
+
+func CockpitPeaksEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(cockpitPeaksContextKey{}).(bool)
+	return enabled
+}
+
+// WithCockpitSessionsForTest marks a context as negotiated for cockpitSessionsV1, for producer tests.
+func WithCockpitSessionsForTest(ctx context.Context) context.Context {
+	return context.WithValue(ctx, cockpitSessionsContextKey{}, true)
+}
+
+// CapabilityCockpitForecastV1 opts in to per-window forecasts in the cockpit details.
+const CapabilityCockpitForecastV1 = "cockpitForecastV1"
+
+// CapabilityForecastProducerV1 tells the App this engine produces forecasts, so
+// Settings can offer the forecast notification kind.
+const CapabilityForecastProducerV1 = "forecastProducerV1"
+
+type cockpitForecastContextKey struct{}
+
+func CockpitForecastEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(cockpitForecastContextKey{}).(bool)
 	return enabled
 }
 

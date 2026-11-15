@@ -490,3 +490,34 @@ func TestThinClientAcceptsCompactComponentsAndLazyExtras(t *testing.T) {
 		t.Fatalf("thin client fetched non-client components: %+v", f.hits)
 	}
 }
+
+// A cache from another source is replaced only by a publication verified from the new one.
+func TestFailedSyncFromAnotherBaseKeepsVerifiedPublication(t *testing.T) {
+	f := &fakeServer{objects: map[string][]byte{}, hits: map[string]int{}}
+	first := publish(f, "first", 50, false)
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	t.Setenv("MODELPLAN_CACHE", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := New(srv.URL, st, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Sync(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	other, err := New("http://127.0.0.1:1", st, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.Sync(context.Background(), false); err == nil {
+		t.Fatal("unreachable base synced")
+	}
+	d, state, err := Load(st)
+	if err != nil || d.PublicationID != first || state.Base != c.Base || state.LastError == "" || state.LastAttemptAt.IsZero() {
+		t.Fatalf("cache after the failure: %+v %v", state, err)
+	}
+}

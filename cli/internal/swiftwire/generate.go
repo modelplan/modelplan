@@ -102,7 +102,7 @@ func load(root string) (*model, error) {
 			files = append(files, "reset_events.go")
 		}
 		if pkg == "wire" {
-			files = append(files, "cockpit.go", "results.go")
+			files = append(files, "cockpit.go", "cockpit_history.go", "results.go")
 		}
 		for _, file := range files {
 			f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, "cli/internal", dir, file), nil, 0)
@@ -210,7 +210,7 @@ func (m *model) swiftType(pkg string, e ast.Expr) (string, error) {
 	}
 }
 func strict(name, field string) bool {
-	if strings.HasPrefix(name, "RowsResetCard") || name == "RowsAccount" && field == "resetCards" {
+	if strings.HasPrefix(name, "RowsResetCard") || name == "RowsAccountToday" || name == "RowsAccount" && (field == "resetCards" || field == "today") {
 		return true
 	}
 	if strings.HasPrefix(name, "WireCockpit") {

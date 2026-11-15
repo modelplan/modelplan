@@ -6,6 +6,22 @@
       "type": "RowsAccount",
       "optional": [
         {
+          "field": "today",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "activity",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
           "field": "resetCards",
           "omission": true,
           "null": false,
@@ -79,6 +95,52 @@
       ]
     },
     {
+      "file": "RowsAccountActivity.json",
+      "type": "RowsAccountActivity",
+      "optional": [],
+      "required": [
+        "sessionRef",
+        "subscriptionRef",
+        "bindingVerified",
+        "phase",
+        "recordAt",
+        "expiresAt"
+      ]
+    },
+    {
+      "file": "RowsAccountToday.json",
+      "type": "RowsAccountToday",
+      "optional": [
+        {
+          "field": "observedOutputTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "generationTps",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "runningSessions",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "bindingBasis"
+      ]
+    },
+    {
       "file": "RowsCredits.json",
       "type": "RowsCredits",
       "optional": [
@@ -89,6 +151,14 @@
           "wrongType": true,
           "strict": false,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "currency",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -120,6 +190,39 @@
       "required": [
         "code",
         "at"
+      ]
+    },
+    {
+      "file": "RowsHint.json",
+      "type": "RowsHint",
+      "optional": [
+        {
+          "field": "signInCommand",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "installCommand",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "installUrl",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "text"
       ]
     },
     {
@@ -167,6 +270,14 @@
           "wrongType": true,
           "strict": false,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "hint",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -265,6 +376,30 @@
       "file": "RowsResetEvent.json",
       "type": "RowsResetEvent",
       "optional": [
+        {
+          "field": "kind",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "confirmedAt",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "confirmedAtBasis",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
         {
           "field": "confirms",
           "omission": true,
@@ -549,11 +684,68 @@
       ]
     },
     {
+      "file": "WireCockpitCycle.json",
+      "type": "WireCockpitCycle",
+      "optional": [],
+      "required": [
+        "startedAt",
+        "resetsAt",
+        "points",
+        "hadDrop",
+        "spent"
+      ]
+    },
+    {
+      "file": "WireCockpitCycleGroup.json",
+      "type": "WireCockpitCycleGroup",
+      "optional": [],
+      "required": [
+        "subscriptionRef",
+        "kind",
+        "attribution",
+        "cycles"
+      ]
+    },
+    {
+      "file": "WireCockpitCycleShare.json",
+      "type": "WireCockpitCycleShare",
+      "optional": [
+        {
+          "field": "model",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "fast",
+        "points"
+      ]
+    },
+    {
       "file": "WireCockpitData.json",
       "type": "WireCockpitData",
       "optional": [
         {
           "field": "details",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "history",
           "omission": true,
           "null": true,
           "wrongType": false,
@@ -569,7 +761,56 @@
     {
       "file": "WireCockpitDetails.json",
       "type": "WireCockpitDetails",
-      "optional": [],
+      "optional": [
+        {
+          "field": "publication",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "publishedModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "planModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "forecasts",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "recentSessions",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "peaks",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
       "required": [
         "version",
         "sources",
@@ -578,6 +819,266 @@
         "sessionCoverage",
         "resetEvents",
         "alerts"
+      ]
+    },
+    {
+      "file": "WireCockpitEntityRanking.json",
+      "type": "WireCockpitEntityRanking",
+      "optional": [],
+      "required": [
+        "measure",
+        "attribution",
+        "recent7d",
+        "recent30d"
+      ]
+    },
+    {
+      "file": "WireCockpitEntityWindow.json",
+      "type": "WireCockpitEntityWindow",
+      "optional": [],
+      "required": [
+        "entities",
+        "totalObservedOutputTokens",
+        "top"
+      ]
+    },
+    {
+      "file": "WireCockpitForecast.json",
+      "type": "WireCockpitForecast",
+      "optional": [
+        {
+          "field": "runsOutAt",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "source",
+        "subscriptionRef",
+        "windowId",
+        "pace",
+        "basis",
+        "observedAt"
+      ]
+    },
+    {
+      "file": "WireCockpitHistory.json",
+      "type": "WireCockpitHistory",
+      "optional": [
+        {
+          "field": "recordingSince",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "dailyFrom",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "version",
+        "sources",
+        "coverage",
+        "subscriptions",
+        "models",
+        "tools",
+        "daily",
+        "hourly",
+        "projects",
+        "cycles"
+      ]
+    },
+    {
+      "file": "WireCockpitHistorySums.json",
+      "type": "WireCockpitHistorySums",
+      "optional": [
+        {
+          "field": "inputTokens",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cacheReadTokens",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cacheWriteTokens",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cacheHitRatio",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "generationTps",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "outputTokens",
+        "observedRequests",
+        "eligibleRequests"
+      ]
+    },
+    {
+      "file": "WireCockpitPeak.json",
+      "type": "WireCockpitPeak",
+      "optional": [
+        {
+          "field": "endsAt",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "rowId",
+        "startsAt",
+        "status"
+      ]
+    },
+    {
+      "file": "WireCockpitPlanModels.json",
+      "type": "WireCockpitPlanModels",
+      "optional": [
+        {
+          "field": "generation",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "planId",
+        "basis",
+        "modelIds"
+      ]
+    },
+    {
+      "file": "WireCockpitProjectRanking.json",
+      "type": "WireCockpitProjectRanking",
+      "optional": [],
+      "required": [
+        "recent7d",
+        "recent30d"
+      ]
+    },
+    {
+      "file": "WireCockpitPublication.json",
+      "type": "WireCockpitPublication",
+      "optional": [
+        {
+          "field": "speedTiers",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "contractVersion",
+        "publicationId",
+        "publishedAt",
+        "source",
+        "models",
+        "truncated"
+      ]
+    },
+    {
+      "file": "WireCockpitPublicationEffort.json",
+      "type": "WireCockpitPublicationEffort",
+      "optional": [
+        {
+          "field": "multiplier",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "ability",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cost",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "time",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "provisional",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "effort",
+        "label",
+        "star"
+      ]
+    },
+    {
+      "file": "WireCockpitPublicationModel.json",
+      "type": "WireCockpitPublicationModel",
+      "optional": [],
+      "required": [
+        "id",
+        "name",
+        "developerId",
+        "recommended",
+        "efforts"
       ]
     },
     {
@@ -594,6 +1095,96 @@
         }
       ],
       "required": []
+    },
+    {
+      "file": "WireCockpitRankedEntity.json",
+      "type": "WireCockpitRankedEntity",
+      "optional": [],
+      "required": [
+        "name",
+        "observedRequests",
+        "observedOutputTokens",
+        "share"
+      ]
+    },
+    {
+      "file": "WireCockpitRankedProject.json",
+      "type": "WireCockpitRankedProject",
+      "optional": [
+        {
+          "field": "label",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "model",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "ref",
+        "observedOutputTokens",
+        "share"
+      ]
+    },
+    {
+      "file": "WireCockpitRecentSession.json",
+      "type": "WireCockpitRecentSession",
+      "optional": [
+        {
+          "field": "subscriptionRef",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectLabel",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectState",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "sessionRef",
+        "source",
+        "model",
+        "lastObservedAt"
+      ]
     },
     {
       "file": "WireCockpitResetCount.json",
@@ -649,12 +1240,28 @@
           "nullPolicy": "coalesced"
         },
         {
+          "field": "projectState",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "rate",
           "omission": true,
           "null": true,
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "fast",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -663,6 +1270,100 @@
         "model",
         "lastObservedAt",
         "state"
+      ]
+    },
+    {
+      "file": "WireCockpitSourceBucket.json",
+      "type": "WireCockpitSourceBucket",
+      "optional": [],
+      "required": [
+        "at",
+        "source",
+        "origin",
+        "observedOutputTokens"
+      ]
+    },
+    {
+      "file": "WireCockpitSourceHistory.json",
+      "type": "WireCockpitSourceHistory",
+      "optional": [],
+      "required": [
+        "source",
+        "bindingBasis",
+        "recent7d",
+        "recent30d"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedBilling.json",
+      "type": "WireCockpitSpeedBilling",
+      "optional": [],
+      "required": [
+        "account",
+        "billsTo",
+        "basis",
+        "ratio"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedEligibility.json",
+      "type": "WireCockpitSpeedEligibility",
+      "optional": [],
+      "required": [
+        "plans",
+        "note"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedRatio.json",
+      "type": "WireCockpitSpeedRatio",
+      "optional": [
+        {
+          "field": "ratio",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "qualifier"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedTier.json",
+      "type": "WireCockpitSpeedTier",
+      "optional": [],
+      "required": [
+        "id",
+        "harness",
+        "tier",
+        "label",
+        "toggle",
+        "eligibility",
+        "models",
+        "billing",
+        "caveats",
+        "sources"
+      ]
+    },
+    {
+      "file": "WireCockpitSpeedTierModel.json",
+      "type": "WireCockpitSpeedTierModel",
+      "optional": [
+        {
+          "field": "modelId",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "vendorModelId",
+        "speed"
       ]
     },
     {
@@ -701,12 +1402,29 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "reportedModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
         "subscriptionRef",
         "resetCounts",
         "today"
+      ]
+    },
+    {
+      "file": "WireCockpitSubscriptionHistory.json",
+      "type": "WireCockpitSubscriptionHistory",
+      "optional": [],
+      "required": [
+        "subscriptionRef",
+        "sources"
       ]
     },
     {
@@ -967,6 +1685,61 @@
       "required": [
         "state",
         "code"
+      ]
+    },
+    {
+      "file": "WireHistoryImportCoverage.json",
+      "type": "WireHistoryImportCoverage",
+      "optional": [],
+      "required": [
+        "source",
+        "from",
+        "through",
+        "rows"
+      ]
+    },
+    {
+      "file": "WireHistoryImportSource.json",
+      "type": "WireHistoryImportSource",
+      "optional": [],
+      "required": [
+        "source",
+        "status",
+        "turns"
+      ]
+    },
+    {
+      "file": "WireHistoryImportStartParams.json",
+      "type": "WireHistoryImportStartParams",
+      "optional": [],
+      "required": [
+        "days",
+        "firstRun"
+      ]
+    },
+    {
+      "file": "WireHistoryImportStatus.json",
+      "type": "WireHistoryImportStatus",
+      "optional": [
+        {
+          "field": "revision",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "schemaVersion",
+        "phase",
+        "days",
+        "filesDone",
+        "filesTotal",
+        "firstRunDone",
+        "importedRows",
+        "coverage",
+        "sources"
       ]
     },
     {
@@ -1349,6 +2122,14 @@
           "null": false,
           "wrongType": false,
           "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "forecasts",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
           "nullPolicy": "forbidden"
         }
       ],

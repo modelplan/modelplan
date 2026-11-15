@@ -22,6 +22,14 @@ func (s *RefreshScheduler) StartAutomatic() {
 
 func (s *RefreshScheduler) automatic() {
 	defer close(s.autoDone)
+	// Observation has its own loop: a refresh job that waits for its budget, a credential or a slow
+	// provider must not hold back the local sessions and rates (G3-85). Closing waits for it.
+	observed := make(chan struct{})
+	go func() {
+		defer close(observed)
+		s.observeLoop()
+	}()
+	defer func() { <-observed }()
 	first := true
 	var previous Stamp
 	for s.ctx.Err() == nil {
@@ -45,13 +53,17 @@ func (s *RefreshScheduler) automatic() {
 		state, mode := admission.State(), admission.Mode()
 		scopes := liveRefreshScopes(state, mode)
 		runtimeGranted := false
-		for _, scope := range scopes {
-			if scope == consent.ScopeCodexRuntimeUsage {
+		for i := 0; i < len(scopes); i++ {
+			if scopes[i] == consent.ScopeCodexRuntimeUsage {
+				if quota.CodexAccountOff() { // the environment keeps Codex to its logs
+					scopes = append(scopes[:i], scopes[i+1:]...)
+					i--
+					continue
+				}
 				runtimeGranted = true
 			}
 		}
-		local, decided := state.Scopes[consent.ScopeCodexLocalHistory]
-		if !s.config.Offline && !s.config.ReadOnly && decided && local.Allowed && state.AllowsScope(consent.ScopeCodexLocalHistory, mode) &&
+		if !s.config.Offline && !s.config.ReadOnly && state.AllowsScope(consent.ScopeCodexLocalHistory, mode) &&
 			(!runtimeGranted || !quota.CodexRuntimeAvailable(s.paths(admission).Cache, admission, now)) {
 			scopes = append(scopes, consent.ScopeCodexLocalHistory)
 		}
@@ -77,6 +89,7 @@ func (s *RefreshScheduler) automatic() {
 				_, pending := s.pending[key]
 				s.mu.Unlock()
 				if pending {
+					s.replanQueued(admission, scope, key, now)
 					continue
 				}
 				if until.After(now) {
@@ -85,7 +98,7 @@ func (s *RefreshScheduler) automatic() {
 					}
 					continue
 				}
-				result, _, err := s.Request(s.ctx, wire.RefreshRequestParams{Scopes: []string{scope}})
+				result, _, err := s.request(s.ctx, wire.RefreshRequestParams{Scopes: []string{scope}}, true)
 				outcome, reason := refreshNotAttempted, refreshUnavailable
 				if err == nil && len(result) == 1 {
 					if result[0].DisabledReason == nil {

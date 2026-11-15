@@ -60,7 +60,7 @@ import ModelPlanSettings
           allowedEnvironment: [
             "HOME": home, "TMPDIR": tmp, "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8",
           ], offline: true, readOnly: true))
-      coordinator.onUnavailable = { [weak host] in host?.stop("engine-cockpit-unavailable") }
+      coordinator.onUnavailable = { [weak host] _ in host?.stop("engine-cockpit-unavailable") }
     }
     func open() async throws {
       rendered = false

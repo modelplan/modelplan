@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "since": "2026-10-06T00:00:00Z",
+  "rows": [
+    {
+      "grantEpoch": {"storeEpoch": "synthetic-epoch", "revokedGeneration": 0},
+      "day": "2026-11-04",
+      "source": "codex",
+      "model": "gpt-5.3",
+      "effortStatus": "reported",
+      "effort": "high",
+      "parser": "codex-rollout/1",
+      "eligibility": "gen-v1",
+      "inputTokens": 1000,
+      "cacheReadTokens": 4000,
+      "cacheWriteTokens": 500,
+      "observedRequests": 10,
+      "observedOutputTokens": 2000,
+      "eligibleRequests": 6,
+      "eligibleOutputTokens": 1200,
+      "genMs": 20000
+    },
+    {
+      "grantEpoch": {"storeEpoch": "synthetic-epoch", "revokedGeneration": 0},
+      "day": "2026-10-20",
+      "source": "codex",
+      "model": "gpt-5.3",
+      "effortStatus": "reported",
+      "effort": "high",
+      "parser": "codex-rollout/1",
+      "eligibility": "gen-v1",
+      "inputTokens": 500,
+      "cacheReadTokens": 500,
+      "observedRequests": 5,
+      "observedOutputTokens": 1000,
+      "eligibleRequests": 5,
+      "eligibleOutputTokens": 1000,
+      "genMs": 25000
+    },
+    {
+      "grantEpoch": {"storeEpoch": "synthetic-epoch", "revokedGeneration": 0},
+      "day": "2026-11-05",
+      "source": "claude-code",
+      "model": "sonnet",
+      "effortStatus": "unreported",
+      "parser": "claude-transcript/1",
+      "eligibility": "gen-v1",
+      "inputTokens": 200,
+      "observedRequests": 4,
+      "observedOutputTokens": 500,
+      "eligibleRequests": 4,
+      "eligibleOutputTokens": 400,
+      "genMs": 8000
+    }
+  ]
+}

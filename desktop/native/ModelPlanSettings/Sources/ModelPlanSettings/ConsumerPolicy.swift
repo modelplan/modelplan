@@ -34,7 +34,12 @@ public struct EffectiveSettings: Equatable, Sendable {
     public let revealSeconds: Double, magnification: HoverMagnification, size: SettingsSize
     public let menuDisplay: MenuDisplay, language: SettingsLanguage, showProjectNames: Bool
     public let opening: OpeningPreference, ignitionSeconds: Double?
+    public let cockpitSize: SettingsCockpitSize
     public let redBelow: Int
+    /// SET-9-10 / CKP-ENG-23: the cockpit shows used instead of remaining.
+    public let showUsedPercent: Bool
+    /// D135: the cockpit shows every published model, not only the own-plan set.
+    public let showAllModels: Bool
     public init(_ p: SettingsPreferences, environment e: SettingsEnvironment) {
         darkAppearance = e.v1NormalEntry || p.theme == .night || (p.theme == .system && e.darkAppearance)
         reduceMotion = p.motion == .on || (p.motion == .system && e.reduceMotion)
@@ -46,8 +51,9 @@ public struct EffectiveSettings: Equatable, Sendable {
         autoHide = p.autoHide; revealSeconds = Double(p.revealMilliseconds) / 1000
         showPercentages = p.showPercentages; sliverAlert = p.sliverAlert
         size = p.size; magnification = reduceMotion ? .none : p.magnification
-        menuDisplay = p.menuDisplay; language = p.language; showProjectNames = p.showProjectNames; redBelow = p.redBelow
+        menuDisplay = p.menuDisplay; language = p.language; showProjectNames = p.showProjectNames; redBelow = p.effectiveRedBelow; showUsedPercent = p.percentageMode == .used; showAllModels = p.showAllModels
         opening = e.v1NormalEntry || p.opening == .quick || reduceMotion || e.macOSMajor < 15 || !e.entranceAccepted ? .quick : .hold
+        cockpitSize = p.cockpitSize
         ignitionSeconds = opening == .hold ? 0.2 + 3 * Double(p.beatMilliseconds) / 1000 : nil
     }
     public var visibilityPolicy: DockVisibilityPolicy {
@@ -68,7 +74,7 @@ public extension SettingsPreferences {
     }
     func applying(to input: DockInstrumentInput) -> DockInstrumentInput {
         var result = input
-        if let value = subscriptionSettings[input.id] { result.alias = value.alias.nilIfEmpty }
+        if let value = subscriptionSettings[input.id] { result.alias = AliasDisplay.shortened(value.alias).nilIfEmpty }
         result.showUsedPercent = percentageMode == .used
         let pin = subscriptionSettings[input.id]?.percentagePin ?? .auto
         // A pin selects a general window, never a model/feature-specific extra quota.
@@ -82,6 +88,31 @@ public extension SettingsPreferences {
 }
 private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
 
+/// The prototype's display limit: about 5 Han or 9 Latin characters, then "…". Only the
+/// display is shortened; the saved alias and the Settings field keep the whole text.
+public enum AliasDisplay {
+    private static let budget = 45, han = 9, other = 5
+    public static func shortened(_ text: String) -> String {
+        var used = 0, kept = ""
+        for character in text {
+            used += wide(character) ? han : other
+            if used > budget { return kept + "…" }
+            kept.append(character)
+        }
+        return text
+    }
+    private static func wide(_ character: Character) -> Bool {
+        character.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x2E80...0x9FFF, 0xAC00...0xD7AF, 0xF900...0xFAFF, 0xFF00...0xFF60, 0x20000...0x3FFFD: return true
+            default: return false
+            }
+        }
+    }
+}
+
+/// D56 (owner 2026-11-08): the `toggleDock` slot (`dockShortcut`) is the Find Quota Widget shortcut.
+/// The stored key and case keep their names so a recorded chord keeps working.
 public enum ShortcutAction: String, Sendable { case openCockpit, toggleDock }
 public enum ShortcutRegistration: Equatable, Sendable { case notRequested, registered, conflict, denied, unavailable }
 public struct ShortcutPolicy: Sendable {
@@ -104,12 +135,23 @@ public struct AliasDraft: Equatable, Sendable {
     public private(set) var text: String
     public private(set) var composing = false
     public init(subscriptionID: String, committed: String) { self.subscriptionID = subscriptionID; text = committed }
+    /// Typed or pasted text is cleaned, never refused: control characters go, and text past
+    /// the stored limit is cut at a whole character.
+    static func lenient(_ text: String) -> String {
+        let scalars = text.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+        var result = ""
+        for character in String(String.UnicodeScalarView(scalars)).trimmingCharacters(in: .whitespacesAndNewlines) {
+            guard result.count < 128, result.utf8.count + character.utf8.count <= 1024 else { break }
+            result.append(character)
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     public mutating func input(_ text: String, composing: Bool) { self.text = text; self.composing = composing }
     public func commit(to preferences: inout SettingsPreferences) throws {
         guard !composing else { throw SettingsError.invalidPreference }
         var candidate = preferences
         var value = candidate.subscriptionSettings[subscriptionID] ?? .init()
-        value.alias = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        value.alias = Self.lenient(text)
         candidate.subscriptionSettings[subscriptionID] = value
         try candidate.validate(); preferences = candidate
     }
@@ -133,8 +175,15 @@ public enum SettingsActionRequest: Equatable, Sendable {
 }
 public struct SettingsCapabilities: Sendable {
     public var login: LoginServiceState = .notRegistered
+    /// G3-69: `login` is `.unavailable` because the system reported the app as not found (not in Applications).
+    public var loginNotInApplications = false
     public var appCacheClearAvailable = false
     public var updateServiceAvailable = false
+    /// True when the host can write a diagnostics file (Settings → Diagnostics → Export diagnostics…).
+    public var diagnosticsExportAvailable = false
+    /// True only while the engine reports its forecast producer (F1). Injected from the
+    /// engine's negotiated capability, never persisted or inferred from the saved kinds.
+    public var forecastProducerAvailable = false
     public var firstRunPreviewAvailable = false
     public var helpMapAvailable = false
     public var helpMapUsesDock = false

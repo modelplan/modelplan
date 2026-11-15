@@ -14,7 +14,7 @@ public enum HelpUILayout {
               input.liveReadings.allSatisfy(HelpUIGeometry.valid) else { return empty(["invalidInput"]) }
         let anchors=Dictionary(uniqueKeysWithValues:input.anchors.filter { $0.visible && HelpUIGeometry.intersects($0.rect,bounds) }.map { ($0.id,$0.rect) })
         if input.map.mode != .hidden { return map(input,anchors:anchors,measure:measure) }
-        let width=min(370,safe.width)
+        var width=min(370,safe.width)
         let identity:HelpUICardIdentity,anchorID:String,height:CGFloat
         if let hint=input.firstUse {
             guard !hint.text.isEmpty,hint.text.utf8.count<=4096,!hint.dismissTitle.isEmpty,hint.dismissTitle.utf8.count<=256 else { return empty() }
@@ -25,6 +25,14 @@ public enum HelpUILayout {
                   (context.actionID?.utf8.count ?? 0)<=256,(context.actionTitle?.utf8.count ?? 0)<=512,
                   context.explanation.title.utf8.count<=512,context.explanation.body.utf8.count<=8192 else { return empty() }
             identity = .context(context.id);anchorID=context.anchorID
+            // Prototype tooltip (help-system study): `width:max-content;max-width:370px`. A tip is as wide as its
+            // text needs, not always the 370 pt ceiling; a card with an action keeps the full width for its button.
+            if context.actionID == nil || context.actionTitle == nil {
+                let inner=width-22
+                let natural=max(measure(context.explanation.title,inner,.contextTitle).width,
+                                measure(context.explanation.body,inner,.contextBody).width)
+                if natural.isFinite,natural>0 { width=min(width,max(48,ceil(natural)+22+1)) }
+            }
             height=ceil(measure(context.explanation.title,width-22,.contextTitle).height)
                 + ceil(measure(context.explanation.body,width-22,.contextBody).height)+23
                 + ((context.actionID != nil && context.actionTitle != nil) ? 26:0)
@@ -117,6 +125,21 @@ public enum HelpUILayout {
             let ends=[CGPoint(x:item.anchor.minX-4,y:item.anchor.midY),.init(x:item.anchor.maxX+4,y:item.anchor.midY),
                       .init(x:item.anchor.midX,y:item.anchor.minY-4),.init(x:item.anchor.midX,y:item.anchor.maxY+4)]
             var leader=[CGPoint]()
+            if input.map.straightLeaders {
+                // The caption edge that faces the target, to the target's nearest edge. Labels that share a target
+                // are spread along its edge so that their lines stay apart where they arrive.
+                let siblings=placed.filter { $0.0.anchor == item.anchor }.map { $0.0.id }
+                let rank=CGFloat(siblings.firstIndex(of:item.id) ?? 0)-CGFloat(siblings.count-1)/2
+                let spread=min(6,item.anchor.height/CGFloat(max(1,siblings.count)))
+                let toRight=frame.minX >= item.anchor.maxX, toLeft=frame.maxX <= item.anchor.minX
+                let start=toRight ? CGPoint(x:frame.minX-4,y:frame.midY) : toLeft ? CGPoint(x:frame.maxX+4,y:frame.midY)
+                    : CGPoint(x:frame.midX,y:frame.midY < item.anchor.midY ? frame.maxY+4:frame.minY-4)
+                let y=min(item.anchor.maxY-1,max(item.anchor.minY+1,item.anchor.midY+rank*spread))
+                let end=toRight ? CGPoint(x:item.anchor.maxX+4,y:y) : toLeft ? CGPoint(x:item.anchor.minX-4,y:y)
+                    : CGPoint(x:min(item.anchor.maxX-1,max(item.anchor.minX+1,item.anchor.midX+rank*spread)),
+                              y:frame.midY < item.anchor.midY ? item.anchor.minY-4:item.anchor.maxY+4)
+                leader=[start,end]
+            }
             for start in starts where leader.isEmpty {
                 for end in ends.sorted(by:{hypot($0.x-start.x,$0.y-start.y)<hypot($1.x-start.x,$1.y-start.y)}) where leader.isEmpty {
                     leader=HelpUIGeometry.leader(from:start,to:end,avoiding:blocks,viewport:input.viewport)

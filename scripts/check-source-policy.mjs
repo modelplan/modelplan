@@ -1,4 +1,4 @@
-import { isWorkflowFile, workflowProblems } from "./workflow-policy.mjs";
+import { guiGuardProblems, isWorkflowFile, workflowProblems } from "./workflow-policy.mjs";
 import assert from "node:assert/strict";
 import { verifyPortholePack } from "./check-porthole-pack.mjs";
 import { readFile } from "node:fs/promises";
@@ -105,6 +105,14 @@ for (const p of tracked) {
   assert.ok(spdxReserved.test(text), `reserved visual must carry SPDX-License-Identifier: ${reserved.license}: ${p}`);
   assert.ok(!/SPDX-License-Identifier"?:\s*"?MIT\b/.test(text), `reserved visual must not carry an MIT header: ${p}`);
 }
+// Native status templates are explicit packaged copies of the reviewed reserved rasters.
+for (const [packaged, canonical] of [
+  ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/Resources/tray.png", "desktop/official-visuals/icons/tray-outline.png"],
+  ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/Resources/tray@2x.png", "desktop/official-visuals/icons/tray-outline@2x.png"],
+]) {
+  assert.ok(tracked.includes(packaged) && tracked.includes(canonical), `missing native tray copy: ${packaged}`);
+  assert.deepEqual(await read(packaged), await read(canonical), `native tray copy differs: ${packaged}`);
+}
 // The community build never reads the reserved prefix: only build.mjs's --official branch names it.
 for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p) && !p.startsWith("desktop/tests/") && !p.endsWith(".md"))) {
   const code = (await read(p)).toString().replace(/^\s*\/\/.*$/gm, "");
@@ -117,8 +125,20 @@ for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p)
     continue;
   }
   if (p === "desktop/native/tools/package-neutral.sh") {
-    assert.equal(code.split("official-visuals").length, 2, "one native visual license reference");
+    assert.equal(code.split("official-visuals").length, 3, "one native visual license reference and one app icon reference");
+    assert.ok(code.includes('cp "$repo_root/desktop/official-visuals/icons/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"'), "exact native app icon copy");
     assert.ok(code.includes('cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"'), "exact native visual license copy");
+    continue;
+  }
+  if (p === "desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/V01TrayTemplateTests.swift") {
+    assert.equal(code.split("official-visuals").length, 2, "one tray reference path in the native test");
+    assert.ok(code.includes('repo.appendingPathComponent("desktop/official-visuals/icons/" + name)'), "exact native tray reference directory");
+    assert.ok(code.includes('let name = scale == 1 ? "tray-outline.png" : "tray-outline@2x.png"'), "exact 1x/2x tray references");
+    continue;
+  }
+  if (p === "desktop/third-party/notices.json") {
+    assert.equal(code.split("official-visuals").length, 2, "one attribution reference in the notice catalog");
+    assert.ok(code.includes('"desktop/official-visuals/runtime/field-scene/cockpit-scene.bundle.js"'), "exact three.js attribution path");
     continue;
   }
   assert.ok(["desktop/build.mjs", "desktop/cockpit/build.mjs"].includes(p), "community build must not read the reserved visuals: " + p);
@@ -127,6 +147,17 @@ for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p)
   assert.ok(
     code.indexOf("if (official) {") >= 0 && code.split("official-visuals").length === branch.split("official-visuals").length,
     "community build must not read the reserved visuals outside the --official branch",
+  );
+}
+// Cockpit admission pins are generated at build time from the canonical build (check-bundle-pins.py --write) and
+// never committed, so parallel cockpit PRs cannot conflict on them (D69).
+{
+  const generated = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift";
+  const factory = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift";
+  assert.ok(!tracked.includes(generated), "generated cockpit pins must not be committed: " + generated);
+  assert.ok(
+    !/"(community|official)"\s*:\s*"[a-f0-9]{64}"/.test((await read(factory)).toString()),
+    "cockpit manifest pins are generated at build time; do not commit them in " + factory,
   );
 }
 const core = JSON.parse(await read("reader/manifest.json"));
@@ -153,6 +184,10 @@ for (const p of tracked.filter(isWorkflowFile)) {
   const s = (await read(p)).toString();
   const problems = workflowProblems(s, p);
   assert.deepEqual(problems, [], "public workflow runner/trigger policy: " + p + " " + problems.join(", "));
+}
+{
+  const problems = guiGuardProblems((await read(".github/workflows/trusted-mac.yml")).toString());
+  assert.deepEqual(problems, [], "trusted-mac GUI guard (D94): " + problems.join(", "));
 }
 assert.ok(
   !(await read("desktop/build.mjs"))

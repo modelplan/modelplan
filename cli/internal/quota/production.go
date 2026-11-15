@@ -16,6 +16,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/profile"
 )
 
 // ProductionPaths is the single CLI/App/hooks constructor. It reads ModelPlan
@@ -30,16 +31,21 @@ func ProductionPaths(cache, version string) Paths {
 
 // ProductionPathsWithAdmission shares the command's permission input with every
 // cache reader. ReaderGrant.StillValid and Publish deliberately remain live.
+// CodexHome: where Codex keeps its session logs. Finding it reads nothing.
+func CodexHome() string {
+	if codex := os.Getenv("CODEX_HOME"); codex != "" {
+		return codex
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".codex")
+}
+
 func ProductionPathsWithAdmission(cache, version string, admission consent.Admission) Paths {
 	home, _ := os.UserHomeDir()
-	codex := os.Getenv("CODEX_HOME")
-	if codex == "" {
-		codex = filepath.Join(home, ".codex")
-	}
-	p := Paths{Admission: &admission, CLIVersion: version, Cache: cache, CodexHome: codex,
-		LocalFile:       filepath.Join(home, ".config", "modelplan", "local.json"),
-		CodexBarFile:    filepath.Join(home, ".config", "modelplan", "codexbar.json"),
-		ConnectionsFile: filepath.Join(home, ".config", "modelplan", "connections.json"),
+	p := Paths{Admission: &admission, CLIVersion: version, Cache: cache, CodexHome: CodexHome(),
+		LocalFile:       profile.ConfigFile(home, "local.json"),
+		CodexBarFile:    profile.ConfigFile(home, "codexbar.json"),
+		ConnectionsFile: profile.ConfigFile(home, "connections.json"),
 		CodexThread:     os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID"),
 		ReaderAccess: &ReaderAccess{Grants: map[string]ReaderGrant{}}}
 	state, mode := admission.State(), admission.Mode()
@@ -72,6 +78,10 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 	if mode != consent.Automatic {
 		return p
 	}
+	if g, ok := defaultClaudeGrant(state, mode, version, routes); ok {
+		p.ReaderAccess.Grants["claude"] = g
+	}
+	p.ClaudeKeychainPending = claudeKeychainPending(state, mode, version, routes)
 	for id, record := range state.Tools {
 		n := nativeReaders[id]
 		if n == nil || !record.Allowed || record.ConsentTextVersion != consent.TextVersion || record.Backend != BackendNative || record.BrowserSession ||
@@ -124,12 +134,117 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 						region = n.Regions[0]
 					}
 					g.ConfigSource = &ZaiConfigSource{Tool: "claude-code", SettingsPath: filepath.Join(profiles[0].Root, "settings.json"), Region: region}
+					// As for ZCode's route, the login generation follows the settings file (size
+					// and modification time; not read here), so a corrected key releases a held
+					// "sign-in rejected" state at the next due read.
+					if fi, err := os.Stat(g.ConfigSource.SettingsPath); err == nil {
+						g.Generation += ":claude-code:" + strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
+					}
 				}
 			}
 		}
 		p.ReaderAccess.Grants[id] = g
 	}
+	configured := glmSourceConfigured(p)
+	if g, ok := defaultZCodeGrant(home, state, mode, configured); ok {
+		p.ReaderAccess.Grants["zai"] = g
+	} else if g, granted := p.ReaderAccess.Grants["zai"]; zcodeDefaultApplies(home, state, mode, configured) {
+		// A bare legacy GLM allow (no key, profile or source, and no key in the environment) is
+		// no route any reader can use; it must not hide the cause below (post-merge #711 (2)).
+		bare := granted && g.ConfigSource == nil && state.Tools["zai"].KeyEnv == "" && os.Getenv(nativeReaders["zai"].KeyEnv) == ""
+		// ZCode is there but keeps no provider file (a Desktop layout, the CLI community
+		// package, or a sign-in that stores no plaintext key). No reader can run, so say so
+		// instead of "not read yet" forever (G3-21, #711 (1)). Presence metadata only; nothing
+		// inside the folders is opened.
+		if _, err := os.Lstat(ZCodeProviderConfig(home)); (!granted || bare) && os.IsNotExist(err) && zcodePresent(home) {
+			if bare {
+				delete(p.ReaderAccess.Grants, "zai")
+			}
+			p.ZCodeNoProviderFile = true
+		}
+	}
 	return p
+}
+
+// zcodeRoots are ZCode's data folders, the same path signals detection lists for it
+// (detect/catalogue.go): Desktop and CLI (~/.zcode), the CLI community package and the macOS
+// support folder.
+var zcodeRoots = []string{".zcode", ".local/share/zcode-community", ".local/share/zcode-cli", "Library/Application Support/ZCode"}
+
+// zcodePresent: one of ZCode's own data folders exists. Presence metadata only.
+func zcodePresent(home string) bool {
+	for _, rel := range zcodeRoots {
+		if detect.LocalRoot(filepath.Join(home, filepath.FromSlash(rel))) {
+			return true
+		}
+	}
+	return false
+}
+
+// zcodeDefaultApplies: no explicit GLM decision, source or readers-off stands in the way of
+// ZCode's own default route.
+func zcodeDefaultApplies(home string, state consent.State, mode string, configured bool) bool {
+	if r, decided := state.Tools["zai"]; decided && (!r.Allowed || zaiRecordChoseSource(r)) {
+		return false
+	}
+	return !configured && home != "" && mode == consent.Automatic && state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode)
+}
+
+// defaultZCodeGrant: ZCode's own Coding Plan key route is on by default (owner decision
+// 2026-11-06, G3-21) for a user who has made no ModelPlan decision about GLM. Construction
+// only checks that ZCode's provider file is there; the file is opened at read time, under
+// the reader lock, by the existing Z.ai configured-key reader. An explicit GLM decision
+// (allow with another source, or deny) always takes precedence.
+func defaultZCodeGrant(home string, state consent.State, mode string, configured bool) (ReaderGrant, bool) {
+	if !zcodeDefaultApplies(home, state, mode, configured) {
+		return ReaderGrant{}, false
+	}
+	file := ZCodeProviderConfig(home)
+	fi, err := os.Lstat(file)
+	if err != nil || !fi.Mode().IsRegular() || !detect.LocalRoot(filepath.Dir(filepath.Dir(file))) {
+		return ReaderGrant{}, false
+	}
+	scope := consent.ScopeZaiAccountUsageAPIKey
+	fence := state.Fence()
+	// The login generation also follows the provider file (size and modification time,
+	// from the same stat; the file is not read here), so replacing the selected key after
+	// a refusal releases the held "sign-in rejected" state at the next due read.
+	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
+	return ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
+		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Generation, 10) + ":zcode:" + stamp,
+		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
+		StillValid: func() bool {
+			current, effective := consent.Current()
+			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence
+		},
+		ConfigSource: &ZaiConfigSource{Tool: "zcode", SettingsPath: file}}, true
+}
+
+// zaiRecordChoseSource: a legacy GLM allow can be a bare tool grant from before ZCode's
+// route existed; only a recorded key, profile or other backend is a choice of source.
+func zaiRecordChoseSource(r consent.Record) bool {
+	return r.KeyEnv != "" || len(r.Profiles) > 0 || (r.Backend != "" && r.Backend != BackendNative)
+}
+
+// glmSourceConfigured: a GLM (Z.ai) source the user already chose in connections.json or
+// the legacy CodexBar file. It always wins over ZCode's default key; an unreadable
+// connections file counts as configured (fail closed).
+func glmSourceConfigured(p Paths) bool {
+	entries, err := LoadConnections(p.ConnectionsFile)
+	if err != nil {
+		return true
+	}
+	for _, e := range entries {
+		if e.Provider == "zai" {
+			return true
+		}
+	}
+	for _, provider := range legacyCodexBar(p.CodexBarFile) {
+		if provider == "zai" {
+			return true
+		}
+	}
+	return false
 }
 
 // InteractiveReaders is only used by an explicit foreground refresh. Quiet

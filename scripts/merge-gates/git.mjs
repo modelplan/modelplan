@@ -28,15 +28,17 @@ export const tree = (cwd, sha) => git(cwd, ["rev-parse", `${sha}^{tree}`]).trim(
 export const isAncestor = (cwd, a, b) => git(cwd, ["merge-base", "--is-ancestor", a, b], { allowFail: true }) !== null;
 export const mergeBase = (cwd, a, b) => (git(cwd, ["merge-base", a, b], { allowFail: true }) ?? "").trim() || null;
 
+// The commits reachable from sha that main does not have, as a Set of full ids.
+export function commitsOnlyIn(cwd, sha, mainRef) {
+  if (!ensure(cwd, sha)) throw new Error(`commit ${sha} not found`);
+  return new Set(git(cwd, ["rev-list", sha, `^${mainRef}`]).split("\n").filter(Boolean));
+}
+
 // The contribution between two commits as Git object identity: one record per changed path with old and
 // new mode and object id and the change letter, NUL-delimited, renames off. Unlike a patch id this sees
 // mode-only changes, binaries, symlinks and deletions exactly.
 export function contribution(cwd, from, to) {
   return git(cwd, ["diff", "--raw", "-z", "--no-renames", "--no-abbrev", "--no-ext-diff", "--no-textconv", from, to]);
-}
-
-export function changedPaths(cwd, from, to) {
-  return git(cwd, ["diff", "--name-only", "-z", "--no-renames", from, to]).split("\0").filter(Boolean);
 }
 
 // VERDICT-CARRY old -> new holds when new is a merge whose first parent is the reviewed head and whose

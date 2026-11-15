@@ -26,6 +26,7 @@ type cxTurn struct {
 	start time.Time // the current request's
 	first int64     // its first token, unix ms; 0 unknown
 	used  bool      // its usage was counted
+	base  *cxUsage  // the cumulative usage when the turn started
 }
 
 type codexParser struct {
@@ -33,6 +34,7 @@ type codexParser struct {
 	cwd      string // the session's, from its session_meta
 	done     []turn
 	total    *cxUsage
+	record   *cxUsage // the last usage record whose token_count notice has not been seen yet (G3-101)
 	probe    liveProbe
 	liveOnly bool
 }
@@ -56,7 +58,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 	t := p.cur
 	switch {
 	case event == "task_started" || event == "turn_started":
-		p.cur = &cxTurn{off: off, at: ts, start: ts, cwd: p.cwd}
+		p.cur = &cxTurn{off: off, at: ts, start: ts, cwd: p.cwd, base: p.total}
 	case kind == "session_meta":
 		var c struct {
 			Payload struct {
@@ -138,6 +140,22 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		if usage == nil || usage.Output == nil || *usage.Output < 0 {
 			return
 		}
+		// G3-101: Codex writes a usage record and then a token_count notice for the same
+		// response, and a tool call's output can land between them. The notice is the
+		// recorded response again, never a new request: counting it doubled the output
+		// and added a request with no generation time, so too few requests had a rate.
+		if kind == "token_usage_record" {
+			p.record = usage
+		} else if p.record != nil {
+			recorded := p.record
+			p.record = nil
+			if sameUsage(recorded, usage) {
+				if n := len(t.reqs); n > 0 && t.reqs[n-1].out == *usage.Output {
+					t.reqs[n-1].TokenKinds.enrich(usage.kinds())
+				}
+				return
+			}
+		}
 		if t.used {
 			// The token_count notice may add cache fields to the preceding usage record.
 			if n := len(t.reqs); n > 0 && t.reqs[n-1].out == *usage.Output {
@@ -193,9 +211,26 @@ func (p *codexParser) finish() ([]turn, int64) {
 	return p.done, -1
 }
 
+// resume and carry keep the cumulative usage baseline across runs: a cumulative-only usage record
+// appended after a read is measured from the total at the cursor, not dropped.
+func (p *codexParser) resume(c Cursor) { p.total = c.Total }
+
+func (p *codexParser) carry(next *Cursor, commit int64) {
+	next.Total = p.total
+	if p.cur != nil && commit == p.cur.off {
+		next.Total = p.cur.base // the unfinished turn is read again from its start
+	}
+}
+
 func clip(s string) string {
 	if len(s) > 96 {
 		return ""
 	}
 	return s
+}
+
+// sameUsage: one response's usage, as the record and its token_count notice both give it.
+func sameUsage(a, b *cxUsage) bool {
+	same := func(x, y *int64) bool { return x == nil || y == nil || *x == *y }
+	return a.Output != nil && b.Output != nil && *a.Output == *b.Output && same(a.Input, b.Input) && same(a.Cached, b.Cached)
 }

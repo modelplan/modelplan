@@ -106,17 +106,17 @@ func TestCodexRuntimeErrorOutput(t *testing.T) {
 						t.Fatal("optional identity failure changed quota success")
 					}
 				} else {
-					if err == nil || s == nil || s.Status != "error" || s.Error != "other" {
+					if err == nil || s == nil || s.Status != "error" || s.Error != "rpc_error" {
 						t.Error("fixed failure reason not retained")
 					}
 					if err != nil {
 						assertNoRuntimeCanary(t, "returned refresh error", err.Error())
 					}
-					if AccountDue(cache, acctNow.Add(29*time.Minute)) || !AccountDue(cache, acctNow.Add(30*time.Minute)) {
+					if AccountDue(cache, acctNow.Add(firstReadRetries[0]-time.Second)) || !AccountDue(cache, acctNow.Add(firstReadRetries[0])) {
 						t.Error("retry floor changed")
 					}
 				}
-				if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow.Add(time.Minute)); err != nil {
+				if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow.Add(time.Second)); err != nil {
 					t.Fatal("not-due refresh failed")
 				}
 				assertRuntimeCacheSafe(t, cache)
@@ -148,7 +148,7 @@ func TestKiroRuntimeErrorOutput(t *testing.T) {
 					e := fetchKiro(context.Background(), nil, "local", "", acctNow)
 					want, reason := "other", "other"
 					if name == "signed_out" {
-						want, reason = "unsupported_login", "Kiro CLI is signed out (kiro-cli login)"
+						want, reason = "not_signed_in", "Kiro CLI is signed out (kiro-cli login)"
 					}
 					if name == "old_runtime" {
 						want, reason = "schema_changed", "Kiro CLI is too old for its usage call; update it"

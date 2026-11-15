@@ -39,26 +39,28 @@ private actor DockHelpMemory: HintPreferenceWriting {
 
 /// All surfaces, timing and persistence are in-memory fakes; no AppKit surface is constructed.
 @MainActor final class DockHelpBindingTests: XCTestCase {
-    func testV1RingHintUsesRealAnchorOnceAndSuppressesLegacyHints() async throws {
+    func testV1FindHintPrecedesRingOnTheSameReveal() async throws {
         let store = DockHelpMemory(), clock = DockHelpClock(), timer = DockHelpTimer(), cockpit = DockHelpFake(), dock = DockHelpFake()
-        dock.kinds = [.ringRefresh, .ignition, .drag, .pinned]
+        dock.kinds = [.findWidget, .ringRefresh, .ignition, .drag, .pinned]
         let router = HelpOverlayRouter(cockpit: cockpit)
         let host = await HintExecutionHost.restored(persistence: store, scheduler: timer, overlay: router, uptime: { clock.now })
         let binding = DockHelpBinding(presenter: dock, isCurrent: { _ in true }); router.installDock(binding)
         var context = HintContext(); context.v1MinimalHints = true; context.ringRefreshAvailable = true
-        let first = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false,
-                                    anchors: [.ringRefresh: CGRect(x: 1, y: 1, width: 4, height: 4)])
-        try binding.update(first, context: context, host: host)
-        XCTAssertEqual(dock.offers.map(\.kind), [.ringRefresh])
+        context.widgetConcealed = true; context.statusAnchorAvailable = true // D114: the find hint follows a collapse
+        let surface = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false,
+            anchors: [.findWidget: CGRect(x: 1, y: 1, width: 4, height: 4), .ringRefresh: CGRect(x: 9, y: 1, width: 4, height: 4)])
+        try binding.update(surface, context: context, host: host)
+        XCTAssertEqual(dock.offers.map(\.kind), [.findWidget])
         await host.flushPersistence()
-        try binding.update(nil, context: context, host: host)
-        clock.now = 1
-        let second = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false,
-                                     anchors: [.ringRefresh: CGRect(x: 1, y: 1, width: 4, height: 4)])
-        try binding.update(second, context: context, host: host)
-        XCTAssertEqual(dock.offers.map(\.kind), [.ringRefresh])
+        host.dismiss(); clock.now = 1
+        try binding.update(surface, context: context, host: host)
+        XCTAssertEqual(dock.offers.map(\.kind), [.findWidget, .ringRefresh])
+        host.dismiss(); clock.now = 2
+        try binding.update(surface, context: context, host: host)
+        XCTAssertEqual(dock.offers.map(\.kind), [.findWidget, .ringRefresh])
+        await host.flushPersistence()
         let saved = await store.snapshot()
-        XCTAssertEqual(saved.preferences.helpHints.seen, [.ringRefresh])
+        XCTAssertEqual(saved.preferences.helpHints.seen, [.findWidget, .ringRefresh])
     }
     func testV1FindHintRequiresVisibleStatusAnchorAndIsShownOnce() async throws {
         let store = DockHelpMemory(), clock = DockHelpClock(), timer = DockHelpTimer(), cockpit = DockHelpFake(), dock = DockHelpFake()
@@ -81,6 +83,58 @@ private actor DockHelpMemory: HintPreferenceWriting {
         XCTAssertEqual(dock.offers.map(\.kind), [.findWidget])
         let saved = await store.snapshot()
         XCTAssertEqual(saved.preferences.helpHints.seen, [.findWidget])
+    }
+    /// D114: no find hint while the widget is expanded; the first collapse shows it once and saves it.
+    func testD114CollapseHintAppearsOnlyAfterTheFirstCollapseAndOnce() async throws {
+        let store = DockHelpMemory(), clock = DockHelpClock(), timer = DockHelpTimer(), cockpit = DockHelpFake(), dock = DockHelpFake()
+        dock.kinds = [.findWidget]
+        let router = HelpOverlayRouter(cockpit: cockpit)
+        let host = await HintExecutionHost.restored(persistence: store, scheduler: timer, overlay: router, uptime: { clock.now })
+        let binding = DockHelpBinding(presenter: dock, isCurrent: { _ in true }); router.installDock(binding)
+        let anchors: [FirstUseHintKind: CGRect] = [.findWidget: CGRect(x: 1, y: 1, width: 4, height: 4)]
+        var context = HintContext(); context.v1MinimalHints = true; context.statusAnchorAvailable = true
+        let expanded = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false, anchors: anchors)
+        try binding.update(expanded, context: context, host: host)
+        XCTAssertTrue(dock.offers.isEmpty, "an expanded widget shows no hint")
+        context.widgetConcealed = true; clock.now = 1
+        let strip = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false, anchors: anchors)
+        try binding.update(strip, context: context, host: host)
+        XCTAssertEqual(dock.offers.map(\.kind), [.findWidget], "the first collapse shows it")
+        await host.flushPersistence()
+        host.dismiss(); clock.now = 2
+        let again = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false, anchors: anchors)
+        try binding.update(again, context: context, host: host)
+        XCTAssertEqual(dock.offers.map(\.kind), [.findWidget], "never repeats")
+        let saved = await store.snapshot()
+        XCTAssertEqual(saved.preferences.helpHints.seen, [.findWidget])
+    }
+    func testShownHintFollowsLayoutRefreshesAndEndsOnADrag() async throws {
+        let store = DockHelpMemory(), clock = DockHelpClock(), timer = DockHelpTimer(), cockpit = DockHelpFake(), dock = DockHelpFake()
+        dock.kinds = [.findWidget]
+        let router = HelpOverlayRouter(cockpit: cockpit)
+        let host = await HintExecutionHost.restored(persistence: store, scheduler: timer, overlay: router, uptime: { clock.now })
+        let binding = DockHelpBinding(presenter: dock, isCurrent: { _ in true }); router.installDock(binding)
+        var context = HintContext(); context.v1MinimalHints = true
+        context.widgetConcealed = true; context.statusAnchorAvailable = true // D114: the find hint follows a collapse
+        let reveal = UUID(), anchor = CGRect(x: 1, y: 1, width: 4, height: 4)
+        func surface(_ rect: CGRect, dragging: Bool = false) -> DockHelpSurface {
+            .init(revealID: reveal, layoutID: UUID(), visible: true, dragging: dragging, anchors: [.findWidget: rect])
+        }
+        try binding.update(surface(anchor), context: context, host: host)
+        XCTAssertEqual(host.hints.visible?.offer.kind, .findWidget)
+        clock.now = 0.25
+        try binding.update(surface(anchor), context: context, host: host)
+        XCTAssertEqual(host.hints.visible?.offer.kind, .findWidget, "a refresh of the same layout must not end the hint")
+        clock.now = 0.5
+        try binding.update(surface(anchor), context: context, host: host)
+        XCTAssertEqual(host.hints.visible?.offer.kind, .findWidget, "the kept hint stays verifiable on the newer surface")
+        clock.now = 0.75
+        try binding.update(surface(anchor.offsetBy(dx: 0, dy: 40)), context: context, host: host)
+        XCTAssertEqual(host.hints.visible?.offer.kind, .findWidget, "rows arriving move the anchor, and the hint follows")
+        XCTAssertTrue(dock.hidden.isEmpty)
+        clock.now = 1
+        try binding.update(surface(anchor, dragging: true), context: context, host: host)
+        XCTAssertNil(host.hints.visible, "a drag takes the widget away from under the hint")
     }
     private func surface(_ id: UUID = UUID(), layout: UUID = UUID(), visible: Bool = true, dragging: Bool = false) -> DockHelpSurface {
         .init(revealID: id, layoutID: layout, visible: visible, dragging: dragging,

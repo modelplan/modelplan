@@ -8,6 +8,10 @@ archive_dir=${1:?Pass directory with pinned official CLI archives and checksums.
 output_dir=${2:?Pass a new local output directory}
 identity_mode=release
 configuration=release
+# Owner D39/D-E: only owner test builds open the cockpit entry; release packages keep it closed (preflight PF-08)
+# until the owner accepts the cockpit.
+cockpit_entry=false
+owner_test_plist=''
 # U7 consumes an independently approved prebuilt artifact; packaging never builds/signs it.
 credential_artifact=${MODELPLAN_CREDENTIAL_AGENT_ARTIFACT:?Pass the approved prebuilt universal helper directory}
 credential_sha=${MODELPLAN_CREDENTIAL_AGENT_SHA256:?Pass its independently approved SHA-256}
@@ -25,18 +29,33 @@ case "${3:-}" in
     '') ;;
     --unverified) identity_mode=unverified ;;
     --e2e-journey) identity_mode=unverified; configuration=debug ;;
-    *) echo 'Optional third argument must be --unverified or --e2e-journey (CI only)' >&2; exit 1 ;;
+    --owner-test) identity_mode=unverified; cockpit_entry=true
+        owner_test_plist='<key>ModelPlanOwnerTestBuild</key><true/>'$'\n' ;;
+    *) echo 'Optional third argument must be --unverified, --e2e-journey or --owner-test (CI only)' >&2; exit 1 ;;
 esac
 if [ "$#" -gt 3 ]; then echo 'Too many packaging arguments' >&2; exit 1; fi
 if [ -e "$output_dir" ]; then echo 'Output directory already exists; refusing overwrite' >&2; exit 1; fi
 public_source=$(git -C "$repo_root" rev-parse HEAD)
 if [ -n "$(git -C "$repo_root" status --porcelain)" ]; then echo "Source tree must be clean" >&2; exit 1; fi
+if [ "$cockpit_entry" = true ]; then
+    # The canonical cockpit editions; their native admission pins are generated from these exact bytes
+    # (never committed) into a gitignored Swift file that the App build below compiles in.
+    npm ci --prefix "$repo_root/desktop/cockpit" --ignore-scripts
+    npm run build --prefix "$repo_root/desktop/cockpit"
+    npm run build:official --prefix "$repo_root/desktop/cockpit"
+    python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --repo "$repo_root" --write
+else
+    # No cockpit page in this package, so no pins: never compile in a stale generated file from an earlier build.
+    rm -f "$native_root/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CockpitBundlePins.generated.swift"
+fi
 mkdir -p "$output_dir"
 archive_dir=$(cd "$archive_dir" && pwd)
 output_dir=$(cd "$output_dir" && pwd)
 export CLANG_MODULE_CACHE_PATH="$output_dir/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$output_dir/module-cache"
+# Both pinned CLI inputs still feed the existing consent-identity receipt; only arm64 is built and bundled.
 for architecture in arm64 x86_64; do
+    if [ "$architecture" = arm64 ]; then
     if [ "$configuration" = debug ]; then
         swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
             --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration debug \
@@ -46,6 +65,7 @@ for architecture in arm64 x86_64; do
     swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
         --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration release \
         --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp
+    fi
     fi
     archive_arch=$architecture
     if [ "$architecture" = x86_64 ]; then archive_arch=amd64; fi
@@ -58,7 +78,11 @@ for architecture in arm64 x86_64; do
 done
 app="$output_dir/ModelPlan Community.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
-# The native factory uses the unchanged MIT tray template from this SwiftPM resource bundle.
+if [ "$cockpit_entry" = true ]; then
+    cp -R "$repo_root/desktop/cockpit/.tmp/official" "$app/Contents/Resources/Cockpit"
+    printf '%s\n' '{"edition": "official", "stage": "owner-test"}' > "$app/Contents/Resources/build-edition.json"
+fi
+# The native factory uses the reserved-licence outline tray template from this SwiftPM resource bundle.
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanDockResources_ModelPlanDockResources.bundle" "$app/Contents/Resources/"
@@ -69,33 +93,58 @@ if [ -z "$mark_path" ] || [ "$(printf '%s\n' "$mark_path" | wc -l | tr -d ' ')" 
     echo 'Expected exactly one beta-only Z.ai mark in the Dock resources bundle' >&2; exit 1
 fi
 rm -- "$mark_path"
-xcrun lipo -create "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" \
-    "$output_dir/build-x86_64/x86_64-apple-macosx/$configuration/ModelPlanCommunityApp" -output "$app/Contents/MacOS/ModelPlanCommunity"
-xcrun lipo -create "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan" -output "$app/Contents/Helpers/modelplan"
-cat > "$app/Contents/Info.plist" <<'PLIST'
+# The community build ships the official appearance, under the reserved visuals licence.
+cp "$repo_root/desktop/official-visuals/icons/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+cp "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" "$app/Contents/MacOS/ModelPlanCommunity"
+cp "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$app/Contents/Helpers/modelplan"
+if [ "$cockpit_entry" = true ]; then
+    # The App admits exactly the page it ships: Resources/Cockpit is the built edition and its pin is in the executable.
+    python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --repo "$repo_root" --app "$app"
+fi
+cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
 <key>CFBundleName</key><string>ModelPlan Community</string>
 <key>CFBundleDisplayName</key><string>ModelPlan Community</string>
 <key>CFBundleIdentifier</key><string>org.modelplan.community.swift.scaffold</string>
 <key>CFBundleExecutable</key><string>ModelPlanCommunity</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
-<key>ModelPlanCockpitEntryEnabled</key><false/>
-<key>NSHighResolutionCapable</key><true/>
-<key>NSHumanReadableCopyright</key><string>MIT community software. Intel untested; 3D may stutter.</string>
+<key>ModelPlanCockpitEntryEnabled</key><$cockpit_entry/>
+$owner_test_plist<key>NSHighResolutionCapable</key><true/>
+<key>NSHumanReadableCopyright</key><string>MIT community software. Apple silicon only.</string>
 </dict></plist>
 PLIST
+# SET-9-38: user-visible Info.plist text (app name, copyright) in both declared localizations.
+mkdir -p "$app/Contents/Resources/en.lproj" "$app/Contents/Resources/zh-Hans.lproj"
+cat > "$app/Contents/Resources/en.lproj/InfoPlist.strings" <<'STRINGS'
+"CFBundleDisplayName" = "ModelPlan Community";
+"NSHumanReadableCopyright" = "MIT community software. Apple silicon only.";
+STRINGS
+cat > "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings" <<'STRINGS'
+"CFBundleDisplayName" = "ModelPlan 社区版";
+"NSHumanReadableCopyright" = "开源社区软件。仅支持苹果芯片。";
+STRINGS
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"
 cp "$repo_root/THIRD-PARTY-TRADEMARKS.md" "$app/Contents/Resources/THIRD-PARTY-TRADEMARKS.md"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
 python3 "$credential_tools/embed_fixed_helper.py" --artifact "$credential_artifact" \
     --expected-sha256 "$credential_sha" --universal "$app"
+# Refuse malformed, Intel or universal executables before sealing the app.
+for executable in "$app/Contents/MacOS/ModelPlanCommunity" "$app/Contents/Helpers/modelplan"; do
+    architecture=$(xcrun lipo -archs "$executable")
+    if [ "$architecture" != arm64 ]; then echo 'Bundled executable must contain exactly arm64' >&2; exit 1; fi
+done
+python3 "$native_root/tools/distribution/check_app_architectures.py" --app "$app" \
+    --main "$app/Contents/MacOS/ModelPlanCommunity" --approved-helper-sha256 "$credential_sha"
 codesign --force --sign - --options runtime "$app/Contents/Helpers/modelplan"
 shasum -a 256 "$app/Contents/Helpers/modelplan" | awk '{print $1}' > "$app/Contents/Resources/modelplan.sha256"
 python3 "$native_root/tools/write-consent-bundle-identity.py" --mode "$identity_mode" --app "$app" --public-source "$public_source" \

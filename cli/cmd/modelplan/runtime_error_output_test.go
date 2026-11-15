@@ -107,7 +107,7 @@ func TestRuntimeErrorsStayOutOfCLIJSONAndLogs(t *testing.T) {
 				if err := testenv.CheckCLIReasonLog(string(logged)); err != nil {
 					t.Error(err)
 				}
-				if provider == "codex" && stage != 3 && !strings.Contains(string(logged), "codex account: other") {
+				if provider == "codex" && stage != 3 && !strings.Contains(string(logged), "codex account: rpc_error") {
 					t.Error("CLI did not report the fixed failure")
 				}
 				capture := "codex-account.json"
@@ -121,7 +121,11 @@ func TestRuntimeErrorsStayOutOfCLIJSONAndLogs(t *testing.T) {
 				if err := testenv.CheckReaderReasons(retained); err != nil {
 					t.Error(err)
 				}
-				if stage != 3 && !bytes.Contains(retained, []byte(`"error": "other"`)) {
+				wantCode := `"error": "other"`
+				if provider == "codex" {
+					wantCode = `"error": "rpc_error"` // a JSON-RPC error reply from the runtime
+				}
+				if stage != 3 && !bytes.Contains(retained, []byte(wantCode)) {
 					t.Error("expected retained safe failure missing")
 				}
 				for _, args := range [][]string{
