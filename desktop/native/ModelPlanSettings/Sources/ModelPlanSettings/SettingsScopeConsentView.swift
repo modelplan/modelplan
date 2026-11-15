@@ -828,8 +828,21 @@ public struct SubscriptionRowsContext {
         self.subscriptions = subscriptions; self.orderedIDs = orderedIDs; self.hiddenIDs = hiddenIDs; self.canSave = canSave; self.canResetOrder = canResetOrder
     }
     var signature: String {
-        subscriptions.map { [$0.id, $0.name.english, $0.plan, $0.vendor, $0.tool, $0.source.rawValue, $0.causeCode ?? "", $0.isUnstable ? "u" : "s"].joined(separator: "\u{1F}") }
-            .joined(separator: "\u{1E}") + "|" + orderedIDs.joined(separator: ",") + "|" + hiddenIDs.sorted().joined(separator: ",") + "|" + (canSave ? "1" : "0") + (canResetOrder ? "r" : "")
+        let fieldSeparator: String = "\u{1F}", rowSeparator: String = "\u{1E}"
+        var rows: [String] = []
+        for sub in subscriptions {
+            let cause: String = sub.causeCode ?? ""
+            let stability: String = sub.isUnstable ? "u" : "s"
+            let fields: [String] = [sub.id, sub.name.english, sub.plan, sub.vendor, sub.tool, sub.source.rawValue, cause, stability]
+            rows.append(fields.joined(separator: fieldSeparator))
+        }
+        let subscriptionPart: String = rows.joined(separator: rowSeparator)
+        let orderPart: String = orderedIDs.joined(separator: ",")
+        let hiddenPart: String = hiddenIDs.sorted().joined(separator: ",")
+        let saveFlag: String = canSave ? "1" : "0"
+        let resetFlag: String = canResetOrder ? "r" : ""
+        let parts: [String] = [subscriptionPart, orderPart, hiddenPart, saveFlag + resetFlag]
+        return parts.joined(separator: "|")
     }
 }
 
