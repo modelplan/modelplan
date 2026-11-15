@@ -8,10 +8,12 @@ import ModelPlanSettings
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
-/// G3-120: the ring card opens and closes like Pulse. Timing model (DockCardInteraction):
-/// open after a 250 ms dwell on one ring; a quicker pass opens nothing; one card at a time, switching at
-/// once to another ring; held by its ring, the card and the band between them; closed 250 ms after the
-/// pointer leaves that hold, at once on a press outside it. Every check runs on an injected clock.
+/// G3-120 / G3-114: the ring card opens and closes like Pulse (qunqin24/Pulse 7668384, behaviour only).
+/// Timing model (DockCardInteraction): a ring's card opens on arrival, with no dwell (Pulse `select`; the 250 ms
+/// `notchDwell` is the notch housing's, never a ring's); one card at a time, switching at once to another ring;
+/// held by its ring, the card and the band between them; closed on the first 150 ms sample off that hold (Pulse
+/// `PanelPointerWatcher.interval`, `pointerMoved` -> `deselect`), at once on a press outside it; closed when a
+/// carry starts, and not reopened by the drop alone (FUC:204-206). Every check runs on an injected clock.
 @MainActor private final class RingCardDeadlines: DockEdgeScheduling {
     var deadline: TimeInterval?
     func arm(at deadline: TimeInterval, _ action: @escaping @MainActor () -> Void) { self.deadline = deadline }
@@ -34,76 +36,68 @@ import ModelPlanWire
         controller.start()
         return Rig(controller: controller, deadlines: deadlines)
     }
-    private func at(_ time: TimeInterval, _ rig: Rig, hover: String?, inside: Bool?, pressed: Bool = false) {
-        now = time; env.hoveredID = hover; env.insideShared = inside; env.pressedOutside = pressed
+    private func at(_ time: TimeInterval, _ rig: Rig, hover: String?, inside: Bool?, pressed: Bool = false, carrying: Bool = false) {
+        now = time; env.hoveredID = hover; env.insideShared = inside; env.pressedOutside = pressed; env.carrying = carrying
         env.hoverEventRevision &+= 1
         rig.controller.refresh()
     }
     private func open(_ rig: Rig, _ id: String = "a") {
         at(now, rig, hover: id, inside: true)
-        at(now + DockCardInteraction.entryDwell, rig, hover: id, inside: true)
         XCTAssertEqual(rig.card, id)
     }
 
     func testTimingModelConstants() {
-        XCTAssertEqual(DockCardInteraction.entryDwell, 0.250)
-        XCTAssertEqual(DockCardInteraction.independentLeaveGrace, 0.250)
+        XCTAssertEqual(DockCardInteraction.leaveSample, 0.150, "Pulse PanelPointerWatcher.interval")
     }
 
-    func testOpensAfterTheDwellAndNotBefore() {
+    /// Fails before: the card waited out a 250 ms ring dwell that Pulse does not have.
+    func testARingOpensItsCardOnArrivalWithNoDwell() {
         let r = rig()
         at(1.0, r, hover: "a", inside: true)
-        XCTAssertNil(r.card)
-        XCTAssertEqual(r.deadlines.deadline ?? -1, 1.25, accuracy: 0.0001, "the open is armed at the dwell deadline")
-        at(1.249, r, hover: "a", inside: true)
-        XCTAssertNil(r.card, "not before the dwell")
-        at(1.25, r, hover: "a", inside: true)
-        XCTAssertEqual(r.card, "a")
+        XCTAssertEqual(r.card, "a", "the card opens on the first sample on the ring")
+        XCTAssertEqual(r.deadlines.deadline ?? -1, 1.15, accuracy: 0.0001, "an open card is re-sampled every 150 ms")
     }
 
-    func testAQuickPassOpensNothing() {
+    func testAPassOverTheRingsShowsEachInTurnAndLeavingClosesOnTheNextSample() {
         let r = rig()
         at(1.0, r, hover: "a", inside: true)
+        at(1.05, r, hover: "b", inside: true)
+        XCTAssertEqual(r.card, "b", "one card at a time, the ring under the pointer")
         at(1.1, r, hover: nil, inside: false)
+        XCTAssertEqual(r.card, "b")
         at(1.3, r, hover: nil, inside: false)
-        at(2.0, r, hover: nil, inside: false)
-        XCTAssertNil(r.card, "a pointer that crossed the ring and left opens no card")
-        // Crossing two rings in turn restarts the dwell for each; neither opens on the way.
-        at(3.0, r, hover: "a", inside: true)
-        at(3.2, r, hover: "b", inside: true)
-        at(3.3, r, hover: "a", inside: true)
-        XCTAssertNil(r.card)
+        XCTAssertNil(r.card, "closed by the next sample after the pointer left")
     }
 
     func testTheCardStaysWhileThePointerCrossesFromRingToCard() {
         let r = rig(); now = 1; open(r)
-        // Off the ring, inside the band between ring and card, then on the card: well past the grace.
+        // Off the ring, inside the band between ring and card, then on the card: many samples long.
         for step in 1...20 { at(now + 0.1, r, hover: nil, inside: true); XCTAssertEqual(r.card, "a", "step \(step)") }
     }
 
-    func testLeavingClosesAfterTheGraceAndComingBackCancelsIt() {
+    func testLeavingClosesOnTheNextSampleAndComingBackCancelsIt() {
         let r = rig(); now = 1; open(r)
         let left = now + 0.1
         at(left, r, hover: nil, inside: false)
-        XCTAssertEqual(r.card, "a", "the grace starts on the first outside sample")
-        XCTAssertEqual(r.deadlines.deadline ?? -1, left + DockCardInteraction.independentLeaveGrace, accuracy: 0.0001)
-        at(left + 0.2, r, hover: nil, inside: true)
-        at(left + 0.3, r, hover: nil, inside: false)
-        at(left + 0.3 + 0.249, r, hover: nil, inside: false)
-        XCTAssertEqual(r.card, "a", "an inside sample restarted the grace")
-        at(left + 0.3 + 0.25, r, hover: nil, inside: false)
-        XCTAssertNil(r.card, "closed once the pointer stayed out for the grace")
+        XCTAssertEqual(r.card, "a", "the first outside sample arms the close")
+        XCTAssertEqual(r.deadlines.deadline ?? -1, left + DockCardInteraction.leaveSample, accuracy: 0.0001)
+        at(left + 0.1, r, hover: nil, inside: true)
+        at(left + 0.2, r, hover: nil, inside: false)
+        at(left + 0.2 + 0.149, r, hover: nil, inside: false)
+        XCTAssertEqual(r.card, "a", "an inside sample called the close off")
+        at(left + 0.2 + 0.15, r, hover: nil, inside: false)
+        XCTAssertNil(r.card, "closed once the next sample was still outside")
         XCTAssertNil(r.deadlines.deadline, "nothing left armed after the close")
     }
 
     func testAPressOutsideClosesAtOnce() {
         let r = rig(); now = 1; open(r)
         at(now + 0.01, r, hover: nil, inside: false, pressed: true)
-        XCTAssertNil(r.card, "an outside click closes without the grace")
-        // A press inside the hold (the card, its ring, or a held widget carry) keeps it.
+        XCTAssertNil(r.card, "an outside click closes without waiting for a sample")
+        // A press inside the hold (the card, its ring, or a held widget press) keeps it.
+        at(now + 0.01, r, hover: nil, inside: false)
         open(r)
         at(now + 0.01, r, hover: nil, inside: true, pressed: false)
-        env.pressedOutside = false
         XCTAssertEqual(r.card, "a")
     }
 
@@ -121,11 +115,28 @@ import ModelPlanWire
         var shown = [String?]()
         r.controller.onPresent = { shown.append($0.card.subscriptionID) }
         at(now + 0.01, r, hover: "b", inside: true)
-        XCTAssertEqual(r.card, "b", "with a card open, the next ring's card shows without a second dwell")
+        XCTAssertEqual(r.card, "b", "with a card open, the next ring's card shows at once")
         at(now + 0.01, r, hover: "a", inside: true)
         XCTAssertEqual(r.card, "a")
         XCTAssertTrue(shown.allSatisfy { $0 != nil }, "the switch never passes through a closed card")
         XCTAssertEqual(shown, ["b", "a"], "exactly one card at each step")
+    }
+
+    /// G3-114 (Pulse FUC:204-206): a carry closes the card on its first moved frame; nothing opens while it is held,
+    /// and the drop alone does not reopen the card of the ring that was carried under the pointer.
+    func testACarryClosesTheCardAndTheDropAloneReopensNothing() {
+        let r = rig(); now = 1; open(r)
+        at(now + 0.01, r, hover: "a", inside: true, carrying: true)
+        XCTAssertNil(r.card, "the carry closes the card at once")
+        XCTAssertNil(r.deadlines.deadline, "nothing is armed while carried")
+        at(now + 0.2, r, hover: "b", inside: true, carrying: true)
+        XCTAssertNil(r.card, "sweeping the rings while carried opens nothing")
+        at(now + 0.01, r, hover: "b", inside: true)
+        at(now + 0.5, r, hover: "b", inside: true)
+        XCTAssertNil(r.card, "the drop alone reopens nothing")
+        at(now + 0.01, r, hover: nil, inside: false)
+        at(now + 0.01, r, hover: "b", inside: true)
+        XCTAssertEqual(r.card, "b", "arriving on a ring after the drop opens it as usual")
     }
 }
 
@@ -208,22 +219,18 @@ private actor RingCardClient: EngineClient {
     }
 
     /// Fails before G3-120: only a tracking event could name the ring, so a widget that opened under a
-    /// resting pointer (no mouse-moved yet) never opened its card.
-    func testARingUnderARestingPointerOpensItsCardAfterTheDwellWithoutAnyHoverEvent() async throws {
+    /// resting pointer (no mouse-moved yet) never opened its card; and the card then waited out a ring dwell.
+    func testARingUnderARestingPointerOpensItsCardOnTheFirstSampleWithoutAnyHoverEvent() async throws {
         let (dock, id, ring) = try await widget()
         pointer = CGPoint(x: ring.midX, y: ring.midY)
         tick(dock, 0)
-        XCTAssertTrue(dock.card.isHidden, "not before the dwell")
-        tick(dock, 0.2)
-        XCTAssertTrue(dock.card.isHidden)
-        tick(dock, 0.06)
-        XCTAssertFalse(dock.card.isHidden, "the sampled ring opens its card after 250 ms")
+        XCTAssertFalse(dock.card.isHidden, "the sampled ring opens its card at once, no dwell")
         XCTAssertEqual(dock.interactionControllerForChecks?.presentation?.card.subscriptionID, id)
     }
 
     /// Fails before G3-120: the whole widget body held an open card, so a pointer resting on the widget away
     /// from the ring kept the card up indefinitely ("stays up far too long").
-    func testThePointerRestingOnTheWidgetBodyAwayFromTheRingClosesTheCardAfterTheGrace() async throws {
+    func testThePointerRestingOnTheWidgetBodyAwayFromTheRingClosesTheCardOnTheNextSample() async throws {
         let (dock, id, ring) = try await widget()
         let placement = try XCTUnwrap(dock.edgePresentation?.placement)
         pointer = CGPoint(x: ring.midX, y: ring.midY)
@@ -248,9 +255,9 @@ private actor RingCardClient: EngineClient {
         try XCTUnwrap(dock.dockView.nozzleEventDelegate).hoverNozzle(nil)
         XCTAssertEqual(dock.interactionEnvironment().insideShared, false, "the widget body is not the card's hold")
         tick(dock, 0.1)
-        XCTAssertFalse(dock.card.isHidden, "still inside the grace")
-        tick(dock, 0.26)
-        XCTAssertTrue(dock.card.isHidden, "closed 250 ms after the pointer left the ring and card")
+        XCTAssertFalse(dock.card.isHidden, "the first outside sample only arms the close")
+        tick(dock, 0.16)
+        XCTAssertTrue(dock.card.isHidden, "closed by the next 150 ms sample off the ring and card")
     }
 
     func testTheBandBetweenRingAndCardHoldsTheCard() async throws {
@@ -284,8 +291,8 @@ private actor RingCardClient: EngineClient {
         tick(dock, 1)
         XCTAssertFalse(dock.card.isHidden, "resting on the card keeps it")
         pointer = CGPoint(x: 700, y: 450)
-        tick(dock, 0.1); tick(dock, 0.2)
-        XCTAssertTrue(dock.card.isHidden, "off ring, band and card: closed after the grace")
+        tick(dock, 0.1); tick(dock, 0.16)
+        XCTAssertTrue(dock.card.isHidden, "off ring, band and card: closed on the next sample")
         cardFrame = nil
     }
 
@@ -299,7 +306,7 @@ private actor RingCardClient: EngineClient {
         pointer = CGPoint(x: 200, y: 400); pressed = true
         try XCTUnwrap(dock.dockView.nozzleEventDelegate).hoverNozzle(nil)
         tick(dock, 0)
-        XCTAssertTrue(dock.card.isHidden, "an outside press closes without the grace")
+        XCTAssertTrue(dock.card.isHidden, "an outside press closes at once")
         pressed = false
     }
 
