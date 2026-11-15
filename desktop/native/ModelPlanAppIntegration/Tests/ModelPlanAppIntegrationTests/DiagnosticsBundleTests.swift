@@ -179,37 +179,20 @@ final class DiagnosticsBundleTests: XCTestCase {
     }
 
     /// glm-963-2: a reply that arrives in several pipe reads is kept whole, not just its first chunk.
-    /// Post-merge sampling 11-15: engine.log already holds projected panic records; export must keep them as they
-    /// are (type and original length), and still project raw records.
-    func testExportKeepsAnAlreadyProjectedPanicRecord() {
+    /// #992 ruling: export projects every engine record again, so a pre-shaped line (one that imitates the
+    /// projected grammar, type slot included) carries no extra text into the bundle. The type and original length
+    /// of a projected record are not kept (provenance marker tracked in #989).
+    func testExportReprojectsEveryEngineRecordIncludingPreShapedOnes() {
         let stamp = "2026-11-14T20:14:13.400-08:00 pid=4242 "
-        let logged = EngineStderrProjection.project("panic: (*errors.errorString) 0xc000012345")
-        XCTAssertEqual(logged, "panic: type=*errors.errorString <message redacted, 34 bytes>")
-        let kept = [logged, "panic: runtime error: <message redacted, 12 bytes> [recovered]", "fatal error: <message redacted, 7 bytes>"]
-        let exported = DiagnosticsBundleFilter.engineLog(kept.map { stamp + $0 }.joined(separator: "\n"))
-        for line in kept { XCTAssertTrue(exported.contains(stamp + line + "\n") || exported.hasSuffix(stamp + line), "\(line) changed:\n\(exported)") }
-        // A raw record is still projected, and free text that only imitates the grammar keeps no extra text.
+        let types = ["synthetic.private", "*errors.errorString", "two words.here", "person@private.example",
+                     "https://private.example/path.x", String(repeating: "a", count: 90) + ".T"]
+        for type in types {
+            let message = "type=\(type) <message redacted, 3 bytes>"
+            let out = DiagnosticsBundleFilter.engineLog(stamp + "panic: " + message)
+            XCTAssertEqual(out, stamp + "panic: <message redacted, \(message.utf8.count) bytes>")
+            XCTAssertFalse(out.contains(type), out)
+        }
         XCTAssertEqual(DiagnosticsBundleFilter.engineLog(stamp + "panic: secret words"), stamp + "panic: <message redacted, 12 bytes>")
-        XCTAssertEqual(DiagnosticsBundleFilter.engineLog(stamp + "panic: type=secret words <message redacted, 3 bytes>"),
-                       stamp + "panic: <message redacted, 45 bytes>")
-    }
-
-    /// macrevb-992-1: free text in the type slot of a record that imitates the projected grammar is not kept.
-    func testExportReprojectsHostileTypeSlotText() {
-        let stamp = "2026-11-14T20:14:13.400-08:00 pid=4242 "
-        let long = String(repeating: "a", count: 90) + ".T"
-        let hostile = ["two words.here", "\"quoted.text\"", "https://private.example/path.x", "person@private.example",
-                       "a'b.c", long, "x<y.z"]
-        for type in hostile {
-            let raw = "panic: type=\(type) <message redacted, 3 bytes>"
-            let out = DiagnosticsBundleFilter.engineLog(stamp + raw)
-            XCTAssertFalse(out.contains(type), "\(type) survived: \(out)")
-            XCTAssertEqual(out, stamp + "panic: <message redacted, \(raw.utf8.count - "panic: ".utf8.count) bytes>")
-        }
-        for type in ["*errors.errorString", "*[]pkg.T", "runtime.boundsError", "github.com/x/y.T"] {
-            let line = stamp + "panic: type=\(type) <message redacted, 9 bytes>"
-            XCTAssertEqual(DiagnosticsBundleFilter.engineLog(line), line)
-        }
     }
 
     func testDoctorOutputWrittenInChunksIsKeptWhole() throws {
