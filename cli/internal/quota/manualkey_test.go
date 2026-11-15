@@ -86,7 +86,7 @@ func TestManualKeyFileIs0600AndHoldsOneEntryPerProvider(t *testing.T) {
 		t.Fatalf("go entry = %+v %v", k, ok)
 	}
 	entries, _ := os.ReadDir(dir)
-	if len(entries) != 1 {
+	if len(entries) != 2 { // the key file and observed/ (key generations)
 		t.Fatalf("temporary files left behind: %v", entries)
 	}
 	if err := RemoveManualKey(dir, "zai"); err != nil || ManualKeyPresent(dir, "zai") || !ManualKeyPresent(dir, "opencodego") {
@@ -712,5 +712,127 @@ func TestFinishedReadIsNotPublishedWhenItsKeyChangesWhileALaterProviderIsHeld(t 
 	}
 	if !got["zai"] {
 		t.Fatalf("GLM's reading (its key unchanged) should still be published: %v", got)
+	}
+}
+
+func cachedProviders(t *testing.T, cache string) map[string]bool {
+	t.Helper()
+	got := map[string]bool{}
+	if s := loadNative(cache); s != nil {
+		for _, e := range s.Providers {
+			got[e.Provider] = true
+		}
+	}
+	return got
+}
+
+// macrev2-993-1 (reproduction 1): a reading carried over from the cache (not due) by a refresh that is still waiting for a
+// later provider must not be written back after the key was replaced or removed.
+func TestCarriedCachedReadingIsNotWrittenBackAfterTheKeyChanges(t *testing.T) {
+	for _, change := range []string{"replace", "remove"} {
+		t.Run(change, func(t *testing.T) {
+			isolateHome(t)
+			arrived, release := make(chan struct{}, 1), make(chan struct{})
+			var once sync.Once
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") == "Bearer "+fakeZaiKey {
+					once.Do(func() { arrived <- struct{}{}; <-release })
+					w.Write([]byte(zaiOKBody))
+					return
+				}
+				w.Write([]byte(goOKBody))
+			}))
+			t.Cleanup(srv.Close)
+			useClient(t, srv, "opencode.ai", "api.z.ai", "open.bigmodel.cn")
+			p := nativePaths(t)
+			if err := SetManualKey(p.Cache, "opencodego", fakeGoKey, ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "opencodego", Backend: BackendNative, Enabled: true}); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now()
+			if err := RefreshNative(context.Background(), p, now); err != nil {
+				t.Fatal(err)
+			}
+			if !cachedProviders(t, p.Cache)["opencodego"] {
+				t.Fatal("the first refresh did not cache OpenCode Go")
+			}
+			if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+				t.Fatal(err)
+			}
+			if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "zai", Backend: BackendNative, Enabled: true}); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- RefreshNative(context.Background(), p, now.Add(time.Minute)) }() // OpenCode Go is not due: carried
+			select {
+			case <-arrived:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the held read did not start")
+			}
+			var err error
+			if change == "replace" {
+				err = SetManualKey(p.Cache, "opencodego", "fake-opencode-key-0009", "")
+			} else {
+				err = RemoveManualKey(p.Cache, "opencodego")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			close(release)
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			if cachedProviders(t, p.Cache)["opencodego"] {
+				t.Fatalf("the carried reading of the old key was written back after the key %sd", change)
+			}
+		})
+	}
+}
+
+// macrev2-993-1 (reproduction 2): the key changes after the publish compared the generations but before it wrote. Save
+// waits for that one write (it never waits for a network read) and its invalidation then removes the written reading.
+func TestKeyChangeBetweenThePublishCheckAndTheWriteLeavesNoOldReading(t *testing.T) {
+	for _, change := range []string{"replace", "remove"} {
+		t.Run(change, func(t *testing.T) {
+			isolateHome(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(goOKBody)) }))
+			t.Cleanup(srv.Close)
+			useClient(t, srv, "opencode.ai")
+			p := nativePaths(t)
+			if err := SetManualKey(p.Cache, "opencodego", fakeGoKey, ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "opencodego", Backend: BackendNative, Enabled: true}); err != nil {
+				t.Fatal(err)
+			}
+			saved := make(chan error, 1)
+			nativePublishHook = func() {
+				go func() {
+					if change == "replace" {
+						saved <- SetManualKey(p.Cache, "opencodego", "fake-opencode-key-0009", "")
+					} else {
+						saved <- RemoveManualKey(p.Cache, "opencodego")
+					}
+				}()
+				select {
+				case err := <-saved:
+					saved <- err
+					t.Error("the key change did not wait for the snapshot write")
+				case <-time.After(300 * time.Millisecond):
+				}
+			}
+			t.Cleanup(func() { nativePublishHook = nil })
+			if err := RefreshNative(context.Background(), p, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-saved; err != nil {
+				t.Fatal(err)
+			}
+			if cachedProviders(t, p.Cache)["opencodego"] {
+				t.Fatalf("the old key's reading stayed cached after the key %sd between the check and the write", change)
+			}
+		})
 	}
 }
