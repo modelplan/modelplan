@@ -158,7 +158,22 @@ struct StatusNoticePresentation {
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     public var makeFirstRunSurfaceWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)?
     private let activateSettings: @MainActor () -> Void
-    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false && (self?.lifecyclePaused == false || self?.setupActive == true) }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
+    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false && (self?.lifecyclePaused == false || self?.setupActive == true) }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, presence: dockPresence, makeSurface: makeSettingsSurface)
+    /// Native-shell spec item 4 (CodexBar `DockIconController`, Pulse `PulseDockPresence`): one owner of the Dock icon and
+    /// Cmd-Tab entry. The app is regular while Settings or a detached cockpit is open or minimised, accessory otherwise.
+    /// A flip posts resign/become active on its own, so the attached cockpit is told to ignore that for 250 ms; no flip
+    /// after terminate begins.
+    public private(set) lazy var dockPresence = PulseDockPresence(
+        currentPolicy: { NSApplication.shared.activationPolicy() },
+        setPolicy: { [weak self] policy in
+            guard let self, !self.terminating else { return }
+            self.currentCockpitPage?()?.suppressDismissal(.policyChange, forMilliseconds: EngineDockMenuApplication.policyChangeHoldMilliseconds)
+            _ = NSApplication.shared.setActivationPolicy(policy)
+        },
+        activate: { NSApplication.shared.activate() })
+    static let policyChangeHoldMilliseconds: UInt64 = 250
+    /// Set by the cockpit factory: the page currently made, attached or not.
+    var currentCockpitPage: (() -> CockpitWindowController?)?
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                 createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                 cockpitEntryEnabled: Bool? = nil,
@@ -580,6 +595,23 @@ struct StatusNoticePresentation {
         lifecycleController = controller
         controller.setActivityPaused(activityPaused)
         withdrawForLifecycle(); controller.start()
+    }
+    /// Spec item 2: the cockpit's wake/unlock/clock/display signals from the lifecycle's one `SystemEvents`, or nil
+    /// before the lifecycle exists (a page then keeps its own observers).
+    var cockpitSystemSignals: CockpitSystemSignalSource? {
+        guard lifecycleController != nil else { return nil }
+        return { [weak self] handler in
+            guard let controller = self?.lifecycleController else { return {} }
+            return controller.subscribe { signal in
+                switch signal {
+                case .wake, .screensWake: handler(.wake)
+                case .unlock: handler(.unlock)
+                case .clockChanged, .timeZoneChanged: handler(.clockChanged)
+                case .displaysChanged: handler(.displaysChanged)
+                case .displaysSettled: handler(.displaysSettled)
+                }
+            }
+        }
     }
     /// M4's activity observer sets an independent pause reason; it never clears OS reasons.
     public func setActivityPaused(_ paused: Bool) {
