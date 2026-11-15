@@ -69,6 +69,8 @@ public enum DiagnosticsBundleFilter {
             let ns = line as NSString
             let head = ns.substring(with: match.range(at: 1)), payload = ns.substring(with: match.range(at: 2))
             guard full(engineEvent, payload) == nil else { return line }
+            // engine.log already holds panic records in the projected grammar; projecting again would lose the type and length.
+            if EngineStderrProjection.isProjected(payload) { return line }
             return head + EngineStderrProjection.project(payload)
         }
     }

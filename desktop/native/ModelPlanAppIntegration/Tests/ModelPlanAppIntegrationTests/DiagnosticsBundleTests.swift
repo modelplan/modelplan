@@ -179,6 +179,21 @@ final class DiagnosticsBundleTests: XCTestCase {
     }
 
     /// glm-963-2: a reply that arrives in several pipe reads is kept whole, not just its first chunk.
+    /// Post-merge sampling 11-15: engine.log already holds projected panic records; export must keep them as they
+    /// are (type and original length), and still project raw records.
+    func testExportKeepsAnAlreadyProjectedPanicRecord() {
+        let stamp = "2026-11-14T20:14:13.400-08:00 pid=4242 "
+        let logged = EngineStderrProjection.project("panic: (*errors.errorString) 0xc000012345")
+        XCTAssertEqual(logged, "panic: type=*errors.errorString <message redacted, 34 bytes>")
+        let kept = [logged, "panic: runtime error: <message redacted, 12 bytes> [recovered]", "fatal error: <message redacted, 7 bytes>"]
+        let exported = DiagnosticsBundleFilter.engineLog(kept.map { stamp + $0 }.joined(separator: "\n"))
+        for line in kept { XCTAssertTrue(exported.contains(stamp + line + "\n") || exported.hasSuffix(stamp + line), "\(line) changed:\n\(exported)") }
+        // A raw record is still projected, and free text that only imitates the grammar keeps no extra text.
+        XCTAssertEqual(DiagnosticsBundleFilter.engineLog(stamp + "panic: secret words"), stamp + "panic: <message redacted, 12 bytes>")
+        XCTAssertEqual(DiagnosticsBundleFilter.engineLog(stamp + "panic: type=secret words <message redacted, 3 bytes>"),
+                       stamp + "panic: <message redacted, 45 bytes>")
+    }
+
     func testDoctorOutputWrittenInChunksIsKeptWhole() throws {
         let chunked = try script("""
         printf '{"readers":['

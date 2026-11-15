@@ -128,6 +128,24 @@ public enum EngineStderrProjection {
         #"^(?:SIG[A-Z]+: [a-z ]{1,60}|PC=0x[0-9a-f]+ m=\d+ sigcode=\d+(?: addr=0x[0-9a-f]+)?|runtime stack:|exit status \d+|\.\.\.additional frames elided\.\.\.|[a-z0-9]{2,6}\s+0x[0-9a-f]+)$"#,
     ].compactMap { try? NSRegularExpression(pattern: $0) }
 
+    /// A record already in the projected panic grammar (`panic: type=*errors.errorString <message redacted, 34 bytes>`),
+    /// as engine.log stores it. Projecting it again would lose the type and the original length, so export keeps it.
+    /// Only the exact grammar `project` writes matches; raw text is never taken for it except where it is itself a
+    /// placeholder, a Go type name or a fixed runtime phrase.
+    private static let projected: [NSRegularExpression] = {
+        let fixed = fixedPrefixes.map { NSRegularExpression.escapedPattern(for: $0.trimmingCharacters(in: .whitespaces)) }.joined(separator: "|")
+        let type = #"\*?[A-Za-z_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z_][A-Za-z0-9_]*"#
+        let head = #"^(?:panic|fatal error):"#, tail = #"(?: \[recovered\])?$"#
+        let placeholder = #" <message redacted, \d+ bytes>"#
+        return [head + "(?: (?:" + fixed + ")| type=" + type + ")?" + placeholder + tail,  // a message was cut
+                head + " (?:" + fixed + ")" + tail]                                            // nothing left to cut
+            .compactMap { try? NSRegularExpression(pattern: $0) }
+    }()
+    public static func isProjected(_ line: String) -> Bool {
+        let range = NSRange(location: 0, length: (line as NSString).length)
+        return projected.contains { $0.firstMatch(in: line, range: range) != nil }
+    }
+
     public static func project(_ line: String) -> String {
         if line.trimmingCharacters(in: .whitespaces).isEmpty { return "" }
         let ns = line as NSString
