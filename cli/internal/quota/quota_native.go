@@ -270,12 +270,23 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		return refreshErr
 	}
 	home, _ := os.UserHomeDir()
+	// The key generations before anything is read or carried over from the cache. A key replaced or removed after this
+	// (manualkey.go bumps its provider's generation under the short snapshot-write lock) invalidates every reading of
+	// that provider in this refresh, fresh or carried; the publish below compares under the same lock.
+	// The generations and the cache are read together under lockManualKeys (short, no network), so they come from one
+	// consistent state: a key change in progress holds the same lock for its whole cache removal and generation bump.
+	unlockSnapshot, lockErr := lockManualKeys(p.Cache)
+	if lockErr != nil {
+		return lockErr
+	}
+	generations := manualKeyGenerations(p.Cache)
 	previous := map[string]codexbarEntry{}
 	if old := loadNative(p.Cache); old != nil {
 		for _, entry := range old.Providers {
 			previous[entry.Provider] = entry
 		}
 	}
+	unlockSnapshot()
 	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
 	if selected != nil {
 		ids := []string{}
@@ -339,6 +350,12 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 			// login is checked for existence by detection and never read here.
 			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
 		}
+		// D90: the entered key can be replaced or removed while this read is in flight. The reading belongs to the key it
+		// was made with (possibly another account's), so when the saved key changed, drop it instead of caching it; the
+		// provider's request-budget reservation stays, and the next due read uses the new key.
+		if mk2, has2, err2 := loadManualKeyChecked(p.Cache, x.Provider); (err2 != nil) != (manualErr != nil) || has2 != hasManual || mk2 != mk {
+			continue
+		}
 		if e.Status == "ok" {
 			e.ErrorCode = ""
 		} else {
@@ -382,15 +399,40 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		s.Providers = append(s.Providers, e)
 	}
-	b, _ := json.MarshalIndent(s, "", "  ")
 	if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0o700); err != nil {
 		return err
 	}
-	if err := consent.Publish(state.Fence(), func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) }); err != nil {
+	if err := consent.Publish(state.Fence(), func() error {
+		// D90: the short snapshot-write lock (the one SetManualKey / RemoveManualKey take while they bump a generation).
+		// A reading of a manual-key provider whose key changed since this refresh began is dropped, so the previous
+		// account's quota is never published after a successful key change. Save waits here for at most one write.
+		unlockKeys, err := lockManualKeys(p.Cache)
+		if err != nil {
+			return err
+		}
+		defer unlockKeys()
+		current := manualKeyGenerations(p.Cache)
+		kept := s.Providers[:0]
+		for _, e := range s.Providers {
+			if ManualKeyProvider(e.Provider) && current[e.Provider] != generations[e.Provider] {
+				continue
+			}
+			kept = append(kept, e)
+		}
+		s.Providers = kept
+		if nativePublishHook != nil {
+			nativePublishHook()
+		}
+		b, _ := json.MarshalIndent(s, "", "  ")
+		return writeAtomic(nativePath(p.Cache), append(b, '\n'))
+	}); err != nil {
 		return err
 	}
 	return refreshErr
 }
+
+// nativePublishHook is a test seam: it runs inside the publish write, after the generations were compared.
+var nativePublishHook func()
 
 // getJSON: one GET with the key as a bearer token, bounded, decoded into v. The error names the
 // HTTP status, never the key or the body.

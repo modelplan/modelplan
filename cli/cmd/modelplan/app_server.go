@@ -85,7 +85,8 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 				importer.StartOwedAfter(owedGrantDelay, speed.ImportDefaultDays)
 			}
 		},
-		Activity: appActivity(st.Dir),
+		ManualKeyPresent: func(provider string) bool { return quota.ManualKeyPresent(st.Dir, provider) },
+		Activity:         appActivity(st.Dir),
 		Reported: func(report quota.Report, now time.Time) {
 			if !options.ReadOnly {
 				observeQuotaHistory(st, report, now)
