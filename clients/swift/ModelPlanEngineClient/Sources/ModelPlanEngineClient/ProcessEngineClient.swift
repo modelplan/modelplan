@@ -8,6 +8,8 @@ struct ClientRuntime: Sendable {
     var writeTimeout: Double = 10
     var now: @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime }
     var sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    /// Ends a child and reports whether it was reaped. Tests inject a failing first cleanup (recovery step 5).
+    var reap: @Sendable (EngineProcess) async -> Bool = { await $0.finish() }
 }
 
 struct ClientPending {
@@ -95,7 +97,10 @@ public actor ProcessEngineClient: EngineClient {
     var epochProbeAttempts = 0
     /// Recovery contract: a stalled consumer stops the child; once its outstanding consume returns, a fresh session starts.
     var stallRecoveryPending = false
-    var stalledProcess: EngineProcess?
+    /// The supervisor's outstanding restart decision: the earliest monotonic time a fresh child may spawn, and whether
+    /// that spawn is the half-open attempt after a cooldown. It survives a failed reap of the old child, so a child
+    /// that is hard to reap can never respawn before its backoff or cooldown (macrev2-994-1, macrev2-994-2).
+    var pendingRelaunch: (notBefore: Double, halfOpen: Bool)?
     var budget = RestartBudget()
     var facts: WireEnvelope<WireConsentFacts>?
     var intents: [String: CredentialIntent] = [:]
@@ -172,7 +177,7 @@ public actor ProcessEngineClient: EngineClient {
     public func stop() async {
         deliveryAuthority.replace(with: nil)
         if let stoppingTask { await stoppingTask.value; return }
-        stopped = true; stopping = true; stallRecoveryPending = false; stalledProcess = nil
+        stopped = true; stopping = true; stallRecoveryPending = false; pendingRelaunch = nil
         rowsBootstrapRetry?.cancel(); rowsBootstrapRetry = nil; rowsBootstrapBusyCount = 0
         epochProbeRetry?.cancel(); epochProbeRetry = nil; epochProbeAttempts = 0
         let retiring = restartTask
@@ -260,36 +265,52 @@ public actor ProcessEngineClient: EngineClient {
         writes.removeAll(); controlWrites.removeAll(); epochProbe = nil
         failRequests(.interrupted(.connectionLost)); failStarts(.interrupted(.connectionLost))
         invalidate(protocolFault ? .protocolFault : .connectionLost, next: floor)
-        guard !stopped && !stopping else {
-            Task { [weak self] in if !(await process.finish()) { await self?.cleanupFailed(process) } }
-            return
-        }
+        // Stopped (a stalled consumer): only reap. A later stall recovery records its decision and relaunches once the
+        // old child is gone.
+        guard !stopped && !stopping else { reapThenRelaunch(process); return }
         superviseCrash(reaping: process, planned: planned)
     }
-    /// The engine supervisor (recovery contract, step 5): reap the old child first, then restart after the budget's
-    /// backoff; past the crash limit, a cooldown and then one automatic half-open attempt. `.stopped(.crashLimit)` still
-    /// tells the app the engine is cooling down; start() refuses until the half-open attempt (retry() skips the wait).
+    /// The engine supervisor (recovery contract, step 5): records the budget's decision, reaps the old child, then
+    /// restarts when the decision is due; past the crash limit, a cooldown and then one automatic half-open attempt.
+    /// `.stopped(.crashLimit)` still tells the app the engine is cooling down; start() refuses until the half-open
+    /// attempt (retry() skips the wait).
     func superviseCrash(reaping process: EngineProcess?, planned: Bool) {
-        let decision: RestartBudget.Decision = planned ? .restart(after: 0) : budget.recordCrash(at: runtime.now())
-        let delay: Double, halfOpen: Bool
+        decideRelaunch(planned: planned)
+        reapThenRelaunch(process)
+    }
+    func decideRelaunch(planned: Bool) {
+        let now = runtime.now()
+        let decision: RestartBudget.Decision = planned ? .restart(after: 0) : budget.recordCrash(at: now)
         switch decision {
         case .restart(let after):
-            delay = after; halfOpen = false
+            pendingRelaunch = (now + after, false)
             emit(.connection(.restarting(attempt: after == 0 ? 0 : Int(log2(after)) + 1, delay: .seconds(after))))
         case .cooldown(let after):
-            delay = after; halfOpen = true; requiresRetry = true
+            pendingRelaunch = (now + after, true); requiresRetry = true
             emit(.connection(.stopped(.crashLimit)))
         }
-        let sleep = runtime.sleep
+    }
+    /// Never two children: the old one is reaped before another can be spawned. A failed reap hands over to the re-reap
+    /// loop, which keeps the pending decision.
+    func reapThenRelaunch(_ process: EngineProcess?) {
+        let reap = runtime.reap
         restartTask = Task { [weak self] in
-            // Never two children: the old one is reaped before another can be spawned.
-            if let process, !(await process.finish()) { await self?.cleanupFailed(process); return }
-            guard let self else { return }
-            do { try await sleep(.seconds(delay)); try Task.checkCancellation(); await self.restartFinished(launch: true, halfOpen: halfOpen) }
-            catch { await self.restartFinished(launch: false, halfOpen: false) }
+            if let process, !(await reap(process)) { await self?.cleanupFailed(process); return }
+            await self?.relaunchWhenDue()
         }
     }
-    /// A child that would not exit is re-reaped with a capped backoff; once it is gone a fresh session starts by itself.
+    /// Waits out whatever is left of the pending decision's backoff or cooldown, then spawns.
+    func relaunchWhenDue() {
+        restartTask = nil
+        guard let pending = pendingRelaunch, !stopping else { return }
+        let wait = max(0, pending.notBefore - runtime.now()), sleep = runtime.sleep
+        restartTask = Task { [weak self] in
+            do { try await sleep(.seconds(wait)); try Task.checkCancellation() }
+            catch { await self?.restartFinished(launch: false); return }
+            await self?.restartFinished(launch: true)
+        }
+    }
+    /// A child that would not exit is re-reaped with a capped backoff; once it is gone the pending decision proceeds.
     func cleanupFailed(_ process: EngineProcess) {
         deliveryAuthority.replace(with: nil)
         unreapedProcess = process; requiresRetry = true; restartTask = nil
@@ -298,10 +319,10 @@ public actor ProcessEngineClient: EngineClient {
     }
     func scheduleReap(_ process: EngineProcess, attempt: Int) {
         guard !stopping else { return }
-        let sleep = runtime.sleep, delay = min(60, 5 * pow(2, Double(min(attempt, 6))))
+        let sleep = runtime.sleep, reap = runtime.reap, delay = min(60, 5 * pow(2, Double(min(attempt, 6))))
         restartTask = Task { [weak self] in
             do { try await sleep(.seconds(delay)); try Task.checkCancellation() } catch { return }
-            let reaped = await process.finish()
+            let reaped = await reap(process)
             await self?.reapFinished(process, reaped: reaped, attempt: attempt)
         }
     }
@@ -309,13 +330,17 @@ public actor ProcessEngineClient: EngineClient {
         restartTask = nil
         guard unreapedProcess?.id == process.id, !stopping else { return }
         guard reaped else { scheduleReap(process, attempt: attempt + 1); return }
-        unreapedProcess = nil; requiresRetry = false
-        if !stopped && !consumerBlocked { launch() }
+        unreapedProcess = nil
+        // The cooldown chosen before the failed reap still holds: start() keeps refusing until its half-open attempt.
+        requiresRetry = pendingRelaunch?.halfOpen ?? false
+        relaunchWhenDue()
     }
-    func restartFinished(launch shouldLaunch: Bool, halfOpen: Bool = false) {
+    func restartFinished(launch shouldLaunch: Bool) {
         restartTask = nil
-        if halfOpen { requiresRetry = false }
-        if shouldLaunch && !stopped { launch() }
+        guard shouldLaunch, let pending = pendingRelaunch else { return }
+        pendingRelaunch = nil
+        if pending.halfOpen { requiresRetry = false }
+        if !stopped && !consumerBlocked { launch() }
     }
     func initializationFailed(_ id: UUID, error: EngineClientError) {
         guard child?.id == id else { return }
