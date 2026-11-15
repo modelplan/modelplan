@@ -48,6 +48,17 @@ the task from the owner-Mac branch (`inputs.task != 'native-headless'`). The D94
 stays; it is harmless on a hosted runner. Only the GUI legs (`native`, `native-owner-gui`, `gui-probe`) use
 the GUI Mac.
 
+D246 (2026-11-13): in the merge queue only, `native-headless` goes back to the non-GUI Macs
+(`modelplan-mac-nongui`, under the same owner gate and `MAC_CI_RUNNER_V2 == 'self-hosted'`), because hosted
+macOS allows five concurrent jobs and queue groups waited behind PR runs while those Macs sat idle. The
+expression admits it with `(inputs.task != 'native-headless' || github.event_name == 'merge_group')` and the
+queue clause (`refs/heads/gh-readonly-queue/main/` only). A merge-queue group contains only PRs that were
+enqueued, so no unreviewed head reaches those Macs. pull_request, push and dispatch runs stay hosted (D198).
+When `MAC_CI_RUNNER_V2` is not `self-hosted` or the owner gate does not match, the queue leg falls back to
+hosted `macos-latest`; an offline non-GUI pool makes it wait, not fall back. `app-smoke` stays on hosted
+`macos-latest` in every event: it launches the packaged AppKit app, and the non-GUI Macs run their runner in
+the `System` launchd domain with no window-server session.
+
 ### Lending gui-2 to non-GUI jobs (D94)
 
 Owner decision D94 (2026-11-09) lets the second GUI runner help with non-GUI work when no GUI work needs it.
@@ -71,7 +82,7 @@ until the PR has merged, and merge it with a merge commit so the pinned commit s
 
 The native suite runs as two parallel legs. `task: native` keeps the GUI
 label and runs everything that may need a window server. `task: native-headless`
-runs on a hosted Mac (D198) and runs the app-integration XCTest classes listed in
+runs on a hosted Mac (D198; non-GUI Macs in the merge queue, D246) and runs the app-integration XCTest classes listed in
 `desktop/native/tools/ci/native-test-partition.json`, plus the pure contract,
 logic and packaging-binary checks. The list is opt-in: a new class runs on the
 GUI leg until it is added. `native_test_partition.py check` (Linux and both Mac
@@ -134,7 +145,7 @@ and `transport-fuzz` workflows to pass there (`QUEUE_WORKFLOWS` in `scripts/merg
 of those paths or its tree equals the PR head. Otherwise `app`, `shell`,
 `native-partition`, `app-smoke` and `native-headless` run on the group commit. The
 pinned `trusted-mac.yml` routes only the GUI tasks of a `merge_group` run to the self-hosted
-group; `native-headless` is hosted everywhere (D198). The full GUI leg runs in the
+group, and `native-headless` to the non-GUI Macs (D246); every other event runs `native-headless` hosted (D198). The full GUI leg runs in the
 queue whenever the group changes a desktop path, even when its tree equals the PR head (D169,
 below); the five Linux workflows have their own `queue-scope` job and no Mac job.
 
