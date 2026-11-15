@@ -19,4 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - run: echo "PR #${{ github.event.pull_request.number }} head ${{ github.event.pull_request.head.sha }} changed desktop/native"
+      # Values go through env (no expression in the script). The step text is a quoted scalar: an unquoted " #"
+      # would start a YAML comment and cut the command (it did: every trigger run failed with exit 2).
+      - env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: 'echo "PR ${PR_NUMBER} head ${HEAD_SHA} changed desktop/native"'
