@@ -7,6 +7,7 @@ import ModelPlanEngineStore
 import ModelPlanSettings
 import ModelPlanWire
 import ModelPlanDock
+import ModelPlanShell
 
 /// Keep #332's single showConsole route and one protocol client/store.
 /// Clear the existing synchronous sinks first, then await WK clear/disposal,
@@ -93,6 +94,9 @@ import ModelPlanDock
                 #endif
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
+        owner.systemSignals = { [weak application] in application?.cockpitSystemSignals }
+        owner.presence = application.dockPresence
+        application.currentCockpitPage = { [weak owner] in owner?.currentPage }
         owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.openPoint = { [weak application] in application?.cockpitOpenPoint }
         owner.ignitionFrame = { [weak application] in application?.composition.dock.ignitionScreenFrame }
@@ -136,6 +140,12 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var currentSize: (() -> SettingsSize?)?
     weak var currentPage: CockpitWindowController?
     private var contextMenu: CockpitContextMenu?
+    /// Spec item 2: the app's single system-signal source, read when a page is made (nil keeps the page's own).
+    var systemSignals: (() -> CockpitSystemSignalSource?)?
+    /// Spec item 4: the app's one Dock/Cmd-Tab presence, shared with Settings.
+    weak var presence: PulseDockPresence?
+    /// The presence tracks windows weakly; the owner keeps the current page's adapter alive.
+    private var presenceWindow: DetachedCockpitPresence?
     /// The cockpit's own right-click menu: Settings…, Reset Position, Quota Widget Size, Help.
     func makeContextMenu(page: CockpitWindowController?) -> NSMenu {
         let menu = CockpitContextMenu(language: appearance.locale == .en ? .english : .chinese, size: currentSize?(),
@@ -240,8 +250,15 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
     func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
-            shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() })
+            shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() },
+            systemSignals:systemSignals?())
         page.ignitionFrame = { [weak self] in self?.ignitionFrame?() }
+        // Spec item 4: a detached cockpit gives the app its Dock icon and Cmd-Tab entry, through the one presence.
+        if let presence {
+            let adapter = DetachedCockpitPresence(page: page)
+            presenceWindow = adapter; presence.track(adapter)
+            page.onPresenceChanged = { [weak presence] userInitiated in presence?.apply(activateIfRegular: userInitiated) }
+        }
         page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
         currentPage = page
         page.contextMenuProvider = { [weak self, weak page] in self?.makeContextMenu(page: page) }
@@ -631,4 +648,13 @@ extension CockpitSize {
         case .percent100: self = .percent100
         }
     }
+}
+
+/// Spec item 4: the detached cockpit as a presence window. An attached cockpit never counts (it is a popover).
+@MainActor final class DetachedCockpitPresence: PulsePresenceWindow {
+    private weak var page: CockpitWindowController?
+    init(page: CockpitWindowController) { self.page = page }
+    var isVisible: Bool { page?.detachedPresence.visible ?? false }
+    var isMiniaturized: Bool { page?.detachedPresence.miniaturized ?? false }
+    func close() { page?.requestClose() }
 }
