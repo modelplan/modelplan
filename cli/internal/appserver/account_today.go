@@ -2,6 +2,7 @@
 package appserver
 
 import (
+	"github.com/modelplan/modelplan/cli/internal/localday"
 	"math"
 	"time"
 
@@ -35,7 +36,7 @@ func nextAccountTodayDeadline(paths quota.Paths, admission consent.Admission, no
 	}
 	if len(view.TodayTotals()) > 0 {
 		local := now.In(time.Local)
-		add(time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, local.Location()))
+		add(localday.Next(local))
 		// The source-wide association requires a binding observed no more
 		// than an hour ago. Its expiry is another time-only invalidation.
 		for _, account := range quota.ReadPermitted(paths, now).Accounts {

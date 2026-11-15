@@ -251,6 +251,24 @@ func AutoLocalLogScopes(s State, tools map[string]bool) []string {
 	return out
 }
 
+// LaterLocalLogScopes lists the local-log scopes of the given tools that are already allowed:
+// the scopes a D240 grant (or the user) opened earlier. Passed to AutoLaterClosedScopes, they
+// let an upgrade close the undecided runtime/account scopes that CLI v0.5.60's D240 grant left
+// open next to them (sampling P1 on #955). Sorted.
+func LaterLocalLogScopes(s State, tools map[string]bool) []string {
+	var out []string
+	for _, d := range Definitions() {
+		if !tools[d.Tool] || d.Class != Local || d.Route != "local_log" || !d.DefaultCheck || d.Keychain {
+			continue
+		}
+		if r, decided := s.Scopes[d.ID]; decided && r.Allowed {
+			out = append(out, d.ID)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // AutoLaterClosedScopes lists the scopes the D240 grant records as off next to the local-log
 // scopes it allows (#924): every undecided runtime, saved-login or key scope of the same tools
 // that would pass while undecided (DefaultCheck). Without this, the tool record that the

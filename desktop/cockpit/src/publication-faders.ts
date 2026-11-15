@@ -30,14 +30,24 @@ export type FaderSetOptions={
  /** Keep only models of developers the user's subscriptions run (D123). Models used in the last 7 days are exempt (D135);
   * ignored when a subscription's developer is unknown. */
  readonly ownPlansOnly?:boolean;
+ /** Recorded sessions (details.recentSessions, the 7-day ledger). They count as "in use" like live ones (sampling #930)
+  * but never attach to a fader: a fader's `sessions` stay live only. */
+ readonly recorded?:readonly unknown[];
 };
+/** Beyond the engine's three: published models in use (live or recorded), then those of a developer one of the user's
+ * subscriptions runs, in publication order. Every subscription counts, whatever the state of its reading: a stale or
+ * loading reading is still the user's plan (sampling #930). `publicationFaders` applies the 7-day and own-plan rules. */
+export function moreFaderModels<T extends {readonly id:string;readonly developerId:string}>(published:readonly T[],live:readonly {readonly model:string}[],recorded:readonly {readonly model:string}[],subscriptions:readonly {readonly developer:string|null}[]):T[]{
+ const used=new Set([...live,...recorded].map(s=>s.model)),vendors=new Set(subscriptions.map(s=>s.developer));
+ return [...published.filter(m=>used.has(m.id)),...published.filter(m=>!used.has(m.id)&&vendors.has(m.developerId))];
+}
 export function publicationFaders(publication:unknown,live:unknown=null,more:readonly unknown[]=[],subscriptions:readonly FaderSubscription[]=[],options:FaderSetOptions={}):{accounts:Account[];faders:Fader[]} {
  const accounts:Account[]=subscriptions.slice(0,100).map(s=>({id:s.key,colour:s.colour}));
  const root=object(publication);
  if(!root||root.contractVersion!==1||!Array.isArray(root.models))return {accounts:[],faders:[]};
  const faders:Fader[]=[],taken=new Set<string>(),lastUsed=new Map<string,number>(),tierOf=new Map<string,number>();
  const planDevelopers=new Set(subscriptions.map(s=>s.developer)),filterPlans=options.ownPlansOnly===true&&subscriptions.length>0&&!planDevelopers.has(null);
- const recent=(Array.isArray(live)?live:[]).flatMap(value=>{
+ const recent=[...(Array.isArray(live)?live:[]),...(options.recorded??[])].flatMap(value=>{
   const s=object(value),model=text(s?.model),at=typeof s?.lastObservedAt==='string'?Date.parse(s.lastObservedAt):NaN;
   if(!model||!text(s?.sessionRef))return [];
   if(options.now===undefined)return [[model,Number.isFinite(at)?at:0] as const];
