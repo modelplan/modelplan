@@ -414,14 +414,18 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         // same page must not announce an unavailable cockpit.
         let onDisplayed = owner.coordinator?.onDisplayed
         owner.coordinator?.onDisplayed = { [weak self] in
-            if let self {
-                if self.pageOpened { self.budget.rendered(at: self.now()) }
-                if self.noticeTimer != nil, !self.rebuilding {
-                    self.lastEventWasOpen = true
-                    self.noticeTimer?.cancel(); self.noticeTimer=nil; self.retryTimer?.cancel(); self.retryTimer=nil; self.noticePath=""
-                }
+            if let self, self.noticeTimer != nil, !self.rebuilding {
+                self.lastEventWasOpen = true
+                self.noticeTimer?.cancel(); self.noticeTimer=nil; self.retryTimer?.cancel(); self.retryTimer=nil; self.noticePath=""
             }
             onDisplayed?()
+        }
+        // Recovery contract (macrevb-981-2): sustained health counts only from a rendered receipt of the presented
+        // page, never from a reply merely handed to it.
+        let onRenderVerified = owner.coordinator?.onRenderVerified
+        owner.coordinator?.onRenderVerified = { [weak self] in
+            if let self, self.pageOpened { self.budget.rendered(at: self.now()) }
+            onRenderVerified?()
         }
         // D88: a detach, a put back or the settled open refreshes the icon highlight and the hints.
         owner.coordinator?.onShellChanged = { [weak self] in self?.onShowingChanged?() }

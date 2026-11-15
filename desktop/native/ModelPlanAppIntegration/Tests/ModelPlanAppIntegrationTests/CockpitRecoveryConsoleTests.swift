@@ -112,7 +112,7 @@ extension CommunityCockpitEntryTests {
             rig.surface.wantsVisible = true
             rig.pageDied(.contentTerminated); rig.clock.advance(by: 1_000); rig.coordinator.onOpened?()
             rig.pageDied(.contentTerminated); rig.clock.advance(by: 4_000); rig.coordinator.onOpened?()
-            rig.coordinator.onDisplayed?() // the rebuilt page shows data
+            rig.coordinator.onRenderVerified?() // the rebuilt page acknowledged a rendered display
             rig.clock.advance(by: healthy)
             rig.pageDied(.contentTerminated)
             XCTAssertEqual(rig.lines.filter { $0.hasPrefix("page-rebuild attempt=1 delayMs=1000") }.count, resets ? 2 : 1,
@@ -120,6 +120,21 @@ extension CommunityCockpitEntryTests {
             XCTAssertEqual(rig.notices.count, resets ? 0 : 1)
             await rig.finish()
         }
+    }
+
+    /// macrevb-981-2: replies handed to a page that never acknowledges a render are not health. Two minutes of them
+    /// leave the budget spent.
+    @MainActor func testRecoveryRepliesWithoutARenderedReceiptDoNotResetTheBudget() async throws {
+        let rig = try RecoveryConsoleRig()
+        rig.surface.wantsVisible = true
+        rig.pageDied(.contentTerminated); rig.clock.advance(by: 1_000); rig.coordinator.onOpened?()
+        rig.pageDied(.contentTerminated); rig.clock.advance(by: 4_000); rig.coordinator.onOpened?()
+        for _ in 0..<130 { rig.coordinator.onDisplayed?(); rig.clock.advance(by: 1_000) } // a reply a second, never rendered
+        rig.pageDied(.contentTerminated)
+        XCTAssertTrue(rig.lines.contains { $0.hasPrefix("page-rebuild cooldown") }, rig.lines.joined(separator: "\n"))
+        XCTAssertEqual(rig.surface.budget.attempts.count, 2)
+        XCTAssertEqual(rig.notices.count, 1)
+        await rig.finish()
     }
 
     @MainActor func testRecoveryPrivacyDisposalRebuildsAtOnceWithoutNoticeOrBudget() async throws {

@@ -138,6 +138,26 @@ import XCTest
     XCTAssertEqual(delays.last, 0, "After a future deadline the throttle is over")
     XCTAssertEqual(exhausted, 1)
   }
+  /// macrev2-981-7: while throttled, reports that keep arriving do not postpone the tick: the next one is due one
+  /// second after the last delivered tick, not one second after the latest report.
+  func testThrottledStreamKeepsOneTickPerSecondUnderContinuousReports() {
+    var callbacks: [@MainActor () -> Void] = [], delays: [UInt64] = [], ticks = 0
+    var now: UInt64 = 10_000
+    let driver = CockpitDeadlineDriver(now: { now }, arm: { delay, fire in delays.append(delay); callbacks.append(fire); return {} }, onExhausted: {}, tick: { if $0 == .deadline { ticks += 1 } })
+    driver.show()
+    for value in 1...CockpitDeadlineDriver.maximumImmediateAdvances { driver.accept(deadline: UInt64(value)); callbacks[value - 1]() }
+    var next = UInt64(CockpitDeadlineDriver.maximumImmediateAdvances + 1)
+    driver.accept(deadline: next)
+    XCTAssertEqual(delays.last, 1_000, "Throttled: one second after the last tick at 10 000")
+    now = 10_600; next += 1; driver.accept(deadline: next)
+    XCTAssertEqual(delays.last, 400, "A newer report keeps the tick due at 11 000")
+    now = 10_900; next += 1; driver.accept(deadline: next)
+    XCTAssertEqual(delays.last, 100)
+    now = 11_000; callbacks.last?()
+    XCTAssertEqual(ticks, CockpitDeadlineDriver.maximumImmediateAdvances + 1, "It ticks on time despite the reports")
+    now = 11_200; next += 1; driver.accept(deadline: next)
+    XCTAssertEqual(delays.last, 800, "and the next one is due at 12 000")
+  }
   func testCancelledImmediateReportsDoNotConsumeConvergenceBudget() {
     var callbacks: [@MainActor () -> Void] = [], exhausted = 0, ticks = 0
     let driver = CockpitDeadlineDriver(now: { 10_000 }, arm: { _, fire in callbacks.append(fire); return {} }, onExhausted: { exhausted += 1 }, tick: { reason in if reason == .deadline { ticks += 1 } })

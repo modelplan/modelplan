@@ -20,6 +20,14 @@ enum CockpitDeadlineReason: String, Equatable {
   /// milliseconds until a deadline in the future arrives; the page is never failed for it.
   static let throttledDelay: UInt64 = 1_000
   private var throttled = false
+  /// Clock time of the last delivered deadline tick. While throttled, a newer report keeps the next allowed tick
+  /// time instead of restarting the one-second wait (macrev2-981-7), so the stream still ticks once a second.
+  private var lastTickAt: UInt64?
+  private func throttledWait(_ current: UInt64) -> UInt64 {
+    guard let lastTickAt else { return Self.throttledDelay }
+    let next = lastTickAt &+ Self.throttledDelay
+    return next > current ? next - current : 0
+  }
   private static let maxDelay: UInt64 = 86_400_000
   var isVisible: Bool { visible && !retired }
 
@@ -32,7 +40,7 @@ enum CockpitDeadlineReason: String, Equatable {
   }
   /// A privacy/context generation barrier retires timer, watermark and clock epoch.
   func invalidate() {
-    cancelTimer(); lastDeliveredDeadline = nil; lastObservedClock = nil; immediateAdvances = 0; throttled = false
+    cancelTimer(); lastDeliveredDeadline = nil; lastObservedClock = nil; immediateAdvances = 0; throttled = false; lastTickAt = nil
   }
   private func sampleClock(externalEvent: Bool = false) -> UInt64 {
     let current = now()
@@ -69,7 +77,7 @@ enum CockpitDeadlineReason: String, Equatable {
       // `onExhausted` only reports the change to a throttled stream; the page stays (recovery contract).
       if !throttled, immediateAdvances >= Self.maximumImmediateAdvances { throttled = true; onExhausted() }
     } else { immediateAdvances = 0; throttled = false }
-    schedule(deadline, minimumDelay: deadline <= current && throttled ? Self.throttledDelay : 0)
+    schedule(deadline, minimumDelay: deadline <= current && throttled ? throttledWait(current) : 0)
   }
   private func schedule(_ deadline: UInt64, minimumDelay: UInt64 = 0) {
     guard visible, !retired else { return }
@@ -78,9 +86,10 @@ enum CockpitDeadlineReason: String, Equatable {
     cancel = arm(delay) { [weak self] in
       guard let self, self.visible, !self.retired, self.serial == token else { return }
       self.cancel = nil; self.serial &+= 1
-      if self.sampleClock() < deadline { self.schedule(deadline); return }
+      let fired = self.sampleClock()
+      if fired < deadline { self.schedule(deadline); return }
       if wasImmediatelyDue { self.immediateAdvances += 1 } else { self.immediateAdvances = 0 }
-      self.lastDeliveredDeadline = deadline; self.tick(.deadline)
+      self.lastDeliveredDeadline = deadline; self.lastTickAt = fired; self.tick(.deadline)
     }
   }
 }

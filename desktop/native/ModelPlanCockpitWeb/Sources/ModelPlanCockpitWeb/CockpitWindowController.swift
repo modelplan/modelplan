@@ -266,13 +266,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private lazy var receiptWatchdog = CockpitDeadlineReceiptWatchdog(
     arm: { [weak self] delay, fire in self?.armDeadline(delay, fire) ?? {} }, timedOut: { [weak self] id in
       guard let self, !self.ending, self.bridge.awaitsDeadlineReceipt(id) else { return }
-      self.setReadingDelayed(true, cause: "deadline")
       self.pageLate("deadlineReceipt")
     })
+  /// macrevb-981-1: measured from the oldest display not yet rendered. A replacement does not restart it (only a
+  /// rendered receipt, a hide or a refusal ends it), so a stream of replies cannot keep a silent page unprobed.
   private lazy var renderWatchdog = CockpitDeadlineReceiptWatchdog(
-    arm: { [weak self] delay, fire in self?.armDeadline(delay, fire) ?? {} }, timedOut: { [weak self] id in
-      guard let self, !self.ending, self.bridge.awaitsDisplayReceipt(id) else { return }
-      self.setReadingDelayed(true, cause: "render")
+    arm: { [weak self] delay, fire in self?.armDeadline(delay, fire) ?? {} }, timedOut: { [weak self] _ in
+      guard let self, !self.ending, let current = self.bridge.currentDisplayRequest,
+            self.bridge.awaitsDisplayReceipt(current) else { return }
       self.pageLate("renderReceipt")
     })
   /// Replaces #959's progress extensions, their four-extension ceiling and its one-shot retry: a deferred appearance
@@ -316,9 +317,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #endif
     return Self.armTimer(delay, fire)
   }
-  /// Something waited past its receipt window: the page is probed until it answers or proves unresponsive.
+  /// Something waited past its receipt window: the reading is delayed (the last rendered data stays) and the page is
+  /// probed until it answers or proves unresponsive. Every late path comes here (macrev2-981-6).
   private func pageLate(_ cause: String) {
     guard !ending else { return }
+    setReadingDelayed(true, cause: cause)
     let now = monotonicNow()
     if health.expect(at: now) {
       CockpitFailureLog.record("page-late cause=\(cause) ready=\(bridge.ready) displayPending=\(bridge.hasPendingDisplay) "
@@ -447,6 +450,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onShellChanged: (() -> Void)?
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onRendered: (() -> Void)?
+  /// Recovery contract: every accepted rendered receipt, for the coordinator (verified data on screen). Separate from
+  /// `onRendered`, which verification and timing hooks own.
+  public var onRenderVerified: (() -> Void)?
   public var onClosed: (() -> Void)?
   /// Once per open, when the page is first confirmed visible. It replaces the hidden-display refresh then.
   public var onShown: (() -> Void)?
@@ -485,6 +491,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     var verificationProbe: ((@escaping @MainActor (String?) -> Void) -> Void)?
     var verificationHealth: CockpitPageHealth { health }
     func verificationWake() { grantHealthGrace(); freshnessDriver.notify(.wake) }
+    /// The window facts `visibilityChanged` reads, for a no-window page; `shown` marks the page as opened.
+    var verificationNoWindowVisibility: CockpitVisibility?
+    func verificationSetHostVisibility(_ value: CockpitVisibility) {
+      shown = true; verificationNoWindowVisibility = value; visibilityChanged()
+    }
     /// G3-86: the next this many submissions are refused as a full delivery queue refuses them.
     var verificationRefuseSubmissions = 0
     /// Actions are admitted only from the key window (`CockpitVisibility.active`), so a window that is shown for
@@ -739,28 +750,30 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       // Do not retain hidden snapshots; request fresh data after show is accepted.
       refreshAfterHiddenDisplay = true; return
     }
-    receiptWatchdog.cancel(); renderWatchdog.cancel()
     // A pending replacement does not prove the displayed deadline is obsolete.
     // Keep its timer until a validated newer report actually replaces it.
+    receiptWatchdog.cancel()
+    // The render wait keeps running across replacements (macrevb-981-1).
+    if !bridge.hasPendingDisplay { renderWatchdog.cancel() }
     do {
       let raw = try bridge.display(data, ticket: ticket)
       let dropped = bridge.lastNonFinitePaths
       for path in dropped.prefix(8) { CockpitFailureLog.record("display-non-finite path=\(path) count=\(dropped.count)") }
       guard let id = bridge.currentDisplayRequest else { throw CockpitBridgeError.unavailable }
-      if bridge.awaitsDisplayReceipt(id) { renderWatchdog.wait(for: id) }
+      if bridge.awaitsDisplayReceipt(id), renderWatchdog.currentID == nil { renderWatchdog.wait(for: id) }
       send(raw, isCurrent: { [weak self] in self?.bridge.isCurrentDisplay(id) == true }, onRejected: { [weak self] in
         // Recovery contract: a refused display leaves the last rendered data in place; no receipt is awaited for it.
         guard let self else { return false }
-        if self.renderWatchdog.currentID == id { self.renderWatchdog.cancel() }
         if self.receiptWatchdog.currentID == id { self.receiptWatchdog.cancel() }
         self.bridge.abandonDisplay(id)
+        if !self.bridge.hasPendingDisplay { self.renderWatchdog.cancel() }
         if self.appearanceGate.retry(visible: self.visibilityFence.isConfirmedVisible, displayPending: self.bridge.hasPendingDisplay) { self.publishAppearance() }
         return false
       }, dropped: { [weak self] in
         guard let self else { return }
-        if self.renderWatchdog.currentID == id { self.renderWatchdog.cancel() }
         if self.receiptWatchdog.currentID == id { self.receiptWatchdog.cancel() }
         self.bridge.abandonDisplay(id)
+        if !self.bridge.hasPendingDisplay { self.renderWatchdog.cancel() }
         self.backlog.display = true
       })
     } catch { degrade("display", error: error) }
@@ -776,7 +789,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     pauseHealth(); setReadingDelayed(false, cause: "clear")
     web?.isHidden = true
     scope = "all"
-    guard web != nil, bridge.ready, clearWaiter == nil else {
+    #if MODELPLAN_TEST_ONLY_SPI
+    let hasPage = web != nil || verificationNoWindowDelivery != nil
+    #else
+    let hasPage = web != nil
+    #endif
+    guard hasPage, bridge.ready, clearWaiter == nil else {
       discard()
       return
     }
@@ -837,7 +855,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       guard let self else { return }
       switch result {
       case .accepted: self.deliveryRefusals = 0; onAccepted?(); self.resyncAfterBacklog()
-      case .missing: self.fail(.pageAPIUnavailable)
+      case .missing: self.fail(clear ? .clearRejected : .pageAPIUnavailable) // macrevb-981-3: a clear that cannot reach the bridge is a privacy disposal
       case .rejected:
         CockpitFailureLog.record("page-reject code=\(self.lastRejectCode)")
         if onRejected?() != true { self.pageRejected(clear: clear, bootstrap: bootstrap) }
@@ -935,7 +953,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         }
       case .rendered:
         setReadingDelayed(false, cause: "rendered")
-        if let id = renderWatchdog.currentID, !bridge.awaitsDisplayReceipt(id) { renderWatchdog.cancel() }
+        if !bridge.hasPendingDisplay { renderWatchdog.cancel() }
         if let id = receiptWatchdog.currentID, !bridge.awaitsDeadlineReceipt(id) {
           receiptWatchdog.cancel()
         }
@@ -949,6 +967,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         if let reason = pendingFreshnessReason { sendFreshnessTick(reason) }
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
         onRendered?()
+        onRenderVerified?()
       case .deadlinePending(let id):
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
       case .nextDeadline(let value):
@@ -1013,18 +1032,27 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   /// The Mac woke or the screen unlocked: a wait that spanned the sleep starts over.
   private func grantHealthGrace() { health.grantGrace(); stopProbing() }
-  private func visibilityChanged() {
-    // The alpha-0 warm paint is not a visible cockpit; the page keeps the hidden state it was given.
-    guard !ending, !warmPainting, closeTask == nil, let window, bridge.queryTicket != nil else { return }
-    let value = CockpitVisibility(
+  private func hostVisibility() -> CockpitVisibility? {
+    #if MODELPLAN_TEST_ONLY_SPI
+    if let value = verificationNoWindowVisibility { return value }
+    #endif
+    guard let window else { return nil }
+    return CockpitVisibility(
       visible: window.isVisible && !window.isMiniaturized && !NSApp.isHidden,
       occluded: !window.occlusionState.contains(.visible), key: window.isKeyWindow && NSApp.isActive
     )
+  }
+  private func visibilityChanged() {
+    // The alpha-0 warm paint is not a visible cockpit; the page keeps the hidden state it was given.
+    guard !ending, !warmPainting, closeTask == nil, bridge.queryTicket != nil, let value = hostVisibility() else { return }
     guard value != lastVisibility else { return }
     lastVisibility = value
     let visible = value.visible && !value.occluded
     let retainVisibleSchedule = visible && freshnessDriver.isVisible
     let token = visibilityFence.begin(visible: visible)
+    // macrev2-981-4: the host's own facts resume liveness accounting with a fresh grace period. Waiting for the page to
+    // accept the visibility would leave a page that stopped answering while covered paused, and never probed.
+    if visible { health.resume() }
     if !visible { suspendForHiddenPage() }
     else if !retainVisibleSchedule {
       freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil

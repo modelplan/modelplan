@@ -38,6 +38,10 @@ import ModelPlanWire
     var healthTimers: [Int: (due: UInt64, fire: @MainActor () -> Void)] = [:]
     var nextHealthTimer = 0
     var probes: [@MainActor (String?) -> Void] = []
+    var rendersVerified = 0
+    /// When set, receipt watchdogs and data deadlines run on the same monotonic timeline as the probes (fired by
+    /// `advance`), instead of being collected for the test to fire by hand.
+    var timedDeadlines = false
     /// Fires every probe timeout due at `time`, in order, moving the monotonic clock to each one's due time.
     @MainActor func advance(to time: UInt64) {
       while let next = healthTimers.filter({ $0.value.due <= time }).min(by: { ($0.value.due, $0.key) < ($1.value.due, $1.key) }) {
@@ -62,7 +66,12 @@ import ModelPlanWire
     let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
     let page = CockpitWindowController(bundle: bundle, context: context, appearance: .init(theme: .night, locale: .en, profile: .full))
     page.verificationNoWindowClock = { 1_000 }
-    page.verificationNoWindowArm = { delay, fire in rig.deadlineTimers.append((delay: delay, fire: fire)); return {} }
+    page.verificationNoWindowArm = { delay, fire in
+      guard rig.timedDeadlines else { rig.deadlineTimers.append((delay: delay, fire: fire)); return {} }
+      let id = rig.nextHealthTimer; rig.nextHealthTimer += 1
+      rig.healthTimers[id] = (due: rig.mono + delay, fire: fire)
+      return { rig.healthTimers[id] = nil }
+    }
     page.verificationNoWindowDelivery = { raw, complete in rig.sent.append((raw, complete)) }
     page.verificationMonotonicClock = { rig.mono }
     page.verificationHealthArm = { delay, fire in
@@ -73,6 +82,7 @@ import ModelPlanWire
     page.verificationProbe = { answer in rig.probes.append(answer) }
     page.onFailure = { rig.failures.append($0) }
     page.onReadingDelayed = { rig.delayed.append($0) }
+    page.onRenderVerified = { rig.rendersVerified += 1 }
     CockpitFailureLog.verificationLine = { rig.lines.append($0) }
     addTeardownBlock { @MainActor in CockpitFailureLog.verificationLine = nil }
     let shell = CockpitShellState(closed: false, attached: true, forcedClosed: false, tier: .tall)
@@ -239,10 +249,97 @@ import ModelPlanWire
     page.verificationRefuseSubmissions = 40
     for _ in 0..<40 { page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket)) }
     XCTAssertEqual(rig.failures, [], "No refusal count ends the page")
+    XCTAssertTrue(page.readingDelayed, "A stuck queue delays the reading too (macrev2-981-6)")
     XCTAssertEqual(rig.probes.count, 1, "The stuck queue starts one probe, not one per refusal")
     rig.probes[0]("ready")
     XCTAssertFalse(page.verificationHealth.isWaiting)
     XCTAssertFalse(page.bridge.disposed); page.discard()
+  }
+
+  /// macrevb-981-1 / macrev2-981-2: replies every 900 ms, the first call never completing and no receipt ever coming.
+  /// The render wait is measured from the oldest unrendered display, so the replacements cannot keep the silent page
+  /// unprobed: it is delayed at 2 s and ends 30 active seconds later. An answering page under the same stream is kept.
+  func testContinuousReplacementsCannotKeepASilentPageFromBeingProbed() throws {
+    for answers in [false, true] {
+      let rig = Rig(); let page = try renderedPage(rig)
+      rig.timedDeadlines = true
+      if answers { page.verificationProbe = { $0("ready") } }
+      let start = rig.mono
+      while rig.failures.isEmpty, rig.mono < start + 60_000 {
+        page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+        rig.advance(to: rig.mono + 900)
+      }
+      XCTAssertTrue(page.readingDelayed, "answers=\(answers): the reading is delayed")
+      XCTAssertEqual(rig.delayed.first, true)
+      if answers {
+        XCTAssertEqual(rig.failures, [], "An answering page is kept, however long its renders take")
+        XCTAssertFalse(page.bridge.disposed); page.discard()
+      } else {
+        XCTAssertEqual(rig.failures, [.unresponsive], "The silent page is recovered despite the replacements")
+        XCTAssertLessThanOrEqual(rig.mono - start, 2_000 + 30_000 + CockpitPageHealth.probeTimeoutMs + 900)
+        XCTAssertGreaterThanOrEqual(rig.mono - start, 2_000 + 30_000)
+      }
+    }
+  }
+
+  /// macrev2-981-4: a page that stops answering while covered is probed once it is uncovered. The host's own window
+  /// facts resume liveness accounting (a fresh grace period); the page's acknowledgement is not awaited for that, and
+  /// the covered time does not count.
+  func testUncoveringAPageThatStoppedAnsweringResumesProbing() throws {
+    let rig = Rig(); let page = try renderedPage(rig)
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: true))
+    try XCTUnwrap(rig.sent.last).1(.accepted) // the page took this visibility
+    page.verificationSetHostVisibility(.init(visible: true, occluded: true, key: false))
+    XCTAssertTrue(page.verificationHealth.paused, "Covered: nothing is accounted")
+    rig.mono += 3_600_000 // an hour covered; the page stops answering meanwhile (no call completes from here on)
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: true))
+    XCTAssertFalse(page.verificationHealth.paused, "Uncovered: accounting resumes from the window facts")
+    XCTAssertFalse(page.verificationHealth.isWaiting, "with a fresh grace period")
+    let uncovered = rig.mono
+    rig.advance(to: uncovered + 2_000)
+    XCTAssertTrue(page.readingDelayed, "The visibility receipt is late: the reading is delayed")
+    XCTAssertEqual(page.verificationHealth.waitingSince, uncovered + 2_000)
+    XCTAssertGreaterThanOrEqual(rig.probes.count, 1)
+    rig.advance(to: uncovered + 31_999)
+    XCTAssertEqual(rig.failures, [], "The hour covered does not count")
+    rig.advance(to: uncovered + 2_000 + 30_000 + CockpitPageHealth.probeTimeoutMs)
+    XCTAssertEqual(rig.failures, [.unresponsive])
+  }
+
+  /// macrevb-981-3: a privacy clear that cannot reach the bridge (no bridge, or a refusal) is a privacy disposal, not a
+  /// dead page: it never spends the rebuild budget or brings the generic notice.
+  func testAClearThatFindsNoBridgeIsAPrivacyDisposal() async throws {
+    for result in [CockpitDeliveryResult.missing, .rejected, .failed] {
+      let rig = Rig(); let page = try renderedPage(rig)
+      let before = rig.sent.count
+      let clearing = Task { @MainActor in await page.clearPrivateViews(adopting: nil) }
+      for _ in 0..<1_000 where rig.sent.count == before { await Task.yield() }
+      let clear = try XCTUnwrap(rig.sent.last)
+      XCTAssertEqual(type(clear.0), "clear")
+      clear.1(result)
+      await clearing.value
+      XCTAssertEqual(rig.failures, [.clearRejected], "\(result): disposed as a privacy barrier")
+      XCTAssertEqual(rig.failures.first?.recovery, .privacy)
+      XCTAssertTrue(page.bridge.disposed)
+    }
+  }
+
+  /// macrevb-981-2: verified health is a rendered receipt, not a reply handed to the page.
+  func testOnlyARenderedReceiptCountsAsVerifiedRender() throws {
+    let rig = Rig(); let page = try renderedPage(rig)
+    XCTAssertEqual(rig.rendersVerified, 1, "The first rendered receipt")
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    let display = try XCTUnwrap(rig.sent.last); display.1(.accepted)
+    XCTAssertEqual(rig.rendersVerified, 1, "A delivered display is not verified data on screen")
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    try XCTUnwrap(rig.sent.last).1(.rejected)
+    XCTAssertEqual(rig.rendersVerified, 1, "Nor is a refused one")
+    let good = try XCTUnwrap(rig.sent.last)
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    let latest = try XCTUnwrap(rig.sent.last); XCTAssertNotEqual(latest.0, good.0); latest.1(.accepted)
+    page.verificationReceive(try reply(latest.0, type: "rendered", sequence: 9), source: source)
+    XCTAssertEqual(rig.rendersVerified, 2)
+    page.discard()
   }
 }
 #endif
