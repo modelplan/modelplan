@@ -244,6 +244,8 @@ func validateAccount(in Input, tool string, a Account, declared string, refs map
 		raw := a.Plan.ID
 		if strings.HasPrefix(raw, "cursor-") {
 			raw = "cursor " + strings.TrimPrefix(raw, "cursor-")
+		} else if tool == "kiro" && strings.HasPrefix(raw, "kiro-") {
+			raw = "kiro " + strings.TrimPrefix(raw, "kiro-")
 		}
 		expected := planValue(tool, raw, "")
 		if expected.ID == "unknown" || !reflect.DeepEqual(a.Plan, expected) {

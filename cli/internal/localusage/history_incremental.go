@@ -93,7 +93,15 @@ type historyState struct {
 	Projection      *ProjectionState         `json:"projection,omitempty"`
 	ProjectionOrder int                      `json:"projectionOrder,omitempty"`
 	Complete        bool                     `json:"complete,omitempty"`
+	// GrokDecoder: the Grok usage.json rules the stored rows were decoded with (0 before
+	// grokDecoderVersion). Older rows are replaced by one re-read of every Grok file.
+	GrokDecoder int `json:"grokDecoder,omitempty"`
 }
+
+// grokDecoderVersion 2: each usage.json turn counts once from its own totalTokens (CodexBar
+// 7e51f6593). Version 0/1 rows counted every model subtotal and dropped turns without a breakdown.
+const grokDecoderVersion = 2
+
 type historyGate struct {
 	SchemaVersion int `json:"schemaVersion"`
 	At, Next      time.Time
@@ -476,6 +484,16 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		}
 		s.ProjectionOrder = projectionOrder
 		projection.start(s.Projection)
+	}
+	if tool == "grok" && s.GrokDecoder < grokDecoderVersion {
+		// Unchanged files would otherwise keep rows decoded by the older rules. Re-reading a
+		// whole-JSON file replaces all of that file's rows, so this corrects each file once; a
+		// cursor not reached in this pass keeps its retry mark for the next one.
+		for k, c := range s.Files {
+			c.Retry = true
+			s.Files[k] = c
+		}
+		s.GrokDecoder = grokDecoderVersion
 	}
 	// Migrate schema-1 readings while their original safe scope cursor still
 	// exists, before discovery may prune it. No new provenance is guessed.
