@@ -33,6 +33,9 @@ import ModelPlanShell
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
     static var verificationConsoleNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
     static var verificationNoticeGrace: Duration?
+    /// Recovery contract seams for the console the factory makes: its scheduler and its monotonic clock.
+    static var verificationConsoleSchedule: CockpitArm?
+    static var verificationConsoleNow: (@MainActor () -> UInt64)?
     /// The coordinator's prewarm and open steps, for timing tests.
     public static var verificationCockpitTrace: ((String) -> Void)?
     /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
@@ -86,7 +89,9 @@ import ModelPlanShell
                 #if MODELPLAN_TEST_ONLY_SPI
                 if let verificationNotice {
                     return SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{ true },activate:{},requestNotice:verificationNotice,
-                                                     noticeGrace:CommunityCockpitApplicationFactory.verificationNoticeGrace ?? SharedEngineCockpitConsole.defaultNoticeGrace)
+                                                     noticeGrace:CommunityCockpitApplicationFactory.verificationNoticeGrace ?? SharedEngineCockpitConsole.defaultNoticeGrace,
+                                                     now:CommunityCockpitApplicationFactory.verificationConsoleNow ?? { CockpitMonotonicClock.nowMs() },
+                                                     schedule:CommunityCockpitApplicationFactory.verificationConsoleSchedule ?? { CockpitScheduling.task($0, $1) })
                 }
                 if verificationFactory != nil {
                     return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
@@ -340,11 +345,16 @@ struct CockpitUnavailableNotice {
     private static let bundleErrors: Set<String> = ["unavailable", "invalidManifest", "unsafePath", "unsafeRoot", "unsafeInventory", "unsafeOpen", "unsafeRegular", "integrity", "limit"]
     /// True when a page could not be created because the bundle or its pins failed (the path ends in the error's case name).
     static func isBundleProblem(path: String) -> Bool {
-        if path == "page.bundleResource" { return true } // an admitted bundle that later could not serve a file
+        // An admitted bundle that later could not serve a file, or a page that speaks another contract than this host:
+        // both are an install problem (recovery contract: the repair state).
+        if path == "page.bundleResource" || path == "page.unsupportedPageContract" { return true }
         guard path.hasPrefix("open.pageCreation.") else { return false }
         return bundleErrors.contains(String(path.dropFirst("open.pageCreation.".count)))
     }
 }
+
+/// One pending console callback; `cancel()` drops it.
+struct CockpitConsoleTimer { let cancel: () -> Void }
 
 @MainActor final class SharedEngineCockpitConsole: EngineRowsConsoleSurface {
     let owner: CockpitConsoleOwner
@@ -367,31 +377,45 @@ struct CockpitUnavailableNotice {
     /// as a recovery if the page opened and nothing failed after it: a rebuild that opens and then fails, or whose
     /// next page cannot be created, is not a recovery (macrevc-786-1).
     private var lastEventWasOpen = false
-    private var noticeTask: Task<Void,Never>?
+    /// The notice grace period of a failed open (G3-66); while it runs, the open may still recover.
+    private var noticeTimer: CockpitConsoleTimer?
     /// The engine reported the cockpit feature failed: the close the coordinator makes next is that failure's, and its
     /// notice outlives it. Any other close of a presented cockpit is the user's and retires the notice (audit A-5).
     private var failureClosesPage = false
+    /// A dead page is being rebuilt: the coordinator's close that follows keeps the presentation.
     private var rebuilding = false
-    private var rebuilds = 0
+    /// Recovery contract: rebuilds of dead pages, two per rolling 10 minutes, then a 60 s cooldown and a probe. Kept
+    /// across clicks; only sustained verified health resets it.
+    private(set) var budget = CockpitRebuildBudget()
+    /// The rebuild (or cooldown probe) waiting to run.
+    private var rebuildTimer: CockpitConsoleTimer?
+    /// A repair notice (damaged bundle, other page contract) ended this click: later failures of it rebuild nothing.
+    private var repairNoticed = false
     /// G3-95: the path that started the current grace period (named in the notice's log line) and whether the one
     /// silent retry of a non-page failure has been spent.
     private var noticePath = ""
     private var retriedOpen = false
     /// The quiet retry waiting to run, and the click it belongs to. A retry never outlives its click (hide, close, a new
     /// click), so a reopen cannot be retried by the attempt before it.
-    private var retryTask: Task<Void,Never>?
+    private var retryTimer: CockpitConsoleTimer?
     private var attempt = 0
     static let openRetryDelay: Duration = .milliseconds(700)
-    static let maxRebuilds = 2
+    /// Every console timer runs on this injected scheduler and every recovery time on this monotonic clock, so the
+    /// tests drive them without sleeping.
+    private let now: @MainActor () -> UInt64
+    private let schedule: CockpitArm
     init(owner:CockpitConsoleOwner,composition:EngineDockMenuComposition,
          isForeground: @escaping @MainActor () -> Bool = { NSApp.isActive },
          activate: @escaping @MainActor () -> Void = { if !NSApp.isActive { NSApplication.shared.activate() } },
          requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)? = nil,
-         noticeGrace: Duration = SharedEngineCockpitConsole.defaultNoticeGrace) {
+         noticeGrace: Duration = SharedEngineCockpitConsole.defaultNoticeGrace,
+         now: @escaping @MainActor () -> UInt64 = { CockpitMonotonicClock.nowMs() },
+         schedule: @escaping CockpitArm = { CockpitScheduling.task($0, $1) }) {
         self.owner=owner;self.composition=composition;self.noticeGrace=noticeGrace
         self.isForeground=isForeground;self.activate=activate;self.requestNotice=requestNotice
+        self.now=now;self.schedule=schedule
         owner.coordinator?.onUnavailable = { [weak self] reason in self?.unavailable(path:reason.path) }
-        owner.pageFailure = { [weak self] failure in self?.unavailable(path:"page."+failure.rawValue) }
+        owner.pageFailure = { [weak self] failure in self?.pageFailed(failure) }
         let onOpened = owner.coordinator?.onOpened
         owner.coordinator?.onOpened = { [weak self] in
             self?.pageOpened = true
@@ -399,7 +423,7 @@ struct CockpitUnavailableNotice {
             self?.lastEventWasOpen = true
             // A successful open after a failure is the recovery: the grace period and the rebuild state end here, so a
             // later user close (page button, outside click) is an ordinary close, not another failure to rebuild from.
-            self?.noticeTask?.cancel(); self?.noticeTask=nil; self?.retryTask?.cancel(); self?.retryTask=nil; self?.rebuilding=false
+            self?.cancelRecoveryTimers(); self?.rebuilding=false
             self?.noticePath="" // the episode is over: a later failure names its own cause
             onOpened?()
         }
@@ -407,30 +431,32 @@ struct CockpitUnavailableNotice {
         // same page must not announce an unavailable cockpit.
         let onDisplayed = owner.coordinator?.onDisplayed
         owner.coordinator?.onDisplayed = { [weak self] in
-            if let self, self.noticeTask != nil, !self.rebuilding {
+            if let self, self.noticeTimer != nil, !self.rebuilding {
                 self.lastEventWasOpen = true
-                self.noticeTask?.cancel(); self.noticeTask=nil; self.retryTask?.cancel(); self.retryTask=nil; self.noticePath=""
+                self.noticeTimer?.cancel(); self.noticeTimer=nil; self.retryTimer?.cancel(); self.retryTimer=nil; self.noticePath=""
             }
             onDisplayed?()
+        }
+        // Recovery contract (macrevb-981-2): sustained health counts only from a rendered receipt of the presented
+        // page, never from a reply merely handed to it.
+        let onRenderVerified = owner.coordinator?.onRenderVerified
+        owner.coordinator?.onRenderVerified = { [weak self] in
+            if let self, self.pageOpened { self.budget.rendered(at: self.now()) }
+            onRenderVerified?()
         }
         // D88: a detach, a put back or the settled open refreshes the icon highlight and the hints.
         owner.coordinator?.onShellChanged = { [weak self] in self?.onShowingChanged?() }
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
-            if self.rebuilding, self.wantsVisible, self.noticeTask != nil {
-                // A failed page inside the grace period: keep the presentation and build the page again.
+            if self.rebuilding, self.wantsVisible {
+                // A dead page: keep the presentation; the scheduled rebuild builds the page again.
                 self.pageOpened=false
-                Task { @MainActor [weak self] in
-                    try? await Task.sleep(for:.milliseconds(150))
-                    guard let self,self.rebuilding,self.wantsVisible,self.noticeTask != nil else { return }
-                    self.owner.coordinator?.open()
-                }
                 return
             }
             // Audit A-5: a user close (the page's close key, an outside click) retires a notice still in its grace
             // period; the close that follows an engine feature failure keeps it.
             if self.failureClosesPage { self.failureClosesPage = false }
-            else { self.noticeTask?.cancel(); self.noticeTask=nil; self.retryTask?.cancel(); self.retryTask=nil; self.rebuilding=false }
+            else { self.cancelRecoveryTimers(); self.rebuilding=false }
             self.wantsVisible = false
             self.onShowingChanged?()
             self.fieldPanel?.close()
@@ -498,8 +524,10 @@ struct CockpitUnavailableNotice {
         // D88: only the menu bar icon grows the cockpit out of itself; the ignition keeps its own entrance.
         entrance = fromStatusItem ? .growFromIcon : .fade
         wantsVisible=true
-        retryTask?.cancel(); retryTask=nil; attempt += 1
-        noticeTask?.cancel(); noticeTask=nil; rebuilding=false; rebuilds=0; retriedOpen=false; noticePath=""; failureClosesPage=false // a new click starts its own grace period
+        attempt += 1
+        // A new click starts its own grace period and opens at once. Recovery contract: it does not reset the rebuild
+        // budget; only sustained verified health does.
+        cancelRecoveryTimers(); rebuilding=false; retriedOpen=false; repairNoticed=false; noticePath=""; failureClosesPage=false
         DiagnosticsLog.shared.info("cockpit", "open requested source=\(fromStatusItem ? "status-item" : "other") pending=\(showTask != nil)")
         guard showTask == nil else { return }
         // G3-42: open stages in the timing log are measured from here, before the settings hop.
@@ -526,14 +554,14 @@ struct CockpitUnavailableNotice {
     /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
     func requestClose() {
         DiagnosticsLog.shared.info("cockpit", "close requested pageOpened=\(pageOpened)")
-        noticeTask?.cancel(); noticeTask=nil; retryTask?.cancel(); retryTask=nil
+        cancelRecoveryTimers(); rebuilding=false
         if pageOpened { owner.coordinator?.requestClose() } else { hide() }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
         if wantsVisible || pageOpened { DiagnosticsLog.shared.info("cockpit", "closed pageOpened=\(pageOpened) rebuilding=\(rebuilding)") }
         wantsVisible = false
-        noticeTask?.cancel(); noticeTask=nil; retryTask?.cancel(); retryTask=nil
+        cancelRecoveryTimers(); rebuilding=false
         onShowingChanged?()
         showTask?.cancel()
         showTask = nil
@@ -542,23 +570,76 @@ struct CockpitUnavailableNotice {
         pageOpened = false
         fallback?.hide()
     }
-    /// G3-66: a failure is only worth a notice when it lasts. The log line is written for every failure, with the
-    /// path, the time since launch and the engine's state. An open that finds no engine context yet is completed
-    /// by the first context (the coordinator keeps it pending); a failed page is rebuilt and reopened while the
-    /// window stays up. A later successful open drops the notice; a failure that outlasts the grace period, or
-    /// that keeps repeating, is announced.
+    private func cancelRecoveryTimers() {
+        noticeTimer?.cancel(); noticeTimer=nil; retryTimer?.cancel(); retryTimer=nil; rebuildTimer?.cancel(); rebuildTimer=nil
+    }
+    /// Recovery contract: a page that ended. Only a dead page is rebuilt, within the budget; a privacy disposal builds a
+    /// fresh page at once and says nothing; a damaged bundle or another page contract asks for repair. The generic
+    /// notice is only for a dead page whose budget is spent, which has nothing left to show.
+    private func pageFailed(_ failure: CockpitWindowFailure) {
+        let path="page."+failure.rawValue,recovery=failure.recovery
+        let initiatedInForeground=isForeground()
+        lastEventWasOpen = false
+        CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened) "
+            + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] "
+            + "recovery=\(recovery.rawValue) attempts=\(budget.attempts.count)")
+        guard wantsVisible, !repairNoticed else { return }
+        switch recovery {
+        case .repair:
+            // A rebuild cannot mend the bundle: say so now, and admit the bundle afresh at the next open.
+            cancelRecoveryTimers(); rebuilding=false; repairNoticed=true
+            noticePath=path
+            owner.verifiedBundle=nil
+            presentNotice(history:false,initiatedInForeground:initiatedInForeground)
+        case .privacy:
+            CockpitFailureLog.record("page-rebuild privacy delayMs=0 after=\(path)")
+            scheduleRebuild(afterMs:0,path:path)
+        case .rebuild:
+            switch budget.pageFailed(at:now()) {
+            case .rebuild(let delay,let number):
+                CockpitFailureLog.record("page-rebuild attempt=\(number) delayMs=\(delay) after=\(path)")
+                DiagnosticsLog.shared.notice("cockpit", "rebuild n=\(number) delayMs=\(delay) cause=\(path)")
+                scheduleRebuild(afterMs:delay,path:path)
+            case .cooldown(let probe):
+                // The budget is spent and the dead page left nothing on screen: the one case for the generic notice.
+                // The cooldown probe still runs while the cockpit is wanted (Cancel in the notice retires it).
+                noticeTimer?.cancel(); noticeTimer=nil; retryTimer?.cancel(); retryTimer=nil
+                if !CockpitUnavailableNotice.isBundleProblem(path:noticePath) { noticePath=path }
+                CockpitFailureLog.record("page-rebuild cooldown probeAfterMs=\(probe) after=\(path)")
+                scheduleRebuild(afterMs:probe,path:path)
+                presentNotice(history:false,initiatedInForeground:initiatedInForeground)
+            }
+        }
+    }
+    private func scheduleRebuild(afterMs delay:UInt64,path:String) {
+        rebuilding=true
+        rebuildTimer?.cancel()
+        let scheduledFor=attempt
+        rebuildTimer=CockpitConsoleTimer(cancel:schedule(delay) { [weak self] in
+            guard let self,self.attempt == scheduledFor else { return }
+            self.rebuildTimer=nil
+            guard self.wantsVisible,self.rebuilding,!self.pageOpened else { return }
+            self.rebuilding=false // the dead page has closed by now; what the new open reports is its own
+            CockpitFailureLog.record("page-rebuild open after=\(path)")
+            self.owner.coordinator?.open()
+        })
+    }
+    /// G3-66: a failed open (no page could be shown yet) is only worth a notice when it lasts. The log line is written for
+    /// every failure, with the path, the time since launch and the engine's state. An open that finds no engine context
+    /// yet is completed by the first context (the coordinator keeps it pending). A later successful open drops the
+    /// notice; a failure that outlasts the grace period is announced. Page failures go through `pageFailed`.
     private func unavailable(path:String,history:Bool=false) {
         // The open already being waited on reports again (a late open step): that says nothing new and must not
         // undo a recovery already seen. Decided before any state changes, so it cannot race the open event.
         // The coordinator closes the page right after a feature failure; that close is the failure's, not the user's.
         if wantsVisible, path == CockpitUnavailableReason.featureFailure.path { failureClosesPage = true }
-        if noticeTask != nil, !history, !path.hasPrefix("page.") {
+        if noticeTimer != nil, !history {
             // macrevc-887-2: a failure that follows a pending open (open.noDelivery, then the bundle error when the first
             // context delivers it) is the more meaningful cause. It is named in the log and in the notice, without
             // restarting the grace period. A bundle problem is never replaced by a milder cause.
             if wantsVisible, path != noticePath, !CockpitUnavailableNotice.isBundleProblem(path: noticePath) {
                 CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(isForeground()) pageOpened=\(pageOpened) "
-                    + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] rebuilds=\(rebuilds) during-grace=true")
+                    + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] attempts=\(budget.attempts.count) during-grace=true")
                 noticePath = path
             }
             // G3-95: a pending open that started this grace period spent no retry; a retryable failure that follows it
@@ -570,27 +651,18 @@ struct CockpitUnavailableNotice {
         let initiatedInForeground=isForeground()
         // A failure in the background or after a close shows nothing, so the log is all there is.
         CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened) "
-            + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] rebuilds=\(rebuilds)")
+            + "sinceLaunchMs=\(CockpitFailureLog.msSinceLaunch) engine=[\(owner.coordinator?.diagnosticState ?? "no-coordinator")] attempts=\(budget.attempts.count)")
         guard wantsVisible else { return }
         if !history, !CockpitUnavailableNotice.isBundleProblem(path:noticePath) { noticePath=path } // a bundle cause is never replaced by a milder one; the cause that starts the grace period; a later non-page cause replaces it above
         if history { presentNotice(history:true,initiatedInForeground:initiatedInForeground); return }
-        if path.hasPrefix("page.") {
-            rebuilds += 1
-            if rebuilds > Self.maxRebuilds { noticeTask?.cancel(); noticeTask=nil; presentNotice(history:false,initiatedInForeground:initiatedInForeground); return }
-            rebuilding=true // the coordinator's close that follows must not retire the presentation
-            DiagnosticsLog.shared.notice("cockpit", "rebuild n=\(rebuilds) cause=\(path)")
-        }
-        guard noticeTask == nil else { return }
         scheduleOpenRetry(path:path)
         let epoch=openCount
-        noticeTask=Task { @MainActor [weak self] in
+        noticeTimer=CockpitConsoleTimer(cancel:schedule(CockpitScheduling.milliseconds(noticeGrace)) { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(for:self.noticeGrace)
-            guard !Task.isCancelled else { return }
-            self.noticeTask=nil; self.retryTask?.cancel(); self.retryTask=nil; self.rebuilding=false
+            self.noticeTimer=nil; self.retryTimer?.cancel(); self.retryTimer=nil
             guard !(self.openCount != epoch && self.lastEventWasOpen) else { return } // a page opened and nothing failed after it: recovered
             self.presentNotice(history:false,initiatedInForeground:initiatedInForeground)
-        }
+        })
     }
     /// G3-95: a failed open that nothing else retries (no client yet, a context the bridge could not use, a page that
     /// could not be made) gets one more open after a short wait, inside the grace period. A bundle problem will not
@@ -600,21 +672,21 @@ struct CockpitUnavailableNotice {
               !CockpitUnavailableNotice.isBundleProblem(path:path) else { return }
         retriedOpen=true
         let scheduledFor=attempt
-        retryTask=Task { @MainActor [weak self] in
-            try? await Task.sleep(for:Self.openRetryDelay)
-            guard !Task.isCancelled,let self,self.attempt == scheduledFor,self.wantsVisible,self.noticeTask != nil,!self.pageOpened else { return }
-            self.retryTask=nil
+        retryTimer=CockpitConsoleTimer(cancel:schedule(CockpitScheduling.milliseconds(Self.openRetryDelay)) { [weak self] in
+            guard let self,self.attempt == scheduledFor,self.wantsVisible,self.noticeTimer != nil,!self.pageOpened else { return }
+            self.retryTimer=nil
             CockpitFailureLog.record("open-retry after=\(path)")
             self.owner.coordinator?.open()
-        }
+        })
     }
     private func presentNotice(history:Bool,initiatedInForeground:Bool) {
         let bundleProblem=CockpitUnavailableNotice.isBundleProblem(path:noticePath)
-        CockpitFailureLog.record("notice-shown cause=\(history ? "history" : noticePath.isEmpty ? "unknown" : noticePath) bundleProblem=\(bundleProblem) foreground=\(initiatedInForeground) rebuilds=\(rebuilds) retriedOpen=\(retriedOpen)")
+        CockpitFailureLog.record("notice-shown cause=\(history ? "history" : noticePath.isEmpty ? "unknown" : noticePath) bundleProblem=\(bundleProblem) foreground=\(initiatedInForeground) attempts=\(budget.attempts.count) retriedOpen=\(retriedOpen)")
         let notice=CockpitUnavailableNotice(history:history,bundleProblem:bundleProblem)
+        // An injected notice sink (tests, verification) gets it at once, so its order against the recovery timers is exact.
+        if let requestNotice { if initiatedInForeground { requestNotice(notice) }; return }
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }
-            if let requestNotice { requestNotice(notice); return }
             let english=await owner.settingsStore.snapshot().preferences.language == .english
             let alert=NSAlert();alert.messageText=english ? "Cockpit unavailable" : "驾驶舱暂不可用"
             alert.informativeText=history
