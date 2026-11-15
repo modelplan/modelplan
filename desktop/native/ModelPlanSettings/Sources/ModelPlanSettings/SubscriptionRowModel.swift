@@ -100,6 +100,9 @@ public struct SubscriptionRowModel: Equatable, Sendable {
         }
         if let code = actionableCode(facts?.code), !isKeychain(code),
            let entry = ReaderCauseTable.rowEntry(code: code, tool: tool.tool, toolName: name, keyEntryAvailable: keyEntryAvailable) {
+            // #954 (G3-105): OpenCode Go's missing key keeps its own line (a found sign-in is not read, D230; the key
+            // goes in OPENCODE_API_KEY); the row's fix still offers the manual key entry when there is one.
+            if ReaderCauseTable.canonical(code) == "key_missing", let line = ToolKeyLines.keyMissingLine(tool) { return (line, true) }
             return (entry.reason, true)
         }
         if tool.promptsKeychain {
@@ -123,8 +126,11 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             let sub = byID[id]!
             let tool = sub.tool.lowercased()
             let toolFacts = facts[tool]
-            var code = actionableCode(sub.causeCode) ?? actionableCode(toolFacts?.code)
-            if code == nil, let state = toolFacts?.state {
+            // SET-9-34: a stale subscription keeps its own "last reading is old" status; a cause or state that belongs to the
+            // tool as a whole (another account's failure) must not replace it. Only the subscription's own cause counts.
+            let stale = sub.source == .stale
+            var code = actionableCode(sub.causeCode) ?? (stale ? nil : actionableCode(toolFacts?.code))
+            if code == nil, !stale, let state = toolFacts?.state {
                 if state == .needsKeychain { code = "keychain_unset" }
                 if state == .needsConsent { code = "consent_required" }
             }

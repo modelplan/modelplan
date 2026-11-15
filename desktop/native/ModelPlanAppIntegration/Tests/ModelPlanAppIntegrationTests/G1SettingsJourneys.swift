@@ -257,7 +257,8 @@ private actor G1SettingsEngine: EngineClient {
                 guard let field = field as? NSTextField, !field.isHiddenOrHasHiddenAncestor else { return nil }
                 return field.stringValue
             }
-            XCTAssertTrue(subscriptionLabels.contains { isHeading($0, order) }, "D87: Settings > Subscriptions has the Order section (\(locale))")
+            // D87/D89: the Order section is replaced by the order controls on the Subscriptions rows; the legacy heading is gone there too.
+            XCTAssertFalse(subscriptionLabels.contains { isHeading($0, order) }, "D87: Subscriptions shows order on its rows, not a separate Order section (\(locale))")
         }
     }
 
@@ -415,10 +416,44 @@ private actor G1SettingsEngine: EngineClient {
 
     func testG1_SET_9_13_SubscriptionOrderChangesAndReset() async throws {
         let app = try await entry(locale: "en-US", discoveredMembers: 3)
-        // D87 item 1 (G3-68, #788): the order control lives in Settings > Subscriptions.
+        // D87 item 1 (G3-68, #788) and slice 6: the order and visibility controls live in Settings > Subscriptions. This
+        // journey presses the production window's own buttons; nothing here replaces the rows context or its actions.
         let window = try await settings(app, pane: "subscriptions")
-        try assertControls(["settings.order.list"], in: window)
-        throw XCTSkip("Three-member drag, arrow actions, engine-column order and relaunch are not yet exercised")
+        let editor = app.settingsHost.application.editor
+        var ids: [String] = []
+        for _ in 0..<500 {
+            ids = editor.context.subscriptions.filter { !$0.isUnstable }.map(\.id)
+            if ids.count >= 2, flatten(try XCTUnwrap(window.contentView)).contains(where: { $0.accessibilityIdentifier() == "subscriptions.down." + ids[0] }) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertGreaterThanOrEqual(ids.count, 2, "the app's own rows give at least two verified subscriptions")
+        guard ids.count >= 2 else { return }
+        let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
+        func press(_ id: String) async throws {
+            let button = try control(id, in: window, as: NSButton.self)
+            XCTAssertTrue(button.isEnabled, "\(id) is enabled")
+            button.performClick(nil)
+            await controller.waitForPendingSave()
+        }
+        func order() async -> [String] {
+            let saved = await app.foundationStore.snapshot().preferences
+            return (try? saved.presentedSubscriptionIDs(editor.context.subscriptions.filter { !$0.isUnstable }.map(\.id), includingHidden: true)) ?? []
+        }
+        let initial = await order()
+        XCTAssertEqual(Array(initial.prefix(2)), Array(ids.prefix(2)))
+        // SET-9-13: down moves the first subscription one place; Reset order restores the default.
+        try await press("subscriptions.down." + ids[0])
+        let moved = await order()
+        XCTAssertEqual(moved.first, ids[1], "the second subscription is now first")
+        try await press("subscriptions.resetOrder")
+        let reset = await order()
+        XCTAssertEqual(reset, initial, "Reset order restores the shared order")
+        // SET-9-16: the visibility switch is a display edit saved in the preferences; it never touches reading consent.
+        let consentBefore = app.scopeConsentEntry.controller.phase
+        try await press("subscriptions.visible." + ids[0])
+        let hidden = await app.foundationStore.snapshot().preferences.subscriptions.hiddenIDs
+        XCTAssertTrue(hidden.contains(ids[0]), "switching a row off hides it from the widget list")
+        if case .idle = consentBefore, case .idle = app.scopeConsentEntry.controller.phase {} else { XCTFail("visibility and order never ask for reading consent") }
     }
 
     func testG1_SET_9_15_AppearanceAndAccessibilityApplyLive() async throws {
