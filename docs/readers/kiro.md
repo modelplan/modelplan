@@ -58,3 +58,23 @@ Outer request set: two RPCs, one data query; no HTTP method/host/path/header pin
 ## Known gaps and unknowns
 
 The P1 runtime side-effect gap is reported for coordinator routing. The current native writer already sanitizes Kiro failure text; this is distinct from the separately documented Codex account-snapshot error path. No installed runtime is certified; no general no-refresh, no-write, no-paid-call or two-vendor-request proof exists here. Owner-shaped L2, native prompts, live vendors and L3 are not-run. Unknowns remain unknown; this card is not permission to promote the path.
+
+## Tool-reported models (D98/D99/D102)
+
+Owner decision D102 (v1.1) accepted one throwaway ACP session per model read. This extends the outer request set above by one process and two RPCs, run only after a successful usage read, under the same `kiro.runtime_usage` consent: a second `kiro-cli acp` is started with an **empty temporary directory** as its working directory (removed afterwards, never a user project), `initialize`, then `session/new` with `{"cwd": <temp dir>, "mcpServers": []}`. No prompt, model selection or authenticate call is ever sent, and the process is killed right after the reply. Kiro may leave a small session stub under `~/.kiro`; the owner accepted that. Budget: at most one such read per 24 hours, counted from the last attempt even if it failed (no manual-refresh bypass); a 20 s hard timeout; any failure, timeout or malformed reply keeps the previous list and never changes the quota outcome. Only ids are kept (`models.availableModels[].modelId` and the options of the `model` config option), cleaned to slugs and cached in `observed/kiro-models.json`. The usage-only path still creates no session.
+
+Tests: `kiro_models_test.go` with a fake ACP process (success, timeout, malformed reply, usage failure opens no session, 24 h budget, throwaway directory removed, hostile ids, no session/account fields in the cache); `TestKiroUsageOverACP` still shows the usage process sends only `initialize` and `getUsage`.
+
+### Follow-up: verification run and alias data (needs a Mac with a signed-in Kiro)
+
+The `session/new` reply shape is parsed defensively and is **unverified against a live account**. Alias data (`harnessIds.kiro`) is deliberately not published until this fixture exists (D102: no guessed aliases). On the Mac with Kiro CLI signed in:
+
+```sh
+d=$(mktemp -d) && cd "$d"
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"modelplan","version":"1"}}}' \
+  "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/new\",\"params\":{\"cwd\":\"$d\",\"mcpServers\":[]}}" \
+  | (cat; sleep 15) | kiro-cli acp --agent-engine v3 --auth-method cli > kiro-session-new.jsonl
+ls -la ~/.kiro   # note any session stub created
+```
+
+Redact session ids, paths and account fields from `kiro-session-new.jsonl`, commit the `id:3` result as a fixture, confirm the parser returns the listed model ids, then match each id to a published model identity by vendor docs and add `harnessIds.kiro` aliases with source and checked date through the data PR flow.

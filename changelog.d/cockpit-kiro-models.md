@@ -1,0 +1,1 @@
+The cockpit can now read the model ids Kiro CLI reports: one throwaway ACP session in an empty temporary directory, at most once per 24 hours, 20 second timeout, no prompt sent. Only ids are kept, failures never affect the quota read, and ids map to published models only once reviewed harness aliases exist for Kiro.

@@ -18,7 +18,20 @@ const kiroUsage = `{"success":true,"data":{"planName":"KIRO PRO","billingCycleRe
 // fakeKiro answers like `kiro-cli acp`: initialize, then _kiro/account/getUsage, and logs every
 // method and its arguments.
 func fakeKiro(t *testing.T, usage string) (bin, log string) {
+	return fakeKiroSession(t, usage, "")
+}
+
+// fakeKiroSession also answers session/new with the given result ("" = never answers, "hang" = no reply
+// and a sleep), logging the working directory it was started in.
+func fakeKiroSession(t *testing.T, usage, session string) (bin, log string) {
+	old := kiroModelsTimeout
+	kiroModelsTimeout = 400 * time.Millisecond
+	t.Cleanup(func() { kiroModelsTimeout = old })
 	dir := t.TempDir()
+	sessionCase := ""
+	if session != "" {
+		sessionCase = "    session/new) echo \"cwd: $(pwd)\" >> \"" + log0(dir) + "\"; printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":%s}\\n' '" + session + "' ;;\n"
+	}
 	bin, log = filepath.Join(dir, "kiro-cli"), filepath.Join(dir, "calls")
 	script := `#!/bin/sh
 echo "args: $*" >> "` + log + `"
@@ -26,7 +39,7 @@ while IFS= read -r line; do
   m=$(printf '%s' "$line" | sed -n 's/.*"method":"\([^"]*\)".*/\1/p'); echo "$m" >> "` + log + `"
   case "$m" in
     initialize) echo '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}' ;;
-    _kiro/account/getUsage) printf '{"jsonrpc":"2.0","id":2,"result":%s}\n' '` + strings.ReplaceAll(usage, "\n", "") + `' ;;
+` + sessionCase + `    _kiro/account/getUsage) printf '{"jsonrpc":"2.0","id":2,"result":%s}\n' '` + strings.ReplaceAll(usage, "\n", "") + `' ;;
   esac
 done
 `
@@ -35,6 +48,14 @@ done
 	}
 	return bin, log
 }
+
+// kiroUsageCalls counts the usage reads a fakeKiro log shows; the 24 h model read is separate.
+func kiroUsageCalls(log string) int {
+	b, _ := os.ReadFile(log)
+	return strings.Count(string(b), "_kiro/account/getUsage")
+}
+
+func log0(dir string) string { return filepath.Join(dir, "calls") }
 
 func TestKiroUsageOverACP(t *testing.T) {
 	isolateHome(t)
@@ -54,7 +75,7 @@ func TestKiroUsageOverACP(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls, _ := os.ReadFile(log)
-	if got := strings.Fields(string(calls)); strings.Join(got, " ") != "args: acp --agent-engine v3 --auth-method cli initialize _kiro/account/getUsage" {
+	if got := strings.Fields(string(calls)); strings.Join(got, " ") != "args: acp --agent-engine v3 --auth-method cli initialize _kiro/account/getUsage args: acp --agent-engine v3 --auth-method cli initialize session/new" {
 		t.Fatalf("calls = %v", got)
 	}
 	var a *Account

@@ -261,7 +261,7 @@ var productionLegacyTests = map[string]func(*testing.T) (time.Time, func() int){
 	"kiro": func(t *testing.T) (time.Time, func() int) {
 		bin, log := fakeKiro(t, kiroUsage)
 		t.Setenv("MODELPLAN_KIRO", bin)
-		return now, func() int { b, _ := os.ReadFile(log); return len(b) }
+		return now, func() int { return kiroUsageCalls(log) }
 	},
 	"antigravity": func(t *testing.T) (time.Time, func() int) {
 		hits := 0
