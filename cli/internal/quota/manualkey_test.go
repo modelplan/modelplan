@@ -534,3 +534,20 @@ func TestUnsafeSavedKeyFileFailsRefreshClosedWithoutAnyRequest(t *testing.T) {
 		t.Fatalf("an unsafe saved-key file must send no request with either key: %v", a)
 	}
 }
+
+// macrevd-795-2 / glm-795-9: the saved-key file check applies only to providers that have a manual key.
+func TestUnsafeSavedKeyFileDoesNotAffectProvidersWithoutManualKeys(t *testing.T) {
+	dir := t.TempDir()
+	if err := SetManualKey(dir, "zai", fakeZaiKey, "global"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(ManualKeyPath(dir), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := loadManualKeyChecked(dir, "minimax"); err != nil {
+		t.Fatalf("a provider without manual keys must ignore the file: %v", err)
+	}
+	if _, _, err := loadManualKeyChecked(dir, "zai"); err == nil {
+		t.Fatal("zai must still fail closed on an unsafe file")
+	}
+}

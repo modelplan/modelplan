@@ -18,7 +18,7 @@ import XCTest
         let store = defaults(), key = StatusItemPlacement.key(autosaveName: "mp")
         XCTAssertEqual(key, "NSStatusItem Preferred Position mp")
         XCTAssertFalse(StatusItemPlacement.clearImplausiblePosition(autosaveName: "mp", defaults: store, screenWidths: [1470]))
-        for valid in [400.0, 1470 + 512] {
+        for valid: Double in [400.0, 1470.0 + 512.0] {
             store.set(valid, forKey: key)
             XCTAssertFalse(StatusItemPlacement.clearImplausiblePosition(autosaveName: "mp", defaults: store, screenWidths: [1470]))
             XCTAssertEqual(store.double(forKey: key), valid, "a dragged position is never touched")

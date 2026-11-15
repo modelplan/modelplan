@@ -174,7 +174,7 @@ public struct HelpCatalog: Sendable {
             basis = copy("直接点选文字，或用键盘按一下切换。", "Press the printed choice directly or activate the key to cycle.")
         case .screen:
             title = copy("公共屏", "Main screen")
-            basis = copy("按页键查看总览、订阅、档位或去向。", "Use the page keys for Overview, Subscriptions, Effort or Destinations.")
+            basis = copy("按页键查看总览、订阅、模型或去向。", "Use the page keys for Overview, Subscriptions, Models or Destinations.")
         case .heat:
             title = copy("每日用量", "Daily use")
             basis = copy("颜色越亮用量越多，空白表示没有记录。", "Brighter cells mean more use and a gap means no record is available.")

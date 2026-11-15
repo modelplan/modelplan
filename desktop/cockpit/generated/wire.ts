@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 9b2be6da20d1d547885850d09a5ebf1b2f09106abe146cdef84390a06965bf96
+// Schema SHA-256: 2560d7c345ffc0898a5236bdd821a5c22f3c658d386ce2cc94541043cc5ca86c
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -88,6 +88,7 @@ export type WireCockpitDetails = {
   readonly "alerts": ReadonlyArray<WireCockpitAlert>;
   readonly "forecasts"?: ReadonlyArray<WireCockpitForecast>;
   readonly "peaks"?: ReadonlyArray<WireCockpitPeak>;
+  readonly "planModels"?: ReadonlyArray<WireCockpitPlanModels>;
   readonly "publication"?: WireCockpitPublication | null;
   readonly "publishedModels"?: ReadonlyArray<WireCockpitPublicationModel>;
   readonly "recentSessions"?: ReadonlyArray<WireCockpitRecentSession>;
@@ -153,6 +154,13 @@ export type WireCockpitPeak = {
   readonly "rowId": string;
   readonly "startsAt": string;
   readonly "status": string;
+};
+
+export type WireCockpitPlanModels = {
+  readonly "basis": string;
+  readonly "generation"?: string;
+  readonly "modelIds": ReadonlyArray<string>;
+  readonly "planId": string;
 };
 
 export type WireCockpitProjectRanking = {
@@ -960,6 +968,13 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "maxItems": 32,
         "type": "array"
       },
+      "planModels": {
+        "items": {
+          "$ref": "#/$defs/CockpitPlanModels"
+        },
+        "maxItems": 128,
+        "type": "array"
+      },
       "publication": {
         "anyOf": [
           {
@@ -1340,6 +1355,38 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "startsAt",
       "endsAt",
       "status"
+    ],
+    "type": "object"
+  },
+  "CockpitPlanModels": {
+    "additionalProperties": false,
+    "properties": {
+      "basis": {
+        "maxLength": 16,
+        "type": "string"
+      },
+      "generation": {
+        "maxLength": 128,
+        "type": "string"
+      },
+      "modelIds": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 256,
+        "minItems": 1,
+        "type": "array"
+      },
+      "planId": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "planId",
+      "basis",
+      "modelIds"
     ],
     "type": "object"
   },

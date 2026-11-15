@@ -153,7 +153,9 @@ private actor KeyEngine: EngineClient {
         // builds); only the order of the key-carrying calls is the contract: Test, then Save reusing it.
         XCTAssertTrue(calls.contains { $0.method == "readerkey/status" }, "the entry reads the stored state first")
         XCTAssertEqual(calls.map(\.method).filter { $0 != "readerkey/status" }, ["readerkey/test", "readerkey/set"], "Save reuses the passing Test")
-        XCTAssertEqual(calls.last, .init(method: "readerkey/set", provider: "zai", region: "global", key: fakeKey))
+        // The accepted reading after Save refreshes each entry's status (readerkey/status), so the final call overall may be
+        // a status call; the contract is that the last key-carrying call is the Save.
+        XCTAssertEqual(calls.last { $0.method != "readerkey/status" }, .init(method: "readerkey/set", provider: "zai", region: "global", key: fakeKey))
         let grants = await engineValue.recordedGrants()
         XCTAssertEqual(grants, [[zaiScope]], "saving turns on exactly that provider's reading scope")
         XCTAssertEqual(find(view, "readerkey.zai.field", as: NSSecureTextField.self)?.stringValue, "", "the key does not stay on screen")

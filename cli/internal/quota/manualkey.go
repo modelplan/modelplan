@@ -121,6 +121,10 @@ func loadManualKey(dir, provider string) (ManualKey, bool) {
 // loadManualKeyChecked is loadManualKey that keeps the difference between "no saved key" and "a saved
 // file that is unsafe or unreadable". A refresh must fail closed on the latter, not use another key.
 func loadManualKeyChecked(dir, provider string) (ManualKey, bool, error) {
+	if !ManualKeyProvider(provider) {
+		// Providers without a manual key file never look at it: a bad file must not affect them.
+		return ManualKey{}, false, nil
+	}
 	keys, err := loadManualKeys(dir)
 	if err != nil {
 		return ManualKey{}, false, err
