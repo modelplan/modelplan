@@ -140,9 +140,10 @@ public enum DiagnosticsBundleFilter {
             return list.prefix(4096).compactMap { project($0, element) }
         }
     }
+    /// Slashes stay unescaped so paths read as written (`/Users/~/src/main.swift`, not `\/Users\/~…`).
     private static func json(_ object: Any) -> String? {
         guard JSONSerialization.isValidJSONObject(object),
-              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted]) else { return nil }
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]) else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
     private static func parse(_ text: Substring) -> Any? {

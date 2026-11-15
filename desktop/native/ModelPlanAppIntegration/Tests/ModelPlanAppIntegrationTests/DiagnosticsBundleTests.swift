@@ -164,6 +164,7 @@ final class DiagnosticsBundleTests: XCTestCase {
             XCTAssertFalse(report.contains(gone), "\(gone) kept:\n\(report)")
         }
         XCTAssertTrue(report.contains("<omitted>"), "the canary frame symbol is refused, not kept")
+        XCTAssertFalse(report.contains("\\/"), "paths are serialized without escaped slashes (macrev2-963-3)")
         XCTAssertTrue(try read("crash-reports/modelplan-2026-11-14-201413.ips").hasPrefix("[report omitted: not an .ips crash report"))
         let doctor = try read("doctor-readers.json").replacingOccurrences(of: " : ", with: ":")
         XCTAssertTrue(doctor.contains("\"provider\":\"codex\""), doctor)
