@@ -946,9 +946,8 @@ final class CommunityCockpitEntryTests:XCTestCase {
         }
     }
 
-    /// CKP-SHELL-01 (D118): through the normal factory, the cockpit opens directly below the menu-bar icon: its top sits a
-    /// fixed 6 pt under the icon's bottom edge and it is centred on the icon (D88: the 636 px raster has the same 8 px
-    /// margin on both sides of the shell, so the frame's centre is the shell's), shifted only as far as the screen's edges require. Parameterised over the icon's position.
+    /// CKP-SHELL-33: the normal factory opens beneath the icon with the rack gap and shoulder alignment,
+    /// clamped to the screen at either edge.
     @MainActor func testNormalFactoryOpensDirectlyBelowTheMenuBarIcon() throws {
         let (owner,bundle,context,_)=try shellFixture()
         let usable=try XCTUnwrap(NSScreen.main).visibleFrame
@@ -959,10 +958,10 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let page=owner.makePage(context:context,verified:bundle)
             page.open()
             let window=try XCTUnwrap(page.window,name)
-            XCTAssertEqual(window.frame.maxY,anchor.minY-6,accuracy:1,"\(name): top is 6 pt under the icon")
+            XCTAssertEqual(window.frame.maxY,anchor.minY-10,accuracy:1,"\(name): top is 10 pt under the icon")
             XCTAssertLessThanOrEqual(window.frame.maxY,anchor.minY,"\(name): never above the icon")
-            let expectedX=max(usable.minX,min(anchor.midX-window.frame.width/2,usable.maxX-window.frame.width))
-            XCTAssertEqual(window.frame.minX,expectedX,accuracy:1,"\(name): centred on the icon, clamped to the screen")
+            let expected = try XCTUnwrap(CockpitShellLayout.fit(usable: usable, anchor: anchor, shutterClosed: false))
+            XCTAssertEqual(window.frame.minX,expected.frame.minX,accuracy:1,"\(name): shoulder aligned and clamped to the screen")
             XCTAssertGreaterThanOrEqual(window.frame.minX,usable.minX-1,name)
             XCTAssertLessThanOrEqual(window.frame.maxX,usable.maxX+1,name)
             page.discard()
