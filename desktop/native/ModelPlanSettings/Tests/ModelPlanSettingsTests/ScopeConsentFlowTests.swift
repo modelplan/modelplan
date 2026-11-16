@@ -487,3 +487,62 @@ import ModelPlanWire
         XCTAssertNil(view.window, "Offscreen command binding is not real input or L2")
     }
 }
+
+/// D89: dropping a row's grip on another row moves it there; a row that cannot be edited does not accept drops.
+@MainActor final class SubscriptionRowDropTests: XCTestCase {
+    func testDroppingOnAnotherRowMovesByTheDistanceAndPendingRowsHaveNoControls() throws {
+        let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
+            try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1, consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
+        })
+        let controller = ScopeConsentController(commands: commands)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        let view = SettingsScopeConsentView(controller: controller, language: .english, compactTools: true)
+        var moves: [String] = []
+        view.rowActions.move = { id, delta in moves.append("\(id):\(delta)") }
+        view.setSubscriptionRows(SubscriptionRowsContext(
+            subscriptions: ["a", "b", "c"].map { SettingsSubscription(id: $0, name: .init($0, $0), vendor: "v" + $0, source: .fresh) },
+            orderedIDs: ["a", "b", "c"], hiddenIDs: [], canSave: true))
+        func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+        let rows = all(view).compactMap { $0 as? SubscriptionDropRow }
+        let a = try XCTUnwrap(rows.first { $0.rowID == "a" }), c = try XCTUnwrap(rows.first { $0.rowID == "c" })
+        a.onDrop?("c", "a"); c.onDrop?("a", "c"); a.onDrop?("a", "a")
+        XCTAssertEqual(moves, ["c:-2", "a:2"], "the distance in the shared order; dropping on itself does nothing")
+        XCTAssertNotNil(all(view).first { $0.accessibilityIdentifier() == "subscriptions.drag.b" })
+    }
+
+    /// macrev2-804-4: the host commits moves against the verified subscriptions only, so with an unverified row in
+    /// between, drop distances and up/down availability are counted in that same verified order.
+    func testMovesSkipUnverifiedRows() throws {
+        let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
+            try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1, consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
+        })
+        let controller = ScopeConsentController(commands: commands)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        let view = SettingsScopeConsentView(controller: controller, language: .english, compactTools: true)
+        var moves: [String] = []
+        view.rowActions.move = { id, delta in moves.append("\(id):\(delta)") }
+        view.setSubscriptionRows(SubscriptionRowsContext(
+            subscriptions: [SettingsSubscription(id: "a", name: .init("a", "a"), vendor: "va", source: .fresh),
+                            SettingsSubscription(id: "u", name: .init("u", "u"), vendor: "vu", source: .fresh, isUnstable: true),
+                            SettingsSubscription(id: "b", name: .init("b", "b"), vendor: "vb", source: .fresh)],
+            orderedIDs: ["a", "u", "b"], hiddenIDs: [], canSave: true))
+        func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+        func button(_ id: String) throws -> NSButton { try XCTUnwrap(all(view).first { $0.accessibilityIdentifier() == id } as? NSButton, id) }
+        let rows = all(view).compactMap { $0 as? SubscriptionDropRow }
+        let a = try XCTUnwrap(rows.first { $0.rowID == "a" }), u = try XCTUnwrap(rows.first { $0.rowID == "u" })
+        a.onDrop?("b", "a"); u.onDrop?("a", "u")
+        XCTAssertEqual(moves, ["b:-1"], "b is one place after a among the verified rows; an unverified row is no target")
+        XCTAssertFalse(try button("subscriptions.up.a").isEnabled); XCTAssertTrue(try button("subscriptions.down.a").isEnabled)
+        XCTAssertTrue(try button("subscriptions.up.b").isEnabled); XCTAssertFalse(try button("subscriptions.down.b").isEnabled)
+        XCTAssertFalse(try button("subscriptions.up.u").isEnabled); XCTAssertFalse(try button("subscriptions.down.u").isEnabled)
+        let model = SubscriptionRowModel.build(subscriptions: [SettingsSubscription(id: "a", name: .init("a", "a")),
+                                                               SettingsSubscription(id: "u", name: .init("u", "u"), isUnstable: true),
+                                                               SettingsSubscription(id: "b", name: .init("b", "b"))],
+                                               orderedIDs: ["a", "u", "b"], hiddenIDs: [], tools: [], facts: [:], isReading: { _ in false },
+                                               name: { .init($0, $0) })
+        let order = SubscriptionRowsView.movableOrder(model) { $0 == "u" }
+        XCTAssertEqual(order, ["a", "b"])
+        XCTAssertEqual(SubscriptionRowsView.moveDelta(source: "b", target: "a", in: order), -1)
+        XCTAssertNil(SubscriptionRowsView.moveDelta(source: "a", target: "u", in: order))
+    }
+}

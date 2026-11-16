@@ -69,6 +69,7 @@ func fetchZaiAuthorization(ctx context.Context, c *http.Client, region, key, aut
 	}
 	if key == "" {
 		e.Error = "no API key in the environment"
+		e.ErrorCode = "no_key"
 		return e
 	}
 	var r zaiResponse

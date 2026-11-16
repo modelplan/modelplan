@@ -8,6 +8,8 @@ struct ClientRuntime: Sendable {
     var writeTimeout: Double = 10
     var now: @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime }
     var sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    /// Ends a child and reports whether it was reaped. Tests inject a failing first cleanup (recovery step 5).
+    var reap: @Sendable (EngineProcess) async -> Bool = { await $0.finish() }
 }
 
 struct ClientPending {
@@ -48,6 +50,8 @@ struct ClientDelivery {
 /// App-side protocol client. UI state and Security.framework remain with its consumers.
 public actor ProcessEngineClient: EngineClient {
     nonisolated let deliveryAuthority = DeliveryAuthority()
+    /// Tells this client's lines apart in the app log (the cockpit and the rows each run their own engine child).
+    nonisolated let logTag = String(UUID().uuidString.prefix(8)).lowercased()
     let configuration: EngineClientConfiguration
     let consumer: any EngineClientEventConsumer
     let credentialAgent: (any CredentialAgent)?
@@ -88,6 +92,15 @@ public actor ProcessEngineClient: EngineClient {
     var restartTask: Task<Void, Never>?
     var rowsBootstrapRetry: Task<Void, Never>?
     var rowsBootstrapBusyCount = 0
+    /// Recovery contract: a failed or timed-out epoch probe is retried with a capped backoff, never left closed.
+    var epochProbeRetry: Task<Void, Never>?
+    var epochProbeAttempts = 0
+    /// Recovery contract: a stalled consumer stops the child; once its outstanding consume returns, a fresh session starts.
+    var stallRecoveryPending = false
+    /// The supervisor's outstanding restart decision: the earliest monotonic time a fresh child may spawn, and whether
+    /// that spawn is the half-open attempt after a cooldown. It survives a failed reap of the old child, so a child
+    /// that is hard to reap can never respawn before its backoff or cooldown (macrev2-994-1, macrev2-994-2).
+    var pendingRelaunch: (notBefore: Double, halfOpen: Bool)?
     var budget = RestartBudget()
     var facts: WireEnvelope<WireConsentFacts>?
     var intents: [String: CredentialIntent] = [:]
@@ -111,7 +124,7 @@ public actor ProcessEngineClient: EngineClient {
         self.credentialAgent = credentialAgent; self.consumer = consumer; self.runtime = runtime
     }
     deinit {
-        restartTask?.cancel(); rowsBootstrapRetry?.cancel(); deliveryTask?.cancel(); deliveryTimer?.cancel()
+        restartTask?.cancel(); rowsBootstrapRetry?.cancel(); epochProbeRetry?.cancel(); deliveryTask?.cancel(); deliveryTimer?.cancel()
         let current = child
         let abandoned = unreapedProcess
         if let current { Task { _ = await current.finish() } }
@@ -164,8 +177,9 @@ public actor ProcessEngineClient: EngineClient {
     public func stop() async {
         deliveryAuthority.replace(with: nil)
         if let stoppingTask { await stoppingTask.value; return }
-        stopped = true; stopping = true
+        stopped = true; stopping = true; stallRecoveryPending = false; pendingRelaunch = nil
         rowsBootstrapRetry?.cancel(); rowsBootstrapRetry = nil; rowsBootstrapBusyCount = 0
+        epochProbeRetry?.cancel(); epochProbeRetry = nil; epochProbeAttempts = 0
         let retiring = restartTask
         retiring?.cancel(); restartTask = nil
         let process = child ?? unreapedProcess
@@ -202,7 +216,7 @@ public actor ProcessEngineClient: EngineClient {
     /// feature the app renders must be listed here. scripts/tests/capability-handshake.test.mjs checks this list
     /// against the server's advertised capabilities.
     static func declaredCapabilities(withCredentials: Bool) -> [String] {
-        ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "cockpitDetailsV1", "cockpitForecastV1", "cockpitHistoryV1", "cockpitModelsV1", "cockpitSessionsV1", "cockpitPeaksV1", "publication", "plugin_install", "history_import_v1", "resetEvents", "memberRefreshV1", "windowSourcesV1", "resetEventLinksV1", "accountTodayV1"] + (withCredentials ? ["credentials"] : [])
+        ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "cockpitDetailsV1", "cockpitForecastV1", "cockpitHistoryV1", "cockpitModelsV1", "cockpitSessionsV1", "cockpitPeaksV1", "publication", "plugin_install", "history_import_v1", "reader_key", "resetEvents", "memberRefreshV1", "windowSourcesV1", "resetEventLinksV1", "accountTodayV1"] + (withCredentials ? ["credentials"] : [])
     }
 
     func launch() {
@@ -227,7 +241,9 @@ public actor ProcessEngineClient: EngineClient {
         } catch {
             failStarts(error as? EngineClientError ?? .invalidConfiguration)
             if let process = child { ended(process.id, protocolFault: false) }
-            else { stopped = true; emit(.connection(.stopped(.requested))) }
+            else if case EngineClientError.invalidConfiguration = error { stopped = true; emit(.connection(.stopped(.requested))) }
+            // Recovery contract: a child that could not be spawned is a crash for the budget, not a stop.
+            else { superviseCrash(reaping: nil, planned: false) }
         }
     }
     func validateConfiguration() throws {
@@ -245,34 +261,86 @@ public actor ProcessEngineClient: EngineClient {
         deliveryAuthority.replace(with: nil)
         child = nil; handshaken = false; writerRunning = false
         rowsBootstrapRetry?.cancel(); rowsBootstrapRetry = nil; rowsBootstrapBusyCount = 0
+        epochProbeRetry?.cancel(); epochProbeRetry = nil; epochProbeAttempts = 0
         writes.removeAll(); controlWrites.removeAll(); epochProbe = nil
         failRequests(.interrupted(.connectionLost)); failStarts(.interrupted(.connectionLost))
         invalidate(protocolFault ? .protocolFault : .connectionLost, next: floor)
-        guard !stopped && !stopping else {
-            Task { [weak self] in if !(await process.finish()) { await self?.cleanupFailed(process) } }
-            return
-        }
-        let delay: Double? = planned ? 0 : budget.recordCrash(at: runtime.now())
-        if let delay { emit(.connection(.restarting(attempt: delay == 0 ? 0 : Int(log2(delay)) + 1, delay: .seconds(delay)))) }
-        else { stopped = true; requiresRetry = true; emit(.connection(.stopped(.crashLimit))) }
-        let sleep = runtime.sleep
-        restartTask = Task { [weak self] in
-            let reaped = await process.finish()
-            guard let self else { return }
-            if !reaped { await self.cleanupFailed(process); return }
-            guard let delay else { await self.restartFinished(launch: false); return }
-            do { try await sleep(.seconds(delay)); try Task.checkCancellation(); await self.restartFinished(launch: true) }
-            catch { await self.restartFinished(launch: false) }
+        // Stopped (a stalled consumer): only reap. A later stall recovery records its decision and relaunches once the
+        // old child is gone.
+        guard !stopped && !stopping else { reapThenRelaunch(process); return }
+        superviseCrash(reaping: process, planned: planned)
+    }
+    /// The engine supervisor (recovery contract, step 5): records the budget's decision, reaps the old child, then
+    /// restarts when the decision is due; past the crash limit, a cooldown and then one automatic half-open attempt.
+    /// `.stopped(.crashLimit)` still tells the app the engine is cooling down; start() refuses until the half-open
+    /// attempt (retry() skips the wait).
+    func superviseCrash(reaping process: EngineProcess?, planned: Bool) {
+        decideRelaunch(planned: planned)
+        reapThenRelaunch(process)
+    }
+    func decideRelaunch(planned: Bool) {
+        let now = runtime.now()
+        let decision: RestartBudget.Decision = planned ? .restart(after: 0) : budget.recordCrash(at: now)
+        switch decision {
+        case .restart(let after):
+            pendingRelaunch = (now + after, false)
+            emit(.connection(.restarting(attempt: after == 0 ? 0 : Int(log2(after)) + 1, delay: .seconds(after))))
+        case .cooldown(let after):
+            pendingRelaunch = (now + after, true); requiresRetry = true
+            emit(.connection(.stopped(.crashLimit)))
         }
     }
+    /// Never two children: the old one is reaped before another can be spawned. A failed reap hands over to the re-reap
+    /// loop, which keeps the pending decision.
+    func reapThenRelaunch(_ process: EngineProcess?) {
+        let reap = runtime.reap
+        restartTask = Task { [weak self] in
+            if let process, !(await reap(process)) { await self?.cleanupFailed(process); return }
+            await self?.relaunchWhenDue()
+        }
+    }
+    /// Waits out whatever is left of the pending decision's backoff or cooldown, then spawns.
+    func relaunchWhenDue() {
+        restartTask = nil
+        guard let pending = pendingRelaunch, !stopping else { return }
+        let wait = max(0, pending.notBefore - runtime.now()), sleep = runtime.sleep
+        restartTask = Task { [weak self] in
+            do { try await sleep(.seconds(wait)); try Task.checkCancellation() }
+            catch { await self?.restartFinished(launch: false); return }
+            await self?.restartFinished(launch: true)
+        }
+    }
+    /// A child that would not exit is re-reaped with a capped backoff; once it is gone the pending decision proceeds.
     func cleanupFailed(_ process: EngineProcess) {
         deliveryAuthority.replace(with: nil)
-        unreapedProcess = process; stopped = true; requiresRetry = true; restartTask = nil
+        unreapedProcess = process; requiresRetry = true; restartTask = nil
         emit(.connection(.stopped(.processCleanupFailed)))
+        scheduleReap(process, attempt: 0)
+    }
+    func scheduleReap(_ process: EngineProcess, attempt: Int) {
+        guard !stopping else { return }
+        let sleep = runtime.sleep, reap = runtime.reap, delay = min(60, 5 * pow(2, Double(min(attempt, 6))))
+        restartTask = Task { [weak self] in
+            do { try await sleep(.seconds(delay)); try Task.checkCancellation() } catch { return }
+            let reaped = await reap(process)
+            await self?.reapFinished(process, reaped: reaped, attempt: attempt)
+        }
+    }
+    func reapFinished(_ process: EngineProcess, reaped: Bool, attempt: Int) {
+        restartTask = nil
+        guard unreapedProcess?.id == process.id, !stopping else { return }
+        guard reaped else { scheduleReap(process, attempt: attempt + 1); return }
+        unreapedProcess = nil
+        // The cooldown chosen before the failed reap still holds: start() keeps refusing until its half-open attempt.
+        requiresRetry = pendingRelaunch?.halfOpen ?? false
+        relaunchWhenDue()
     }
     func restartFinished(launch shouldLaunch: Bool) {
         restartTask = nil
-        if shouldLaunch && !stopped { launch() }
+        guard shouldLaunch, let pending = pendingRelaunch else { return }
+        pendingRelaunch = nil
+        if pending.halfOpen { requiresRetry = false }
+        if !stopped && !consumerBlocked { launch() }
     }
     func initializationFailed(_ id: UUID, error: EngineClientError) {
         guard child?.id == id else { return }
@@ -381,7 +449,7 @@ public actor ProcessEngineClient: EngineClient {
         let error: EngineClientError = (entry.receiptKnown ? nil : entry.grant).map { .mutationOutcomeUnknown(requestID: $0.requestId, expected: EngineConsentFloor(storeEpoch: $0.expectStoreEpoch, generation: $0.expectGeneration)) } ?? .deadlineExceeded(entry.sent ? (entry.method == "plugin/install" ? .outcomeUnknown : .cancelled) : .notSent)
         finishRequest(key, error: error)
         if entry.purpose == .initialize { initializationFailed(id, error: error) }
-        if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, .staleValue)) }
+        if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, .staleValue)); scheduleEpochProbeRetry() }
     }
     func cancelRequest(_ key: String) {
         guard let entry = pending[key] else { return }
@@ -415,7 +483,7 @@ public actor ProcessEngineClient: EngineClient {
 
     func request<T: Encodable & Sendable>(_ method: String, _ params: T, timeout: Duration?, grant: WireConsentGrantParams? = nil, userAction: EngineUserAction? = nil, pluginTool: WirePluginTool? = nil, prepared: (@Sendable (WireRequestID) async -> Void)? = nil) async throws -> EngineRequestCompletion {
         guard handshaken, child != nil, epochProbe == nil, !epochUncertain else { throw EngineClientError.notReady }
-        if let capability = ["rows/subscribe": "rows", "consent/get": "consent", "consent/grant": "consent", "history/query": "history", "cockpit/query": "cockpit", "publication/get": "publication", "plugin/install": "plugin_install", "history/import_start": "history_import_v1", "history/import_status": "history_import_v1", "history/import_cancel": "history_import_v1", "history/import_remove": "history_import_v1", "refresh/request": "refresh", "diagnostics/get": "diagnostics"][method], !capabilities.contains(capability) { throw EngineClientError.unsupportedCapability }
+        if let capability = ["rows/subscribe": "rows", "consent/get": "consent", "consent/grant": "consent", "history/query": "history", "cockpit/query": "cockpit", "publication/get": "publication", "plugin/install": "plugin_install", "readerkey/set": "reader_key", "readerkey/test": "reader_key", "readerkey/remove": "reader_key", "readerkey/status": "reader_key", "history/import_start": "history_import_v1", "history/import_status": "history_import_v1", "history/import_cancel": "history_import_v1", "history/import_remove": "history_import_v1", "refresh/request": "refresh", "diagnostics/get": "diagnostics"][method], !capabilities.contains(capability) { throw EngineClientError.unsupportedCapability }
         if Task.isCancelled { throw EngineClientError.interrupted(.notSent) }
         let maximum: Duration = method == "plugin/install" ? .seconds(120) : runtime.requestTimeout
         let bound = min(timeout ?? maximum, maximum)
@@ -449,7 +517,20 @@ public actor ProcessEngineClient: EngineClient {
     }
     public func subscribeRows(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("rows/subscribe", WireEmpty(), timeout: timeout) }
     public func consent(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("consent/get", WireEmpty(), timeout: timeout) }
-    public func grant(_ value: WireConsentGrantParams, userAction: EngineUserAction? = nil, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("consent/grant", value, timeout: timeout, grant: value, userAction: userAction) }
+    public func grant(_ value: WireConsentGrantParams, userAction: EngineUserAction? = nil, timeout: Duration? = nil) async throws -> EngineRequestCompletion {
+        // Scope ids only: no account, key or keychain value.
+        func ids(_ list: [String]?) -> String { "[" + (list ?? []).map(DiagnosticsLog.safeID).joined(separator: ",") + "]" }
+        let scopes = "allow=\(ids(value.allow)) deny=\(ids(value.deny)) forget=\(ids(value.forget)) client=\(logTag)"
+        DiagnosticsLog.shared.notice("consent", "grant requested " + scopes)
+        do {
+            let completion = try await request("consent/grant", value, timeout: timeout, grant: value, userAction: userAction)
+            DiagnosticsLog.shared.notice("consent", "grant accepted " + scopes)
+            return completion
+        } catch {
+            DiagnosticsLog.shared.notice("consent", "grant failed error=\(DiagnosticsLog.errorName(error)) " + scopes)
+            throw error
+        }
+    }
     public func refresh(_ value: WireRefreshRequestParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("refresh/request", value, timeout: timeout) }
     public func refresh(_ value: WireRefreshRequestParams, timeout: Duration? = nil,
                         prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion {
@@ -460,6 +541,9 @@ public actor ProcessEngineClient: EngineClient {
     public func cockpit(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("cockpit/query", WireEmpty(), timeout: timeout) }
     public func pluginInstall(_ value: WirePluginInstallParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion {
         try await request("plugin/install", value, timeout: timeout, pluginTool: value.tool)
+    }
+    public func readerKey(_ method: EngineReaderKeyMethod, _ params: WireReaderKeyParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion {
+        try await request(method.rawValue, params, timeout: timeout)
     }
     public func publication(timeout: Duration? = nil) async throws -> EngineRequestCompletion {
         try await request("publication/get", WireEmpty(), timeout: timeout)

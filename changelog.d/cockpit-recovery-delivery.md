@@ -1,0 +1,1 @@
+While the cockpit is busy, it no longer queues every reading that arrives: one update is drawn at a time, with only the newest one waiting behind it, so a burst of readings or a slow page cannot fill the queue, hold back a settings change or cause a rebuild.

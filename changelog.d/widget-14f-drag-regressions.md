@@ -1,1 +1,0 @@
-Quota Widget: while you drag the widget, its quota rings stay on it even when new readings arrive mid-drag (the new readings appear when you let go), and an open ring card closes as soon as the drag starts instead of staying behind where the widget was.

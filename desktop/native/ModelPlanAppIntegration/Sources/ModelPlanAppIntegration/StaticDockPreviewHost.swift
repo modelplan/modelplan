@@ -11,6 +11,7 @@ import ModelPlanInstruments
 import ModelPlanOfficialDock
 import ModelPlanDockResources
 import ModelPlanCommunityHost
+import ModelPlanEngineClient
 
 /// Geometry returned by an injected appearance, already scaled in view-local points.
 struct DockHoverStation {
@@ -1127,6 +1128,7 @@ struct DockHelpInteraction: Equatable {
             guard self.rebuildPending || self.withdrawHeldForPress || crossed else { return }
             self.rebuild()
         }
+        edge.onDiagnostic = { DiagnosticsLog.shared.info("dock", $0) }
         edge.onCommittedPlacement = { [weak self] value in
             guard let self, let next = SettingsDockEdge(rawValue: String(describing: value.edge)) else { return }
             // Pulse persists the dock it showed at mouse-up. The Settings write is asynchronous, so the dropped

@@ -779,6 +779,14 @@
           "nullPolicy": "forbidden"
         },
         {
+          "field": "planModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "forecasts",
           "omission": true,
           "null": false,
@@ -958,6 +966,25 @@
         "rowId",
         "startsAt",
         "status"
+      ]
+    },
+    {
+      "file": "WireCockpitPlanModels.json",
+      "type": "WireCockpitPlanModels",
+      "optional": [
+        {
+          "field": "generation",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "planId",
+        "basis",
+        "modelIds"
       ]
     },
     {
@@ -1375,6 +1402,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "reportedModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1971,6 +2006,29 @@
         "code",
         "message",
         "data"
+      ]
+    },
+    {
+      "file": "WireReaderKeyParams.json",
+      "type": "WireReaderKeyParams",
+      "optional": [],
+      "required": [
+        "provider",
+        "region",
+        "key"
+      ]
+    },
+    {
+      "file": "WireReaderKeyResult.json",
+      "type": "WireReaderKeyResult",
+      "optional": [],
+      "required": [
+        "schemaVersion",
+        "provider",
+        "region",
+        "present",
+        "otherKeyFound",
+        "outcome"
       ]
     },
     {

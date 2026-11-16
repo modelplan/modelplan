@@ -14,6 +14,11 @@ private actor CountingClient: EngineClient {
   func start() throws -> EngineDeliveryContext { throw EngineClientError.notReady }
   func retry() throws -> EngineDeliveryContext { throw EngineClientError.notReady }
   func stop() { complete() }
+  /// Recovery step 4: the held cockpit reads fail, as a timed-out query does.
+  func failAll() {
+    let held = waiters; waiters = []
+    for waiter in held { waiter.resume(throwing: EngineClientError.deadlineExceeded(.cancelled)) }
+  }
   func complete() {
     let held = waiters; waiters = []
     for waiter in held { waiter.resume(returning: .init(requestID: .string("synthetic-cockpit"))) }
@@ -43,6 +48,7 @@ private actor CountingClient: EngineClient {
 @MainActor private final class WarmProbe: CockpitPageSurface {
   let state: CockpitBridgeState
   var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?, onShown: (() -> Void)?
+  var onRenderVerified: (() -> Void)?
   var queryTicket: CockpitQueryTicket? { state.queryTicket }
   private(set) var prewarmed = false, opened = 0, discarded = false
   private(set) var displays = 0, displayedWhileHidden = 0
@@ -92,7 +98,71 @@ private actor CountingClient: EngineClient {
   func failWhileHidden() { discard() }
 }
 
+/// Recovery contract: a page whose only job is to report verified renders.
+@MainActor private final class RenderProbe: CockpitPageSurface {
+  var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?, onRenderVerified: (() -> Void)?
+  var queryTicket: CockpitQueryTicket? { nil }
+  func open() {}
+  func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {}
+  func clearPrivateViews(adopting: CockpitEngineContext?) async {}
+  func discard() { onClosed?() }
+}
+
 final class CoordinatorPrewarmTests: XCTestCase {
+  /// macrevb-981-2: the console's rebuild budget counts health from verified renders; the coordinator forwards them only
+  /// from the page it presents, and a closed page's late receipt counts for nothing.
+  /// Recovery step 4: a presented page with verified data keeps it when a read fails or the engine reports a cockpit
+  /// feature failure; the read is retried after 1 s, then 2 s, and nothing is announced. A page with nothing to show
+  /// still reports the failure as before.
+  @MainActor func testAFailedReadOnARenderedPageKeepsThePageAndRetries() async {
+    for rendered in [true, false] {
+      var pages: [WarmProbe] = [], unavailable: [CockpitUnavailableReason] = []
+      var timers: [(UInt64, @MainActor () -> Void)] = []
+      let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+      let client = CountingClient(); coordinator.bind(client: client)
+      coordinator.schedule = { delay, fire in timers.append((delay, fire)); return {} }
+      coordinator.onUnavailable = { unavailable.append($0) }
+      await coordinator.consume(.context(delivery()))
+      coordinator.open()
+      for _ in 0..<1_000 { if await client.requests >= 1 { break }; await Task.yield() }
+      if rendered { pages[0].onRenderVerified?() }
+      await client.failAll()
+      for _ in 0..<1_000 where timers.isEmpty && unavailable.isEmpty { await Task.yield() }
+      if rendered {
+        XCTAssertEqual(unavailable, [], "a page with verified data announces nothing")
+        XCTAssertEqual(timers.map { $0.0 }, [1_000], "the read is retried after 1 s")
+        timers[0].1()
+        for _ in 0..<1_000 { if await client.requests >= 2 { break }; await Task.yield() }
+        let requests = await client.requests; XCTAssertEqual(requests, 2, "the retry asks again")
+        await coordinator.consume(.featureFailure(.cockpit, .featureDecode(.cockpit)))
+        XCTAssertFalse(pages[0].discarded, "a feature failure keeps a page that shows verified data")
+        XCTAssertTrue(coordinator.presented)
+        XCTAssertEqual(timers.map { $0.0 }, [1_000, 2_000], "and retries after 2 s")
+        XCTAssertEqual(unavailable, [])
+      } else {
+        XCTAssertEqual(unavailable, [.query("deadlineExceeded")], "a page with nothing to show still reports it")
+        XCTAssertTrue(timers.isEmpty)
+        await coordinator.consume(.featureFailure(.cockpit, .featureDecode(.cockpit)))
+        XCTAssertTrue(pages[0].discarded, "unchanged: an empty page is closed on a feature failure")
+      }
+      await coordinator.shutdown(); await client.complete()
+    }
+  }
+  @MainActor func testOnlyThePresentedPagesVerifiedRenderReachesTheCoordinator() async {
+    var pages: [RenderProbe] = [], verified = 0
+    let coordinator = EngineCockpitCoordinator { _ in let page = RenderProbe(); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.onRenderVerified = { verified += 1 }
+    await coordinator.consume(.context(delivery()))
+    coordinator.open()
+    XCTAssertEqual(pages.count, 1)
+    pages[0].onRenderVerified?()
+    XCTAssertEqual(verified, 1)
+    coordinator.close()
+    pages[0].onRenderVerified?()
+    XCTAssertEqual(verified, 1, "A page that is no longer presented reports nothing")
+    await coordinator.shutdown(); await client.complete()
+  }
   private func delivery(generation: UInt64 = 3) -> EngineDeliveryContext {
     EngineDeliveryContext(sessionID: "s-" + UUID().uuidString.lowercased(),
       floor: .init(storeEpoch: "synthetic", generation: generation), revision: 2)
@@ -238,7 +308,7 @@ final class CoordinatorPrewarmTests: XCTestCase {
       coordinator.open()
       XCTAssertEqual(pages.count, round, "each rebuild opens a new page")
       XCTAssertEqual(opened, round)
-      pages[round - 1].discard() // what a page failure does (appearanceWaitTimeout and the like)
+      pages[round - 1].discard() // what a page failure does (a dead page: contentTerminated, unresponsive and the like)
       XCTAssertFalse(coordinator.presented)
       XCTAssertTrue(coordinator.diagnosticState.contains("client=true delivery=true"),
         "a rebuild keeps the engine client and delivery: \(coordinator.diagnosticState)")

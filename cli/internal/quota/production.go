@@ -148,15 +148,37 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 	configured := glmSourceConfigured(p)
 	if g, ok := defaultZCodeGrant(home, state, mode, configured); ok {
 		p.ReaderAccess.Grants["zai"] = g
-	} else if _, granted := p.ReaderAccess.Grants["zai"]; !granted && zcodeDefaultApplies(home, state, mode, configured) {
-		// ZCode is there but keeps no provider file (a Desktop layout or a sign-in that
-		// stores no plaintext key). No reader can run, so say so instead of "not read yet"
-		// forever (G3-21). Presence metadata only; nothing inside the folder is opened.
-		if _, err := os.Lstat(ZCodeProviderConfig(home)); os.IsNotExist(err) && detect.LocalRoot(filepath.Join(home, ".zcode")) {
+	} else if g, granted := p.ReaderAccess.Grants["zai"]; zcodeDefaultApplies(home, state, mode, configured) {
+		// A bare legacy GLM allow (no key, profile or source, and no key in the environment) is
+		// no route any reader can use; it must not hide the cause below (post-merge #711 (2)).
+		bare := granted && g.ConfigSource == nil && state.Tools["zai"].KeyEnv == "" && os.Getenv(nativeReaders["zai"].KeyEnv) == ""
+		// ZCode is there but keeps no provider file (a Desktop layout, the CLI community
+		// package, or a sign-in that stores no plaintext key). No reader can run, so say so
+		// instead of "not read yet" forever (G3-21, #711 (1)). Presence metadata only; nothing
+		// inside the folders is opened.
+		if _, err := os.Lstat(ZCodeProviderConfig(home)); (!granted || bare) && os.IsNotExist(err) && zcodePresent(home) {
+			if bare {
+				delete(p.ReaderAccess.Grants, "zai")
+			}
 			p.ZCodeNoProviderFile = true
 		}
 	}
 	return p
+}
+
+// zcodeRoots are ZCode's data folders, the same path signals detection lists for it
+// (detect/catalogue.go): Desktop and CLI (~/.zcode), the CLI community package and the macOS
+// support folder.
+var zcodeRoots = []string{".zcode", ".local/share/zcode-community", ".local/share/zcode-cli", "Library/Application Support/ZCode"}
+
+// zcodePresent: one of ZCode's own data folders exists. Presence metadata only.
+func zcodePresent(home string) bool {
+	for _, rel := range zcodeRoots {
+		if detect.LocalRoot(filepath.Join(home, filepath.FromSlash(rel))) {
+			return true
+		}
+	}
+	return false
 }
 
 // zcodeDefaultApplies: no explicit GLM decision, source or readers-off stands in the way of
