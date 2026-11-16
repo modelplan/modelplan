@@ -378,3 +378,69 @@ test('G3-96: reset events as CLI v0.5.59 emits them (kind, confirmedAt, confirme
   assert.equal(accepted,true);
   assert.deepEqual(f.retained().details.resetEvents,data.details.resetEvents);
 });
+// Recovery contract (G3-96, G3-116; cockpit recovery step 2): a refusal proves the page answered. A view exception is
+// refused and the page stays loaded with what it showed; a revision refused once is quarantined.
+function failing() {
+  const calls=[],fail={render:false,appearance:false,shell:false,tick:false};let shown=null,id=500;
+  const view={clear(){shown=null;calls.push('clear');},render(data){if(fail.render)throw Error('synthetic render failure');shown=data;calls.push('render');},nextDeadline(){return null;},
+    tick(){if(fail.tick)throw Error('synthetic tick failure');calls.push('tick');},configure(){},updateAppearance(){if(fail.appearance)throw Error('synthetic appearance failure');calls.push('appearance');},
+    shell(){if(fail.shell)throw Error('synthetic shell failure');calls.push('shell');},active(){},dispose(){calls.push('dispose');}};
+  const events=[],bridge=new CockpitBridge(pageId,source.origin,value=>events.push(JSON.parse(value)),view,()=>`00000000-0000-4000-8000-${String(++id).padStart(12,'0')}`);
+  const send=commands();bridge.documentHidden(false);bridge.ready();
+  assert.equal(bridge.receive(send('load',{appearance,shell}),source),true);
+  assert.equal(bridge.receive(send('visibility',{visible:true,occluded:false,key:true}),source),true);
+  return {bridge,send,events,calls,fail,shown:()=>shown};
+}
+test('a display whose render throws is refused, the page stays loaded, and the next good display renders',()=>{
+  const f=failing(),good=capture();
+  assert.equal(f.bridge.receive(f.send('display',{data:good}),source),true);
+  const next=capture();next.projection.rows[0].name={en:'Next',zh:'下一个'};
+  f.fail.render=true;
+  assert.equal(f.bridge.receive(f.send('display',{data:next}),source),false);
+  assert.equal(f.bridge.lastReject,'display.render');
+  assert.equal(f.bridge.disposed,false,'a render failure is not an unload');
+  assert.equal(f.bridge.state,'ready');
+  assert.equal(f.calls.includes('dispose'),false);
+  assert.deepEqual(f.shown(),good,'the last rendered data stays');
+  assert.equal(f.events.filter(e=>e.type==='rendered').length,1,'no rendered receipt for the refused display');
+  f.fail.render=false;
+  const after=capture();after.projection.rows[0].name={en:'After',zh:'之后'};
+  assert.equal(f.bridge.receive(f.send('display',{data:after}),source),true,'a good display recovers without disposal');
+  assert.deepEqual(f.shown(),after);
+  assert.equal(f.events.filter(e=>e.type==='rendered').length,2);
+});
+test('a refused revision sent again is quarantined; another revision, a clear or a rendered display lifts it',()=>{
+  const f=failing(),bad=capture();bad.projection.rows.push(bad.projection.rows[0]); // duplicate row id: schema refusal
+  assert.equal(f.bridge.receive(f.send('display',{data:bad}),source),false);
+  assert.equal(f.bridge.lastReject,'data.rowDuplicate');
+  assert.equal(f.bridge.receive(f.send('display',{data:bad}),source),false);
+  assert.equal(f.bridge.lastReject,'display.quarantined','the identical revision is refused at once');
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true,'a different revision is tried and renders');
+  assert.equal(f.bridge.receive(f.send('display',{data:bad}),source),false);
+  assert.equal(f.bridge.lastReject,'data.rowDuplicate','after a rendered display the old revision is validated again');
+  f.fail.render=true;const throwing=capture();
+  assert.equal(f.bridge.receive(f.send('display',{data:throwing}),source),false);
+  assert.equal(f.bridge.receive(f.send('display',{data:throwing}),source),false);
+  assert.equal(f.bridge.lastReject,'display.quarantined','a revision whose render threw is quarantined too');
+  assert.equal(f.bridge.disposed,false);
+});
+test('appearance, shell and tick view exceptions are refused without unloading the page',()=>{
+  const f=failing();assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  for(const [kind,message,code] of [['appearance',['appearance',{...appearance,locale:'zh-CN'}],'appearance.view'],['shell',['shell',shell],'shell.view'],['tick',['tick',{nowUnixMs:'1000',reason:'deadline'}],'tick.view']]){
+    f.fail[kind]=true;
+    assert.equal(f.bridge.receive(f.send(...message),source),false,kind);
+    assert.equal(f.bridge.lastReject,code);
+    assert.equal(f.bridge.disposed,false,`${kind}: the page stays loaded`);
+    f.fail[kind]=false;
+    assert.equal(f.bridge.receive(f.send(...message),source),true,`${kind}: the next one is taken`);
+  }
+  assert.equal(f.calls.includes('dispose'),false);
+});
+test('the real Go cockpit capture, as the host sends it, validates and renders through the bridge',()=>{
+  // The host decodes this capture into WireCockpitData and encodes it unchanged (BridgeTests in ModelPlanCockpitWeb
+  // asserts the encoded display equals the capture); the page takes it, reset events included.
+  const f=failing(),data=capture();
+  assert.ok(data.details.resetEvents.length>0&&data.projection.resetEvents.length>0,'the capture carries reset events');
+  assert.equal(f.bridge.receive(f.send('display',{data}),source),true,f.bridge.lastReject);
+  assert.deepEqual(f.shown(),data);
+});

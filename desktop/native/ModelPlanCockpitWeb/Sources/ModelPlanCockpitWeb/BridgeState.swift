@@ -281,6 +281,13 @@ public final class CockpitBridgeState {
     self.context = context
     self.pageID = pageID
   }
+  /// Recovery contract (step 2): the host's correlated health probe for this page. main.ts `state(pageId)` answers
+  /// only for its own page; a replaced one answers "mismatch", which is never taken as liveness. The page id is a UUID,
+  /// so it is safe inside the script's string literal. The controller adopts it in step 2b; until then it probes
+  /// without the id, as before.
+  public var probeScript: String {
+    "const c=window.modelPlanCockpit;return c&&typeof c.state==='function'?String(c.state('\(pageID.uuidString)')):'missing'"
+  }
   public var queryTicket: CockpitQueryTicket? {
     ready && !blocked && !disposed
       ? CockpitQueryTicket(pageID: pageID, context: context, viewRevision: viewRevision) : nil

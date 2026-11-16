@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publicationFaders,scopedFaders} from '../../../cockpit/.tmp/compiled/src/publication-faders.js';
+import {publicationFaders,scopedFaders,moreFaderModels} from '../../../cockpit/.tmp/compiled/src/publication-faders.js';
 
 test('maps published model verdicts without inventing unknown readings',()=>{
  const input={contractVersion:1,models:[{id:'example',name:'Example',recommended:'medium',efforts:[
@@ -93,4 +93,32 @@ test('G3-110 a subscription scope keeps only that subscription\'s faders; All ke
  assert.deepEqual(scopedFaders(faders,'codex',true).map(f=>f.id),['gpt-x','gpt-z']);
  // A subscription whose developer is unknown cannot be matched: the D123 set stays.
  assert.deepEqual(scopedFaders(faders,'other',false).map(f=>f.id),all);
+});
+
+// Sampling #930 (1): the 7-day "in use" set also counts the recorded sessions (details.recentSessions), not only the
+// live ones. A recorded session counts for order and the D135 exemption but never attaches to a fader as a live session.
+test('sampling-930 recorded sessions of the last 7 days count as in use; only live sessions attach to a fader',()=>{
+ const model=(id,ability,developerId='openai')=>({id,name:id,developerId,recommended:'medium',efforts:[{effort:'medium',star:true,ability,cost:1,time:null}]});
+ const now=Date.parse('2026-11-14T00:00:00Z'),day=86_400_000;
+ const recorded=[
+  {sessionRef:'00000000000000r1',subscriptionRef:null,model:'foreign',lastObservedAt:new Date(now-2*day).toISOString()},
+  {sessionRef:'00000000000000r2',subscriptionRef:null,model:'too-old',lastObservedAt:new Date(now-8*day).toISOString()},
+ ];
+ const subs=[{key:'s1',developer:'openai',colour:'#fff'}];
+ const publication={contractVersion:1,models:[model('rec1',50),model('rec2',60),model('rec3',40)]};
+ const published=[...publication.models,model('foreign',99,'google'),model('too-old',99,'google'),model('own',10)];
+ const more=moreFaderModels(published,[],recorded,subs);
+ assert.deepEqual(more.map(m=>m.id),['foreign','too-old','rec1','rec2','rec3','own']);
+ const {faders}=publicationFaders(publication,[],more,subs,{now,ownPlansOnly:true,recorded});
+ assert.deepEqual(faders.map(f=>f.id),['foreign','rec1','rec2','rec3','own']);
+ assert.deepEqual(faders[0].sessions,[]);
+});
+
+// Sampling #930 (2): a subscription whose reading is stale or still loading is still the user's plan, so its developer's
+// published models stay candidates; the deck passes every member, whatever its reading state.
+test('sampling-930 every subscription developer adds its published models, in publication order',()=>{
+ const model=(id,developerId)=>({id,name:id,developerId});
+ const published=[model('a','openai'),model('b','anthropic'),model('c','google'),model('d','anthropic')];
+ const subs=[{key:'s1',developer:'openai',colour:'#fff'},{key:'s2',developer:'anthropic',colour:'#fff'},{key:'s3',developer:null,colour:'#fff'}];
+ assert.deepEqual(moreFaderModels(published,[{model:'c'}],[],subs).map(m=>m.id),['c','a','b','d']);
 });

@@ -18,3 +18,21 @@ for(const theme of ['day','night'])for(const profile of ['closed','open'])test(`
  for(const box of await map.locator('.an').evaluateAll(a=>a.map(e=>{const r=e.getBoundingClientRect();return {y:r.y,bottom:r.bottom};})))expect(box.y).toBeGreaterThanOrEqual(crop);
  await page.keyboard.up('Alt');
 });
+
+// Sampling #953: on the closed tall cockpit the crop leaves less room, two columns narrow the captions and they grow
+// taller. Every caption must still end inside the window (the body does not scroll).
+for(const locale of ['en','zh-CN'])test(`Option help captions end inside the closed tall window (${locale})`,async({page})=>{
+ await page.setViewportSize({width:1000,height:939});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,tier:'tall',profile:'closed'}}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data:currentSample()}))).toBe(true);
+ await page.waitForFunction(()=>document.querySelector('#cockpit')?.dataset.shell==='closed');
+ await page.keyboard.down('Alt');const map=page.locator('#help-map');await expect(map).toBeVisible();
+ const boxes=await map.locator('.an').evaluateAll(a=>a.map(e=>{const r=e.getBoundingClientRect();return {text:e.textContent,x:r.x,right:r.right,bottom:r.bottom};}));
+ const view=await page.evaluate(()=>({w:innerWidth,h:innerHeight}));
+ expect(boxes.length).toBeGreaterThan(8);
+ for(const box of boxes){expect(box.bottom,box.text).toBeLessThanOrEqual(view.h);expect(box.x,box.text).toBeGreaterThanOrEqual(0);expect(box.right,box.text).toBeLessThanOrEqual(view.w);}
+ await page.keyboard.up('Alt');
+});

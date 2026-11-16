@@ -1,0 +1,95 @@
+# Workflow reviewer, tier-1 pilot (owner 2026-11-15). After `ci` passes on a ready, same-repository PR by the
+# trusted account, one Terra review runs on the owner's review runner with the owner's ChatGPT Codex login and posts
+# "VERDICT: merge|block @ <head> (gh-terra)" (or (gh-terra-shadow) while vars.PR_REVIEW_MODE is not "count").
+#
+# Trust boundary (design: handoffs/shared/research/gh-review-pilot-1115.md):
+# - Only workflow_run and workflow_dispatch start it; both run main's definition, never a PR's. The runner group
+#   "modelplan-review" admits only modelplan/modelplan/.github/workflows/pr-review.yml@refs/heads/main, and the
+#   runner's root-owned job-started hook (scripts/pr-review/runner-hook.py) refuses anything else.
+# - PR code is data: it is fetched into a detached worktree and read, never built, installed or executed.
+# - Codex runs with no network for its commands, a read-only file system and the runner user's home (Codex login,
+#   runner credentials) unreadable, in its own PID namespace; the preflight proves this before every review.
+# - The comment token is an environment secret (environment pr-review, main only), present only in the post step,
+#   which writes the VERDICT line itself, quotes everything the model wrote and refuses output with a secret in it.
+# - Codex output goes to files under the runner temp, never to the public job log; nothing is uploaded.
+name: pr review
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to review at its current head (ci must have passed there)
+        required: true
+        type: string
+      force:
+        description: Review again even if this head already has a verdict from this lane
+        type: boolean
+        default: false
+permissions: {}
+concurrency:
+  # One review per PR; a newer head's ci completion cancels the review of the older head.
+  group: pr-review-${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true
+jobs:
+  review:
+    if: >-
+      github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.pull_requests[0].number) ||
+       (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005' && github.triggering_actor == 'guanbear'))
+    runs-on: [self-hosted, Linux, ARM64, modelplan-review]
+    environment: pr-review
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read
+    env:
+      PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.workflow_run.pull_requests[0].number }}
+      RUN_HEAD: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+      FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+      LANE: ${{ vars.PR_REVIEW_MODE == 'count' && 'gh-terra' || 'gh-terra-shadow' }}
+      MODEL: gpt-6.1-terra
+      EFFORT: medium
+    steps:
+      - name: Check out main (trusted scripts only)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Preflight (identity, login, sandbox denies the login, disk)
+        run: bash scripts/pr-review/preflight.sh
+
+      - name: Decide and build the brief
+        id: prep
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/pr-review/prepare.mjs
+
+      - name: Review with Codex (read-only, no network, login unreadable)
+        if: steps.prep.outputs.review == 'true'
+        run: bash scripts/pr-review/run-codex.sh
+
+      - name: Post the verdict
+        if: steps.prep.outputs.review == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PR_REVIEW_COMMENT_TOKEN }}
+          HEAD_SHA: ${{ steps.prep.outputs.head }}
+          MODE: ${{ steps.prep.outputs.mode }}
+          TIER: ${{ steps.prep.outputs.tier }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/pr-review/post.mjs
+
+      - name: Clean up the review directory
+        if: always()
+        run: |
+          git worktree remove --force "$RUNNER_TEMP/pr-review/pr" 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/pr-review"
