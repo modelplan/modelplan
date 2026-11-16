@@ -595,18 +595,21 @@ export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO) {
 
 // The GUI leg of desktop.yml's queue run, read from its jobs (GET /actions/runs/{id}/jobs). A skipped GUI job is
 // ok only when queue-scope's "GUI share not needed" step succeeded (desktop.yml's design decision); otherwise the
-// leg must have actually run: one pool fully green (native, or native-hosted + native-owner-gui) with the other
-// pool skipped. A skip for any other reason, or no GUI job at all, fails closed. null jobs = not read: no check.
+// leg must have actually run: one pool green (native, or native-hosted + native-owner-gui). A skip for any other reason, or no GUI job at all, fails closed. null jobs = not read: no check.
 export const GUI_NOT_NEEDED_STEP = "GUI share not needed";
 export function guiLegState(jobs) {
   if (jobs == null) return { state: SUCCESS, why: "GUI leg not read" };
   if (jobs.some((j) => j.name === "queue-scope" && (j.steps ?? []).some((s) => s.name === GUI_NOT_NEEDED_STEP && s.conclusion === "success"))) return { state: SUCCESS, why: "GUI share not needed" };
-  const pool = (re) => jobs.filter((j) => re.test(j.name));
-  const a = pool(/^native \(/), b = pool(/^native-(hosted|owner-gui) \(/);
-  const green = (p) => p.length > 0 && p.every((j) => j.conclusion === "success");
-  const idle = (p) => p.every((j) => j.conclusion === "skipped");
-  if ((green(a) && idle(b)) || (green(b) && idle(a) && b.length >= 2)) return { state: SUCCESS, why: "GUI leg green" };
-  return { state: FAILURE, why: "GUI leg skipped or missing without gui-scope saying it is not needed" };
+  // Only the actual GUI leg jobs count (names from a real merge-group run: the reusable workflow's job named after the
+  // task, "<caller> (os) / <task> (os)"). Its other child jobs (probe, sequences, transport, u11-native, ...) are skipped
+  // by design and ignored, and so is a whole job skipped before it expanded (its name keeps "${{ matrix.os }}").
+  const A = jobs.filter((j) => /^native \(([^)$]*)\) \/ native \(\1\)$/.test(j.name));
+  const H = jobs.filter((j) => /^native-hosted \([^)$]*\) \/ native-hosted-gui \([^)$]*\)$/.test(j.name));
+  const O = jobs.filter((j) => /^native-owner-gui \([^)$]*\) \/ native-owner-gui \([^)$]*\)$/.test(j.name));
+  const leg = [...A, ...H, ...O];
+  if (leg.some((j) => j.conclusion !== "success")) return { state: FAILURE, why: `GUI leg ${leg.filter((j) => j.conclusion !== "success").map((j) => `${j.name} ${j.conclusion}`).join(", ")}` };
+  if (A.length || (H.length && O.length)) return { state: SUCCESS, why: "GUI leg green" };
+  return { state: FAILURE, why: "GUI leg skipped or missing without queue-scope saying it is not needed" };
 }
 
 export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, repo = REPO, now = Date.now() }) {

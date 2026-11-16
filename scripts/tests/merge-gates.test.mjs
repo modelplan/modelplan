@@ -952,7 +952,16 @@ test("merge-group GUI leg: skipped is ok only when desktop.yml declared the GUI 
   assert.equal(R.guiLegState([job("queue-scope", "success")]).state, R.FAILURE, "no GUI job at all");
   assert.equal(R.guiLegState([job(gui, "success")]).state, R.SUCCESS);
   assert.equal(R.guiLegState([job(gui, "failure")]).state, R.FAILURE);
-  assert.equal(R.guiLegState([job(gui, "skipped"), job("native-hosted (macos-15) / native-hosted-gui (macos-15)", "success"), job("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)", "success")]).state, R.SUCCESS, "hosted pair green, native skipped");
+  assert.equal(R.guiLegState([job("native (${{ matrix.os }})", "skipped"), job("native-hosted (macos-15) / native-hosted-gui (macos-15)", "success"), job("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)", "success")]).state, R.SUCCESS, "hosted pair green, native skipped whole");
+  // macrevb-997-3: the live job list of merge-group run 43781966202 shape, GUI leg green, child jobs skipped by design.
+  const live = [job("queue-scope", "success"), job("gui-scope", "success"), job("native-partition", "success"),
+    job("native-headless (macos-latest) / native-headless (macos-latest)", "success"), job("native-headless (macos-latest) / probe", "skipped"),
+    job(gui, "success"), job("native (macos-latest) / transport", "skipped"), job("native (macos-latest) / sequences", "skipped"), job("native (macos-latest) / probe", "skipped"),
+    job("native (macos-latest) / native-headless (${{ inputs.os }})", "skipped"), job("native (macos-latest) / u11-native (${{ inputs.os }})", "skipped"), job("native (macos-latest) / gui-probe", "skipped"),
+    job("native-hosted (${{ matrix.os }})", "skipped"), job("native-owner-gui (macos-latest)", "skipped")];
+  assert.equal(R.guiLegState(live).state, R.SUCCESS, "child jobs skipped by design do not fail a green GUI leg");
+  assert.equal(R.guiLegState(live.map((j) => j.name === gui ? { ...j, conclusion: "failure" } : j)).state, R.FAILURE);
+  assert.equal(R.guiLegState(live.filter((j) => j.name !== gui)).state, R.FAILURE, "children alone are not a GUI leg");
   assert.equal(R.guiLegState([job(gui, "skipped"), job("native-hosted (macos-15) / native-hosted-gui (macos-15)", "success"), job("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)", "skipped")]).state, R.FAILURE, "half the hosted pair skipped");
   const ok = { state: R.SUCCESS, why: "ok" };
   const runs = R.QUEUE_WORKFLOWS.map((path, i) => qrun(path, "success", 1, "completed", { check_suite_id: 100 + i }));
