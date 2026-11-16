@@ -224,8 +224,17 @@ private actor CardDismissalClient: EngineClient {
         focused.setAccessibilityFocused(false)
         var navigations = 0
         dock.showSettings = { navigations += 1 }; dock.showConsole = { navigations += 1 }
-        // Member identity rule: the same verified member ID reopens the card.
-        nozzle.hoverNozzle(nil); nozzle.hoverNozzle(memberID)
+        // A fresh pointer entry onto the same verified member reopens the card after Escape.
+        // Hover callbacks alone cannot move the sampled pointer used by the production controller.
+        pointer = CGPoint(x: 100, y: 100)
+        nozzle.hoverNozzle(nil)
+        dock.interactionControllerForChecks?.refresh()
+        let returnPlacement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let returnAnchor = try XCTUnwrap(view.interactionAnchor(memberID))
+        pointer = CGPoint(x: returnPlacement.frame.minX + returnAnchor.midX - view.bounds.minX,
+                          y: returnPlacement.frame.maxY - returnAnchor.midY + view.bounds.minY)
+        nozzle.hoverNozzle(memberID)
+        dock.interactionControllerForChecks?.refresh()
         for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(dock.card.isHidden, "The same member reopens its card")
 
