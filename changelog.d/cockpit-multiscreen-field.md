@@ -1,1 +1,0 @@
-With more than one display, the widget's ignition now opens the cockpit on the display you clicked, and the cockpit can be dragged to any display. The enlarged launch field opens on the cockpit's display, moves by the strip above its card, and resizes to fit the display it is on.

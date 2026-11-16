@@ -44,6 +44,24 @@ public enum CockpitScreenSelection {
     if let anchor, let screen = overlapping(anchor, in: screens) { return screen }
     return screens.first
   }
+  /// D204: where an attached cockpit opens. When each display has its own Spaces (and so its own menu bar with the
+  /// icon), it is the display the ignition was pressed on (`point`); otherwise only the main display has a menu bar,
+  /// so it is the icon's display, then the display at the global origin (the menu bar's), whatever was clicked.
+  public static func attachedScreen(point: CGPoint?, anchor: CGRect?, screens: [CockpitScreen], separateSpaces: Bool) -> CockpitScreen? {
+    if separateSpaces { return openScreen(point: point, anchor: anchor, screens: screens) }
+    if let anchor, let screen = overlapping(anchor, in: screens) { return screen }
+    return screens.first { $0.frame.origin == .zero } ?? screens.first
+  }
+  /// D204: the menu bar icon as it sits on `screen`. Menu bar items keep their distance from a display's top-right
+  /// corner, so with a menu bar on every display the icon on another display is the known one moved by that offset.
+  /// Nil when the icon is unknown or the moved rect is not on `screen`.
+  public static func icon(_ anchor: CGRect?, on screen: CockpitScreen, screens: [CockpitScreen]) -> CGRect? {
+    guard let anchor, let home = overlapping(anchor, in: screens) else { return nil }
+    if home == screen { return anchor }
+    let moved = CGRect(x: screen.frame.maxX - (home.frame.maxX - anchor.minX), y: screen.frame.maxY - (home.frame.maxY - anchor.minY),
+                       width: anchor.width, height: anchor.height)
+    return screen.frame.contains(moved) ? moved : nil
+  }
   /// `rect` moved just enough to lie inside `usable` (its left and bottom edges win when it is larger).
   public static func clamp(_ rect: CGRect, into usable: CGRect) -> CGRect {
     CGRect(x: max(usable.minX, min(rect.minX, usable.maxX - rect.width)),

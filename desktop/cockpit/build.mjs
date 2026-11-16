@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-import { cp,readFile,writeFile,mkdir,rm } from 'node:fs/promises';
+import { cp,readFile,writeFile,mkdir,rm,readdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve,relative,dirname,sep } from 'node:path';
@@ -47,6 +47,16 @@ if (official) {
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
   await cp(resolve(here,'web/field.html'),resolve(output,'field.html'));
+  // D207: the field scene's fleet r4 rockets read their albedo/material atlases under its base URL, ./assets/art/rockets/.
+  // They move there from the copied pack (no second copy), each checked against the reserved-visuals registry.
+  const rocketPack=resolve(output,'runtime/field-scene/rockets'),rocketOut=resolve(output,'assets/art/rockets');await mkdir(rocketOut,{recursive:true});
+  const visualPolicy=JSON.parse(await readFile(resolve(repo,'source-policy.json'),'utf8'));
+  for(const name of await readdir(rocketPack)){
+    const bytes=await readFile(resolve(rocketPack,name)),expected=visualPolicy.reservedVisuals.binaries['desktop/official-visuals/runtime/field-scene/rockets/'+name];
+    if(!name.endsWith('.webp')||!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved launch-field rocket atlas: '+name);
+    await writeFile(resolve(rocketOut,name),bytes);
+  }
+  await rm(rocketPack,{recursive:true});
   // D43: the field scene draws vendor marks on its plates and asks for them by these names under ./assets/brands/;
   // the engine keys use the same folder (G3-47 review: the key marks pointed at a folder that never shipped).
   const marks=resolve(repo,'desktop/third-party/dock-resources/Resources/Marks'),brands=resolve(output,'assets/brands');await mkdir(brands,{recursive:true});

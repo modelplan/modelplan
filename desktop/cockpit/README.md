@@ -151,3 +151,44 @@ attribution, memory returning after native close or repeated-window growth. The
 verification skill/test-Mac lane must remeasure those on the actual package before
 this draft becomes ready. No hidden prewarm, old-path deletion or U13/L3 acceptance
 is claimed here.
+
+## Maker livery colours (D131, D250)
+
+**D250 (owner 2026-11-13, guanbear/modelplans.ai#716) supersedes D211 "Set 1" for UI accents:** the old pastel palette, completed ("Old+").
+It applies to engine tabs, fader strips, record-strip chips and chart series. Rockets keep the website livery (`rocket`). The shared table is the
+private site's `src/shell/brandLivery.ts`; `src/livery-shared.json` is its vendored copy and is unchanged by D250.
+
+| Maker | Colour | Alt (collision shade) |
+| --- | --- | --- |
+| OpenAI / Codex | `#6aa8ff` | `#1352a1` |
+| Anthropic / Claude | `#ff9a6a` | `#a0440a` |
+| Zhipu / Z.ai / GLM | `#8f7dff` | `#4422a0` |
+| Copilot | `#c08cff` | `#6c35a1` |
+| Kimi | `#ff8fcf` | `#a03878` |
+| OpenCode | `#b5d65a` | `#647c04` |
+| Cursor | `#eef2f6` | `#6f7782` (mid grey, reads on light backgrounds; `altFrom: 'app'`) |
+| xAI | `#8594a4` | `#374452` |
+| Google | `#4eccd3` | `#0b7176` |
+| MiniMax | `#f16f7e` | `#900d30` |
+| Meta | `#a6dcff` | `#5084a4` |
+| Alibaba | `#4ab89a` | `#025e4b` |
+| DeepSeek | `#00aad6` | `#0e5166` |
+| Xiaomi | `#e89700` | `#794e08` |
+
+Alts are the same hue, lightness lowered by 0.28 in OKLab (`deriveAlt`), so they separate from the main colours. Antigravity `#68d7a1`, Kiro `#f8d376`
+and Amp `#83b259` are owner-approved too but have no table row: the cockpit has no vendor key, logo or engine row for them, so adding a row would be dead
+until that wiring exists.
+
+Same-screen collisions (CIEDE2000 under 15) now include GLM next to Copilot (9.7) and GLM next to xAI (12.6); the later one takes its alt.
+Day theme: marks are drawn at 40% of the colour toward black, at least 3.4:1 on the day metal for every colour. Cursor's near-white would only reach 3.25, so on day Cursor starts from its grey alt `#6f7782` (CSS rule in `prototype-theme.css`).
+Night uses the colours as is.
+
+**UI accents only; rockets keep website livery.** The palette above is applied by `APP_UI` and `TOOLS` in `sync-livery.mjs` over the shared table:
+`livery-shared.json` stays a verbatim copy of the website's `brandLivery.ts`, so `node sync-livery.mjs --check --source <file>` still demands
+identity with it, and the website colour stays in the generated table as `rocket` (Cursor keeps its former `#f79dcb`). Anything that paints a rocket
+(launch-field scene developer colours, porthole stills) uses `rocketColour()`, never `brandColour()`.
+
+`app/livery.css` declares the `--mp-<maker>` developer variables for external or private visual packages appended after the frozen
+`official-visuals/theme.css` (`build.mjs`); nothing in this repo reads them, so the public build's pixels do not depend on that file.
+Contrast floors: night marks are at least 3:1 on the night metal (the lowest are Meta 3.22, Zhipu 3.25, DeepSeek 3.90, MiniMax 4.08); the
+enforced bar is the 3:1 in `livery.test.mjs`. Day marks (40% toward black) are at least 3.4:1.

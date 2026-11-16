@@ -527,6 +527,13 @@
           "maxItems": 32,
           "type": "array"
         },
+        "planModels": {
+          "items": {
+            "$ref": "#/$defs/CockpitPlanModels"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
         "publication": {
           "anyOf": [
             {
@@ -910,6 +917,38 @@
       ],
       "type": "object"
     },
+    "CockpitPlanModels": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "maxLength": 16,
+          "type": "string"
+        },
+        "generation": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "modelIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "planId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "planId",
+        "basis",
+        "modelIds"
+      ],
+      "type": "object"
+    },
     "CockpitProjectRanking": {
       "additionalProperties": false,
       "properties": {
@@ -1218,6 +1257,15 @@
             }
           ]
         },
+        "projectState": {
+          "enum": [
+            "named",
+            "unnamed",
+            "hidden",
+            "none"
+          ],
+          "type": "string"
+        },
         "sessionRef": {
           "maxLength": 16,
           "pattern": "^[a-f0-9]{16}$",
@@ -1324,6 +1372,15 @@
               "type": "null"
             }
           ]
+        },
+        "projectState": {
+          "enum": [
+            "named",
+            "unnamed",
+            "hidden",
+            "none"
+          ],
+          "type": "string"
         },
         "rate": {
           "anyOf": [
@@ -1624,6 +1681,13 @@
               "type": "null"
             }
           ]
+        },
+        "reportedModels": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "type": "array"
         },
         "resetCards": {
           "anyOf": [
@@ -2102,6 +2166,10 @@
             }
           ]
         },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
         "unit": {
           "type": "string"
         }
@@ -2303,6 +2371,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",
@@ -2351,6 +2420,9 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "codex_custom_provider",
+            "team_unsupported",
+            "no_plan",
             "other",
             "readers_off",
             "no_consent",
@@ -2414,6 +2486,31 @@
         "storeEpoch",
         "consentGeneration",
         "data"
+      ],
+      "type": "object"
+    },
+    "Hint": {
+      "additionalProperties": false,
+      "properties": {
+        "installCommand": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "installUrl": {
+          "maxLength": 128,
+          "pattern": "^https://",
+          "type": "string"
+        },
+        "signInCommand": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "text": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "required": [
+        "text"
       ],
       "type": "object"
     },
@@ -2996,6 +3093,16 @@
                 "offline"
               ],
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Hint"
             },
             {
               "type": "null"
@@ -3608,6 +3715,122 @@
       ],
       "type": "object"
     },
+    "ReaderKeyParams": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "zai",
+            "opencodego"
+          ],
+          "type": "string"
+        },
+        "region": {
+          "enum": [
+            "none",
+            "global",
+            "china"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "region",
+        "key"
+      ],
+      "type": "object"
+    },
+    "ReaderKeyResult": {
+      "additionalProperties": false,
+      "properties": {
+        "otherKeyFound": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "enum": [
+            "saved",
+            "removed",
+            "ok",
+            "key_refused",
+            "plan_lapsed",
+            "no_key",
+            "unreachable",
+            "failed",
+            "not_accepted",
+            "file_unsafe"
+          ],
+          "type": "string"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "provider": {
+          "enum": [
+            "zai",
+            "opencodego"
+          ],
+          "type": "string"
+        },
+        "region": {
+          "enum": [
+            "none",
+            "global",
+            "china"
+          ],
+          "type": "string"
+        },
+        "schemaVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "provider",
+        "region",
+        "present",
+        "otherKeyFound",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "ReaderKeyResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/ReaderKeyResult"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
     "Reason": {
       "additionalProperties": false,
       "properties": {
@@ -3615,6 +3838,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",
@@ -3663,6 +3887,9 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "codex_custom_provider",
+            "team_unsupported",
+            "no_plan",
             "other",
             "readers_off",
             "no_consent",
@@ -4212,6 +4439,102 @@
               "const": "2.0"
             },
             "method": {
+              "const": "readerkey/remove"
+            },
+            "params": {
+              "$ref": "#/$defs/ReaderKeyParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "readerkey/set"
+            },
+            "params": {
+              "$ref": "#/$defs/ReaderKeyParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "readerkey/status"
+            },
+            "params": {
+              "$ref": "#/$defs/ReaderKeyParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "readerkey/test"
+            },
+            "params": {
+              "$ref": "#/$defs/ReaderKeyParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
               "const": "refresh/request"
             },
             "params": {
@@ -4387,6 +4710,19 @@
     "ResetEvent": {
       "additionalProperties": false,
       "properties": {
+        "confirmedAt": {
+          "description": "Confirmed events only: the publication's confirmation time, or when the CLI first read the confirmation (see confirmedAtBasis).",
+          "format": "date-time",
+          "type": "string"
+        },
+        "confirmedAtBasis": {
+          "enum": [
+            "published",
+            "observed",
+            "firstSeen"
+          ],
+          "type": "string"
+        },
         "confirms": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
           "type": "string"
@@ -4397,6 +4733,14 @@
         },
         "id": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "type": "string"
+        },
+        "kind": {
+          "description": "reset_credit: extra resets were issued (news, not a window restart); direct_reset: usage limits reset. Absent from older producers, read as direct_reset.",
+          "enum": [
+            "reset_credit",
+            "direct_reset"
+          ],
           "type": "string"
         },
         "planIds": {
@@ -4564,6 +4908,9 @@
                 },
                 {
                   "$ref": "#/$defs/MemberRefreshResultEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/ReaderKeyResultEnvelope"
                 },
                 {
                   "$ref": "#/$defs/HistoryImportStatusEnvelope"
@@ -4894,6 +5241,7 @@
           "enum": [
             "ok",
             "estimated",
+            "usage_not_reported",
             "stale_reading",
             "observation_time_unknown",
             "not_read_yet",
@@ -4942,6 +5290,9 @@
             "rpc_error",
             "closed",
             "region_refused",
+            "codex_custom_provider",
+            "team_unsupported",
+            "no_plan",
             "other",
             "readers_off",
             "no_consent",

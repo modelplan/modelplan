@@ -58,9 +58,16 @@ func cockpitRecentSessions(sessions []speed.PerfSession, allowed map[string]bool
 				}
 			}
 		}
-		if labels && session.ProjectRef != "" && safeCockpitLabel(session.ProjectLabel) {
+		entry.ProjectState = wire.ProjectNone
+		switch {
+		case session.ProjectRef == "":
+		case !labels:
+			entry.ProjectState = wire.ProjectHidden
+		case safeCockpitLabel(session.ProjectLabel):
 			v := session.ProjectLabel
-			entry.ProjectLabel = &v
+			entry.ProjectLabel, entry.ProjectState = &v, wire.ProjectNamed
+		default:
+			entry.ProjectLabel, entry.ProjectState = unnamedProjectLabel(session.ProjectRef), wire.ProjectUnnamed
 		}
 		if session.SubscriptionRef != "" && verified[session.SubscriptionRef] != nil {
 			v := session.SubscriptionRef

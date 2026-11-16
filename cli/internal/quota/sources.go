@@ -147,6 +147,10 @@ func (in StatuslineInput) Account(now time.Time) Account {
 		if x.w == nil {
 			continue
 		}
+		// A five-hour entry without a percentage is no session window (weekly-only plans).
+		if x.kind == "five_hour" && finite(x.w.UsedPercentage, 0, 1000) == nil {
+			continue
+		}
 		w := Window{Kind: x.kind, UsedPercent: finite(x.w.UsedPercentage, 0, 1000), ResetsAt: unixTime(x.w.ResetsAt), ResetMode: "fixed", ObservedAt: a.ObservedAt}
 		if x.kind == "five_hour" {
 			w.WindowMinutes = 300

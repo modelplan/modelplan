@@ -87,6 +87,10 @@ test('D63 openField may name the clicked rocket by its published display name, n
   for(const bad of ['',' ','x'.repeat(65),42])assert.equal(f.bridge.action('openField',bad),false,String(bad));
   assert.equal(f.bridge.action('openField','Synthetic 5.5'),true);last=f.events.at(-1);assert.equal(last.action,'openField');assert.equal(last.key,'Synthetic 5.5');
 });
+test('openSettingsSubscriptions is one fixed action with no payload (CKP-SHELL-39)',()=>{
+  const f=fixture();assert.equal(f.bridge.action('openSettingsSubscriptions'),true);
+  const last=f.events.at(-1);assert.equal(last.action,'openSettingsSubscriptions');assert.equal(last.key,undefined);assert.equal(last.tool,undefined);
+});
 test('only fixed actions are emitted, history is limited to currently displayed rows',()=>{
   const f=fixture();assert.equal(f.bridge.action('openURL'),false);assert.equal(f.bridge.action('chooseSetup','x'),false);
   assert.equal(f.bridge.action('openHistory','unknown'),false);assert.equal(f.bridge.action('openSettings'),true);
@@ -284,6 +288,50 @@ test('redBelow is optional, validated and logged on load and appearance without 
   assert.ok(logs.every(args=>args.length===1&&args[0]==='Cockpit redBelow missing or invalid; using default 25.'));
  }finally{console.warn=original;}
 });
+
+test('showAllModels (D135) is an optional boolean on load and appearance; off by default; anything else is rejected',()=>{
+ const logs=[],original=console.warn;console.warn=(...args)=>logs.push(args);
+ try{
+  for(const [input,expected] of [[true,true],[false,false],[undefined,false]]){
+   const seen=[],view={clear(){},configure(_a,_n,_u,all){seen.push(all);},updateAppearance(_a,_now,_n,_u,all){seen.push(all);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+   const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
+   const extra=input===undefined?{}:{showAllModels:input};
+   assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,...extra}),source),true);
+   assert.equal(b.receive(send('appearance',{...appearance,redBelow:25,...extra}),source),true);
+   assert.deepEqual(seen,[expected,expected]);
+  }
+  for(const bad of ['yes',1,null,{}]){
+   const view={clear(){},configure(){},updateAppearance(){},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+   const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
+   assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,showAllModels:bad}),source),false);
+   assert.equal(b.receive(send('load',{appearance,shell,redBelow:25}),source),true);
+   assert.equal(b.receive(send('appearance',{...appearance,redBelow:25,showAllModels:bad}),source),false);
+   assert.equal(b.receive(send('appearance',{...appearance,redBelow:25,appearance:{showAllModels:true}}),source),false);
+  }
+ }finally{console.warn=original;}
+});
+
+test('pinnedModels (D136): restored from load before configure, reported after each long-press, strictly validated',()=>{
+ const order=[],events=[];
+ const view={clear(){},configure(){order.push('configure');},restorePins(ids){order.push(['pins',ids]);},updateAppearance(){},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+ const send=commands(),b=new CockpitBridge(pageId,source.origin,v=>events.push(JSON.parse(v)),view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
+ assert.equal(b.receive(send('load',{appearance,shell,redBelow:25,pinnedModels:['model-b','model-a']}),source),true);
+ assert.deepEqual(order,[['pins',['model-b','model-a']],'configure']);
+ // Not active yet: the report is kept and sent when the page becomes active.
+ assert.equal(b.pinModels(['model-a']),false);
+ assert.equal(b.receive(send('visibility',{visible:true,occluded:false,key:true}),source),true);
+ let sent=events.filter(e=>e.type==='action'&&e.action==='pinnedModels');
+ assert.deepEqual(sent.map(e=>e.ids),[['model-a']]);
+ assert.equal(b.pinModels(['model-c','model-a']),true);
+ sent=events.filter(e=>e.type==='action'&&e.action==='pinnedModels');
+ assert.deepEqual(sent.map(e=>e.ids),[['model-a'],['model-c','model-a']]);
+ assert.equal(b.pinModels(['bad\u0007id']),false);
+ assert.equal(events.filter(e=>e.type==='action'&&e.action==='pinnedModels').length,2);
+ for(const bad of ['x',[1],[''],Array.from({length:65},(_,i)=>'m'+i),null]){
+  const b2=new CockpitBridge(pageId,source.origin,()=>{},{...view,restorePins(){}},()=>sessionId,()=>1000);b2.documentHidden(false);b2.ready();
+  assert.equal(b2.receive(send('load',{appearance,shell,redBelow:25,pinnedModels:bad}),source),false);
+ }
+});
 test('G3-66: a show tick before the page document event is accepted once the host says visible',()=>{
   const f=fixture(),tick={nowUnixMs:'1793620800000',reason:'show'};
   assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
@@ -308,4 +356,83 @@ test('G3-66: reject codes are fixed code paths and never carry message data',()=
   const cases=[[{...base,data:{...base.data,accessToken:secret}},'data.schema'],[{...base,extra:secret},'display.keys'],[{...base,requestId:secret},'msg.header'],[{...base,type:secret},'msg.type']];
   for(const [msg,code] of cases){assert.equal(f.bridge.receive(JSON.stringify(msg),source),false);assert.equal(f.bridge.lastReject,code);assert.ok(!f.bridge.lastReject.includes(secret));assert.match(f.bridge.lastReject,/^[a-z]+\.[A-Za-z]+$/);}
   assert.equal(f.bridge.receive(' '.repeat(MAX_MESSAGE_BYTES+1),source),false);assert.equal(f.bridge.lastReject,'msg.size');
+});
+test('G3-96: reset events as CLI v0.5.59 emits them (kind, confirmedAt, confirmedAtBasis) are displayed, not rejected as data.schema',()=>{
+  // Build 14d: the CLI sets kind on every reset event and a confirmation time on a confirmed one. Their schema nodes
+  // carried an enum without a type, which the page's bounded validator refuses, so every display with a published
+  // reset event (the live Codex reset credit) failed with data.schema and the cockpit never opened.
+  // The events come from the real projector (resetevents.CaptureEvents via swiftwire), unedited: announced direct reset,
+  // announced reset credit and a confirmed credit. A field the producer adds shows up here without anyone transcribing it.
+  const f=fixture(),data=capture();
+  assert.deepEqual(data.details.resetEvents.map(e=>[e.kind,e.status,e.confirmedAtBasis??null]),[['reset_credit','confirmed','firstSeen'],['reset_credit','announced',null],['direct_reset','announced',null]]);
+  const accepted=f.bridge.receive(f.send('display',{data}),source);
+  assert.equal(f.bridge.lastReject,'none');
+  assert.equal(accepted,true);
+  assert.deepEqual(f.retained().details.resetEvents,data.details.resetEvents);
+});
+// Recovery contract (G3-96, G3-116; cockpit recovery step 2): a refusal proves the page answered. A view exception is
+// refused and the page stays loaded with what it showed; a revision refused once is quarantined.
+function failing() {
+  const calls=[],fail={render:false,appearance:false,shell:false,tick:false};let shown=null,id=500;
+  const view={clear(){shown=null;calls.push('clear');},render(data){if(fail.render)throw Error('synthetic render failure');shown=data;calls.push('render');},nextDeadline(){return null;},
+    tick(){if(fail.tick)throw Error('synthetic tick failure');calls.push('tick');},configure(){},updateAppearance(){if(fail.appearance)throw Error('synthetic appearance failure');calls.push('appearance');},
+    shell(){if(fail.shell)throw Error('synthetic shell failure');calls.push('shell');},active(){},dispose(){calls.push('dispose');}};
+  const events=[],bridge=new CockpitBridge(pageId,source.origin,value=>events.push(JSON.parse(value)),view,()=>`00000000-0000-4000-8000-${String(++id).padStart(12,'0')}`);
+  const send=commands();bridge.documentHidden(false);bridge.ready();
+  assert.equal(bridge.receive(send('load',{appearance,shell}),source),true);
+  assert.equal(bridge.receive(send('visibility',{visible:true,occluded:false,key:true}),source),true);
+  return {bridge,send,events,calls,fail,shown:()=>shown};
+}
+test('a display whose render throws is refused, the page stays loaded, and the next good display renders',()=>{
+  const f=failing(),good=capture();
+  assert.equal(f.bridge.receive(f.send('display',{data:good}),source),true);
+  const next=capture();next.projection.rows[0].name={en:'Next',zh:'下一个'};
+  f.fail.render=true;
+  assert.equal(f.bridge.receive(f.send('display',{data:next}),source),false);
+  assert.equal(f.bridge.lastReject,'display.render');
+  assert.equal(f.bridge.disposed,false,'a render failure is not an unload');
+  assert.equal(f.bridge.state,'ready');
+  assert.equal(f.calls.includes('dispose'),false);
+  assert.deepEqual(f.shown(),good,'the last rendered data stays');
+  assert.equal(f.events.filter(e=>e.type==='rendered').length,1,'no rendered receipt for the refused display');
+  f.fail.render=false;
+  const after=capture();after.projection.rows[0].name={en:'After',zh:'之后'};
+  assert.equal(f.bridge.receive(f.send('display',{data:after}),source),true,'a good display recovers without disposal');
+  assert.deepEqual(f.shown(),after);
+  assert.equal(f.events.filter(e=>e.type==='rendered').length,2);
+});
+test('a refused revision sent again is quarantined; another revision, a clear or a rendered display lifts it',()=>{
+  const f=failing(),bad=capture();bad.projection.rows.push(bad.projection.rows[0]); // duplicate row id: schema refusal
+  assert.equal(f.bridge.receive(f.send('display',{data:bad}),source),false);
+  assert.equal(f.bridge.lastReject,'data.rowDuplicate');
+  assert.equal(f.bridge.receive(f.send('display',{data:bad}),source),false);
+  assert.equal(f.bridge.lastReject,'display.quarantined','the identical revision is refused at once');
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true,'a different revision is tried and renders');
+  assert.equal(f.bridge.receive(f.send('display',{data:bad}),source),false);
+  assert.equal(f.bridge.lastReject,'data.rowDuplicate','after a rendered display the old revision is validated again');
+  f.fail.render=true;const throwing=capture();
+  assert.equal(f.bridge.receive(f.send('display',{data:throwing}),source),false);
+  assert.equal(f.bridge.receive(f.send('display',{data:throwing}),source),false);
+  assert.equal(f.bridge.lastReject,'display.quarantined','a revision whose render threw is quarantined too');
+  assert.equal(f.bridge.disposed,false);
+});
+test('appearance, shell and tick view exceptions are refused without unloading the page',()=>{
+  const f=failing();assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  for(const [kind,message,code] of [['appearance',['appearance',{...appearance,locale:'zh-CN'}],'appearance.view'],['shell',['shell',shell],'shell.view'],['tick',['tick',{nowUnixMs:'1000',reason:'deadline'}],'tick.view']]){
+    f.fail[kind]=true;
+    assert.equal(f.bridge.receive(f.send(...message),source),false,kind);
+    assert.equal(f.bridge.lastReject,code);
+    assert.equal(f.bridge.disposed,false,`${kind}: the page stays loaded`);
+    f.fail[kind]=false;
+    assert.equal(f.bridge.receive(f.send(...message),source),true,`${kind}: the next one is taken`);
+  }
+  assert.equal(f.calls.includes('dispose'),false);
+});
+test('the real Go cockpit capture, as the host sends it, validates and renders through the bridge',()=>{
+  // The host decodes this capture into WireCockpitData and encodes it unchanged (BridgeTests in ModelPlanCockpitWeb
+  // asserts the encoded display equals the capture); the page takes it, reset events included.
+  const f=failing(),data=capture();
+  assert.ok(data.details.resetEvents.length>0&&data.projection.resetEvents.length>0,'the capture carries reset events');
+  assert.equal(f.bridge.receive(f.send('display',{data}),source),true,f.bridge.lastReject);
+  assert.deepEqual(f.shown(),data);
 });

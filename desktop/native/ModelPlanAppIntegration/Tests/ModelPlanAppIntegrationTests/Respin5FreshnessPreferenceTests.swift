@@ -47,7 +47,7 @@ import ModelPlanShell
     private func app(_ dock: StaticDockPreviewHost) throws -> SettingsApplicationCoordinator {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("respin5-settings-"+UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at:folder) }
-        let value = SettingsApplicationCoordinator(store:try SettingsStore(url:folder.appendingPathComponent("settings.json")),apply:{dock.apply($0)})
+        let value = SettingsApplicationCoordinator(store:try chineseSettingsStore(url:folder.appendingPathComponent("settings.json")),apply:{dock.apply($0)})
         CommunityPlacementBinding.install(on:dock,application:value)
         return value
     }

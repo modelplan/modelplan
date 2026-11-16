@@ -13,10 +13,26 @@ public struct DockForecastSignal: Sendable {
 }
 public struct DockResetSignal: Sendable {
     public enum Status: Sendable { case announced, confirmed }
+    /// D166: extra resets issued (a reset credit) or a direct limit reset. Same dot rules; the card words differ.
+    public enum Kind: Sendable { case resetCredit, directReset }
+    /// D166 PR 1: a confirmation's dot stays this long after the confirmation, within the event's own expiry
+    /// and never past `confirmedDotHardCap`. A presence-based lifetime replaces the wall-clock one in PR 2 by
+    /// setting `confirmedDotUntil`; the projection reads only that bound.
+    public static let confirmedDotLifetime: TimeInterval = 3 * 3600
+    public static let confirmedDotHardCap: TimeInterval = 24 * 3600
     public var id: String, status: Status
+    public var kind: Kind = .directReset
     public var announcedAt: Date?, confirmedAt: Date?, scheduledThrough: Date?
     public var expiresAt: Date?
+    /// Overrides the wall-clock dot lifetime (PR 2: presence-counted); still capped by `confirmedDotHardCap`.
+    public var confirmedDotUntil: Date?
     public var restartedReading = false
+    /// The last moment the confirmed dot may show, or nil without a confirmation time.
+    public var confirmedDotEnd: Date? {
+        guard let at = confirmedAt else { return nil }
+        let cap = at.addingTimeInterval(Self.confirmedDotHardCap)
+        return min(confirmedDotUntil ?? at.addingTimeInterval(Self.confirmedDotLifetime), cap)
+    }
     public init(id: String, status: Status, announcedAt: Date? = nil, confirmedAt: Date? = nil, scheduledThrough: Date? = nil, expiresAt:Date? = nil) {
         self.id = id; self.status = status; self.announcedAt = announcedAt
         self.confirmedAt = confirmedAt; self.scheduledThrough = scheduledThrough; self.expiresAt=expiresAt
@@ -47,7 +63,7 @@ public struct DockNoticeKey: Hashable, Sendable {
     public let sourceIDs: [String]
 }
 public struct DockNotice: Equatable, Sendable {
-    public enum Tone: Equatable, Hashable, Sendable { case amber, blue, white }
+    public enum Tone: Equatable, Hashable, Sendable { case amber, blue, green, white }
     public enum Shape: Equatable, Sendable { case solid, hollow }
     public let key: DockNoticeKey
     public let tone: Tone
@@ -60,6 +76,14 @@ public struct DockNotice: Equatable, Sendable {
         case .credits: return 3
         }
     }
+}
+/// D166: the reset dot colours await the owner's choice. Flip `DockNotice.resetPalette` to switch every
+/// surface (Dock face, strip, menu indicator); shapes stay hollow = announced, solid = confirmed.
+public enum DockResetPalette: Sendable { case blue, amberGreen }
+extension DockNotice {
+    public static let resetPalette: DockResetPalette = .blue
+    public static var resetAnnouncedTone: Tone { resetPalette == .blue ? .blue : .amber }
+    public static var resetConfirmedTone: Tone { resetPalette == .blue ? .blue : .green }
 }
 public enum DockNoticeProjection {
     public static func candidates(for signal: DockSubscriptionSignal, at now: Date) -> [DockNotice] {
@@ -77,10 +101,10 @@ public enum DockNoticeProjection {
             case .announced:
                 let until = reset.scheduledThrough ?? reset.announcedAt?.addingTimeInterval(48*3600)
                 let observed = reset.announcedAt.map { $0 <= now } ?? (reset.scheduledThrough != nil)
-                if observed, let until, until > now { append(.resetAnnounced, [reset.id], .blue, .hollow) }
+                if observed, let until, until > now { append(.resetAnnounced, [reset.id], DockNotice.resetAnnouncedTone, .hollow) }
             case .confirmed:
-                if !reset.restartedReading, let at = reset.confirmedAt, at <= now, now < at.addingTimeInterval(24*3600) {
-                    append(.resetConfirmed, [reset.id], .blue)
+                if !reset.restartedReading, let at = reset.confirmedAt, at <= now, let end = reset.confirmedDotEnd, now < end {
+                    append(.resetConfirmed, [reset.id], DockNotice.resetConfirmedTone)
                 }
             }
         }

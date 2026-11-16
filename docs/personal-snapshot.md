@@ -141,7 +141,7 @@ CLI 0.5.27+. `{measure: "observed-output-tokens", recent7d, recent30d}`; each wi
 - `ref`: a random reference made on this machine. Sessions carry no title, path or session id;
 - `source`, `firstAt` (the first counted turn's start) and `lastAt` (the newest sample's completion), to the minute;
 - `observedOutputTokens`, `observedRequests` and `share`: the session's part of the window's observed output tokens. That is a share of what this CLI saw in the logs it reads, not of any plan or allowance;
-- `projectRef` (CLI 0.5.29+): the session's project, as in `projectRanking`; `null` when its log records no working directory;
+- `projectRef` (CLI 0.5.29+): the session's project, as in `projectRanking`; `null` when the session has no project in its own tool (next CLI release; see `projectRanking`);
 - `subscriptionRef` (CLI 0.5.30+): the subscription the harness was signed in to when the session's first turn with a known one was read; `null` when unknown;
 - `configs[]`: `{model, effortStatus, effort, speed, observedOutputTokens, share, recommendedEffort}`, the largest first, at most three. `share` (CLI 0.5.29+) is the configuration's part of the session's output in the window; `recommendedEffort` (CLI 0.5.29+) is the published ★ effort of the model as a native key, absent when the publication has none.
 
@@ -160,15 +160,15 @@ An account without one (Codex read only from its logs, a declared plan) has none
 
 ## `projectRanking`
 
-CLI 0.5.29+. `{measure: "observed-output-tokens", recent7d, recent30d}`; each window is `{projects, totalObservedOutputTokens, unattributedOutputTokens, top}`. `totalObservedOutputTokens` counts every session in the window; `unattributedOutputTokens` is the part from sessions whose log records no working directory. `top` holds the ten projects with the most observed output tokens:
+CLI 0.5.29+. `{measure: "observed-output-tokens", recent7d, recent30d}`; each window is `{projects, totalObservedOutputTokens, unattributedOutputTokens, top}`. `totalObservedOutputTokens` counts every session in the window; `unattributedOutputTokens` is the part from sessions that have no project in their own tool (the apps show "No project"). `top` holds the ten projects with the most observed output tokens:
 
-- `ref`: an opaque reference, a keyed hash of the project root with a random key kept beside the ledger (`observed/project-key`). It says nothing about the path and differs between machines. The root is the repository's git common directory when the session's working directory is inside a checkout or worktree that still exists when it is read, so all worktrees of one repository are one project; otherwise it is the working directory itself, also when that was removed before it was read. `.git` files are read; git is never run;
+- `ref`: an opaque reference, a keyed hash of the project's identity with a random key kept beside the ledger (`observed/project-key`). It says nothing about the path and differs between machines. Since the next CLI release the project is the one the session's own tool defines, never a ModelPlan guess: Codex, the project folder Codex lists (a `[projects."<path>"]` table in `config.toml` or a saved workspace root of the desktop app) that holds the session's working directory or its repository root, the deepest wins, none otherwise; Claude Code, the session's working directory (worktrees and subfolders are projects of their own); OpenCode, its project row (the "global" project is none); ZCode, the session's `project_id`, labelled with the folder name from ZCode's own session record (ZCode stores no separate project name); any other source has none. `.git` files are read for the Codex repository root; git is never run;
 - `label`: the project folder's name (not its path), only while `projectLabels` is on, which is the default since CLI 0.5.32; `null` otherwise, and the desktop names projects by rank ("Project A / B / C"). A choice the user stored is kept: a user who turned labels off stays off. Turning labels off (`modelplan project-labels off`) deletes the stored names; the references stay. Names are kept only on this machine and are never synced or uploaded;
 - `sessions`, `lastAt`, `observedOutputTokens`, `observedRequests` and `share` (the project's part of `totalObservedOutputTokens`);
 - `subscriptionRefs` (CLI 0.5.30+): the subscriptions its sessions ran under, as far as known;
 - `configs[]`: as in `sessionRanking`, across the project's sessions.
 
-Sources: the Codex rollout's working directory (session meta and turn context) and the Claude Code transcript's. The first one a session records names its project. At most 500 projects are kept; the ones last active longest ago lose their reference first, and a reference goes with its last session. Neither the reference nor the label is meant for anything that leaves the machine; a future portable or synced form leaves both out.
+Sources: the Codex rollout's and the Claude Code transcript's working directory (session meta and turn context), and the OpenCode and ZCode databases' project of the session. The first one a session records names its project. At most 500 projects are kept; the ones last active longest ago lose their reference first, and a reference goes with its last session. Neither the reference nor the label is meant for anything that leaves the machine; a future portable or synced form leaves both out.
 
 ## `perfHistory`
 

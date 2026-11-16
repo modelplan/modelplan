@@ -11,6 +11,7 @@ import ModelPlanInstruments
 import ModelPlanOfficialDock
 import ModelPlanDockResources
 import ModelPlanCommunityHost
+import ModelPlanEngineClient
 
 /// Geometry returned by an injected appearance, already scaled in view-local points.
 struct DockHoverStation {
@@ -200,6 +201,15 @@ struct DockHelpInteraction: Equatable {
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
+    /// D204 (G3-94): the ignition's own press, with the screen point it came from. Nil falls back to `showConsole`.
+    public var pressIgnition: ((CGPoint) -> Void)?
+    /// D204 (G3-94): the ignition's frame on screen while it is on the widget; the cockpit does not treat a press there
+    /// as an outside click.
+    public var ignitionScreenFrame: CGRect? {
+        guard !consoleButton.isHiddenOrHasHiddenAncestor, let window = consoleButton.window,
+              consoleButton.bounds.width > 0, consoleButton.bounds.height > 0 else { return nil }
+        return window.convertToScreen(consoleButton.convert(consoleButton.bounds, to: nil))
+    }
     private func installIgnitionArt() {
         let side = dockView.presentedSkinForChecks?.fixedLayers.first { $0.resource.contains("recessed-guard") }?.rect.width ?? 0
         consoleButton.installArt(side > 0 ? T2IgnitionArt.shared : nil, guardSide: side)
@@ -714,6 +724,9 @@ struct DockHelpInteraction: Equatable {
         displayed.setNozzlePoses(poses)
     }
 
+    /// G3-98: a failed or never-started refresh releases the hidden number (a landed result does it in the view).
+    func resolveRefreshReadout(_ id: String) { interactionView.resolveRefreshReadout(id) }
+
     @discardableResult func sweepRefresh(_ id: String) -> Bool {
         guard permitted, !retired, preferences.showDock,
               model?.inputs.contains(where: { $0.id == id }) == true else { return false }
@@ -993,7 +1006,7 @@ struct DockHelpInteraction: Equatable {
         self.prepareDetachedAlternateAppearances = prepareDetachedAlternateAppearances
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
-        consoleButton.target = self; consoleButton.action = #selector(openConsole)
+        consoleButton.target = self; consoleButton.action = #selector(ignitionPressed)
         consoleButton.setAccessibilityIdentifier("dock.ignition")
         consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
@@ -1059,6 +1072,7 @@ struct DockHelpInteraction: Equatable {
             self.rebuildPass(self.inputGeneration, carriedTo: display)
         }
         edge.onDragCancelled = { [weak self] in self?.rebuild() }
+        edge.onDiagnostic = { DiagnosticsLog.shared.info("dock", $0) }
         edge.onCommittedPlacement = { [weak self] value in
             guard let self, let next = SettingsDockEdge(rawValue: String(describing: value.edge)) else { return }
             if let id = value.displayID, let commit = self.commitDisplayPlacement {
@@ -1152,7 +1166,9 @@ struct DockHelpInteraction: Equatable {
         menuNotice = nil; menuNoticeDidChange?(nil, false)
         if !keepCard { catalogueKey = ""; catalogueChanged?([]) }
         try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
-        for view in [dockView] + alternateViews { view.retireOfficialPresentation() }
+        // G3-98: a plain replacement keeps a ring click's hidden number so the landed value fades in (#906);
+        // a privacy withdrawal drops it with everything else.
+        for view in [dockView] + alternateViews { view.retireOfficialPresentation(keepingRefreshHolds: !privacy) }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
         return keepCard
@@ -1228,7 +1244,18 @@ struct DockHelpInteraction: Equatable {
     private func rebuild() {
         guard !retired, !retiring, application != nil else { return }
         rebuildPending = true
-        guard !rendering, !edge.isBackgroundPressed, !edge.isPublishingRelease else { return }
+        guard !rendering, !edge.isPublishingRelease else { return }
+        if edge.isBackgroundPressed {
+            // G3-113: a content replacement (the engine clears the admitted content, then reinstalls it) can land
+            // while the widget is held. The clear has already retired the rings, so waiting for the drop left the
+            // carried widget without them until the release. Repaint the held widget in place, as the carry's own
+            // preparation pass does; placement, menus and the card wait for the full pass after the drop (still pending).
+            guard let display = appearanceDisplay else { return }
+            rendering = true
+            defer { rendering = false; rebuildPending = true; bindInteractionInput(); interactionController?.refresh() }
+            rebuildPass(inputGeneration, carriedTo: display)
+            return
+        }
         rendering = true
         defer { rendering = false; bindInteractionInput(); interactionController?.refresh() }
         while rebuildPending, !retired {
@@ -1325,7 +1352,7 @@ struct DockHelpInteraction: Equatable {
             do {
                 let profile = RenderProfile(dark: true, scale: backingScale, reduceMotion: application?.effective.reduceMotion ?? true)
                 try driver.configure(view: dockView, readings: rows, profile: profile,
-                                     rotation: DockEffectRotation(period: 1), provider: { _ in provider })
+                                     rotation: .working, provider: { _ in provider })
             } catch { driver.stop(); lastWorkingEffectError = error }
         } else { workingDriver?.stop() }
         workingEffectsDidConfigureForChecks?()
@@ -1515,8 +1542,13 @@ struct DockHelpInteraction: Equatable {
         callback(observation.placement, observation.recovering)
     }
     private func bindBackgroundMovement(_ value: DockEdgePresentation) {
-        dockView.backgroundDragDelegate = nil
-        alternateViews.forEach { $0.backgroundDragDelegate = nil }
+        // A held carry keeps its handler on every view: a carry onto another edge swaps that edge's view in, but the
+        // pointer's drag and release still arrive at the view that took the press. Clearing it there stranded the
+        // held drag (no release, no later carry). The binding is exact again at the first present after the drop.
+        if !edge.isBackgroundPressed {
+            dockView.backgroundDragDelegate = nil
+            alternateViews.forEach { $0.backgroundDragDelegate = nil }
+        }
         edge.dragRegions = nil
         guard permitted, !retired, value.state == .expanded else { return }
         let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
@@ -1601,6 +1633,7 @@ struct DockHelpInteraction: Equatable {
             collapseGhost.play(snapshotOf: container, frame: panel.frame, level: panel.level, edge: motionEdge, reduceMotion: reduceMotion)
         } else if value.state == .expanded { collapseGhost.stop() }
         panel.level = value.moving ? .statusBar : .floating
+        let previousFrame = panel.frame
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = panelCollectionBehavior
         let content: NSView
@@ -1622,6 +1655,14 @@ struct DockHelpInteraction: Equatable {
         case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
+        // G3-114: an open card follows its ring when the widget moves (D244: a ring press-drag carries the whole
+        // widget), as prototype card.js re-places it from the ring as painted. Only now is the presented edge's view
+        // in the panel (macrevc-960-1: a carry onto another edge swaps it in above). While carrying, the edge's own
+        // refresh is idle, so re-place now; after a drop, re-place once the release's refresh has finished.
+        if value.state == .expanded, previousFrame != panel.frame {
+            if value.moving { refreshCardPlacement() }
+            else { Task { @MainActor [weak self] in self?.refreshCardPlacement() } }
+        }
         bindPointerInput(value, content: content)
         // Keep the AppKit tracking instance attached while the surface redraws.
         let contextualMenu = trackedDockMenu ?? menu()
@@ -2057,6 +2098,12 @@ struct DockHelpInteraction: Equatable {
         try? attention.acknowledge(.cockpitOpening, signals: attentionSignals, at: currentDate())
         publishAttention()
     }
+    /// D204 (G3-94): the ignition toggles an attached cockpit and brings a detached one to the front (the app decides).
+    @objc private func ignitionPressed() {
+        guard cockpitEntryEnabled, permitted, !retired else { return }
+        guard let pressIgnition else { openConsole(); return }
+        dismissCard(); pressIgnition(NSEvent.mouseLocation)
+    }
     @objc private func openConsole() {
         guard cockpitEntryEnabled, permitted, !retired, let showConsole else { return }
         acknowledgeCockpitOpening(); dismissCard(); showConsole()
@@ -2300,6 +2347,9 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
         edge.endBackgroundMove(global: globalPoint)
     }
     public var hasPanelControlCapture: Bool { interactionController?.hasCapture == true }
+    /// A carry is held (a body press, or a ring press past the click threshold, D244): the panel routes the rest of
+    /// the drag and its release here, whichever view took the press.
+    public var hasPanelCarry: Bool { permitted && !retired && edge.isBackgroundPressed }
 
     public func cancelPanelMove() {
         if hasPanelControlCapture { interactionController?.cancelNozzle() }
