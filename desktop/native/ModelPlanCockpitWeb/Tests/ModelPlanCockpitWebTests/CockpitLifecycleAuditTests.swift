@@ -177,7 +177,13 @@ import ModelPlanWire
     XCTAssertEqual(page.verificationLayout?.frame, home.frame)
     XCTAssertEqual(page.verificationWebView?.pageZoom ?? 0, home.scale, accuracy: 0.0001, "and its zoom")
     XCTAssertEqual(page.verificationDragRegion?.frame, home.scaledTitleDragFrame, "and its drag strip")
-    try await Task.sleep(for: .milliseconds(500))
+    // AppKit's nominal 250 ms animation can finish later on a busy hosted GUI runner. This is a destination-layout
+    // regression, not a speed-budget test: wait for the actual frame, still failing if it never reaches home.
+    // G3-118/#966 deliberately overlaps web shell joints by 1 CSS px; it does not change this native destination.
+    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+    while window.frame != home.frame, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(20))
+    }
     XCTAssertEqual(window.frame, home.frame, "the window settles under the icon")
     XCTAssertEqual(window.contentView?.bounds.size, home.frame.size, "with the page canvas of that layout")
     XCTAssertEqual(failures, [])
