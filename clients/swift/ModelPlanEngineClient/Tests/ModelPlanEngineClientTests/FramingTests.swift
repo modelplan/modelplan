@@ -38,10 +38,31 @@ final class FramingTests: XCTestCase {
     }
     func testCrashWindowAndBackoff() {
         var budget = RestartBudget()
-        for index in 0..<4 { XCTAssertEqual(budget.recordCrash(at: Double(index)), Double(1 << index)) }
-        XCTAssertNil(budget.recordCrash(at: 4))
+        for index in 0..<4 { XCTAssertEqual(budget.recordCrash(at: Double(index)), .restart(after: Double(1 << index))) }
+        XCTAssertEqual(budget.recordCrash(at: 4), .cooldown(after: RestartBudget.cooldown), "the fifth crash in 600 s cools down")
         var expired = RestartBudget()
-        XCTAssertNotNil(expired.recordCrash(at: 0))
-        XCTAssertEqual(expired.recordCrash(at: 601), 1)
+        XCTAssertEqual(expired.recordCrash(at: 0), .restart(after: 1))
+        XCTAssertEqual(expired.recordCrash(at: 601), .restart(after: 1))
+    }
+    /// Recovery contract (step 5): a busy initial rows subscription is not given up after four retries.
+    func testBusyRowsBootstrapKeepsRetryingWithACappedBackoff() {
+        XCTAssertEqual((1...4).map { ProcessEngineClient.rowsBootstrapRetryDelay(attempt: $0) }, Array(repeating: .milliseconds(250), count: 4))
+        XCTAssertEqual((5...11).map { ProcessEngineClient.rowsBootstrapRetryDelay(attempt: $0) },
+                       [.seconds(1), .seconds(2), .seconds(4), .seconds(8), .seconds(16), .seconds(30), .seconds(30)])
+        XCTAssertEqual(ProcessEngineClient.rowsBootstrapRetryDelay(attempt: 1_000), .seconds(30))
+    }
+    /// Recovery contract (step 5): past the crash limit nothing is sticky. Each cooldown ends in one half-open attempt;
+    /// a crash of that attempt inside the window cools down again; once the window has passed, backoff starts over.
+    func testCrashLimitCoolsDownAndRecoversByItself() {
+        var budget = RestartBudget()
+        for index in 0..<4 { _ = budget.recordCrash(at: Double(index)) }
+        XCTAssertEqual(budget.recordCrash(at: 10), .cooldown(after: 120))
+        XCTAssertEqual(budget.recordCrash(at: 131), .cooldown(after: 120), "the half-open attempt crashed inside the window")
+        XCTAssertEqual(budget.recordCrash(at: 600), .cooldown(after: 120), "only the crash at 0 has left the window")
+        XCTAssertEqual(budget.recordCrash(at: 1_300), .restart(after: 1), "a quiet window: the backoff starts over")
+        var capped = RestartBudget()
+        for index in 0..<4 { _ = capped.recordCrash(at: Double(index) * 700) }
+        XCTAssertEqual(capped.recordCrash(at: 4 * 700), .restart(after: 1))
+        XCTAssertLessThanOrEqual(RestartBudget.cap, 30)
     }
 }

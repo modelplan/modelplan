@@ -310,7 +310,9 @@ func TestRemoveImportedDeletesOnlyImportedRows(t *testing.T) {
 	}
 }
 
-func TestAutoImportRunsOnceEvenWhenEverythingIsSkipped(t *testing.T) {
+// G3-112: a first-run import that could read no source (no history grant yet) stays pending, so it
+// runs once a grant arrives; one that read a source runs only once.
+func TestAutoImportStaysPendingUntilASourceIsAdmitted(t *testing.T) {
 	f := newFixture(t)
 	if !NeedsAutoImport(f.cache) {
 		t.Fatal("first run must need the import")
@@ -318,8 +320,14 @@ func TestAutoImportRunsOnceEvenWhenEverythingIsSkipped(t *testing.T) {
 	if _, err := Import(context.Background(), f.cache, ImportOptions{Now: f.now, Admission: both(), Auto: true}); err != nil {
 		t.Fatal(err)
 	}
+	if !NeedsAutoImport(f.cache) {
+		t.Fatal("an import that skipped every source must stay pending")
+	}
+	if _, err := Import(context.Background(), f.cache, ImportOptions{Now: f.now, Codex: &ImportRoot{Dir: f.home}, Admission: both(), Auto: true}); err != nil {
+		t.Fatal(err)
+	}
 	if NeedsAutoImport(f.cache) {
-		t.Fatal("still pending")
+		t.Fatal("an admitted source with nothing to import still completes the first run")
 	}
 }
 

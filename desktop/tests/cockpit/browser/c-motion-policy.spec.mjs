@@ -7,7 +7,7 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture,renderVisualDeck} from '../visual-fixture.mjs';
 
 const ALLOWED_ANIMATIONS=new Set([
- 'cockpit-caution-blink', // CKP-STRIP-06 new caution, 1 s x 10
+ 'cockpit-caution-blink', // CKP-STRIP-06 new caution, 1 s x 3
  'strip-alert',           // the official strip's copy of the same lamp blink
  'cockpit-running-cursor', // CKP-STRIP-10 running-row cursor
  'cockpit-state-pulse',   // two finite lamp-dot pulses on a state change (no idle loop)
@@ -44,7 +44,7 @@ test('MOT-2.3-01 only the allowed cockpit motions are live, and they run while t
  const lamp=page.locator('[data-caution]');await expect(lamp).toHaveClass(/\bflash\b/);
  const states=[];states.push(await motions(page));
  await page.keyboard.down('Alt');states.push(await motions(page));await page.keyboard.up('Alt');
- for(const name of ['Subscription','Effort','Breakdown']){await page.getByRole('button',{name,exact:true}).click();states.push(await motions(page));}
+ for(const name of ['Subscription','Models','Breakdown']){await page.getByRole('button',{name,exact:true}).click();states.push(await motions(page));}
  for(const list of states)expect(disallowed(list)).toEqual([]);
  const names=new Set(states.flat().map(m=>m.animation));
  expect(names.has('cockpit-running-cursor')).toBe(true);
@@ -81,7 +81,22 @@ test('MOT-2.3-08 a hidden or closed cockpit runs no animation',async({page})=>{
  expect(await running(page)).toEqual([]);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);
+ // CKP-PORT-09 (amended G3-108, 250 ms): the porthole's own one-shot close runs first. Its end settles the closed
+ // shell by itself: the test runs that one motion to its end and checks the shell within the same task, so no
+ // rendering update (whose cadence a loaded headless runner does not keep, macrev2-923-1) can be what settles it.
+ // g3-108-shutter-motion.spec.mjs covers the same close running out on real frames.
+ const settled=await page.evaluate(async()=>{
+  const c=document.getElementById('cockpit'),runs=document.querySelector('.ck-portrow').getAnimations().filter(a=>a.animationName==='cockpit-shutter');
+  const during={shell:c.dataset.shell,motion:c.dataset.shutterMotion,runs:runs.length};
+  for(const a of runs)a.finish();
+  await Promise.all(runs.map(a=>a.finished));await null;
+  return {during,after:{shell:c.dataset.shell,motion:c.dataset.shutterMotion??null}};
+ });
+ expect(settled.during,'the porthole closes as its own motion').toEqual({shell:'closing',motion:'closing',runs:1});
+ expect(settled.after,'the end of that motion closes the shell').toEqual({shell:'closed',motion:null});
+ // MOT-2.3-08: closed, nothing runs.
  expect((await motions(page)).filter(m=>m.animation!=='none')).toEqual([]);
+ expect((await running(page)).filter(m=>m.kind==='CSSAnimation')).toEqual([]);
 });
 
 test('MOT-2.3-08 a hidden cockpit starts no transition and cancels any in flight (visible positive control)',async({page})=>{

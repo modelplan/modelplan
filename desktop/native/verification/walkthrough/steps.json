@@ -463,8 +463,10 @@
           "seconds": 1
         },
         {
-          "op": "click",
-          "target": "subrole:AXCloseButton"
+          "op": "press",
+          "by": "subrole",
+          "value": "AXCloseButton",
+          "within": "settings.sidebar"
         },
         {
           "op": "wait",
@@ -612,9 +614,8 @@
           "seconds": 1.2
         },
         {
-          "op": "press",
-          "by": "id",
-          "value": "status.help"
+          "op": "click",
+          "target": "ax:status.help"
         },
         {
           "op": "park"
@@ -1223,7 +1224,7 @@
       "actions": [
         {
           "op": "click",
-          "target": "label:Open the 3D view"
+          "target": "label:Open the 3D launch field · Or click anywhere on the field"
         },
         {
           "op": "wait",
@@ -1254,7 +1255,7 @@
       "actions": [
         {
           "op": "clickIn",
-          "target": "label:Open the 3D view",
+          "target": "label:Open the 3D launch field · Or click anywhere on the field",
           "at": [
             0.8,
             0.3
@@ -1284,19 +1285,15 @@
     {
       "id": "hud-select",
       "title": "HUD row",
-      "expected": "A click on the first HUD row opens that model on the Effort page and nothing else. HUD rows are not in the accessibility tree, so the pointer goes by position.",
+      "expected": "A click on the first HUD row opens that model on the Effort page and nothing else. Each HUD row is an accessibility button titled by its rank (\"1 Astra \u2605Med\"); the 3D-field label now names only the \u2922 key, so a position inside it opens the field.",
       "prototype": "desktop/cockpit/study/rocket-r1 hud-selection",
       "requires": [
         "porthole-enlarged-closed"
       ],
       "actions": [
         {
-          "op": "clickIn",
-          "target": "label:Open the 3D view",
-          "at": [
-            0.17,
-            0.48
-          ]
+          "op": "click",
+          "target": "title^:1 "
         },
         {
           "op": "wait",

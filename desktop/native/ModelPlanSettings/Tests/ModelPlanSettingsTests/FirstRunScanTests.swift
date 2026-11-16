@@ -34,14 +34,20 @@ import ModelPlanWire
         var root = URL(fileURLWithPath: #filePath).resolvingSymlinksInPath().deletingLastPathComponent()
         while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent("cli/internal/detect/catalogue.go").path) { root.deleteLastPathComponent() }
         let source = try String(contentsOf: root.appendingPathComponent("cli/internal/detect/catalogue.go"), encoding: .utf8)
-        let pattern = try NSRegularExpression(pattern: #"\{"([a-z]+)", "[^"]+", "([a-z-]+)", "([^"]+)"\}"#)
-        let matches = pattern.matches(in: source, range: NSRange(source.startIndex..., in: source))
+        // Entries look like {"id", "Name", []Signal{cmd("x"), path("y"), ...}} and may span lines.
+        let entry = try NSRegularExpression(pattern: #"\{"([a-z]+)", "[^"]+", \[\]Signal\{([^}]*)\}\}"#)
+        let commandPattern = try NSRegularExpression(pattern: #"cmd\("([^"]+)"\)"#)
+        let pathPattern = try NSRegularExpression(pattern: #"path\("([^"]+)"\)"#)
+        func captures(_ regex: NSRegularExpression, _ text: String) -> [String] {
+            regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).map { String(text[Range($0.range(at: 1), in: text)!]) }
+        }
+        let matches = entry.matches(in: source, range: NSRange(source.startIndex..., in: source))
         XCTAssertEqual(matches.count, FirstRunPresenceCatalogue.tools.count)
         for match in matches {
             func group(_ i: Int) -> String { String(source[Range(match.range(at: i), in: source)!]) }
             let tool = try XCTUnwrap(FirstRunPresenceCatalogue.tools.first { $0.id == group(1) }, group(1))
-            XCTAssertTrue(tool.commands.contains(group(2)), group(1))
-            XCTAssertTrue(tool.paths.contains(group(3)), group(1))
+            XCTAssertEqual(Set(tool.commands), Set(captures(commandPattern, group(2))), group(1))
+            XCTAssertEqual(Set(tool.paths), Set(captures(pathPattern, group(2))), group(1))
         }
         XCTAssertEqual(FirstRunPresenceCatalogue.tools.map(\.id), matches.map { String(source[Range($0.range(at: 1), in: source)!]) })
     }

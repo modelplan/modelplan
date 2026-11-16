@@ -1,6 +1,7 @@
 package speed
 
 import (
+	"github.com/modelplan/modelplan/cli/internal/localday"
 	"math"
 	"sort"
 	"strings"
@@ -491,7 +492,7 @@ func (v PerfView) Boundaries() []time.Time {
 	l := v.Now.Local()
 	out := []time.Time{}
 	if len(v.Ledger.Rows) > 0 || len(v.Ledger.Hourly) > 0 || (v.longUsable() && len(v.Long.Rows) > 0) {
-		out = append(out, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, time.Local))
+		out = append(out, localday.Next(l))
 	}
 	for _, r := range v.Ledger.Live {
 		out = append(out, r.LastAt.Add(LiveWithin))

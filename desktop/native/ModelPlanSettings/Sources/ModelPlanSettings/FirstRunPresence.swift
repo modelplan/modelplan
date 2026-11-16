@@ -23,14 +23,15 @@ public enum FirstRunPresenceCatalogue {
               paths: [".zcode", ".local/share/zcode-community", ".local/share/zcode-cli", "Library/Application Support/ZCode"]),
         .init(id: "cursor", commands: ["cursor"], paths: [".cursor"]),
         .init(id: "copilot", commands: ["copilot"], paths: [".copilot"]),
-        .init(id: "gemini", commands: ["gemini"], paths: [".gemini"]),
+        .init(id: "gemini", commands: ["gemini"], paths: [".gemini/oauth_creds.json", ".gemini/tmp"]),
         .init(id: "kimi", commands: ["kimi"], paths: [".kimi-code"]),
         .init(id: "qwen", commands: ["qwen"], paths: [".qwen"]),
         .init(id: "opencodego", commands: ["opencode"], paths: [".config/opencode"]),
-        .init(id: "kiro", commands: ["kiro-cli"], paths: [".kiro"]),
+        .init(id: "kiro", commands: ["kiro-cli"], paths: []),
         .init(id: "amp", commands: ["amp"], paths: [".local/share/amp"]),
         .init(id: "droid", commands: ["droid"], paths: [".factory"]),
         .init(id: "grok", commands: ["grok"], paths: [".grok"]),
+        .init(id: "antigravity", commands: ["antigravity"], paths: [".gemini/antigravity"]),
     ]
 }
 

@@ -20,7 +20,7 @@ final class BridgeTests: XCTestCase {
     -> String
   {
     var value = try object(outgoing)
-    for key in ["data", "appearance", "shell", "visible", "occluded", "key", "nowUnixMs", "reason", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "visible", "occluded", "key", "nowUnixMs", "reason", "theme", "locale", "reduceMotion", "reduceTransparency", "showProjectNames", "redBelow", "showUsedPercent", "showAllModels", "memberOrder"] { value[key] = nil }
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }
@@ -345,6 +345,22 @@ final class BridgeTests: XCTestCase {
     XCTAssertEqual(try state.accept(reply(load,"action",3,extra:["action":"openSettingsSubscriptions"]),source:source),.action(.openSettingsSubscriptions))
     XCTAssertThrowsError(try state.accept(reply(load,"action",4,extra:["action":"openSettingsSubscriptions","pane":"about"]),source:source),"no pane or URL crosses")
   }
+  /// D244 / G3-111: the saved subscription order reaches the page on load and on every appearance update, so the
+  /// cockpit's tabs and columns follow it; none saved sends no order (the engine order), and only member keys cross.
+  func testSavedMemberOrderReachesThePageOnLoadAndAppearance() throws {
+    let saved = ["bbbbbbbbbbbbbbbb", "codex#saved_login_api", "aaaaaaaaaaaaaaaa"]
+    let state = CockpitBridgeState(context: try context())
+    let load = try state.load(.init(theme: .night, locale: .en, profile: .full, memberOrder: saved + ["all", "not a key", "bbbbbbbbbbbbbbbb"]),
+      shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+    XCTAssertEqual(try object(load)["memberOrder"] as? [String], saved, "member keys only, once each, in the saved order")
+    XCTAssertEqual(try state.accept(reply(load, "ready", 1), source: source), .ready)
+    let reordered = try state.setAppearance(.init(theme: .night, locale: .en, profile: .full, memberOrder: ["aaaaaaaaaaaaaaaa"]))
+    XCTAssertEqual(try object(reordered)["memberOrder"] as? [String], ["aaaaaaaaaaaaaaaa"])
+    let reset = try state.setAppearance(.init(theme: .night, locale: .en, profile: .full))
+    XCTAssertNil(try object(reset)["memberOrder"], "no saved order: the page keeps the engine order")
+    let plain = CockpitBridgeState(context: try context())
+    XCTAssertNil(try object(try ready(plain))["memberOrder"])
+  }
   func testEarlyAppearanceReportSurvivesLaterValidActionBeforeAck() throws {
     let state=CockpitBridgeState(context:try context()),load=try ready(state)
     _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
@@ -492,5 +508,30 @@ final class BridgeTests: XCTestCase {
     for (field, node) in event where node["type"] == nil && node["$ref"] == nil && node["anyOf"] == nil {
       XCTFail("ResetEvent.\(field) has no type; the page rejects every display that carries it")
     }
+  }
+
+  /// Cockpit recovery step 2: the real Go capture, decoded into WireCockpitData and encoded by the bridge, reaches the
+  /// page unchanged (reset events included). desktop/tests/cockpit/unit/bridge.test.mjs takes the same capture through
+  /// the page bridge's validation and render, so Go JSON -> Swift decode/encode -> TS validation/render holds end to end.
+  func testTheGoCaptureIsSentToThePageUnchanged() throws {
+    var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    while !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures").path) { root.deleteLastPathComponent() }
+    let bytes = try Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))
+    let capture = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? NSDictionary)
+    let wire = try WireDecoder.decode(WireCockpitData.self, from: bytes)
+    let state = CockpitBridgeState(context: try context())
+    _ = try ready(state)
+    let display = try object(state.display(wire, ticket: XCTUnwrap(state.queryTicket)))
+    let sent = try XCTUnwrap(display["data"] as? NSDictionary)
+    XCTAssertEqual(sent, capture, "The host adds, drops or rewrites nothing the page validates")
+    XCTAssertEqual(state.lastNonFinitePaths, [])
+  }
+  /// Cockpit recovery step 2: the correlated probe names this page, and only this page.
+  func testTheCorrelatedProbeNamesItsPage() throws {
+    let state = CockpitBridgeState(context: try context())
+    XCTAssertEqual(state.probeScript,
+      "const c=window.modelPlanCockpit;return c&&typeof c.state==='function'?String(c.state('\(state.pageID.uuidString)')):'missing'",
+      "Only the page id is interpolated")
+    XCTAssertNotEqual(state.probeScript, CockpitBridgeState(context: try context()).probeScript)
   }
 }

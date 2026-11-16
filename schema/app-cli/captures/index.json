@@ -193,6 +193,39 @@
       ]
     },
     {
+      "file": "RowsHint.json",
+      "type": "RowsHint",
+      "optional": [
+        {
+          "field": "signInCommand",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "installCommand",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "installUrl",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "text"
+      ]
+    },
+    {
       "file": "RowsModelScope.json",
       "type": "RowsModelScope",
       "optional": [],
@@ -237,6 +270,14 @@
           "wrongType": true,
           "strict": false,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "hint",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -738,6 +779,14 @@
           "nullPolicy": "forbidden"
         },
         {
+          "field": "planModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "forecasts",
           "omission": true,
           "null": false,
@@ -917,6 +966,25 @@
         "rowId",
         "startsAt",
         "status"
+      ]
+    },
+    {
+      "file": "WireCockpitPlanModels.json",
+      "type": "WireCockpitPlanModels",
+      "optional": [
+        {
+          "field": "generation",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "planId",
+        "basis",
+        "modelIds"
       ]
     },
     {
@@ -1101,6 +1169,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectState",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1162,6 +1238,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectState",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         },
         {
           "field": "rate",
@@ -1318,6 +1402,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "reportedModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1914,6 +2006,29 @@
         "code",
         "message",
         "data"
+      ]
+    },
+    {
+      "file": "WireReaderKeyParams.json",
+      "type": "WireReaderKeyParams",
+      "optional": [],
+      "required": [
+        "provider",
+        "region",
+        "key"
+      ]
+    },
+    {
+      "file": "WireReaderKeyResult.json",
+      "type": "WireReaderKeyResult",
+      "optional": [],
+      "required": [
+        "schemaVersion",
+        "provider",
+        "region",
+        "present",
+        "otherKeyFound",
+        "outcome"
       ]
     },
     {

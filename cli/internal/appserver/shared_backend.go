@@ -4,6 +4,7 @@ package appserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -30,11 +31,19 @@ type SharedConfig struct {
 	// quota history is kept without a second read.
 	Reported func(quota.Report, time.Time)
 	// Activity is an admitted, cache-only observer, independent of quota refresh/rate.
-	Activity          func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
-	ResetPublication  func() (*digest.Digest, error)
-	Detect            func() detect.Report
-	Paths             func(consent.Admission) quota.Paths
-	Cleanup           func(string, bool) error
+	Activity         func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
+	ResetPublication func() (*digest.Digest, error)
+	Detect           func() detect.Report
+	// LaterInstalled records each detection report and returns the tools detected now that
+	// were absent when this Mac's engine first looked (D238). Optional.
+	LaterInstalled func(detect.Report) map[string]bool
+	Paths          func(consent.Admission) quota.Paths
+	Cleanup        func(string, bool) error
+	// Granted runs after each committed, not replayed, consent change (optional); the history
+	// import retry hangs off it (G3-112).
+	Granted func()
+	// ManualKeyPresent reports whether the user saved a manual key for a provider (D90). Optional.
+	ManualKeyPresent  func(provider string) bool
 	Offline, ReadOnly bool
 }
 
@@ -82,6 +91,9 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	b := &SharedBackend{config: config, resetMemo: resetevents.NewMemo(), changes: make(chan struct{}, 1)}
 	if !config.ReadOnly {
 		_ = consent.RetryCleanup(consent.Path(), config.Cleanup)
+		// Engine-start migration: apply D240 (and close what v0.5.60's grant left open) before
+		// any view or automatic refresh can admit a later-installed tool's runtime reader.
+		b.allowLaterLocalLogs(context.Background())
 	}
 	return b, nil
 }
@@ -138,6 +150,7 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 	if err := ctx.Err(); err != nil {
 		return View{}, err
 	}
+	b.allowLaterLocalLogs(ctx)
 	result := consent.BuildStable(func(admission consent.Admission) View { return b.buildView(admission, false) }, func(admission consent.Admission) View { return b.buildView(admission, true) })
 	if ctx.Err() != nil {
 		return View{}, ctx.Err()
@@ -147,10 +160,58 @@ func (b *SharedBackend) Get(ctx context.Context) (View, error) {
 	}
 	return result, nil
 }
+
+// allowLaterLocalLogs applies D240 (owner 2026-11-13): a tool installed after the first run
+// has its local-log scopes allowed without a prompt, through the same grant path Settings
+// uses, once, while the user has made no decision for that tool. Anything that needs the
+// tool's saved login, its runtime or a network call stays opt-in (offered in the menu, D238):
+// the same grant records those scopes as off when they would otherwise pass while undecided
+// (#924), because the local-log grant's tool record would admit their readers.
+// A failed or stale attempt is retried on the next view; until then buildView keeps the
+// scopes it would close out of the refreshable list.
+func (b *SharedBackend) allowLaterLocalLogs(ctx context.Context) {
+	if b.config.LaterInstalled == nil || b.config.ReadOnly {
+		return
+	}
+	later := b.config.LaterInstalled(b.config.Detect())
+	if len(later) == 0 {
+		return
+	}
+	admission := consent.Capture()
+	if admission.Mode() == consent.Off {
+		return
+	}
+	state := admission.State()
+	if state.StoreEpoch == "" {
+		return
+	}
+	scopes := consent.AutoLocalLogScopes(state, later)
+	// Upgrade repair (sampling P1 on #955): CLI v0.5.60 allowed the local logs without the
+	// denies below, so the tool record it wrote still admits that tool's runtime/account
+	// readers. Close those for every later-installed tool whose local logs are already allowed.
+	// Only undecided scopes are denied: every user choice (allow or deny) is a scope record,
+	// which AutoLaterClosedScopes skips, and v0.5.60 never wrote one for these scopes. Once
+	// recorded, the list is empty, so a second run writes nothing.
+	deny := consent.AutoLaterClosedScopes(state, append(append([]string{}, scopes...), consent.LaterLocalLogScopes(state, later)...))
+	if len(scopes) == 0 && len(deny) == 0 {
+		return
+	}
+	request := "d240-local-logs-%d"
+	if len(scopes) == 0 {
+		request = "d240-close-later-%d"
+	}
+	_, _ = b.Grant(ctx, wire.ConsentGrantParams{RequestID: fmt.Sprintf(request, state.Generation), ExpectStoreEpoch: state.StoreEpoch,
+		ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: scopes, Deny: deny})
+}
+
 func (b *SharedBackend) buildView(admission consent.Admission, changed bool) View {
 	p := b.paths(admission)
 	detection := b.config.Detect()
 	detected := map[string]bool{}
+	later := map[string]bool{}
+	if b.config.LaterInstalled != nil {
+		later = b.config.LaterInstalled(detection)
+	}
 	in := admission.RowsInput(b.now())
 	in.ReadOnly = b.config.ReadOnly
 	in.Offline = b.config.Offline
@@ -161,9 +222,12 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	for _, tool := range detection.Tools {
 		id := rows.CanonicalTool(tool.ProviderID)
 		detected[id] = tool.Detected
+		for _, scope := range tool.UndetectedScopes() {
+			detected[scope] = false
+		}
 		_, _, native := quota.NativeReader(id)
 		exists := native || id == "codex" || tool.Preferred == "codexbar" && tool.HelperStatus() == ""
-		in.Catalogue = append(in.Catalogue, rows.CatalogueEntry{ToolID: id, ReaderID: tool.ReaderID, Backend: tool.Preferred, Detected: tool.Detected, ReaderExists: exists, Status: tool.Status})
+		in.Catalogue = append(in.Catalogue, rows.CatalogueEntry{ToolID: id, ReaderID: tool.ReaderID, Backend: tool.Preferred, Detected: tool.Detected, ReaderExists: exists, Status: tool.Status, InstalledLater: later[tool.ProviderID]})
 	}
 	// Implicit local permission becomes a candidate only when a real tool/source
 	// establishes it. A blank home must not acquire phantom Claude/Codex cards.
@@ -223,10 +287,12 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "no-native-reader" {
 					continue
 				}
-				// A denied generic runtime route must not veto the independently
-				// admitted local-history route. ReadPermitted still checks each
-				// scope and the row builder enforces tool denial and cleanup.
-				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "reader-consent-or-privacy" && admission.Allows("codex", consent.Local) {
+				// A denied or undecided runtime/account route must not veto the
+				// independently admitted local-history route, for any tool (#924:
+				// a later-installed tool's history is allowed, its account is not).
+				// ReadPermitted still checks each scope and the row builder enforces
+				// tool denial and cleanup.
+				if selected.Backend == quota.BackendNative && selected.Blocked == "reader-consent-or-privacy" && admission.Allows(selected.Provider, consent.Local) {
 					continue
 				}
 				in.Admissions = append(in.Admissions, rows.Admission{ToolID: selected.Provider, Veto: selected.Blocked})
@@ -249,6 +315,13 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	scopes := []string{}
 	diagnostics := []wire.ScopeDiag{}
 	state := admission.State()
+	// Until the D240 upgrade repair commits (a stale or failed grant is retried on the next
+	// view), the runtime/account scopes that CLI v0.5.60's grant left open stay out of the
+	// refreshable list, so neither the automatic scheduler nor a request admits them (#971).
+	unrepaired := map[string]bool{}
+	for _, id := range consent.AutoLaterClosedScopes(state, consent.LaterLocalLogScopes(state, later)) {
+		unrepaired[id] = true
+	}
 	for _, fact := range admission.ScopeFacts(detected) {
 		if id, pending := quota.PolicyPending(fact.Tool); pending && id == fact.Scope {
 			reason := "policy_pending"
@@ -271,7 +344,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 			scope.Disabled = &reason
 		}
 		facts.Scopes = append(facts.Scopes, scope)
-		if state.AllowsScope(fact.Scope, admission.Mode()) && scope.Disabled == nil && !scope.CleanupPending {
+		if state.AllowsScope(fact.Scope, admission.Mode()) && scope.Disabled == nil && !scope.CleanupPending && !unrepaired[fact.Scope] {
 			scopes = append(scopes, fact.Scope)
 		}
 		diag := wire.ScopeDiag{Scope: fact.Scope, State: rows.StatePending, Code: rows.CodeNotReadYet}
@@ -379,6 +452,20 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 			if record.KeyEnv == "" {
 				return consent.Record{}, errors.New("reader_unavailable")
 			}
+			// D90: saving a manual GLM key allows this scope too. Where ZCode's own provider file is the detected
+			// source, the record must not name an environment key: that would count as a chosen source and switch ZCode's
+			// default route off, so removing the manual key would leave GLM unread. The manual key still wins first.
+			// An existing explicit choice (an environment key, a profile or another backend) is never replaced: file
+			// presence is not evidence that ZCode was the selected source.
+			prior := consent.Capture().State().Tools["zai"]
+			chosen := prior.KeyEnv != "" || len(prior.Profiles) > 0 || (prior.Backend != "" && prior.Backend != "native")
+			if definition.Tool == "zai" && !chosen && b.config.ManualKeyPresent != nil && b.config.ManualKeyPresent("zai") {
+				if home, err := os.UserHomeDir(); err == nil {
+					if fi, err := os.Lstat(quota.ZCodeProviderConfig(home)); err == nil && fi.Mode().IsRegular() {
+						record.KeyEnv = ""
+					}
+				}
+			}
 		}
 		return record, nil
 	}, Cleanup: b.config.Cleanup})
@@ -391,6 +478,9 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	}
 	if !b.config.Offline && receipt.Committed && !receipt.Replayed && keychain[consent.ScopeClaudeAccountUsageSavedLogin] == "allow" {
 		result.Credentials = []CredentialNeed{{Provider: "claude", Scope: consent.ScopeClaudeAccountUsageSavedLogin, Interactive: true}}
+	}
+	if receipt.Committed && !receipt.Replayed && b.config.Granted != nil {
+		b.config.Granted()
 	}
 	b.notify()
 	return result, nil

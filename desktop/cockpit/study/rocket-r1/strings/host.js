@@ -26,6 +26,8 @@ register('host', {
   running: ['silk', '运行中', 'Running'],
   lastSeen: ['silk', '最近读数', 'Last seen'],
   sessionRate: ['line', '会话速率 ', 'Session rate '],
+  projectUnnamed: ['line', '未命名项目', 'Unnamed project'],
+  projectNone: ['line', '无项目', 'No project'],
   workingNow: ['lcd', '正在用', 'working now'],
   readingIsNotCurrent: ['line', '读数不是最新', 'reading is not current'],
   idle: ['silk', '空闲', 'idle'],

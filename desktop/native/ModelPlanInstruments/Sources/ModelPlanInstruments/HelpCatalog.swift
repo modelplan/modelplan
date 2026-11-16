@@ -135,7 +135,7 @@ public struct HelpCatalog: Sendable {
             title = copy("额度挂件喷口 · 订阅", "Quota Widget nozzle · subscription")
             basis = context.nozzleLocation == .overflow
                 ? copy("悬停查看额度卡片，点按刷新；更多订阅暂不支持拖动排序，可用 ⌥ 加方向键移动一位。", "Hover for the quota card or click to refresh; overflow items cannot be dragged in v1; use Option arrows to move one place.")
-                : copy("悬停查看额度卡片，点按刷新，沿额度挂件拖动喷口可调整订阅顺序；也可用 ⌥ 加方向键移动一位。", "Hover for the quota card, click to refresh, or drag along the Quota Widget to reorder; Option arrows move one place.")
+                : copy("悬停查看额度卡片，点按刷新，拖动喷口可移动整个额度挂件；也可用 ⌥ 加方向键移动一位。", "Hover for the quota card, click to refresh, or drag to move the whole Quota Widget; Option arrows move one place.")
         case .page:
             title = copy("订阅页", "Subscription page")
             basis = copy("翻页不会改变已选订阅。", "Changing pages keeps your subscription selection.")
@@ -174,7 +174,7 @@ public struct HelpCatalog: Sendable {
             basis = copy("直接点选文字，或用键盘按一下切换。", "Press the printed choice directly or activate the key to cycle.")
         case .screen:
             title = copy("公共屏", "Main screen")
-            basis = copy("按页键查看总览、订阅、档位或去向。", "Use the page keys for Overview, Subscriptions, Effort or Destinations.")
+            basis = copy("按页键查看总览、订阅、模型或去向。", "Use the page keys for Overview, Subscriptions, Models or Destinations.")
         case .heat:
             title = copy("每日用量", "Daily use")
             basis = copy("颜色越亮用量越多，空白表示没有记录。", "Brighter cells mean more use and a gap means no record is available.")

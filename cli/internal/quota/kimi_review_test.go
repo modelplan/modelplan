@@ -107,7 +107,8 @@ func TestKimiSameGenerationEarlyFailuresRetainCaptureAndBudget(t *testing.T) {
 				t.Fatal(err)
 			}
 			s, _ := loadReaderState(p.Cache, "kimi")
-			if hits != 1 || s.Entries[0].Account == nil || !s.Entries[0].Account.ObservedAt.Equal(kimiNow) || NativeDue(p, kimiNow.Add(14*time.Minute)) || kimiBudgetDue(p.Cache, kimiNow.Add(14*time.Minute)) {
+			if hits != 1 || s.Entries[0].Account == nil || !s.Entries[0].Account.ObservedAt.Equal(kimiNow) || NativeDue(p, kimiNow.Add(14*time.Minute)) || kimiBudgetDue(p.Cache, kimiNow.Add(9*time.Minute)) {
+				// The failure back-off is in the reader state; the shared budget keeps the floor (#911).
 				t.Fatal("same-generation capture age or shared timing lost")
 			}
 		})

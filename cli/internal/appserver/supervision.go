@@ -37,8 +37,10 @@ func RestartDelay(crashes []time.Time, now time.Time, protocolMismatch bool) (ti
 // The MODELPLAN_* keys are restricting reader switches only (any other value reads
 // as off or is ignored), so device verification can narrow what the engine reads.
 // Keys whose value can name a binary or path, such as MODELPLAN_CODEXBAR, stay out.
+// The one exception is MODELPLAN_PROFILE_ROOT (D164): it names no binary and only
+// moves ModelPlan's own config and cache under a test build's fresh-profile folder.
 func ChildEnvironmentKeys() []string {
-	return []string{"HOME", "KIMI_CODE_API_KEY", "LANG", "LC_ALL", "LC_CTYPE", "MINIMAX_CODING_API_KEY", "MODELPLAN_CODEX_ACCOUNT", "MODELPLAN_READERS", "MODELPLAN_VERIFY_READERS", "OPENCODE_API_KEY", "PATH", "TMPDIR", "Z_AI_API_KEY"}
+	return []string{"HOME", "KIMI_CODE_API_KEY", "LANG", "LC_ALL", "LC_CTYPE", "MINIMAX_CODING_API_KEY", "MODELPLAN_CODEX_ACCOUNT", "MODELPLAN_PROFILE_ROOT", "MODELPLAN_READERS", "MODELPLAN_VERIFY_READERS", "OPENCODE_API_KEY", "PATH", "TMPDIR", "Z_AI_API_KEY"}
 }
 
 // ChildEnvironment creates an allow-listed copy without inspecting the host

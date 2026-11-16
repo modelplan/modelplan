@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 // ReaderDiagnostic is an explicit allowlist, never an embedded reader DTO.
@@ -245,6 +247,9 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 			if selectionErr != nil {
 				row.State = "unavailable:config_unavailable"
 			}
+			if id == "zai" && p.ZCodeNoProviderFile && row.Consent != "denied" {
+				row.State = "unavailable:no_provider_file"
+			}
 		case managed:
 			s, err := loadReaderState(p.Cache, id)
 			if err != nil {
@@ -311,6 +316,10 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 				if r.ErrorCode != "" {
 					row.State = nativeDiagnosticState(r.Availability, r.ErrorCode)
 				}
+				// G3-112: no attempt recorded at all is "not read yet", not a stale reading.
+				if loadZaiConfigState(p.Cache).Availability == "" {
+					row.State = "unavailable:not_read"
+				}
 			}
 		}
 		rows = append(rows, row)
@@ -340,6 +349,7 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 		}
 		rows = append(rows, ReaderDiagnostic{Provider: id + ":history", Detected: yesNo(detect.LocalRoot(root)), Consent: grant, Admitted: yesNo(admitted), State: state, Last: diagnosticAge(r.ObservedAt, now), Beta: true})
 	}
+	rows = append(rows, importDiagnostics(p, policy, now)...)
 	a := p.ClaudeSessionAccess
 	row := ReaderDiagnostic{Provider: "claude:session", Detected: yesNo(presence["claude"]), Consent: diagnosticConsent(policy, "claude", consent.Local), Admitted: "no", State: "unavailable:not_admitted", Last: "unknown", Beta: true}
 	if a != nil && historyDiagnosticAdmission(p.ClaudeSessionRoot, *a) {
@@ -397,4 +407,37 @@ func diagnosticSessionDue(p Paths, now time.Time) bool {
 	}
 	r := localusage.ReadProjectionCache(p.Cache, "claude", *p.ClaudeSessionAccess, now)
 	return r.CapturedAt.IsZero() || !now.Before(r.CapturedAt.Add(5*time.Minute))
+}
+
+// importDiagnostics: the Codex and Claude Code past-usage import (G3-112). It reads only
+// imported.json and presence metadata: never a log. Last is the age of the imported span's end.
+func importDiagnostics(p Paths, policy consent.State, now time.Time) []ReaderDiagnostic {
+	admission := admissionFor(p)
+	home, _ := os.UserHomeDir()
+	claudeRoot := os.Getenv("CLAUDE_CONFIG_DIR")
+	if claudeRoot == "" {
+		claudeRoot = filepath.Join(home, ".claude")
+	}
+	var out []ReaderDiagnostic
+	for _, src := range []struct{ id, source, scope, root string }{
+		{"claude", "claude-code", consent.ScopeClaudeLocalHistory, filepath.Join(claudeRoot, "projects")},
+		{"codex", "codex", consent.ScopeCodexLocalHistory, filepath.Join(p.CodexHome, "sessions")},
+	} {
+		admitted := p.Cache != "" && admission.State().AllowsScope(src.scope, admission.Mode()) && os.Getenv("MODELPLAN_HISTORY") != "off"
+		row := ReaderDiagnostic{Provider: src.id + ":history", Detected: yesNo(detect.LocalRoot(src.root)), Consent: diagnosticConsent(policy, src.id, consent.Local), Admitted: yesNo(admitted), State: "unavailable:not_admitted", Last: "unknown", Beta: true}
+		if row.Consent == "none" && admitted {
+			row.Consent = "granted"
+		}
+		if row.Consent == "denied" {
+			row.State = "unavailable:denied"
+		}
+		if admitted {
+			row.State = "unavailable:not_read"
+			if through, _, ok := speed.ImportedCoverage(p.Cache, src.source); ok {
+				row.State, row.Last = "ok", diagnosticAge(through, now)
+			}
+		}
+		out = append(out, row)
+	}
+	return out
 }
