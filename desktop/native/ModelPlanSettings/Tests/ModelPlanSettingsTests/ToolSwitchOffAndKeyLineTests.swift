@@ -90,6 +90,41 @@ import ModelPlanWire
         XCTAssertEqual(on.intent.allowIDs, ["cursor.local_history"])
     }
 
+    /// Sampling #954: Off while the key is absent, On while it is still absent, then the key returns (still refused).
+    /// The history is read again, so the switch must show On, and the next click must stop it, not allow the key.
+    func testSwitchShowsOnWhileHistoryIsReadAfterTheKeyReturnsRefused() throws {
+        let controller = controller()
+        controller.receiveAcceptedFacts(try facts([
+            ("opencodego.local_history", "opencodego", "local_log", "allowed", true, true),
+            ("opencodego.account_usage.api_key", "opencodego", "api_key_api", "allowed", true, true),
+        ]))
+        XCTAssertTrue(controller.isToolReading("opencodego"))
+        XCTAssertEqual(try denyIDs(controller, off: "opencodego"), ["opencodego.account_usage.api_key", "opencodego.local_history"])
+        controller.cancelConfirmation()
+        // The engine applied Off; then the key went away.
+        controller.receiveAcceptedFacts(try facts([
+            ("opencodego.local_history", "opencodego", "local_log", "denied", true, true),
+            ("opencodego.account_usage.api_key", "opencodego", "api_key_api", "denied", false, true),
+        ]))
+        XCTAssertFalse(controller.isToolReading("opencodego"))
+        XCTAssertNotNil(controller.requestToolChoice("opencodego", on: true))
+        guard case .confirmation(let on) = controller.phase else { return XCTFail("switching a tool on asks to confirm") }
+        XCTAssertEqual(on.intent.allowIDs, ["opencodego.local_history"], "On allows only the paths the row shows")
+        controller.cancelConfirmation()
+        // The engine applied On; then the key came back, still refused from the earlier Off.
+        controller.receiveAcceptedFacts(try facts([
+            ("opencodego.local_history", "opencodego", "local_log", "allowed", true, true),
+            ("opencodego.account_usage.api_key", "opencodego", "api_key_api", "denied", true, true),
+        ]))
+        XCTAssertTrue(controller.isReading("opencodego.local_history"))
+        XCTAssertTrue(controller.isToolReading("opencodego"), "the history is read, so the switch shows On")
+        // The view's click: requestToolChoice(on: !isToolReading). It must be a stop that includes the history.
+        XCTAssertNotNil(controller.requestToolChoice("opencodego", on: !controller.isToolReading("opencodego")))
+        guard case .confirmation(let next) = controller.phase else { return XCTFail("the click asks to confirm") }
+        XCTAssertEqual(next.intent.allowIDs, [], "the click never allows the refused key")
+        XCTAssertEqual(next.intent.denyIDs, ["opencodego.local_history"])
+    }
+
     /// Finding 3: a found OpenCode Go subscription (key path detected) with the engine's key_missing row still
     /// says why no quota is shown; with no subscription found the existing line stays.
     func testFoundSubscriptionWithAMissingKeyStillShowsTheKeyLine() throws {

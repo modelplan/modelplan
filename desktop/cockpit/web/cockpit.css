@@ -40,7 +40,7 @@
 
 /* Bounded caution blink; hidden, closed and reduced-motion surfaces stay still. */
 @keyframes cockpit-caution-blink{50%{filter:brightness(.45)}}
-#cockpit[data-active="true"][data-shell="open"] .caution.flash{animation:cockpit-caution-blink 1s steps(1,end) 10!important}
+#cockpit[data-active="true"][data-shell="open"] .caution.flash{animation:cockpit-caution-blink 1s steps(1,end) 3!important}
 html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .caution.flash{animation:none!important}
 /* G3-56: the row of the newest acknowledged caution is highlighted when the lamp opens the list: one flash, then a steady tint
    for as long as the list is open. Reduce Motion keeps the steady tint and drops the flash. */

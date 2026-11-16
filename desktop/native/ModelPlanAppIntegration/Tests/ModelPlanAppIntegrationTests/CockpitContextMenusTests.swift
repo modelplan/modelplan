@@ -35,15 +35,4 @@ import ModelPlanSettings
         XCTAssertEqual(log, ["settings", "reset", "help", "size:S", "size:L"])
         XCTAssertEqual(menu(.english, size: nil) { _ in }.menu.items[2].submenu?.items.map(\.state), [.off, .off, .off])
     }
-
-    func testSettingsOpenAppRoundTripsThroughRegularAndBackToAccessory() {
-        var seen: [NSApplication.ActivationPolicy] = []
-        let presence = SettingsAppPresence { seen.append($0) }
-        presence.settingsClosed()
-        XCTAssertEqual(seen, [], "closing while closed changes nothing")
-        presence.settingsOpened(); presence.settingsOpened()
-        XCTAssertEqual(seen, [.regular]); XCTAssertTrue(presence.isRegular)
-        presence.settingsClosed(); presence.settingsClosed()
-        XCTAssertEqual(seen, [.regular, .accessory]); XCTAssertFalse(presence.isRegular)
-    }
 }

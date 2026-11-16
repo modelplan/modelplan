@@ -148,7 +148,7 @@ private actor CarryEngine: EngineClient {
     /// and the ring pressed (D244: the press is the start of a carry). `pointer` is the native pointer sample.
     private final class Pointer { var at = CGPoint(x: 600, y: 450) }
     private struct Opened {
-        let app: EngineDockMenuApplication, dock: StaticDockPreviewHost, view: DockInstrumentView
+        let app: EngineDockMenuApplication, dock: StaticDockPreviewHost, view: DockInstrumentView, store: SettingsStore
         let id: String, plate: CGRect, ring: CGRect, local: CGPoint, start: CGRect
     }
     private func openCardAndPressItsRing(_ pointer: Pointer, screen: DockDisplayArea) async throws -> Opened {
@@ -194,7 +194,7 @@ private actor CarryEngine: EngineClient {
             guard ContinuousClock.now < arrival else { XCTFail("a press on a ring is taken"); throw CancellationError() }
             try await Task.sleep(for: .milliseconds(10))
         }
-        return .init(app: app, dock: dock, view: view, id: id, plate: plate, ring: ring, local: local, start: start)
+        return .init(app: app, dock: dock, view: view, store: store, id: id, plate: plate, ring: ring, local: local, start: start)
     }
     private let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795), backingScale: 2)
 
@@ -257,7 +257,7 @@ private actor CarryEngine: EngineClient {
     func testRingCarryOntoAnotherEdgeStillDropsAndTheWidgetDragsAgain() async throws {
         let pointer = Pointer()
         let o = try await openCardAndPressItsRing(pointer, screen: screen)
-        let dock = o.dock, view = o.view, editor = o.app.settingsHost.application.editor
+        let dock = o.dock, view = o.view
         let bottom = CGPoint(x: screen.visibleFrame.midX, y: screen.visibleFrame.minY + 2)
         pointer.at = bottom
         view.performPointerDrag(atLocal: o.local, global: bottom)
@@ -272,11 +272,19 @@ private actor CarryEngine: EngineClient {
         let followed = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
         XCTAssertEqual(followed.midX - first.midX, 100, accuracy: 1, "the carry still follows the pointer after the edge change")
 
-        // ... and the release ends the carry and saves the bottom edge.
+        // ... and the release ends the carry and saves the bottom edge. The check reads the persisted Settings
+        // document (the store the commit writes), not the edge controller's in-memory destination (macrevc-969-1).
         view.performPointerUp(atLocal: o.local, global: along)
         XCTAssertFalse(dock.hasPanelCarry, "the release ended the carry")
         XCTAssertNotEqual(dock.edgePresentation?.moving, true)
-        try await waitForSettings(editor) { editor.snapshot?.preferences.dockEdge == .bottom && !editor.isSaving }
+        XCTAssertEqual(dock.edgePresentation?.placement?.edge, .bottom, "the drop lands on the bottom edge")
+        let saveBy = ContinuousClock.now + .seconds(10)
+        var saved = await o.store.snapshot().preferences
+        while saved.dockEdge != .bottom && ContinuousClock.now < saveBy {
+            try await Task.sleep(for: .milliseconds(50)); saved = await o.store.snapshot().preferences
+        }
+        XCTAssertEqual(saved.dockEdge, .bottom, "the drop is saved: stored display \(saved.dockDisplayID ?? "nil"), fraction \(saved.dockAlongFraction)")
+        XCTAssertEqual(saved.dockDisplayID, "primary")
 
         // A second drag, on the body of the bottom-edge widget, still moves it.
         try await Task.sleep(for: .milliseconds(50))

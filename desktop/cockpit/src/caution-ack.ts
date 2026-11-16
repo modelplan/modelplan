@@ -34,6 +34,8 @@ const sameCycle=(a:number,b:number,span:number|null)=>Math.abs(a-b)<(span===null
 export interface CautionMemory {
  /** Records the current lamp conditions; true when one of them is new (never blinked and never acknowledged). */
  update(items:readonly CautionItem[],read:ReadonlyMap<string,ReadWindow>):boolean;
+ /** Recovery contract: the lamp memory as it is now; calling the result puts it back (a refused render, glm-990-1). */
+ checkpoint():()=>void;
  /** The lamp was pressed: everything lit is acknowledged. Returns the newest acknowledged caution's stable identity. */
  acknowledge():string|null;
  /** Identities the host remembered from an earlier run. They count as acknowledged and are not reported back. */
@@ -47,6 +49,7 @@ export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):Cautio
  const durable=()=>[...acked].map(([id,cycle])=>persisted(id,cycle)).filter(durableMember);
  const report=()=>onChange(durable().slice(-MAX));
  return {
+  checkpoint(){const savedAcked=new Map(acked),savedShown=new Map(shown),savedCurrent=current,savedNewest=newest;return ()=>{acked.clear();for(const [k,v] of savedAcked)acked.set(k,v);shown.clear();for(const [k,v] of savedShown)shown.set(k,v);current=savedCurrent;newest=savedNewest;};},
   forget(){acked.clear();shown.clear();current=[];newest=null;},
   restore(ids){for(const id of ids.slice(0,MAX)){if(typeof id!=='string'||!durableMember(id))continue;const r=fromPersisted(id);if(r)acked.set(r[0],r[1]);}},
   update(items,read){

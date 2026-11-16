@@ -143,7 +143,9 @@ enum ProductionDockPalette {
         func frames(_ id: String) -> [(id: String, alpha: Double, text: String)] { view.refreshSweepReadoutFramesForChecks.filter { $0.id == id } }
 
         XCTAssertTrue(view.playRefreshSweep("a", reduceMotion: false))
-        try await Task.sleep(for: .milliseconds(300))
+        // The 0.15 s fade-out is driven by a 50 ms frame loop; on a loaded GUI runner a fixed 300 ms sleep could end
+        // before the loop drew a frame past the fade (run 43612127821: last alpha 0.137). Wait for the frame instead.
+        try await waitFrames(view, until: { frames("a").last?.alpha == 0 }, seconds: 2)
         XCTAssertEqual(frames("a").last?.alpha, 0)
         // Repeated click on A while its refresh still runs: A stays hidden (no fade back in, no restart).
         XCTAssertTrue(view.playRefreshSweep("a", reduceMotion: false))
@@ -154,14 +156,14 @@ enum ProductionDockPalette {
         // Click B while A still waits: A stays hidden, B fades out on its own clock.
         let aBefore = frames("a").count
         XCTAssertTrue(view.playRefreshSweep("b", reduceMotion: false))
-        try await Task.sleep(for: .milliseconds(400))
+        try await waitFrames(view, until: { frames("b").last?.alpha == 0 && frames("a").count > aBefore }, seconds: 2)
         XCTAssertTrue(frames("a").dropFirst(aBefore).allSatisfy { $0.alpha == 0 }, "another ring's refresh never reveals A")
         XCTAssertGreaterThan(frames("a").count, aBefore, "A keeps being held while B sweeps")
         XCTAssertEqual(frames("b").last?.alpha, 0)
 
         // A's result lands: only A comes back, with its new value; B still waits.
         try view.applyOfficial(skin: skin, rows: [reading(45, id: "a"), reading(70, id: "b")], renderer: renderer, scale: 1, locale: "en")
-        try await Task.sleep(for: .milliseconds(400))
+        try await waitFrames(view, until: { frames("a").last?.alpha == 1 }, seconds: 2)
         XCTAssertEqual(frames("a").last?.alpha, 1)
         XCTAssertEqual(frames("a").last?.text, "45%")
         XCTAssertEqual(frames("b").last?.alpha, 0, "B stays hidden until its own result")

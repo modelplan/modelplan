@@ -45,7 +45,7 @@ public enum SettingsSystemPane: String, CaseIterable, Sendable {
 }
 public enum SettingsUpdateState: String, Sendable { case unavailable, notChecked, current, available, failed }
 public enum SettingsB22Action: Sendable {
-    case clearAppCache, openLink(SettingsPublicLink), openSystemSettings(SettingsSystemPane), checkForUpdates, previewFirstRun
+    case clearAppCache, openLink(SettingsPublicLink), openSystemSettings(SettingsSystemPane), checkForUpdates, previewFirstRun, exportDiagnostics
 }
 
 /// One app-owned instance wraps the existing policy. It never requests permission or posts an OS notice.

@@ -60,10 +60,23 @@ func TestD232SignInAndInstallHints(t *testing.T) {
 	for _, c := range cases {
 		in := failedInput(c.tool, c.failure)
 		out := Build(in)
-		// Validate predates the per-tool not-signed-in sentence (G3-38) and rejects it; the
-		// other causes are checked against the closed tables, hint included.
-		if err := Validate(in, out); err != nil && c.failure != "not_signed_in" {
+		// Every cause, the per-tool not-signed-in sentence (G3-38) included, is checked against
+		// the closed tables, hint included (post-merge #916 (2)).
+		if err := Validate(in, out); err != nil {
 			t.Fatalf("%s/%s: %v", c.tool, c.failure, err)
+		}
+		if c.failure == "not_signed_in" {
+			tampered := Build(in)
+			for i := range tampered.Rows {
+				if tampered.Rows[i].ID == c.tool && tampered.Rows[i].NextStep != nil && tampered.Rows[i].NextStep.Hint != nil {
+					h := *tampered.Rows[i].NextStep.Hint
+					h.SignInCommand = "rm -rf ~"
+					tampered.Rows[i].NextStep.Hint = &h
+				}
+			}
+			if Validate(in, tampered) == nil {
+				t.Fatalf("%s: tampered not-signed-in hint accepted", c.tool)
+			}
 		}
 		row := rowByID(t, out, c.tool)
 		h := row.NextStep.Hint
