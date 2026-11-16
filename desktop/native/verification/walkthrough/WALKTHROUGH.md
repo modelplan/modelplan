@@ -59,7 +59,7 @@ itself (see `publication-fresh-profile` below). That is the only network use, an
 Steps named `j-*` walk the prototype's interaction journeys (tab scope, MFD pages, option keys, press a fader strip,
 return from a comparison, ALERT lamp, Esc order). They carry few hard checks on purpose: each step's `tree.json` is
 compared with the prototype journey by a separate feature checker (PASS / BROKEN / MISSING per feature). Targets accept
-`label^:` (starts with) and `label~:` (contains); `clickFirst` clicks the first of several targets that is on screen.
+`label^:` (starts with) and `label~:` (contains), both matching the label or the title like `label:`; `clickFirst` clicks the first of several targets that is on screen.
 
 ## Output
 

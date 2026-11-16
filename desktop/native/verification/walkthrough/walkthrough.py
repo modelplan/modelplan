@@ -59,8 +59,8 @@ def matcher(target):
         "ax": lambda n: n.get("id") == value,
         "ax^": lambda n: str(n.get("id", "")).startswith(value),
         "label": lambda n: value in (n.get("label"), n.get("title")),
-        "label^": lambda n: str(n.get("label") or n.get("title") or "").startswith(value),
-        "label~": lambda n: value in str(n.get("label") or n.get("title") or ""),
+        "label^": lambda n: any(str(n.get(k) or "").startswith(value) for k in ("label", "title")),
+        "label~": lambda n: any(value in str(n.get(k) or "") for k in ("label", "title")),
         "title^": lambda n: str(n.get("title", "")).startswith(value),
         "value": lambda n: n.get("value") == value,
         "dom^": lambda n: str(n.get("dom", "")).startswith(value),
@@ -327,7 +327,7 @@ class Walkthrough:
         window = self.need(action["window"])["frame"]
         scale = window[2] / 636.0
         root = round(window[3] / scale) - 34
-        strip_top = {877: 225, 691: 45, 627: 57, 609: 57}.get(min((877, 691, 627, 609), key=lambda r: abs(r - root)), 225)
+        strip_top = {877: 225, 691: 45, 627: 57, 609: 45}.get(min((877, 691, 627, 609), key=lambda r: abs(r - root)), 225)
         start = (window[0] + 132 * scale, window[1] + (strip_top + 13) * scale)
         self.host.helper("down", *start)
         self.host.helper("held", start[0] + action["by"][0], start[1] + action["by"][1], action.get("seconds", 1.0))
