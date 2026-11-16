@@ -642,11 +642,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     super.init(window: nil)
   }
   required init?(coder: NSCoder) { nil }
+  private var transitionTiming = CockpitTransitionTiming()
+  private func timing(_ line: String?) { if let line { CockpitTimingLog.record(line) } }
   public func prewarm() {
     guard web == nil, !bridge.disposed, !ending else { return }
     build()
   }
   public func open() {
+    transitionTiming.beginOpen(requestedAt: CockpitTimingLog.clickAt)
+    timing(transitionTiming.openStage("window-start"))
     let wasVisible = isVisibleToUser
     let wasClosing = closeTask != nil
     closeTask?.cancel(); closeTask = nil
@@ -681,6 +685,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           Task { @MainActor in
             guard let self, self.entering else { return }
             self.entering = false
+            self.timing(self.transitionTiming.openStage("animation-complete"))
             if self.closeTask == nil, !self.ending, !self.shellSession.detached, let frame = self.layout?.frame { self.window?.setFrame(frame, display: true) }
             self.onShellChanged?()
           }
@@ -689,9 +694,17 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         panel.alphaValue = appearance.reduceMotion ? 1 : 0
         panel.makeKeyAndOrderFront(nil)
         if !appearance.reduceMotion {
-          NSAnimationContext.runAnimationGroup { context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }
+          NSAnimationContext.runAnimationGroup({ context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }, completionHandler: { [weak self] in
+            Task { @MainActor in
+              guard let self, self.closeTask == nil, !self.ending else { return }
+              self.timing(self.transitionTiming.openStage("animation-complete"))
+            }
+          })
+        } else {
+          timing(transitionTiming.openStage("animation-complete"))
         }
       }
+      timing(transitionTiming.openStage("window-visible"))
       #if MODELPLAN_TEST_ONLY_SPI
         verificationEntrance?(start != nil ? "grow" : appearance.reduceMotion ? "instant" : "fade")
       #endif
@@ -719,6 +732,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     if !wasVisible, !wasClosing, !shellSession.detached { applyLayout() }
     panel.alphaValue = 1
     bringToFront(panel)
+    timing(transitionTiming.openStage("window-visible"))
+    timing(transitionTiming.openStage("animation-complete"))
     applyPresentationTraits()
     if shellSession.detached { onPresenceChanged?(true) }
     lastVisibility = nil; visibilityChanged()
@@ -1101,6 +1116,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         default: onIntent?(intent)
         }
       case .rendered:
+        if shown { timing(transitionTiming.openStage("page-rendered")) }
         setReadingDelayed(false, cause: "rendered")
         if !bridge.hasPendingDisplay { renderWatchdog.cancel() }
         if let id = receiptWatchdog.currentID, !bridge.awaitsDeadlineReceipt(id) {
@@ -1725,6 +1741,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func closeAnimated() {
     guard !ending, closeTask == nil else { return }
+    timing(transitionTiming.beginClose())
     freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
     // Audit A-2: the invalidation drops a display still queued behind an in-flight call. A re-open during the fade
     // confirms visibility on the same page, so it must ask for fresh data then, as a hidden page does.
@@ -1809,6 +1826,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     window?.delegate = nil
     window?.contentView = nil
     window?.close()
+    timing(transitionTiming.gone())
     window = nil
     web = nil
     proxy.owner = nil

@@ -64,14 +64,17 @@ public enum CockpitTimingLog {
   private static let logger = Logger(subsystem: "org.modelplan.community", category: "cockpit")
   private static let stderrPrepared: Void = { _ = fcntl(STDERR_FILENO, F_SETNOSIGPIPE, 1) }()
   /// The menu bar click (or other open request) the next open stages are measured from.
-  @MainActor private static var clickAt: TimeInterval?
+  @MainActor static var clickAt: TimeInterval?
   #if MODELPLAN_TEST_ONLY_SPI
   @MainActor public static var verificationLine: ((String) -> Void)?
   #endif
   static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
   static func ms(since start: TimeInterval) -> Int { max(0, Int((now - start) * 1_000)) }
   /// Called where the app receives the open request, before any await, so a stage's time includes the hop.
-  @MainActor public static func markClick() { clickAt = now }
+  @MainActor public static func markClick() {
+    clickAt = now
+    record("open stage=request elapsedMs=0")
+  }
   /// Milliseconds since the last open request, or -1 when there was none.
   @MainActor static func sinceClick() -> Int { clickAt.map { ms(since: $0) } ?? -1 }
   @MainActor public static func record(_ line: String) {
@@ -83,4 +86,32 @@ public enum CockpitTimingLog {
     _ = stderrPrepared
     ("modelplan-cockpit timing " + line + "\n").withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
   }
+}
+
+/// G3-123: one page's transition clock. Monotonic and injectable; receipts are
+/// emitted once per transition so later data updates cannot replace the first paint.
+struct CockpitTransitionTiming {
+  var now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+  private var opened: TimeInterval?
+  private var closing: TimeInterval?
+  private var stages: Set<String> = []
+  init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) { self.now = now }
+  mutating func beginOpen(requestedAt: TimeInterval? = nil) {
+    opened = requestedAt ?? now(); closing = nil; stages = []
+  }
+  mutating func openStage(_ stage: String) -> String? {
+    guard let opened, stages.insert(stage).inserted else { return nil }
+    return "open stage=\(stage) elapsedMs=\(elapsed(opened))"
+  }
+  mutating func beginClose() -> String? {
+    guard closing == nil else { return nil }
+    closing = now()
+    return "close stage=request elapsedMs=0"
+  }
+  mutating func gone() -> String? {
+    guard let closing else { return nil }
+    self.closing = nil
+    return "close stage=gone elapsedMs=\(elapsed(closing))"
+  }
+  private func elapsed(_ start: TimeInterval) -> Int { max(0, Int(((now() - start) * 1000).rounded())) }
 }
