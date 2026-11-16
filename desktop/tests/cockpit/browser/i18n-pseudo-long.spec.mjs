@@ -11,7 +11,7 @@ async function open(page,{pseudo}) {
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
  return {send,receive};
@@ -29,7 +29,7 @@ for(const tier of ['tall','compact'])
 test(`pseudo-long English keeps key labels inside their boxes (${tier})`,async({page})=>{
  const found={};
  for(const pseudo of [false,true]){
-  const context=await page.context().browser().newContext({viewport:{width:636,height:890}}),p=await context.newPage();
+  const context=await page.context().browser().newContext({viewport:{width:636,height:890},reducedMotion:'reduce'}),p=await context.newPage();
   const {send,receive}=await open(p,{pseudo});
   expect(await receive(send('shell',{...shell,tier}))).toBe(true);
   const seen=[];
