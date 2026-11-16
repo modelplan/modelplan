@@ -328,10 +328,14 @@ public enum EngineDeadlineFacts {
             return member.name(english:english) + number + " · " + text(message(row, now: context.now).0.text)
         }
         let subscriptions: [SettingsSubscription] = members.map { member -> SettingsSubscription in
+            let retainedFailure = (member.row.state == .stale || member.account.valueState == .retained)
+                ? member.account.lastFailure?.code.rawValue : nil
             let failing = member.row.state == .failed || member.row.state == .needsAction
             let causeCode: String?
             // Only a member that is failing carries a cause; a stale but live row keeps its own status.
-            if failing {
+            if let retainedFailure {
+                causeCode = retainedFailure
+            } else if failing {
                 causeCode = message(member.row, now: context.now).0.code.rawValue
             } else {
                 causeCode = nil
@@ -347,7 +351,8 @@ public enum EngineDeadlineFacts {
         // still owns a Settings row carrying the cause. Build those rows from the Settings surface, not the Dock.
         let memberRows = Set(members.map(\.rowID))
         let accountless: [SettingsSubscription] = value.settingsRows.compactMap { row in
-            guard row.accounts.isEmpty, !memberRows.contains(row.id), row.state == .failed || row.state == .needsAction else { return nil }
+            guard row.accounts.isEmpty, !memberRows.contains(row.id),
+                  row.state == .failed || row.state == .needsAction || row.state == .needsKeychain else { return nil }
             let authorized = row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired
             return SettingsSubscription(id: row.id, name: .init(row.name.en, row.name.zh), vendor: row.vendorKey ?? row.id,
                 source: authorized ? .unavailable : .denied, isUnstable: true, causeCode: message(row, now: context.now).0.code.rawValue)

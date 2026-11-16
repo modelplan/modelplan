@@ -137,7 +137,10 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             let displayName = sub.name.english.isEmpty ? name(tool) : sub.name
             let fix = code.flatMap { ReaderCauseTable.rowEntry(code: $0, tool: tool, toolName: displayName.value(english), keyEntryAvailable: keyEntryAvailable) }
             let status: SettingsText
-            if let fix { status = fix.reason }
+            if let fix, stale {
+                status = .init("The last reading is old · cause: \(fix.reason.english)",
+                               "上次读数已过期 · 原因：\(fix.reason.chinese)")
+            } else if let fix { status = fix.reason }
             else {
                 switch sub.source {
                 case .fresh: status = SettingsText("Reading works", "读取正常")

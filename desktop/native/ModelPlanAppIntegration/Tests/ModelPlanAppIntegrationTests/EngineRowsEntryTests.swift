@@ -14,14 +14,18 @@ private actor RowsEntryClient: EngineClient {
             context.floor.generation == 1 && context.revision == 1
     }
     let store: EngineStore
-    let rows: WireRowsSnapshot
+    private(set) var rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "synthetic-entry", floor: .init(storeEpoch: "synthetic-entry", generation: 1), revision: 1)
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context)))
         await store.consume(.context(context))
-        await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: 0))
+        try await publish(rows)
         return context
+    }
+    func publish(_ value: WireRowsSnapshot) async throws {
+        rows = value
+        await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: value), delivery: context), invalidRowCount: value.projection.invalidRowCount))
     }
     func stop() async {}
     func retry() async throws -> EngineDeliveryContext { try await start() }
@@ -53,6 +57,54 @@ private actor RowsEntryClient: EngineClient {
     func hide() {}
 }
 @MainActor final class EngineRowsEntryTests: XCTestCase {
+    private func settingNode(_ root: NSView, id: String) -> NSView? {
+        if root.accessibilityIdentifier() == id { return root }
+        for child in root.subviews { if let found = settingNode(child, id: id) { return found } }
+        return nil
+    }
+
+    private func failedRows(state: String, code: String, accountless: Bool) throws -> WireRowsSnapshot {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        rows[0]["surfaces"] = ["menu", "settings", "dock"]
+        rows[0]["state"] = state
+        rows[0]["reason"] = ["code": code, "text": ["en": code, "zh": code]]
+        rows[0].removeValue(forKey: "expiresAt"); rows[0].removeValue(forKey: "stateAfterExpiry")
+        if accountless {
+            rows[0]["accounts"] = [[String: Any]]()
+        } else {
+            var accounts = try XCTUnwrap(rows[0]["accounts"] as? [[String: Any]])
+            accounts[0]["valueState"] = "retained"
+            accounts[0]["lastFailure"] = ["code": code, "at": "2026-11-16T00:00:00Z"]
+            accounts[0]["observedAt"] = "2026-11-15T23:00:00Z"
+            accounts[0]["freshUntil"] = "2026-11-15T23:30:00Z"
+            rows[0]["state"] = "stale"
+            rows[0]["expiresAt"] = "2026-11-16T00:30:00Z"
+            accounts[0].removeValue(forKey: "resetCards")
+            rows[0]["accounts"] = accounts
+        }
+        projection["rows"] = rows; root["projection"] = projection
+        return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+    }
+
+    private func normalEntry(_ rows: WireRowsSnapshot, profile: URL) throws -> (EngineDockMenuApplication, RowsEntryClient) {
+        let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        var client: RowsEntryClient?
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
+            makeClient: { _, engine in let value = RowsEntryClient(store: engine, rows: rows); client = value; return value }, activateSettings: {})
+        return (app, try XCTUnwrap(client))
+    }
+
+    private func node(_ root: NSView, id: String) -> NSView? {
+        if root.accessibilityIdentifier() == id { return root }
+        for child in root.subviews { if let match = node(child, id: id) { return match } }
+        return nil
+    }
     func testPluginResultUsesAcceptedRequestPairAcrossOtherResponsesAndClear() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u8-plugin-" + UUID().uuidString)
@@ -310,28 +362,79 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertTrue((expired.menuStatusLines ?? []).joined().contains("Engine expiry reason"))
     }
 
-    /// SET-9-42: a reader that failed before any account or reading exists has no Dock member, yet its own
-    /// Settings row must still carry the cause (reason and fix entry) through the normal rows-to-Settings path.
-    func testAccountlessFailedReaderKeepsItsCauseOnItsSettingsRow() async throws {
-        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
-        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
-        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
-        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
-        rows[0]["surfaces"] = ["menu", "settings"]; rows[0]["state"] = "failed"
-        rows[0]["accounts"] = [[String: Any]]()
-        rows[0]["reason"] = ["code": "not_signed_in", "text": ["en": "Not signed in", "zh": "未登录"]]
-        rows[0].removeValue(forKey: "expiresAt"); rows[0].removeValue(forKey: "stateAfterExpiry")
-        projection["rows"] = rows; root["projection"] = projection
-        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
-        let store = EngineStore(), source = EngineDockMenuProvider(store: store)
-        let adapter = EngineDockContentProvider(source: source)
-        let fake = RowsEntryClient(store: store, rows: fixture); _ = try await fake.start()
-        let content = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date()))
-        XCTAssertTrue(content.snapshot.inputs.isEmpty, "no Dock member exists for an accountless failure")
-        let entry = try XCTUnwrap(content.snapshot.subscriptions.first { $0.id == "codex" }, "the failed tool keeps its Settings row")
-        XCTAssertEqual(entry.causeCode, "not_signed_in")
-        XCTAssertNotEqual(entry.source, .fresh)
-        XCTAssertNotNil(ReaderCauseTable.entry(code: try XCTUnwrap(entry.causeCode), tool: entry.vendor, toolName: entry.name.english))
+    /// SET-9-42/D202 through the actual entry and rendered Settings row, not the provider's intermediate output.
+    func testAccountlessFailedReaderShowsReasonAndFixOnItsNormalSettingsToolRow() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set942-accountless-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let (app, _) = try normalEntry(failedRows(state: "failed", code: "runtime_missing", accountless: true), profile: profile)
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        defer { app.composition.dock.close() }
+        for _ in 0..<100 where !app.settingsHost.application.editor.context.subscriptions.contains(where: { $0.id == "codex" }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let subscription = try XCTUnwrap(app.settingsHost.application.editor.context.subscriptions.first { $0.id == "codex" })
+        XCTAssertEqual(subscription.causeCode, "runtime_missing")
+        await app.settingsHost.present(paneID: "subscriptions")
+        let view = app.scopeConsentEntry.view
+        view.layoutSubtreeIfNeeded()
+        XCTAssertEqual((settingNode(view, id: "subscriptions.status.codex") as? NSTextField)?.stringValue, "Node.js is required")
+        XCTAssertEqual((settingNode(view, id: "subscriptions.fix.codex") as? NSButton)?.title, "Install Node.js")
+        await app.composition.stop()
+    }
+
+    func testAccountlessKeychainWaitShowsItsOwnNormalSettingsFix() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set942-keychain-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let (app, _) = try normalEntry(failedRows(state: "needs_keychain", code: "keychain_unavailable", accountless: true), profile: profile)
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        defer { app.composition.dock.close() }
+        await app.settingsHost.present(paneID: "subscriptions")
+        let view = app.scopeConsentEntry.view; view.layoutSubtreeIfNeeded()
+        XCTAssertEqual((settingNode(view, id: "subscriptions.status.codex") as? NSTextField)?.stringValue, "Keychain access needed")
+        XCTAssertEqual((settingNode(view, id: "subscriptions.fix.codex") as? NSButton)?.title, "Allow reading")
+        await app.composition.stop()
+    }
+
+    func testRetainedFailedRefreshKeepsItsCauseAlongsideStaleStatusOnNormalSettingsRow() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set942-retained-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let (app, _) = try normalEntry(failedRows(state: "stale", code: "closed", accountless: false), profile: profile)
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        defer { app.composition.dock.close() }
+        await app.settingsHost.present(paneID: "subscriptions")
+        let view = app.scopeConsentEntry.view; view.layoutSubtreeIfNeeded()
+        let retained = try XCTUnwrap(app.settingsHost.application.editor.context.subscriptions.first { $0.tool == "codex" && $0.source == .stale })
+        let status = try XCTUnwrap((settingNode(view, id: "subscriptions.status." + retained.id) as? NSTextField)?.stringValue)
+        XCTAssertTrue(status.contains("last reading is old"), status)
+        XCTAssertTrue(status.contains("closed unexpectedly"), status)
+        XCTAssertEqual((settingNode(view, id: "subscriptions.fix." + retained.id) as? NSButton)?.title, "Retry")
+        await app.composition.stop()
+    }
+
+    func testOpenSettingsToolRowUpdatesWhenTheSameReaderCauseChanges() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set942-cause-update-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let initial = try failedRows(state: "failed", code: "closed", accountless: true)
+        let (app, client) = try normalEntry(initial, profile: profile)
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        defer { app.composition.dock.close() }
+        await app.settingsHost.present(paneID: "subscriptions")
+        let view = app.scopeConsentEntry.view; view.layoutSubtreeIfNeeded()
+        XCTAssertEqual((settingNode(view, id: "subscriptions.status.codex") as? NSTextField)?.stringValue,
+                       "The tool's background service closed unexpectedly")
+        let updated = try failedRows(state: "failed", code: "runtime_missing", accountless: true)
+        try await client.publish(updated)
+        for _ in 0..<100 where (settingNode(view, id: "subscriptions.status.codex") as? NSTextField)?.stringValue != "Node.js is required" {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual((settingNode(view, id: "subscriptions.status.codex") as? NSTextField)?.stringValue,
+                       "Node.js is required")
+        XCTAssertEqual((settingNode(view, id: "subscriptions.fix.codex") as? NSButton)?.title, "Install Node.js")
+        await app.composition.stop()
     }
 
     func testNormalSettingsContextUsesBundleNoticesAndAcceptedEngineReadiness() async throws {
