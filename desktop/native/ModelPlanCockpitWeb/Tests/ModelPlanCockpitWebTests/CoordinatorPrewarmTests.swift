@@ -55,6 +55,7 @@ private actor CountingClient: EngineClient {
   var holdShown = false
   var entersWithRack: Bool { holdShown && opened > 0 }
   private(set) var displays = 0, displayedWhileHidden = 0
+  private(set) var displayedNames: [String] = []
   private var sequence = 0
   init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
   private func ack(_ raw: String, _ type: String) {
@@ -80,11 +81,11 @@ private actor CountingClient: EngineClient {
   func open() {
     opened += 1
     load()
-    if opened == 1, !holdShown { onShown?() }
+    if opened == 1, !holdShown { onShown?(); onRenderVerified?() }
   }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {
     guard ticket == queryTicket else { return }
-    if opened == 0 { displayedWhileHidden += 1 } else { displays += 1 }
+    if opened == 0 { displayedWhileHidden += 1 } else { displays += 1; displayedNames.append(data.projection.rows.first?.name.en ?? "") }
   }
   func clearPrivateViews(adopting: CockpitEngineContext?) async {
     let raw = try! state.clear(adopting: adopting)
@@ -170,9 +171,17 @@ final class CoordinatorPrewarmTests: XCTestCase {
     EngineDeliveryContext(sessionID: "s-" + UUID().uuidString.lowercased(),
       floor: .init(storeEpoch: "synthetic", generation: generation), revision: 2)
   }
-  private func reply(_ delivery: EngineDeliveryContext) throws -> EngineClientEvent {
-    let data = try JSONDecoder().decode(WireCockpitData.self, from: Data(contentsOf: XCTUnwrap(
-      Bundle.module.url(forResource: "cockpit", withExtension: "json", subdirectory: "Fixtures"))))
+  private func reply(_ delivery: EngineDeliveryContext, name: String? = nil) throws -> EngineClientEvent {
+    let bytes = try Data(contentsOf: XCTUnwrap(
+      Bundle.module.url(forResource: "cockpit", withExtension: "json", subdirectory: "Fixtures")))
+    var root = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    if let name {
+      var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+      var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+      rows[0]["name"] = ["en": name, "zh": name]
+      projection["rows"] = rows; root["projection"] = projection
+    }
+    let data = try JSONDecoder().decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: root))
     let envelope = try WireEnvelope(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
       consentGeneration: delivery.floor.generation, data: data)
     return .response(requestID: .string("synthetic-reply"), .cockpit(.init(envelope: envelope, delivery: delivery)))
@@ -327,12 +336,58 @@ final class CoordinatorPrewarmTests: XCTestCase {
 
     warm.onShown?() // the rack's visible part is out and the page is confirmed visible
     XCTAssertEqual(warm.displays, 1, "the last reply shows at once, without waiting for the fresh one")
+    warm.onRenderVerified?()
     requests = await client.requests
     XCTAssertEqual(requests, 2, "the query asked at the click is not asked again")
     await coordinator.consume(try reply(session))
     XCTAssertEqual(warm.displays, 2, "the fresh reply replaces it when it lands")
     await client.complete(); await coordinator.joinCurrentQueryForVerification()
     await coordinator.shutdown(); await client.complete()
+  }
+
+  /// The fresh query can finish during the rack entrance; the cached reply must still be displayed first.
+  @MainActor func testFreshReplyBeforeShownWaitsBehindCachedReply() async throws {
+    var pages: [WarmProbe] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.prewarmDelay = .zero; coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { pages.count == 1 }; await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session, name: "cached"))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+    coordinator.open()
+    await settle { await client.requests == 2 }
+    await coordinator.consume(try reply(session, name: "fresh"))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    XCTAssertEqual(warm.displays, 0, "neither reply is displayed before the page is shown")
+    warm.onShown?()
+    XCTAssertEqual(warm.displayedNames, ["cached"], "only the cached reply is submitted first")
+    warm.onRenderVerified?()
+    XCTAssertEqual(warm.displayedNames, ["cached", "fresh"], "the fresh reply follows the verified cached render")
+    let count = await client.requests
+    XCTAssertEqual(count, 2, "a completed click-time query is not repeated")
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// A delivery change during entrance invalidates the held reply before the page is shown.
+  @MainActor func testDeliveryChangeBeforeShownDiscardsHeldReply() async throws {
+    var pages: [WarmProbe] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.prewarmDelay = .zero; coordinator.prewarmEnabled = true
+    let old = delivery()
+    await coordinator.consume(.context(old))
+    await settle { pages.count == 1 }; await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(old, name: "old"))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+    coordinator.open(); await settle { await client.requests == 2 }
+    await coordinator.consume(.context(delivery(generation: 4)))
+    warm.onShown?()
+    XCTAssertTrue(warm.displayedNames.isEmpty, "the old delivery is never shown after a context change")
+    await client.complete(); await coordinator.shutdown(); await client.complete()
   }
 
   /// G3-42: a plain fade open does not query at the click; the query follows the shown page's last reply, so a fresh
