@@ -43,7 +43,7 @@ register('host', {
   moreSessions: ['line', '另有 {n} 个会话', '{n} more sessions'],
   pageOverview: ['aria', '总览', 'Overview'],
   pageSubscription: ['aria', '订阅', 'Subscription'],
-  pageEffort: ['aria', '档位', 'Effort'],
+  pageEffort: ['aria', '模型', 'Models'],
   pageBreakdown: ['aria', '去向', 'Breakdown'],
   settingsAria: ['aria', '设置', 'Settings'],
   waiting: ['line', '等待读数', 'Waiting for readings'],
