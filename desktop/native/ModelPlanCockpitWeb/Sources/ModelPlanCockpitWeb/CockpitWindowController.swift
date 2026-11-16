@@ -409,6 +409,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       CockpitFailureLog.record("page-answered waitedMs=\(health.waited(at: monotonicNow())) unanswered=\(health.unansweredProbes)")
     }
     health.answered(); stopProbing()
+    // macrevb-998-2: an answer proves the page alive, but a shown page that is still not ready stays watched; nothing
+    // else would notice if it stopped answering before its ready receipt (no query ticket, no receipt watchdogs).
+    if shown, !bridge.ready, !health.paused, bootstrapCheck == nil { armBootstrapCheck() }
   }
   private func startProbing() {
     guard !ending, probeTimer == nil, health.isWaiting else { return }
@@ -999,7 +1002,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         #if MODELPLAN_TEST_ONLY_SPI
         if let code = self.verificationRejectCode { self.lastRejectCode = code }
         #endif
-        CockpitFailureLog.record("page-reject code=\(self.lastRejectCode)")
+        // macrevb-998-4: every refusal is typed, including the tick refusals that are retried below.
+        self.lastRejectionKind = CockpitRecoveryPolicy.rejectionKind(code: self.lastRejectCode)
+        CockpitFailureLog.record("page-reject code=\(self.lastRejectCode) kind=\(self.lastRejectionKind?.rawValue ?? "none")")
         if onRejected?() != true { self.pageRejected(clear: clear, bootstrap: bootstrap) }
       case .failed:
         // The load call failing means the page module never ran. Any other call that threw was still answered by a
