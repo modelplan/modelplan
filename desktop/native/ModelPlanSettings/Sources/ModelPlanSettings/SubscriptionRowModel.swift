@@ -75,7 +75,7 @@ public struct SubscriptionRowModel: Equatable, Sendable {
     private static let notPrerequisite: Set<String> = [
         "ok", "estimated", "stale_reading", "observation_time_unknown", "not_read_yet", "reader_busy", "consent_changed",
         "no_manual_reading", "no_usage_windows", "consent_required", "consent_denied", "consent_outdated", "readers_off",
-        "no_consent", "no_dock_rows", "other", "policy_pending",
+        "no_consent", "no_dock_rows", "policy_pending",
     ]
     private static func isKeychain(_ code: String) -> Bool { code.hasPrefix("keychain_") }
 

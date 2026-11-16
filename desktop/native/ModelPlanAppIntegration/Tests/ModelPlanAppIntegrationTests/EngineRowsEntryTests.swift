@@ -383,6 +383,38 @@ private actor RowsEntryClient: EngineClient {
         await app.composition.stop()
     }
 
+    func testAccountlessParseFailureShowsReasonAndFixOnItsNormalSettingsToolRow() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set942-parse-error-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let (app, _) = try normalEntry(failedRows(state: "failed", code: "parse_error", accountless: true), profile: profile)
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        defer { app.composition.dock.close() }
+        await app.settingsHost.present(paneID: "subscriptions")
+        let view = app.scopeConsentEntry.view; view.layoutSubtreeIfNeeded()
+        XCTAssertEqual((settingNode(view, id: "subscriptions.status.codex") as? NSTextField)?.stringValue,
+                       "The saved reading could not be parsed")
+        XCTAssertEqual((settingNode(view, id: "subscriptions.fix.codex") as? NSButton)?.title, "Open Settings")
+        await app.composition.stop()
+    }
+
+    func testRetainedHTTP401ShowsItsCauseAndFixOnItsNormalSettingsToolRow() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set942-http-401-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let (app, _) = try normalEntry(failedRows(state: "stale", code: "http_401", accountless: false), profile: profile)
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        defer { app.composition.dock.close() }
+        await app.settingsHost.present(paneID: "subscriptions")
+        let view = app.scopeConsentEntry.view; view.layoutSubtreeIfNeeded()
+        let retained = try XCTUnwrap(app.settingsHost.application.editor.context.subscriptions.first { $0.tool == "codex" && $0.source == .stale })
+        let status = try XCTUnwrap((settingNode(view, id: "subscriptions.status." + retained.id) as? NSTextField)?.stringValue)
+        XCTAssertTrue(status.contains("The sign-in was rejected"), status)
+        XCTAssertTrue(status.contains("last reading is old"), status)
+        XCTAssertEqual((settingNode(view, id: "subscriptions.fix." + retained.id) as? NSButton)?.title, "Check the sign-in")
+        await app.composition.stop()
+    }
+
     func testAccountlessKeychainWaitShowsItsOwnNormalSettingsFix() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set942-keychain-" + UUID().uuidString)
