@@ -48,7 +48,7 @@ private actor CountingClient: EngineClient {
 @MainActor private final class WarmProbe: CockpitPageSurface {
   let state: CockpitBridgeState
   var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?, onShown: (() -> Void)?
-  var onRenderVerified: (() -> Void)?
+  var onRenderVerified: (() -> Void)?, onDisplayAbandoned: (() -> Void)?
   var queryTicket: CockpitQueryTicket? { state.queryTicket }
   private(set) var prewarmed = false, opened = 0, discarded = false
   /// CKP-SHELL-33: the rack-first open shows the page only after the rack's visible part is out; the test confirms it.
@@ -81,7 +81,7 @@ private actor CountingClient: EngineClient {
   func open() {
     opened += 1
     load()
-    if opened == 1, !holdShown { onShown?(); onRenderVerified?() }
+    if opened == 1, !holdShown { onShown?(); if displays > 0 { onRenderVerified?() } }
   }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {
     guard ticket == queryTicket else { return }
@@ -369,6 +369,30 @@ final class CoordinatorPrewarmTests: XCTestCase {
     let count = await client.requests
     XCTAssertEqual(count, 2, "a completed click-time query is not repeated")
     await coordinator.shutdown(); await client.complete()
+  }
+
+  /// A refused cached display has no render receipt; fresh data must recover whether it arrived before or after refusal.
+  @MainActor func testRefusedCachedDisplayReleasesFreshReply() async throws {
+    for freshFirst in [true, false] {
+      var pages: [WarmProbe] = []
+      let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+      let client = CountingClient(); coordinator.bind(client: client)
+      coordinator.prewarmDelay = .zero; coordinator.prewarmEnabled = true
+      let session = delivery()
+      await coordinator.consume(.context(session))
+      await settle { pages.count == 1 }; await settle { await client.requests == 1 }
+      await coordinator.consume(try reply(session, name: "cached"))
+      await client.complete(); await coordinator.joinCurrentQueryForVerification()
+      let warm = try XCTUnwrap(pages.first)
+      coordinator.open(); await settle { await client.requests == 2 }
+      warm.onShown?()
+      if freshFirst { await coordinator.consume(try reply(session, name: "fresh")) }
+      XCTAssertEqual(warm.displayedNames, ["cached"])
+      warm.onDisplayAbandoned?() // no onRenderVerified: the cached display was refused
+      if !freshFirst { await coordinator.consume(try reply(session, name: "fresh")) }
+      XCTAssertEqual(warm.displayedNames, ["cached", "fresh"], "fresh data reaches the same page after refusal")
+      await client.complete(); await coordinator.shutdown(); await client.complete()
+    }
   }
 
   /// A delivery change during entrance invalidates the held reply before the page is shown.

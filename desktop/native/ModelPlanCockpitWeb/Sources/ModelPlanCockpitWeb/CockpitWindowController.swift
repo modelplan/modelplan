@@ -542,6 +542,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// Recovery contract: every accepted rendered receipt, for the coordinator (verified data on screen). Separate from
   /// `onRendered`, which verification and timing hooks own.
   public var onRenderVerified: (() -> Void)?
+  public var onDisplayAbandoned: (() -> Void)?
   public var onClosed: (() -> Void)?
   /// Once per open, when the page is first confirmed visible. It replaces the hidden-display refresh then.
   public var onShown: (() -> Void)?
@@ -941,18 +942,29 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         // Recovery contract: a refused display leaves the last rendered data in place; no receipt is awaited for it.
         guard let self else { return false }
         if self.receiptWatchdog.currentID == id { self.receiptWatchdog.cancel() }
+        let wasCurrent = self.bridge.isCurrentDisplay(id)
         self.bridge.abandonDisplay(id)
         if !self.bridge.hasPendingDisplay { self.renderWatchdog.cancel() }
+        if wasCurrent { self.onDisplayAbandoned?() }
         if self.appearanceGate.retry(visible: self.visibilityFence.isConfirmedVisible, displayPending: self.bridge.hasPendingDisplay) { self.publishAppearance() }
         return false
+      }, onFailed: { [weak self] in
+        guard let self else { return }
+        let wasCurrent = self.bridge.isCurrentDisplay(id)
+        if self.receiptWatchdog.currentID == id { self.receiptWatchdog.cancel() }
+        self.bridge.abandonDisplay(id)
+        if !self.bridge.hasPendingDisplay { self.renderWatchdog.cancel() }
+        if wasCurrent { self.onDisplayAbandoned?() }
       }, dropped: { [weak self] in
         guard let self else { return }
+        let wasCurrent = self.bridge.isCurrentDisplay(id)
         if self.receiptWatchdog.currentID == id { self.receiptWatchdog.cancel() }
         self.bridge.abandonDisplay(id)
         if !self.bridge.hasPendingDisplay { self.renderWatchdog.cancel() }
         self.backlog.display = true
+        if wasCurrent { self.onDisplayAbandoned?() }
       })
-    } catch { degrade("display", error: error) }
+    } catch { degrade("display", error: error); onDisplayAbandoned?() }
   }
   /// Hide synchronously before yielding; acknowledge only after clear receipt
   /// or complete view disposal. An unknown floor remains blocked after receipt.
@@ -997,7 +1009,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// undoes its wait and marks what to resend.
   private func send(_ raw: String, clear: Bool = false, bootstrap: Bool = false, coalesce: String? = nil,
                     isCurrent: (() -> Bool)? = nil, onAccepted: (() -> Void)? = nil,
-                    onRejected: (() -> Bool)? = nil, dropped: (() -> Void)? = nil) {
+                    onRejected: (() -> Bool)? = nil, onFailed: (() -> Void)? = nil, dropped: (() -> Void)? = nil) {
     let web = self.web
     #if MODELPLAN_TEST_ONLY_SPI
     let noWindowTest = web == nil && verificationNoWindowDelivery != nil
@@ -1045,7 +1057,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         // live page (a dead process reports its termination separately), so the page keeps what it shows.
         if bootstrap { self.fail(.javascriptFailed) }
         else if clear { self.fail(.clearRejected) }
-        else { CockpitFailureLog.record("page-call-failed type=\(Self.messageType(raw)) kept=true") }
+        else { CockpitFailureLog.record("page-call-failed type=\(Self.messageType(raw)) kept=true"); onFailed?() }
       }
     }) }
     guard !submitted else { return }

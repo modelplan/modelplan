@@ -14,6 +14,8 @@ import ModelPlanWire
   var onShellChanged: (() -> Void)? { get set }
   /// Recovery contract: the page acknowledged a rendered display (verified data on screen).
   var onRenderVerified: (() -> Void)? { get set }
+  /// A submitted display terminated without a rendered receipt.
+  var onDisplayAbandoned: (() -> Void)? { get set }
   /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
   /// G3-80: the cockpit window's frame while it is on screen; the enlarged field opens on its display.
@@ -38,6 +40,7 @@ public extension CockpitPageSurface {
   var onShown: (() -> Void)? { get { nil } set {} }
   var onShellChanged: (() -> Void)? { get { nil } set {} }
   var onRenderVerified: (() -> Void)? { get { nil } set {} }
+  var onDisplayAbandoned: (() -> Void)? { get { nil } set {} }
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
   var cockpitFrame: CGRect? { nil }
   var entersWithRack: Bool { false }
@@ -330,12 +333,12 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     newPage.onRenderVerified = { [weak self] in
       guard let self, self.pageGeneration == generation, self.presented else { return }
       self.presentedPageRendered = true; self.readRetryAttempt = 0
-      if self.openingShown, self.openingReply != nil {
-        let hasFresh = self.openingFreshPending
-        self.openingReply = nil; self.openingFreshPending = false; self.openingShown = false
-        if hasFresh { self.showLastReply(self.lastReply); self.onDisplayed?() }
-      }
+      self.releaseOpeningReply()
       self.onRenderVerified?()
+    }
+    newPage.onDisplayAbandoned = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.releaseOpeningReply()
     }
     newPage.onIntent = { [weak self] intent in
       guard self?.pageGeneration == generation else { return }; self?.receiveIntent(intent)
@@ -357,6 +360,13 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       self.schedulePrewarm()
     }
     return newPage
+  }
+  /// A rendered or terminally refused cached display releases the latest fresh reply, if one arrived.
+  private func releaseOpeningReply() {
+    guard openingShown, openingReply != nil else { return }
+    let hasFresh = openingFreshPending
+    openingReply = nil; openingFreshPending = false; openingShown = false
+    if hasFresh { showLastReply(lastReply); onDisplayed?() }
   }
   /// The last reply for this exact delivery, on a page confirmed visible. Never retagged to a newer context.
   private func showLastReply(_ reply: (delivery: EngineDeliveryContext, data: WireCockpitData)?) {

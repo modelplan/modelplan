@@ -405,6 +405,22 @@ import ModelPlanWire
     XCTAssertFalse(page.bridge.disposed); page.discard()
   }
 
+  /// A refused or failed display reports terminal abandonment without claiming a rendered receipt.
+  func testUnrenderedDisplayReportsAbandonment() throws {
+    for result in [CockpitDeliveryResult.rejected, .failed] {
+      let rig = Rig(); let page = try page(rig)
+      var abandoned = 0
+      page.onDisplayAbandoned = { abandoned += 1 }
+      page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+      page.verificationRejectCode = "display.render"
+      try XCTUnwrap(rig.sent.last).1(result)
+      XCTAssertEqual(abandoned, 1)
+      XCTAssertEqual(rig.rendersVerified, 0)
+      XCTAssertFalse(page.bridge.disposed)
+      page.discard()
+    }
+  }
+
   /// Step 2b: since #990 the page refuses a render, appearance, shell or tick exception without unloading, so those
   /// refusals keep the page (kind `view`); only a page that unloaded itself is gone.
   func testAViewExceptionRefusalKeepsThePageAndOnlyAnUnloadEndsIt() throws {
