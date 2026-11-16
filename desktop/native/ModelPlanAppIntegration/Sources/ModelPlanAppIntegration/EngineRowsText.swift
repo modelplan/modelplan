@@ -12,6 +12,10 @@ enum EngineRowsText {
     static let widgetTurnedOffHint = SettingsText(
         "Quota Widget is off. Right-click the menu bar icon and choose Show Quota Widget.",
         "额度挂件已关闭，可右键点菜单栏图标，勾选「显示额度挂件」重新打开")
+    /// D114: one-time hint the first time the widget collapses to its strip.
+    static let widgetCollapsedHint = SettingsText(
+        "Quota Widget is now a strip on the screen edge. Hover it, or right-click the menu bar icon and choose Find Quota Widget.",
+        "额度挂件已收成屏幕边缘的细条，鼠标移上去可展开，也可右键点菜单栏图标，选「找到额度挂件」")
     static let refresh = SettingsText("Refresh", "刷新")
     static let settings = SettingsText("Settings…", "设置…")
     static let contextSettings = SettingsText("Settings", "设置")
@@ -24,8 +28,11 @@ enum EngineRowsText {
     static let quit = SettingsText("Quit ModelPlan", "退出 ModelPlan")
     static let about = SettingsText("About ModelPlan", "关于 ModelPlan")
     /// G3-22: macOS hides status items behind the notch when the menu bar is full.
-    static let statusItemHidden = SettingsText("The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right.",
-                                               "菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。")
+    static let statusItemHidden = SettingsText("The menu bar icon is hidden — the menu bar may be full or the camera notch may cover it. You can still use the Quota Widget, the ignition key, or the shortcut below.",
+                                               "菜单栏图标被遮住了。可能是菜单栏已满，或被屏幕刘海挡住，拖动也不一定有用。仍可用：额度挂件、点火键，或下面的快捷键。")
+    /// The same notice for a build whose cockpit entry is off: neither the ignition key nor the shortcut can open anything there.
+    static let statusItemHiddenWithoutCockpit = SettingsText("The menu bar icon is hidden — the menu bar may be full or the camera notch may cover it. You can still use the Quota Widget.",
+                                                             "菜单栏图标被遮住了。可能是菜单栏已满，或被屏幕刘海挡住，拖动也不一定有用。仍可用：额度挂件。")
     /// D65 (owner 11-08): the card's plain line for a window at 0 %, with the time until it resets when known.
     /// "5-hour quota used up · resets in 3h 18m" / "5 小时额度已用完 · 3 小时 18 分后重置".
     static func quotaUsedUp(period: DockQuotaPeriod, label: String, resetMinutes: Int?) -> SettingsText {
@@ -52,4 +59,15 @@ enum EngineRowsText {
         "Readings unavailable. Check the reading service connection in Settings.",
         "读数不可用，请在设置中检查读取服务连接。")
     static let waitingForFresh = SettingsText("Waiting for current readings. Refresh to retry.", "等待读数更新，可刷新重试。")
+}
+
+/// Right-click menus (cockpit, widget, status item). Terms follow the shared glossary and Settings.
+extension EngineRowsText {
+    static let resetPosition = SettingsText("Reset Position", "重置位置")
+    static let widgetSize = SettingsText("Quota Widget Size", "额度挂件大小")
+    static let sizeSmall = SettingsText("Small", "小")
+    static let sizeMedium = SettingsText("Medium", "中")
+    static let sizeLarge = SettingsText("Large", "大")
+    static let help = SettingsText("Help…", "说明…")
+    static let closeWindow = SettingsText("Close Window", "关闭窗口")
 }

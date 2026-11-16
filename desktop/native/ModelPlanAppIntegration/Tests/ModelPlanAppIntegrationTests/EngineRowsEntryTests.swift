@@ -94,6 +94,7 @@ private actor RowsEntryClient: EngineClient {
         await app.composition.store.consume(.connection(.ready(context)))
         await app.composition.store.consume(.context(context))
         await app.composition.store.consume(.consentChanged(reply))
+        app.scopeConsentEntry.controller.choose(facts.scopes[0].scope, selected: true) // Settings no longer pre-selects (G3-67)
         let request = try XCTUnwrap(app.scopeConsentEntry.controller.requestAllow())
         await app.scopeConsentEntry.controller.confirm(request.id)
         if case .waitingForFacts = app.scopeConsentEntry.controller.phase {} else { XCTFail("Completion cannot prove consent") }
@@ -126,9 +127,11 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertTrue(try XCTUnwrap(window.window?.contentView).subviews.contains { find($0, "settings.scopeConsent") })
         await window.prepare();window.selectPane("subscriptions")
         let shown=await window.acceptanceCheckpoint()
-        let retained:Set<String>=[SettingKey.visible.rawValue,SettingKey.alias.rawValue]
+        // D87/D89: visibility and order moved into the Subscriptions rows (SettingsWindowController filters .visible and .order out
+        // of the catalogue when the rows view is present); the rows are exercised by G1SettingsJourneys.testG1_SET_9_13.
+        let retained:Set<String>=[SettingKey.alias.rawValue]
         let replaced:Set<String>=[SettingKey.detectedReaders.rawValue,SettingKey.optionalReaders.rawValue]
-        XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isSuperset(of:retained),"SET-9-16 per-subscription controls must remain")
+        XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isSuperset(of:retained),"SET-9-16 per-subscription alias control must remain (visibility lives in the rows)")
         XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isDisjoint(with:replaced),"U8 replaces only the legacy consent rows")
         XCTAssertFalse(shown.windowVisible,"construction proof must not order a Settings window")
         func falseEmpty(_ view:NSView) -> Bool {

@@ -22,7 +22,7 @@ class AppSmokeAssertionsTests(unittest.TestCase):
                        'firstRunConnectionStatus': 'Connection service is ready.',
                        'consentPortPresent': True, 'consentAPIAvailable': True,
                        'cliHelp': 'Usage:\n  modelplan consent --json\n', 'cliHelpExitCode': 0,
-                       'cliSupportsConsentJSON': True, 'cliPath': str(self.helper), 'showDock': True, 'autoHide': True,
+                       'cliSupportsConsentJSON': True, 'cliPath': str(self.helper), 'showDock': True, 'autoHide': False,
                        'edge': 'right', 'home': str(self.home), 'visibleWindows': 0}
 
     def results(self, *, expect_unverified=False):
@@ -163,11 +163,11 @@ class AppSmokeAssertionsTests(unittest.TestCase):
         self.report.pop('showDock')
         self.assertFalse(self.results()['dock-defaults'])
 
-    def test_collapsed_fresh_default_and_saved_off_are_distinct(self):
-        # D56: a fresh install starts collapsed; an "off" here is not the fresh default.
-        self.report['autoHide'] = True
-        self.assertTrue(self.results()['dock-defaults'])
+    def test_expanded_fresh_default_and_saved_collapse_are_distinct(self):
+        # D114: a fresh install starts expanded; auto-collapse on here is not the fresh default.
         self.report['autoHide'] = False
+        self.assertTrue(self.results()['dock-defaults'])
+        self.report['autoHide'] = True
         self.assertFalse(self.results()['dock-defaults'])
 
 

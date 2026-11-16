@@ -122,18 +122,18 @@ private actor G1BEngine: EngineClient {
         let app = try await entry(profile: profile(), preferredLanguages: ["zh-CN"], fixture: quotaFixture())
         let menu = try XCTUnwrap(app.liveStatusMenu)
         // This healthy synthetic fixture has no provider diagnostics or update action.
-        let expected = ["刷新", "显示额度挂件", "找到额度挂件", "即将推出", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
+        let expected = ["刷新", "显示额度挂件", "找到额度挂件", "即将推出", "网站", "方法论", "隐私", "说明…", "设置…", "重置位置", "关于 ModelPlan", "退出 ModelPlan"]
         let statusTitles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
         let dockTitles = app.composition.dock.menu().items.filter { !$0.isSeparatorItem }.map(\.title)
         XCTAssertGreaterThan(statusTitles.count, 1)
         XCTAssertGreaterThanOrEqual(dockTitles.count, 3)
         XCTAssertEqual(statusTitles, expected)
-        // Owner HIG decision 11-06: the widget menu is [✓自动收起, 设置…] — [退出 ModelPlan]; no Hide.
-        XCTAssertEqual(dockTitles, ["自动收起", "设置…", "退出 ModelPlan"])
+        // Owner HIG decision 11-06: the widget menu is [✓自动收起, 设置…, 重置位置] — [退出 ModelPlan]; no Hide.
+        XCTAssertEqual(dockTitles, ["自动收起", "设置…", "重置位置", "退出 ModelPlan"])
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         let english = try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
         XCTAssertGreaterThan(english.count, 1)
-        XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Find Quota Widget", "Coming soon", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"])
+        XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Find Quota Widget", "Coming soon", "Website", "Methodology", "Privacy", "Help…", "Settings…", "Reset Position", "About ModelPlan", "Quit ModelPlan"])
         XCTAssertNotEqual(english, expected, "The check must reject English app-owned actions")
     }
 
@@ -162,7 +162,7 @@ private actor G1BEngine: EngineClient {
         let rows = try SettingsCatalogue.rows(preferences: initial.preferences, context: editor.context, paneID: nil)
         let language = try XCTUnwrap(rows.first { $0.key == .language })
         guard case .choice(_, let options) = language.value else { return XCTFail("Language must offer choices") }
-        XCTAssertEqual(Set(options), Set(["en", "zh-CN"]))
+        XCTAssertEqual(Set(options), Set(["system", "en", "zh-CN"]), "Follow System sits beside Chinese and English (SET-9-39)")
         for choice in [SettingsLanguage.chinese, .english] {
             _ = try await editor.commit(SettingsB21Edit.language(choice))
             let persisted = await app.foundationStore.snapshot()

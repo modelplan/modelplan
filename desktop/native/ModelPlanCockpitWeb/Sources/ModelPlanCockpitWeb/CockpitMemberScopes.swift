@@ -9,12 +9,15 @@ enum CockpitMemberScopes {
         let verified=Set(data.subscriptions.map(\.subscriptionRef))
         var keys:Set<String>=["all"]
         var counts:[String:Int]=[:], ordinals:[String:Int]=[:]
-        for row in data.projection.rows {
+        // The page's members are the widget's: only rows on the Dock surface (members.ts dockRows). A row the producer
+        // keeps for the menu and Settings only is no scope, so a saved scope for it falls back to All.
+        let rows=data.projection.rows.filter { $0.surfaces.contains(.dock) }
+        for row in rows {
             for account in row.accounts where account.subscriptionRef.map({ !verified.contains($0) }) ?? true {
                 counts[row.id+"#"+account.route.rawValue,default:0] += 1
             }
         }
-        for row in data.projection.rows {
+        for row in rows {
             for account in row.accounts {
                 let key:String
                 if let reference=account.subscriptionRef,verified.contains(reference) { key=reference }

@@ -126,4 +126,52 @@ final class T2GeometryTests: XCTestCase {
             }
         }
     }
+
+    /// DOCK-3.1-15: readouts stay upright. On every edge the readout is an axis-aligned, wider-than-tall box
+    /// (56 x 16 u, never swapped for a rotated arc), centred on the station's readout anchor; under the ring
+    /// on the side edges, beside it on the bottom and top.
+    func testReadoutsStayUprightOnEveryEdge() throws {
+        for edge in [T2Edge.right, .left, .bottom, .top] {
+            for diameter in [CGFloat(36), 44, 52] {
+                let unit = diameter / 52
+                let geometry = try T2Geometry.make(subscriptions: (0..<4).map { .init(id: "member-\($0)") }, input: .init(coordinates: .init(edge: edge, width: 1470, height: 956, menuBarExclusion: 26), diameter: diameter))
+                let skin = try T2DockSkin.make(geometry: geometry, rows: [], showsPercentages: true)
+                XCTAssertEqual(skin.stations.count, geometry.stations.count)
+                for (recipe, station) in zip(skin.stations, geometry.stations) {
+                    let label = "\(edge) D\(diameter)"
+                    XCTAssertEqual(recipe.readout.width, 56 * unit, accuracy: 1e-6, label)
+                    XCTAssertEqual(recipe.readout.height, 16 * unit, accuracy: 1e-6, label)
+                    XCTAssertGreaterThan(recipe.readout.width, recipe.readout.height, label)
+                    XCTAssertEqual(recipe.readout.midX, station.readoutCentre.x, accuracy: 1e-6, label)
+                    XCTAssertEqual(recipe.readout.midY, station.readoutCentre.y, accuracy: 1e-6, label)
+                    if edge == .left || edge == .right {
+                        XCTAssertEqual(station.readoutCentre.x, station.centre.x, accuracy: 1e-6, label)
+                        XCTAssertGreaterThan(station.readoutCentre.y, station.centre.y, label)
+                    } else {
+                        XCTAssertEqual(station.readoutCentre.y, station.centre.y, accuracy: 1e-6, label)
+                        XCTAssertGreaterThan(station.readoutCentre.x, station.centre.x, label)
+                    }
+                }
+            }
+        }
+    }
+
+    /// DOCK-3.1-19: an empty Dock reserves one empty slot (a dashed "?" station), never zero and never more.
+    func testEmptyDockReservesOneEmptySlot() throws {
+        for edge in [T2Edge.right, .left, .bottom, .top] {
+            for diameter in [CGFloat(36), 44, 52] {
+                let geometry = try T2Geometry.make(subscriptions: [], input: .init(coordinates: .init(edge: edge, width: 1470, height: 956, menuBarExclusion: 26), diameter: diameter))
+                let label = "\(edge) D\(diameter)"
+                XCTAssertEqual(geometry.stations.count, 1, label)
+                XCTAssertTrue(try XCTUnwrap(geometry.stations.first).isEmpty, label)
+                XCTAssertFalse(geometry.stations[0].isOverflow, label)
+                XCTAssertTrue(geometry.shown.isEmpty && geometry.overflow.isEmpty, label)
+                XCTAssertFalse(geometry.outline.isEmpty, label)
+                let skin = try T2DockSkin.make(geometry: geometry, rows: [], showsPercentages: true)
+                XCTAssertEqual(skin.stations.count, 1, label)
+                XCTAssertEqual(skin.stations[0].placeholderLabel, "?", label)
+                XCTAssertNil(skin.stations[0].subscriptionID, label)
+            }
+        }
+    }
 }

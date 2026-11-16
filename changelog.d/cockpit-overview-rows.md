@@ -1,1 +1,0 @@
-The cockpit Overview now lists a blue lower-effort suggestion for a session running on a red quota and shows when an announced official extra reset is expected. Its Grid heatmap is drawn at the size of its area, takes the subscription's colour in a subscription scope, and shows the date and tokens when you hover a day.

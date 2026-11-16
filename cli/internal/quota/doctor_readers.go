@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 // ReaderDiagnostic is an explicit allowlist, never an embedded reader DTO.
@@ -26,6 +29,28 @@ type ReaderDiagnostic struct {
 	Windows  int    `json:"windows"`
 	Last     string `json:"last"`
 	Beta     bool   `json:"beta"`
+	// Cause: the fixed failure code behind a failed state (reader_error:<code> or runtime_missing).
+	Cause string `json:"cause,omitempty"`
+	// Failures: Codex's recent failures, oldest first (fixed codes and times only).
+	Failures []DiagnosticFailure `json:"failures,omitempty"`
+}
+
+// DiagnosticFailure is one entry of the Codex failure ring.
+type DiagnosticFailure struct {
+	Code          string `json:"code"`
+	At            string `json:"at"`
+	StreakSeconds int64  `json:"streakSeconds"`
+}
+
+// diagnosticCause names the fixed code behind a failed diagnostic state, or "".
+func diagnosticCause(state string) string {
+	if state == "unavailable:"+toolcli.RuntimeMissing {
+		return "runtime_missing"
+	}
+	if code, ok := strings.CutPrefix(state, "unavailable:reader_error:"); ok {
+		return ReaderErrorCode(code)
+	}
+	return ""
 }
 
 func yesNo(v bool) string {
@@ -118,6 +143,21 @@ func codexFailureState(s *accountSnap) string {
 	return diagnosticState(toolcli.RuntimeMissing)
 }
 
+// codexAccountState is the diagnostic state of the newest Codex snapshot alone. Older failures
+// live in the failure ring and never decide it: a newer ok snapshot is ok, and a failure too old
+// to describe anything current is stale, not reader_error.
+func codexAccountState(s *accountSnap, now time.Time) string {
+	switch {
+	case s.Status != "ok" && (now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now)):
+		return "stale"
+	case s.Status != "ok":
+		return codexFailureState(s)
+	case now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now):
+		return "stale"
+	}
+	return "ok"
+}
+
 // codexDiagnostic: Codex is not a native reader, so it reports its runtime route from the
 // cached account snapshot alone. Session logs stay the fallback and are never opened here.
 func codexDiagnostic(p Paths, policy consent.State, detected bool, now time.Time) ReaderDiagnostic {
@@ -141,14 +181,10 @@ func codexDiagnostic(p Paths, policy consent.State, detected bool, now time.Time
 		}
 		row.Last = diagnosticAge(reading.ObservedAt, now)
 		row.Windows = diagnosticWindows(reading.Windows, now)
-		switch {
-		case s.Status != "ok":
-			row.State = codexFailureState(s)
-		case now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now):
-			row.State = "stale"
-		default:
-			row.State = "ok"
+		for _, f := range s.Failures {
+			row.Failures = append(row.Failures, DiagnosticFailure{Code: ReaderErrorCode(f.Code), At: f.At.UTC().Format(time.RFC3339), StreakSeconds: f.StreakSeconds})
 		}
+		row.State = codexAccountState(s, now)
 	}
 	return row
 }
@@ -210,6 +246,9 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 			}
 			if selectionErr != nil {
 				row.State = "unavailable:config_unavailable"
+			}
+			if id == "zai" && p.ZCodeNoProviderFile && row.Consent != "denied" {
+				row.State = "unavailable:no_provider_file"
 			}
 		case managed:
 			s, err := loadReaderState(p.Cache, id)
@@ -277,6 +316,10 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 				if r.ErrorCode != "" {
 					row.State = nativeDiagnosticState(r.Availability, r.ErrorCode)
 				}
+				// G3-112: no attempt recorded at all is "not read yet", not a stale reading.
+				if loadZaiConfigState(p.Cache).Availability == "" {
+					row.State = "unavailable:not_read"
+				}
 			}
 		}
 		rows = append(rows, row)
@@ -306,6 +349,7 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 		}
 		rows = append(rows, ReaderDiagnostic{Provider: id + ":history", Detected: yesNo(detect.LocalRoot(root)), Consent: grant, Admitted: yesNo(admitted), State: state, Last: diagnosticAge(r.ObservedAt, now), Beta: true})
 	}
+	rows = append(rows, importDiagnostics(p, policy, now)...)
 	a := p.ClaudeSessionAccess
 	row := ReaderDiagnostic{Provider: "claude:session", Detected: yesNo(presence["claude"]), Consent: diagnosticConsent(policy, "claude", consent.Local), Admitted: "no", State: "unavailable:not_admitted", Last: "unknown", Beta: true}
 	if a != nil && historyDiagnosticAdmission(p.ClaudeSessionRoot, *a) {
@@ -317,6 +361,9 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 		}
 	}
 	rows = append(rows, row)
+	for i := range rows {
+		rows[i].Cause = diagnosticCause(rows[i].State)
+	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Provider < rows[j].Provider })
 	return rows
 }
@@ -360,4 +407,37 @@ func diagnosticSessionDue(p Paths, now time.Time) bool {
 	}
 	r := localusage.ReadProjectionCache(p.Cache, "claude", *p.ClaudeSessionAccess, now)
 	return r.CapturedAt.IsZero() || !now.Before(r.CapturedAt.Add(5*time.Minute))
+}
+
+// importDiagnostics: the Codex and Claude Code past-usage import (G3-112). It reads only
+// imported.json and presence metadata: never a log. Last is the age of the imported span's end.
+func importDiagnostics(p Paths, policy consent.State, now time.Time) []ReaderDiagnostic {
+	admission := admissionFor(p)
+	home, _ := os.UserHomeDir()
+	claudeRoot := os.Getenv("CLAUDE_CONFIG_DIR")
+	if claudeRoot == "" {
+		claudeRoot = filepath.Join(home, ".claude")
+	}
+	var out []ReaderDiagnostic
+	for _, src := range []struct{ id, source, scope, root string }{
+		{"claude", "claude-code", consent.ScopeClaudeLocalHistory, filepath.Join(claudeRoot, "projects")},
+		{"codex", "codex", consent.ScopeCodexLocalHistory, filepath.Join(p.CodexHome, "sessions")},
+	} {
+		admitted := p.Cache != "" && admission.State().AllowsScope(src.scope, admission.Mode()) && os.Getenv("MODELPLAN_HISTORY") != "off"
+		row := ReaderDiagnostic{Provider: src.id + ":history", Detected: yesNo(detect.LocalRoot(src.root)), Consent: diagnosticConsent(policy, src.id, consent.Local), Admitted: yesNo(admitted), State: "unavailable:not_admitted", Last: "unknown", Beta: true}
+		if row.Consent == "none" && admitted {
+			row.Consent = "granted"
+		}
+		if row.Consent == "denied" {
+			row.State = "unavailable:denied"
+		}
+		if admitted {
+			row.State = "unavailable:not_read"
+			if through, _, ok := speed.ImportedCoverage(p.Cache, src.source); ok {
+				row.State, row.Last = "ok", diagnosticAge(through, now)
+			}
+		}
+		out = append(out, row)
+	}
+	return out
 }

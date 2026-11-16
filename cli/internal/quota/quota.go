@@ -178,6 +178,9 @@ func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Cr
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
 	ResetCards *rows.ResetCards `json:"-"`
+	// ReportedModels (D98): model ids the tool itself lists for this account (Codex model/list), native ids as
+	// the harness names them. Internal: it reaches the cockpit wire mapped to published ids, not this JSON.
+	ReportedModels []string `json:"-"`
 	Beta       bool             `json:"beta,omitempty"` // reader has not completed real-account verification
 	Source     string           `json:"source"`         // claude-code | codex | user | codexbar:<provider>
 	Plan       string           `json:"plan,omitempty"`
@@ -314,6 +317,7 @@ type Paths struct {
 	ClaudeKeychainPending       bool                      // a Keychain-only Claude Code login awaits the user's choice (D41)
 	ClaudeSessionAccess         *localusage.HistoryAccess // explicit consent/profile scope for cache-only session projection
 	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
+	ZCodeNoProviderFile         bool                      // ZCode is present on the default route but keeps no provider file (G3-21)
 }
 
 // Read gathers every available source and evaluates it at now.

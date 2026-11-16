@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/localday"
 	"sort"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
 	"github.com/modelplan/modelplan/cli/internal/render"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -244,6 +246,13 @@ func Build(in Input) Snapshot {
 	}
 	if s.Accounts == nil {
 		s.Accounts = []quota.Account{}
+	} else {
+		// The desktop shows each account's plan text as is, so Codex's Pro tier ids become their
+		// names here; the report keeps the ids its history and advice are keyed on.
+		s.Accounts = append(make([]quota.Account, 0, len(s.Accounts)), s.Accounts...)
+		for i := range s.Accounts {
+			s.Accounts[i].Plan = rows.PlanLabel(s.Accounts[i].Source, s.Accounts[i].Plan)
+		}
 	}
 	if s.Sources == nil {
 		s.Sources = []quota.SourceStatus{}
@@ -408,7 +417,7 @@ func revision(in Input) string {
 	}
 	if in.Perf != nil {
 		l := in.Perf.Ledger
-		l.Files = nil // how far the logs were read is no observation
+		l.Files, l.Counted = nil, nil // how far the logs were read is no observation
 		v.Perf, v.PerfOK = &l, in.Perf.OK
 		if in.Perf.LongOK {
 			v.Long, v.LongOK = &in.Perf.Long, true
@@ -464,7 +473,7 @@ func validUntil(in Input, s Snapshot) *time.Time {
 	for _, usage := range in.LocalUsage {
 		if usage.Enabled {
 			l := in.Now.Local()
-			ts = append(ts, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, l.Location()))
+			ts = append(ts, localday.Next(l))
 			break
 		}
 	}
@@ -481,7 +490,7 @@ func validUntil(in Input, s Snapshot) *time.Time {
 	}
 	if len(s.Measured) > 0 {
 		l := in.Now.Local()
-		ts = append(ts, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, time.Local))
+		ts = append(ts, localday.Next(l))
 	}
 	sort.Slice(ts, func(i, j int) bool { return ts[i].Before(ts[j]) })
 	for _, t := range ts {

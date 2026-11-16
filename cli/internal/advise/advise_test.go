@@ -352,6 +352,10 @@ func TestAnnouncedResetSpendsAheadAndSwitchesBackOnlyOnProof(t *testing.T) {
 		"beyond a day":          {withResets(ann("r-far", "upstream-announced", 30*time.Hour)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
 		"withdrawn":             {withResets(ann("r-w", "withdrawn", 6*time.Hour)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
 		"announced time passed": {withResets(ann("r-past", "upstream-announced", -time.Hour)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
+		// D166: extra resets issued are redeemable credits, not a window restart; never spend ahead for them.
+		"reset credit": {withResets(json.RawMessage(`{"id":"r-card","provider":"openai","eventType":"reset_credit_issued","status":"upstream-announced","publishedAt":"` +
+			now.Add(-time.Hour).Format(time.RFC3339) + `","url":"https://x.com/r","schedule":{"precision":"window","from":"` + now.Add(time.Hour).Format(time.RFC3339) +
+			`","through":"` + now.Add(6*time.Hour).Format(time.RFC3339) + `","label":"today"}}`)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
 	} {
 		for _, e := range derive(t, nil, c.d, c.a) {
 			if e.Type == AnnouncedSurplus {

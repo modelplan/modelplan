@@ -12,6 +12,14 @@ import ModelPlanSettings
           layouts:[],primaryDisplayID:"synthetic-display",pointer:CGPoint(x:700,y:400))
 }
 
+/// A latency budget reported as a metric rather than asserted. GUI runners are shared Macs; when the whole host
+/// runs 2-3x slow every journey slows with it, so the hard bound is the caller's generous condition ceiling and the
+/// product budget is printed as one greppable `GUI-BUDGET` line (over=true when the budget was missed).
+func reportBudget(_ name: String, elapsed: Duration, budget: Duration) {
+    let seconds = { (d: Duration) in Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18 }
+    print("GUI-BUDGET \(name) elapsed=\(String(format: "%.3f", seconds(elapsed)))s budget=\(String(format: "%.3f", seconds(budget)))s over=\(elapsed > budget)")
+}
+
 @MainActor private final class SettingsConditionWait {
     let editor: SettingsEditor, condition: @MainActor () -> Bool
     var token: UUID?, timeout: Task<Void,Never>?, continuation: CheckedContinuation<Bool,Never>?
@@ -85,7 +93,7 @@ import ModelPlanSettings
     }
 }
 
-/// D56 (owner 2026-11-08) made a fresh profile start with the Quota Widget collapsed. Journeys
+/// D56 (owner 2026-11-08) made a fresh profile start collapsed; D114 (2026-11-10) reversed that. Journeys
 /// written for an expanded widget open a new profile with Auto-Collapse saved off; a profile that
 /// already exists keeps whatever it saved. Fresh defaults are covered by FindQuotaWidgetJourneyTests
 /// and SET909DockDefaultsJourneyTests, which use EngineRowsEntry.makeSettingsStore directly.

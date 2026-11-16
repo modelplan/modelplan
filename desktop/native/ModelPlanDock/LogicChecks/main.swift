@@ -189,9 +189,10 @@ do {
         s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(600))
         try expect(DockNoticeProjection.candidates(for:s,at:now).map(\.key.kind)==[.forecast,.resetAnnounced,.cardsExpiring,.credits],"priority order")
         s.forecast=nil;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"card expiry precedes announced reset")
-        let cards=s.cards;s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.shape == .hollow,"announced hollow blue")
+        let cards=s.cards;s.cards=[];let announced=DockNoticeProjection.selected(for:s,at:now)
+        try expect(announced?.shape == .hollow && announced?.tone == DockNotice.resetAnnouncedTone,"announced hollow, palette tone")
         s.reset=reset(confirmed:true);let confirmed=DockNoticeProjection.selected(for:s,at:now)
-        try expect(confirmed?.tone == .blue && confirmed?.shape == .solid,"confirmed solid blue, never credits white")
+        try expect(confirmed?.tone == DockNotice.resetConfirmedTone && confirmed?.shape == .solid && confirmed?.tone != .white,"confirmed solid, palette tone, never credits white")
         s.cards=cards;s.reset?.restartedReading=true;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"reading clears confirmed reset only")
         s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.tone == .white,"credits are white")
         s.creditsKnown=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"unknown credits not fabricated")
@@ -202,6 +203,9 @@ do {
         s.reset=DockResetSignal(id:"scheduled",status:.announced,scheduledThrough:now.addingTimeInterval(10))
         try expect(DockNoticeProjection.selected(for:s,at:now) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(10)) == nil,"scheduled end, not nominal 48h")
         s.reset=reset(confirmed:true);try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600))==nil,"confirmed 24h")
+        try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(3*3600-1)) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(3*3600))==nil,"D166: confirmed dot 3h")
+        s.reset?.confirmedDotUntil=now.addingTimeInterval(30*3600);try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600-1)) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600))==nil,"D166: a later dot bound is capped at 24h")
+        s.reset?.confirmedDotUntil=nil
         s.reset?.confirmedAt=now.addingTimeInterval(1);try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"future confirmation withheld")
         s.reset=nil;s.cards=[DockResetCardSignal(id:"expired",expiresAt:now),DockResetCardSignal(id:"boundary",expiresAt:now.addingTimeInterval(48*3600)),DockResetCardSignal(id:"late",expiresAt:now.addingTimeInterval(48*3600+1))]
         try expect(DockNoticeProjection.selected(for:s,at:now)?.key.sourceIDs == ["boundary"],"card 48h inclusive, zero excluded")
@@ -306,7 +310,7 @@ do {
         try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","shortest outer, weekly inner")
         try expect(result.readout=="20%" && result.selectedWindowID=="week" && result.litTimePoints(positions:37)==19,"selected tightest quota, clock actual time")
         input.selectedWindowID="5h";input.showUsedPercent=true;result=try DockInstrumentProjection.evaluate(input,now:now)
-        try expect(result.readout=="20%" && result.status == .normal && result.litTimePoints(positions:37)==15,"used display does not invert status or clock")
+        try expect(result.readout=="20%" && result.status == .normal && result.litTimePoints(positions:37)==23,"used display does not invert status; clock lights time elapsed (D129)")
         try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","pin never swaps quota rings")
         input.windows=[week]; result=try DockInstrumentProjection.evaluate(input,now:now)
         try expect(result.outer?.windowID=="week" && result.inner==nil,"one weekly window uses the outer ring only")
@@ -331,6 +335,46 @@ do {
         try expect(old.dataState == .stale && old.readout=="--" && old.outer?.fraction==nil && old.litTimePoints(positions:37)==nil,"stale is neither zero nor full")
         i.dataState = .fresh;i.windows[0].resetsAt=now
         try expect(try DockInstrumentProjection.evaluate(i,now:now).readout=="--","passed reset retires quota")
+    }
+    try test("D129 clock dots follow the remaining/used choice") {
+        func lit(_ left:Double,used:Bool)throws->Int?{
+            let w=DockQuotaWindowInput(id:"w",period:.fiveHour,label:"5h",remainingPercent:50,resetsAt:now.addingTimeInterval(18000*left),durationSeconds:18000)
+            var i=DockInstrumentInput(id:"s",name:"Synthetic",windows:[w]);i.dataState = .fresh;i.showUsedPercent=used
+            return try DockInstrumentProjection.evaluate(i,now:now).litTimePoints(positions:37)
+        }
+        let a1:Int?=try lit(0.4,used:false), a2:Int?=try lit(0.4,used:true)
+        try expect(a1==15,"remaining mode lights time left")
+        try expect(a2==23,"used mode lights time elapsed")
+        let b1:Int?=try lit(1,used:false), b2:Int?=try lit(1,used:true)
+        try expect(b1==37 && b2==0,"full time left: all dots remaining, none used")
+        let c1:Int?=try lit(0.0001,used:false), c2:Int?=try lit(0.0001,used:true)
+        try expect(c1==1 && c2==37,"time almost gone: one dot remaining, all dots used")
+        let d1:Int?=try lit(0.5,used:false), d2:Int?=try lit(0.5,used:true)
+        try expect(d1==19 && d2==19,"half time lights the same count in both modes")
+    }
+    try test("D130 quota arcs follow the remaining/used choice; colours stay keyed to remaining") {
+        func reading(_ r:Double,used:Bool)throws->DockInstrumentReading{
+            let a=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"Short",remainingPercent:r,resetsAt:nil,durationSeconds:nil)
+            let b=DockQuotaWindowInput(id:"week",period:.week,label:"Long",remainingPercent:100-r,resetsAt:nil,durationSeconds:nil)
+            var i=DockInstrumentInput(id:"s",name:"Synthetic",windows:[a,b]);i.dataState = .fresh;i.showUsedPercent=used
+            return try DockInstrumentProjection.evaluate(i,now:now)
+        }
+        let levels:[Double]=[0,10,25,40,50,75,100]
+        for r in levels {
+            let rem=try reading(r,used:false),used=try reading(r,used:true)
+            let remOuter:Double=rem.outer?.fraction ?? -1, remInner:Double=rem.inner?.fraction ?? -1
+            let usedOuter:Double=used.outer?.fraction ?? -1, usedInner:Double=used.inner?.fraction ?? -1
+            let remTruth:Double=used.outer?.remainingFraction ?? -1
+            try expect(abs(remOuter-r/100)<1e-9 && abs(remInner-(100-r)/100)<1e-9,"remaining mode arcs = remaining")
+            try expect(abs(usedOuter-(1-r/100))<1e-9 && abs(usedInner-r/100)<1e-9,"used mode arcs = used")
+            try expect(rem.outer?.status==used.outer?.status && rem.inner?.status==used.inner?.status && rem.status==used.status,"colours identical across modes")
+            try expect(rem.outer?.remainingFraction==used.outer?.remainingFraction && abs(remTruth-r/100)<1e-9,"remaining truth identical across modes")
+        }
+        let empty=try reading(0,used:true),full=try reading(100,used:true)
+        try expect(empty.outer?.fraction==1 && empty.outer?.status == .critical && empty.outer?.remainingFraction==0,"0% remaining: full used arc, still critical and used-up")
+        try expect(full.outer?.fraction==0 && full.outer?.status == .normal && full.outer?.remainingFraction==1,"100% remaining: empty used arc, still normal")
+        let unknown=DockQuotaArc(windowID:"x",fraction:nil,status:.unknown)
+        try expect(unknown.remainingFraction==nil,"unknown stays unknown")
     }
     try test("configured critical thresholds include equality for saved and new choices") {
         for threshold in [40.0, 30, 25, 20, 15, 10] {
@@ -481,6 +525,17 @@ do {
         try expect(DockRefreshSweep.fraction(elapsed: 0.6, target: 0.75, reduceMotion: false) == 0.75, "ends at admitted value")
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: 0.75, reduceMotion: true) == 0.75, "Reduce Motion is static")
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: .nan, reduceMotion: false) == nil, "invalid values are rejected")
+        // G3-98: fade out, hidden until the result lands (cap 3 s), fade in; never counts; Reduce Motion never dims.
+        func al(_ e: Double, _ r: Double? = nil) -> Double { DockRefreshSweep.readoutAlpha(elapsed: e, resolvedAt: r, reduceMotion: false) }
+        try expect(al(0) == 1 && al(0.15) == 0, "fades out in 0.15 s")
+        try expect(al(1.2) == 0 && al(2.9) == 0, "stays hidden past the sweep while no result has landed")
+        try expect(abs(al(1.0, 0.8) - 1) < 0.000001, "fades in from the moment the result landed")
+        try expect(al(0.5, 0.3) > 0.999, "a quick result returns the number promptly")
+        try expect(al(0.15, 0.05) == 0 && abs(al(0.2, 0.05) - 1.0 / 3) < 0.000001 && al(0.4, 0.05) > 0.999, "an instant failure still completes the fade-out first")
+        try expect(al(3.0) == 0 && al(3.15) > 0.999, "timeout fades the number back in at 3 s")
+        try expect(abs(DockRefreshSweep.readoutEnd(resolvedAt: nil) - 3.15) < 0.000001 && DockRefreshSweep.readoutEnd(resolvedAt: 0.2) == 0.6, "loop end follows the result")
+        try expect(stride(from: 0.0, through: 3.2, by: 0.01).allSatisfy { (0...1).contains(al($0)) }, "alpha stays in range")
+        try expect(DockRefreshSweep.readoutAlpha(elapsed: 0.3, resolvedAt: nil, reduceMotion: true) == 1, "Reduce Motion swaps instantly, no fade")
     }
     try test("B08 independent card:leave and menu protection without a repeat loop"){
         var card=DockCardInteraction()
@@ -549,7 +604,22 @@ do {
         var input=DockInstrumentInput(id:"a",name:"Synthetic",windows:[.init(id:"five",period:.fiveHour,label:"Short",remainingPercent:0,resetsAt:now.addingTimeInterval(100),durationSeconds:18000),.init(id:"week",period:.week,label:"Long",remainingPercent:nil,resetsAt:nil,durationSeconds:nil)])
         input.dataState = .fresh;input.showUsedPercent=true
         let card=try DockCardProjection.content(input:input,at:now)
-        try expect(card.rows[0].value=="100%" && card.rows[0].remainingFraction==0 && card.rows[0].tone == .critical,"used display never reverses fuel/status truth")
+        try expect(card.rows[0].value=="100%" && card.rows[0].remainingFraction==0 && card.rows[0].tone == .critical,"used display never reverses status truth (tone and remaining truth)")
+        try expect(card.rows[0].fillFraction==1,"D130: the bar fills with used in used mode")
+        input.showUsedPercent=false
+        let remCard=try DockCardProjection.content(input:input,at:now)
+        try expect(remCard.rows[0].fillFraction==0 && remCard.rows[0].tone == .critical && remCard.rows[0].remainingFraction==0,"D130: remaining mode bar = remaining, same tone")
+        let cardLevels:[Double]=[0,30,60,100]
+        for r in cardLevels {
+            for used in [false,true] {
+                var i=DockInstrumentInput(id:"a",name:"S",windows:[.init(id:"five",period:.fiveHour,label:"Short",remainingPercent:r,resetsAt:nil,durationSeconds:nil)]);i.dataState = .fresh;i.showUsedPercent=used
+                let row=try DockCardProjection.content(input:i,at:now).rows[0]
+                let rowRem:Double=row.remainingFraction ?? -1, rowFill:Double=row.fillFraction ?? -1
+                let expectedFill:Double=used ? 1-r/100:r/100
+                try expect(abs(rowRem-r/100)<1e-9 && abs(rowFill-expectedFill)<1e-9,"D130 card bar fill, both modes, 0 and 100 boundaries")
+            }
+        }
+        input.showUsedPercent=true
         try expect(card.rows[1].value=="--" && card.rows[1].remainingFraction==nil,"missing is not zero")
         input.dataState = .stale
         let stale=try DockCardProjection.content(input:input,at:now)

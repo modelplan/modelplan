@@ -3,6 +3,7 @@
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
+import {shortLabel} from '../../../cockpit/study/rocket-r1/short-label.js';
 
 const effort=(key,ability,cost,star=false)=>({effort:key,label:key,star,ability,cost,time:30});
 const model=(id,ability,cost)=>({id,name:'Synthetic '+id,developerId:'openai',recommended:'high',efforts:[effort('low',ability-8,cost/3),effort('high',ability,cost,true)]});
@@ -53,6 +54,39 @@ test('CKP-PORT-07 a subscription scope narrows the HUD and 全部 restores it',a
  await expect(page.locator('.hud .hp')).toHaveCount(1);await expect(page.locator('.hud .hp b')).toHaveText('Synthetic claude-model');
  expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.hud .hp')).toHaveCount(4);
 });
+// D86: "All" is the union of the user's own subscriptions, never the whole published field.
+const keepRows=ids=>data=>{data.projection.rows=data.projection.rows.filter(r=>ids.includes(r.id));data.subscriptions=data.subscriptions.filter(s=>data.projection.rows.some(r=>r.accounts.some(a=>a.subscriptionRef===s.subscriptionRef)));};
+const mixed=()=>[model('gpt-a',50,.3),model('gpt-b',45,.2),{...model('claude-a',60,.5),developerId:'anthropic'},{...model('google-a',55,.4),developerId:'google'}];
+test('CKP-PORT-04 D86 one GPT subscription: All lists only that plan\'s models, on the HUD and the 模型 page',async({page})=>{
+ await open(page,{published:mixed(),edit:keepRows(['codex'])});
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['gpt-a','gpt-b']);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ const ids=await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models');expect(ids.split(' ').sort()).toEqual(['gpt-a','gpt-b']);
+});
+test('CKP-PORT-04 D86 two subscriptions: All is the union of both and nothing else',async({page})=>{
+ await open(page,{published:mixed(),edit:keepRows(['codex','claude'])});
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ const ids=await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models');expect(ids.split(' ').sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+});
+test('CKP-PORT-04 D86 a published plan model list narrows All to the models that plan lists',async({page})=>{
+ await open(page,{published:mixed(),edit:data=>{keepRows(['codex'])(data);data.projection.rows[0].accounts[0].plan={id:'plus'};data.details.planModels=[{planId:'openai-plus',basis:'access',modelIds:['gpt-a']}];}});
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['gpt-a']);
+});
+// D98: the models the tool reports for the signed-in account (details.subscriptions[].reportedModels) decide before the
+// published plan list; a subscription the tool reported nothing for keeps the plan list.
+const reported=ids=>data=>{keepRows(['codex'])(data);data.projection.rows[0].accounts[0].plan={id:'plus'};data.details.planModels=[{planId:'openai-plus',basis:'access',modelIds:['gpt-a']}];
+ const ref=data.projection.rows[0].accounts[0].subscriptionRef,sub=data.details.subscriptions.find(s=>s.subscriptionRef===ref);if(!sub)throw Error('fixture has no codex subscription details');if(ids)sub.reportedModels=ids;};
+test('CKP-FAD-25 D98 the tool-reported models decide All before the published plan list, on the HUD and the 模型 page',async({page})=>{
+ await open(page,{published:mixed(),edit:reported(['gpt-b'])});
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['gpt-b']);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ expect(await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models')).toBe('gpt-b');
+});
+test('CKP-FAD-25 D98 without a reported list the published plan list still decides',async({page})=>{
+ await open(page,{published:mixed(),edit:reported(null)});
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['gpt-a']);
+});
 test('CKP-PORT-03 the HUD hides while the shutter is closed',async({page})=>{
  const {send,receive}=await open(page);await expect(page.locator('.hud')).toBeVisible();
  expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);await expect(page.locator('.hud')).toBeHidden();
@@ -62,7 +96,26 @@ test('CKP-PORT-08 one point per model at ★, a dashed frontier, dominated dots 
  await open(page,{published:[model('a',40,.1),model('b',50,.3),model('c',35,.9)]});
  await expect(page.locator('.hud-dot')).toHaveCount(3);await expect(page.locator('.hud-dot.dominated')).toHaveCount(1);
  expect((await page.locator('.hud-front').getAttribute('points')).trim().split(/\s+/).length).toBe(2);
- await expect(page.locator('.hud-mini text')).toHaveCount(0);
+ // No names inside: the chart's only text is its two axis captions and the rank digits of the first three points.
+ expect(await page.locator('.hud-mini text').allTextContents()).toEqual(expect.arrayContaining(['Ability ↑','Cost ×']));
+ expect((await page.locator('.hud-mini text.hud-rank').allTextContents()).sort()).toEqual(['1','2','3']);
+ for(const text of await page.locator('.hud-mini text').allTextContents())expect(text).not.toContain('Synthetic');
+});
+// QA 11-08 (G3-48): six rows of real-length names fit the tall HUD whole, and the chart carries the study's axis captions.
+const longNames=['GPT-6 Astra','GPT-6.1 Terra','GPT-6 Luna','Gemini 4 Argon','MiMo-V2.6-Flash','GPT-6.1 Sol'];
+test('CKP-PORT-04 six real-length names fit the tall HUD: no row clipped, no name or effort cut',async({page})=>{
+ await open(page,{published:longNames.map((name,i)=>({...model('n'+i,40+i,.1*(i+1)),name,recommended:'max',efforts:[effort('low',32+i,.03*(i+1)),effort('max',40+i,.1*(i+1),true)]}))});
+ const hud=page.locator('.hud');await expect(hud.locator('.hp')).toHaveCount(6);
+ await expect(hud.locator('.hp b')).toHaveText(longNames.map(name=>shortLabel(name)));// the HUD shows the study's short names (#761)
+ const geometry=await hud.evaluate(h=>{const box=e=>e.getBoundingClientRect(),H=box(h);return [...h.querySelectorAll('.hp')].map(r=>{const b=r.querySelector('b'),rec=r.querySelector('.hp-rec');return {bottom:box(r).bottom-H.bottom,right:box(rec).right-H.right,cut:b.scrollWidth>b.clientWidth+.5,recCut:rec.scrollWidth>rec.clientWidth+.5};});});
+ for(const row of geometry){expect(row.bottom).toBeLessThanOrEqual(0.5);expect(row.right).toBeLessThanOrEqual(0.5);expect(row.cut).toBe(false);expect(row.recCut).toBe(false);}
+ await expect(hud.locator('.hp-rec').nth(4)).toHaveText('★max');
+ await expect(page.locator('.hud-b .hud-axis-label')).toHaveText(['Ability ↑','Cost ×']);
+});
+test('CKP-PORT-04 the axis captions follow the language',async({page})=>{
+ const {send,receive}=await open(page);
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ await expect(page.locator('.hud-b .hud-axis-label')).toHaveText(['能力 ↑','成本 ×']);
 });
 test('CKP-PORT-08 a different current effort is a white dot linked to its ★',async({page})=>{
  await open(page,{published:[model('a',40,.1)],session:{sessionRef:'0000000000000001',source:'Codex',subscriptionRef:null,model:'a',effort:'low',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null}});
@@ -71,7 +124,7 @@ test('CKP-PORT-08 a different current effort is a white dot linked to its ★',a
 test('CKP-PORT-05 the compact profile is one strip of three',async({page})=>{
  await open(page,{tier:'compact'});
  await expect(page.locator('.hud.hud-strip .hp')).toHaveCount(3);
- expect(await local(page)).toEqual([58,9,216,30]);
+ expect(await local(page)).toEqual([62,25,216,30]);
 });
 // G3-48: long published names overlapped their neighbours in three columns. The study's compact strip is an
 // 86x30 chart beside three stacked 10 px rows; each name stays inside its own row, before its ★ effort.
@@ -95,7 +148,7 @@ test('G3-48 compact HUD names never overlap, however long',async({page})=>{
   expect([p.lineHeight,p.rowHeight]).toEqual(['10px',10]);
  }
 });
-test('CKP-PORT-06 a row opens 档位 and Esc or Back returns to the page before',async({page})=>{
+test('CKP-PORT-06 a row opens 模型 and Esc or Back returns to the page before',async({page})=>{
  await open(page);
  await page.locator('.hud .hp').first().click();await expect(page.locator('.fc')).toBeVisible();
  await expect(page.locator('.mfd-back')).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('.fc')).toHaveCount(0);
@@ -103,13 +156,13 @@ test('CKP-PORT-06 a row opens 档位 and Esc or Back returns to the page before'
  await page.locator('.mfd-back').click();await expect(page.locator('.fc')).toHaveCount(0);
 });
 const fieldOpens=page=>page.evaluate(()=>window.__actions.filter(a=>a==='openField').length);
-test('CKP-PORT-06 a HUD click opens 档位 only; the port beside it still opens the field',async({page})=>{
+test('CKP-PORT-06 a HUD click opens 模型 only; the port beside it still opens the field',async({page})=>{
  await open(page);await page.locator('.ck-port').click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(1);
  await page.locator('.hud .hp').first().click();await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
  await page.keyboard.press('Escape');await page.locator('.hud-dot').first().click();await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
 });
-for(const key of ['Enter','Space'])test(`CKP-PORT-06 ${key} on a HUD row opens 档位 only; on the port it opens the field`,async({page})=>{
- await open(page);await page.locator('.ck-port').focus();await page.keyboard.press(key);await expect.poll(()=>fieldOpens(page)).toBe(1);
+for(const key of ['Enter','Space'])test(`CKP-PORT-06 ${key} on a HUD row opens 模型 only; on the port's ⤢ key it opens the field`,async({page})=>{
+ await open(page);await page.locator('.port-big[data-bigfield]').focus();await page.keyboard.press(key);await expect.poll(()=>fieldOpens(page)).toBe(1);
  await page.locator('.hud .hp').first().focus();await page.keyboard.press(key);await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
 });
 test('clearing the data leaves no HUD box and no Back button',async({page})=>{

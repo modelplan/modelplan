@@ -45,8 +45,42 @@ type CockpitDetails struct {
 	// PublishedModels is present only for a client that negotiated cockpitModelsV1: public
 	// data of every published model, in publication order, with no personal selection.
 	PublishedModels []CockpitPublicationModel `json:"publishedModels,omitempty" schema:"maxItems=256" null:"forbidden"`
+	// PlanModels is the published client data.planModels (D86), present with PublishedModels: which published
+	// models each published plan lets its subscriber use. A plan without an entry is unknown, not empty.
+	PlanModels []CockpitPlanModels `json:"planModels,omitempty" schema:"maxItems=128" null:"forbidden"`
 	// Forecasts is present only for a client that negotiated cockpitForecastV1.
 	Forecasts []CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
+	// RecentSessions is present only for a client that negotiated cockpitSessionsV1: the sessions this
+	// device last observed within the past seven days, newest first. LastObservedAt is a last sighting,
+	// never an end time; there are no titles or token counts.
+	RecentSessions []CockpitRecentSession `json:"recentSessions,omitempty" schema:"maxItems=200" null:"forbidden"`
+	// Peaks is present only for a client that negotiated cockpitPeaksV1: for each declared plan row, its current
+	// or next published time-of-day window with a raised rate within 24 hours. EndsAt is null when the window does
+	// not end within the published horizon.
+	Peaks []CockpitPeak `json:"peaks,omitempty" schema:"maxItems=32" null:"forbidden"`
+}
+
+// CockpitPeak is one declared plan's peak-rate window from the publication's multiplier windows.
+type CockpitPeak struct {
+	RowID    string     `json:"rowId" schema:"minLength=1,maxLength=128"`
+	StartsAt time.Time  `json:"startsAt"`
+	EndsAt   *time.Time `json:"endsAt" null:"coalesced"`
+	Status   string     `json:"status"` // confirmed | tentative
+}
+
+// CockpitRecentSession is one recorded session. Model is a published model ID or "unknown";
+// SubscriptionRef is set only under a binding the cockpit already verified.
+type CockpitRecentSession struct {
+	SessionRef      string  `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Source          string  `json:"source"`
+	SubscriptionRef *string `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
+	Model           string  `json:"model"`
+	Effort          *string `json:"effort" null:"coalesced"`
+	ProjectLabel    *string `json:"projectLabel" null:"coalesced"`
+	// ProjectState tells "no project" apart from a name that is hidden or not stored (glm-909-1). The CLI always
+	// sends it; a reader treats an absent state as before (a null label reads as no project).
+	ProjectState   CockpitProjectState `json:"projectState,omitempty" null:"forbidden"`
+	LastObservedAt time.Time           `json:"lastObservedAt"`
 }
 
 // CockpitForecast is the engine's outlook for one current window. RunsOutAt is
@@ -144,6 +178,12 @@ type CockpitPublicationModel struct {
 	Recommended string                     `json:"recommended" schema:"maxLength=64"`
 	Efforts     []CockpitPublicationEffort `json:"efforts" schema:"maxItems=32"`
 }
+type CockpitPlanModels struct {
+	PlanID     string   `json:"planId" schema:"minLength=1,maxLength=128"`
+	Generation string   `json:"generation,omitempty" null:"forbidden" schema:"maxLength=128"`
+	Basis      string   `json:"basis" schema:"maxLength=16"`
+	ModelIDs   []string `json:"modelIds" schema:"minItems=1,maxItems=256"`
+}
 type CockpitPublicationEffort struct {
 	Effort      string   `json:"effort" schema:"minLength=1,maxLength=64"`
 	Label       string   `json:"label" schema:"maxLength=64"`
@@ -162,6 +202,10 @@ type CockpitSubscriptionDetails struct {
 	ResetCounts          []CockpitResetCount `json:"resetCounts" schema:"maxItems=64"`
 	Credits              *CockpitCredits     `json:"credits" null:"coalesced"`
 	Today                []CockpitToday      `json:"today" schema:"maxItems=4"`
+	// ReportedModels (D98) are the published model ids the tool itself lists for this subscription's signed-in
+	// account (Codex model/list), mapped through the published harnessIds. Ids only. Absent when the tool did not
+	// report; the client then uses PlanModels, then the developer match. Present with PublishedModels.
+	ReportedModels []string `json:"reportedModels,omitempty" schema:"maxItems=256" null:"forbidden"`
 }
 type CockpitResetCount struct {
 	Kind      string     `json:"kind"`
@@ -179,15 +223,21 @@ type CockpitToday struct {
 	BindingBasis         string   `json:"bindingBasis"`
 }
 type CockpitSession struct {
-	SessionRef      string    `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
-	Source          string    `json:"source"`
-	SubscriptionRef *string   `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
-	Model           string    `json:"model"`
-	Effort          *string   `json:"effort" null:"coalesced"`
-	ProjectLabel    *string   `json:"projectLabel" null:"coalesced"`
-	LastObservedAt  time.Time `json:"lastObservedAt"`
-	State           string    `json:"state"`
-	Rate            *float64  `json:"rate" null:"coalesced"`
+	SessionRef      string  `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Source          string  `json:"source"`
+	SubscriptionRef *string `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
+	Model           string  `json:"model"`
+	Effort          *string `json:"effort" null:"coalesced"`
+	ProjectLabel    *string `json:"projectLabel" null:"coalesced"`
+	// ProjectState tells "no project" apart from a name that is hidden or not stored (glm-909-1). The CLI always
+	// sends it; a reader treats an absent state as before (a null label reads as no project).
+	ProjectState   CockpitProjectState `json:"projectState,omitempty" null:"forbidden"`
+	LastObservedAt time.Time           `json:"lastObservedAt"`
+	State          string              `json:"state"`
+	Rate           *float64            `json:"rate" null:"coalesced"`
+	// Fast is present (true) only for a session whose recorded speed mode is the harness's fast
+	// mode. Absent means the mode was not reported or was standard; the ledger cannot tell those apart.
+	Fast *bool `json:"fast,omitempty" null:"forbidden"`
 }
 type CockpitAlert struct {
 	Source           string  `json:"source"`

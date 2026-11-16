@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/appserver"
 	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detach"
@@ -23,6 +24,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/profile"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
@@ -107,6 +109,12 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        (MODELPLAN_HISTORY=off stops both, and the tokens per day)
   modelplan history --effort-suggestion dismiss|off|on
                                        control local weekly effort suggestions (default off; never changes settings)
+  modelplan history --import [--days N]
+                                       read older Claude Code and Codex logs on this machine (timestamps, model,
+                                       effort and token counts only; never prompts, replies, paths or ids) into
+                                       imported.json, marked as imported; needs each tool's history consent
+  modelplan history --remove-imported
+                                       delete exactly the imported history
   modelplan declare <planId> [generation] [--region ID]
                                        record which plan pays for another vendor's model (GLM through
                                        Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
@@ -128,7 +136,8 @@ Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
      MODELPLAN_READERS=passive|off (restrict shared reader permissions),
      MODELPLAN_EFFORT_SUGGESTION=on (opt in to local weekly effort suggestions; default off),
      MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history, speed measurement or tokens per day), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
-     MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
+     MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run),
+     MODELPLAN_PROFILE_ROOT=<absolute dir> (keep all ModelPlan config and cache under dir: a fresh profile)
 `
 
 type common struct {
@@ -197,6 +206,11 @@ func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 var startDetached = detach.Start
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// A fresh-profile root that is not absolute is refused before any store is touched.
+	if err := profile.Check(); err != nil {
+		fmt.Fprintln(stderr, err)
+		return exitUsage
+	}
 	if len(args) > 0 && args[0] == "app-server" {
 		return appServerCmd(args[1:], stdin, stdout, stderr)
 	}
@@ -239,6 +253,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	all := fs.Bool("all", false, "disconnect: revoke all tools and delete readings")
 	qwenExport := fs.String("export", "", "qwen-usage: optional Qwen JSON export file or directory")
 	effortSuggestion := fs.String("effort-suggestion", "", "history: dismiss for one week, off, or on (local only)")
+	importHistory := fs.Bool("import", false, "history: import older Claude Code and Codex usage (metadata only) from this machine's logs")
+	importDays := fs.Int("days", 0, "history --import: how many days back (7, 30 or 90; default 30, at most 371)")
+	importFirstRun := fs.Bool("first-run", false, "history --import: only if the first-run import has not run yet")
+	removeImported := fs.Bool("remove-imported", false, "history: delete the imported history")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
 	withHistory := fs.Bool("history", false, "desktop: include the 7/30-day performance history and rankings in the snapshot")
 	refreshReaders := fs.Bool("refresh", false, "doctor readers: explicitly refresh admitted readers within request budgets")
@@ -308,6 +326,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	if *effortSuggestion != "" && (cmd != "history" || (*effortSuggestion != "dismiss" && *effortSuggestion != "off" && *effortSuggestion != "on")) {
 		fmt.Fprintln(stderr, "usage: modelplan history --effort-suggestion dismiss|off|on")
+		return exitUsage
+	}
+
+	if (*importHistory || *removeImported || *importFirstRun || *importDays != 0) && (cmd != "history" || *importHistory == *removeImported || (*removeImported && (*importFirstRun || *importDays != 0)) || (!*importHistory && (*importFirstRun || *importDays != 0)) || *importDays < 0) {
+		fmt.Fprintln(stderr, "usage: modelplan history --import [--days N] [--first-run] | modelplan history --remove-imported")
 		return exitUsage
 	}
 
@@ -458,6 +481,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return usageCmd(fs.Args(), stdout, stderr, c)
 
 	case "history":
+		if *importHistory || *removeImported {
+			return historyImportCmd(stdout, stderr, st, c, *importHistory, *importDays, *importFirstRun)
+		}
 		if *effortSuggestion != "" {
 			if err := history.SetEffortSuggestion(st.Dir, *effortSuggestion, time.Now()); err != nil {
 				fmt.Fprintln(stderr, err)
@@ -1276,7 +1302,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly, withHisto
 		// A second change publishes only the user's own declarations. No tool
 		// account, connection, history, session or advice survives a discarded build.
 		home, _ := os.UserHomeDir()
-		report := quota.ReadDeclared(quota.Paths{LocalFile: filepath.Join(home, ".config", "modelplan", "local.json")}, now)
+		report := quota.ReadDeclared(quota.Paths{LocalFile: profile.ConfigFile(home, "local.json")}, now)
 		report.ConsentGeneration = admission.Generation()
 		report.ConsentStoreEpoch = admission.Fence().StoreEpoch
 		report.Sources = append(report.Sources, quota.SourceStatus{Source: "readers", Status: "off", Reason: "consent-changed"})
@@ -1291,17 +1317,20 @@ func observeLiveSessions(st *store.Store, paths quota.Paths, report quota.Report
 }
 
 // observeLiveLogs is observeLiveSessions for a caller without a report: the current consent fences it.
-func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, now time.Time) {
+func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, now time.Time) appserver.ObserveOutcome {
 	fence := consent.Capture().Fence()
-	observeLive(st, codexHome, refs, quota.Report{ConsentStoreEpoch: fence.StoreEpoch, ConsentGeneration: fence.Generation}, now)
+	return observeLive(st, codexHome, refs, quota.Report{ConsentStoreEpoch: fence.StoreEpoch, ConsentGeneration: fence.Generation}, now)
 }
 
-func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time) {
+func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time) appserver.ObserveOutcome {
 	// Each harness's logs are read under its own grant: a Codex-only user still gets live Codex sessions (owner
 	// build 13), and Claude Code's logs stay unread without its grant. An empty home disables that root.
 	claudeAllowed, codexAllowed := consent.Allowed("claude", consent.Local), consent.Allowed("codex", consent.Local)
-	if speed.Off() || !claudeAllowed && !codexAllowed {
-		return
+	if speed.Off() {
+		return appserver.ObserveSkippedOff
+	}
+	if !claudeAllowed && !codexAllowed {
+		return appserver.ObserveSkippedConsent
 	}
 	claude := ""
 	if claudeAllowed {
@@ -1313,9 +1342,9 @@ func observeLive(st *store.Store, codexHome string, refs map[string]string, repo
 	if !codexAllowed {
 		codexHome = ""
 	}
-	reportWrite(report, func() error {
+	return observeOutcome(reportWrite(report, func() error {
 		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, codexHome, now), projectLabels(), refs, now)
-	})
+	}))
 }
 
 // observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex
@@ -1324,14 +1353,21 @@ func observeCodexSpeed(st *store.Store, now time.Time) {
 	observeCodexHomeSpeed(st, quotaPaths(st).CodexHome, now)
 }
 
-func observeCodexHomeSpeed(st *store.Store, home string, now time.Time) {
+func observeCodexHomeSpeed(st *store.Store, home string, now time.Time) appserver.ObserveOutcome {
 	if !consent.Allowed("codex", consent.Local) {
-		return
+		return appserver.ObserveSkippedConsent
 	}
-	_ = consent.LocalWrite("codex", func() error {
-		return speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
+	if speed.Off() {
+		return appserver.ObserveSkippedOff
+	}
+	rollouts := quota.RecentRollouts(home, 8)
+	if len(rollouts) == 0 {
+		return appserver.ObserveSkippedNoLogs
+	}
+	return observeOutcome(consent.LocalWrite("codex", func() error {
+		return speed.ObserveCodex(st.Dir, rollouts, func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
 			speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}, now)
-	})
+	}))
 }
 
 // projectLabelsCmd shows or sets the project-label switch: on unless the user turned it off (the
@@ -1373,15 +1409,17 @@ func projectLabelsCmd(args []string, stdout, stderr io.Writer, st *store.Store, 
 
 // observeAgents measures what is new in the other agents' databases (ZCode, OpenCode V2); each
 // is read at most every 30 seconds and only when it changed.
-func observeAgents(st *store.Store, now time.Time) {
+func observeAgents(st *store.Store, now time.Time) []appserver.ObserveResult {
 	home, _ := os.UserHomeDir()
 	in := speed.Ingest{Labels: projectLabels()}
+	results := []appserver.ObserveResult{{Source: "zai", Outcome: appserver.ObserveSkippedConsent}, {Source: "opencodego", Outcome: appserver.ObserveSkippedConsent}}
 	if consent.Allowed("zai", consent.Local) {
-		_ = consent.LocalWrite("zai", func() error { return speed.ObserveZCode(st.Dir, home, in, now) })
+		results[0].Outcome = observeOutcome(consent.LocalWrite("zai", func() error { return speed.ObserveZCode(st.Dir, home, in, now) }))
 	}
 	if consent.Allowed("opencodego", consent.Local) {
-		_ = consent.LocalWrite("opencodego", func() error { return speed.ObserveOpenCode(st.Dir, home, in, now) })
+		results[1].Outcome = observeOutcome(consent.LocalWrite("opencodego", func() error { return speed.ObserveOpenCode(st.Dir, home, in, now) }))
 	}
+	return results
 }
 
 // projectLabels: project labels are on, unless the user turned them off (`modelplan project-labels off`).
@@ -1429,7 +1467,7 @@ func reorder(args []string) []string {
 	return append(fl, pos...)
 }
 
-var takesValue = map[string]bool{"provider": true, "plan": true, "profile": true, "privacy": true, "effort-suggestion": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
+var takesValue = map[string]bool{"provider": true, "plan": true, "profile": true, "privacy": true, "effort-suggestion": true, "days": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
 
 func printJSON(w io.Writer, v any) int {
 	e := json.NewEncoder(w)

@@ -337,22 +337,61 @@ func decodeHistory(tool string, b []byte, jsonl bool, state *historyDecodeState)
 		}
 		var r struct {
 			Turns []struct {
-				Number int              `json:"turnNumber"`
-				At     string           `json:"endedAt"`
-				Models map[string]usage `json:"modelUsage"`
+				Number  int              `json:"turnNumber"`
+				At      string           `json:"endedAt"`
+				Total   *int64           `json:"totalTokens"`
+				Primary string           `json:"primaryModelId"`
+				Models  map[string]usage `json:"modelUsage"`
 			} `json:"turns"`
 		}
 		if json.Unmarshal(b, &r) != nil || len(r.Turns) > 20000 {
 			return nil, fmt.Errorf("unsupported history")
 		}
+		// Each turn counts once (CodexBar 7e51f6593, behaviour only): the turn's own totalTokens
+		// and endedAt are authoritative. Model subtotals are kept as the breakdown only while
+		// they add up to that total; otherwise the turn counts as one row. The session-level
+		// figures are never read, so nothing is added on top of the turns.
 		var out []historyDatum
-		for _, turn := range r.Turns {
+		for i, turn := range r.Turns {
 			if len(turn.Models) > 256 {
 				return nil, fmt.Errorf("unsupported history")
 			}
 			at, _ := time.Parse(time.RFC3339Nano, turn.At)
+			key := strconv.Itoa(turn.Number)
+			if turn.Number <= 0 {
+				key = "index:" + strconv.Itoa(i)
+			}
+			matched := len(turn.Models) > 0
+			var sum int64
+			for _, u := range turn.Models {
+				if u.Total == nil || *u.Total < 0 || sum > 1<<62-*u.Total {
+					matched = false
+					break
+				}
+				sum += *u.Total
+			}
+			if turn.Total != nil && (!matched || sum != *turn.Total) {
+				model, incomplete := turn.Primary, false
+				var only *usage
+				for id, u := range turn.Models {
+					if len(turn.Models) == 1 {
+						model, only = id, &u
+					}
+					incomplete = incomplete || u.Incomplete
+				}
+				counts := HistoryCounts{Total: turn.Total}
+				if only != nil {
+					counts = HistoryCounts{Input: only.Input, Output: only.Output, CacheRead: only.Read, CacheWrite: only.Write, Reasoning: only.Reasoning, Total: turn.Total}
+				}
+				d := historyDatum{ID: key + "/" + model, Model: historyModel(model), At: at, Counts: counts}
+				if incomplete {
+					d.Unallocated = "provider_reports_incomplete_usage"
+				}
+				out = append(out, d)
+				continue
+			}
 			for id, u := range turn.Models {
-				d := historyDatum{ID: strconv.Itoa(turn.Number) + "/" + id, Model: historyModel(id), At: at, Counts: HistoryCounts{Input: u.Input, Output: u.Output, CacheRead: u.Read, CacheWrite: u.Write, Reasoning: u.Reasoning, Total: u.Total}}
+				d := historyDatum{ID: key + "/" + id, Model: historyModel(id), At: at, Counts: HistoryCounts{Input: u.Input, Output: u.Output, CacheRead: u.Read, CacheWrite: u.Write, Reasoning: u.Reasoning, Total: u.Total}}
 				if u.Incomplete {
 					d.Unallocated = "provider_reports_incomplete_usage"
 				}

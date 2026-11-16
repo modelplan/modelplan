@@ -1,4 +1,4 @@
-export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && inputs.os == 'macos-15' && vars.MAC_CI_NONGUI == 'enabled' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/'))))) && fromJSON('[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'gui-probe') && '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\",\"modelplan-mac-gui\"]' || '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}";
+export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && inputs.os == 'macos-15' && vars.MAC_CI_NONGUI == 'enabled' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/'))))) && fromJSON('[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (((inputs.task != 'native' && inputs.task != 'native-owner-gui') || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && inputs.task != 'native-hosted-gui' && (inputs.task != 'native-headless' || github.event_name == 'merge_group') && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'native-headless') && github.event_name == 'merge_group' && startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) || ((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main'))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'native-owner-gui' || inputs.task == 'gui-probe') && '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\",\"modelplan-mac-gui\"]' || '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac-nongui\"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}";
 // SPDX-License-Identifier: MIT
 // Runner and trigger rules for public workflows. Defence in depth only: the enforced boundaries
 // are the immutable reusable workflow selected by the runner group and the owner-only pre-job gate.
@@ -7,6 +7,74 @@ export const TRUSTED_MAC_ROUTE = "runs-on: ${{ (inputs.task == 'u11-native' && i
 // select these runners directly. Other triggers, OR bypasses and constructed
 // selectors fail; escaped YAML spellings are checked too.
 export const ALLOWED_ROUTES = new Set();
+
+// The workflow reviewer (owner 2026-11-15 pilot). Only pr-review.yml may name the review runner, with exactly
+// this line, and it may start only from workflow_run or workflow_dispatch: both run main's definition, so a PR
+// cannot change what runs next to the owner's Codex login. The enforced boundary is the runner group, which admits
+// only modelplan/modelplan/.github/workflows/pr-review.yml@refs/heads/main, and the runner's job-started hook.
+export const PR_REVIEW_PATH = ".github/workflows/pr-review.yml";
+export const PR_REVIEW_ROUTE = "runs-on: [self-hosted, Linux, ARM64, modelplan-review]";
+export const PR_REVIEW_TRIGGERS = Object.freeze(["workflow_run", "workflow_dispatch"]);
+
+export function prReviewProblems(text) {
+  const problems = [];
+  const on = topLevelBlock(text, "on");
+  const keys = on ? [...on.matchAll(/^ {2}([A-Za-z_]+):/gm)].map((m) => m[1]) : [];
+  if (!keys.length || keys.some((k) => !PR_REVIEW_TRIGGERS.includes(k))) problems.push("pr-review.yml may start only from workflow_run or workflow_dispatch");
+  if (!/^permissions: \{\}$/m.test(text)) problems.push("pr-review.yml needs top-level permissions: {}");
+  if (!/^\s+persist-credentials: false$/m.test(text)) problems.push("pr-review.yml checkout must not persist credentials");
+  if (text.split("\n").filter((l) => l.trim() === PR_REVIEW_ROUTE).length !== 1) problems.push("pr-review.yml has exactly one review-runner job");
+  return problems;
+}
+
+// The Mac compile check (owner 2026-11-15). Only mac-compile.yml may name the compile runners, with exactly this line,
+// in one job whose condition is exactly MAC_COMPILE_IF. It may start only from workflow_run (after the trigger
+// workflow) or workflow_dispatch, which both run main's definition: a pull_request run would execute the PR's own
+// copy, so a fork could drop the condition. Read-only token except one statuses: write job that checks nothing
+// out, no secrets, no persisted checkout credentials. The trigger workflow runs on pull_request with no permissions,
+// no checkout and no actions. The enforced boundary is the modelplan-compile runner group, restricted to
+// mac-compile.yml@refs/heads/main.
+export const MAC_COMPILE_PATH = ".github/workflows/mac-compile.yml";
+export const MAC_COMPILE_TRIGGER_PATH = ".github/workflows/mac-compile-trigger.yml";
+export const MAC_COMPILE_ROUTE = "runs-on: [self-hosted, macOS, ARM64, modelplan-compile]";
+export const MAC_COMPILE_GATE = "github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005'))";
+export const MAC_COMPILE_IF = `if: \${{ needs.plan.outputs.run == 'true' && ${MAC_COMPILE_GATE} }}`;
+
+const onKeys = (text) => {
+  const on = topLevelBlock(text, "on");
+  return on ? [...on.matchAll(/^ {2}([A-Za-z_]+):/gm)].map((m) => m[1]) : [];
+};
+const significant = (block) => (block ?? "").split("\n").filter((l) => l.trim() && !/^\s*#/.test(l)).join("\n");
+
+export function macCompileProblems(text) {
+  const problems = [];
+  const keys = onKeys(text);
+  if (keys.join(",") !== "workflow_run,workflow_dispatch") problems.push("mac-compile.yml may start only from workflow_run and workflow_dispatch");
+  if (!/^ {4}workflows: \[mac-compile trigger\]$/m.test(topLevelBlock(text, "on") ?? "")) problems.push("mac-compile.yml's workflow_run must follow only the mac-compile trigger workflow");
+  if (significant(topLevelBlock(text, "permissions")) !== "permissions:\n  contents: read") problems.push("mac-compile.yml needs top-level permissions: contents: read");
+  if (/\bsecrets\./.test(text)) problems.push("mac-compile.yml may not use secrets");
+  const checkouts = (text.match(/uses: actions\/checkout@/g) ?? []).length;
+  if (checkouts !== (text.match(/^\s+persist-credentials: false$/gm) ?? []).length) problems.push("every mac-compile.yml checkout must set persist-credentials: false");
+  const jobs = jobBlocks(text);
+  const writes = text.split("\n").filter((l) => !/^\s*#/.test(l) && /:\s*write\b/.test(l));
+  const writer = jobs.filter((j) => j.lines.some((l) => /:\s*write\b/.test(l)));
+  if (writes.some((l) => l !== "      statuses: write") || writes.length > 1) problems.push("mac-compile.yml may ask only for statuses: write, in one job");
+  else if (writer.length === 1 && writer[0].lines.some((l) => l.trim() === MAC_COMPILE_ROUTE || /^\s*(?:-\s*)?(?:uses|working-directory):/.test(l)))
+    problems.push("the statuses: write job may not check out or run repository code, nor run on the compile runners");
+  const routed = jobs.filter((j) => j.lines.some((l) => l.trim() === MAC_COMPILE_ROUTE));
+  if (routed.length !== 1 || text.split("\n").filter((l) => l.trim() === MAC_COMPILE_ROUTE).length !== 1) problems.push("mac-compile.yml has exactly one compile-runner job");
+  else if (routed[0].lines.filter((l) => /^    if:/.test(l)).join("\n") !== "    " + MAC_COMPILE_IF) problems.push("the compile-runner job's condition must be exactly MAC_COMPILE_IF");
+  return problems;
+}
+
+export function macCompileTriggerProblems(text) {
+  const problems = [];
+  if (onKeys(text).join(",") !== "pull_request") problems.push("mac-compile-trigger.yml may start only from pull_request");
+  if (!/^permissions: \{\}$/m.test(text)) problems.push("mac-compile-trigger.yml needs top-level permissions: {}");
+  if (/^\s*(?:-\s*)?(?:uses|permissions):/m.test(text.replace(/^permissions: \{\}$/m, ""))) problems.push("mac-compile-trigger.yml may not use actions or ask for permissions");
+  if (/\bsecrets\./.test(text)) problems.push("mac-compile-trigger.yml may not use secrets");
+  return problems;
+}
 
 // GitHub runs top-level .yml and .yaml files under .github/workflows/.
 export function isWorkflowFile(path) {
@@ -23,9 +91,11 @@ function decodedVariant(text) {
       (_, x, u, U) => String.fromCodePoint(parseInt(x || u || U, 16)));
 }
 
-function lineProblems(raw, problems) {
+function lineProblems(raw, problems, path = "") {
   const line = raw.trim();
   if (/modelplans-(publish|ci)/.test(line)) problems.add("private runner label");
+  if (path !== PR_REVIEW_PATH && /modelplan-review/.test(line)) problems.add("review runner label outside pr-review.yml");
+  if (path !== MAC_COMPILE_PATH && /modelplan-compile\b/.test(line)) problems.add("compile runner label outside mac-compile.yml");
   if (/^runs-on:.*\b(format|join)\(/.test(line)) problems.add("dynamically constructed runner label");
   if ((line.includes("self-hosted") || line.includes("pull_request_target")) && !ALLOWED_ROUTES.has(line))
     problems.add("non-canonical self-hosted route or pull_request_target");
@@ -35,8 +105,13 @@ export function workflowProblems(text, path = "") {
   const problems = new Set();
   const check = (raw) => {
     if (path === ".github/workflows/trusted-mac.yml" && raw.trim() === TRUSTED_MAC_ROUTE) return;
-    lineProblems(raw, problems);
+    if (path === PR_REVIEW_PATH && raw.trim() === PR_REVIEW_ROUTE) return;
+    if (path === MAC_COMPILE_PATH && raw.trim() === MAC_COMPILE_ROUTE) return;
+    lineProblems(raw, problems, path);
   };
+  if (path === PR_REVIEW_PATH) for (const p of prReviewProblems(text)) problems.add(p);
+  if (path === MAC_COMPILE_PATH) for (const p of macCompileProblems(text)) problems.add(p);
+  if (path === MAC_COMPILE_TRIGGER_PATH) for (const p of macCompileTriggerProblems(text)) problems.add(p);
   if (path !== ".github/workflows/trusted-mac.yml" && text.includes("MAC_GUI_LEND")) problems.add("GUI lending switch outside trusted-mac.yml");
   for (const raw of text.split("\n")) check(raw);
   if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) check(raw);

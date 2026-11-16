@@ -14,12 +14,13 @@ async function open(page,theme,tier){
   return {send,receive};
 }
 const state=page=>page.evaluate(()=>{
-  const field=document.querySelector('.ck-field'),port=document.querySelector('.ck-port').getBoundingClientRect(),box=field.getBoundingClientRect();
+  const field=document.querySelector('.ck-field'),box=field.getBoundingClientRect();
   return {still:field.dataset.still,projection:field.querySelector('.ck-still')?.dataset.projection??null,
     layers:field.querySelectorAll('.ck-still-layer').length,additive:field.querySelectorAll('.ck-still-add').length,
     media:field.querySelectorAll('img,svg,canvas,video').length,
     animations:document.getAnimations().filter(a=>a.effect?.target?.closest?.('.ck-field')).length,
-    covers:Math.abs(box.width-document.querySelector('.ck-port').clientWidth)<1&&box.height>0&&box.top>=port.top,
+    // G3-82: the still fills the canopy art box (the port row grown 24 px each side and 12 px at the top).
+    covers:(r=>Math.abs(box.width-(r.width+48))<1&&Math.abs(box.height-(r.height+12))<1&&Math.abs(box.top-(r.top-12))<1&&Math.abs(box.left-(r.left-24))<1)(document.querySelector('.ck-portrow').getBoundingClientRect()),
     blend:getComputedStyle(field.querySelector('.ck-still-add')).mixBlendMode};
 });
 for(const theme of ['night','day'])for(const tier of ['tall','compact'])test(`porthole still ${theme} ${tier}`,async({page})=>{
@@ -59,4 +60,24 @@ test('porthole flicker follows the prototype timing and stops on every gate',asy
   expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);await expect.poll(async()=>(await state(page)).animations).toBe(0);
   expect(await receive(send('shell',shell))).toBe(true);await expect.poll(async()=>(await state(page)).animations).toBe(14);
   expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);await expect.poll(async()=>(await state(page)).animations).toBe(0);
+});
+// D207/D209 (owner 2026-11-12): the night stills are the website's fleet r4 rockets, rendered from the same 3D models
+// with the porthole camera. The normal view paints exactly the pack's re-rendered layers at their recorded
+// rectangles and never asks for a WebGL context (CKP-PORT-01), also across a scope's theme/tier change.
+test('D207 the night still paints the r4 layers at their recorded rectangles and creates no WebGL context',async({page})=>{
+  const {readFileSync}=await import('node:fs');
+  const pack=JSON.parse(readFileSync(new URL('../../../official-visuals/runtime/porthole-stills/manifest.json',import.meta.url),'utf8'));
+  await page.addInitScript(()=>{window.glAsks=0;const get=HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext=function(type,...rest){if(/webgl/i.test(String(type)))window.glAsks++;return get.call(this,type,...rest);};
+    if(window.OffscreenCanvas){const off=OffscreenCanvas.prototype.getContext;OffscreenCanvas.prototype.getContext=function(type,...rest){if(/webgl/i.test(String(type)))window.glAsks++;return off.call(this,type,...rest);};}});
+  const {send,receive}=await open(page,'night','tall');
+  await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
+  const projection=pack.projections.find(p=>p.id===projections['night-tall']);
+  const bodies=await page.locator('.ck-still-body').evaluateAll(es=>es.map(e=>({file:getComputedStyle(e).backgroundImage.slice(5,-2).split('/porthole-stills/')[1],left:parseFloat(e.style.left),top:parseFloat(e.style.top),width:parseFloat(e.style.width),height:parseFloat(e.style.height)})));
+  expect(bodies.map(b=>b.file).sort()).toEqual(projection.models.map(m=>m.body.file).sort());
+  for(const m of projection.models){const b=bodies.find(x=>x.file===m.body.file);expect([b.left,b.top,b.width,b.height]).toEqual([m.body.left,m.body.top,m.body.width,m.body.height]);}
+  expect(await receive(send('appearance',{...appearance,theme:'day'}))).toBe(true);
+  await page.setViewportSize({width:636,height:640});expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(true);
+  await expect(page.locator('.ck-still')).toHaveAttribute('data-projection',projections['day-compact']);
+  expect(await page.evaluate(()=>window.glAsks)).toBe(0);
 });

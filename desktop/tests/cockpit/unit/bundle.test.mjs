@@ -44,19 +44,31 @@ test('both editions have reproducible bounded manifests; community excludes rese
     for(const name of Object.keys(manifest.files).filter(name=>/\.(?:js|html|css)$/.test(name)&&name!==scene&&name!=='src/field-page.js'&&!name.startsWith('runtime/')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/field-scene|cockpit-scene/,name);
     assert.equal(Object.hasOwn(manifest.files,'field.html'),edition==='official','field.html');
     if(edition==='official')assert.match(readFileSync(root+'src/field-page.js','utf8'),/await import\(url\)/);
-    else assert.equal(Object.hasOwn(manifest.files,'src/field-page.js'),false);
+    else for(const gone of ['src/field-page.js','src/field-shape.js'])assert.equal(Object.hasOwn(manifest.files,gone),false);
     for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.js')&&name!==scene))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/,name);
     if(edition==='official'){assert.ok(Object.hasOwn(manifest.files,'assets/brands/SOURCES.md'));assert.match(readFileSync(root+'NOTICES.txt','utf8'),/Vendor marks: third-party trademarks.*assets\/brands\/SOURCES[.]md/);}
     else assert.equal(existsSync(root+'assets/brands'),false,'community has no vendor marks');
+    // D207: the scene flies the website's fleet r4 rockets; their atlases ship once, beside the vendor marks under the
+    // scene's base URL (./assets/), byte-equal to the reserved registry, and the community edition has none.
+    const atlases=Object.keys(manifest.files).filter(name=>name.startsWith('assets/art/rockets/'));
+    if(edition==='official'){
+      const policy=JSON.parse(readFileSync(project+'../../source-policy.json','utf8')).reservedVisuals.binaries;
+      const vehicles=['falcon9','falcon-heavy','new-glenn','vulcan','long-march-2f','long-march-5','long-march-3b','starship'];
+      assert.deepEqual(atlases.sort(),vehicles.flatMap(v=>['512','256','mat'].map(p=>`assets/art/rockets/${v}-${p}.webp`)).sort());
+      for(const name of atlases)assert.equal(manifest.files[name],policy['desktop/official-visuals/runtime/field-scene/rockets/'+name.slice(19)],name);
+      assert.ok(!Object.keys(manifest.files).some(name=>name.startsWith('runtime/field-scene/rockets/')),'atlases ship once');
+      const code=readFileSync(root+scene,'utf8');assert.match(code,/art\/rockets\//);for(const v of vehicles)assert.ok(code.includes(`"${v}"`),v);
+    } else assert.deepEqual(atlases,[]);
     const provenance=JSON.parse(readFileSync(root+'prototype/source.json'));
     assert.equal(provenance.sourceCommit,'1d3f82429f1b853314ee120d4bd0007f84fc051d');
     assert.equal(provenance.fixtureAudit.copied,false);
     for(const name of Object.keys(manifest.files)){
       assert.doesNotMatch(name,/workbench-data|three[.]/i);
-      const brands=['openai-white','claude-rounded','cursor','copilot','opencode','zai-white','zhipu','x-white','qwen','deepseek','kimi-white','minimax','gemini','xiaomi'].map(mark=>`assets/brands/${mark}.svg`);
-      if(name.endsWith('.svg'))assert.ok(edition==='official'&&['assets/detach.svg','assets/put-back.svg','assets/hull/cap-slab.svg',...brands].includes(name),`unapproved SVG: ${name}`);
+      const brands=['openai-white','claude-rounded','claude','cursor','copilot','opencode','zai-white','zhipu','x-white','qwen','deepseek','kimi-white','minimax','gemini','xiaomi'].map(mark=>`assets/brands/${mark}.svg`);
+      if(name.endsWith('.svg'))assert.ok(edition==='official'&&['assets/detach.svg','assets/put-back.svg','assets/hull/cap-slab.svg','assets/logo.svg',...brands].includes(name),`unapproved SVG: ${name}`);
       // Published U12 PNGs may join the verified pack; no runtime scene code.
       if(name.startsWith('runtime/')&&name!==scene)assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
+      if(name.endsWith('.webp'))assert.ok(edition==='official'&&name.startsWith('assets/art/rockets/'),`unapproved WebP: ${name}`);
     }
     execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
     assert.deepEqual(JSON.parse(readFileSync(root+'bundle-manifest.json')),manifest);

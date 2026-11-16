@@ -3,9 +3,32 @@ import Foundation
 import ModelPlanWire
 
 extension ProcessEngineClient {
+    /// Connection changes, private-view clears and feature failures, by fixed name only, in the app log.
+    func logDiagnostics(_ event: EngineClientEvent) {
+        let tag = "client=" + logTag
+        switch event {
+        case .connection(let state):
+            switch state {
+            case .idle: DiagnosticsLog.shared.info("engine", "connection idle \(tag)")
+            case .starting: DiagnosticsLog.shared.info("engine", "connection starting \(tag)")
+            case .ready: DiagnosticsLog.shared.info("engine", "connection ready \(tag) server=\(DiagnosticsLog.safeID(serverVersion ?? "unknown"))")
+            case .restarting(let attempt, let delay):
+                let ms = delay.components.seconds * 1_000 + delay.components.attoseconds / 1_000_000_000_000_000
+                DiagnosticsLog.shared.notice("engine", "connection lost; restart attempt=\(attempt) delayMs=\(ms) \(tag)")
+            case .stopped(let reason):
+                DiagnosticsLog.shared.record("engine", reason == .requested ? .info : .error, "connection stopped reason=\(reason) \(tag)")
+            }
+        case .clearPrivateViews(let invalidation):
+            DiagnosticsLog.shared.info("engine", "clear views reason=\(invalidation.reason) revision=\(invalidation.revision) \(tag)")
+        case .featureFailure(let feature, let error):
+            DiagnosticsLog.shared.notice("engine", "feature failure feature=\(feature) error=\(DiagnosticsLog.errorName(error)) \(tag)")
+        default: break
+        }
+    }
     func emit(_ event: EngineClientEvent, bytes: Int = 256, revision expected: UInt64? = nil,
               request key: String? = nil, error: EngineClientError? = nil, data: Bool = false, clear: UInt64? = nil,
               ready: Bool = false, receipt: Bool = false, epoch: String? = nil) {
+        logDiagnostics(event)
         var item = ClientDelivery(event: event, bytes: bytes, revision: expected, epoch: epoch, requestKey: key)
         item.completionError = error
         item.isData = data; item.clearRevision = clear; item.ready = ready; item.receiptMetadata = receipt
@@ -101,13 +124,27 @@ extension ProcessEngineClient {
             bootstrap()
         }
         delivering = nil
+        if stallRecoveryPending { resumeAfterStall() }
         pumpDelivery()
+    }
+    /// Recovery contract (step 5): the stalled consume has returned, so no second callback can overlap it. Start a
+    /// fresh session through the supervisor's budget (a consumer that keeps stalling ends in its cooldown).
+    func resumeAfterStall() {
+        stallRecoveryPending = false
+        guard !stopping, child == nil else { return }
+        consumerBlocked = false; stopped = false; requiresRetry = false
+        // The budget's decision for the stalled session (macrev2-994-1). The stalled child was being reaped since the
+        // stall: if that reap (or its re-reap loop) is still running, it relaunches once the child is gone; otherwise
+        // the relaunch waits out the decision now.
+        decideRelaunch(planned: false)
+        if unreapedProcess != nil { requiresRetry = true }
+        if restartTask == nil && unreapedProcess == nil { relaunchWhenDue() }
     }
     func consumerStalled(id: UUID? = nil) {
         if let id, delivering?.id != id { return }
         guard !consumerBlocked else { return }
         deliveryAuthority.replace(with: nil)
-        consumerBlocked = true; stopped = true; requiresRetry = true
+        consumerBlocked = true; stopped = true; requiresRetry = true; stallRecoveryPending = true
         deliveryTask?.cancel(); deliveryTimer?.cancel()
         // The outstanding consume may be non-cooperative. Do not create another
         // concurrent callback. A sticky clear follows it when it eventually returns.
@@ -180,7 +217,24 @@ extension ProcessEngineClient {
             return
         }
         do { epochProbe = try enqueue("consent/get", params: .object([:]), purpose: .epochProbe, timeout: runtime.requestTimeout) }
-        catch { emit(.featureFailure(.consent, .staleValue)) }
+        catch { emit(.featureFailure(.consent, .staleValue)); scheduleEpochProbeRetry() }
+    }
+    /// Recovery contract (step 5): a failed or timed-out epoch probe is asked again after 1, 2, 4 ... at most 30 s, while
+    /// the epoch stays uncertain on the same child. The delivery gate stays closed until it is confirmed.
+    func scheduleEpochProbeRetry() {
+        guard epochProbeRetry == nil, let id = child?.id, epochUncertain, !stopped, !stopping else { return }
+        epochProbeAttempts += 1
+        let delay = min(30, pow(2, Double(min(epochProbeAttempts - 1, 5)))), sleep = runtime.sleep
+        epochProbeRetry = Task { [weak self] in
+            do { try await sleep(.seconds(delay)); try Task.checkCancellation() } catch { return }
+            await self?.retryEpochProbe(id)
+        }
+    }
+    func retryEpochProbe(_ id: UUID) {
+        epochProbeRetry = nil
+        guard child?.id == id, handshaken, epochUncertain, epochProbe == nil, !stopped, !stopping else { return }
+        do { epochProbe = try enqueue("consent/get", params: .object([:]), purpose: .epochProbe, timeout: runtime.requestTimeout) }
+        catch { scheduleEpochProbeRetry() }
     }
     func bootstrap() {
         guard handshaken, !gateClosed, child != nil else { return }
@@ -195,13 +249,21 @@ extension ProcessEngineClient {
 
     // Only retry the internal, read-only bootstrap subscription. Public request
     // callers receive the typed busy error and decide their own retry policy.
+    /// The wait before busy retry `attempt` (1-based) of the initial rows subscription: four quick ones, then 1, 2, 4 ...
+    /// at most 30 s, for as long as the server stays busy.
+    static func rowsBootstrapRetryDelay(attempt: Int) -> Duration {
+        attempt <= 4 ? .milliseconds(250) : .seconds(min(30, pow(2, Double(min(attempt - 5, 5)))))
+    }
     func retryBusyRowsBootstrap(_ id: UUID, error: EngineClientError) {
         guard child?.id == id, sequence == nil, rowsBootstrapRetry == nil else { return }
-        guard rowsBootstrapBusyCount < 4 else { emit(.featureFailure(.rows, error)); return }
+        // Recovery contract (step 5): after four quick retries the rows are reported unavailable once, and the subscription
+        // keeps being asked for with a capped backoff (1, 2, 4 ... at most 30 s) instead of giving up.
+        if rowsBootstrapBusyCount == 4 { emit(.featureFailure(.rows, error)) }
         rowsBootstrapBusyCount += 1
         let sleep = runtime.sleep
+        let delay = Self.rowsBootstrapRetryDelay(attempt: rowsBootstrapBusyCount)
         rowsBootstrapRetry = Task { [weak self] in
-            do { try await sleep(.milliseconds(250)); try Task.checkCancellation() }
+            do { try await sleep(delay); try Task.checkCancellation() }
             catch { return }
             await self?.resumeRowsBootstrap(id)
         }
@@ -231,7 +293,7 @@ extension ProcessEngineClient {
                        !meetsMinimumServerVersion(result.data.serverVersion, minimum: minimum) {
                         protocolMismatch(); return
                     }
-                    capabilities = Set(result.data.capabilities); handshaken = true
+                    capabilities = Set(result.data.capabilities); serverVersion = result.data.serverVersion; handshaken = true
                     finishRequest(key)
                     if !adopt(EngineConsentFloor(storeEpoch: envelope.storeEpoch, generation: envelope.consentGeneration)) {
                         epochUncertain = true; invalidate(.epochChanged, next: nil)
@@ -242,7 +304,7 @@ extension ProcessEngineClient {
                 }
                 if let entry = pending[key], entry.purpose == .epochProbe, epochProbe == key {
                     let result = try decodeEnvelope(envelope, as: WireConsentFacts.self).value
-                    epochProbe = nil; finishRequest(key)
+                    epochProbe = nil; epochProbeAttempts = 0; finishRequest(key)
                     if adopt(EngineConsentFloor(storeEpoch: result.storeEpoch, generation: result.consentGeneration)) {
                         facts = result
                     } else { emit(.featureFailure(.consent, .staleValue)) }
@@ -288,7 +350,7 @@ extension ProcessEngineClient {
                         return
                     }
                     if entry.purpose == .initialize { initializationFailed(id, error: error); return }
-                    if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, error)) }
+                    if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, error)); scheduleEpochProbeRetry() }
                     if entry.purpose == .request, gateClosed {
                         emit(.featureFailure(entry.method == "history/query" ? .history : .consent, error), revision: revision, request: key, error: error)
                     } else { finishRequest(key, error: error) }
@@ -333,6 +395,8 @@ extension ProcessEngineClient {
         case "cockpit/query": feature = .cockpit
         case "publication/get": feature = .publication
         case "plugin/install": feature = .pluginInstall
+        case "readerkey/set", "readerkey/test", "readerkey/remove", "readerkey/status": feature = .readerKey
+        case "history/import_start", "history/import_status", "history/import_cancel", "history/import_remove": feature = .historyImport
         case "refresh/request": feature = .rows
         default: feature = .diagnostics
         }
@@ -378,6 +442,12 @@ extension ProcessEngineClient {
                 guard decoded.data.tool == entry.pluginTool else { throw EngineClientError.protocolViolation }
                 pending[key]?.receiptKnown = true
                 result = .pluginInstall(EngineReply(envelope: decoded, delivery: context))
+            case "readerkey/set", "readerkey/test", "readerkey/remove", "readerkey/status":
+                let decoded = try decodeEnvelope(envelope, as: WireReaderKeyResult.self).value
+                pending[key]?.receiptKnown = true
+                result = .readerKey(EngineReply(envelope: decoded, delivery: context))
+            case "history/import_start", "history/import_status", "history/import_cancel", "history/import_remove":
+                result = .historyImport(EngineReply(envelope: try decodeEnvelope(envelope, as: WireHistoryImportStatus.self).value, delivery: context))
             case "diagnostics/get": result = .diagnostics(EngineReply(envelope: try decodeEnvelope(envelope, as: WireDiagnostics.self).value, delivery: context))
             default: throw EngineClientError.protocolViolation
             }

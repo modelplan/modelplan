@@ -304,6 +304,19 @@ import ModelPlanSettings
         print("placement-producer saved=right effective=right recovery=false restored-right=true unknown-cleared=true retired-cleared=true durable-unchanged=true panels-closed=true")
     }
 
+    func testSET_9_12TheDockStaysSharedWithScreenCaptureByDefault() async throws {
+        // SET-9-12 (owner decision C19, 2026-11-01): hide-from-screen-capture is OFF by default —
+        // "off, so screenshots show the Dock as users expect" — and v1 ships no switch for it.
+        // The dock panel must never exclude itself from screen capture.
+        let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
+        await f.start()
+        let panel = try f.panel()
+        XCTAssertNotEqual(panel.sharingType, .none, "SET-9-12: the Dock must appear in screen capture by default")
+        try f.reveal()
+        XCTAssertNotEqual(try f.panel().sharingType, .none, "SET-9-12: reveal must not turn capture exclusion on")
+        report(1, "sharingType=\(panel.sharingType == .none ? "none" : "shared")")
+    }
+
     func testItem1FirstLaunchIsInsideMainVisibleFrame() async throws {
         let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
         await f.start()
@@ -552,8 +565,10 @@ import ModelPlanSettings
         XCTAssertThrowsError(try SettingsB21Edit(key: .captureHiding, value: "true"))
         let covered: Set<SettingKey> = [.showDock, .autoHide, .reveal, .magnification, .size, .showPercentages,
             .percentageMode, .percentagePin, .redBelow, .sliverAlert, .dockDisplay, .dockEdge, .dockPosition,
-            .fullscreen, .captureHiding, .activeDisplay, .order]
+            .fullscreen, .captureHiding, .activeDisplay]
         XCTAssertEqual(Set(Settings65Homes.dock.flatMap(\.keys)), covered)
+        // G3-68 / D87 (1): subscription order lives in Settings > Subscriptions, not in the Quota Widget pane.
+        XCTAssertFalse(Settings65Homes.dock.flatMap(\.keys).contains(.order))
         try await editor.commit(.moveSubscription("synthetic-second", to: 0,
                                                  expectedOrder: ["synthetic-local", "synthetic-second"]))
         XCTAssertEqual(f.rows().map { $0.accessibilityIdentifier() },

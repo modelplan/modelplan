@@ -187,7 +187,7 @@ class Script(unittest.TestCase):
     def test_covers_the_build_12_checklist(self):
         ids = {s["id"] for s in self.STEPS}
         self.assertTrue({"first-run-window", "widget-collapse", "widget-reveal", "card-third-ring", "card-pointer-away",
-                         "card-empty-quota", "cockpit-toggle-close", "cockpit-reopen", "shutter-closed", "cockpit-detach",
+                         "card-empty-quota", "cockpit-toggle-close", "cockpit-reopen", "shutter-closed", "cockpit-detach", "cockpit-put-back",
                          "cockpit-drag-title", "help-map", "air-1440x900", "air-1470x956"} <= ids)
 
     def test_the_seed_has_a_ring_at_zero(self):
@@ -226,6 +226,53 @@ class Steps(unittest.TestCase):
         self.assertIn(("capture_window", 9), host.calls)
         self.assertEqual(record["window"]["bounds"], [100, 100, 300, 300])
         self.assertTrue((self.out / record["window"]["file"]).exists())
+
+    def test_press_passes_the_scope_to_the_helper(self):
+        host = FakeHost()
+        walker(host, self.out, []).op_press({"by": "subrole", "value": "AXCloseButton", "within": "settings.sidebar"})
+        self.assertEqual(host.calls[-1], ("press", 42, "subrole", "AXCloseButton", "settings.sidebar"))
+
+    STEPS = json.loads((ROOT / "steps.json").read_text(encoding="utf-8"))["steps"]
+
+    def test_settings_is_closed_by_subrole_not_by_a_coordinate(self):
+        step = next(s for s in self.STEPS if s["id"] == "widget-size-M")
+        closes = [a for a in step["actions"] if a.get("value") == "AXCloseButton"]
+        self.assertEqual([(a["op"], a["by"], a["within"]) for a in closes], [("press", "subrole", "settings.sidebar")])
+        self.assertNotIn({"op": "click", "target": "subrole:AXCloseButton"}, step["actions"])
+
+    def test_the_3d_field_label_is_the_one_the_cockpit_sets(self):
+        source = (ROOT.parents[2] / "cockpit/src/porthole-still.ts")
+        if not source.exists():
+            self.skipTest("cockpit sources not in this checkout")
+        label = "Open the 3D launch field \u00b7 Or click anywhere on the field"
+        self.assertIn(label, source.read_text(encoding="utf-8"))
+        text = json.dumps(self.STEPS, ensure_ascii=False)
+        self.assertIn("label:" + label, text)
+        self.assertNotIn("label:Open the 3D view", text)
+
+    def test_help_is_chosen_with_a_real_click_so_the_app_may_take_focus_for_escape(self):
+        # An accessibility press is not user input, so the app's activation is refused and Escape goes to Finder.
+        step = next(s for s in self.STEPS if s["id"] == "help-map")
+        self.assertIn({"op": "click", "target": "ax:status.help"}, step["actions"])
+        self.assertFalse([a for a in step["actions"] if a.get("op") == "press"])
+
+    def test_the_hud_row_is_clicked_by_its_title_not_inside_the_field_key(self):
+        step = next(s for s in self.STEPS if s["id"] == "hud-select")
+        self.assertEqual(step["actions"][0], {"op": "click", "target": "title^:1 "})
+        row = {"title": "1 Astra \u2605Med", "frame": [1372, 142, 168, 12]}
+        key = {"title": "Open the 3D launch field \u00b7 Or click anywhere on the field", "frame": [1834, 97, 22, 22]}
+        tree = {"windows": [{"frame": [0, 0, 9, 9], "children": [key, row]}]}
+        self.assertIs(w.resolve(tree, "title^:1 "), row)
+
+    def test_the_first_reading_is_timed_from_the_hook_not_from_launch(self):
+        tree = {"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "dock.subscription.0", "frame": [1, 1, 2, 2]}]}]}
+        host = FakeHost(tree)
+        walk = walker(host, self.out, [{"id": "first-run-done", "title": "t", "expected": "e"}])
+        seen = []
+        walk.after_step["first-run-done"] = lambda: seen.append(w.await_reading(host, walk, host.now()))
+        walk.walk_steps()
+        self.assertEqual(len(seen), 1)
+        self.assertIsNotNone(seen[0])
 
     def test_a_failed_action_is_still_photographed_and_blocks_dependents(self):
         steps = [{"id": "a", "title": "t", "expected": "e", "actions": [{"op": "click", "target": "ax:gone"}]},
@@ -338,6 +385,33 @@ class NewChecks(unittest.TestCase):
         walk = walker(FakeHost({}), self.out, [])
         walk.remembered = [0, 0, 90, 300]
         walk.check({"collapsed": "window-of:ax:g"}, self.out, {})
+
+    def test_toggle_open_clicks_the_icon_when_a_prewarmed_page_only_passes_by(self):
+        # Build 6a084a0e, air-1470x956: a page caught mid-prewarm passed for an open cockpit, so the icon was never
+        # clicked and the check found nothing. "Already open" must hold a moment later, as the cockpit window.
+        cockpit = {"windows": [{"role": "AXWindow", "frame": [700, 30, 541, 775], "children": [
+                       {"role": "AXWebArea", "label": "ModelPlan Cockpit", "frame": [700, 30, 541, 775]}]}],
+                   "extras": {"children": [{"role": "AXMenuBarItem", "frame": [700, 0, 60, 24]}]}}
+        empty = {"windows": [], "extras": cockpit["extras"]}
+
+        class Passing(FakeHost):
+            def __init__(self):
+                super().__init__(cockpit)
+                self.trees = [cockpit, empty, empty]
+
+            def helper(self, *arguments):
+                if arguments[0] == "tree":
+                    self.calls.append(arguments)
+                    current = self.trees.pop(0) if self.trees else cockpit
+                    return json.loads(json.dumps(current))
+                return super().helper(*arguments)
+        host = Passing()
+        walker(host, self.out, []).op_toggleCockpit({"want": "open"})
+        self.assertIn(("click", 730.0, 12.0), host.calls)
+        # A cockpit that stays open is left alone.
+        steady = FakeHost(cockpit)
+        walker(steady, self.out, []).op_toggleCockpit({"want": "open"})
+        self.assertFalse([c for c in steady.calls if c[0] == "click"])
 
     def test_fits_uses_the_visible_area_below_the_menu_bar_and_above_the_dock(self):
         facts = {"screens": [{"frame": [0, 0, 1440, 900], "visible": [0, 70, 1440, 805]}]}

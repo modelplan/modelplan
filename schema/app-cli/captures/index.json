@@ -151,6 +151,14 @@
           "wrongType": true,
           "strict": false,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "currency",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -182,6 +190,39 @@
       "required": [
         "code",
         "at"
+      ]
+    },
+    {
+      "file": "RowsHint.json",
+      "type": "RowsHint",
+      "optional": [
+        {
+          "field": "signInCommand",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "installCommand",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "installUrl",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "text"
       ]
     },
     {
@@ -229,6 +270,14 @@
           "wrongType": true,
           "strict": false,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "hint",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -327,6 +376,30 @@
       "file": "RowsResetEvent.json",
       "type": "RowsResetEvent",
       "optional": [
+        {
+          "field": "kind",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "confirmedAt",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "confirmedAtBasis",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
         {
           "field": "confirms",
           "omission": true,
@@ -706,7 +779,31 @@
           "nullPolicy": "forbidden"
         },
         {
+          "field": "planModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "forecasts",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "recentSessions",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "peaks",
           "omission": true,
           "null": false,
           "wrongType": false,
@@ -850,6 +947,44 @@
         "outputTokens",
         "observedRequests",
         "eligibleRequests"
+      ]
+    },
+    {
+      "file": "WireCockpitPeak.json",
+      "type": "WireCockpitPeak",
+      "optional": [
+        {
+          "field": "endsAt",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "rowId",
+        "startsAt",
+        "status"
+      ]
+    },
+    {
+      "file": "WireCockpitPlanModels.json",
+      "type": "WireCockpitPlanModels",
+      "optional": [
+        {
+          "field": "generation",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "planId",
+        "basis",
+        "modelIds"
       ]
     },
     {
@@ -1008,6 +1143,50 @@
       ]
     },
     {
+      "file": "WireCockpitRecentSession.json",
+      "type": "WireCockpitRecentSession",
+      "optional": [
+        {
+          "field": "subscriptionRef",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectLabel",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectState",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "sessionRef",
+        "source",
+        "model",
+        "lastObservedAt"
+      ]
+    },
+    {
       "file": "WireCockpitResetCount.json",
       "type": "WireCockpitResetCount",
       "optional": [
@@ -1061,12 +1240,28 @@
           "nullPolicy": "coalesced"
         },
         {
+          "field": "projectState",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "rate",
           "omission": true,
           "null": true,
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "fast",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1084,6 +1279,7 @@
       "required": [
         "at",
         "source",
+        "origin",
         "observedOutputTokens"
       ]
     },
@@ -1206,6 +1402,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "reportedModels",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -1484,6 +1688,61 @@
       ]
     },
     {
+      "file": "WireHistoryImportCoverage.json",
+      "type": "WireHistoryImportCoverage",
+      "optional": [],
+      "required": [
+        "source",
+        "from",
+        "through",
+        "rows"
+      ]
+    },
+    {
+      "file": "WireHistoryImportSource.json",
+      "type": "WireHistoryImportSource",
+      "optional": [],
+      "required": [
+        "source",
+        "status",
+        "turns"
+      ]
+    },
+    {
+      "file": "WireHistoryImportStartParams.json",
+      "type": "WireHistoryImportStartParams",
+      "optional": [],
+      "required": [
+        "days",
+        "firstRun"
+      ]
+    },
+    {
+      "file": "WireHistoryImportStatus.json",
+      "type": "WireHistoryImportStatus",
+      "optional": [
+        {
+          "field": "revision",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "schemaVersion",
+        "phase",
+        "days",
+        "filesDone",
+        "filesTotal",
+        "firstRunDone",
+        "importedRows",
+        "coverage",
+        "sources"
+      ]
+    },
+    {
       "file": "WireHistoryItem.json",
       "type": "WireHistoryItem",
       "optional": [
@@ -1747,6 +2006,29 @@
         "code",
         "message",
         "data"
+      ]
+    },
+    {
+      "file": "WireReaderKeyParams.json",
+      "type": "WireReaderKeyParams",
+      "optional": [],
+      "required": [
+        "provider",
+        "region",
+        "key"
+      ]
+    },
+    {
+      "file": "WireReaderKeyResult.json",
+      "type": "WireReaderKeyResult",
+      "optional": [],
+      "required": [
+        "schemaVersion",
+        "provider",
+        "region",
+        "present",
+        "otherKeyFound",
+        "outcome"
       ]
     },
     {

@@ -33,6 +33,17 @@ const pr = (over = {}) => ({
 });
 const evalPr = ({ comments = [], reviews = [], files = [file("scripts/tool.mjs")], runs = greenCi, statuses = [], verified = () => false, p = pr() } = {}) =>
   R.evaluatePr({ pr: p, items: R.feed(comments, reviews), files, runs, statuses, verifiedEdge: verified, conf });
+// D243 (owner 2026-11-13): scenario evidence, Scenarios lines, trains, GLMREV, DESIGN and non-GPT verdict blocks are
+// advisory. They never change the PR state; the status description names them after "info:". advisory() reads the
+// evidence part back out of a result: PENDING when the description reports missing or unreadable evidence.
+const advisory = (r) => /info: .*(evidence pending|Scenarios line|train Scenarios)/.test(r.why) ? R.PENDING : R.SUCCESS;
+// The advisory GLMREV or DESIGN result the description reports: SUCCESS for ok/pass, FAILURE for issues/fail,
+// PENDING when the marker is absent. The PR itself must pass regardless.
+const marker = (r, kind) => {
+  assert.equal(r.state, R.SUCCESS, `${kind} never decides the PR (D243)`);
+  const m = new RegExp(`info: .*${kind} (ok|pass|issues|fail)`).exec(r.why);
+  return !m ? R.PENDING : m[1] === "ok" || m[1] === "pass" ? R.SUCCESS : R.FAILURE;
+};
 const v = (verdict, sha = H, lane = "macrev") => `Review\n\nVERDICT: ${verdict} @ ${sha}${lane ? ` (${lane})` : ""}`;
 
 test("trust needs the login and the numeric id; deleted authors and drafts never count", () => {
@@ -76,19 +87,54 @@ test("verdicts: exact full head, case-insensitive, latest per lane, trusted only
   assert.deepEqual([...R.verdicts(R.feed([comment(v("merge", H.toUpperCase(), ""))]), H, [])], [["(unnamed)", "merge"]]);
 });
 
-test("tier gates: tier 1 any merge, tier 2 needs macrev2, macrev is advice on tier 2, blocks stop every tier", () => {
+test("tier gates: tier 1 needs a GPT merge, tier 2 needs a Sol lane, macrev is advice on tier 2, GPT blocks stop every tier", () => {
   assert.equal(evalPr({ comments: [comment(v("merge"))] }).state, R.SUCCESS);
   assert.equal(evalPr().state, R.PENDING);
   const t2 = [file("clients/swift/Wire.swift")];
   const glm = comment(`GLMREV: OK @ ${H}`);
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev")), glm] }).state, R.PENDING);
   assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrev")), comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS);
-  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), comment(v("block", H, "glm")), glm] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.SUCCESS, "Sonnet stands in for macrev2");
-  assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "sonnet")), comment(v("merge", H, "macrev2")), glm] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: [file("docs/a.md")] }).state, R.SUCCESS, "tier 0 needs no verdict");
-  assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(v("block"))] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment("REVIEW-TIER: 1")] }).state, R.PENDING);
+  // D243: one review gate. A GLM or (sonnet) block is reviewer input, shown in the description, never a FAILURE.
+  const glmBlock = evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), comment(v("block", H, "glm")), glm] });
+  assert.equal(glmBlock.state, R.SUCCESS);
+  assert.match(glmBlock.why, /info: .*\(glm\) block/);
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.PENDING, "tier 2: sonnet never counts");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "sonnet"))] }).state, R.PENDING, "tier 1: sonnet never counts");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "sonnet")), comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS, "a sonnet block is input");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrevb")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "a Sol block at the head stops it");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "macrevc")), comment(v("block", H, ""))] }).state, R.FAILURE, "an unnamed block stops it");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "macrevc")), comment(v("block", OLD, "macrev2"))] }).state, R.SUCCESS, "a block at another head is not outstanding");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevd"))] }).state, R.SUCCESS, "tier 2 macrevd (third Sol lane); no GLMREV needed");
+  // Owner D149: a GPT reviewer lane is required; sonnet never counts in the public gate
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevb")), glm] }).state, R.SUCCESS, "tier 2 macrevb");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS, "tier 2 macrev2");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrevc")), glm] }).state, R.PENDING, "tier 2 macrevc is Terra");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "glm"))] }).state, R.PENDING, "tier 1 GLM-only");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "macrevc"))] }).state, R.SUCCESS, "tier 1 macrevc");
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
+});
+
+test("workflow reviewer (gh-terra pilot): a Terra lane; its shadow name and other hyphenated names count for nothing", () => {
+  assert.ok(R.TERRA_LANES.includes("(gh-terra)"));
+  assert.ok(!R.SOL_LANES.includes("(gh-terra)"));
+  assert.deepEqual([...R.verdicts(R.feed([comment(v("merge", H, "gh-terra"))]), H, [])], [["(gh-terra)", "merge"]]);
+  assert.deepEqual([...R.verdicts(R.feed([comment(v("block", H, "GH-Terra-Shadow"))]), H, [])], [["(gh-terra-shadow)", "block"]]);
+  for (const odd of ["gh-", "-gh", "gh--terra", "gh_terra", "gh terra"])
+    assert.deepEqual([...R.verdicts(R.feed([comment(v("merge", H, odd))]), H, [])], [["(unnamed)", "merge"]], odd);
+  const t2 = [file("clients/swift/Wire.swift")];
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra"))] }).state, R.SUCCESS, "tier 1 gh-terra");
+  assert.equal(evalPr({ comments: [comment(v("block", H, "gh-terra")), comment(v("merge", H, "macrevc"))] }).state, R.FAILURE, "a gh-terra block stops tier 1");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "gh-terra"))] }).state, R.PENDING, "tier 2 needs Sol");
+  const t2Block = evalPr({ files: t2, comments: [comment(v("block", H, "gh-terra")), comment(v("merge", H, "macrev2"))] });
+  assert.equal(t2Block.state, R.SUCCESS, "on tier 2 a Terra block is advice");
+  assert.match(t2Block.why, /info: .*\(gh-terra\) block/);
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra-shadow"))] }).state, R.PENDING, "shadow never counts");
+  const shadow = evalPr({ comments: [comment(v("block", H, "gh-terra-shadow")), comment(v("merge", H, "macrevc"))] });
+  assert.equal(shadow.state, R.SUCCESS, "a shadow block is input");
+  assert.match(shadow.why, /info: .*\(gh-terra-shadow\) block/);
+  assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra"), { login: "github-actions[bot]", id: 41898282 })] }).state, R.PENDING, "only the trusted account posts verdicts");
+  assert.equal(R.pathTier([".github/workflows/pr-review.yml"]), 2, "the reviewer workflow is gate-self");
+  assert.equal(R.pathTier(["scripts/pr-review/brief.mjs"]), 2);
 });
 
 test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothing looser does", () => {
@@ -107,6 +153,9 @@ test("D97 AUTO-VERIFIED: trusted first line at the exact head clears the listed 
   const av = (ids, sha = H, gates = "ci,gui,review") => `AUTO-VERIFIED: ${ids} @ ${sha} gates=${gates}`;
   assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(`${av("V-01, V-02")}\n\nchecked`)] }).state, R.SUCCESS);
   assert.equal(evalPr({ p: ledger("Scenarios: G3-07, V-01, V-02"), files: docs, comments: [comment(av("G3-07 V-01 V-02"))] }).state, R.SUCCESS, "G3 row and space-separated IDs");
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-107, V-01"), files: docs, comments: [comment(av("G3-107, V-01"))] }).state, R.SUCCESS, "three-digit G3 row");
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-107"), files: docs, comments: [comment(`VERIFIED: G3-107 @ ${H} evidence=/x/y`)] }).state, R.SUCCESS, "three-digit VERIFIED line");
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-107"), files: docs, comments: [comment(`EVIDENCE-DEFERRED: G3-107 @ ${H} issue=470`)] }).state, R.SUCCESS, "three-digit deferral");
   for (const gates of R.AUTO_VERIFIED_GATES)
     assert.equal(evalPr({ p: ledger("Scenarios: V-01"), files: docs, comments: [comment(av("V-01", H, gates))] }).state, R.SUCCESS, gates);
   // Mixed with a coordinator VERIFIED line and a #470 deferral.
@@ -114,9 +163,11 @@ test("D97 AUTO-VERIFIED: trusted first line at the exact head clears the listed 
   // A Scenarios line without a ledger row (real-Mac tier) is cleared the same way.
   assert.equal(evalPr({ p: pr({ title: "Ordinary", body: "Scenarios: C-10" }), files: docs, comments: [comment(av("C-10"))] }).state, R.SUCCESS);
 
+  // D243: missing evidence is advisory; the PR passes and the description reports it.
   const pending = (comments, why, p = ledger("Scenarios: V-01, V-02")) => {
     const r = evalPr({ p, files: docs, comments });
-    assert.equal(r.state, R.PENDING, why);
+    assert.equal(r.state, R.SUCCESS, why);
+    assert.equal(advisory(r), R.PENDING, why);
     return r;
   };
   pending([comment(av("V-01, V-02", OLD))], "old head");
@@ -124,7 +175,7 @@ test("D97 AUTO-VERIFIED: trusted first line at the exact head clears the listed 
   pending([comment(av("V-01, V-02"), { login: "mallory", id: 1 })], "untrusted login");
   pending([comment(av("V-01, V-02"), { login: "guanbear", id: 1 })], "recycled login");
   pending([comment(`notes first\n${av("V-01, V-02")}`)], "not the first line");
-  assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, reviews: [review(av("V-01, V-02"))] }).state, R.PENDING, "a review is not a comment");
+  assert.equal(advisory(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, reviews: [review(av("V-01, V-02"))] })), R.PENDING, "a review is not a comment");
   pending([comment(` ${av("V-01, V-02")}`)], "leading space");
   for (const gates of ["ci,review", "gui,review", "ci,gui", "review,gui,ci", "ci,gui,review,visual,design", "ci,gui,review,", "ci,gui,review,extra", "ci,gui,review,walkthrough", ""])
     pending([comment(av("V-01, V-02", H, gates))], `gates=${gates}`);
@@ -132,7 +183,7 @@ test("D97 AUTO-VERIFIED: trusted first line at the exact head clears the listed 
   pending([comment(av("V-01, V-02", H.toUpperCase()))], "upper-case sha");
   pending([comment(`${av("V-01, V-02")} trailing`)], "trailing text");
   pending([comment(av("V-01, v-02"))], "malformed ID");
-  assert.equal(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(av("V-01, V-02", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }).state, R.PENDING, "never carried");
+  assert.equal(advisory(evalPr({ p: ledger("Scenarios: V-01, V-02"), files: docs, comments: [comment(av("V-01, V-02", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true })), R.PENDING, "never carried");
   assert.match(pending([comment(av("V-01"))], "only the listed ID").why, /evidence pending: V-02$/);
 
   // Design-touching PR: the line must name design (evidence-gate.sh NEED_D).
@@ -168,7 +219,7 @@ test("carry: verified edges only, followed back from the head, at most 6 hops", 
   assert.equal(R.carryEdges(R.feed([], [review(`VERDICT-CARRY: ${OLD} -> ${H}`)])).length, 0, "edges come from comments only");
 });
 
-test("design gate: paths, pin-only bundle updates, DESIGN lines only in design-conformance reviews", () => {
+test("design marker: paths, pin-only bundle updates, DESIGN lines only in design-conformance reviews (advisory, D243)", () => {
   assert.equal(R.designTouch([file("desktop/native/ModelPlanDock/Sources/View.swift")], conf).touching, true);
   assert.equal(R.designTouch([file("desktop/native/ModelPlanDock/Tests/ViewTests.swift")], conf).touching, false);
   assert.equal(R.designTouch([file("docs/x.md"), file("desktop/cockpit/src/ui.md")], conf).touching, false);
@@ -183,11 +234,11 @@ test("design gate: paths, pin-only bundle updates, DESIGN lines only in design-c
 
   const files = [file("desktop/native/ModelPlanSettings/Pane.swift")];
   const merge = comment(v("merge")), glm = comment(`GLMREV: OK @ ${H}`);
-  assert.equal(evalPr({ files, comments: [merge, glm] }).state, R.PENDING);
-  assert.equal(evalPr({ files, comments: [merge, glm, comment(`Tier review\nDESIGN: pass @ ${H}`)] }).state, R.PENDING, "stray DESIGN line");
-  assert.equal(evalPr({ files, comments: [merge, glm], reviews: [review(`Design-conformance review (GLM)\nDESIGN: pass @ ${H}`)] }).state, R.SUCCESS);
-  assert.equal(evalPr({ files, comments: [merge, glm, comment(`Design-conformance review\nDESIGN: pass @ ${H}`), comment(`Design-conformance review\nDESIGN: fail @ ${H}`)] }).state, R.FAILURE);
-  assert.equal(evalPr({ files: [file("desktop/official-visuals/dock/a.svg")], comments: [] }).state, R.PENDING, "tier 0 design-touching still needs DESIGN");
+  assert.equal(marker(evalPr({ files, comments: [merge, glm] }), "DESIGN"), R.PENDING);
+  assert.equal(marker(evalPr({ files, comments: [merge, glm, comment(`Tier review\nDESIGN: pass @ ${H}`)] }), "DESIGN"), R.PENDING, "stray DESIGN line");
+  assert.equal(marker(evalPr({ files, comments: [merge, glm], reviews: [review(`Design-conformance review (GLM)\nDESIGN: pass @ ${H}`)] }), "DESIGN"), R.SUCCESS);
+  assert.equal(marker(evalPr({ files, comments: [merge, glm, comment(`Design-conformance review\nDESIGN: pass @ ${H}`), comment(`Design-conformance review\nDESIGN: fail @ ${H}`)] }), "DESIGN"), R.FAILURE);
+  assert.equal(evalPr({ files: [file("desktop/official-visuals/dock/a.svg")], comments: [] }).state, R.SUCCESS, "tier 0 design-touching no longer waits for DESIGN");
 });
 
 test("design gate: only the pinned CLI identity file is excluded by name; other generated-looking files are reviewed", () => {
@@ -197,16 +248,112 @@ test("design gate: only the pinned CLI identity file is excluded by name; other 
     assert.equal(R.designTouch([file(other)], conf).touching, true, other);
 });
 
-test("GLM gate: seams only, exact head, comment must start with the line, latest wins", () => {
+test("GLMREV marker: seams only, exact head, comment must start with the line, latest wins (advisory, D243)", () => {
   const files = [file("cli/main.go")];
   const merge = comment(v("merge"));
-  assert.equal(evalPr({ files: [file("scripts/x.mjs")], comments: [merge] }).state, R.SUCCESS, "outside GLM scope");
-  assert.equal(evalPr({ files, comments: [merge] }).state, R.PENDING, "a seam PR waits for GLM");
-  assert.equal(evalPr({ files, comments: [merge, comment(`note\nGLMREV: OK @ ${H}`)] }).state, R.PENDING);
-  assert.equal(evalPr({ files, comments: [merge, comment(`GLMREV: OK @ ${H}0`)] }).state, R.PENDING);
-  assert.equal(evalPr({ files, comments: [merge, comment(`GLMREV: OK @ ${H}`), comment(`GLMREV: ISSUES @ ${H}\n1. x`)] }).state, R.FAILURE);
-  assert.equal(evalPr({ files, comments: [merge, comment(`GLMREV: ISSUES @ ${H}`), comment(`GLMREV-ACCEPTED @ ${H}`)] }).state, R.SUCCESS);
-  assert.equal(evalPr({ files, comments: [merge, comment(`GLMREV: OK @ ${OLD}`), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }).state, R.PENDING, "GLMREV never carries");
+  assert.equal(marker(evalPr({ files: [file("scripts/x.mjs")], comments: [merge, comment(`GLMREV: ISSUES @ ${H}`)] }), "GLMREV"), R.PENDING, "outside GLM scope");
+  assert.equal(marker(evalPr({ files, comments: [merge] }), "GLMREV"), R.PENDING, "a seam PR no longer waits for GLM");
+  assert.equal(marker(evalPr({ files, comments: [merge, comment(`note\nGLMREV: OK @ ${H}`)] }), "GLMREV"), R.PENDING);
+  assert.equal(marker(evalPr({ files, comments: [merge, comment(`GLMREV: OK @ ${H}0`)] }), "GLMREV"), R.PENDING);
+  assert.equal(marker(evalPr({ files, comments: [merge, comment(`GLMREV: OK @ ${H}`), comment(`GLMREV: ISSUES @ ${H}\n1. x`)] }), "GLMREV"), R.FAILURE);
+  assert.equal(marker(evalPr({ files, comments: [merge, comment(`GLMREV: ISSUES @ ${H}`), comment(`GLMREV-ACCEPTED @ ${H}`)] }), "GLMREV"), R.SUCCESS);
+  assert.equal(marker(evalPr({ files, comments: [merge, comment(`GLMREV: OK @ ${OLD}`), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }), "GLMREV"), R.PENDING, "GLMREV never carries");
+  assert.equal(evalPr({ files, comments: [comment(`GLMREV: OK @ ${H}`)] }).state, R.PENDING, "GLMREV OK is not a review verdict");
+});
+
+test("GLM-out fallback: (sonnet) DESIGN/GLMREV pass only inside the window, exact head, posted before expiry; fail/ISSUES always count", () => {
+  const UNTIL = "2026-11-14T12:17:50Z", until = Date.parse(UNTIL);
+  const inside = Date.parse("2026-11-09T12:00:00Z"), after = until + 1000;
+  const evalFb = ({ comments, files, now = inside, u = until }) => {
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmFallbackUntil: u, now });
+    return { ...r, state: marker(r, files === seam ? "GLMREV" : "DESIGN") };
+  };
+  // window parsing: strict UTC form, at most 8 days ahead
+  assert.equal(R.parseFallbackUntil(UNTIL, inside), until);
+  assert.equal(R.parseFallbackUntil("", inside), null);
+  assert.equal(R.parseFallbackUntil("2026-11-14 12:17:50", inside), null);
+  assert.equal(R.parseFallbackUntil("2026-12-30T00:00:00Z", inside), null, "too far ahead");
+
+  const merge = comment(v("merge"));
+  const seam = [file("cli/main.go")];
+  const gOk = comment(`GLMREV (sonnet): OK @ ${H}\n\nSonnet review`);
+  const r = evalFb({ comments: [merge, gOk], files: seam });
+  assert.equal(r.state, R.SUCCESS);
+  assert.deepEqual(r.glmFallback, ["GLMREV (sonnet)"]);
+  assert.equal(evalFb({ comments: [merge, gOk], files: seam, now: after }).state, R.PENDING, "expired window");
+  assert.equal(evalFb({ comments: [merge, gOk], files: seam, u: null }).state, R.PENDING, "no window");
+  assert.equal(evalFb({ comments: [merge, comment(`GLMREV (sonnet): OK @ ${OLD}`)], files: seam }).state, R.PENDING, "other head");
+  assert.equal(evalFb({ comments: [merge, comment(`GLMREV (sonnet): OK @ ${H.slice(0, 12)}`)], files: seam }).state, R.PENDING, "short sha");
+  assert.equal(evalFb({ comments: [merge, comment(`note\nGLMREV (sonnet): OK @ ${H}`)], files: seam }).state, R.PENDING, "must start the comment");
+  assert.equal(evalFb({ comments: [merge, comment(`GLMREV (sonnet): OK @ ${H}`, { login: "guanbear", id: 1 })], files: seam }).state, R.PENDING, "untrusted");
+  assert.equal(evalFb({ comments: [merge, comment(`GLMREV (sonnet): ISSUES @ ${H}`)], files: seam, now: after }).state, R.FAILURE, "ISSUES always counts");
+  assert.equal(evalFb({ comments: [merge, comment(`GLMREV: OK @ ${H}`)], files: seam, now: after }).state, R.SUCCESS, "GLM markers unchanged");
+  // posted after the window closed (a window set in the past but still parsed): never counts
+  const late = { user: ME, body: `GLMREV (sonnet): OK @ ${H}`, created_at: "2026-11-15T00:00:00Z" };
+  assert.equal(evalFb({ comments: [merge, late], files: seam, now: inside, u: Date.parse("2026-11-14T00:00:00Z") }).state, R.PENDING);
+
+  const ui = [file("desktop/native/ModelPlanSettings/Pane.swift")], glm = comment(`GLMREV: OK @ ${H}`);
+  const dOk = comment(`Design-conformance review (sonnet) @ ${H}\n\nDESIGN (sonnet): pass @ ${H}`);
+  const d = evalFb({ comments: [merge, glm, dOk], files: ui });
+  assert.equal(d.state, R.SUCCESS);
+  assert.deepEqual(d.glmFallback, ["DESIGN (sonnet)"]);
+  assert.equal(evalFb({ comments: [merge, glm, dOk], files: ui, now: after }).state, R.PENDING, "expired window");
+  assert.equal(evalFb({ comments: [merge, glm, comment(`Tier review\nDESIGN (sonnet): pass @ ${H}`)], files: ui }).state, R.PENDING, "needs the design-conformance header");
+  assert.equal(evalFb({ comments: [merge, glm, comment(`Design-conformance review (sonnet) @ ${H}\nDESIGN (sonnet): fail @ ${H}`)], files: ui, now: after }).state, R.FAILURE, "fail always counts");
+});
+
+test("GLM-out fallback mixing: a (sonnet) pass/OK only at the exact head and never over a fail/ISSUES; fail/ISSUES from either reviewer stays blocking", () => {
+  const until = Date.parse("2026-11-14T12:17:50Z"), now = Date.parse("2026-11-09T12:00:00Z");
+  const ui = [file("desktop/native/ModelPlanSettings/Pane.swift")], seam = [file("cli/main.go")];
+  const evalFb = ({ comments, files, verified = () => false }) => {
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: verified, conf, glmFallbackUntil: until, now });
+    return { ...r, state: marker(r, files === seam ? "GLMREV" : "DESIGN") };
+  };
+  const merge = comment(v("merge")), glm = comment(`GLMREV: OK @ ${H}`);
+  const dsn = (r, sha = H) => comment(`Design-conformance review (sonnet) @ ${sha}\n\nDESIGN (sonnet): ${r} @ ${sha}`);
+  const dglm = (r, sha = H) => comment(`Design-conformance review (GLM) @ ${sha}\n\nDESIGN: ${r} @ ${sha}`);
+  const carry = comment(`VERDICT-CARRY: ${OLD} -> ${H}`);
+  // exact head only: a (sonnet) pass at a carried head does not count; a GLM pass there still carries
+  assert.equal(evalFb({ comments: [merge, glm, dsn("pass", OLD), carry], files: ui, verified: () => true }).state, R.PENDING, "sonnet pass over a carry edge");
+  assert.equal(evalFb({ comments: [merge, glm, dglm("pass", OLD), carry], files: ui, verified: () => true }).state, R.SUCCESS, "GLM pass still carries");
+  // DESIGN: no overriding across reviewers
+  assert.equal(evalFb({ comments: [merge, glm, dglm("fail"), dsn("pass")], files: ui }).state, R.FAILURE, "sonnet pass over GLM fail");
+  assert.equal(evalFb({ comments: [merge, glm, dsn("fail"), dglm("pass")], files: ui }).state, R.FAILURE, "GLM pass over sonnet fail");
+  assert.equal(evalFb({ comments: [merge, glm, dsn("fail"), dsn("pass")], files: ui }).state, R.FAILURE, "sonnet pass over sonnet fail");
+  assert.equal(evalFb({ comments: [merge, glm, dglm("fail"), dglm("pass")], files: ui }).state, R.SUCCESS, "GLM-only: latest wins");
+  // GLMREV: same, with GLMREV-ACCEPTED as the only lift
+  const g = (b) => comment(`${b} @ ${H}`);
+  assert.equal(evalFb({ comments: [merge, g("GLMREV: ISSUES"), g("GLMREV (sonnet): OK")], files: seam }).state, R.FAILURE, "sonnet OK over GLM ISSUES");
+  assert.equal(evalFb({ comments: [merge, g("GLMREV (sonnet): ISSUES"), g("GLMREV: OK")], files: seam }).state, R.FAILURE, "GLM OK over sonnet ISSUES");
+  assert.equal(evalFb({ comments: [merge, g("GLMREV (sonnet): ISSUES"), g("GLMREV-ACCEPTED")], files: seam }).state, R.SUCCESS, "ACCEPTED lifts");
+  assert.equal(evalFb({ comments: [merge, g("GLMREV: ISSUES"), g("GLMREV: OK")], files: seam }).state, R.SUCCESS, "GLM-only: latest wins");
+  assert.equal(evalFb({ comments: [merge, g("GLMREV (sonnet): OK"), g("GLMREV: ISSUES")], files: seam }).state, R.FAILURE, "a later ISSUES wins");
+});
+
+test("DESIGN-ACCEPTED: coordinator lift of a GLM or (sonnet) DESIGN fail, exact head, trusted comment first line only", () => {
+  const until = Date.parse("2026-11-14T12:17:50Z"), now = Date.parse("2026-11-09T12:00:00Z");
+  const evalD = ({ comments, reviews = [], verified = () => false, u = until }) => {
+    const r = R.evaluatePr({ pr: pr(), items: R.feed(comments, reviews), files: [file("desktop/native/ModelPlanSettings/Pane.swift")], runs: greenCi, statuses: [], verifiedEdge: verified, conf, glmFallbackUntil: u, now });
+    return { ...r, state: marker(r, "DESIGN") };
+  };
+  const merge = comment(v("merge")), glm = comment(`GLMREV: OK @ ${H}`);
+  const gFail = comment(`Design-conformance review (GLM) @ ${H}\nDESIGN: fail @ ${H}`);
+  const sFail = comment(`Design-conformance review (sonnet) @ ${H}\nDESIGN (sonnet): fail @ ${H}`);
+  const ok = evalD({ comments: [merge, glm, gFail, comment(`DESIGN-ACCEPTED @ ${H}\n\nCoordinator: out of scope.`)] });
+  assert.equal(ok.state, R.SUCCESS);
+  assert.equal(evalD({ comments: [merge, glm, sFail, comment(`DESIGN-ACCEPTED @ ${H}`)], u: null }).state, R.SUCCESS, "lifts a sonnet fail, window not needed");
+  const lift = comment(`DESIGN-ACCEPTED @ ${H}`), laterFail = comment(`Design-conformance review (GLM) @ ${H}\nDESIGN: fail @ ${H}`);
+  assert.equal(evalD({ comments: [merge, glm, lift, laterFail] }).state, R.FAILURE, "a later fail wins again");
+  assert.equal(evalD({ comments: [merge, glm] }).state, R.PENDING);
+  assert.equal(evalD({ comments: [merge, glm, comment(`DESIGN-ACCEPTED @ ${H}`)] }).state, R.SUCCESS, "also stands in for a missing pass");
+  for (const [why, c, rv] of [
+    ["carried head", [comment(`DESIGN-ACCEPTED @ ${OLD}`), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], []],
+    ["short sha", [comment(`DESIGN-ACCEPTED @ ${H.slice(0, 12)}`)], []],
+    ["not the first line", [comment(`note\nDESIGN-ACCEPTED @ ${H}`)], []],
+    ["untrusted", [comment(`DESIGN-ACCEPTED @ ${H}`, { login: "guanbear", id: 1 })], []],
+    ["inside a design review", [comment(`Design-conformance review (sonnet) @ ${H}\nDESIGN-ACCEPTED @ ${H}`)], []],
+    ["a review, not a comment", [], [review(`DESIGN-ACCEPTED @ ${H}`)]],
+  ]) assert.equal(evalD({ comments: [merge, glm, gFail, ...c], reviews: rv, verified: () => true }).state, R.FAILURE, why);
 });
 
 test("CI at the head: newest run per workflow, parse-time failures, statuses, anchor workflow", () => {
@@ -272,29 +419,30 @@ test("CI cancelled upstream: the newest run being cancelled fails the head; a su
   assert.equal(R.cancelledRunSuperseded({ conclusion: "failure", head_sha: OLD }, H), false);
 });
 
-test("ledger evidence: exact-head trusted comment required for every listed scenario", () => {
+test("D243: evidence lines are read exactly as before but only reported; G3 mentions no longer force a Scenarios line", () => {
   const docs = [file("docs/evidence.md")];
   const ledger = (body, extra = {}) => pr({ title: "Fix G3-07", body, ...extra });
   const mark = (id, sha = H) => `VERIFIED: ${id} @ ${sha} evidence=artifacts/run-1`;
-  assert.equal(evalPr({ p: ledger("Details"), files: docs }).state, R.FAILURE);
-  assert.equal(evalPr({ p: ledger("Scenarios: D-01, V-03"), files: docs }).state, R.PENDING);
-  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01"), {login:"other", id:1})] }).state, R.PENDING);
-  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01", OLD))] }).state, R.PENDING);
-  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, reviews: [review(mark("D-01"))] }).state, R.PENDING);
-  assert.equal(evalPr({ p: ledger("Scenarios: D-01, V-03"), files: docs, comments: [comment(mark("D-01")), comment(mark("V-03"))] }).state, R.SUCCESS);
-  assert.equal(evalPr({ p: pr({title:"Ordinary fix", body:""}), files: docs }).state, R.SUCCESS);
-  assert.equal(evalPr({ p: pr({title:"Ordinary", body:"Scenarios: D-01", head:{sha:H, ref:"fix/g3-12", repo:{full_name:"modelplan/modelplan"}}}), files: docs }).state, R.PENDING);
-  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(`VERIFIED: D-01 @ ${H} evidence=`)] }).state, R.PENDING);
-  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }).state, R.PENDING);
-  assert.equal(evalPr({ p: ledger("**Scenarios:** D-01, D-01"), files: docs, comments: [comment(mark("D-01"))] }).state, R.SUCCESS);
-  assert.equal(evalPr({ p: ledger("Scenarios: D-01, V-03"), files: docs, comments: [comment(mark("D-01")), comment(mark("V-03"), {login:"guanbear",id:1})] }).state, R.PENDING);
-  assert.equal(evalPr({ p: ledger("Scenarios: D-01\nScenarios: V-03"), files: docs, comments: [comment(mark("D-01"))] }).state, R.SUCCESS, "only the first declaration counts");
-  assert.equal(evalPr({ p: ledger("Scenarios: d-01"), files: docs }).state, R.FAILURE, "IDs follow the shell gate's uppercase format");
-  assert.equal(evalPr({ p: ledger("Scenarios: G3-12, V-03"), files: docs, comments: [comment(mark("V-03"))] }).state, R.PENDING, "ledger scenario needs its own evidence");
-  assert.equal(evalPr({ p: ledger("Scenarios: G3-12, V-03"), files: docs, comments: [comment(mark("G3-12")), comment(mark("V-03"))] }).state, R.SUCCESS, "numeric scenario prefixes match verified evidence");
+  const ev = (o) => { const r = evalPr(o); assert.equal(r.state, R.SUCCESS, "evidence never blocks"); return advisory(r); };
+  assert.equal(ev({ p: ledger("Details"), files: docs }), R.SUCCESS, "G13 cut: a G3 mention needs no Scenarios line");
+  assert.equal(ev({ p: ledger("Scenarios: D-01, V-03"), files: docs }), R.PENDING);
+  assert.equal(ev({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01"), {login:"other", id:1})] }), R.PENDING);
+  assert.equal(ev({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01", OLD))] }), R.PENDING);
+  assert.equal(ev({ p: ledger("Scenarios: D-01"), files: docs, reviews: [review(mark("D-01"))] }), R.PENDING);
+  assert.equal(ev({ p: ledger("Scenarios: D-01, V-03"), files: docs, comments: [comment(mark("D-01")), comment(mark("V-03"))] }), R.SUCCESS);
+  assert.equal(ev({ p: pr({title:"Ordinary fix", body:""}), files: docs }), R.SUCCESS);
+  assert.equal(ev({ p: pr({title:"Ordinary", body:"Scenarios: D-01", head:{sha:H, ref:"fix/g3-12", repo:{full_name:"modelplan/modelplan"}}}), files: docs }), R.PENDING);
+  assert.equal(ev({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(`VERIFIED: D-01 @ ${H} evidence=`)] }), R.PENDING);
+  assert.equal(ev({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }), R.PENDING);
+  assert.equal(ev({ p: ledger("**Scenarios:** D-01, D-01"), files: docs, comments: [comment(mark("D-01"))] }), R.SUCCESS);
+  assert.equal(ev({ p: ledger("Scenarios: D-01, V-03"), files: docs, comments: [comment(mark("D-01")), comment(mark("V-03"), {login:"guanbear",id:1})] }), R.PENDING);
+  assert.equal(ev({ p: ledger("Scenarios: D-01\nScenarios: V-03"), files: docs, comments: [comment(mark("D-01"))] }), R.SUCCESS, "only the first declaration counts");
+  assert.equal(ev({ p: ledger("Scenarios: d-01"), files: docs }), R.PENDING, "a malformed line is reported, not failed");
+  assert.equal(ev({ p: ledger("Scenarios: G3-12, V-03"), files: docs, comments: [comment(mark("V-03"))] }), R.PENDING, "ledger scenario needs its own evidence");
+  assert.equal(ev({ p: ledger("Scenarios: G3-12, V-03"), files: docs, comments: [comment(mark("G3-12")), comment(mark("V-03"))] }), R.SUCCESS, "numeric scenario prefixes match verified evidence");
 });
 
-test("merge group requires evidence for each member's own head", () => {
+test("D243: a merge group no longer waits for each member's evidence; the member reports it", () => {
   const docs = [file("docs/evidence.md")];
   const first = evalPr({p:pr({title:"G3-01", body:"Scenarios: D-01"}), files:docs,
     comments:[comment(`VERIFIED: D-01 @ ${H} evidence=first`)]});
@@ -303,65 +451,70 @@ test("merge group requires evidence for each member's own head", () => {
   const valid = evalPr({p:other, files:docs, comments:[comment(`VERIFIED: D-02 @ ${OLD} evidence=second`)]});
   const step = (n, result) => ({pr:n, prResult:result, mergeProof:{ok:true}});
   const queueRuns = greenQueue;
-  assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, absent)], queueRuns}).state, R.FAILURE);
+  assert.equal(advisory(absent), R.PENDING);
+  assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, absent)], queueRuns}).state, R.SUCCESS);
   assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, valid)], queueRuns}).state, R.SUCCESS);
 });
 
-test("malformed scenario members fail PR and merge group despite valid evidence", () => {
+test("D243: a malformed Scenarios line is reported, never a PR or merge-group failure", () => {
   const docs = [file("docs/evidence.md")];
   const receipt = comment(`VERIFIED: V-01 @ ${H} evidence=fixture`);
   for (const invalid of ["S6", "d-01", "V-1", "V-001"]) {
     const result = evalPr({ p: pr({title:"G3-07", body:`Scenarios: V-01, ${invalid}`}), files:docs, comments:[receipt] });
-    assert.equal(result.state, R.FAILURE, invalid);
-    assert.equal(R.evaluateGroup({steps:[{pr:1, prResult:result, mergeProof:{ok:true}}], queueRuns:greenQueue}).state, R.FAILURE, invalid);
+    assert.equal(result.state, R.SUCCESS, invalid);
+    assert.match(result.why, /info: .*Scenarios line/, invalid);
+    assert.equal(R.evaluateGroup({steps:[{pr:1, prResult:result, mergeProof:{ok:true}}], queueRuns:greenQueue}).state, R.SUCCESS, invalid);
   }
   const valid = evalPr({p:pr({title:"G3-07", body:"Scenarios: V-01 (normal entry), V-01"}), files:docs, comments:[receipt]});
   assert.equal(valid.state, R.SUCCESS);
+  assert.doesNotMatch(valid.why, /info:/);
 });
 
-test("a Scenarios line without a ledger row needs the same exact-head evidence (#661: C-10 passed unaccounted)", () => {
+test("a Scenarios line reads exact-head evidence the same way; D243 reports a gap instead of holding the PR (#661)", () => {
   const docs = [file("docs/evidence.md")];
   const plain = (body) => pr({ title: "Cockpit publication", body: `Ledger: none\n${body}`, head: { sha: H, ref: "web/publication", repo: { full_name: "modelplan/modelplan" } } });
   const done = (id) => comment(`VERIFIED: ${id} @ ${H} evidence=fixture`);
   const pending = evalPr({ p: plain("Scenarios: C-09, C-10"), files: docs, comments: [done("C-09")] });
-  assert.equal(pending.state, R.PENDING);
-  assert.match(pending.why, /evidence pending: C-10/);
+  assert.equal(pending.state, R.SUCCESS);
+  assert.match(pending.why, /info: evidence pending: C-10/);
   const group = R.evaluateGroup({ steps: [{ pr: 661, prResult: pending, mergeProof: { ok: true } }], queueRuns: greenQueue });
-  assert.equal(group.state, R.FAILURE, "a pending member never lands");
-  assert.equal(evalPr({ p: plain("Scenarios: C-09, C-10"), files: docs, comments: [done("C-09"), comment(`EVIDENCE-DEFERRED: C-10 @ ${H} issue=470`)] }).state, R.SUCCESS);
-  assert.equal(evalPr({ p: plain("Scenarios: C-09"), files: docs, comments: [comment(`VERIFIED: C-09 @ ${OLD} evidence=fixture`)] }).state, R.PENDING, "another head proves nothing");
+  assert.equal(group.state, R.SUCCESS, "device evidence moved to the build gate");
+  assert.equal(advisory(evalPr({ p: plain("Scenarios: C-09, C-10"), files: docs, comments: [done("C-09"), comment(`EVIDENCE-DEFERRED: C-10 @ ${H} issue=470`)] })), R.SUCCESS);
+  assert.equal(advisory(evalPr({ p: plain("Scenarios: C-09"), files: docs, comments: [comment(`VERIFIED: C-09 @ ${OLD} evidence=fixture`)] })), R.PENDING, "another head proves nothing");
   assert.equal(evalPr({ p: plain("Scenarios: none"), files: docs }).state, R.SUCCESS);
   assert.equal(evalPr({ p: pr({ title: "Docs", body: "No declaration here." }), files: docs }).state, R.SUCCESS);
 });
 
-test("D21: without a ledger row a CI-tier scenario rides on green CI; real-Mac tiers and anything unknown need a line", () => {
+test("D21: a CI-tier scenario rides on green CI; real-Mac tiers and anything unknown are reported as missing (advisory, D243)", () => {
   const docs = [file("docs/evidence.md")];
   const tiers = R.parseTiers("# comment\nid\ttier\tneeds\nS-11\tT2\t-\nV-17\tT1P\t-\nR-01\tT0\tVF\nC-10\tT3\tCK\nD-02\tT4\tSYS\n");
   assert.deepEqual([...tiers], [["S-11", "T2"], ["V-17", "T1P"], ["R-01", "T0"], ["C-10", "T3"], ["D-02", "T4"]]);
   const plain = (line) => pr({ title: "Cockpit", body: `Ledger: none\nScenarios: ${line}` });
   const ev = (line, o = {}) => R.evaluatePr({ pr: plain(line), items: R.feed(o.comments ?? []), files: docs, runs: o.runs ?? greenCi, statuses: [], verifiedEdge: () => false, conf, tiers: o.tiers ?? tiers });
 
-  assert.equal(ev("S-11, V-17, R-01").state, R.SUCCESS, "T2 passes on green CI");
+  assert.equal(advisory(ev("S-11, V-17, R-01")), R.SUCCESS, "T2 passes on green CI");
   assert.equal(ev("S-11", { runs: [run(".github/workflows/ci.yml", "failure")] }).state, R.FAILURE, "red CI stops it");
   assert.equal(ev("S-11", { runs: [run(".github/workflows/ci.yml", null, 1, "in_progress")] }).state, R.PENDING, "running CI is not green");
   const t3 = ev("S-11, C-10");
-  assert.equal(t3.state, R.PENDING, "T3 still needs its line");
+  assert.equal(t3.state, R.SUCCESS, "D243: missing evidence never holds the PR");
+  assert.equal(advisory(t3), R.PENDING, "T3 still needs its line");
   assert.match(t3.why, /evidence pending: C-10$|evidence pending: C-10\b/);
   assert.doesNotMatch(t3.why, /S-11/);
-  assert.equal(ev("D-02").state, R.PENDING, "T4 too");
-  assert.equal(ev("C-10", { comments: [comment(`EVIDENCE-DEFERRED: C-10 @ ${H} issue=470`)] }).state, R.SUCCESS);
-  assert.equal(ev("C-10", { comments: [comment(`VERIFIED: C-10 @ ${H} evidence=fixture`)] }).state, R.SUCCESS);
-  assert.equal(ev("Z-01").state, R.PENDING, "a scenario missing from the table needs evidence");
-  assert.equal(ev("G3-12").state, R.PENDING, "a ledger row in the line is a ledger PR");
-  // A PR naming a ledger row needs a line for every scenario, whatever its tier.
+  assert.equal(advisory(ev("D-02")), R.PENDING, "T4 too");
+  assert.equal(advisory(ev("C-10", { comments: [comment(`EVIDENCE-DEFERRED: C-10 @ ${H} issue=470`)] })), R.SUCCESS);
+  assert.equal(advisory(ev("C-10", { comments: [comment(`VERIFIED: C-10 @ ${H} evidence=fixture`)] })), R.SUCCESS);
+  assert.equal(advisory(ev("Z-01")), R.PENDING, "a scenario missing from the table needs evidence");
+  assert.equal(advisory(ev("G3-12")), R.PENDING, "a ledger row is not in the tier table");
+  // D243 cut G13: a G3 mention in the title no longer makes every scenario need a line.
   const ledger = R.evaluatePr({ pr: pr({ title: "Fix G3-07", body: "Scenarios: S-11" }), items: [], files: docs, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, tiers });
-  assert.equal(ledger.state, R.PENDING);
+  assert.equal(ledger.state, R.SUCCESS);
+  assert.equal(advisory(ledger), R.SUCCESS);
 
   // Fail closed: no readable table means every scenario needs evidence.
   const missing = R.tiersFrom(() => { throw new Error("ENOENT"); });
   assert.equal(missing.size, 0);
-  assert.equal(ev("S-11", { tiers: missing }).state, R.PENDING);
-  assert.equal(ev("S-11", { tiers: R.tiersFrom(() => "not a table\n") }).state, R.PENDING);
+  assert.equal(advisory(ev("S-11", { tiers: missing })), R.PENDING);
+  assert.equal(advisory(ev("S-11", { tiers: R.tiersFrom(() => "not a table\n") })), R.PENDING);
 
   // The shipped table, and the checkout that must bring it to the gate.
   const shipped = R.tiersFrom(() => readFileSync(join(root, R.TIER_TABLE), "utf8"));
@@ -372,7 +525,7 @@ test("D21: without a ledger row a CI-tier scenario rides on green CI; real-Mac t
   assert.ok(sparse.includes(dirname(R.TIER_TABLE)), "cone-mode sparse checkout takes directories, so the table's directory");
 });
 
-test("Scenarios lines: spec IDs or none, on every PR; requirement IDs and free text are rejected (exception review 1.4)", () => {
+test("Scenarios lines: spec IDs or none; requirement IDs and free text are reported as unreadable, never failed (D243)", () => {
   const docs = [file("docs/evidence.md")];
   const plain = (line) => pr({ title: "Widget setting", body: `Ledger: none\n${line}` });
   for (const line of [
@@ -382,23 +535,27 @@ test("Scenarios lines: spec IDs or none, on every PR; requirement IDs and free t
     "Scenarios: DOCK-3.1-01, D-01",
     "Scenarios: owner test build opens the cockpit from the menu bar",
     "Scenarios: D-01 and a sentence",
+    "Scenarios: G3-1007",
+    "Scenarios: G3-007",
     "Scenarios: none listed",
     "Scenarios: none, D-03",
     "Scenarios:",
     "Scenarios were not changed",
   ]) {
     const result = evalPr({ p: plain(line), files: docs });
-    assert.equal(result.state, R.FAILURE, line);
-    assert.match(result.why, /Scenarios line/, line);
+    assert.equal(result.state, R.SUCCESS, line);
+    assert.match(result.why, /info: .*Scenarios line/, line);
   }
   const draft = evalPr({ p: pr({ draft: true, title: "x", body: "Scenarios: SET-9-12" }), files: docs });
-  assert.equal(draft.state, R.FAILURE, "a draft sees the rejection at once");
+  assert.equal(draft.state, R.PENDING, "a draft only waits");
+  assert.match(draft.why, /^draft; info: .*Scenarios line/, "and sees the note at once");
   // Forms real PRs use: notes in brackets, semicolons, bold, none with a note.
   const shapes = {
     "Scenarios: R-08, R-09 (partial evidence); V-06, V-07": ["R-08", "R-09", "V-06", "V-07"],
     "**Scenarios:** C-13 (Effort and Breakdown slice), C-05 (live locale; web slice)": ["C-05", "C-13"],
     "Scenarios: D-12 and D-24": ["D-12", "D-24"],
     "Scenarios: G3-12, V-03": ["G3-12", "V-03"],
+    "Scenarios: G3-107, C-01 (three-digit ledger row)": ["C-01", "G3-107"],
     "Scenarios: none": [],
     "**Scenarios:** None": [],
     "Scenarios: none (no new product behaviour)": [],
@@ -411,7 +568,7 @@ test("Scenarios lines: spec IDs or none, on every PR; requirement IDs and free t
   assert.equal(R.parseScenarios("no line").declared, false);
 });
 
-test("train: every member's scenarios must be in the train's own line (#650 dropped seven)", () => {
+test("train: a member scenario missing from the train's own line is reported (#650 dropped seven; advisory since D243)", () => {
   const docs = [file("docs/evidence.md")];
   const ref = (name) => ({ sha: H, ref: name, repo: { full_name: "modelplan/modelplan" } });
   const train = pr({ title: "Quota Widget train", body: "Ledger: none\nScenarios: D-01, V-02", head: ref("b/widget-train") });
@@ -419,14 +576,15 @@ test("train: every member's scenarios must be in the train's own line (#650 drop
   const trainPr = (members, p = train) => R.evaluatePr({ pr: p, items: R.feed(done), files: docs, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, members });
   assert.equal(trainPr([{ number: 1, body: "Scenarios: D-01" }, { number: 2, body: "Scenarios: none" }, { number: 3, body: "no line" }]).state, R.SUCCESS);
   const short = trainPr([{ number: 519, body: "Scenarios: R-08, V-02" }, { number: 518, body: "Scenarios: S-01" }]);
-  assert.equal(short.state, R.FAILURE);
+  assert.equal(short.state, R.SUCCESS);
   assert.match(short.why, /#519: R-08/);
   assert.match(short.why, /#518: S-01/);
   const bad = trainPr([{ number: 626, body: "Scenarios: SET-9 Quota Widget controls" }]);
-  assert.equal(bad.state, R.FAILURE, "an unreadable member line cannot be proved a subset");
+  assert.equal(bad.state, R.SUCCESS);
+  assert.match(bad.why, /info: .*train Scenarios/, "an unreadable member line cannot be proved a subset");
   assert.match(bad.why, /#626/);
   const none = pr({ title: "Train", body: "Scenarios: none", head: ref("b/x") });
-  assert.equal(trainPr([{ number: 7, body: "Scenarios: D-01" }], none).state, R.FAILURE);
+  assert.equal(advisory(trainPr([{ number: 7, body: "Scenarios: D-01" }], none)), R.PENDING);
 
   assert.ok(R.isTrain(train));
   assert.ok(R.isTrain(pr({ title: "Build 9 TRAIN", body: "" })));
@@ -453,6 +611,8 @@ test("merge-group evaluation: the group's own CI replaces any stale-base rule", 
   const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, ...o });
   const qci = greenQueue;
   assert.ok(R.QUEUE_WORKFLOWS.includes(".github/workflows/desktop.yml"), "the queue must test the Mac build class");
+  assert.deepEqual([...R.QUEUE_WORKFLOWS].sort(), [".github/workflows/ci.yml", ".github/workflows/desktop.yml", ".github/workflows/official-visuals.yml",
+    ".github/workflows/transport-fuzz.yml", ".github/workflows/u11-cockpit.yml", ".github/workflows/u11a-aggregate.yml", ".github/workflows/u14-harness.yml"], "queue membership is pinned");
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: qci }).state, R.SUCCESS);
   assert.equal(R.evaluateGroup({ steps: [], queueRuns: qci }).state, R.FAILURE);
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [] }).state, R.PENDING, "queue CI not started yet");
@@ -595,6 +755,25 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
   for (const p of prPathList) assert.match(p.replace(/\*\*$/, "x"), scope, `queue-scope misses ${p}`);
   assert.doesNotMatch("docs/mac-ci.md", scope);
   assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: queue-scope/);
+  // D112: every other queue workflow is Linux-only and decides with its own pull_request path list.
+  for (const path of R.QUEUE_WORKFLOWS.filter((p) => !/\/(ci|desktop)\.yml$/.test(p))) {
+    const text = readFileSync(join(root, path), "utf8");
+    assert.doesNotMatch(text, /macos|trusted-mac\.yml/i, `${path}: no Mac time in the merge queue`);
+    const block = /^  pull_request:\n    paths:\n((?:      - .*\n)+)/m.exec(text);
+    assert.ok(block, `${path}: pull_request paths list`);
+    const list = block[1].trim().split("\n").map((l) => l.replace(/^\s*- /, "").replace(/^['"]|['"]$/g, ""));
+    const re = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(text)[1]);
+    for (const p of list) assert.match(p.replace(/\*\*$/, "x"), re, `${path}: queue-scope misses ${p}`);
+    assert.doesNotMatch("docs/unrelated.md", re, `${path}: queue-scope is too wide`);
+    const jobs = text.slice(text.indexOf("\njobs:\n"));
+    const names = [...jobs.matchAll(/^  ([a-z0-9-]+):\n/gm)].map((m) => m[1]);
+    assert.ok(names.includes("queue-scope") && names.length >= 2, `${path}: queue-scope plus the checked job(s)`);
+    for (const job of names.filter((n) => n !== "queue-scope")) {
+      const body = new RegExp(`^  ${job}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(jobs)[1];
+      assert.match(body, /needs: queue-scope/, `${path}: ${job} must wait for queue-scope`);
+      assert.match(body, /needs\.queue-scope\.outputs\.run == 'true'/, `${path}: ${job} must follow queue-scope`);
+    }
+  }
   const probe = readFileSync(join(root, ".github/workflows/merge-gates-probe.yml"), "utf8");
   assert.match(probe, /pull_request:\s*\n\s*types:\s*\[[^\]]*\bedited\b/, "PR title/body edits must re-evaluate evidence");
   const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
@@ -665,9 +844,10 @@ test("data-sync: the run is bound to the PR (parent = run head, PR opened during
   assert.equal(evalSync({ files: Array.from({ length: R.FILE_LIST_LIMIT - 1 }, (_, i) => file(`data/f${i}.json`)) }).state, R.SUCCESS);
 });
 
-test("data-sync: a failing run or status on the head still fails; a block still blocks", () => {
+test("data-sync: a failing run or status on the head still fails; a GPT block still blocks", () => {
   assert.equal(evalSync({ runs: [...syncChecks(), run(".github/workflows/u6-engine-store-core.yml", "failure", 9, "completed", { head_branch: `data/sync-0.5.21-${RUN_ID}`, pull_requests: [] })] }).state, R.FAILURE);
-  assert.equal(evalSync({ comments: [comment(v("merge", H, "")), comment(v("block", H, "glm"))] }).state, R.FAILURE);
+  assert.equal(evalSync({ comments: [comment(v("merge", H, "")), comment(v("block", H, "macrevc"))] }).state, R.FAILURE);
+  assert.equal(evalSync({ comments: [comment(v("merge", H, "")), comment(v("block", H, "glm"))] }).state, R.SUCCESS, "D243: a GLM block is input");
 });
 
 test("data-sync: a file outside data/ fails, including a rename from outside", () => {

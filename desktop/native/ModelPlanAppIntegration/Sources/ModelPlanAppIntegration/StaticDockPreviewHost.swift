@@ -11,6 +11,7 @@ import ModelPlanInstruments
 import ModelPlanOfficialDock
 import ModelPlanDockResources
 import ModelPlanCommunityHost
+import ModelPlanEngineClient
 
 /// Geometry returned by an injected appearance, already scaled in view-local points.
 struct DockHoverStation {
@@ -132,8 +133,10 @@ public struct StaticDockGeometry {
         let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
         addTrackingArea(area); hoverArea = area
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true; updatePose() }
-    override func mouseExited(with event: NSEvent) { hovered = false; updatePose() }
+    // G3-62: the key is its own view, so the widget's pointer tracking never sees the pointer leave it; without
+    // this the key's tip stayed up after the pointer had gone.
+    override func mouseEntered(with event: NSEvent) { hovered = true; updatePose(); onHelpFocusChanged?() }
+    override func mouseExited(with event: NSEvent) { hovered = false; updatePose(); onHelpFocusChanged?() }
     override func highlight(_ flag: Bool) { super.highlight(flag); pressed = flag; updatePose() }
 
     private var canPresentHelp: Bool { isEnabled && !isHiddenOrHasHiddenAncestor && !bounds.isEmpty }
@@ -198,6 +201,15 @@ struct DockHelpInteraction: Equatable {
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
+    /// D204 (G3-94): the ignition's own press, with the screen point it came from. Nil falls back to `showConsole`.
+    public var pressIgnition: ((CGPoint) -> Void)?
+    /// D204 (G3-94): the ignition's frame on screen while it is on the widget; the cockpit does not treat a press there
+    /// as an outside click.
+    public var ignitionScreenFrame: CGRect? {
+        guard !consoleButton.isHiddenOrHasHiddenAncestor, let window = consoleButton.window,
+              consoleButton.bounds.width > 0, consoleButton.bounds.height > 0 else { return nil }
+        return window.convertToScreen(consoleButton.convert(consoleButton.bounds, to: nil))
+    }
     private func installIgnitionArt() {
         let side = dockView.presentedSkinForChecks?.fixedLayers.first { $0.resource.contains("recessed-guard") }?.rect.width ?? 0
         consoleButton.installArt(side > 0 ? T2IgnitionArt.shared : nil, guardSide: side)
@@ -216,12 +228,12 @@ struct DockHelpInteraction: Equatable {
         }
     }
     public var showSettings: (() -> Void)?
+    /// Widget context menu "Reset Position"; the app host supplies it.
+    public var resetPosition: (() -> Void)?
     var openCardSourceURL: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
     /// G3-28: the widget menu's Auto-Collapse item. The app writes the same stored setting
     /// as Settings' auto-collapse switch; without an app the preview applies nothing.
     public var requestAutoCollapse: ((Bool) -> Void)?
-    /// G3-22: shown as the first, disabled line of the widget menu (the status icon may be hidden).
-    public var statusIconNotice: SettingsText?
     /// Set only when the member-scoped refresh adapter is actually installed.
     public var ringRefreshAvailable = false
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
@@ -277,29 +289,59 @@ struct DockHelpInteraction: Equatable {
     }
     /// Where the expanded widget is on screen now, and the whole display it is on; nil while it
     /// is collapsed, hidden or withdrawn. The hull comes from the registered outline, not the panel.
-    var spotlightTarget: QuotaWidgetSpotlightTarget? {
+    var spotlightTarget: QuotaWidgetSpotlightTarget? { spotlightGeometry()?.target }
+
+    /// Frame and display only (cheap, polled every tick), plus how to read the widget view's pixels.
+    private struct SpotlightGeometry {
+        let target: QuotaWidgetSpotlightTarget
+        let view: DockInstrumentView
+        /// Global screen point to the view's own coordinates.
+        let toLocal: (CGPoint) -> CGPoint
+    }
+    private func spotlightGeometry() -> SpotlightGeometry? {
         guard permitted, !retired, !retiring, preferences.showDock, let presentation = edge.presentation,
               presentation.state == .expanded, let frame = presentation.paintedFrame,
               let placement = presentation.placement,
               !createsNativePanels || panel?.isVisible == true,
               let display = topology(of: sampleEnvironment()).display(placement.displayID) else { return nil }
         var widget = frame
-        do {
-            let view = edgeViews[placement.edge] ?? dockView
-            let local = view.registeredMoveOutlinePath?.boundingBox ?? view.bounds
-            let global: CGRect
-            if createsNativePanels, let window = view.window, window === panel {
-                global = window.convertToScreen(view.convert(local, to: nil))
-            } else {
-                // Detached checks: the view sits at the container origin, which fills the painted frame.
-                let y = view.isFlipped ? view.bounds.height - local.maxY : local.minY
-                global = CGRect(x: frame.minX + view.frame.minX + local.minX, y: frame.minY + view.frame.minY + y,
-                                width: local.width, height: local.height)
+        let view = edgeViews[placement.edge] ?? dockView
+        let local = view.registeredMoveOutlinePath?.boundingBox ?? view.bounds
+        let global: CGRect
+        let toLocal: (CGPoint) -> CGPoint
+        if createsNativePanels, let window = view.window, window === panel {
+            global = window.convertToScreen(view.convert(local, to: nil))
+            toLocal = { view.convert(window.convertFromScreen(CGRect(origin: $0, size: .zero)).origin, from: nil) }
+        } else {
+            // Detached checks: the view sits at the container origin, which fills the painted frame.
+            let y = view.isFlipped ? view.bounds.height - local.maxY : local.minY
+            global = CGRect(x: frame.minX + view.frame.minX + local.minX, y: frame.minY + view.frame.minY + y,
+                            width: local.width, height: local.height)
+            toLocal = { (point: CGPoint) -> CGPoint in
+                let x = point.x - frame.minX - view.frame.minX
+                let up = point.y - frame.minY - view.frame.minY
+                return CGPoint(x: x, y: view.isFlipped ? view.bounds.height - up : up)
             }
-            let clipped = global.intersection(frame)
-            if !clipped.isNull, !clipped.isEmpty { widget = clipped }
         }
-        return .init(widget: widget, display: display.frame, displayID: placement.displayID)
+        let clipped = global.intersection(frame)
+        if !clipped.isNull, !clipped.isEmpty { widget = clipped }
+        return SpotlightGeometry(target: .init(widget: widget, display: display.frame, displayID: placement.displayID),
+                                 view: view, toLocal: toLocal)
+    }
+
+    private struct SilhouetteKey: Equatable { let widget: CGRect, displayID: String, view: ObjectIdentifier }
+    private var silhouetteCache: (key: SilhouetteKey, at: Date, value: QuotaWidgetSilhouette?)?
+    /// The widget's real drawn outline (painted pixels), sampled once for the target that is presented. The
+    /// result is kept briefly per geometry so a repeated call for the same target costs nothing. nil: the widget
+    /// is not there, nothing (or everything) is painted; the overlay then draws a padded rounded rectangle.
+    func spotlightSilhouette(for target: QuotaWidgetSpotlightTarget) -> QuotaWidgetSilhouette? {
+        guard let geometry = spotlightGeometry() else { return nil }
+        let key = SilhouetteKey(widget: target.widget, displayID: target.displayID, view: ObjectIdentifier(geometry.view))
+        if let cached = silhouetteCache, cached.key == key, Date().timeIntervalSince(cached.at) < 2 { return cached.value }
+        let view = geometry.view, toLocal = geometry.toLocal
+        let value = QuotaWidgetSilhouette(frame: target.widget) { (point: CGPoint) -> Bool in view.isPainted(atLocal: toLocal(point)) }
+        silhouetteCache = (key, Date(), value)
+        return value
     }
     /// Presentation is allowed by the lifecycle, so a Show request can make the widget visible now.
     var canPresentForHelp: Bool { permitted && !retired && !retiring }
@@ -663,12 +705,11 @@ struct DockHelpInteraction: Equatable {
             switch preferences.magnification {
             case .none: continue
             case .subtle:
-                // G3-29: like the prototype, the hovered ring grows outward (away from the screen
-                // edge, along the station's inward normal), never toward the readout below it.
+                // G3-74 (owner, deviation from DOCK-3.8-01a): the hovered ring grows concentrically,
+                // the hovered ring alone grows 1.15x about its own centre with no travel; the label stays put.
                 guard member == id else { continue }
-                let length = hypot(station.inward.dx, station.inward.dy)
                 scale = 1.15
-                offset = length > 0 ? CGPoint(x: 6 * station.inward.dx / length, y: 6 * station.inward.dy / length) : .zero
+                offset = .zero
             case .strong:
                 guard station.pitch > 0, let anchor = displayed.interactionAnchor(member) else { continue }
                 let centre = horizontal ? anchor.midX : anchor.midY
@@ -682,6 +723,9 @@ struct DockHelpInteraction: Equatable {
         }
         displayed.setNozzlePoses(poses)
     }
+
+    /// G3-98: a failed or never-started refresh releases the hidden number (a landed result does it in the view).
+    func resolveRefreshReadout(_ id: String) { interactionView.resolveRefreshReadout(id) }
 
     @discardableResult func sweepRefresh(_ id: String) -> Bool {
         guard permitted, !retired, preferences.showDock,
@@ -962,7 +1006,7 @@ struct DockHelpInteraction: Equatable {
         self.prepareDetachedAlternateAppearances = prepareDetachedAlternateAppearances
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
-        consoleButton.target = self; consoleButton.action = #selector(openConsole)
+        consoleButton.target = self; consoleButton.action = #selector(ignitionPressed)
         consoleButton.setAccessibilityIdentifier("dock.ignition")
         consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
@@ -1028,6 +1072,7 @@ struct DockHelpInteraction: Equatable {
             self.rebuildPass(self.inputGeneration, carriedTo: display)
         }
         edge.onDragCancelled = { [weak self] in self?.rebuild() }
+        edge.onDiagnostic = { DiagnosticsLog.shared.info("dock", $0) }
         edge.onCommittedPlacement = { [weak self] value in
             guard let self, let next = SettingsDockEdge(rawValue: String(describing: value.edge)) else { return }
             if let id = value.displayID, let commit = self.commitDisplayPlacement {
@@ -1121,7 +1166,9 @@ struct DockHelpInteraction: Equatable {
         menuNotice = nil; menuNoticeDidChange?(nil, false)
         if !keepCard { catalogueKey = ""; catalogueChanged?([]) }
         try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
-        for view in [dockView] + alternateViews { view.retireOfficialPresentation() }
+        // G3-98: a plain replacement keeps a ring click's hidden number so the landed value fades in (#906);
+        // a privacy withdrawal drops it with everything else.
+        for view in [dockView] + alternateViews { view.retireOfficialPresentation(keepingRefreshHolds: !privacy) }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
         return keepCard
@@ -1197,7 +1244,18 @@ struct DockHelpInteraction: Equatable {
     private func rebuild() {
         guard !retired, !retiring, application != nil else { return }
         rebuildPending = true
-        guard !rendering, !edge.isBackgroundPressed, !edge.isPublishingRelease else { return }
+        guard !rendering, !edge.isPublishingRelease else { return }
+        if edge.isBackgroundPressed {
+            // G3-113: a content replacement (the engine clears the admitted content, then reinstalls it) can land
+            // while the widget is held. The clear has already retired the rings, so waiting for the drop left the
+            // carried widget without them until the release. Repaint the held widget in place, as the carry's own
+            // preparation pass does; placement, menus and the card wait for the full pass after the drop (still pending).
+            guard let display = appearanceDisplay else { return }
+            rendering = true
+            defer { rendering = false; rebuildPending = true; bindInteractionInput(); interactionController?.refresh() }
+            rebuildPass(inputGeneration, carriedTo: display)
+            return
+        }
         rendering = true
         defer { rendering = false; bindInteractionInput(); interactionController?.refresh() }
         while rebuildPending, !retired {
@@ -1294,7 +1352,7 @@ struct DockHelpInteraction: Equatable {
             do {
                 let profile = RenderProfile(dark: true, scale: backingScale, reduceMotion: application?.effective.reduceMotion ?? true)
                 try driver.configure(view: dockView, readings: rows, profile: profile,
-                                     rotation: DockEffectRotation(period: 1), provider: { _ in provider })
+                                     rotation: .working, provider: { _ in provider })
             } catch { driver.stop(); lastWorkingEffectError = error }
         } else { workingDriver?.stop() }
         workingEffectsDidConfigureForChecks?()
@@ -1484,8 +1542,13 @@ struct DockHelpInteraction: Equatable {
         callback(observation.placement, observation.recovering)
     }
     private func bindBackgroundMovement(_ value: DockEdgePresentation) {
-        dockView.backgroundDragDelegate = nil
-        alternateViews.forEach { $0.backgroundDragDelegate = nil }
+        // A held carry keeps its handler on every view: a carry onto another edge swaps that edge's view in, but the
+        // pointer's drag and release still arrive at the view that took the press. Clearing it there stranded the
+        // held drag (no release, no later carry). The binding is exact again at the first present after the drop.
+        if !edge.isBackgroundPressed {
+            dockView.backgroundDragDelegate = nil
+            alternateViews.forEach { $0.backgroundDragDelegate = nil }
+        }
         edge.dragRegions = nil
         guard permitted, !retired, value.state == .expanded else { return }
         let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
@@ -1570,6 +1633,7 @@ struct DockHelpInteraction: Equatable {
             collapseGhost.play(snapshotOf: container, frame: panel.frame, level: panel.level, edge: motionEdge, reduceMotion: reduceMotion)
         } else if value.state == .expanded { collapseGhost.stop() }
         panel.level = value.moving ? .statusBar : .floating
+        let previousFrame = panel.frame
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = panelCollectionBehavior
         let content: NSView
@@ -1591,6 +1655,14 @@ struct DockHelpInteraction: Equatable {
         case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
+        // G3-114: an open card follows its ring when the widget moves (D244: a ring press-drag carries the whole
+        // widget), as prototype card.js re-places it from the ring as painted. Only now is the presented edge's view
+        // in the panel (macrevc-960-1: a carry onto another edge swaps it in above). While carrying, the edge's own
+        // refresh is idle, so re-place now; after a drop, re-place once the release's refresh has finished.
+        if value.state == .expanded, previousFrame != panel.frame {
+            if value.moving { refreshCardPlacement() }
+            else { Task { @MainActor [weak self] in self?.refreshCardPlacement() } }
+        }
         bindPointerInput(value, content: content)
         // Keep the AppKit tracking instance attached while the surface redraws.
         let contextualMenu = trackedDockMenu ?? menu()
@@ -1913,10 +1985,6 @@ struct DockHelpInteraction: Equatable {
         }
         let available = permitted && !lifecycleSuspended
         var items: [DockMenuPresentationItem] = []
-        if let statusIconNotice {
-            items.append(.init(title: statusIconNotice.value(preferences.language), accessibilityID: "dock.menu.notice"))
-            items.append(.init(title: nil))
-        }
         if lifecycleSuspended {
             items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
             items.append(.init(title: nil))
@@ -1930,6 +1998,10 @@ struct DockHelpInteraction: Equatable {
                            action: available && requestAutoCollapse != nil ? { [weak self] in self?.toggleAutoCollapseFromMenu(!autoCollapse) } : nil))
         items.append(.init(title: EngineRowsText.settings.value(preferences.language), accessibilityID: "dock.menu.settings",
                            action: available ? { [weak self] in self?.openSettings() } : nil))
+        if resetPosition != nil {
+            items.append(.init(title: EngineRowsText.resetPosition.value(preferences.language), accessibilityID: "dock.menu.resetPosition",
+                               action: available ? { [weak self] in self?.resetPosition?() } : nil))
+        }
         items.append(.init(title: nil))
         items.append(.init(title: quit, accessibilityID: "dock.menu.quit",
                            target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
@@ -2025,6 +2097,12 @@ struct DockHelpInteraction: Equatable {
         guard cockpitEntryEnabled, !retired else { return }
         try? attention.acknowledge(.cockpitOpening, signals: attentionSignals, at: currentDate())
         publishAttention()
+    }
+    /// D204 (G3-94): the ignition toggles an attached cockpit and brings a detached one to the front (the app decides).
+    @objc private func ignitionPressed() {
+        guard cockpitEntryEnabled, permitted, !retired else { return }
+        guard let pressIgnition else { openConsole(); return }
+        dismissCard(); pressIgnition(NSEvent.mouseLocation)
     }
     @objc private func openConsole() {
         guard cockpitEntryEnabled, permitted, !retired, let showConsole else { return }
@@ -2269,6 +2347,9 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
         edge.endBackgroundMove(global: globalPoint)
     }
     public var hasPanelControlCapture: Bool { interactionController?.hasCapture == true }
+    /// A carry is held (a body press, or a ring press past the click threshold, D244): the panel routes the rest of
+    /// the drag and its release here, whichever view took the press.
+    public var hasPanelCarry: Bool { permitted && !retired && edge.isBackgroundPressed }
 
     public func cancelPanelMove() {
         if hasPanelControlCapture { interactionController?.cancelNozzle() }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanCockpitWeb
 import ModelPlanDock
 import ModelPlanSettings
 
@@ -14,8 +15,17 @@ import ModelPlanSettings
     func requestClose()
     /// Called when `isShowing` may have changed without a call from the owner, such as the page's own close.
     var onShowingChanged: (() -> Void)? { get set }
+    /// D88: an open from the menu bar icon grows the cockpit out of the icon; every other entry fades.
+    func show(fromStatusItem: Bool)
+    /// D88: the open cockpit was detached from the menu bar icon (its pressed highlight is then off).
+    var isDetached: Bool { get }
+    /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
+    var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
 }
 public extension EngineRowsConsoleSurface {
+    func show(fromStatusItem: Bool) { show() }
+    var isDetached: Bool { false }
+    var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
     func applySettings(_ value: SettingsApplication) {}
     var isShowing: Bool { false }
     func requestClose() { hide() }
@@ -28,7 +38,7 @@ public extension EngineRowsConsoleSurface {
     init(composition: EngineDockMenuComposition) {
         self.composition = composition
         let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 420, height: 300), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = EngineRowsText.readingsTitle.value(composition.latestSettings?.effective.language ?? .english); window.isReleasedWhenClosed = false
+        window.title = EngineRowsText.readingsTitle.value(composition.latestSettings?.effective.language ?? .fallback); window.isReleasedWhenClosed = false
         super.init(window: window)
         content.orientation = .vertical; content.alignment = .leading; content.spacing = 10
         content.edgeInsets = .init(top: 16, left: 16, bottom: 16, right: 16)
@@ -37,7 +47,7 @@ public extension EngineRowsConsoleSurface {
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     func show() { render(); showWindow(nil); window?.makeKeyAndOrderFront(nil); NSApplication.shared.activate() }
     func render() {
-        let language = composition.latestSettings?.effective.language ?? .english
+        let language = composition.latestSettings?.effective.language ?? .fallback
         window?.title = EngineRowsText.readingsTitle.value(language)
         for view in content.arrangedSubviews { content.removeArrangedSubview(view); view.removeFromSuperview() }
         let value = composition.presentedContent

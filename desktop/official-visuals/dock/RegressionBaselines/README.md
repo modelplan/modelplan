@@ -19,3 +19,5 @@ MODELPLAN_S1_REGRESSION_BASELINES="$PWD/desktop/official-visuals/dock/Regression
 Negative control: replacing the community factory's official appearance with `nil` locally caused the check to exit 1 at `appearance: native-00.png`; the factory was then restored byte-for-byte and rebuilt. The complete local baseline run passed 36 Dock images and 27 flame poses with zero observed channel error. Hosted CI remains the cross-machine verification.
 
 The additional `native-empty-44-right.png` records the requested zero-readings scenario at the default 44pt right edge, rendered without a window from the pinned study's `?` placeholder. It is a new regression case rather than one of the original 36 owner-accepted captures. The normal-entry XCTest separately checks its accessible Settings action.
+
+G3-74 (owner, 2026-11-09) made the percentage digits 13×D/52 instead of 11×D/52. The 30 Dock captures that show digits were re-rendered from the CI actuals of the official-dock workflow (macos-15) at the G3-74 head; the six without digits (native-00, -01, -24, -25, -30, -31) stay the accepted pixels. The ledger row is the recorded approval D48 asks for.

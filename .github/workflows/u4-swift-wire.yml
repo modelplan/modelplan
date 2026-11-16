@@ -6,6 +6,7 @@ on:
       - cli/internal/appserver/wire/**
       - cli/internal/appserver/wireschema/**
       - cli/internal/rows/**
+      - cli/internal/resetevents/**
       - cli/internal/swiftwire/**
       - schema/app-cli/app-server.json
       - schema/app-cli/captures/**
@@ -17,6 +18,7 @@ on:
       - cli/internal/appserver/wire/**
       - cli/internal/appserver/wireschema/**
       - cli/internal/rows/**
+      - cli/internal/resetevents/**
       - cli/internal/swiftwire/**
       - schema/app-cli/app-server.json
       - schema/app-cli/captures/**
