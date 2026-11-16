@@ -544,6 +544,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         reply.envelope.storeEpoch == delivery.floor.storeEpoch,
         reply.envelope.consentGeneration == delivery.floor.generation
       {
+        cancelReadRetry()
         lastReply = (delivery, reply.envelope.data); readRetryAttempt = 0
         trace(presented ? "query.reply" : "warm.reply")
         if !presented { CockpitTimingLog.record("prewarm last-reply buildMs=\(warmBuiltAt.map { CockpitTimingLog.ms(since: $0) } ?? -1)") }
