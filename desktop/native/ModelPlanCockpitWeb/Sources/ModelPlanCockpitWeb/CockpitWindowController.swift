@@ -612,6 +612,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationShellState: CockpitShellState? { currentShell }
     public var verificationRootHeight: CGFloat? { layout?.rootHeight }
     public var verificationLayout: CockpitShellLayout? { layout }
+    /// AppKit finished the animated destination layout; observing it never changes the animation or its frame.
+    public var verificationLayoutAnimationCompleted: (() -> Void)?
     public var verificationDragRegion: NSView? { dragRegion }
     /// The drag's snap guide as last shown: its frame and whether it showed ready (solid line).
     public var verificationSnapGuide: (frame: CGRect, ready: Bool)? {
@@ -1501,10 +1503,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       (window as? CockpitPanel)?.pendingTopDrop = current.height - frame.height
     } else if animated {
       shutterMoving = false
-      NSAnimationContext.runAnimationGroup { context in
+      NSAnimationContext.runAnimationGroup({ context in
         context.duration = 0.25; context.timingFunction = CAMediaTimingFunction(name: .easeOut)
         window.animator().setFrame(frame, display: true)
-      }
+      }, completionHandler: {
+        #if MODELPLAN_TEST_ONLY_SPI
+        Task { @MainActor [weak self] in self?.verificationLayoutAnimationCompleted?() }
+        #endif
+      })
     } else { shutterMoving = false; window.setFrame(frame, display: true) }
     // CKP-SHELL-07 (owner D51): a scaled cockpit is the same page at a uniform WebKit page zoom, not a
     // scaled bitmap, so text is drawn at its final size and the page hit-tests its own controls.
