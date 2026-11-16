@@ -875,3 +875,85 @@ func TestRefreshBeginningInTheMiddleOfAKeyChangeDoesNotWriteTheOldReadingBack(t 
 		t.Fatal("the old key's reading was carried and written back by a refresh that began in the middle of the key change")
 	}
 }
+
+func TestGLMKeyChangeClearsReadingKeepsDetectedReference(t *testing.T) {
+	for _, change := range []string{"replace", "remove"} {
+		t.Run(change, func(t *testing.T) {
+			isolateHome(t)
+			ks := &keyServer{body: zaiOKBody}
+			useClient(t, ks.serve(t), "api.z.ai")
+			p := nativePaths(t)
+			t.Setenv("Z_AI_API_KEY", fakeOtherKey)
+			if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+				t.Fatal(err)
+			}
+			refreshWith(t, p, "zai")
+			before := loadNative(p.Cache).Providers[0]
+			if before.Status != "ok" || before.DetectedKeyRef == "" {
+				t.Fatalf("missing fixture: %+v", before)
+			}
+			var err error
+			if change == "replace" {
+				err = SetManualKey(p.Cache, "zai", "replacement-key", "global")
+			} else {
+				err = RemoveManualKey(p.Cache, "zai")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries := loadNative(p.Cache).Providers
+			if len(entries) != 1 || entries[0].DetectedKeyRef != before.DetectedKeyRef || entries[0].Status == "ok" || len(entries[0].Windows) != 0 || entries[0].SubscriptionRef != "" {
+				t.Fatalf("stale reading or missing detected reference: %+v", entries)
+			}
+			if change == "replace" && !ManualKeyOtherKeyFound(p.Cache, "zai") {
+				t.Fatal("lost other-key indication")
+			}
+		})
+	}
+}
+
+func TestGLMKeyChangeDuringRefreshKeepsDetectedReference(t *testing.T) {
+	isolateHome(t)
+	arrived, release := make(chan struct{}, 1), make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		arrived <- struct{}{}
+		<-release
+		w.Write([]byte(zaiOKBody))
+	}))
+	t.Cleanup(srv.Close)
+	useClient(t, srv, "api.z.ai")
+	p := nativePaths(t)
+	if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "zai", Backend: BackendNative, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	seed := &nativeSnap{SchemaVersion: 1, Providers: []codexbarEntry{{Provider: "zai", Status: "ok", DetectedKeyRef: "detected-ref"}}}
+	b, _ := json.Marshal(seed)
+	if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nativePath(p.Cache), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- RefreshNative(context.Background(), p, time.Now().Add(time.Hour)) }()
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("refresh did not start")
+	}
+	if err := SetManualKey(p.Cache, "zai", "replacement-key", "global"); err != nil {
+		close(release)
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	entries := loadNative(p.Cache).Providers
+	if len(entries) != 1 || entries[0].DetectedKeyRef != "detected-ref" || entries[0].Status == "ok" {
+		t.Fatalf("stale reading or lost reference: %+v", entries)
+	}
+}

@@ -251,11 +251,22 @@ func afterManualKeyChange(dir, provider string) error {
 	// The cached reading goes first and the generation is bumped after it, both inside the lock; RefreshNative takes its
 	// generation snapshot and reads the cache under the same lock, so it sees either the state before this change or the
 	// one after it, never a mix.
-	// Only OpenCode Go: GLM's cached entry also carries the detected-key reference the "another key was found" line is
-	// worked out from, so dropping it would hide that line; GLM keeps its entry (a separate follow-up if needed).
 	if provider == "opencodego" {
 		if _, err := os.Stat(nativePath(dir)); err == nil {
 			_ = filterCachedSource(nativePath(dir), "native.json", provider, false, nil)
+		}
+	}
+	if provider == "zai" {
+		if s := loadNative(dir); s != nil {
+			for i, e := range s.Providers {
+				if e.Provider == "zai" {
+					s.Providers[i] = glmReferenceOnly(e)
+				}
+			}
+			b, _ := json.MarshalIndent(s, "", "  ")
+			if err := writeAtomic(nativePath(dir), append(b, '\n')); err != nil {
+				return errors.New("manual key cache not written")
+			}
 		}
 	}
 	if manualKeyChangeHook != nil {
@@ -271,6 +282,10 @@ func afterManualKeyChange(dir, provider string) error {
 		return errors.New("manual key generation not written")
 	}
 	return nil
+}
+
+func glmReferenceOnly(e codexbarEntry) codexbarEntry {
+	return codexbarEntry{Provider: "zai", DetectedKeyRef: e.DetectedKeyRef}
 }
 
 // manualKeyChangeHook is a test seam: it runs inside the change, between the cache removal and the generation bump.
