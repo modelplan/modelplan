@@ -221,7 +221,7 @@ import ModelPlanWire
     try XCTUnwrap(rig.sent.last).1(.rejected)
     XCTAssertEqual(rig.failures, [])
     XCTAssertFalse(page.bridge.hasPendingDisplay, "No receipt is awaited for a refused display")
-    XCTAssertTrue(rig.lines.contains { $0.hasPrefix("page-reject-kept code=") }, rig.lines.joined(separator: "\n"))
+    XCTAssertTrue(rig.lines.contains { $0.hasPrefix("page-reject-kept kind=message code=none") }, rig.lines.joined(separator: "\n"))
     page.updateAppearance(.init(theme: .night, locale: .zhCN, profile: .full))
     XCTAssertEqual(type(try XCTUnwrap(rig.sent.last).0), "appearance", "Nothing holds the appearance back")
     var index = rig.sent.count - 1
@@ -282,6 +282,160 @@ import ModelPlanWire
     }
   }
 
+  /// Queue-pressure phase only: a held page call coalesces 10,000 attempted updates to bounded current work. This is
+  /// intentionally not the elapsed-time soak; the separate long-run test advances and services the fake scheduler.
+  func testTenThousandHeldSubmissionsStayBoundedAndOnlyLatestDisplayIsAccepted() throws {
+    let rig = Rig(); rig.timedDeadlines = true
+    let page = try renderedPage(rig)
+    let originalPage = ObjectIdentifier(page)
+    let data = try fixture(), ticket = try XCTUnwrap(page.queryTicket)
+    rig.sent.removeAll(keepingCapacity: true)
+
+    var key = true, peakOutstanding = page.verificationOutstanding, peakTimers = rig.healthTimers.count
+    var displaySubmissions = 0, ticks = 0, wakes = 0, visibilityEvents = 0
+    let verifiedBefore = rig.rendersVerified
+    for step in 0..<10_000 {
+      page.display(data, ticket: ticket); displaySubmissions += 1
+      if step.isMultiple(of: 2) { page.verificationFreshnessTick(.deadline); ticks += 1 }
+      if step.isMultiple(of: 3) { page.verificationWake(); wakes += 1 }
+      if step.isMultiple(of: 5) {
+        key.toggle()
+        page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: key))
+        visibilityEvents += 1
+      }
+      peakOutstanding = max(peakOutstanding, page.verificationOutstanding)
+      peakTimers = max(peakTimers, rig.healthTimers.count)
+      XCTAssertLessThanOrEqual(page.verificationOutstanding, 32, "The outbound work queue has a fixed capacity")
+      XCTAssertLessThanOrEqual(rig.healthTimers.count, 8, "Cancelled fake-clock callbacks do not accumulate")
+      XCTAssertFalse(page.bridge.disposed, "Event \(step) cannot dispose the responsive page")
+    }
+    XCTAssertEqual(displaySubmissions, 10_000, "This phase measures submissions, not accepted displays")
+    XCTAssertEqual(ticks, 5_000)
+    XCTAssertEqual(wakes, 3_334)
+    XCTAssertEqual(visibilityEvents, 2_000)
+    XCTAssertLessThanOrEqual(peakOutstanding, 4, "One active delivery plus latest display, tick and visibility")
+    XCTAssertLessThanOrEqual(peakTimers, 8)
+    XCTAssertEqual(rig.failures, [], "Healthy churn never requests a rebuild")
+    XCTAssertTrue(page.bridge.hasPendingDisplay, "The newest display is still pending behind the held call")
+
+    var nextSequence = 4
+    while !rig.sent.isEmpty {
+      let (raw, completed) = rig.sent.removeFirst()
+      let header = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+      let requestID = try XCTUnwrap((header["requestId"] as? String).flatMap(UUID.init(uuidString:)))
+      let messageType = try XCTUnwrap(header["type"] as? String)
+      completed(.accepted)
+      if messageType == "display", page.bridge.isCurrentDisplay(requestID) {
+        page.verificationReceive(try reply(raw, type: "rendered", sequence: nextSequence), source: source)
+        nextSequence += 1
+      } else if messageType == "tick", page.bridge.currentDeadlineTrigger == requestID {
+        page.verificationReceive(try reply(raw, type: "nextDeadline", sequence: nextSequence,
+                                          extra: ["deadlineUnixMs": NSNull()]), source: source)
+        nextSequence += 1
+      }
+    }
+    XCTAssertEqual(page.verificationOutstanding, 0)
+    XCTAssertFalse(page.bridge.hasPendingDisplay, "The coalesced latest display receives its bridge receipt")
+    XCTAssertEqual(rig.rendersVerified - verifiedBefore, 1, "Only the current coalesced display is verified as rendered")
+    XCTAssertEqual(rig.failures, [])
+    XCTAssertFalse(page.bridge.disposed)
+    XCTAssertEqual(ObjectIdentifier(page), originalPage, "No replacement controller/page was constructed")
+    page.discard()
+  }
+
+  /// Long-run phase: every display, tick, wake and visibility state is delivered and acknowledged while a fake
+  /// monotonic clock advances past ten minutes. One intentional 2 s backpressure interval fires the fake receipt timer,
+  /// receives a probe answer and then completes the held render; all later displays continue to be accepted.
+  func testFiveThousandAcceptedDisplaysAdvanceFakeTimeAndServiceProbeCallbacks() throws {
+    let rig = Rig(); rig.timedDeadlines = true
+    let page = try renderedPage(rig), data = try fixture(), ticket = try XCTUnwrap(page.queryTicket)
+    let verifiedBefore = rig.rendersVerified, originalPage = ObjectIdentifier(page)
+    rig.sent.removeAll(keepingCapacity: true)
+    page.verificationNoWindowClock = { rig.mono }
+
+    var nextSequence = 4, acceptedDisplays = 0, acceptedTicks = 0, acceptedVisibility = 0
+    var callbackErrors: [String] = [], holdNextDisplay = false
+    var held: (String, (CockpitDeliveryResult) -> Void)?
+    var peakOutstanding = page.verificationOutstanding, peakTimers = rig.healthTimers.count
+
+    func complete(_ raw: String, _ completion: @escaping (CockpitDeliveryResult) -> Void) {
+      do {
+        let header = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+        let requestID = try XCTUnwrap((header["requestId"] as? String).flatMap(UUID.init(uuidString:)))
+        let messageType = try XCTUnwrap(header["type"] as? String)
+        if messageType == "display", page.bridge.isCurrentDisplay(requestID) {
+          let before = rig.rendersVerified
+          page.verificationReceive(try reply(raw, type: "rendered", sequence: nextSequence), source: source)
+          nextSequence += 1
+          if rig.rendersVerified == before + 1 { acceptedDisplays += 1 }
+        } else if messageType == "tick", page.bridge.currentDeadlineTrigger == requestID {
+          page.verificationReceive(try reply(raw, type: "nextDeadline", sequence: nextSequence,
+                                             extra: ["deadlineUnixMs": NSNull()]), source: source)
+          nextSequence += 1
+          if page.bridge.currentDeadlineTrigger != requestID { acceptedTicks += 1 }
+        }
+        completion(.accepted)
+        if messageType == "visibility" { acceptedVisibility += 1 }
+      } catch {
+        callbackErrors.append(String(describing: error))
+        completion(.failed)
+      }
+    }
+
+    page.verificationNoWindowDelivery = { raw, completion in
+      if holdNextDisplay, self.type(raw) == "display" {
+        holdNextDisplay = false; held = (raw, completion); return
+      }
+      complete(raw, completion)
+    }
+
+    var key = true
+    let started = rig.mono
+    for step in 0..<5_000 {
+      rig.mono += 150
+      if step == 2_500 { holdNextDisplay = true }
+      page.display(data, ticket: ticket)
+      if step.isMultiple(of: 2) { page.verificationFreshnessTick(.deadline) }
+      if step.isMultiple(of: 3) { page.verificationWake() }
+      if step.isMultiple(of: 5) {
+        key.toggle()
+        page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: key))
+      }
+
+      if step == 2_500 {
+        XCTAssertNotNil(held, "The intentional backpressure phase must hold an actual display delivery")
+        rig.advance(to: rig.mono + CockpitPageHealth.delayedAfterMs)
+        XCTAssertTrue(page.readingDelayed, "A held render receipt crosses the delayed threshold on fake time")
+        XCTAssertEqual(rig.probes.count, 1, "The controller issues a probe for the delayed page")
+        rig.probes[0]("ready")
+        XCTAssertFalse(page.verificationHealth.isWaiting, "The fake probe answer restores responsiveness")
+        let (raw, completion) = try XCTUnwrap(held); held = nil
+        complete(raw, completion)
+        XCTAssertFalse(page.readingDelayed, "The rendered receipt clears the transient delay")
+      }
+
+      rig.advance(to: rig.mono)
+      peakOutstanding = max(peakOutstanding, page.verificationOutstanding)
+      peakTimers = max(peakTimers, rig.healthTimers.count)
+      XCTAssertLessThanOrEqual(page.verificationOutstanding, 32)
+      XCTAssertLessThanOrEqual(rig.healthTimers.count, 8, "Fake callbacks stay bounded across elapsed time")
+      XCTAssertEqual(rig.failures, [], "A page that responds to probes is never rebuilt")
+      XCTAssertFalse(page.bridge.disposed)
+    }
+
+    XCTAssertGreaterThanOrEqual(rig.mono - started, 600_000, "The fake scheduler spans more than ten minutes")
+    XCTAssertEqual(acceptedDisplays, 5_000, "Every long-run display received its current rendered receipt")
+    XCTAssertGreaterThan(acceptedTicks, 0)
+    XCTAssertGreaterThan(acceptedVisibility, 0)
+    XCTAssertEqual(rig.rendersVerified - verifiedBefore, 5_000)
+    XCTAssertEqual(callbackErrors, [])
+    XCTAssertEqual(rig.failures.filter { $0.recovery == .rebuild }.count, 0)
+    XCTAssertLessThanOrEqual(peakOutstanding, 4)
+    XCTAssertLessThanOrEqual(peakTimers, 8)
+    XCTAssertEqual(ObjectIdentifier(page), originalPage)
+    page.discard()
+  }
+
   /// macrev2-981-4: a page that stops answering while covered is probed once it is uncovered. The host's own window
   /// facts resume liveness accounting (a fresh grace period); the page's acknowledgement is not awaited for that, and
   /// the covered time does not count.
@@ -340,6 +494,132 @@ import ModelPlanWire
     page.verificationReceive(try reply(latest.0, type: "rendered", sequence: 9), source: source)
     XCTAssertEqual(rig.rendersVerified, 2)
     page.discard()
+  }
+
+  // MARK: recovery step 2b (and the #981 post-merge sampling P2s)
+
+  /// A shown page whose bootstrap has not reported ready (cold open, slow WebKit start): no query ticket yet.
+  private func unreadyPage(_ rig: Rig) throws -> CockpitWindowController {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-recovery-unready-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+    let html = Data("synthetic".utf8); try html.write(to: root.appendingPathComponent("index.html"))
+    let manifest = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "edition": "community", "interfaceOnly": true, "files": ["index.html": VerifiedCockpitBundle.digest(html)]])
+    try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
+    let bundle = try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
+    let page = CockpitWindowController(bundle: bundle, context: try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1),
+                                       appearance: .init(theme: .night, locale: .en, profile: .full))
+    page.verificationNoWindowClock = { 1_000 }
+    page.verificationNoWindowArm = { _, _ in {} }
+    page.verificationNoWindowDelivery = { raw, complete in rig.sent.append((raw, complete)) }
+    page.verificationMonotonicClock = { rig.mono }
+    page.verificationHealthArm = { delay, fire in
+      let id = rig.nextHealthTimer; rig.nextHealthTimer += 1
+      rig.healthTimers[id] = (due: rig.mono + delay, fire: fire)
+      return { rig.healthTimers[id] = nil }
+    }
+    page.verificationProbe = { answer in rig.probes.append(answer) }
+    page.onFailure = { rig.failures.append($0) }
+    page.verificationShowUnready()
+    XCTAssertNil(page.queryTicket)
+    return page
+  }
+
+  /// #981 sampling P2 (1): wake or unlock while an unready page's bootstrap is being probed. The grace restarts the
+  /// bootstrap check, so a page that never becomes ready is still recovered, 30 active seconds after it is late again.
+  func testWakeKeepsWatchingAPageThatNeverBecameReady() throws {
+    let rig = Rig(); let page = try unreadyPage(rig)
+    rig.advance(to: 3_000)
+    XCTAssertTrue(page.verificationHealth.isWaiting, "the bootstrap is late: probing")
+    rig.advance(to: 10_000)
+    page.verificationWake()
+    XCTAssertFalse(page.verificationHealth.isWaiting, "the wait that spanned the sleep starts over")
+    rig.advance(to: 12_000)
+    XCTAssertEqual(page.verificationHealth.waitingSince, 12_000, "and the bootstrap is watched again after the grace")
+    rig.advance(to: 41_999)
+    XCTAssertEqual(rig.failures, [])
+    rig.advance(to: 12_000 + 30_000 + CockpitPageHealth.probeTimeoutMs)
+    XCTAssertEqual(rig.failures, [.unresponsive], "a page that never becomes ready is recovered, not left blank")
+  }
+
+  /// #981 sampling P2 (3): an unready page that is minimised or covered accrues no liveness time; uncovered, it gets a
+  /// fresh grace period and its bootstrap is watched again.
+  func testAHiddenUnreadyPageAccruesNothing() throws {
+    let rig = Rig(); let page = try unreadyPage(rig)
+    page.verificationSetHostVisibility(.init(visible: true, occluded: true, key: false))
+    XCTAssertTrue(page.verificationHealth.paused, "covered before ready: nothing is accounted")
+    XCTAssertTrue(rig.healthTimers.isEmpty, "the bootstrap check waits for the page to be seen")
+    rig.advance(to: 3_600_000)
+    XCTAssertEqual(rig.failures, []); XCTAssertEqual(rig.probes.count, 0)
+    page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: true))
+    XCTAssertFalse(page.verificationHealth.paused)
+    rig.advance(to: 3_602_000)
+    XCTAssertTrue(page.verificationHealth.isWaiting, "uncovered and still not ready: probed again")
+    XCTAssertGreaterThanOrEqual(rig.probes.count, 1)
+    XCTAssertFalse(page.bridge.disposed); page.discard()
+  }
+
+  /// Step 2b: since #990 the page refuses a render, appearance, shell or tick exception without unloading, so those
+  /// refusals keep the page (kind `view`); only a page that unloaded itself is gone.
+  func testAViewExceptionRefusalKeepsThePageAndOnlyAnUnloadEndsIt() throws {
+    for (code, kind) in [("display.render", CockpitRecoveryPolicy.RejectionKind.view), ("data.schema", .data), ("display.quarantined", .data)] {
+      let rig = Rig(); let page = try renderedPage(rig)
+      page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+      page.verificationRejectCode = code
+      try XCTUnwrap(rig.sent.last).1(.rejected)
+      XCTAssertEqual(rig.failures, [], "\(code): the page is kept")
+      XCTAssertEqual(page.lastRejectionKind, kind)
+      XCTAssertTrue(rig.lines.contains { $0.hasPrefix("page-reject-kept kind=\(kind.rawValue) code=\(code)") }, rig.lines.joined(separator: "\n"))
+      XCTAssertFalse(page.bridge.disposed); page.discard()
+    }
+    let rig = Rig(); let page = try renderedPage(rig)
+    page.display(try fixture(), ticket: try XCTUnwrap(page.queryTicket))
+    page.verificationRejectCode = "recv.source"
+    try XCTUnwrap(rig.sent.last).1(.rejected)
+    XCTAssertEqual(rig.failures, [.pageAPIUnavailable], "a page that has ended is gone")
+  }
+
+  /// Step 2b: the controller probes with the correlated script for its own page (#990's state(pageId)).
+  func testTheHealthProbeIsCorrelatedWithThisPage() throws {
+    let rig = Rig(); let page = try renderedPage(rig)
+    XCTAssertEqual(page.probeScript, page.bridge.probeScript)
+    XCTAssertTrue(page.probeScript.contains("c.state('\(page.bridge.pageID.uuidString)')"))
+    page.discard()
+  }
+
+  /// macrevb-998-2: an unready page that answers one probe and then stops answering before its ready receipt is still
+  /// recovered; one that keeps answering is never rebuilt.
+  func testAnUnreadyPageThatAnsweredOnceIsStillWatched() throws {
+    for keepsAnswering in [false, true] {
+      let rig = Rig(); let page = try unreadyPage(rig)
+      if keepsAnswering { page.verificationProbe = { $0("loading") } }
+      rig.advance(to: 3_000)
+      if !keepsAnswering {
+        XCTAssertTrue(page.verificationHealth.isWaiting, "the bootstrap is late: probed")
+        try XCTUnwrap(rig.probes.first)("loading") // answered once, still not ready
+        XCTAssertFalse(page.verificationHealth.isWaiting)
+        XCTAssertFalse(rig.healthTimers.isEmpty, "the unfinished bootstrap is watched again")
+      }
+      rig.advance(to: 300_000)
+      if keepsAnswering {
+        XCTAssertEqual(rig.failures, [], "a page that keeps answering is never rebuilt")
+        XCTAssertFalse(page.bridge.disposed); page.discard()
+      } else {
+        XCTAssertEqual(rig.failures, [.unresponsive], "a page that stopped answering before ready is recovered")
+      }
+    }
+  }
+
+  /// macrevb-998-4: a tick refusal that is retried is typed too.
+  func testARetriedTickRefusalIsTyped() throws {
+    let rig = Rig(); let page = try renderedPage(rig)
+    page.verificationWake() // sends a tick
+    let tick = try XCTUnwrap(rig.sent.last); XCTAssertEqual(type(tick.0), "tick")
+    page.verificationRejectCode = "tick.documentHidden"
+    tick.1(.rejected)
+    XCTAssertEqual(page.lastRejectionKind, .state)
+    XCTAssertTrue(rig.lines.contains { $0 == "page-reject code=tick.documentHidden kind=state" }, rig.lines.joined(separator: "\n"))
+    XCTAssertEqual(rig.failures, []); page.discard()
   }
 }
 #endif

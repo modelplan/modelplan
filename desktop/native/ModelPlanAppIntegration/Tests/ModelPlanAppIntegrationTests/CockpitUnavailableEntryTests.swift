@@ -328,7 +328,7 @@ extension CommunityCockpitEntryTests {
             try await Self.untilTheConsoleOpenStepRan(coordinator,surface)
             coordinator.onOpened?()                          // the cockpit is up
             coordinator.onUnavailable?(.query("timeout"))     // a query on it fails ...
-            if recovers { coordinator.onDisplayed?() }        // ... and the next one shows fresh data
+            if recovers { coordinator.onRenderVerified?() }   // ... and the next one shows fresh data
             try await Task.sleep(for:.milliseconds(900))
             XCTAssertEqual(notices.count,recovers ? 0 : 1,recovers ? "Fresh data on the same page is a recovery: no notice" : "A query failure that lasts is announced")
             XCTAssertTrue(surface.wantsVisible,"the cockpit stays up either way")

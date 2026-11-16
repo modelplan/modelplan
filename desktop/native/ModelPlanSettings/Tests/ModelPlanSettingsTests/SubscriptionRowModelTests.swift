@@ -146,4 +146,22 @@ final class RowFixTableTests: XCTestCase {
         XCTAssertNil(ReaderCauseTable.rowEntry(code: "surprise"))
         XCTAssertEqual(try XCTUnwrap(ReaderCauseTable.entry(code: "runtime_missing")).target, .guidance)
     }
+
+    func testEveryFixedReaderFailureHasAReasonAndFix() throws {
+        let codes = ["file_missing", "file_unreadable", "parse_error", "schema_changed", "http_401", "http_403",
+                     "http_429", "http_5xx", "network", "timeout", "runtime_missing", "unsupported_login",
+                     "not_signed_in", "not_found", "rpc_error", "closed", "no_key", "region_refused",
+                     "codex_custom_provider", "team_unsupported", "no_plan", "other"]
+
+        for code in codes {
+            let fix = try XCTUnwrap(ReaderCauseTable.rowEntry(code: code, tool: "codex", toolName: "Codex"), code)
+            XCTAssertFalse(fix.reason.english.isEmpty, code)
+            XCTAssertFalse(fix.reason.chinese.isEmpty, code)
+            XCTAssertFalse(fix.action.english.isEmpty, code)
+            XCTAssertFalse(fix.action.chinese.isEmpty, code)
+        }
+        let runtime = try XCTUnwrap(ReaderCauseTable.rowEntry(code: "runtime_missing", tool: "codex"))
+        XCTAssertFalse(runtime.reason.chinese.contains("Node.js"))
+        XCTAssertFalse(runtime.action.chinese.contains("Node.js"))
+    }
 }

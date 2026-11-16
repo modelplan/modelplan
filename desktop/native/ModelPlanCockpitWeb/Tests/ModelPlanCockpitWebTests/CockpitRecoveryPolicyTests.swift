@@ -96,6 +96,31 @@ final class CockpitRecoveryPolicyTests: XCTestCase {
     XCTAssertEqual(budget.attempts, [10_000, 600_000])
   }
 
+  func testTenThousandFailuresNeverScheduleMoreThanTwoRebuildsInTheRollingWindow() {
+    var budget = CockpitRebuildBudget()
+    var now: UInt64 = 0
+    var scheduled = 0, cooldowns = 0
+    // This oracle records returned rebuild decisions; it never reads `budget.attempts`.
+    var observedRebuildTimes: [UInt64] = []
+    for _ in 0..<10_000 {
+      switch budget.pageFailed(at: now) {
+      case .rebuild(let delay, let attempt):
+        XCTAssertEqual(delay, attempt == 1 ? 1_000 : 4_000, "Rebuild delays stay on the approved schedule")
+        XCTAssertTrue((1...2).contains(attempt))
+        scheduled += 1; observedRebuildTimes.append(now)
+      case .cooldown(let probeAfter):
+        XCTAssertEqual(probeAfter, 60_000, "An exhausted window waits before its automatic probe")
+        cooldowns += 1
+      }
+      observedRebuildTimes.removeAll { $0 > now || now - $0 >= 600_000 }
+      XCTAssertLessThanOrEqual(observedRebuildTimes.count, 2,
+                               "The test's independent timeline permits at most two rebuilds per rolling ten minutes")
+      now += 1_000
+    }
+    XCTAssertGreaterThan(scheduled, 2, "The rolling budget recovers after old attempts expire")
+    XCTAssertGreaterThan(cooldowns, 0, "A full rolling window must actually return cooldown")
+  }
+
   func testOnlySustainedVerifiedHealthResetsTheBudget() {
     for (healthy, expected) in [(119_999 as UInt64, CockpitRebuildBudget.Decision.cooldown(probeAfterMs: 60_000)),
                                 (120_000, .rebuild(afterMs: 1_000, attempt: 1))] {
@@ -123,14 +148,45 @@ final class CockpitRecoveryPolicyTests: XCTestCase {
   }
 
   func testARefusalNeverMakesALivePageDead() {
-    for code in ["data.schema", "data.rowDuplicate", "tick.documentHidden", "tick.noDisplay", "recv.sequence", "display.notReady", "none"] {
+    // Step 2b: since #990 bridge.ts refuses render, appearance, shell and tick exceptions without unloading.
+    for code in ["data.schema", "data.rowDuplicate", "display.quarantined", "display.render", "appearance.view", "shell.view", "tick.view",
+                 "tick.documentHidden", "tick.noDisplay", "recv.sequence", "display.notReady", "none"] {
       XCTAssertEqual(CockpitRecoveryPolicy.rejection(code: code, clear: false, bootstrap: false), .kept, code)
     }
-    for code in ["display.render", "appearance.view", "shell.view", "tick.view", "load.view", "clear.retired", "recv.source"] {
+    for code in ["load.view", "clear.retired", "recv.source"] {
       XCTAssertEqual(CockpitRecoveryPolicy.rejection(code: code, clear: false, bootstrap: false), .pageGone, "\(code) unloads the page")
     }
     XCTAssertEqual(CockpitRecoveryPolicy.rejection(code: "data.schema", clear: true, bootstrap: false), .privacy)
     XCTAssertEqual(CockpitRecoveryPolicy.rejection(code: "none", clear: false, bootstrap: true), .pageGone)
+  }
+
+  func testRejectionKinds() {
+    let expected: [String: CockpitRecoveryPolicy.RejectionKind] = [
+      "data.schema": .data, "data.rowAccounts": .data, "display.quarantined": .data,
+      "display.render": .view, "appearance.view": .view, "shell.view": .view, "tick.view": .view,
+      "recv.sequence": .state, "recv.context": .state, "tick.documentHidden": .state, "display.notReady": .state, "clear.barrier": .state,
+      "msg.size": .message, "display.keys": .message, "none": .message,
+      "load.view": .gone, "clear.retired": .gone, "recv.source": .gone,
+    ]
+    for (code, kind) in expected { XCTAssertEqual(CockpitRecoveryPolicy.rejectionKind(code: code), kind, code) }
+  }
+
+  /// #981 sampling P2: health ends with the page that earned it. A page that rendered, then closed, cannot hand its
+  /// health to a replacement that fails before rendering; a closing page with sustained health resets at its close.
+  func testAClosedPagesHealthDoesNotResetTheNextPagesBudget() {
+    var budget = CockpitRebuildBudget()
+    _ = budget.pageFailed(at: 0); _ = budget.pageFailed(at: 5_000)
+    budget.rendered(at: 10_000)
+    budget.pageRetired(at: 20_000) // closed after 10 s of health
+    XCTAssertNil(budget.healthySince)
+    XCTAssertEqual(budget.pageFailed(at: 150_000), .cooldown(probeAfterMs: 60_000),
+                   "the replacement failed before rendering: the spent attempts stand")
+    var earned = CockpitRebuildBudget()
+    _ = earned.pageFailed(at: 0); _ = earned.pageFailed(at: 5_000)
+    earned.rendered(at: 10_000)
+    earned.pageRetired(at: 130_000) // closed after 120 s of verified health
+    XCTAssertEqual(earned.attempts, [], "sustained health of the closing page resets the attempts")
+    XCTAssertEqual(earned.pageFailed(at: 140_000), .rebuild(afterMs: 1_000, attempt: 1))
   }
 
   func testProbeReplies() {
@@ -142,5 +198,6 @@ final class CockpitRecoveryPolicyTests: XCTestCase {
     XCTAssertEqual(CockpitRecoveryPolicy.probeOutcome("missing", pageReady: false), .unanswered, "Still loading: not an answer, not a death")
     XCTAssertEqual(CockpitRecoveryPolicy.probeOutcome(nil, pageReady: true), .unanswered)
     XCTAssertEqual(CockpitRecoveryPolicy.probeOutcome("something-else", pageReady: true), .unanswered)
+    XCTAssertEqual(CockpitRecoveryPolicy.probeOutcome("mismatch", pageReady: true), .unanswered, "another page never answers for this one")
   }
 }
