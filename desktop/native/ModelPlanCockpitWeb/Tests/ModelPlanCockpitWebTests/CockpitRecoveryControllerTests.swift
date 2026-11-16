@@ -221,7 +221,7 @@ import ModelPlanWire
     try XCTUnwrap(rig.sent.last).1(.rejected)
     XCTAssertEqual(rig.failures, [])
     XCTAssertFalse(page.bridge.hasPendingDisplay, "No receipt is awaited for a refused display")
-    XCTAssertTrue(rig.lines.contains { $0.hasPrefix("page-reject-kept code=") }, rig.lines.joined(separator: "\n"))
+    XCTAssertTrue(rig.lines.contains { $0.hasPrefix("page-reject-kept kind=message code=none") }, rig.lines.joined(separator: "\n"))
     page.updateAppearance(.init(theme: .night, locale: .zhCN, profile: .full))
     XCTAssertEqual(type(try XCTUnwrap(rig.sent.last).0), "appearance", "Nothing holds the appearance back")
     var index = rig.sent.count - 1
@@ -431,6 +431,41 @@ import ModelPlanWire
     XCTAssertEqual(page.probeScript, page.bridge.probeScript)
     XCTAssertTrue(page.probeScript.contains("c.state('\(page.bridge.pageID.uuidString)')"))
     page.discard()
+  }
+
+  /// macrevb-998-2: an unready page that answers one probe and then stops answering before its ready receipt is still
+  /// recovered; one that keeps answering is never rebuilt.
+  func testAnUnreadyPageThatAnsweredOnceIsStillWatched() throws {
+    for keepsAnswering in [false, true] {
+      let rig = Rig(); let page = try unreadyPage(rig)
+      if keepsAnswering { page.verificationProbe = { $0("loading") } }
+      rig.advance(to: 3_000)
+      if !keepsAnswering {
+        XCTAssertTrue(page.verificationHealth.isWaiting, "the bootstrap is late: probed")
+        try XCTUnwrap(rig.probes.first)("loading") // answered once, still not ready
+        XCTAssertFalse(page.verificationHealth.isWaiting)
+        XCTAssertFalse(rig.healthTimers.isEmpty, "the unfinished bootstrap is watched again")
+      }
+      rig.advance(to: 300_000)
+      if keepsAnswering {
+        XCTAssertEqual(rig.failures, [], "a page that keeps answering is never rebuilt")
+        XCTAssertFalse(page.bridge.disposed); page.discard()
+      } else {
+        XCTAssertEqual(rig.failures, [.unresponsive], "a page that stopped answering before ready is recovered")
+      }
+    }
+  }
+
+  /// macrevb-998-4: a tick refusal that is retried is typed too.
+  func testARetriedTickRefusalIsTyped() throws {
+    let rig = Rig(); let page = try renderedPage(rig)
+    page.verificationWake() // sends a tick
+    let tick = try XCTUnwrap(rig.sent.last); XCTAssertEqual(type(tick.0), "tick")
+    page.verificationRejectCode = "tick.documentHidden"
+    tick.1(.rejected)
+    XCTAssertEqual(page.lastRejectionKind, .state)
+    XCTAssertTrue(rig.lines.contains { $0 == "page-reject code=tick.documentHidden kind=state" }, rig.lines.joined(separator: "\n"))
+    XCTAssertEqual(rig.failures, []); page.discard()
   }
 }
 #endif
