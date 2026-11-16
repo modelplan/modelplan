@@ -65,7 +65,18 @@ private actor LifecycleEngine: EngineClient {
     }
     func publishOld() async throws { if let first { try await publish(first) } }
     func publishFresh() async throws { if let current { try await publish(current) } }
+    /// macrev2-999-1: holds the next rows subscription until released, as a slow first subscription does.
+    private var holdSubscribe = false, subscribeHeld = false
+    private var subscribeGate: CheckedContinuation<Void, Never>?
+    func holdNextSubscribe() { holdSubscribe = true }
+    func isSubscribeHeld() -> Bool { subscribeHeld }
+    func releaseSubscribe() { subscribeGate?.resume(); subscribeGate = nil }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion {
+        if holdSubscribe {
+            holdSubscribe = false; subscribeHeld = true
+            await withCheckedContinuation { subscribeGate = $0 }
+            subscribeHeld = false
+        }
         if starts == 1, let current { try await publish(current) }
         return .init(requestID: .string("synthetic-subscribe-\(starts)"))
     }
@@ -177,6 +188,25 @@ private actor LifecycleEngine: EngineClient {
         await until({ !app.lifecyclePaused }, "the supervisor's fresh session restores the readings")
         let counts = await engine.counts(); XCTAssertEqual(counts.0, 1, "adopted, not started again")
         XCTAssertEqual(app.composition.store.snapshot.delivery?.sessionID, "synthetic-1")
+        await app.stopLifecycle()
+    }
+    /// macrev2-999-1: session A's start is still awaiting its subscription when A fails and the supervisor's replacement
+    /// B becomes ready. The ready event arrives while the start is in flight, so it is not adopted then; once A's attempt
+    /// finishes, the lifecycle reconciles with the supervisor's current session and B's readings are published.
+    func testASessionThatBecomesReadyDuringTheStartIsReconciledWhenTheStartFinishes() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-ready-during-start-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (app, engine) = try await supervisedApp(root, rows: try rowsFixture())
+        await engine.holdNextSubscribe()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        for _ in 0..<20_000 { if await engine.isSubscribeHeld() { break }; await Task.yield() }
+        let held = await engine.isSubscribeHeld(); XCTAssertTrue(held, "A's subscription is held")
+        try await engine.supervisorRestart() // A fails; B becomes ready and publishes its rows while A's start is in flight
+        for _ in 0..<200 { await Task.yield() }
+        XCTAssertTrue(app.lifecyclePaused, "B is not adopted while A's start is still in flight")
+        await engine.releaseSubscribe()
+        await until({ !app.lifecyclePaused }, "once A's attempt finishes, B's readings are published")
+        XCTAssertEqual(app.composition.store.snapshot.delivery?.sessionID, "synthetic-2")
         await app.stopLifecycle()
     }
     /// Recovery step 6: a crash while awake (crash limit, cooldown, half-open attempt) ends in the supervisor's new
