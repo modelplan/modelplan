@@ -63,8 +63,35 @@ extension ReaderCauseTable {
             else { reason = .init("Install the tool, or make sure it runs from a terminal", "安装这个工具，或确认它在命令行里能运行") }
             return .init(reason: reason, action: .init("Open install page", "打开安装页面"), target: .installTool)
         case "runtime_missing":
-            return .init(reason: .init("Node.js is required", "需要 Node.js"),
-                         action: .init("Install Node.js", "安装 Node.js"), target: .installNode)
+            return .init(reason: .init("Node.js is required", "需要运行环境"),
+                         action: .init("Install Node.js", "安装运行环境"), target: .installNode)
+        case "parse_error", "schema_changed":
+            return .init(reason: .init("The saved reading could not be parsed", "无法解析保存的读数"),
+                         action: .init("Open Settings", "打开设置"), target: .openSettings)
+        case "http_401":
+            return .init(reason: .init("The sign-in was rejected", "登录信息被拒绝"),
+                         action: .init("Check the sign-in", "检查登录状态"), target: .openTool)
+        case "http_403":
+            return .init(reason: .init("The provider refused access", "服务商拒绝了访问"),
+                         action: .init("Review access with the provider", "向服务商检查访问权限"), target: .explain)
+        case "http_429":
+            return .init(reason: .init("The provider is receiving too many requests", "服务商请求过于频繁"),
+                         action: .init("Wait a moment, then retry", "稍后再试"), target: .retry)
+        case "http_5xx":
+            return .init(reason: .init("The provider service is unavailable", "服务商暂时不可用"),
+                         action: .init("Retry later", "稍后重试"), target: .retry)
+        case "network":
+            return .init(reason: .init("The reading could not reach the provider", "无法连接服务商"),
+                         action: .init("Check the connection, then retry", "检查连接后重试"), target: .retry)
+        case "file_missing", "file_unreadable":
+            return .init(reason: .init("The local sign-in data could not be read", "无法读取本地登录数据"),
+                         action: .init("Open the tool and check its sign-in", "打开工具并检查登录状态"), target: .openTool)
+        case "unsupported_login", "team_unsupported", "codex_custom_provider":
+            return .init(reason: .init("This sign-in type is not supported for reading", "暂不支持读取此登录类型"),
+                         action: .init("Use a supported sign-in", "改用受支持的登录方式"), target: .explain)
+        case "other":
+            return .init(reason: .init("The reading failed", "读取失败"),
+                         action: .init("Retry the reading", "重试读取"), target: .retry)
         case "timeout":
             return .init(reason: .init("The reading timed out; it will retry on its own", "读取超时，稍后自动重试"),
                          action: .init("Retry now", "立即重试"), target: .retry)
@@ -94,6 +121,13 @@ extension ReaderCauseTable {
             }
             return .init(reason: .init("A key is needed", "需要配置密钥"),
                          action: .init("Open Settings", "在设置查看"), target: .openSettings)
+        case "no_plan":
+            if rowIsGLM(tool) {
+                return .init(reason: .init("This key has no GLM Coding Plan", "这个密钥没有开通 GLM 编程套餐"),
+                             action: .init("Use a key with a GLM Coding Plan", "换用已开通 GLM 编程套餐的密钥"), target: .explain)
+            }
+            return .init(reason: .init("This account has no plan to read", "这个账户没有可读取的套餐"),
+                         action: .init("Check the plan with the provider", "向服务商确认套餐"), target: .explain)
         case "region_refused":
             return .init(reason: .init("This address is a third-party relay, so its quota can't be read", "这个地址是第三方转发服务，查不到额度"),
                          action: .init("Why?", "了解原因"), target: .explain)

@@ -1282,7 +1282,7 @@ struct DockHelpInteraction: Equatable {
         let passPreferences = preferences.withoutUnstableMemberChoices(next.subscriptions)
         contentMenuStatusLines = content.menuStatusLines
         contentEmptyText = content.emptyText
-        let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)|\($0.isUnstable)" }.joined(separator: "\n")
+        let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)|\($0.isUnstable)|\($0.causeCode ?? "")" }.joined(separator: "\n")
         if carriedTo == nil, key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
         guard passIsCurrent(generation) else { return }
         let byID = Dictionary(uniqueKeysWithValues: next.inputs.map { ($0.id, $0) })

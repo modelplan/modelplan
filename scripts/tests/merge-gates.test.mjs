@@ -919,3 +919,54 @@ test("an action_required run never ran: it is skipped when picking the latest ru
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "failure", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.FAILURE);
   assert.equal(R.ciState([run(".github/workflows/ci.yml", "success", 3), run(".github/workflows/ci.yml", "action_required", 9)]).state, R.SUCCESS);
 });
+
+test("merge-group gate waits for the group's GUI job, fails closed, times out", () => {
+  const ok = { state: R.SUCCESS, why: "ok" };
+  const steps = [{ pr: 7, prResult: ok, mergeProof: { ok: true } }];
+  const runs = R.QUEUE_WORKFLOWS.map((path, i) => qrun(path, "success", 1, "completed", { check_suite_id: 100 + i, created_at: "2026-11-15T15:00:00Z" }));
+  const desktopSuite = 100 + R.QUEUE_WORKFLOWS.indexOf(".github/workflows/desktop.yml");
+  const gui = (status, conclusion = null) => ({ name: "native (macos-latest) / native (macos-latest)", status, conclusion, check_suite: { id: desktopSuite } });
+  const now = Date.parse("2026-11-15T15:31:00Z");
+  const ev = (checks, at = now) => R.evaluateGroup({ steps, queueRuns: runs, queueCheckRuns: checks, now: at });
+  assert.equal(ev([gui("completed", "success")]).state, R.SUCCESS);
+  assert.equal(ev([gui("completed", "skipped")]).state, R.SUCCESS, "skipped by design");
+  assert.equal(ev([]).state, R.SUCCESS, "no GUI job when desktop.yml scoped it out");
+  const queued = ev([gui("queued")]);
+  assert.equal(queued.state, R.PENDING);
+  assert.match(queued.why, /native \(macos-latest\)/);
+  assert.equal(ev([gui("in_progress")]).state, R.PENDING);
+  for (const c of ["failure", "cancelled", "timed_out"]) assert.equal(ev([gui("completed", c)]).state, R.FAILURE, c);
+  const late = ev([gui("queued")], now + R.GROUP_WAIT_MS + 60000);
+  assert.equal(late.state, R.FAILURE);
+  assert.match(late.why, /timed out/);
+  assert.equal(ev([{ ...gui("queued"), check_suite: { id: 9999 } }]).state, R.SUCCESS, "another suite's job is not the queue's");
+});
+
+test("merge-group GUI leg: skipped is ok only when desktop.yml declared the GUI share not needed", () => {
+  const job = (name, conclusion, steps = []) => ({ name, conclusion, steps });
+  const none = job("queue-scope", "success", [{ name: "GUI share not needed", conclusion: "success" }]);
+  const gui = "native (macos-latest) / native (macos-latest)";
+  assert.equal(R.guiLegState([none, job("gui-scope", "skipped"), job(gui, "skipped")]).state, R.SUCCESS, "declared not needed");
+  assert.equal(R.guiLegState([job("queue-scope", "success", [{ name: "GUI share not needed", conclusion: "skipped" }]), job(gui, "skipped")]).state, R.FAILURE, "skipped without the declaration");
+  assert.equal(R.guiLegState([job("queue-scope", "success"), job("gui-scope", "success"), job(gui, "skipped")]).state, R.FAILURE);
+  assert.equal(R.guiLegState([job("queue-scope", "success")]).state, R.FAILURE, "no GUI job at all");
+  assert.equal(R.guiLegState([job(gui, "success")]).state, R.SUCCESS);
+  assert.equal(R.guiLegState([job(gui, "failure")]).state, R.FAILURE);
+  assert.equal(R.guiLegState([job("native (${{ matrix.os }})", "skipped"), job("native-hosted (macos-15) / native-hosted-gui (macos-15)", "success"), job("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)", "success")]).state, R.SUCCESS, "hosted pair green, native skipped whole");
+  // macrevb-997-3: the live job list of merge-group run 43781966202 shape, GUI leg green, child jobs skipped by design.
+  const live = [job("queue-scope", "success"), job("gui-scope", "success"), job("native-partition", "success"),
+    job("native-headless (macos-latest) / native-headless (macos-latest)", "success"), job("native-headless (macos-latest) / probe", "skipped"),
+    job(gui, "success"), job("native (macos-latest) / transport", "skipped"), job("native (macos-latest) / sequences", "skipped"), job("native (macos-latest) / probe", "skipped"),
+    job("native (macos-latest) / native-headless (${{ inputs.os }})", "skipped"), job("native (macos-latest) / u11-native (${{ inputs.os }})", "skipped"), job("native (macos-latest) / gui-probe", "skipped"),
+    job("native-hosted (${{ matrix.os }})", "skipped"), job("native-owner-gui (macos-latest)", "skipped")];
+  assert.equal(R.guiLegState(live).state, R.SUCCESS, "child jobs skipped by design do not fail a green GUI leg");
+  assert.equal(R.guiLegState(live.map((j) => j.name === gui ? { ...j, conclusion: "failure" } : j)).state, R.FAILURE);
+  assert.equal(R.guiLegState(live.filter((j) => j.name !== gui)).state, R.FAILURE, "children alone are not a GUI leg");
+  assert.equal(R.guiLegState([job(gui, "skipped"), job("native-hosted (macos-15) / native-hosted-gui (macos-15)", "success"), job("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)", "skipped")]).state, R.FAILURE, "half the hosted pair skipped");
+  const ok = { state: R.SUCCESS, why: "ok" };
+  const runs = R.QUEUE_WORKFLOWS.map((path, i) => qrun(path, "success", 1, "completed", { check_suite_id: 100 + i }));
+  const g = (desktopJobs) => R.evaluateGroup({ steps: [{ pr: 7, prResult: ok, mergeProof: { ok: true } }], queueRuns: runs, desktopJobs });
+  assert.equal(g([job(gui, "skipped")]).state, R.FAILURE);
+  assert.equal(g([none, job(gui, "skipped")]).state, R.SUCCESS);
+});
+
