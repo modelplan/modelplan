@@ -282,6 +282,66 @@ import ModelPlanWire
     }
   }
 
+  /// A deterministic 10,000-event soak through the real controller and BridgeState. The first outbound call is held
+  /// while display, deadline, wake and visibility work churns; the ordered queue may retain only its bounded current
+  /// work. Draining then proves the newest display still renders and the same page survives without rebuilding.
+  func testTenThousandDisplayTickVisibilityAndWakeEventsStayBoundedOnOnePage() throws {
+    let rig = Rig(); rig.timedDeadlines = true
+    let page = try renderedPage(rig)
+    let originalPage = ObjectIdentifier(page)
+    let data = try fixture(), ticket = try XCTUnwrap(page.queryTicket)
+    rig.sent.removeAll(keepingCapacity: true)
+
+    var key = true, peakOutstanding = page.verificationOutstanding, peakTimers = rig.healthTimers.count
+    var displays = 0, ticks = 0, wakes = 0, visibilityEvents = 0
+    for step in 0..<10_000 {
+      page.display(data, ticket: ticket); displays += 1
+      if step.isMultiple(of: 2) { page.verificationFreshnessTick(.deadline); ticks += 1 }
+      if step.isMultiple(of: 3) { page.verificationWake(); wakes += 1 }
+      if step.isMultiple(of: 5) {
+        key.toggle()
+        page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: key))
+        visibilityEvents += 1
+      }
+      peakOutstanding = max(peakOutstanding, page.verificationOutstanding)
+      peakTimers = max(peakTimers, rig.healthTimers.count)
+      XCTAssertLessThanOrEqual(page.verificationOutstanding, 32, "The outbound work queue has a fixed capacity")
+      XCTAssertLessThanOrEqual(rig.healthTimers.count, 8, "Cancelled fake-clock callbacks do not accumulate")
+      XCTAssertFalse(page.bridge.disposed, "Event \(step) cannot dispose the responsive page")
+    }
+    XCTAssertEqual(displays, 10_000)
+    XCTAssertEqual(ticks, 5_000)
+    XCTAssertEqual(wakes, 3_334)
+    XCTAssertEqual(visibilityEvents, 2_000)
+    XCTAssertLessThanOrEqual(peakOutstanding, 4, "One active delivery plus latest display, tick and visibility")
+    XCTAssertLessThanOrEqual(peakTimers, 8)
+    XCTAssertEqual(rig.failures, [], "Healthy churn never requests a rebuild")
+    XCTAssertTrue(page.bridge.hasPendingDisplay, "The newest display is still pending behind the held call")
+
+    var nextSequence = 4
+    while !rig.sent.isEmpty {
+      let (raw, completed) = rig.sent.removeFirst()
+      let header = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+      let requestID = try XCTUnwrap((header["requestId"] as? String).flatMap(UUID.init(uuidString:)))
+      let messageType = try XCTUnwrap(header["type"] as? String)
+      completed(.accepted)
+      if messageType == "display", page.bridge.isCurrentDisplay(requestID) {
+        page.verificationReceive(try reply(raw, type: "rendered", sequence: nextSequence), source: source)
+        nextSequence += 1
+      } else if messageType == "tick", page.bridge.currentDeadlineTrigger == requestID {
+        page.verificationReceive(try reply(raw, type: "nextDeadline", sequence: nextSequence,
+                                          extra: ["deadlineUnixMs": NSNull()]), source: source)
+        nextSequence += 1
+      }
+    }
+    XCTAssertEqual(page.verificationOutstanding, 0)
+    XCTAssertFalse(page.bridge.hasPendingDisplay, "The coalesced latest display receives its bridge receipt")
+    XCTAssertEqual(rig.failures, [])
+    XCTAssertFalse(page.bridge.disposed)
+    XCTAssertEqual(ObjectIdentifier(page), originalPage, "No replacement controller/page was constructed")
+    page.discard()
+  }
+
   /// macrev2-981-4: a page that stops answering while covered is probed once it is uncovered. The host's own window
   /// facts resume liveness accounting (a fresh grace period); the page's acknowledgement is not awaited for that, and
   /// the covered time does not count.
