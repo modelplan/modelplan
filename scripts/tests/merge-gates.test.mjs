@@ -941,3 +941,23 @@ test("merge-group gate waits for the group's GUI job, fails closed, times out", 
   assert.match(late.why, /timed out/);
   assert.equal(ev([{ ...gui("queued"), check_suite: { id: 9999 } }]).state, R.SUCCESS, "another suite's job is not the queue's");
 });
+
+test("merge-group GUI leg: skipped is ok only when desktop.yml declared the GUI share not needed", () => {
+  const job = (name, conclusion, steps = []) => ({ name, conclusion, steps });
+  const none = job("queue-scope", "success", [{ name: "GUI share not needed", conclusion: "success" }]);
+  const gui = "native (macos-latest) / native (macos-latest)";
+  assert.equal(R.guiLegState([none, job("gui-scope", "skipped"), job(gui, "skipped")]).state, R.SUCCESS, "declared not needed");
+  assert.equal(R.guiLegState([job("queue-scope", "success", [{ name: "GUI share not needed", conclusion: "skipped" }]), job(gui, "skipped")]).state, R.FAILURE, "skipped without the declaration");
+  assert.equal(R.guiLegState([job("queue-scope", "success"), job("gui-scope", "success"), job(gui, "skipped")]).state, R.FAILURE);
+  assert.equal(R.guiLegState([job("queue-scope", "success")]).state, R.FAILURE, "no GUI job at all");
+  assert.equal(R.guiLegState([job(gui, "success")]).state, R.SUCCESS);
+  assert.equal(R.guiLegState([job(gui, "failure")]).state, R.FAILURE);
+  assert.equal(R.guiLegState([job(gui, "skipped"), job("native-hosted (macos-15) / native-hosted-gui (macos-15)", "success"), job("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)", "success")]).state, R.SUCCESS, "hosted pair green, native skipped");
+  assert.equal(R.guiLegState([job(gui, "skipped"), job("native-hosted (macos-15) / native-hosted-gui (macos-15)", "success"), job("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)", "skipped")]).state, R.FAILURE, "half the hosted pair skipped");
+  const ok = { state: R.SUCCESS, why: "ok" };
+  const runs = R.QUEUE_WORKFLOWS.map((path, i) => qrun(path, "success", 1, "completed", { check_suite_id: 100 + i }));
+  const g = (desktopJobs) => R.evaluateGroup({ steps: [{ pr: 7, prResult: ok, mergeProof: { ok: true } }], queueRuns: runs, desktopJobs });
+  assert.equal(g([job(gui, "skipped")]).state, R.FAILURE);
+  assert.equal(g([none, job(gui, "skipped")]).state, R.SUCCESS);
+});
+
