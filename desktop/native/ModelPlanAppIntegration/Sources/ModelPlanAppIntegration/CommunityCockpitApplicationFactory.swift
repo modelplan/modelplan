@@ -427,21 +427,18 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
             self?.noticePath="" // the episode is over: a later failure names its own cause
             onOpened?()
         }
-        // Audit A-5: fresh data on the presented page is a recovery too. A query that failed and then succeeded on the
-        // same page must not announce an unavailable cockpit.
-        let onDisplayed = owner.coordinator?.onDisplayed
-        owner.coordinator?.onDisplayed = { [weak self] in
-            if let self, self.noticeTimer != nil, !self.rebuilding {
-                self.lastEventWasOpen = true
-                self.noticeTimer?.cancel(); self.noticeTimer=nil; self.retryTimer?.cancel(); self.retryTimer=nil; self.noticePath=""
-            }
-            onDisplayed?()
-        }
-        // Recovery contract (macrevb-981-2): sustained health counts only from a rendered receipt of the presented
-        // page, never from a reply merely handed to it.
+        // Audit A-5 / recovery step 4: verified data on the presented page (a rendered receipt, not a reply merely
+        // handed to it) is the recovery: a query that failed and then rendered must not announce an unavailable cockpit.
+        // It also starts sustained health for the rebuild budget (macrevb-981-2).
         let onRenderVerified = owner.coordinator?.onRenderVerified
         owner.coordinator?.onRenderVerified = { [weak self] in
-            if let self, self.pageOpened { self.budget.rendered(at: self.now()) }
+            if let self, self.pageOpened {
+                self.budget.rendered(at: self.now())
+                if self.noticeTimer != nil, !self.rebuilding {
+                    self.lastEventWasOpen = true
+                    self.noticeTimer?.cancel(); self.noticeTimer=nil; self.retryTimer?.cancel(); self.retryTimer=nil; self.noticePath=""
+                }
+            }
             onRenderVerified?()
         }
         // D88: a detach, a put back or the settled open refreshes the icon highlight and the hints.
