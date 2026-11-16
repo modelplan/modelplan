@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "status": "pending-owner-confirmation",
+  "source": "desktop/tests/cockpit/browser/cockpit-zoom-baseline.spec.mjs",
+  "candidates": [
+    {
+      "zoomPercent": 85,
+      "snapshotPattern": "desktop/official-visuals/cockpit-baselines/{projectName}/cockpit-zoom-{zoomPercent}-pending-owner-confirmation.png",
+      "status": "pending-owner-confirmation",
+      "ownerConfirmed": false
+    },
+    {
+      "zoomPercent": 100,
+      "snapshotPattern": "desktop/official-visuals/cockpit-baselines/{projectName}/cockpit-zoom-{zoomPercent}-pending-owner-confirmation.png",
+      "status": "pending-owner-confirmation",
+      "ownerConfirmed": false
+    },
+    {
+      "zoomPercent": 125,
+      "snapshotPattern": "desktop/official-visuals/cockpit-baselines/{projectName}/cockpit-zoom-{zoomPercent}-pending-owner-confirmation.png",
+      "status": "pending-owner-confirmation",
+      "ownerConfirmed": false
+    }
+  ]
+}
