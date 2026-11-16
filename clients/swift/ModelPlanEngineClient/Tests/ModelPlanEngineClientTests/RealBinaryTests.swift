@@ -70,6 +70,7 @@ actor EventProbe: EngineClientEventConsumer {
         return nil
     } }
     func crashDelays() -> [Double] { events.compactMap { if case .connection(.restarting(_, let delay)) = $0 { return durationSeconds(delay) }; return nil } }
+    func consentFailures() -> Int { events.filter { if case .featureFailure(.consent, _) = $0 { return true }; return false }.count }
     func stopped(_ reason: EngineStopReason) -> Bool { events.contains { if case .connection(.stopped(let value)) = $0 { return value == reason }; return false } }
 }
 
