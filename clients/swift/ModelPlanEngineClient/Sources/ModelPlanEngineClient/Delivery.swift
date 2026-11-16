@@ -131,17 +131,20 @@ extension ProcessEngineClient {
     /// fresh session through the supervisor's budget (a consumer that keeps stalling ends in its cooldown).
     func resumeAfterStall() {
         stallRecoveryPending = false
-        guard !stopping, child == nil, restartTask == nil else { return }
+        guard !stopping, child == nil else { return }
         consumerBlocked = false; stopped = false; requiresRetry = false
-        if unreapedProcess != nil { requiresRetry = true; return } // the re-reap loop relaunches once it is gone
-        let previous = stalledProcess; stalledProcess = nil
-        superviseCrash(reaping: previous, planned: false) // the stalled session's child is reaped before another spawns
+        // The budget's decision for the stalled session (macrev2-994-1). The stalled child was being reaped since the
+        // stall: if that reap (or its re-reap loop) is still running, it relaunches once the child is gone; otherwise
+        // the relaunch waits out the decision now.
+        decideRelaunch(planned: false)
+        if unreapedProcess != nil { requiresRetry = true }
+        if restartTask == nil && unreapedProcess == nil { relaunchWhenDue() }
     }
     func consumerStalled(id: UUID? = nil) {
         if let id, delivering?.id != id { return }
         guard !consumerBlocked else { return }
         deliveryAuthority.replace(with: nil)
-        consumerBlocked = true; stopped = true; requiresRetry = true; stallRecoveryPending = true; stalledProcess = child
+        consumerBlocked = true; stopped = true; requiresRetry = true; stallRecoveryPending = true
         deliveryTask?.cancel(); deliveryTimer?.cancel()
         // The outstanding consume may be non-cooperative. Do not create another
         // concurrent callback. A sticky clear follows it when it eventually returns.

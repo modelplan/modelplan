@@ -29,6 +29,7 @@ type proxy struct {
 	session       string
 	triggered     bool
 	probeDropped  bool
+	probeID       string
 	paused        bool
 	held          map[string]any
 	receipt       map[string]any
@@ -147,6 +148,11 @@ func main() {
 			p.mu.Lock()
 			id, _ := m["id"].(string)
 			p.methods[id] = method
+			// probe-fails-once: the client's epoch probe is the first consent/get it sends after the trigger. Only that
+			// request's reply is lost, whatever order the server answers in.
+			if p.plan.Mode == "probe-fails-once" && p.triggered && method == "consent/get" && p.probeID == "" {
+				p.probeID = id
+			}
 			if method == "initialize" {
 				p.session, _ = params["sessionId"].(string)
 				if p.plan.Mode == "major-mismatch" {
@@ -261,7 +267,7 @@ func main() {
 			continue
 		}
 		// Recovery step 5: the first epoch probe is lost; the client's retry is answered.
-		if p.plan.Mode == "probe-fails-once" && p.triggered && method == "consent/get" && !p.probeDropped {
+		if p.plan.Mode == "probe-fails-once" && p.probeID != "" && id == p.probeID && !p.probeDropped {
 			p.probeDropped = true
 			p.mu.Unlock()
 			continue

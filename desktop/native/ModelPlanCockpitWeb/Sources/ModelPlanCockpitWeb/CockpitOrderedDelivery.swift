@@ -22,8 +22,9 @@ enum CockpitDeliveryResult { case accepted, missing, rejected, failed }
   init(capacity: Int = 32, answered: (() -> Void)? = nil, deliver: @escaping (Message, @escaping Completion) -> Void) {
     self.capacity = capacity; self.answered = answered; self.deliver = deliver
   }
-  /// G3-86: `coalesce` names a whole-state message (shell, untriggered appearance): a newer one
-  /// replaces a queued older one, at the back, so host sequence order is kept. A full queue first drops
+  /// G3-86: `coalesce` names a whole-state message (shell, untriggered appearance; recovery step 3 adds display, tick
+  /// and visibility): a newer one replaces a queued older one, at the back, so host sequence order is kept. The active
+  /// call is never replaced, so each kind has at most one call in flight and one waiting. A full queue first drops
   /// queued work that is no longer current; only then is the message refused.
   @discardableResult func submit(_ message: Message, coalesce: String? = nil, isCurrent: @escaping () -> Bool,
                                   completed: @escaping Completion) -> Bool {

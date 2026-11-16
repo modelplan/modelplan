@@ -1184,5 +1184,61 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertFalse(lines.contains { $0.contains("page-failure failure=bundleResource") },lines.joined(separator:"\n"))
         app.toggleConsole();await coordinator.shutdown();await app.composition.stop()
     }
+    /// Cockpit recovery step 3 (G3-96, G3-116; CKP-SHELL-27, #470 staging) through the normal entry: the Dock's console
+    /// button opens the cockpit on the real composition with the cockpit entry enabled and the coordinator presents a
+    /// real CockpitWindowController. Behind one call that never completes, a stream of replies keeps one display in
+    /// flight and only the newest waiting; nothing is refused, the page is never failed or rebuilt, and when the held
+    /// call completes only the newest display is delivered.
+    @MainActor func testDeliveryThroughTheNormalEntryKeepsOneActiveAndTheNewestDisplay() async throws {
+        let (owner,bundle,context,_)=try shellFixture()
+        let client=RouteClient()
+        var pages:[CockpitWindowController]=[],lines:[String]=[]
+        CockpitFailureLog.verificationLine={ lines.append($0) }
+        defer{CockpitFailureLog.verificationLine=nil}
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{ _ in XCTFail("no notice") })
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let page=try XCTUnwrap(pages.first)
+        XCTAssertTrue(coordinator.presented,"the normal entry presented the real page")
+        var sent:[(String,(CockpitDeliveryResult)->Void)]=[],failures:[CockpitWindowFailure]=[]
+        page.verificationNoWindowDelivery={ raw,complete in sent.append((raw,complete)) }
+        page.verificationNoWindowArm={ _,_ in {} }
+        page.verificationNoWindowClock={ 1_000 }
+        let previousFailure=page.onFailure
+        page.onFailure={ failures.append($0); previousFailure?($0) }
+        let shell=CockpitShellState(closed:false,attached:true,forcedClosed:false,tier:.tall)
+        page.verificationNoWindowShell=shell
+        var ready=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(page.bridge.load(owner.appearance,shell:shell).utf8)) as? [String:Any])
+        for key in ["appearance","shell","redBelow","showUsedPercent","showAllModels","ackedCautions","pinnedModels","memberOrder"] { ready[key]=nil }
+        ready["type"]="ready";ready["sequence"]="1";ready["appearanceVersion"]=2;ready["capabilities"]=["appearanceUpdates","shellState","shellActions"]
+        _=try page.bridge.accept(String(decoding:JSONSerialization.data(withJSONObject:ready),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"))
+        try page.verificationConfirmVisible()
+        let capture=Self.repoRoot().appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")
+        let data=try WireDecoder.decode(WireCockpitData.self,from:Data(contentsOf:capture))
+        page.display(data,ticket:try XCTUnwrap(page.queryTicket))
+        XCTAssertEqual(sent.count,1,"one display in flight; its call never completes")
+        for _ in 0..<40 { page.display(data,ticket:try XCTUnwrap(page.queryTicket)) }
+        XCTAssertLessThanOrEqual(page.verificationOutstanding,2,"one active display and the newest replacement")
+        XCTAssertEqual(sent.count,1)
+        XCTAssertFalse(lines.contains { $0.hasPrefix("delivery-skipped") },"nothing is refused")
+        XCTAssertEqual(failures,[]);XCTAssertFalse(page.bridge.disposed);XCTAssertTrue(coordinator.presented)
+        sent[0].1(.accepted)
+        XCTAssertEqual(sent.count,2,"the held call completes; only the newest display follows")
+        sent[1].1(.accepted)
+        XCTAssertEqual(sent.count,2)
+        XCTAssertEqual(failures,[]);XCTAssertEqual(pages.count,1,"never rebuilt")
+        XCTAssertFalse(lines.contains { $0.hasPrefix("page-failure") },lines.joined(separator:"\n"))
+        app.toggleConsole();await coordinator.shutdown();await app.composition.stop()
+    }
 #endif
 }
