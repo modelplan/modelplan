@@ -255,7 +255,8 @@ func afterManualKeyChange(dir, provider string) error {
 	// worked out from, so dropping it would hide that line; GLM keeps its entry (a separate follow-up if needed).
 	if provider == "opencodego" {
 		if _, err := os.Stat(nativePath(dir)); err == nil {
-			_ = filterCachedSource(nativePath(dir), "native.json", provider, false, nil)
+			// The caller already owns lockManualKeys; do not acquire it again.
+			_ = filterCachedSourceWithWriter(nativePath(dir), "native.json", provider, false, nil, writeAtomic)
 		}
 	}
 	if manualKeyChangeHook != nil {
