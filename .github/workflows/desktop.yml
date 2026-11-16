@@ -147,7 +147,7 @@ jobs:
       # guiLegState): a skipped GUI job counts as ok only when this step ran and succeeded. Keep the step name.
       - name: GUI share not needed
         if: ${{ steps.scope.outputs.gui != 'true' }}
-        run: echo "group changes no desktop path: the GUI share is not needed"
+        run: echo "group changes no desktop path, so the GUI share is not needed"
 
   app:
     needs: [queue-scope, pr-ref]
