@@ -4,6 +4,7 @@
 // page: another page id is a mismatch, never an answer. Built page, normal bridge, real Go capture.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,capture,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
+import {visualFixture} from '../visual-fixture.mjs';
 
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 async function open(page){
@@ -15,6 +16,54 @@ async function open(page){
   return {send,receive};
 }
 const engine=page=>page.evaluate(()=>document.querySelector('#cockpit .ck-engine, #cockpit [class*="engine"]')?.innerHTML??document.getElementById('cockpit').innerHTML);
+test('S1: a refused publication preserves the comparison even when the previous-data repaint succeeds',async({page})=>{
+  const {send,receive}=await open(page),data=visualFixture().data;
+  data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[
+    {id:'model-a',name:'Synthetic A',developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]},
+  ]};
+  expect(await receive(send('display',{data}))).toBe(true);
+  await page.locator('.fd-ch:not(.empty) .fd-strip').first().click();
+  await expect(page.locator('.mfd-page.pg-compare')).toBeVisible();
+  const next=structuredClone(data);next.details.publication.publicationId='fedcba9876543210fedcba98';
+  const refused=await page.evaluate(raw=>{
+    const append=Element.prototype.append,replace=Element.prototype.replaceChildren;let failed=false;
+    const gate=original=>function(...nodes){if(!failed&&this.closest?.('.hud')){failed=true;throw Error('synthetic HUD failure');}return original.apply(this,nodes);};
+    Element.prototype.append=gate(append);Element.prototype.replaceChildren=gate(replace);
+    try{return {accepted:window.modelPlanCockpit.receive(raw),reject:window.modelPlanCockpit.reject(),failed};}
+    finally{Element.prototype.append=append;Element.prototype.replaceChildren=replace;}
+  },send('display',{data:next}));
+  expect(refused).toEqual({accepted:false,reject:'display.render',failed:true});
+  await expect(page.locator('.mfd-page.pg-compare')).toBeVisible();
+  expect(await receive(send('tick',{nowUnixMs:String(Date.now()),reason:'deadline'}))).toBe(true);
+  await expect(page.locator('.mfd-page.pg-compare')).toBeVisible();
+});
+
+test('S2: deck checkpoints restore the selected page, alert overlay and tune return target after clear',async({page})=>{
+  await open(page);
+  const fixture=visualFixture();
+  fixture.data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[
+    {id:'sol',name:'Synthetic A',developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]},
+  ]};
+  fixture.data.details.publishedModels=fixture.data.details.publication.models;
+  await page.evaluate(async fixture=>{
+    const {mountPrototypeDeck}=await import('/src/prototype-deck.js');
+    window.checkpointDeck=mountPrototypeDeck(document.querySelector('#cockpit'),undefined,{publication:fixture.publication,liveSessions:fixture.data.details.sessions,resetEvents:null,history:null});
+    window.checkpointDeck.render(fixture.data,Date.now());
+  },fixture);
+  await page.locator('[data-mfd="page:sub"]').click();
+  await page.evaluate(()=>window.checkpointDeck.showTune('sol'));
+  const tune=await page.locator('.mfd-screen').innerHTML();
+  expect(tune).toContain('Synthetic A');
+  await page.evaluate(()=>{const d=window.checkpointDeck,restore=d.checkpoint();d.clear();restore();d.refresh();});
+  expect(await page.locator('.mfd-screen').innerHTML()).toBe(tune);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-mfd="page:sub"]')).toHaveAttribute('aria-pressed','true');
+  await page.evaluate(()=>window.checkpointDeck.showAlerts());
+  const alerts=await page.locator('.mfd-screen').innerHTML();
+  await page.evaluate(()=>{const d=window.checkpointDeck,restore=d.checkpoint();d.clear();restore();d.refresh();});
+  expect(await page.evaluate(()=>window.checkpointDeck.alertsOpen())).toBe(true);
+  expect(await page.locator('.mfd-screen').innerHTML()).toBe(alerts);
+});
 test('a render that throws keeps the page and its last rendered data; the next display renders',async({page})=>{
   const {send,receive}=await open(page);
   expect(await receive(send('display',{data:capture()}))).toBe(true);

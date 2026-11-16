@@ -172,10 +172,10 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);syncCaution(lastData!,now);});}
  // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
  // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
- // and keeps the page. If that repaint fails too (glm-990-1, macrevb-990-1, macrev2-990-1), the whole cockpit view is
+ // and keeps the page. Whether that repaint succeeds or fails, the whole cockpit view is
  // put back as it was before the render: every element under the root gets its own child nodes, attributes, handler
  // properties and form values back, so the engine, HUD, MFD, records and lamp keep their committed nodes and controls;
- // the view's own state (engine closures, shell scope, last data) is restored with them. Nothing is repainted then, so
+ // the view's own state (engine closures, shell scope, last data) is restored with them. Nothing is repainted afterwards, so
  // a failure that persists cannot erase the view again. lastData never points at data that did not render.
  let restoring=false;
  const HANDLERS=['onclick','onchange','oninput','onkeydown','onlostpointercapture','onpointercancel','onpointerdown','onpointerleave','onpointermove','onpointerover','onpointerup'] as const;
@@ -208,8 +208,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
    if(!restoring&&!disposed){
     restoring=true;
     try{if(previous)renderInto(previous,previousAt);else{lastData=null;frame.engine.replaceChildren();setEmpty('waiting');}}
-    catch{restore();}
-    finally{restoring=false;}
+    catch{/* The committed snapshot also covers a failed repaint. */}
+    finally{restore();restoring=false;}
    }
    throw error;
   }
