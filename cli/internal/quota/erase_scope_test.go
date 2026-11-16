@@ -15,6 +15,49 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
+func TestConsentCleanupWaitsForManualKeyCacheTransaction(t *testing.T) {
+	isolateHome(t)
+	p := Paths{Cache: t.TempDir()}
+	if err := SetManualKey(p.Cache, "opencodego", fakeGoKey, ""); err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(nativeSnap{SchemaVersion: 1, Providers: []codexbarEntry{
+		{Provider: "opencodego", Status: "ok"}, {Provider: "zai", Status: "ok"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAtomic(nativePath(p.Cache), b); err != nil {
+		t.Fatal(err)
+	}
+	cleaned := make(chan error, 1)
+	manualKeyChangeHook = func() {
+		// Save has removed the old key's reading, but still owns the cache transaction.
+		go func() { cleaned <- EraseScope(p, consent.ScopeZaiAccountUsageAPIKey, false) }()
+		select {
+		case err := <-cleaned:
+			cleaned <- err
+			t.Error("consent cleanup rewrote native.json inside the manual-key cache transaction")
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	t.Cleanup(func() { manualKeyChangeHook = nil })
+	if err := SetManualKey(p.Cache, "opencodego", fakeOtherKey, ""); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-cleaned:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("consent cleanup did not finish after the key transaction")
+	}
+	if got := cachedProviders(t, p.Cache); got["opencodego"] || got["zai"] {
+		t.Fatal("cleanup retained a removed key reading or the revoked provider")
+	}
+}
+
 func TestAccountScopeCleanupKeepsIndependentKeyValuesAndBudget(t *testing.T) {
 	for _, forget := range []bool{false, true} {
 		t.Run(map[bool]string{false: "deny", true: "forget"}[forget], func(t *testing.T) {
