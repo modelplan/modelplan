@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/appserver"
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
@@ -38,9 +39,19 @@ func historyImportCmd(stdout, stderr io.Writer, st *store.Store, c common, doImp
 		}
 		return 0
 	}
+	if firstRun {
+		if err := speed.MarkAutoRequested(st.Dir, time.Now()); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitErr
+		}
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	opts := importOptions(st, days, firstRun, time.Now())
+	allow := manualImport
+	if firstRun {
+		allow = automaticImport(nil)
+	}
+	opts := importOptions(st, days, firstRun, time.Now(), allow)
 	res, err := speed.Import(ctx, st.Dir, opts)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -66,12 +77,12 @@ func say(c common, en, zh string) string {
 	return zh
 }
 
-// importOptions: the roots of the tools the user granted history consent for, each write under the
-// consent fence. A tool without consent gets no root and is reported as skipped.
-func importOptions(st *store.Store, days int, firstRun bool, now time.Time) speed.ImportOptions {
-	opts := speed.ImportOptions{Days: days, Now: now, Auto: firstRun,
+// importOptions: the roots of the tools admitted by allow, each write under the consent fence. A
+// tool without it gets no root and is reported as skipped.
+func importOptions(st *store.Store, days int, auto bool, now time.Time, allow func(tool string) bool) speed.ImportOptions {
+	opts := speed.ImportOptions{Days: days, Now: now, Auto: auto,
 		Guard: guardLocalWrite}
-	if consent.Allowed("claude", consent.Local) {
+	if allow("claude") {
 		home, _ := os.UserHomeDir()
 		dir := os.Getenv("CLAUDE_CONFIG_DIR")
 		if dir == "" {
@@ -79,10 +90,46 @@ func importOptions(st *store.Store, days int, firstRun bool, now time.Time) spee
 		}
 		opts.Claude = &speed.ImportRoot{Dir: dir}
 	}
-	if consent.Allowed("codex", consent.Local) {
+	if allow("codex") {
 		opts.Codex = &speed.ImportRoot{Dir: quotaPaths(st).CodexHome, Background: func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }}
 	}
 	return opts
+}
+
+// manualImport: an explicit "Import" reads every tool whose history the consent in force allows.
+func manualImport(tool string) bool { return consent.Allowed(tool, consent.Local) }
+
+// recordedHistoryGrant: the user answered this tool's history scope with an allow that is in
+// force. Automatic imports (first run, launch retry) read only such tools, never a default-on
+// scope nobody answered (glm-967-1).
+func recordedHistoryGrant(a consent.Admission, tool string) bool {
+	scope := map[string]string{"claude": consent.ScopeClaudeLocalHistory, "codex": consent.ScopeCodexLocalHistory}[tool]
+	s := a.State()
+	r, decided := s.Scopes[scope]
+	return scope != "" && decided && r.Allowed && s.AllowsScope(scope, a.Mode())
+}
+
+// automaticImport admits the tools with a recorded grant, and, when only is set, only those.
+func automaticImport(only map[string]bool) func(string) bool {
+	a := consent.Capture()
+	return func(tool string) bool { return recordedHistoryGrant(a, tool) && (only == nil || only[tool]) }
+}
+
+// owedHistoryTools: the consent tools the engine still owes an import (speed.OwedSources), by
+// consent tool name; empty when nothing is owed (G3-112).
+func owedHistoryTools(cache string) map[string]bool {
+	owed := map[string]bool{}
+	for _, source := range speed.OwedSources(cache, consent.Capture()) {
+		owed[consentToolOf(source)] = true
+	}
+	return owed
+}
+
+func consentToolOf(source string) string {
+	if source == "claude-code" {
+		return "claude"
+	}
+	return source
 }
 
 // importEngine adapts the importer to the app-server's history/import_* methods.
@@ -92,7 +139,59 @@ func (e importEngine) Run(ctx context.Context, days int, firstRun bool, progress
 	if firstRun && !speed.NeedsAutoImport(e.st.Dir) {
 		return []wire.HistoryImportSource{}, nil
 	}
-	opts := importOptions(e.st, days, firstRun, time.Now())
+	if firstRun {
+		if err := speed.MarkAutoRequested(e.st.Dir, time.Now()); err != nil {
+			return nil, err
+		}
+	}
+	allow := manualImport
+	if firstRun {
+		allow = automaticImport(nil)
+	}
+	return e.run(ctx, importOptions(e.st, days, firstRun, time.Now(), allow), progress)
+}
+
+// RunOwed imports what the engine still owes (failed, interrupted, withdrawn, or cleared and
+// granted again): only those sources, and only under a recorded grant (G3-112).
+// Each attempt is recorded first (backoff and cap in speed.OwedSourcesAt), and logs are read with
+// a pause between them: the retry is a light background read that never disturbs (owner
+// condition, 2026-11-14). It opens local logs only and launches no tool.
+func (e importEngine) RunOwed(ctx context.Context, days int, progress func(done, total int)) ([]wire.HistoryImportSource, error) {
+	owed := owedHistoryTools(e.st.Dir)
+	var sources []string
+	for _, source := range []string{"claude-code", "codex"} {
+		if owed[consentToolOf(source)] {
+			sources = append(sources, source)
+		}
+	}
+	if err := speed.MarkOwedAttempt(e.st.Dir, sources, consent.Capture(), time.Now()); err != nil {
+		return nil, err
+	}
+	opts := importOptions(e.st, days, true, time.Now(), automaticImport(owed))
+	opts.Pause = owedImportPause
+	return e.run(ctx, opts, progress)
+}
+
+// The retry's pacing: it waits after launch and after a grant, and yields between logs.
+const (
+	owedLaunchDelay = 10 * time.Second
+	owedGrantDelay  = 2 * time.Second
+	owedImportPause = 20 * time.Millisecond
+)
+
+// NextOwedAt: when the next owed retry is due (the running engine wakes for it).
+func (e importEngine) NextOwedAt(now time.Time) (time.Time, bool) {
+	return speed.NextOwedAt(e.st.Dir, consent.Capture(), now)
+}
+
+// CancelOwed: the user cancelled an import; no automatic import starts again under the current
+// grants. A failure to record it is left to the in-memory stop (Cancel already stopped the timers).
+func (e importEngine) CancelOwed() { _ = speed.MarkOwedCancelled(e.st.Dir, consent.Capture()) }
+
+// Owed: some history source is owed an import (see RunOwed).
+func (e importEngine) Owed() bool { return len(owedHistoryTools(e.st.Dir)) > 0 }
+
+func (e importEngine) run(ctx context.Context, opts speed.ImportOptions, progress func(done, total int)) ([]wire.HistoryImportSource, error) {
 	opts.Progress = progress
 	res, err := speed.Import(ctx, e.st.Dir, opts)
 	if err == nil && res.Cancelled {
@@ -128,3 +227,8 @@ func guardLocalWrite(tool string, write func() error) error {
 	}
 	return err
 }
+
+var (
+	_ appserver.OwedRunner    = importEngine{}
+	_ appserver.OwedScheduler = importEngine{}
+)

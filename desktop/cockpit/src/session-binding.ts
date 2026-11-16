@@ -3,6 +3,7 @@
 // the faders, the record strip, the MFD lists and the HUD agree (owner build 13: Codex sessions matched nothing).
 // A producer-verified subscriptionRef wins, and when it names no member the session stays unbound. Without one, a session joins the single subscription of its tool when
 // there is exactly one; with two or more of the same tool it stays unbound, because nothing says which account ran it.
+import {brandColour,resolveColours,NEUTRAL} from './livery.js';
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
 
@@ -15,9 +16,10 @@ export const sessionTool=(source:string)=>sessionTools[source.toLowerCase()]??nu
 // A subscription's tool to the developer of the models it runs (the CLI's eligibleCockpitVendors).
 export const toolDevelopers:Readonly<Record<string,string>>={codex:'openai',claude:'anthropic',gemini:'google',grok:'xai',kimi:'kimi',zai:'zhipuai',minimax:'minimax',qwen:'alibaba'};
 // Identity colour and allowlisted mark per vendor key (the engine bar's palette).
-export const vendorPalette:Readonly<Record<string,{colour:string;logo:string}>>={openai:{colour:'#6aa8ff',logo:'openai'},claude:{colour:'#ff9a6a',logo:'claude'},cursor:{colour:'#eef2f6',logo:'cursor'},copilot:{colour:'#c08cff',logo:'copilot'},kimi:{colour:'#ff8fcf',logo:'kimi'},glm:{colour:'#8f7dff',logo:'zai-white'},opencode:{colour:'#b5d65a',logo:'opencode'}};
-export const NEUTRAL='#c6ccd4';
-export const memberColour=(m:{readonly row:{readonly vendorKey:string|null}}|null|undefined)=>m?.row.vendorKey&&Object.hasOwn(vendorPalette,m.row.vendorKey)?vendorPalette[m.row.vendorKey]!.colour:NEUTRAL;
+export const vendorPalette:Readonly<Record<string,{colour:string;logo:string}>>=Object.fromEntries(Object.entries({openai:'openai',claude:'claude',cursor:'cursor',copilot:'copilot',kimi:'kimi',glm:'zai-white',opencode:'opencode'}).map(([key,logo])=>[key,{colour:brandColour(key),logo}]));
+export {NEUTRAL};
+/** The members' identity colours for one view, in member order: brand colours, with the collision rule applied (COL-2.1-18). */
+export const memberColours=(members:readonly {readonly key:string;readonly row:{readonly vendorKey:string|null}}[]):Map<string,string>=>{const colours=resolveColours(members.map(m=>m.row.vendorKey));return new Map(members.map((m,i)=>[m.key,colours[i]!]));};
 
 /** The member a session belongs to, or null when that cannot be said. */
 export function sessionMember(members:readonly Member[],session:Pick<Session,'source'|'subscriptionRef'>):Member|null {

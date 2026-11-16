@@ -12,6 +12,8 @@ import ModelPlanWire
   var onShown: (() -> Void)? { get set }
   /// D88: the attachment or the settled open changed (detach, put back, drop, entrance end).
   var onShellChanged: (() -> Void)? { get set }
+  /// Recovery contract: the page acknowledged a rendered display (verified data on screen).
+  var onRenderVerified: (() -> Void)? { get set }
   /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
   /// G3-80: the cockpit window's frame while it is on screen; the enlarged field opens on its display.
@@ -24,6 +26,8 @@ import ModelPlanWire
   func updateScope(_ key:String)
   /// G3-56: the acknowledged caution identities to restore; applied before the page loads.
   func setAckedCautions(_ ids:[String])
+  /// D136: the favourite model ids to restore; applied before the page loads.
+  func setPinnedModels(_ ids:[String])
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
   func clearPrivateViews(adopting: CockpitEngineContext?) async
   func discard()
@@ -31,6 +35,7 @@ import ModelPlanWire
 public extension CockpitPageSurface {
   var onShown: (() -> Void)? { get { nil } set {} }
   var onShellChanged: (() -> Void)? { get { nil } set {} }
+  var onRenderVerified: (() -> Void)? { get { nil } set {} }
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
   var cockpitFrame: CGRect? { nil }
   func prewarm() {}
@@ -38,6 +43,7 @@ public extension CockpitPageSurface {
   func updateAppearance(_ appearance: CockpitAppearance) {}
   func updateScope(_ key:String) {}
   func setAckedCautions(_ ids:[String]) {}
+  func setPinnedModels(_ ids:[String]) {}
 }
 extension CockpitWindowController: CockpitPageSurface {}
 
@@ -49,6 +55,12 @@ extension CockpitWindowController: CockpitPageSurface {}
 
 /// G3-56: where the app keeps the caution identities the owner acknowledged, so the lamp stays steady after a restart.
 @MainActor public protocol CockpitCautionMemory: AnyObject {
+  func load() -> [String]
+  func save(_ ids: [String])
+}
+
+/// D136: where the app keeps the favourite (pinned) model ids, so they survive a restart. Public model ids only.
+@MainActor public protocol CockpitPinMemory: AnyObject {
   func load() -> [String]
   func save(_ ids: [String])
 }
@@ -91,6 +103,12 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public var cautionMemory: (any CockpitCautionMemory)? {
     didSet { let ids = cautionMemory?.load() ?? []; ackedCautions = CockpitCautionIdentities.valid(ids) ? ids : [] }
   }
+  /// D136: the favourite model ids. Restored at load and replaced whenever the page reports a long-press. A user
+  /// preference, so a store barrier does not clear them.
+  public private(set) var pinnedModels: [String] = []
+  public var pinMemory: (any CockpitPinMemory)? {
+    didSet { let ids = pinMemory?.load() ?? []; pinnedModels = CockpitCautionIdentities.valid(ids) && Set(ids).count == ids.count ? ids : [] }
+  }
   private static func persistable(_ key: String) -> Bool {
     key != "all" && CockpitMemberScopes.isValidKey(key) && !CockpitMemberScopes.isIndexedFallback(key)
   }
@@ -109,6 +127,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// delivery change, feature failure and shutdown. The page applies the same freshness rules to it as
   /// to any data, against the clock at display time.
   private var lastReply: (delivery: EngineDeliveryContext, data: WireCockpitData)?
+  /// The last settled history-import state seen for this delivery (phase, rows, coverage). The cockpit reads
+  /// imported history on every query, but an import finishing or a removal need not change the engine's rows,
+  /// so a change here is what asks the cockpit again (HIST-IMP-05).
+  private var importState: String?
   /// CKP-SHELL-20 (owner D50): keep one loaded, hidden, empty page ready so a click does not wait for a
   /// WebKit cold start. Off by default; the app turns it on when the cockpit entry is enabled.
   public var prewarmEnabled = false {
@@ -154,6 +176,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// A fresh reply was handed to the presented page: the cockpit is showing data again (audit A-5: a query failure
   /// followed by this is a recovery, not an unavailable cockpit).
   public var onDisplayed: (() -> Void)?
+  /// Recovery contract: the presented page acknowledged a rendered display. Unlike `onDisplayed` (a reply handed to
+  /// the page), this is verified data on screen; the console's rebuild budget counts health from it.
+  public var onRenderVerified: (() -> Void)?
   /// D88: forwarded from the presented page only.
   public var onShellChanged: (() -> Void)?
   /// D88: the presented page's detach / put-back key, for the one-time hints.
@@ -244,6 +269,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func makeWiredPage(_ context: CockpitEngineContext) throws -> any CockpitPageSurface {
     let newPage = try makePage(context)
     newPage.setAckedCautions(ackedCautions)
+    newPage.setPinnedModels(pinnedModels)
     let generation = UUID()
     pageGeneration = generation
     newPage.onReady = { [weak self] in
@@ -264,6 +290,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     newPage.onShellChanged = { [weak self] in
       guard let self, self.pageGeneration == generation, self.presented else { return }
       self.onShellChanged?()
+    }
+    newPage.onRenderVerified = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.onRenderVerified?()
     }
     newPage.onIntent = { [weak self] intent in
       guard self?.pageGeneration == generation else { return }; self?.receiveIntent(intent)
@@ -363,6 +393,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       guard CockpitCautionIdentities.valid(ids) else { return }
       ackedCautions=ids; cautionMemory?.save(ids); return
     }
+    if case .pinnedModels(let ids)=intent {
+      guard CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { return }
+      pinnedModels=ids; pinMemory?.save(ids); return
+    }
     if case .scopeSelect(let key)=intent {
       guard delivery != nil,scopeMembers.contains(key) else { return }
       selectedScope=key; scopeDay=calendarDay(currentDate()); page?.updateScope(key)
@@ -438,7 +472,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func adopt(_ next: EngineDeliveryContext) async {
     guard delivery != next else { return }
     cancelQuery()
-    lastReply = nil
+    lastReply = nil; importState = nil
     // A restored scope (D64) waits for the first context; a change of session or floor after that returns to All.
     if let previous = delivery, previous.sessionID != next.sessionID || previous.floor != next.floor { selectedScope="all" }
     scopeMembers.removeAll()
@@ -459,7 +493,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     switch event {
     case .clearPrivateViews(let invalidation):
       cancelQuery()
-      lastReply = nil
+      lastReply = nil; importState = nil
       // The engine's first floor arrives as a clear with no previous session; nothing private was shown yet, so a scope
       // restored for today (D64) stays, and is still checked against the first reply. After a session, a consent or
       // store change forgets the saved scope; an engine stop (the app quitting) keeps it for today.
@@ -496,6 +530,26 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         }
       }
     case .rowsChanged: refresh()
+    case .response(_, .historyImport(let reply)):
+      guard let delivery, reply.delivery == delivery else { break }
+      let status = reply.envelope.data
+      // Progress while running changes nothing the cockpit draws; a finished, cancelled or removed import may.
+      guard status.phase != .running else { break }
+      // HIST-IMP-07: one re-query per import operation. The engine's revision changes exactly when a run settles
+      // or imported history is removed; a fast run's start reply can already be done, so neither the summary nor
+      // an observed running status identifies an operation. Repeated polls of one revision do not ask again.
+      // An older engine sends no revision: then every settled status may be a new completion and asks again.
+      if let revision = status.revision {
+        let state = String(revision)
+        guard state != importState else { break }
+        importState = state
+      } else {
+        importState = nil
+      }
+      // The kept reply may still hold the removed or superseded history; a hidden page refills too.
+      lastReply = nil
+      trace("import.changed")
+      refresh()
     case .featureFailure(.cockpit, _):
       cancelQuery()
       lastReply = nil

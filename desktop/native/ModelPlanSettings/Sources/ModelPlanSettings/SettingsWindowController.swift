@@ -130,6 +130,10 @@ enum SettingsWords {
     private var historyImportView: SettingsHistoryImportView?
     private let heading = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
+    /// G3-71: the hidden-icon notice. General pane only, dismissible; never in the status line.
+    private let iconNoticeBox = NSStackView()
+    private let iconNoticeLabel = NSTextField(wrappingLabelWithString: "")
+    private let iconNoticeShortcut = NSButton(), iconNoticeClose = NSButton()
     private let empty = NSTextField(wrappingLabelWithString: "")
     private var rows: [SettingKey: SettingsNativeRow] = [:]
     private var displayedKeys: [SettingKey] = []
@@ -221,7 +225,7 @@ enum SettingsWords {
         guard !refreshing, SettingsStructure.task65.panes.indices.contains(sidebar.selectedRow) else { return }
         selectedPaneID = SettingsStructure.task65.panes[sidebar.selectedRow].id; refresh()
     }
-    private var language: SettingsLanguage { editor.snapshot?.preferences.language ?? .chinese }
+    private var language: SettingsLanguage { editor.snapshot?.preferences.language ?? .fallback }
     private func buildWindow(_ window: NSWindow) {
         let root = SettingsBackground(); window.contentView = root
         let side = SettingsBackground(); side.translatesAutoresizingMaskIntoConstraints = false
@@ -250,7 +254,18 @@ enum SettingsWords {
         status.font = .systemFont(ofSize: 12); status.textColor = .systemRed
         status.setAccessibilityIdentifier("settings.status"); status.setAccessibilityRole(.staticText)
         empty.font = .systemFont(ofSize: 13); empty.textColor = .secondaryLabelColor
-        for view in [heading, status, empty] { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        iconNoticeBox.orientation = .horizontal; iconNoticeBox.alignment = .centerY; iconNoticeBox.spacing = 8
+        iconNoticeLabel.font = .systemFont(ofSize: 12); iconNoticeLabel.textColor = .systemOrange
+        iconNoticeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        iconNoticeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        iconNoticeShortcut.bezelStyle = .rounded; iconNoticeShortcut.target = self; iconNoticeShortcut.action = #selector(iconNoticeSetShortcut)
+        iconNoticeClose.bezelStyle = .rounded; iconNoticeClose.target = self; iconNoticeClose.action = #selector(iconNoticeDismiss)
+        iconNoticeClose.title = "×"
+        iconNoticeBox.setAccessibilityIdentifier("settings.iconNotice"); iconNoticeShortcut.setAccessibilityIdentifier("settings.iconNotice.shortcut")
+        iconNoticeClose.setAccessibilityIdentifier("settings.iconNotice.dismiss")
+        for view in [iconNoticeLabel, iconNoticeShortcut, iconNoticeClose] { iconNoticeBox.addArrangedSubview(view) }
+        iconNoticeBox.isHidden = true
+        for view in [heading, iconNoticeBox, status, empty] { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         let connectionContent: NSView = scopeConsentEntry?.view ?? connectionsView
         stack.addArrangedSubview(connectionContent)
         connectionContent.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -313,6 +328,7 @@ enum SettingsWords {
         glass.isHidden = effective.reduceTransparency
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         scopeConsentEntry?.view.apply(language: language)
+        updateSubscriptionRows(snapshot)
         let connectionContent: NSView = scopeConsentEntry?.view ?? connectionsView
         let connectionsWereHidden = connectionContent.isHidden
         connectionContent.isHidden = query.isEmpty ? selectedPaneID != "subscriptions"
@@ -333,8 +349,16 @@ enum SettingsWords {
         let feedbackText = feedback.map { $0 == .copied ? SettingsWords.text("Diagnostics copied", "诊断信息已复制", language) : SettingsWords.text("Request sent to the app", "请求已交给应用", language) }
         let deliveryWarning = editor.lastCommitDeliveryFailure?.message(language)
         let iconNotice = editor.context.statusItemNotice?.value(language)
-        status.stringValue = errorMessage ?? deliveryWarning ?? feedbackText ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : (iconNotice ?? ""))
-        status.textColor = errorMessage != nil ? .systemRed : (deliveryWarning == nil && (iconNotice == nil || status.stringValue != iconNotice) ? .secondaryLabelColor : .systemOrange)
+        // G3-71: the hidden-icon notice has its own dismissible box, General pane only.
+        let showIconNotice = iconNotice != nil && selectedPaneID == "general" && query.isEmpty && !editor.statusItemNoticeDismissed
+        iconNoticeBox.isHidden = !showIconNotice
+        iconNoticeLabel.stringValue = showIconNotice ? iconNotice ?? "" : ""
+        iconNoticeShortcut.title = SettingsWords.text("Set Shortcut…", "设置快捷键…", language)
+        // The recorder is disabled while the build cannot open the cockpit; a button that records nothing is not shown.
+        iconNoticeShortcut.isHidden = !(rows[.openShortcut]?.shortcut?.isEnabled ?? false)
+        iconNoticeClose.setAccessibilityLabel(SettingsWords.text("Dismiss", "关闭提示", language))
+        status.stringValue = errorMessage ?? deliveryWarning ?? feedbackText ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : "")
+        status.textColor = errorMessage != nil ? .systemRed : (deliveryWarning == nil ? .secondaryLabelColor : .systemOrange)
         status.isHidden = status.stringValue.isEmpty
         do {
             let catalogued = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
@@ -343,6 +367,8 @@ enum SettingsWords {
                 .filter { row in
                     return !editor.connections.isAvailable || (row.key != .detectedReaders && row.key != .optionalReaders)
                 }
+                // D87/D89: with the Subscriptions rows, visibility and order live in the rows, not in separate controls.
+                .filter { row in scopeConsentEntry == nil || (row.key != .visible && row.key != .order) }
             let ordered = try snapshot.preferences.presentedSubscriptionIDs(editor.context.subscriptions.map(\.id), includingHidden: true)
             let inputs = SettingsDiagrams.inputs(snapshot.preferences, orderedIDs: ordered, lastChangedSubscriptionID: editor.lastChangedSubscriptionID)
             let diagrams: [SettingKey: SettingsDiagramInput] = [.dockEdge: inputs[0], .showPercentages: inputs[1], .autoHide: inputs[2], .size: inputs[3], .percentagePin: inputs[4]]
@@ -360,7 +386,7 @@ enum SettingsWords {
                 for (index, key) in keys.enumerated() {
                     let row = rows[key] ?? SettingsNativeRow(key: key); rows[key] = row
                     if row.superview !== stack {
-                        stack.insertArrangedSubview(row, at: index + (historyImportView == nil ? 4 : 5))
+                        stack.insertArrangedSubview(row, at: index + (historyImportView == nil ? 5 : 6))
                         row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
                     }
                 }
@@ -400,6 +426,34 @@ enum SettingsWords {
             status.stringValue = SettingsWords.text("Settings are unavailable. Check the supplied subscription data.", "设置暂不可用，请检查订阅数据。", language)
             status.isHidden = false
         }
+    }
+    /// D87 slice 6: feed the Subscriptions rows the shared order and hidden set, and wire their visibility and
+    /// order buttons to the same edits the catalogue rows use. Nothing here touches reading consent.
+    private func updateSubscriptionRows(_ snapshot: SettingsSnapshot) {
+        guard let view = scopeConsentEntry?.view else { return }
+        let subscriptions = editor.context.subscriptions
+        let ordered = (try? snapshot.preferences.presentedSubscriptionIDs(subscriptions.map(\.id), includingHidden: true)) ?? subscriptions.map(\.id)
+        view.rowActions.setVisible = { [weak self] id, visible in
+            guard let self else { return }
+            self.submit(operation: { [editor = self.editor] in try await editor.commit(SettingsB21Edit.visible(id, visible)) })
+        }
+        view.rowActions.resetOrder = { [weak self] in
+            guard let self else { return }
+            self.submit(operation: { [editor = self.editor] in try await editor.commit(SettingsB21Edit.resetOrder) })
+        }
+        view.rowActions.move = { [weak self] id, delta in
+            guard let self, let current = self.editor.snapshot else { return }
+            let stable = self.editor.context.subscriptions.filter { !$0.isUnstable }.map(\.id)
+            guard let order = try? current.preferences.presentedSubscriptionIDs(stable, includingHidden: true),
+                  let from = order.firstIndex(of: id), order.indices.contains(from + delta) else { return }
+            self.submit(operation: { [editor = self.editor] in
+                try await editor.commit(SettingsB21Edit.moveSubscription(id, to: from + delta, expectedOrder: order))
+            })
+        }
+        view.setSubscriptionRows(SubscriptionRowsContext(subscriptions: subscriptions, orderedIDs: ordered,
+                                                         hiddenIDs: snapshot.preferences.subscriptions.hiddenIDs,
+                                                         canSave: !editor.isSaving && !pendingEdit,
+                                                         canResetOrder: !snapshot.preferences.subscriptions.order.isEmpty))
     }
     private func owns(_ sender: NSView & SettingsOwnedControl) -> Bool {
         guard sender.isEnabled, !sender.isRetired,
@@ -521,6 +575,12 @@ enum SettingsWords {
     var visibleSettingKeys: [SettingKey] { displayedKeys }
     func aliasControl(subscriptionID: String) -> SettingsAliasControl? { rows[.alias]?.aliases[subscriptionID] }
     func shortcutControl(key: SettingKey) -> SettingsShortcutControl? { rows[key]?.shortcut }
+    var iconNoticeVisible: Bool { !iconNoticeBox.isHidden }
+    var iconNoticeText: String { iconNoticeLabel.stringValue }
+    var iconNoticeShortcutButton: NSButton { iconNoticeShortcut }
+    var iconNoticeDismissButton: NSButton { iconNoticeClose }
+    @objc private func iconNoticeDismiss() { editor.dismissStatusItemNotice() }
+    @objc private func iconNoticeSetShortcut() { rows[.openShortcut]?.shortcut?.beginRecording() }
     var orderControl: SettingsOrderControl? { rows[.order]?.order }
     var hintsResetControl: SettingsActionControl? { rows[.resetHints]?.resetHints }
     func actionControl(key: SettingKey) -> SettingsActionControl? { rows[key]?.surfaceAction }

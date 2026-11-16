@@ -7,6 +7,9 @@ const schema = JSON.parse(source), found = new Set();
 const allowed = new Set(['$ref','description','type','properties','additionalProperties','required','items','enum','anyOf','format','pattern','minimum','maximum','minItems','maxItems','uniqueItems','minLength','maxLength']);
 function visit(node) {
   for (const key of Object.keys(node)) if (!allowed.has(key)) throw Error('Unmodeled wire-schema keyword: '+key);
+  // G3-96: the page's validator (src/schema.ts) refuses any value at a node with no type, $ref or anyOf, so such a node
+  // would reject every message that carries the field. An enum alone is not enough; the schema must name its type.
+  if (!node.$ref && !node.anyOf && !node.type) throw Error('Untyped wire-schema node: '+JSON.stringify(node).slice(0,120));
   if (node.$ref) {
     const name = node.$ref.replace('#/$defs/', '');
     if (!schema.$defs[name] || node.$ref !== '#/$defs/'+name) throw Error('Non-local schema reference');

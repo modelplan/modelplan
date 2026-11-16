@@ -68,6 +68,9 @@
             "generationTps": 42.5,
             "bindingBasis": "synthetic"
           }
+        ],
+        "reportedModels": [
+          "synthetic"
         ]
       }
     ],
@@ -79,21 +82,65 @@
         "model": "synthetic",
         "effort": "synthetic",
         "projectLabel": "synthetic",
+        "projectState": "named",
         "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
         "state": "synthetic",
-        "rate": 42.5
+        "rate": 42.5,
+        "fast": false
       }
     ],
     "sessionCoverage": "synthetic",
     "resetEvents": [
       {
         "version": 1,
+        "id": "synthetic-confirmed",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "confirmed",
+        "kind": "reset_credit",
+        "confirmedAt": "2026-10-29T12:00:00Z",
+        "confirmedAtBasis": "firstSeen",
+        "confirms": "synthetic-confirmed",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "expiresAt": "2026-10-30T12:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
+        "id": "synthetic-credit",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "announced",
+        "kind": "reset_credit",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
         "id": "synthetic-reset",
         "provider": "openai",
         "rowId": "codex",
         "status": "announced",
+        "kind": "direct_reset",
         "publishedAt": "2026-10-29T12:00:00Z",
-        "expiresAt": "2026-10-31T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
         "source": {
           "kind": "publication",
           "publicationId": "0123456789abcdef01234567",
@@ -133,6 +180,16 @@
         ]
       }
     ],
+    "planModels": [
+      {
+        "planId": "synthetic",
+        "generation": "synthetic",
+        "basis": "synthetic",
+        "modelIds": [
+          "synthetic"
+        ]
+      }
+    ],
     "forecasts": [
       {
         "source": "synthetic",
@@ -152,6 +209,7 @@
         "model": "synthetic",
         "effort": "synthetic",
         "projectLabel": "synthetic",
+        "projectState": "named",
         "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
       }
     ],
@@ -325,12 +383,54 @@
     "resetEvents": [
       {
         "version": 1,
+        "id": "synthetic-confirmed",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "confirmed",
+        "kind": "reset_credit",
+        "confirmedAt": "2026-10-29T12:00:00Z",
+        "confirmedAtBasis": "firstSeen",
+        "confirms": "synthetic-confirmed",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "expiresAt": "2026-10-30T12:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
+        "id": "synthetic-credit",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "announced",
+        "kind": "reset_credit",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      },
+      {
+        "version": 1,
         "id": "synthetic-reset",
         "provider": "openai",
         "rowId": "codex",
         "status": "announced",
+        "kind": "direct_reset",
         "publishedAt": "2026-10-29T12:00:00Z",
-        "expiresAt": "2026-10-31T12:00:00Z",
+        "schedule": {
+          "precision": "window",
+          "from": "2026-10-29T13:00:00Z",
+          "through": "2026-10-29T15:00:00Z"
+        },
+        "expiresAt": "2026-10-30T15:00:00Z",
         "source": {
           "kind": "publication",
           "publicationId": "0123456789abcdef01234567",
@@ -385,7 +485,16 @@
             "zh": "synthetic"
           },
           "availableAt": "2026-10-29T12:00:00.123456789Z",
-          "disabledReason": "cooldown"
+          "disabledReason": "cooldown",
+          "hint": {
+            "signInCommand": "codex login",
+            "installCommand": "npm i -g @openai/codex",
+            "installUrl": "https://kiro.dev",
+            "text": {
+              "en": "To sign in, run this in Terminal",
+              "zh": "在终端运行这条命令登录"
+            }
+          }
         },
         "accounts": [
           {
@@ -437,7 +546,8 @@
             "beta": false,
             "credits": {
               "balance": 42.5,
-              "unit": "synthetic"
+              "unit": "synthetic",
+              "currency": "USD"
             },
             "valueState": "current",
             "observedAt": "2026-10-29T12:00:00.123456789Z",
@@ -490,7 +600,16 @@
               "zh": "synthetic"
             },
             "availableAt": "2026-10-29T12:00:00.123456789Z",
-            "disabledReason": "cooldown"
+            "disabledReason": "cooldown",
+            "hint": {
+              "signInCommand": "codex login",
+              "installCommand": "npm i -g @openai/codex",
+              "installUrl": "https://kiro.dev",
+              "text": {
+                "en": "To sign in, run this in Terminal",
+                "zh": "在终端运行这条命令登录"
+              }
+            }
           }
         }
       }
@@ -515,7 +634,16 @@
           "zh": "synthetic"
         },
         "availableAt": "2026-10-29T12:00:00.123456789Z",
-        "disabledReason": "cooldown"
+        "disabledReason": "cooldown",
+        "hint": {
+          "signInCommand": "codex login",
+          "installCommand": "npm i -g @openai/codex",
+          "installUrl": "https://kiro.dev",
+          "text": {
+            "en": "To sign in, run this in Terminal",
+            "zh": "在终端运行这条命令登录"
+          }
+        }
       }
     }
   },
@@ -574,7 +702,8 @@
             "beta": false,
             "credits": {
               "balance": 42.5,
-              "unit": "synthetic"
+              "unit": "synthetic",
+              "currency": "USD"
             },
             "valueState": "current",
             "observedAt": "2026-10-29T12:00:00.123456789Z",

@@ -69,9 +69,10 @@ import ModelPlanCommunityHost
         // window itself is ordered above the front app's windows on that same presentation.
         XCTAssertEqual(surface.raises, 1, "the launch's first run window is raised above the front app")
         await flow.restoreFirstRunIfNeeded()
-        XCTAssertEqual(surface.shows, 2); XCTAssertEqual(activations, 1, "a restore after a wake takes no focus")
+        // Owner 11-12 (E1): the page is already up, so a restore only refreshes admission and never re-shows it.
+        XCTAssertEqual(surface.shows, 1, "a page that is already up is not re-shown"); XCTAssertEqual(activations, 1, "a restore after a wake takes no focus")
         XCTAssertEqual(surface.raises, 1, "a restore after a wake is not raised over other apps")
-        await flow.openFirstRun(); XCTAssertEqual(factories, 1); XCTAssertEqual(surface.shows, 3); XCTAssertEqual(activations, 2)
+        await flow.openFirstRun(); XCTAssertEqual(factories, 1); XCTAssertEqual(surface.shows, 2); XCTAssertEqual(activations, 2)
         XCTAssertEqual(surface.raises, 2, "an explicit open is raised too")
         flow.dispose()
     }

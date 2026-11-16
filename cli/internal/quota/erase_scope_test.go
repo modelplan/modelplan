@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 func TestAccountScopeCleanupKeepsIndependentKeyValuesAndBudget(t *testing.T) {
@@ -183,12 +184,86 @@ func TestHistoryLedgerRewriteFailureLeavesOriginal(t *testing.T) {
 	if err := os.WriteFile(path, before, 0600); err != nil {
 		t.Fatal(err)
 	}
-	err := filterCachedSourceWithWriter(path, "perf.json", "codex", true, func(string, []byte) error { return errors.New("simulated failure before atomic rename") })
+	err := filterCachedSourceWithWriter(path, "perf.json", "codex", true, nil, func(string, []byte) error { return errors.New("simulated failure before atomic rename") })
 	if err == nil {
 		t.Fatal("rewrite failure was ignored")
 	}
 	after, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(after, before) {
 		t.Fatalf("failed rewrite changed original: %s, %v", after, err)
+	}
+}
+
+// Audit D finding 4: revoking or forgetting one tool's history also drops that tool's imported
+// coverage (dates and grant), so the import status no longer reports it; the other tool's stays.
+func TestHistoryScopeCleanupErasesItsImportedCoverage(t *testing.T) {
+	for _, forget := range []bool{false, true} {
+		t.Run(map[bool]string{false: "revoke", true: "forget"}[forget], func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			cache := t.TempDir()
+			dir := filepath.Join(cache, "observed")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			span := `{"from":"2026-10-01T00:00:00Z","through":"2026-10-31T00:00:00Z","epoch":{"storeEpoch":"e","revokedGeneration":0}}`
+			b := []byte(`{"schemaVersion":1,"coverage":{"codex":` + span + `,"claude-code":` + span + `},"rows":[{"source":"codex","day":"2026-10-02"},{"source":"claude-code","day":"2026-10-02"}]}`)
+			if err := os.WriteFile(filepath.Join(dir, "imported.json"), b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := EraseScope(Paths{Cache: cache}, consent.ScopeCodexLocalHistory, forget); err != nil {
+				t.Fatal(err)
+			}
+			st := speed.ImportStatus(cache)
+			if st.Rows != 1 || len(st.Coverage) != 1 || st.Coverage[0].Source != "claude-code" {
+				t.Fatalf("codex import left behind: %+v", st)
+			}
+		})
+	}
+}
+
+func TestHistoryClearRemovesRequestHashesAndCumulativeTotals(t *testing.T) {
+	for _, tool := range []string{"codex", "claude"} {
+		t.Run(tool, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			cache := t.TempDir()
+			dir := filepath.Join(cache, "observed")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			ledger := `{"schemaVersion":1,"since":"2026-11-01T00:00:00Z","rows":[],"files":{"f1":{"offset":9,"seen":"2026-11-12","source":"codex","total":{"input":777}},"legacycursor":{"offset":5,"seen":"2026-11-12"}},"counted":[{"id":"hashclaude1","file":"f1"}],"stores":{"opencode:s1":{"sig":"x","seen":{"hashopen1":1}},"codex:s2":{"sig":"y","seen":{"hashcodex1":1}}}}`
+			for _, name := range []string{"speed.json", "perf.json"} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(ledger), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := EraseScope(Paths{Cache: cache}, tool+".local_history", true); err != nil {
+				t.Fatal(err)
+			}
+			// A cursor without a source (an earlier build's) that nothing attributes goes: it may be
+			// the cleared tool's, and its key, offset and date would be that tool's history.
+			for _, name := range []string{"speed.json", "perf.json"} {
+				b, _ := os.ReadFile(filepath.Join(dir, name))
+				got := string(b)
+				if strings.Contains(got, "legacycursor") {
+					t.Fatalf("%s kept an unattributed log cursor: %s", name, got)
+				}
+				switch tool {
+				case "claude":
+					if strings.Contains(got, "hashclaude1") {
+						t.Fatalf("%s kept counted request hashes: %s", name, got)
+					}
+					if !strings.Contains(got, "777") || !strings.Contains(got, "hashopen1") || !strings.Contains(got, "hashcodex1") {
+						t.Fatalf("%s lost other tools' state: %s", name, got)
+					}
+				case "codex":
+					if strings.Contains(got, "777") || strings.Contains(got, "hashcodex1") {
+						t.Fatalf("%s kept codex totals or hashes: %s", name, got)
+					}
+					if !strings.Contains(got, "hashclaude1") || !strings.Contains(got, "hashopen1") {
+						t.Fatalf("%s lost other tools' state: %s", name, got)
+					}
+				}
+			}
+		})
 	}
 }

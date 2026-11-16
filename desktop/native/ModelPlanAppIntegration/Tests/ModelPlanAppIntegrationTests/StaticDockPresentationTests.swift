@@ -37,6 +37,10 @@ import ModelPlanSettings
     /// DOCK-3.7-02: the reset mark on the strip is 4 pt at M, at 70 % opacity.
     func testStripResetMarkSizeAndOpacity() {
         XCTAssertEqual(DockSliverNoticeMark.diameter(tone: .blue, shape: .solid, unit: 44.0 / 52), 4, accuracy: 1e-6)
+        // D166: the announced amber ring and the confirmed green dot are the reset marks now.
+        XCTAssertEqual(DockSliverNoticeMark.diameter(tone: .amber, shape: .hollow, unit: 44.0 / 52), 4, accuracy: 1e-6)
+        XCTAssertEqual(DockSliverNoticeMark.diameter(tone: .green, shape: .solid, unit: 44.0 / 52), 4, accuracy: 1e-6)
+        XCTAssertEqual(DockSliverNoticeMark.diameter(tone: .amber, shape: .solid, unit: 44.0 / 52), 5 * 44.0 / 52, accuracy: 1e-6)
         XCTAssertEqual(DockSliverNoticeMark.opacity, 0.7)
     }
     func testSliverNamedParametersSupportFixedLengthAndPhysicalTrackingDepth() throws {

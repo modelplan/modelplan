@@ -61,13 +61,16 @@ import AppKit
             copy.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
             subtitle.widthAnchor.constraint(equalTo: copy.widthAnchor),
             illustration.widthAnchor.constraint(equalToConstant: 96), illustration.heightAnchor.constraint(equalToConstant: 40),
-            // G3-26: rows listing every subscription give names room next to their controls.
-            controls.widthAnchor.constraint(equalToConstant: [.visible, .alias].contains(key) ? 380 : 230),
+            controls.widthAnchor.constraint(equalToConstant: Self.controlColumnWidth(key)),
             readout.widthAnchor.constraint(lessThanOrEqualToConstant: 230),
         ])
         setAccessibilityElement(false)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
+
+    /// G3-26: rows listing every subscription give names room next to their controls. Since D87 (G3-68) the
+    /// order list sits in Settings > Subscriptions beside visibility and aliases, so it shares their column.
+    static func controlColumnWidth(_ key: SettingKey) -> CGFloat { [.visible, .alias, .order].contains(key) ? 380 : 230 }
 
     override func layout() {
         super.layout()
@@ -152,6 +155,7 @@ import AppKit
         case .privacyLink: action = .request(.openLink(.privacy))
         case .repositoryLink: action = .request(.openLink(.repository))
         case .updateStatus: action = .request(.checkForUpdates)
+        case .exportDiagnostics: action = .request(.exportDiagnostics)
         case .loginSystemSettings: action = .request(.openSystemSettings(.loginItems))
         case .notificationSystemSettings: action = .request(.openSystemSettings(.notifications))
         default: action = nil
@@ -166,6 +170,7 @@ import AppKit
             surfaceAction?.isEnabled = !saving && (key == .diagnostics || (hasHost && row.availability == .available))
                 && (key != .clearAppCache || context.capabilities.appCacheClearAvailable)
                 && (key != .updateStatus || context.capabilities.updateServiceAvailable)
+                && (key != .exportDiagnostics || context.capabilities.diagnosticsExportAvailable)
             if key == .updateStatus {
                 let words: (String, String)
                 switch context.updateState {
@@ -342,6 +347,7 @@ import AppKit
         let p = p.withoutUnstableMemberChoices(context.subscriptions)
         if order == nil {
             retireControls(); let view = SettingsOrderControl(frame: .zero); order = view; controls.addArrangedSubview(view)
+            view.listWidth = Self.controlColumnWidth(key)
             view.onMove = { onEdit($0, .moveSubscription($1, to: $2, expectedOrder: $3)) }
             view.onReset = { onEdit($0, .resetOrder) }
         }

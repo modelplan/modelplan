@@ -43,8 +43,11 @@ The reference links above are source-reported behavior/pitfalls, not new inciden
 | Stage | Method / carrier | Host / peer | Path / RPC | Header names only |
 | --- | --- | --- | --- | --- |
 | Only request | GET | cli-chat-proxy.grok.com | /v1/billing?format=credits | Accept, Authorization, User-Agent, X-XAI-Token-Auth, X-Userid, X-Grok-Client-Version, X-Grok-Client-Mode |
+| Models (D99, after billing succeeded) | GET | cli-chat-proxy.grok.com | /v1/models | Same as the billing request |
 
-All listed URLs use HTTPS. GET bodies are empty. The only query is the literal `format=credits`. Header **values are intentionally absent**. Transport-managed names such as `Host` and `Accept-Encoding` may be added below the application guard; ambient cookies, changed authorities/ports, unlisted application headers, extra stages and redirect following are refused.
+Models: the model list the tool reports for the signed-in session; only the slugs are kept (best effort, 3 seconds, never affects the quota read).
+
+All listed URLs use HTTPS. GET bodies are empty. The only query is the literal `format=credits`, on the billing request. Header **values are intentionally absent**. Transport-managed names such as `Host` and `Accept-Encoding` may be added below the application guard; ambient cookies, changed authorities/ports, unlisted application headers, extra stages and redirect following are refused.
 
 ### Authentication source and refresh
 

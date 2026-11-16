@@ -1,0 +1,38 @@
+{
+ "sourceSha256": "dc32e093693369d9157c5e6dac611238d2d5619ff10b1c00185ce490fecc03e7",
+ "makers": {
+  "openai": {
+   "colour": "#ececec"
+  },
+  "anthropic": {
+   "colour": "#d97757"
+  },
+  "alibaba": {
+   "colour": "#ff6a00"
+  },
+  "xiaomi": {
+   "colour": "#ff6900"
+  },
+  "google": {
+   "colour": "#4285f4"
+  },
+  "kimi": {
+   "colour": "#007cff"
+  },
+  "minimax": {
+   "colour": "#e73562"
+  },
+  "zhipuai": {
+   "colour": "#b9c2cc"
+  },
+  "xai": {
+   "colour": "#8f96a0"
+  },
+  "meta": {
+   "colour": "#0467df"
+  },
+  "deepseek": {
+   "colour": "#4d6bfe"
+  }
+ }
+}

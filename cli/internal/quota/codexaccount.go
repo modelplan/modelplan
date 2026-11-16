@@ -93,6 +93,10 @@ type accountSnap struct {
 	UsageRead bool     `json:"usageRead,omitempty"`
 	// SubscriptionRef: the account's reference (identity.go); the identity itself is not kept.
 	SubscriptionRef string `json:"subscriptionRef,omitempty"`
+	// ReportedModels (D98): the model ids Codex itself lists for the signed-in account (app-server
+	// model/list), ids only, read with the same refresh and never more often. Empty when Codex did not
+	// answer or is too old to list models; then the published plan list and the developer match decide.
+	ReportedModels []string `json:"reportedModels,omitempty"`
 	// FirstFailures: failed reads in a row since the cache began, with no reading before them.
 	FirstFailures int `json:"firstFailures,omitempty"`
 	// ErrorCode: the fixed ReaderErrorCode vocabulary word for a failed read (never provider text).
@@ -408,6 +412,11 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		if errors.Is(err, context.DeadlineExceeded) {
 			reason = "timeout"
 		}
+		// D232: with another model provider (Bedrock or custom) Codex has no ChatGPT plan
+		// limits to report; say so instead of a generic service error. Read-only config check.
+		if reason == "rpc_error" && codexUsesCustomProvider(CodexHome()) {
+			reason = "codex_custom_provider"
+		}
 		code := reason
 		safeErr := codeError(reason, reason)
 		if errors.Is(err, toolcli.ErrRuntimeMissing) {
@@ -417,6 +426,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		return errors.Join(safeErr, commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: status, Error: reason, ErrorCode: code}))
 	}
 	s := snapFrom(resp, now)
+	s.ReportedModels = resp.models
 	attachResetCardIdentities(s, resp, cache)
 	if resp.identity != "" {
 		s.SubscriptionRef = assignSubscription(cache, "codex-account", resp.identity, now)
@@ -480,6 +490,7 @@ type rlResponse struct {
 	RateLimits           *rlSnapshot            `json:"rateLimits"`
 	RateLimitsByLimitID  map[string]*rlSnapshot `json:"rateLimitsByLimitId"`
 	identity             string                 // from account/read; never cached
+	models               []string               // model/list: model ids only; empty when unanswered
 	RateLimitResetCredit *struct {
 		AvailableCount *int64 `json:"availableCount"`
 		Credits        []struct {
@@ -496,6 +507,8 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 		return nil, err
 	}
 	cmd.Stderr = io.Discard
+	ownProcessGroup(cmd)
+	cmd.WaitDelay = time.Second
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -507,7 +520,20 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	// A descendant that inherited stdout can keep the pipe open after the launcher dies: on the
+	// deadline, stop the whole group and close the read end so the scan below returns.
+	fired := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() { defer close(fired); killProcessGroup(cmd); _ = out.Close() })
+	defer func() {
+		// The deadline kill finishes before Wait reaps the launcher, so it never signals a
+		// recycled process group.
+		if !stop() {
+			<-fired
+		}
+		_ = in.Close()
+		killProcessGroup(cmd)
+		_ = cmd.Wait()
+	}()
 	send := func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
@@ -564,7 +590,84 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 			r.identity = codexIdentity(raw)
 		}
 	}
+	r.models = askCodexModels(send, wait)
 	return &r, nil
+}
+
+const (
+	modelListTimeout = 3 * time.Second
+	modelListPages   = 4
+	modelListMax     = 256
+)
+
+// askCodexModels (D98) asks the app-server which models the signed-in account can use (model/list,
+// hidden models excluded). It is best effort: an error, a timeout (a Codex that never answers it) or a
+// malformed answer yields none and never fails the quota read. Only the model slug is kept. The list
+// is all or nothing: a failed or malformed later page, or a list longer than the page/size caps, also
+// yields none, because a partial list would hide the models on the pages that were not read.
+func askCodexModels(send func(any) error, wait func(int) (json.RawMessage, error)) []string {
+	done := make(chan []string, 1)
+	go func() {
+		var out []string
+		seen := map[string]bool{}
+		cursor := ""
+		complete := false
+		for p := 0; p < modelListPages; p++ {
+			params := map[string]any{"limit": 100}
+			if cursor != "" {
+				params["cursor"] = cursor
+			}
+			if send(map[string]any{"jsonrpc": "2.0", "id": 4 + p, "method": "model/list", "params": params}) != nil {
+				break
+			}
+			raw, err := wait(4 + p)
+			if err != nil {
+				break
+			}
+			// A page must carry its data array: a missing or null result or data is malformed, not the end.
+			var r struct {
+				Data *[]struct {
+					ID     string `json:"id"`
+					Model  string `json:"model"`
+					Hidden bool   `json:"hidden"`
+				} `json:"data"`
+				NextCursor *string `json:"nextCursor"`
+			}
+			if json.Unmarshal(raw, &r) != nil || r.Data == nil {
+				break
+			}
+			for _, m := range *r.Data {
+				id := strings.TrimSpace(m.Model)
+				if id == "" {
+					id = strings.TrimSpace(m.ID)
+				}
+				if m.Hidden || id == "" || len(id) > 128 || seen[id] {
+					continue
+				}
+				seen[id] = true
+				out = append(out, id)
+			}
+			if len(out) > modelListMax {
+				break
+			}
+			if r.NextCursor == nil || *r.NextCursor == "" {
+				complete = true
+				break
+			}
+			cursor = *r.NextCursor
+		}
+		if !complete {
+			out = nil
+		}
+		done <- out
+	}()
+	select {
+	case out := <-done:
+		sort.Strings(out)
+		return out
+	case <-time.After(modelListTimeout):
+		return nil
+	}
 }
 
 // codexIdentity: the signed-in ChatGPT account (its e-mail, as Codex reports it), "" for an API
@@ -734,6 +837,13 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		}
 		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: "stale", ErrorCode: failed.failureCode(), Reason: reason})
 	}
+	// A recent failure with no usable retained reading (a first read that failed, or a retained
+	// reading past accountKeep) still names its cause; runtime_missing is reported above.
+	if failed == nil && s != nil && s.Status != "ok" && s.Status != toolcli.RuntimeMissing &&
+		now.Sub(s.ObservedAt) <= accountKeep && !s.ObservedAt.After(now.Add(5*time.Minute)) {
+		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: "error", ErrorCode: s.failureCode(),
+			Reason: "last refresh failed at " + s.ObservedAt.UTC().Format(time.RFC3339)})
+	}
 	if s == nil || s.Status != "ok" || now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now.Add(5*time.Minute)) {
 		return
 	}
@@ -836,6 +946,7 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		a.ObservedAt = s.ObservedAt
 	}
 	a.Via = "codex-account"
+	a.ReportedModels = s.ReportedModels
 	if failed != nil && !a.ObservedAt.After(s.ObservedAt) {
 		a.retained = true // the newest reading of this row is the retained one
 	}

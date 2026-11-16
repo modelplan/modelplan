@@ -10,6 +10,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
 // QuotaNotice is a single factual line for the prompt hook's model context, with the one step
@@ -216,7 +217,7 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 		}
 		head := []string{s.c(bold+";"+hi, sourceName(q, a.Source))}
 		if a.Plan != "" {
-			head = append(head, a.Plan)
+			head = append(head, rows.PlanLabel(a.Source, a.Plan))
 		}
 		if h := a.Harness; h != nil {
 			if h.Model != "" {

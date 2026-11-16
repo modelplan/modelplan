@@ -7,7 +7,7 @@ test('official built header displays each approved control glyph',async({page})=
  const send=commands();expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('load',{appearance,shell}))).toBe(true);
  const cases=[
   {selector:'[data-settings]',part:'::before',property:'backgroundImage',asset:'gear-normal@3x.png'},
-  {selector:'[data-close]',part:'::before',property:'backgroundImage',asset:'close-normal@3x.png'},
+  // [data-close] is CSS-drawn since G3-102 (D234); see g3-102-close-key.spec.mjs
   {selector:'[data-detach] .detach-glyph',part:null,property:'webkitMaskImage',asset:'detach.svg'},
   {selector:'[data-shutter] .shutter-thumb',part:null,property:'backgroundImage',asset:'thumb-open@3x.png'},
   {selector:'.s6-alert',part:'::after',property:'backgroundImage',asset:'lamp-off-body@3x.png'},

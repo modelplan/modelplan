@@ -10,6 +10,7 @@ import ModelPlanWire
 @MainActor final class EngineScopeConsentBinding: EngineStoreEventSink {
     let entry: ScopeConsentEntry
     private let store: EngineStore
+    private let commands: EngineClientScopeConsentCommands
     init(composition: EngineDockMenuComposition) {
         let store = composition.store
         self.store = store
@@ -17,6 +18,10 @@ import ModelPlanWire
             guard let snapshot = store?.snapshot else { return (nil, nil) }
             return (snapshot.delivery, snapshot.acceptedConsent)
         }
+        commands = EngineClientScopeConsentCommands(client: composition.client, ready: { [weak store] in
+            guard let snapshot = store?.snapshot, case .ready = snapshot.connection else { return false }
+            return true
+        }, makeGrant: { intent in try factory.make(intent) })
         entry = ScopeConsentEntry(client: composition.client, ready: { [weak store] in
             guard let snapshot = store?.snapshot, case .ready = snapshot.connection else { return false }
             return true
@@ -29,6 +34,15 @@ import ModelPlanWire
         }))
         entry.historyImport = importer
         store.attach(self)
+    }
+    /// D90: saving a key is an explicit user action for that provider, so its reading scope is
+    /// allowed through the same grant path as the Permissions list. Nothing else is touched.
+    func allow(scope: String) async -> Bool {
+        guard commands.canMutate else { return false }
+        do {
+            _ = try await commands.grant(.init(mutation: .allow(scopes: [scope], keychain: [])), userAction: .init(id: UUID()))
+            return true
+        } catch { return false }
     }
     func clearPrivateViews(_ invalidation: EngineInvalidation) {
         entry.clearPrivateViews()
@@ -43,9 +57,9 @@ import ModelPlanWire
             case .rows(let reply, _): entry.acceptedRows(reply.envelope.data)
             case .grant(let grant):
                 entry.controller.receiveAcceptedGrant(grant)
-                // The first-run import follows the committed consent with no further dialog; the engine
-                // runs it once and skips every tool that was not allowed.
-                if grant.committedAt != nil, !grant.supersededByLaterConsent, grant.receipt.code == .ok, let model = entry.historyImport {
+                // The first-run import follows the committed first-run consent with no further dialog; the
+                // engine runs it once and skips every tool that was not allowed. Other receipts never start it.
+                if entry.controller.takeCommittedFirstRunGrant(grant), let model = entry.historyImport {
                     Task { @MainActor in await model.runAfterFirstRunConsent() }
                 }
             case .historyImport(let reply): entry.acceptedHistoryImport(reply.envelope.data)
@@ -59,6 +73,8 @@ import ModelPlanWire
     func apply(_ snapshot: EngineStoreSnapshot) {
         // An unrelated snapshot fanout is not a new consent readback.
         entry.controller.refreshAvailability()
+        // A Privacy look before readiness asks for the import status once the engine is ready.
+        entry.historyImport?.readinessChanged()
     }
 }
 

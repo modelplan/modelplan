@@ -339,8 +339,15 @@ private actor G350Engine: EngineClient {
     /// G3-74 (owner, deviation from DOCK-3.8-01): subtle magnification is concentric. The ring centre stays
     /// fixed at 1.15x, and at S, M and L on every allowed edge the grown ring stays inside the
     /// panel, and clear of the neighbouring rings and labels. The label does not magnify: its frame and font size are unchanged.
-    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighbours() async throws {
-        for edge in [SettingsDockEdge.left, .right, .bottom, .top] {
+    // G3-74, one test per edge: the same edge × size matrix as the former single test (116-210 s on the GUI runner),
+    // split so each part stays well under the per-test budget and a failure names its edge.
+    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighboursLeft() async throws { try await checkConcentricMagnification(edge: .left) }
+    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighboursRight() async throws { try await checkConcentricMagnification(edge: .right) }
+    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighboursBottom() async throws { try await checkConcentricMagnification(edge: .bottom) }
+    func testG374ConcentricMagnificationKeepsCentreAndClearsEdgesAndNeighboursTop() async throws { try await checkConcentricMagnification(edge: .top) }
+
+    private func checkConcentricMagnification(edge: SettingsDockEdge) async throws {
+        do {
             for size in SettingsSize.allCases {
                 let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g374-" + UUID().uuidString)
                 addTeardownBlock { try? FileManager.default.removeItem(at: profile) }

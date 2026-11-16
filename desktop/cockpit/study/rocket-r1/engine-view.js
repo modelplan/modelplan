@@ -1,5 +1,5 @@
 // Round G, owner-approved task 09. Pure view; positional windows, one aligned number per cell.
-import {t,formatCredits} from './i18n.js';
+import {t,has,formatCredits} from './i18n.js';
 import {esc, dhm, tok, when, hm, relativeMoment} from './mfd-pages/engine-fmt.js';
 import {fillColour, numberColour} from './colour-mode.js';
 import {emptyKey, emptyColumn} from './empty-bays.js';
@@ -14,7 +14,11 @@ const shortTime = n => n >= 1440 ? `${Math.floor(n/1440)}d` : n >= 60 ? `${Math.
 const until = (ms, now) => {const h=Math.max(0,Math.floor((ms-now)/H));return h>48?`${Math.floor(h/24)}d${h%24}h`:`${h}h`;};
 const bar = c => `<span class="qmeter"><span class="qbar">${Array.from({length:10},(_,i)=>`<i${i<c.lit?' class="on"':''}></i>`).join('')}</span>${c.timeLit==null?'':`<span class="qtime" data-frac="${c.timeLeft}" aria-hidden="true">${Array.from({length:10},(_,i)=>`<i${i<c.timeLit?' class="on"':''}></i>`).join('')}</span>`}</span>`;
 const paint = c => ` style="--qf:${fillColour(c.level)||'var(--lcd-muted)'};--qn:${numberColour(c.level)||'var(--lcd-ink)'}"`;
-const periodTag = c => c.extra ? t('extra.name',{n:c.name,p:t('extra.per.'+c.period)}) : t(TAG[c.period]||'eng.other');
+// G3-109: an extra whose period has no copy (role "other") shows its name alone, never a raw key like extra.per.other.
+const extraName = c => c.name || t('eng.other');
+const extraPer = c => has('extra.per.'+c.period) ? t('extra.per.'+c.period) : null;
+const periodTag = c => c.extra ? (extraPer(c) ? t('extra.name',{n:extraName(c),p:extraPer(c)}) : extraName(c)) : t(TAG[c.period]||'eng.other');
+const extraShort = c => [...extraName(c)].length <= 3 ? extraName(c) : extraPer(c) ? t('extra.name',{n:[...extraName(c)][0],p:extraPer(c)}) : t('eng.other');
 function note(col,c,ui) {
   if(col.state==='loading') return {text:t('eng.loading'),short:t('eng.loadingShort')};
   if(col.state==='error') return {text:t('eng.failed')};
@@ -33,10 +37,10 @@ function title(col,c,ui){return [col.name,periodTag(c),c.value==null?t('eng.noRe
   c.level==='low'?t('eng.lvLow'):c.level==='mid'?t('eng.lvMid'):'',c.runOutMin!=null?t('eng.runOut',{t:dhm(c.runOutMin)}):'',c.resetIn!=null?t('eng.resetIn',{t:dhm(c.resetIn)}):'',note(col,c,ui).text].filter(Boolean).join(' · ');}
 function cell(col,c,row,m,ui,fresh){
   const n=note(col,c,ui), different=c.extra||c.period!==m.rowPeriods[row];
-  const tag=different?periodTag(c):'', shortTag=c.extra?(c.name.length>3?t('extra.name',{n:[...c.name][0],p:t('extra.per.'+c.period)}):c.name):tag;
+  const tag=different?periodTag(c):'', shortTag=c.extra?extraShort(c):tag;
   const meta=(txt,tg)=>[tg,txt,c.more?`+${c.more}`:''].filter(Boolean).join(' ');
   const full=meta(n.warn&&m.cls==='narrow'?(n.short||n.text):n.text,tag), short=meta(n.event&&ui.lang==='zh-CN'?(n.short||n.text).replaceAll(' ',''):(n.short||n.text),shortTag);
-  const smallest=[c.extra?[...c.name][0]:tag,n.small||n.short||n.text].filter(Boolean).join(' ')+(c.more?`+${c.more}`:'');
+  const smallest=[c.extra?[...extraName(c)][0]:tag,n.small||n.short||n.text].filter(Boolean).join(' ')+(c.more?`+${c.more}`:'');
   const tip=c.all?c.all.map(x=>title(col,x,ui)).join('\n'):title(col,c,ui);
   return `<div class="qcell lv-${c.level}${c.extra?' qx':''}${c.drawing?' used':''}${c.noData?' nodata':''}${c.event?' ev':''}" data-row="${row}" data-kind="${c.extra?'extra':c.kind}" data-tag="${esc(tag)}" data-more="${c.more||0}"${paint(c)} ${c.extra||c.all?.some(x=>x.extra)?`tabindex="0" data-tip="${esc(tip)}"`:""} aria-label="${esc(tip)}">
     <span class="qline"><b class="qnum${fresh?' lcd-in':''}"><span class="qvalue">${c.value==null?'--':Math.round(c.value)}</span>${c.value==null?'':'<small>%</small>'}</b><em class="qtxt${n.warn?' warn':''}${n.crit?' crit':''}${n.event?' qev':''}" data-full="${esc(full)}" data-short="${esc(short)}" data-small="${esc(smallest)}">${esc(full)}</em></span>${bar(c)}</div>`;
@@ -46,8 +50,9 @@ function reserve(col,m,ui){
   const r=col.reserve;if(!r)return '<div class="qrow qrow-r"></div>';
   const expiry=r.firstExpiry==null?'':` · ${until(r.firstExpiry,ui.now)}`;
   const full=t(r.cards===1?'eng.resetWordOne':'eng.resetsWords',{n:r.cards})+expiry, short=t(r.cards===1?'eng.resetCompactOne':'eng.resetsCompact',{n:r.cards})+expiry.replaceAll(' ','');
-  const points=r.credits==null?'':formatCredits(r.credits,ui.lang).replace('<','&lt;');
-  return `<div class="qrow qrow-r" aria-label="${esc([r.cards!=null?full:'',points].filter(Boolean).join(' · '))}">${r.cards!=null?`<span class="qrv-c${r.warn?' warn':''}" data-full="${esc(full)}" data-short="${esc(short)}">${esc(full)}</span>`:''}${points?`<span class="qrv-p">${esc(points)}</span>`:''}</div>`;
+  // G3-109: a money balance arrives formatted and escaped; it reads "Balance $12.34", or the value alone when narrow.
+  const points=r.money?t('eng.balance',{v:r.money}):r.credits==null?'':formatCredits(r.credits,ui.lang).replace('<','&lt;');
+  return `<div class="qrow qrow-r" aria-label="${esc([r.cards!=null?full:'',points].filter(Boolean).join(' · '))}">${r.cards!=null?`<span class="qrv-c${r.warn?' warn':''}" data-full="${esc(full)}" data-short="${esc(short)}">${esc(full)}</span>`:''}${points?`<span class="qrv-p"${r.money?` data-full="${esc(points)}" data-short="${esc(r.money)}"`:''}>${esc(points)}</span>`:''}</div>`;
 }
 // Exactly two extra instruments in the wide-column prototype; missing history stays unplotted.
 function detail(col, ui) {

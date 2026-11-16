@@ -214,6 +214,15 @@ test('CKP-SHELL-22 missing bridge data stays empty and the page makes no externa
  const origin=new URL(page.url()).origin;expect(requests.every(url=>new URL(url).origin===origin)).toBe(true);
 });
 
+test('Cockpit members (14c): sessions stay on the tape while no subscription has a widget reading yet',async({page})=>{
+ // Post-merge sample 11-11 (#847 finding 1): every tool row is menu/settings only (no quota reading yet) while the
+ // producer already delivers running sessions; the engine is empty, the sessions are not.
+ const data=visualFixture().data;for(const row of data.projection.rows)row.surfaces=['menu','settings'];
+ await open(page,data);
+ await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(0);await expect(page.locator('.ck-eng .ec-empty')).toHaveCount(1);
+ await expect(page.locator('.ck-tape .t-observed')).toHaveCount(data.details.sessions.length);
+});
+
 test('CKP-ENG-10 quota numerals and bars use the LCD font and status inks',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,3);for(const [i,row] of data.projection.rows.entries())row.accounts[0].windows[0].remainingPercent=[75,40,20][i];await open(page,data);
  const cells=page.locator('.eng-cols .ec[data-col] .qcell[data-row="first"]');await expect(cells).toHaveCount(3);const ink=[];
@@ -256,7 +265,7 @@ test('CKP-ENTRY-03 opens on usage with no comparison when publication is absent'
 
 test('CKP-MFD-02 four page keys select and light the current page in both languages',async({page})=>{
  const {send,receive}=await open(page);const buttons=page.locator('.mfd-pk .pk');await expect(buttons).toHaveCount(4);
- for(const labels of [['Overview','Subscription','Effort','Breakdown'],['总览','订阅','档位','去向']]){
+ for(const labels of [['Overview','Subscription','Models','Breakdown'],['总览','订阅','模型','去向']]){
   for(const [i,label] of labels.entries()){const key=buttons.nth(i);await expect(key).toHaveAttribute('aria-label',label);await key.click();await expect(key).toHaveAttribute('aria-pressed','true');await expect(key).toHaveClass(/\bon\b/);await expect(buttons.locator('.pk-led')).toHaveCount(4);const activeColor=await key.locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor);for(let j=0;j<4;j++)if(i!==j){await expect(buttons.nth(j)).toHaveAttribute('aria-pressed','false');expect(await buttons.nth(j).locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor)).not.toBe(activeColor);}}
   if(labels[0]==='Overview')expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
  }
@@ -313,12 +322,12 @@ test('CKP-MFD-12 scoped subscription shows reported credits and reading age with
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(credits).toContainText('5m前读取');
 });
 
-test('CKP-STRIP-06 a new caution flashes at most ten seconds and a new condition retriggers',async({page})=>{
+test('CKP-STRIP-06 a new caution blinks three times, then stays lit; a new condition retriggers',async({page})=>{
  const data=visualFixture().data;data.details=null;data.projection.rows=data.projection.rows.slice(0,1);const windows=data.projection.rows[0].accounts[0].windows;for(const w of windows)w.remainingPercent=75;
  const {send,receive}=await open(page,data),lamp=page.locator('[data-caution]');await expect(lamp).not.toHaveClass(/\bflash\b/);
  windows[0].remainingPercent=35;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\b(flash|lit)\b/);
  windows[0].remainingPercent=20;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bflash\b/);await expect(lamp).toHaveClass(/\bred\b/);
- const animation=await lamp.evaluate(e=>{const s=getComputedStyle(e);window.__g1CautionAnimation=e.getAnimations()[0];return {name:s.animationName,duration:s.animationDuration,count:s.animationIterationCount};});expect(animation.name).not.toBe('none');expect(animation.duration).toBe('1s');expect(animation.count).toBe('10');
+ const animation=await lamp.evaluate(e=>{const s=getComputedStyle(e);window.__g1CautionAnimation=e.getAnimations()[0];return {name:s.animationName,duration:s.animationDuration,count:s.animationIterationCount};});expect(animation.name).not.toBe('none');expect(animation.duration).toBe('1s');expect(animation.count).toBe('3');
  // The same condition keeps its blink; a second red window is a new condition and blinks again.
  windows[0].remainingPercent=18;expect(await receive(send('display',{data}))).toBe(true);expect(await lamp.evaluate(e=>e.getAnimations().includes(window.__g1CautionAnimation))).toBe(true);
  windows[1].remainingPercent=10;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bred\b/);expect(await lamp.evaluate(e=>e.getAnimations().includes(window.__g1CautionAnimation))).toBe(false);windows[1].remainingPercent=75;
@@ -386,7 +395,7 @@ test('CKP-STRIP-06 ALERT under a healthy selected subscription lists the other s
  // Esc returns; a second lamp press returns; a page key leaves the view for that page.
  await lamp.click();await expect(list).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('.pg-sub')).toBeVisible();
  await lamp.click();await expect(list).toBeVisible();await lamp.click();await expect(page.locator('.pg-sub')).toBeVisible();
- await lamp.click();await expect(list).toBeVisible();await page.getByRole('button',{name:'Effort',exact:true}).click();await expect(page.locator('.pg-tune')).toBeVisible();
+ await lamp.click();await expect(list).toBeVisible();await page.getByRole('button',{name:'Models',exact:true}).click();await expect(page.locator('.pg-tune')).toBeVisible();
 });
 test('CKP-STRIP-06 ALERT reveals a critical subscription on another engine page',async({page})=>{
  const {lamp}=await alertScope(page,7);await expect(lamp).toHaveClass(/\bred\b/);await expect(page.locator('.eng-keys')).not.toContainText('Synthetic 6');

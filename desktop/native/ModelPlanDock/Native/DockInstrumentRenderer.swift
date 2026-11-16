@@ -12,7 +12,21 @@ public struct DockInk: Codable, Sendable {
 }
 public struct DockBitmapLayer: Codable, Sendable {public var resource:String;public var rect:CGRect;public var opacity:Double?}
 public struct DockRingRecipe: Codable, Sendable {public var radius:CGFloat,width:CGFloat,minimumVisibleFraction:Double,opacity:Double;public var trackOpacity:Double?,unknownDash:[CGFloat]?}
-public struct DockClockRecipe: Codable, Sendable {public var radius:CGFloat,dotRadius:CGFloat,backWidth:CGFloat;public var positions:Int}
+/// `pixelSnap` (optional, D167 / DOCK-3.8-22): on a 1x raster each time dot is centred on a device pixel and covers
+/// at least that whole pixel, so it is not smeared across four half-lit pixels. 2x and 3x keep the recipe's size.
+public struct DockClockRecipe: Codable, Sendable {public var radius:CGFloat,dotRadius:CGFloat,backWidth:CGFloat;public var positions:Int;public var pixelSnap:Bool?}
+/// D167: where a time dot lands on the raster. At scale 1 with snapping, the centre moves to the nearest device-pixel
+/// centre (in the context's current transform, so poses and viewports are respected) and the radius grows to at least
+/// √½ device px, the smallest circle that contains the whole centre pixel.
+public enum DockClockDotPlacement {
+    public static func dot(centre p:CGPoint,radius:CGFloat,snap:Bool,scale:Int,toDevice:CGAffineTransform) -> (centre:CGPoint,radius:CGFloat) {
+        guard snap, scale == 1 else { return (p, radius) }
+        let device = p.applying(toDevice), back = toDevice.inverted()
+        let snapped = CGPoint(x: device.x.rounded(.down) + 0.5, y: device.y.rounded(.down) + 0.5).applying(back)
+        let unit = hypot(back.a, back.b)
+        return (snapped, max(radius, unit * CGFloat(0.5).squareRoot()))
+    }
+}
 /// Optional native equivalent of a supplied CSS radial alpha overlay.
 public struct DockRadialOverlayRecipe: Codable, Sendable {public var radius: CGFloat; public var alphas: [CGFloat]}
 public struct DockTextRecipe: Codable, Sendable {public var fontResource:String?;public var systemFontName:String?;public var useSystemUIFont:Bool?;public var language:String?;public var size:CGFloat,weight:Double}
@@ -229,7 +243,8 @@ public struct DockNozzlePose: Equatable, Sendable {
             c.restoreGState()
         }
         func drawNotice(_ notice: DockNotice, _ station: DockStationRecipe) throws {
-                let palette=notice.tone == .amber ? "noticeAmber":notice.tone == .blue ? "noticeBlue":"noticeWhite"
+                // D166: a confirmed reset is green; a skin without its own notice green uses its normal green.
+                let palette=notice.tone == .amber ? "noticeAmber":notice.tone == .blue ? "noticeBlue":notice.tone == .green ? (skin.palette["noticeGreen"] != nil ? "noticeGreen":"normal"):"noticeWhite"
                 let diameter=(notice.shape == .solid ? station.eventSolidDiameter:station.eventHollowDiameter) ?? station.eventRect.width/2
                 let stroke=station.eventStrokeWidth ?? 1.2
                 guard diameter.isFinite,diameter>0,diameter<=station.eventRect.width,stroke.isFinite,stroke>0,stroke<=diameter else{throw DockArtworkError.invalidManifest}
@@ -335,9 +350,10 @@ public struct DockNozzlePose: Equatable, Sendable {
                     c.strokeEllipse(in:CGRect(x:station.centre.x-r,y:station.centre.y-r,width:2*r,height:2*r))
                     let count=reading.litTimePoints(positions:clock.positions) ?? 0
                     c.setFillColor(try ink("clock"))
+                    let toDevice=c.userSpaceToDeviceSpaceTransform
                     for i in 0..<count {let a=Double(i)*2 * .pi/Double(clock.positions)
-                        let p=CGPoint(x:station.centre.x+sin(a)*r,y:station.centre.y-cos(a)*r)
-                        c.fillEllipse(in:CGRect(x:p.x-clock.dotRadius,y:p.y-clock.dotRadius,width:2*clock.dotRadius,height:2*clock.dotRadius))}
+                        let (p,d)=DockClockDotPlacement.dot(centre:CGPoint(x:station.centre.x+sin(a)*r,y:station.centre.y-cos(a)*r),radius:clock.dotRadius,snap:clock.pixelSnap==true,scale:scale,toDevice:toDevice)
+                        c.fillEllipse(in:CGRect(x:p.x-d,y:p.y-d,width:2*d,height:2*d))}
                 }
             }
         }

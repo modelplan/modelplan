@@ -581,7 +581,7 @@
     "Resources/artwork.json": "23c13b15206a61e2a24fe11121f47acdb0472215a5a33151b1a2cd137acf8348",
     "SOURCES.md": "e3279a19fd71718eb725e70914951c0fb828819c50291bd9a6d3bb7d25d9ffb1",
     "T2BundledArtwork.swift": "27c4a46a389afae29c0c7bd9ed5871483c4b666b4c2f67f4b9e206fbe6095265",
-    "T2DockSkin.swift": "d1bf0f2edd48646329138b3ab09314fe6cc9ed80745ade0f114bb77bc2ffdbfe",
+    "T2DockSkin.swift": "98f0e36c7c58040207b0fb2e3b70ee7c3e05bfd2417d13b7397483c660249c54",
     "T2EdgeCoordinates.swift": "3a6d9945c0bec5ce152c8cad2a55e9cef453ad33f12994f4769dbf185a6d7f67",
     "T2FaceMaterial.swift": "0ac067f6346e44e1447b2f1a1634590e5bb21a1b7190f85ed71d7d7aa2c60fb3",
     "T2FlameFrameProvider.swift": "c4cfe07ca51bc5dea30ecd883de5c56c9e9a1f46ae5ce4202aebeea4edb0aa9f",
@@ -590,7 +590,7 @@
     "Tests/T2FlameFrameProviderTests.swift": "a52e805c9fa76fd699645eeead4bb280e9d365e16094bfca3ffe384371889c2d",
     "Tests/T2GeometryTests.swift": "0be73a1b8f39f726268bb2224919f61688fd7a4441fef1c05637995eb779fb66",
     "Tests/T2OracleTests.swift": "5223cccb73db0e6ac0335f6cb09a22fe5d071d31646e5ddf29dec1e3312f5735",
-    "Tests/T2ResetEventDotTests.swift": "7ac4cc29b558eb40d01daff55259380c470fed0b1f92730aae4076884485941a",
+    "Tests/T2ResetEventDotTests.swift": "7cdb0d3443c66fd50d27a704192b9752ff0cee879ab3a99d582b5969dbfebb47",
     "Tests/T2ResourceTests.swift": "8f45bdfe136500487da32c6dd221f964d9c0946df7d916e79fc35b99909e2037",
     "Tests/geometry-oracle.json": "746709f8d11eab84e94896537696f35531e644e7be8d35a7eda055f15a4268bb"
   }

@@ -82,7 +82,7 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 		}
 		value.ResetCards = account.ResetCards
 		if account.Credits != nil {
-			value.Credits = &rows.CreditsInput{Balance: account.Credits.Balance, Unit: account.Credits.Unit}
+			value.Credits = &rows.CreditsInput{Balance: account.Credits.Balance, Unit: account.Credits.Unit, Currency: account.Credits.Currency}
 		}
 		for _, window := range account.Windows {
 			source := rows.WindowSourceOther
@@ -116,7 +116,13 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 			profile.FreshUntil = &until
 		}
 		for _, source := range report.Sources {
-			if rows.CanonicalTool(source.Source) == tool && source.ErrorCode != "" {
+			matches := rows.CanonicalTool(source.Source) == tool
+			if source.Source == "codex-account" {
+				// Codex's account reading fails under its own source name: its failure belongs to the
+				// runtime account only, never to an independent local-history account.
+				matches = account.Source == "codex" && account.Via == "codex-account"
+			}
+			if matches && source.ErrorCode != "" {
 				profile.LatestAttempt = rows.AttemptResultFailed
 				profile.LastFailure = &rows.FailureInput{Code: source.ErrorCode, At: timePointer(report.EvaluatedAt)}
 			}
