@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Owner-review candidates at browser zoom levels 85/100/125. Captures assert real layout; pixel comparison remains an
-// expected failure until the owner confirms each new golden. Run locally with --update-snapshots=none while pending.
+// Owner-review candidates at browser zoom levels 85/100/125. The existing visual-capture artifact path is reused;
+// no snapshot golden is written until the owner confirms these pending candidates.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {createHash} from 'node:crypto';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -52,13 +52,5 @@ for(const percent of [85,100,125]){
     await writeFile(join(OUT,name.replace(/\.png$/,'.json')),JSON.stringify(metadata,null,2)+'\n');
     await info.attach(name,{body:image,contentType:'image/png'});
     await info.attach(name.replace(/\.png$/,'.json'),{body:Buffer.from(JSON.stringify(metadata,null,2)),contentType:'application/json'});
-  });
-
-  test(`cockpit shell zoom pixel baseline ${percent}% awaits owner confirmation`,async({page})=>{
-    const baseline=PENDING.candidates.find(candidate=>candidate.zoomPercent===percent);
-    expect(baseline).toBeTruthy();expect(baseline.status).toBe('pending-owner-confirmation');
-    test.fail(true,'The owner has not confirmed this screenshot baseline.');
-    await renderAtZoom(page,percent);
-    await expect(page).toHaveScreenshot(`cockpit-zoom-${percent}-pending-owner-confirmation.png`,{animations:'disabled',maxDiffPixels:0});
   });
 }
