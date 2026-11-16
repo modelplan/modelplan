@@ -78,7 +78,7 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift",
-      "sha256": "b8e27cf4643030261d6d91be7b73d3fad2cf41180ddf69c0c712cfeea8a55ac0",
+      "sha256": "2da27db375f4f4b601eaebab8a66dc8f91c4e67989f04b53ddf1052c69422a60",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
       "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
