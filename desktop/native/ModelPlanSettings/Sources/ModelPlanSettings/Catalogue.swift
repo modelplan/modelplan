@@ -13,7 +13,7 @@ public enum SettingKey: String, CaseIterable, Sendable {
     case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints, cockpitSize
     case notificationConsent, forecast, reset, official, expiring, stale
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
-    case appVersion, cliStatus, architecture, diagnostics, readerDetails, refreshHistory, feedback, licenses, consentHelp
+    case appVersion, cliStatus, architecture, diagnostics, exportDiagnostics, readerDetails, refreshHistory, feedback, licenses, consentHelp
     case dockEdge, dockDisplay, dockPosition, detectedReaders, optionalReaders
     case updateStatus, websiteLink, methodologyLink, privacyLink, repositoryLink
     case loginSystemSettings, notificationSystemSettings
@@ -49,15 +49,19 @@ public struct SettingsSubscription: Sendable {
     public let isUnstable: Bool
     /// The engine's fixed failure code for this subscription's source, if it failed (D87); text comes from ReaderCauseTable.
     public let causeCode: String?
+    /// The engine's tool id for this subscription's row (`codex`, `zai`, `opencodego`, ...). `vendor` is the
+    /// row's vendor key (`openai`, `glm`, `opencode`, ...) and is not a tool id (macrev2-803-2).
+    public let tool: String
     public var persistenceDisabledReason: SettingsText? {
         isUnstable ? .init("Unverified account — changes can't be saved yet", "未验证账号，暂不能保存设置") : nil
     }
     public init(id: String, name: SettingsText, plan: String = "", vendor: String = "",
                 modelNames: [String] = [], toolNames: [String] = [], source: SubscriptionSourceState = .unavailable,
-                isUnstable: Bool = false, causeCode: String? = nil) {
+                isUnstable: Bool = false, causeCode: String? = nil, tool: String = "") {
         self.id = id; self.name = name; self.plan = plan; self.vendor = vendor
         self.modelNames = modelNames; self.toolNames = toolNames; self.source = source; self.isUnstable = isUnstable
         self.causeCode = causeCode
+        self.tool = tool.isEmpty ? SubscriptionRowModel.toolID(vendor: vendor) : tool
     }
 }
 public enum CLIReadState: String, Sendable { case ready, unavailable, denied, stale }
@@ -106,7 +110,7 @@ public struct SettingsAbout: Sendable {
     }
     public static let consentHelpURL = URL(string: "https://github.com/modelplan/modelplan/blob/main/docs/cli-consent.md")!
     public static let feedbackURL = URL(string: "https://github.com/modelplan/modelplan/issues/new/choose")!
-    public static let privacy = SettingsText("No local data is uploaded. Only public data is downloaded.", "不上传任何本机数据，只下载公开数据。")
+    public static let privacy = SettingsText("No local data is uploaded. Only public data is downloaded; a key you enter is sent only to its provider's official host.", "不上传任何本机数据，只下载公开数据；你输入的密钥只发送到对应服务商的官方主机。")
     public static let intelNote = SettingsText("Intel untested; 3D may stutter.", "Intel 未测试，3D 效果可能卡顿。")
     public static let trademarkNotice = SettingsText(
         "ModelPlan and Model Plan identify the official project. Software licenses do not grant endorsement or permission to impersonate it. Official visuals have a separate reserved license; the root MIT license does not cover them. Third-party marks belong to their respective owners.",
@@ -263,7 +267,7 @@ public enum SettingsCatalogue {
         .init(.menuDisplay,"Menu-bar display","菜单栏显示","Icon, tightest percentage or two windows.","图标、最紧的百分比或并列两个窗口。"),
         .init(.openShortcut,"Open cockpit shortcut","打开驾驶舱快捷键","Global registration can fail; local matching remains available.","全局注册可能失败；应用内匹配仍可用。"),
         .init(.dockShortcut,"Find Quota Widget shortcut","找到额度挂件快捷键","Shows where the Quota Widget is. Text editing and composition do not trigger shortcuts.","显示额度挂件的位置；文本编辑与输入法组合期间不触发。"),
-        .init(.language,"Language","语言","Choose Chinese or English.","选择中文或英文。"),
+        .init(.language,"Language","语言","Follow the system language, or choose Chinese or English.","跟随系统语言，或选择中文或英文。"),
         .init(.opening,"Cockpit opening","打开驾驶舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
         .init(.cockpitSize,"Cockpit size","驾驶舱大小","Auto uses 85 % on laptop screens and 100 % on larger displays. On a screen too short for the size, the whole cockpit is drawn smaller to fit.","自动：笔记本屏幕用 85%，更大的显示器用 100%。屏幕放不下时，整个驾驶舱会再缩小以适配。"),
         .init(.countdown,"Countdown beat","倒数节奏","Three beats follow the 200 ms hold boundary.","按住200毫秒后开始三拍倒数。"),
@@ -283,12 +287,13 @@ public enum SettingsCatalogue {
         .init(.loginSystemSettings,"Open Login Items","打开登录项设置","macOS could not turn this on from here. Allow ModelPlan in System Settings.","macOS 无法在此开启，请在系统设置中允许 ModelPlan。"),
         .init(.notificationSystemSettings,"Open Notification Settings","打开通知设置","macOS is not allowing ModelPlan notifications. Change this in System Settings.","macOS 未允许 ModelPlan 发送通知，请在系统设置中更改。"),
         .init(.clearAppCache,"Clear app cache","清除应用缓存","Only app-owned derived caches; preferences and CLI data are kept.","仅清除应用衍生缓存，保留偏好和CLI数据。"),
-        .init(.privacyStatement,"Privacy statement","隐私说明","No local uploads; only public downloads.","不上传本机数据，仅下载公开数据。"),
+        .init(.privacyStatement,"Privacy statement","隐私说明","No local data is uploaded. A key you enter is stored on this Mac and sent only to its official host (api.z.ai or open.bigmodel.cn for GLM, opencode.ai for OpenCode Go) to read plan usage. Everything else is public downloads.","不上传本机数据。你输入的密钥保存在本机，只发送到对应的官方主机（智谱 GLM 或 OpenCode Go 的官方站点）用于读取套餐用量；其余仅下载公开数据。"),
         .init(.appVersion,"App version","应用版本","Application build version.","应用构建版本。"),
         .init(.consentHelp,"Manual consent and cleanup instructions","授权与手动清理说明","Read the CLI disconnect instructions. Browser-cookie cleanup may require a separate approval; nothing is run automatically.","阅读 CLI 断开连接说明；浏览器缓存清理可能另需批准，此处不会自动执行。"),
         .init(.cliStatus,"CLI status","CLI状态","Read-only CLI availability.","CLI可用性的只读状态。"),
         .init(.architecture,"Architecture","架构","Intel is untested; 3D may stutter.","Intel未测试，3D效果可能卡顿。"),
         .init(.diagnostics,"Copy diagnostics","复制诊断","Versions, macOS, reader identifiers and error codes only.","仅含版本、macOS、读取器标识和错误代码。"),
+        .init(.exportDiagnostics,"Export diagnostics…","导出诊断包…","App and engine logs, crash reports and reader status in one file you save yourself. Nothing is uploaded.","把应用与引擎日志、崩溃报告和读取状态存成一个文件，由你自己保存，不会上传。"),
         .init(.readerDetails,"Reader status","读取状态","Source and reading times for admitted readers.","已授权读取器的来源与读取时间。"),
         .init(.refreshHistory,"Recent refreshes","最近刷新","Recent admitted refresh outcomes.","最近的已授权刷新结果。"),
         .init(.feedback,"Feedback","反馈","Open the public issue template; nothing is submitted automatically.","打开公开问题模板，不自动提交内容。"),
@@ -330,6 +335,8 @@ public enum SettingsCatalogue {
                     // engine reports its forecast producer, and is hidden until then.
                     if c.v1NormalEntry && key == .forecast && !c.capabilities.forecastProducerAvailable { return nil }
                     if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) && (!c.capabilities.updateServiceAvailable || c.unavailableControls[key] != nil) { return nil }
+                    // No dead control: the export row appears once the app can write the file.
+                    if c.v1NormalEntry && key == .exportDiagnostics && !c.capabilities.diagnosticsExportAvailable { return nil }
                     guard let d = byKey[key] else { return nil }
                     let baseMatches = query.isEmpty || [d.key.rawValue, d.title.english, d.title.chinese,
                         d.subtitle.english, d.subtitle.chinese, pane.title.english, pane.title.chinese,
@@ -366,6 +373,7 @@ public enum SettingsCatalogue {
         case .login: return .available // The local choice stays editable even when service actions are unavailable.
         case .clearAppCache: return c.capabilities.appCacheClearAvailable ? .available : .cacheUnavailable
         case .updateStatus: return c.capabilities.updateServiceAvailable ? .available : .serviceUnavailable
+        case .exportDiagnostics: return c.capabilities.diagnosticsExportAvailable ? .available : .serviceUnavailable
         default: return .available
         }
     }
@@ -413,7 +421,8 @@ public enum SettingsCatalogue {
         case .menuDisplay: return choices(p.menuDisplay)
         case .openShortcut: return .text(shortcut(p.openShortcut))
         case .dockShortcut: return .text(shortcut(p.dockShortcut))
-        case .language: return choices(p.language)
+        case .language: return .choice(p.followsSystemLanguage ? SettingsLanguage.followSystemValue : p.language.rawValue,
+                                       options: [SettingsLanguage.followSystemValue] + SettingsLanguage.allCases.map(\.rawValue))
         case .opening: return choices(p.opening)
         case .cockpitSize: return choices(p.cockpitSize)
         case .countdown: return .choice(String(p.beatMilliseconds), options: [150,200,250].map(String.init))
@@ -465,6 +474,7 @@ public enum SettingsCatalogue {
         case .privacyLink: return .link(SettingsPublicLink.privacy.url)
         case .repositoryLink: return .link(SettingsPublicLink.repository.url)
         case .updateStatus: return .text(c.updateState.rawValue)
+        case .exportDiagnostics: return .action(nil)
         }
     }
     private static func shortcut(_ chord: ShortcutChord) -> String {

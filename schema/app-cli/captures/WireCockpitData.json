@@ -68,6 +68,9 @@
             "generationTps": 42.5,
             "bindingBasis": "synthetic"
           }
+        ],
+        "reportedModels": [
+          "synthetic"
         ]
       }
     ],
@@ -174,6 +177,16 @@
             "cost": 2,
             "time": 1.2
           }
+        ]
+      }
+    ],
+    "planModels": [
+      {
+        "planId": "synthetic",
+        "generation": "synthetic",
+        "basis": "synthetic",
+        "modelIds": [
+          "synthetic"
         ]
       }
     ],
@@ -472,7 +485,16 @@
             "zh": "synthetic"
           },
           "availableAt": "2026-10-29T12:00:00.123456789Z",
-          "disabledReason": "cooldown"
+          "disabledReason": "cooldown",
+          "hint": {
+            "signInCommand": "codex login",
+            "installCommand": "npm i -g @openai/codex",
+            "installUrl": "https://kiro.dev",
+            "text": {
+              "en": "To sign in, run this in Terminal",
+              "zh": "在终端运行这条命令登录"
+            }
+          }
         },
         "accounts": [
           {
@@ -578,7 +600,16 @@
               "zh": "synthetic"
             },
             "availableAt": "2026-10-29T12:00:00.123456789Z",
-            "disabledReason": "cooldown"
+            "disabledReason": "cooldown",
+            "hint": {
+              "signInCommand": "codex login",
+              "installCommand": "npm i -g @openai/codex",
+              "installUrl": "https://kiro.dev",
+              "text": {
+                "en": "To sign in, run this in Terminal",
+                "zh": "在终端运行这条命令登录"
+              }
+            }
           }
         }
       }
@@ -603,7 +634,16 @@
           "zh": "synthetic"
         },
         "availableAt": "2026-10-29T12:00:00.123456789Z",
-        "disabledReason": "cooldown"
+        "disabledReason": "cooldown",
+        "hint": {
+          "signInCommand": "codex login",
+          "installCommand": "npm i -g @openai/codex",
+          "installUrl": "https://kiro.dev",
+          "text": {
+            "en": "To sign in, run this in Terminal",
+            "zh": "在终端运行这条命令登录"
+          }
+        }
       }
     }
   },

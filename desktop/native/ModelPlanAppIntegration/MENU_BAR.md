@@ -11,6 +11,15 @@ Two-window mode displays the available five-hour and weekly minima. An expired
 or missing value leaves no number for that period, and an empty title keeps the
 icon. These modes always report remaining quota.
 
+G3-122: one owner writes the item's title, image position and length (`applyStatusContent`), and only changed
+values. The title comes from `StatusTitleKeeper`: while the admitted projection is between two states (an engine
+delivery is cleared and re-installed, a withdrawn or suspended projection) it keeps the last number shown, with no
+stale marking, for at most 10 minutes. Icon mode, a privacy clear, no rows, or an admitted reading with no number take
+the number away at once. While the status menu is open nothing in it or in the item changes; one render runs after it
+closes. A display change re-verifies the item 750 ms after the last change and once more 2 s later. Before the item is
+created, a stored position that is not a finite positive number or lies beyond the widest display plus 512 pt is
+removed; the item is created at zero length, named, then given its variable length.
+
 `Resources/tray.png` and `Resources/tray@2x.png` are byte-identical packaged copies of `desktop/official-visuals/icons/tray-outline.png` and `tray-outline@2x.png`, under LicenseRef-ModelPlan-Visuals-1.0. The original public MIT tray remains unchanged. `ModelPlanAppIntegration_ModelPlanAppIntegration.bundle` must be next to CLI-built executables or inside `Contents/Resources` in a packaged app. The public neutral packager and hosted native-runtime artifact copy it explicitly. App lookup uses packaged resources first and does not depend on a build-checkout fallback. External app assemblers must include the same resource bundle.
 
 Factory checks use synthetic transports. A separate hosted-GUI test also checks the real status item at 1× and 2×; real-device visual acceptance remains separate.

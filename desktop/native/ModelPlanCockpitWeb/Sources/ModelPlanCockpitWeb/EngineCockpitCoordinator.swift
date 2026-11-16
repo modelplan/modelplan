@@ -12,6 +12,8 @@ import ModelPlanWire
   var onShown: (() -> Void)? { get set }
   /// D88: the attachment or the settled open changed (detach, put back, drop, entrance end).
   var onShellChanged: (() -> Void)? { get set }
+  /// Recovery contract: the page acknowledged a rendered display (verified data on screen).
+  var onRenderVerified: (() -> Void)? { get set }
   /// D88: the detach / put-back key on screen for the one-time hints; nil while not settled.
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { get }
   /// G3-80: the cockpit window's frame while it is on screen; the enlarged field opens on its display.
@@ -33,6 +35,7 @@ import ModelPlanWire
 public extension CockpitPageSurface {
   var onShown: (() -> Void)? { get { nil } set {} }
   var onShellChanged: (() -> Void)? { get { nil } set {} }
+  var onRenderVerified: (() -> Void)? { get { nil } set {} }
   var attachmentHintAnchor: CockpitAttachmentHintAnchor? { nil }
   var cockpitFrame: CGRect? { nil }
   func prewarm() {}
@@ -173,6 +176,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// A fresh reply was handed to the presented page: the cockpit is showing data again (audit A-5: a query failure
   /// followed by this is a recovery, not an unavailable cockpit).
   public var onDisplayed: (() -> Void)?
+  /// Recovery contract: the presented page acknowledged a rendered display. Unlike `onDisplayed` (a reply handed to
+  /// the page), this is verified data on screen; the console's rebuild budget counts health from it.
+  public var onRenderVerified: (() -> Void)?
   /// D88: forwarded from the presented page only.
   public var onShellChanged: (() -> Void)?
   /// D88: the presented page's detach / put-back key, for the one-time hints.
@@ -284,6 +290,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     newPage.onShellChanged = { [weak self] in
       guard let self, self.pageGeneration == generation, self.presented else { return }
       self.onShellChanged?()
+    }
+    newPage.onRenderVerified = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.onRenderVerified?()
     }
     newPage.onIntent = { [weak self] intent in
       guard self?.pageGeneration == generation else { return }; self?.receiveIntent(intent)
