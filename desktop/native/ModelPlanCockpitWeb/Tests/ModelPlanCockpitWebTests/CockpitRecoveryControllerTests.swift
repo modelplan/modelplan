@@ -282,10 +282,9 @@ import ModelPlanWire
     }
   }
 
-  /// A deterministic 10,000-event soak through the real controller and BridgeState. The first outbound call is held
-  /// while display, deadline, wake and visibility work churns; the ordered queue may retain only its bounded current
-  /// work. Draining then proves the newest display still renders and the same page survives without rebuilding.
-  func testTenThousandDisplayTickVisibilityAndWakeEventsStayBoundedOnOnePage() throws {
+  /// Queue-pressure phase only: a held page call coalesces 10,000 attempted updates to bounded current work. This is
+  /// intentionally not the elapsed-time soak; the separate long-run test advances and services the fake scheduler.
+  func testTenThousandHeldSubmissionsStayBoundedAndOnlyLatestDisplayIsAccepted() throws {
     let rig = Rig(); rig.timedDeadlines = true
     let page = try renderedPage(rig)
     let originalPage = ObjectIdentifier(page)
@@ -293,9 +292,10 @@ import ModelPlanWire
     rig.sent.removeAll(keepingCapacity: true)
 
     var key = true, peakOutstanding = page.verificationOutstanding, peakTimers = rig.healthTimers.count
-    var displays = 0, ticks = 0, wakes = 0, visibilityEvents = 0
+    var displaySubmissions = 0, ticks = 0, wakes = 0, visibilityEvents = 0
+    let verifiedBefore = rig.rendersVerified
     for step in 0..<10_000 {
-      page.display(data, ticket: ticket); displays += 1
+      page.display(data, ticket: ticket); displaySubmissions += 1
       if step.isMultiple(of: 2) { page.verificationFreshnessTick(.deadline); ticks += 1 }
       if step.isMultiple(of: 3) { page.verificationWake(); wakes += 1 }
       if step.isMultiple(of: 5) {
@@ -309,7 +309,7 @@ import ModelPlanWire
       XCTAssertLessThanOrEqual(rig.healthTimers.count, 8, "Cancelled fake-clock callbacks do not accumulate")
       XCTAssertFalse(page.bridge.disposed, "Event \(step) cannot dispose the responsive page")
     }
-    XCTAssertEqual(displays, 10_000)
+    XCTAssertEqual(displaySubmissions, 10_000, "This phase measures submissions, not accepted displays")
     XCTAssertEqual(ticks, 5_000)
     XCTAssertEqual(wakes, 3_334)
     XCTAssertEqual(visibilityEvents, 2_000)
@@ -336,9 +336,103 @@ import ModelPlanWire
     }
     XCTAssertEqual(page.verificationOutstanding, 0)
     XCTAssertFalse(page.bridge.hasPendingDisplay, "The coalesced latest display receives its bridge receipt")
+    XCTAssertEqual(rig.rendersVerified - verifiedBefore, 1, "Only the current coalesced display is verified as rendered")
     XCTAssertEqual(rig.failures, [])
     XCTAssertFalse(page.bridge.disposed)
     XCTAssertEqual(ObjectIdentifier(page), originalPage, "No replacement controller/page was constructed")
+    page.discard()
+  }
+
+  /// Long-run phase: every display, tick, wake and visibility state is delivered and acknowledged while a fake
+  /// monotonic clock advances past ten minutes. One intentional 2 s backpressure interval fires the fake receipt timer,
+  /// receives a probe answer and then completes the held render; all later displays continue to be accepted.
+  func testFiveThousandAcceptedDisplaysAdvanceFakeTimeAndServiceProbeCallbacks() throws {
+    let rig = Rig(); rig.timedDeadlines = true
+    let page = try renderedPage(rig), data = try fixture(), ticket = try XCTUnwrap(page.queryTicket)
+    let verifiedBefore = rig.rendersVerified, originalPage = ObjectIdentifier(page)
+    rig.sent.removeAll(keepingCapacity: true)
+    page.verificationNoWindowClock = { rig.mono }
+
+    var nextSequence = 4, acceptedDisplays = 0, acceptedTicks = 0, acceptedVisibility = 0
+    var callbackErrors: [String] = [], holdNextDisplay = false
+    var held: (String, (CockpitDeliveryResult) -> Void)?
+    var peakOutstanding = page.verificationOutstanding, peakTimers = rig.healthTimers.count
+
+    func complete(_ raw: String, _ completion: @escaping (CockpitDeliveryResult) -> Void) {
+      do {
+        let header = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+        let requestID = try XCTUnwrap((header["requestId"] as? String).flatMap(UUID.init(uuidString:)))
+        let messageType = try XCTUnwrap(header["type"] as? String)
+        if messageType == "display", page.bridge.isCurrentDisplay(requestID) {
+          let before = rig.rendersVerified
+          page.verificationReceive(try reply(raw, type: "rendered", sequence: nextSequence), source: source)
+          nextSequence += 1
+          if rig.rendersVerified == before + 1 { acceptedDisplays += 1 }
+        } else if messageType == "tick", page.bridge.currentDeadlineTrigger == requestID {
+          page.verificationReceive(try reply(raw, type: "nextDeadline", sequence: nextSequence,
+                                             extra: ["deadlineUnixMs": NSNull()]), source: source)
+          nextSequence += 1
+          if page.bridge.currentDeadlineTrigger != requestID { acceptedTicks += 1 }
+        }
+        completion(.accepted)
+        if messageType == "visibility" { acceptedVisibility += 1 }
+      } catch {
+        callbackErrors.append(String(describing: error))
+        completion(.failed)
+      }
+    }
+
+    page.verificationNoWindowDelivery = { raw, completion in
+      if holdNextDisplay, self.type(raw) == "display" {
+        holdNextDisplay = false; held = (raw, completion); return
+      }
+      complete(raw, completion)
+    }
+
+    var key = true
+    let started = rig.mono
+    for step in 0..<5_000 {
+      rig.mono += 150
+      if step == 2_500 { holdNextDisplay = true }
+      page.display(data, ticket: ticket)
+      if step.isMultiple(of: 2) { page.verificationFreshnessTick(.deadline) }
+      if step.isMultiple(of: 3) { page.verificationWake() }
+      if step.isMultiple(of: 5) {
+        key.toggle()
+        page.verificationSetHostVisibility(.init(visible: true, occluded: false, key: key))
+      }
+
+      if step == 2_500 {
+        XCTAssertNotNil(held, "The intentional backpressure phase must hold an actual display delivery")
+        rig.advance(to: rig.mono + CockpitPageHealth.delayedAfterMs)
+        XCTAssertTrue(page.readingDelayed, "A held render receipt crosses the delayed threshold on fake time")
+        XCTAssertEqual(rig.probes.count, 1, "The controller issues a probe for the delayed page")
+        rig.probes[0]("ready")
+        XCTAssertFalse(page.verificationHealth.isWaiting, "The fake probe answer restores responsiveness")
+        let (raw, completion) = try XCTUnwrap(held); held = nil
+        complete(raw, completion)
+        XCTAssertFalse(page.readingDelayed, "The rendered receipt clears the transient delay")
+      }
+
+      rig.advance(to: rig.mono)
+      peakOutstanding = max(peakOutstanding, page.verificationOutstanding)
+      peakTimers = max(peakTimers, rig.healthTimers.count)
+      XCTAssertLessThanOrEqual(page.verificationOutstanding, 32)
+      XCTAssertLessThanOrEqual(rig.healthTimers.count, 8, "Fake callbacks stay bounded across elapsed time")
+      XCTAssertEqual(rig.failures, [], "A page that responds to probes is never rebuilt")
+      XCTAssertFalse(page.bridge.disposed)
+    }
+
+    XCTAssertGreaterThanOrEqual(rig.mono - started, 600_000, "The fake scheduler spans more than ten minutes")
+    XCTAssertEqual(acceptedDisplays, 5_000, "Every long-run display received its current rendered receipt")
+    XCTAssertGreaterThan(acceptedTicks, 0)
+    XCTAssertGreaterThan(acceptedVisibility, 0)
+    XCTAssertEqual(rig.rendersVerified - verifiedBefore, 5_000)
+    XCTAssertEqual(callbackErrors, [])
+    XCTAssertEqual(rig.failures.filter { $0.recovery == .rebuild }.count, 0)
+    XCTAssertLessThanOrEqual(peakOutstanding, 4)
+    XCTAssertLessThanOrEqual(peakTimers, 8)
+    XCTAssertEqual(ObjectIdentifier(page), originalPage)
     page.discard()
   }
 

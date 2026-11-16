@@ -35,6 +35,9 @@ for(const percent of [85,100,125]){
   test(`cockpit shell zoom capture ${percent}% is laid out and exported for review`,async({page},info)=>{
     const baseline=PENDING.candidates.find(candidate=>candidate.zoomPercent===percent);
     expect(baseline).toBeTruthy();expect(baseline.status).toBe('pending-owner-confirmation');
+    const snapshot=baseline.snapshotPattern.replace('{projectName}',info.project.name).replace('{zoomPercent}',String(percent));
+    expect(snapshot).toContain(`/cockpit-baselines/${info.project.name}/`);
+    expect(snapshot).toMatch(new RegExp(`cockpit-zoom-${percent}-pending-owner-confirmation\\.png$`));
     const geometry=await renderAtZoom(page,percent);
     expect(geometry.zoom).toBe(`${percent}%`);
     expect(geometry.cockpit?.width).toBeGreaterThan(100);
@@ -47,7 +50,7 @@ for(const percent of [85,100,125]){
     const hash=createHash('sha256').update(image).digest('hex');
     await mkdir(OUT,{recursive:true});
     const name=`cockpit-zoom-${percent}-pending-owner-confirmation.png`;
-    const metadata={status:'pending-owner-confirmation',ownerConfirmed:false,zoomPercent:percent,sha256:hash,geometry,snapshot:baseline.snapshot};
+    const metadata={status:'pending-owner-confirmation',ownerConfirmed:false,zoomPercent:percent,sha256:hash,geometry,snapshot};
     await writeFile(join(OUT,name),image);
     await writeFile(join(OUT,name.replace(/\.png$/,'.json')),JSON.stringify(metadata,null,2)+'\n');
     await info.attach(name,{body:image,contentType:'image/png'});

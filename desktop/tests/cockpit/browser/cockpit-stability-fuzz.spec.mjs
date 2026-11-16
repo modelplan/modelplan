@@ -32,10 +32,12 @@ test('seeded capture mutations are rejected without losing the last cockpit rend
     await expect(page.locator('#cockpit')).toContainText(marker);
 
     const damaged=structuredClone(good),choice=next()%4;
+    const badMarker=`BAD-${index}`;
+    damaged.projection.rows[0].name={en:badMarker,zh:badMarker};
     let raw,reason;
     if(choice===0){delete damaged.projection.rows[0].id;raw=send('display',{data:damaged});reason='data.schema';counts.missing++;}
     else if(choice===1){raw=send('display',{data:damaged}).slice(0,-1);reason='msg.parse';counts.truncated++;}
-    else if(choice===2){damaged.projection.rows='wrong-type';raw=send('display',{data:damaged});reason='data.schema';counts.wrongType++;}
+    else if(choice===2){damaged.projection.rows[0].accounts='wrong-type';raw=send('display',{data:damaged});reason='data.schema';counts.wrongType++;}
     else {damaged.projection.rows[0].id='x'.repeat(129+index%32);raw=send('display',{data:damaged});reason='data.rowId';counts.longField++;}
 
     const rejection=await page.evaluate(raw=>{
@@ -44,14 +46,15 @@ test('seeded capture mutations are rejected without losing the last cockpit rend
     },raw);
     expect(rejection).toEqual({accepted:false,reason,state:'ready'});
     await expect(page.locator('#cockpit')).toContainText(marker);
-    await expect(page.locator('#cockpit')).not.toContainText(`BAD-${index}`);
+    await expect(page.locator('#cockpit')).not.toContainText(badMarker);
   }
 
   const oversized=structuredClone(seed);
-  oversized.projection.rows[0].name={en:'x'.repeat(1_050_000),zh:'too long'};
+  oversized.projection.rows[0].name={en:'BAD-OVERSIZE-'+'x'.repeat(1_050_000),zh:'too long'};
   const tooLarge=await page.evaluate(raw=>({accepted:window.modelPlanCockpit.receive(raw),reason:window.modelPlanCockpit.reject(),state:window.modelPlanCockpit.state()}),send('display',{data:oversized}));
   expect(tooLarge).toEqual({accepted:false,reason:'msg.size',state:'ready'});
   await expect(page.locator('#cockpit')).toContainText('GOOD-063');
+  await expect(page.locator('#cockpit')).not.toContainText('BAD-OVERSIZE');
   const recovered=structuredClone(seed);recovered.projection.rows[0].name={en:'GOOD-AFTER-FUZZ',zh:'GOOD-AFTER-FUZZ'};
   expect(await receive(send('display',{data:recovered}))).toBe(true);
   await expect(page.locator('#cockpit')).toContainText('GOOD-AFTER-FUZZ');
