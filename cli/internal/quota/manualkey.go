@@ -285,7 +285,16 @@ func afterManualKeyChange(dir, provider string) error {
 }
 
 func glmReferenceOnly(e codexbarEntry) codexbarEntry {
-	return codexbarEntry{Provider: "zai", DetectedKeyRef: e.DetectedKeyRef}
+	next := e.NativeNextAttemptAt
+	if next == nil && !e.ObservedAt.IsZero() {
+		wait := NativeEvery
+		if e.Status != "ok" {
+			wait = nativeRetryAfter
+		}
+		deadline := e.ObservedAt.Add(wait)
+		next = &deadline
+	}
+	return codexbarEntry{Provider: "zai", DetectedKeyRef: e.DetectedKeyRef, NativeNextAttemptAt: next}
 }
 
 // manualKeyChangeHook is a test seam: it runs inside the change, between the cache removal and the generation bump.
