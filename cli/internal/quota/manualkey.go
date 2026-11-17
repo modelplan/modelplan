@@ -214,11 +214,20 @@ func SetManualKey(dir, provider, key, region string) error {
 	if keys == nil {
 		keys = map[string]ManualKey{}
 	}
+	// Invalidate GLM first while holding the lock. If invalidation fails, the old key stays installed.
+	if provider == "zai" {
+		if err := invalidateManualKeyReadings(dir, provider); err != nil {
+			return err
+		}
+	}
 	keys[provider] = k
 	if err := writeManualKeys(dir, keys); err != nil {
 		return err
 	}
-	return afterManualKeyChange(dir, provider)
+	if provider == "zai" {
+		return nil
+	}
+	return invalidateManualKeyReadings(dir, provider)
 }
 
 // manualKeyGenerationFile holds one counter per manual-key provider, bumped on every replace and remove. Refresh compares
@@ -243,11 +252,11 @@ func manualKeyGenerations(dir string) map[string]uint64 {
 	return out
 }
 
-// afterManualKeyChange runs under lockManualKeys, after the key file changed: it bumps the provider's generation, so any
+// invalidateManualKeyReadings runs under lockManualKeys (before persisting GLM, after other providers): it bumps the provider's generation, so any
 // reading in flight or carried by a running refresh is dropped at its publish, and (OpenCode Go) removes the provider's
 // cached reading, read with the previous key and possibly another account's. The request-budget reservation is kept:
 // this never makes the provider due sooner.
-func afterManualKeyChange(dir, provider string) error {
+func invalidateManualKeyReadings(dir, provider string) error {
 	// The cached reading goes first and the generation is bumped after it, both inside the lock; RefreshNative takes its
 	// generation snapshot and reads the cache under the same lock, so it sees either the state before this change or the
 	// one after it, never a mix.
@@ -264,7 +273,7 @@ func afterManualKeyChange(dir, provider string) error {
 				}
 			}
 			b, _ := json.MarshalIndent(s, "", "  ")
-			if err := writeAtomic(nativePath(dir), append(b, '\n')); err != nil {
+			if err := writeGLMNativeCache(nativePath(dir), append(b, '\n')); err != nil {
 				return errors.New("manual key cache not written")
 			}
 		}
@@ -297,6 +306,9 @@ func glmReferenceOnly(e codexbarEntry) codexbarEntry {
 	return codexbarEntry{Provider: "zai", DetectedKeyRef: e.DetectedKeyRef, NativeNextAttemptAt: next}
 }
 
+// writeGLMNativeCache allows the cache-write error path to be exercised without changing other writes.
+var writeGLMNativeCache = writeAtomic
+
 // manualKeyChangeHook is a test seam: it runs inside the change, between the cache removal and the generation bump.
 var manualKeyChangeHook func()
 
@@ -317,11 +329,19 @@ func RemoveManualKey(dir, provider string) error {
 	if _, ok := keys[provider]; !ok {
 		return nil
 	}
+	if provider == "zai" {
+		if err := invalidateManualKeyReadings(dir, provider); err != nil {
+			return err
+		}
+	}
 	delete(keys, provider)
 	if err := writeManualKeys(dir, keys); err != nil {
 		return err
 	}
-	return afterManualKeyChange(dir, provider)
+	if provider == "zai" {
+		return nil
+	}
+	return invalidateManualKeyReadings(dir, provider)
 }
 
 // Outcomes of a manual key test. Fixed words only.

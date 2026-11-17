@@ -1021,3 +1021,120 @@ func TestGLMKeyChangeDuringRefreshKeepsDetectedReference(t *testing.T) {
 		})
 	}
 }
+
+func TestGLMKeyChangeCacheFailureKeepsCredential(t *testing.T) {
+	for _, change := range []string{"replace", "remove"} {
+		t.Run(change, func(t *testing.T) {
+			isolateHome(t)
+			arrived, release := make(chan struct{}, 1), make(chan struct{})
+			released := false
+			defer func() {
+				writeGLMNativeCache = writeAtomic
+				if !released {
+					close(release)
+				}
+			}()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				arrived <- struct{}{}
+				<-release
+				w.Write([]byte(goOKBody))
+			}))
+			t.Cleanup(srv.Close)
+			useClient(t, srv, "opencode.ai")
+			p := nativePaths(t)
+			if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+				t.Fatal(err)
+			}
+			if err := SetManualKey(p.Cache, "opencodego", fakeGoKey, ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "opencodego", Backend: BackendNative, Enabled: true}); err != nil {
+				t.Fatal(err)
+			}
+			if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "zai", Backend: BackendNative, Enabled: true}); err != nil {
+				t.Fatal(err)
+			}
+			used := 61.0
+			at := time.Now().UTC()
+			seed := nativeSnap{SchemaVersion: 1, Providers: []codexbarEntry{{Provider: "zai", Source: "api", Plan: "Synthetic old account", Status: "ok", ObservedAt: at, DetectedKeyRef: "detected-ref", SubscriptionRef: "0123456789abcdef", Windows: []Window{{Kind: "five_hour", UsedPercent: &used, ObservedAt: at}}}}}
+			b, _ := json.Marshal(seed)
+			if err := writeAtomic(nativePath(p.Cache), b); err != nil {
+				t.Fatal(err)
+			}
+			visible := false
+			for _, a := range Read(p, time.Now()).Accounts {
+				if a.Source == "native:zai" {
+					visible = true
+				}
+			}
+			if !visible {
+				t.Fatal("old GLM reading not visible in fixture")
+			}
+			done := make(chan error, 1)
+			go func() {
+				done <- RefreshNativeProviders(context.Background(), p, time.Now().Add(time.Hour), []string{"opencodego"})
+			}()
+			select {
+			case <-arrived:
+			case <-time.After(10 * time.Second):
+				t.Fatal("old read did not start")
+			}
+			before := manualKeyGenerations(p.Cache)["zai"]
+			writeGLMNativeCache = func(string, []byte) error { return errors.New("synthetic cache write failure") }
+			var err error
+			if change == "replace" {
+				err = SetManualKey(p.Cache, "zai", "replacement-key", "global")
+			} else {
+				err = RemoveManualKey(p.Cache, "zai")
+			}
+			writeGLMNativeCache = writeAtomic
+			if err == nil {
+				t.Fatal("fault was not exercised")
+			}
+			keys, keyErr := loadManualKeys(p.Cache)
+			if keyErr != nil {
+				t.Fatal(keyErr)
+			}
+			if got, ok := keys["zai"]; !ok || got.Key != fakeZaiKey {
+				t.Fatal("failed cache clear changed the stored GLM credential")
+			}
+			after := manualKeyGenerations(p.Cache)["zai"]
+			close(release)
+			released = true
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("old read did not finish")
+			}
+			if after != before {
+				t.Fatalf("failed clear changed generation: %d -> %d", before, after)
+			}
+			entry := loadNative(p.Cache).Providers
+			found := false
+			for _, e := range entry {
+				if e.Provider == "zai" {
+					found = true
+					if e.DetectedKeyRef != "detected-ref" || e.Status != "ok" {
+						t.Fatalf("prior key reading/reference not retained: %+v", e)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("prior key reading missing")
+			}
+			visibleAfter := false
+			for _, a := range Read(p, time.Now()).Accounts {
+				if a.Source == "native:zai" {
+					visibleAfter = true
+				}
+			}
+			if !visibleAfter {
+				t.Fatal("prior credential's reading is no longer projected")
+			}
+
+		})
+	}
+}
