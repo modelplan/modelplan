@@ -204,17 +204,15 @@ import ModelPlanWire
     XCTAssertEqual(window.level, CockpitWindowController.panelLevel, "put back: floats again")
   }
 
-  /// Walkthrough 11-17 (build b2b50b34, #977 regression): detach, drag the detached window, put it back with the page's
-  /// key, then press the page's Close once. The put back flipped the app to accessory, macOS resigned it a moment later,
-  /// the page was told `key: false` and the Close press was dropped. The host is played as EngineDockMenuApplication and
-  /// PulseDockPresence play it (regular while detached, accessory attached, a 250 ms policy hold, then the flip's resign).
-  func testThePagesCloseWorksOnTheFirstPressAfterADragAndAPutBack() async throws {
-    let page = try page(try bundle(), reduceMotion: true, icon: try menuBarIcon())
-    defer { page.discard() }
+  /// The host as EngineDockMenuApplication and PulseDockPresence play it: regular while the detached cockpit (or
+  /// Settings) is shown, accessory otherwise, a 250 ms policy hold on each flip, and the flip's resign. The test process
+  /// is never the active app, so the activation, policy and key facts come through the controller's SPI seams.
+  private final class PutBackHost {
+    enum Resign { case immediate, later }
+    var active = true, activations = 0, regular = false, settingsOpen = false
+    var resign = Resign.later
     var sent: [(raw: String, complete: (CockpitDeliveryResult) -> Void)] = [], delivered = 0
-    page.verificationNoWindowClock = { 1_000 }
-    page.verificationNoWindowArm = { _, _ in {} }
-    page.verificationNoWindowDelivery = { raw, complete in sent.append((raw, complete)) }
+    var sequence = 1
     func drain() { while delivered < sent.count { delivered += 1; sent[delivered - 1].complete(.accepted) } }
     func lastKey() -> Bool? {
       for entry in sent.reversed() {
@@ -223,21 +221,33 @@ import ModelPlanWire
       }
       return nil
     }
-    final class App { var active = true, activations = 0, regular = false }
-    let app = App()
+    func resignActive() {
+      active = false
+      NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApplication.shared)
+    }
+  }
+  /// Opens the cockpit, tears it off with the strip drag and drops it away from the catch zone, and returns with the
+  /// detached cockpit shown and the page ready; `press` sends the page's actions.
+  private func detachedByDrag(_ app: PutBackHost) async throws -> (page: CockpitWindowController, press: (String) throws -> Void) {
+    let page = try page(try bundle(), reduceMotion: true, icon: try menuBarIcon())
+    addTeardownBlock { @MainActor in page.discard() }
+    if app.settingsOpen { app.regular = true }
+    page.verificationNoWindowClock = { 1_000 }
+    page.verificationNoWindowArm = { _, _ in {} }
+    page.verificationNoWindowDelivery = { raw, complete in app.sent.append((raw, complete)) }
     page.verificationApplicationActive = { app.active }
+    page.verificationApplicationRegular = { app.regular }
     page.verificationActivateApplication = { app.active = true; app.activations += 1 }
     page.onPresenceChanged = { [weak page] userInitiated in
       guard let page else { return }
-      let wantsRegular = !page.isAttached && page.window?.isVisible == true
+      let wantsRegular = app.settingsOpen || (!page.isAttached && page.window?.isVisible == true)
       guard wantsRegular != app.regular else { return }
       app.regular = wantsRegular
       page.suppressDismissal(.policyChange, forMilliseconds: 250)
       if wantsRegular { if userInitiated { app.active = true }; return }
-      // The flip to accessory resigns the app after the call has returned.
-      Task { @MainActor in
-        app.active = false
-        NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApplication.shared)
+      switch app.resign {
+      case .immediate: app.active = false; NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApplication.shared)
+      case .later: Task { @MainActor in app.resignActive() }
       }
     }
     page.open(); detachSyntheticLoad(page)
@@ -246,16 +256,14 @@ import ModelPlanWire
     guard window.occlusionState.contains(.visible) else { throw XCTSkip("the window server reports the panel occluded") }
     let shell = CockpitShellState(closed: false, attached: true, forcedClosed: false, tier: .tall)
     let load = try page.bridge.load(.init(theme: .night, locale: .en, profile: .full), shell: shell)
-    var sequence = 1
-    page.verificationReceive(try reply(load, type: "ready", sequence: sequence), source: source); drain()
-    XCTAssertEqual(lastKey(), true, "opened: the page is key")
-    func press(_ action: String) throws {
-      sequence += 1
-      var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try reply(load, type: "action", sequence: sequence).utf8)) as? [String: Any])
+    page.verificationReceive(try reply(load, type: "ready", sequence: app.sequence), source: source); app.drain()
+    XCTAssertEqual(app.lastKey(), true, "opened: the page is key")
+    let press: (String) throws -> Void = { [unowned self] action in
+      app.sequence += 1
+      var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try self.reply(load, type: "action", sequence: app.sequence).utf8)) as? [String: Any])
       value["action"] = action; value["requestId"] = UUID().uuidString
-      page.verificationReceive(String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self), source: source)
+      page.verificationReceive(String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self), source: self.source)
     }
-    // Detach and drag: the strip tears the cockpit off and drops it away from the catch zone.
     let grab = CGPoint(x: window.frame.minX + 120, y: window.frame.maxY - 16)
     page.titleDrag(.began, point: grab)
     page.titleDrag(.moved, point: CGPoint(x: grab.x + 40, y: grab.y - 120))
@@ -263,23 +271,73 @@ import ModelPlanWire
     page.titleDrag(.ended, point: CGPoint(x: grab.x + 80, y: grab.y - 300))
     XCTAssertFalse(page.isAttached)
     XCTAssertTrue(app.regular, "detached: the app has its Dock icon")
-    drain()
-    // Put back with the page's key; with Reduce Motion it latches at once.
-    let rejectedBefore = page.rejectedBridgeMessageCount
-    try press("putBack"); drain()
-    XCTAssertEqual(page.rejectedBridgeMessageCount, rejectedBefore, "the put-back press is accepted")
-    XCTAssertTrue(page.isAttached, "put back")
-    XCTAssertFalse(app.regular, "attached: back to accessory")
-    // Let the flip's resign, and the visibility it causes, arrive.
-    for _ in 0..<25 { try await Task.sleep(for: .milliseconds(20)); drain() }
-    XCTAssertTrue(app.active, "the put back leaves the app active")
-    XCTAssertGreaterThanOrEqual(app.activations, 1)
-    XCTAssertEqual(lastKey(), true, "the page is key again, so its next press counts")
-    XCTAssertNotNil(page.window, "the flip's resign did not close the attached cockpit")
-    let rejected = page.rejectedBridgeMessageCount
-    try press("close")
-    XCTAssertEqual(page.rejectedBridgeMessageCount, rejected, "the Close press is accepted")
-    XCTAssertNil(page.window, "the first Close press closes the cockpit")
+    app.drain()
+    return (page, press)
+  }
+  private func settle(_ app: PutBackHost, milliseconds: Int = 500) async throws {
+    for _ in 0..<(milliseconds / 20) { try await Task.sleep(for: .milliseconds(20)); app.drain() }
+  }
+
+  /// Walkthrough 11-17 (build b2b50b34, #977 regression): detach, drag the detached window, put it back with the page's
+  /// key, then press the page's Close once. The put back flipped the app to accessory, macOS resigned it a moment later,
+  /// the page was told `key: false` and the Close press was dropped.
+  func testThePagesCloseWorksOnTheFirstPressAfterADragAndAPutBack() async throws {
+    for resign in [PutBackHost.Resign.later, .immediate] {
+      let app = PutBackHost(); app.resign = resign
+      let (page, press) = try await detachedByDrag(app)
+      let rejectedBefore = page.rejectedBridgeMessageCount
+      try press("putBack"); app.drain()
+      XCTAssertEqual(page.rejectedBridgeMessageCount, rejectedBefore, "\(resign): the put-back press is accepted")
+      XCTAssertTrue(page.isAttached)
+      XCTAssertFalse(app.regular, "attached: back to accessory")
+      try await settle(app, milliseconds: 300)
+      XCTAssertTrue(app.active, "\(resign): the put back leaves the app active")
+      XCTAssertEqual(app.activations, 1, "\(resign): one activation answers the flip")
+      XCTAssertEqual(app.lastKey(), true, "\(resign): the page is key again, so its next press counts")
+      XCTAssertNotNil(page.window, "\(resign): the flip's resign did not close the attached cockpit")
+      let rejected = page.rejectedBridgeMessageCount
+      try press("close")
+      XCTAssertEqual(page.rejectedBridgeMessageCount, rejected, "\(resign): the Close press is accepted")
+      XCTAssertNil(page.window, "\(resign): the first Close press closes the cockpit")
+    }
+    XCTAssertEqual(failures, [])
+  }
+
+  /// macrevd-1033-1: with Settings open the put back changes no policy, so a resign right after it is the user's own
+  /// switch: nothing activates the app again and the attached cockpit closes as on any app switch.
+  func testAPutBackWithoutAPolicyFlipDoesNotFightAnAppSwitch() async throws {
+    let app = PutBackHost(); app.settingsOpen = true
+    let (page, press) = try await detachedByDrag(app)
+    try press("putBack"); app.drain()
+    XCTAssertTrue(page.isAttached)
+    XCTAssertTrue(app.regular, "Settings keeps the app regular")
+    app.resignActive() // Cmd-Tab within the window
+    try await settle(app, milliseconds: 100)
+    XCTAssertEqual(app.activations, 0, "no activation against the user's switch")
+    XCTAssertNil(page.window, "the switch closes the attached cockpit")
+    XCTAssertEqual(failures, [])
+  }
+
+  /// macrevd-1033-1: once the flip has been answered, a genuine switch inside the window is not fought; nor is one the
+  /// user starts (the Command key of Cmd-Tab) before the flip's resign could arrive.
+  func testAGenuineSwitchAfterThePutBackIsNotFought() async throws {
+    let answered = PutBackHost(); answered.resign = .immediate
+    let first = try await detachedByDrag(answered)
+    try first.press("putBack"); answered.drain()
+    XCTAssertEqual(answered.activations, 1, "the immediate deactivation is answered at the latch")
+    try await settle(answered, milliseconds: 300) // past the host's policy hold, inside the 500 ms window
+    answered.resignActive()
+    try await settle(answered, milliseconds: 100)
+    XCTAssertEqual(answered.activations, 1, "no second activation for the user's switch")
+    XCTAssertNil(first.page.window, "the switch closes the attached cockpit")
+
+    let switching = PutBackHost(); switching.resign = .later
+    let second = try await detachedByDrag(switching)
+    try second.press("putBack")
+    second.page.userSwitchesAway() // the Command key goes down before the flip's resign arrives
+    try await settle(switching, milliseconds: 100)
+    XCTAssertEqual(switching.activations, 0, "the switch the user started is not fought")
+    XCTAssertFalse(switching.active)
     XCTAssertEqual(failures, [])
   }
 
