@@ -150,29 +150,33 @@ const grip=async ch=>{const b=await box(ch.locator('.fd-cap')),f=Number(await ch
 const scaleRows=async page=>Object.fromEntries(await Promise.all(['Low','Med','High','XHigh','Max'].map(async l=>[l,await row(page,l)])));
 for(const theme of ['night','day'])for(const dsf of [1,2])for(const [tier,height] of [['tall',890],['compact',640]])
  test(`G3-92 detent rows are one mapping for lever, ghost and rod; axis shared (${theme}, ${dsf}x, ${tier})`,async({browser})=>{
-  const ctx=await browser.newContext({deviceScaleFactor:dsf,baseURL:'http://127.0.0.1:41783'}),page=await ctx.newPage();
-  await openThrottles(page,{theme,tier,height,glmEfforts:['low','max']});
-  const rows=await scaleRows(page);
-  // Sol (index 0): lever High, trial Max (rod above the lever). GLM (index 2): lever Max, trial Low (rod down to Low).
-  for(const [i,keys,from,to] of [[0,['ArrowUp','ArrowUp'],'High','Max'],[2,['ArrowDown'],'Max','Low']]){
-   const ch=channel(page,i),slider=ch.locator('[role=slider]');await slider.focus();for(const k of keys)await page.keyboard.press(k);
-   await expect(slider).toHaveAttribute('aria-valuetext',to);await expect(slider).toHaveAttribute('data-lever',from);
-   await expect.poll(async()=>Math.abs((await box(ch.locator('.fd-ghost'))).y-rows[to]),{timeout:15000}).toBeLessThanOrEqual(.6);
-   await page.waitForTimeout(400);
-   const rod=await box(ch.locator('.fd-tline')),lever=await box(ch.locator('.fd-cap')),ghost=await box(ch.locator('.fd-ghost')),slot=await box(ch.locator('.fd-slot'));
-   // the lever pivots about the slot centre: the rod runs from that pivot (midway between the Max and Low rows) to the ghost
-   const pivot=(rows.Max+rows.Low)/2,down=rows[to]>pivot;
-   expect(Math.abs((down?rod.top:rod.bottom)-pivot),'rod starts at the slot-centre pivot').toBeLessThanOrEqual(.6);
-   expect(Math.abs((down?rod.bottom:rod.top)-rows[to]),'rod ends on the ghost detent').toBeLessThanOrEqual(.6);
-   expect(Math.abs(await grip(ch)-rows[from]),'lever grip on its own detent row').toBeLessThanOrEqual(.6);
-   for(const [name,x] of [['ghost',ghost.x],['rod',rod.x],['slot',slot.x]])expect(Math.abs(x-lever.x),name+' axis vs lever').toBeLessThanOrEqual(.5);
-   // the rod is faint but visible; in the day theme it is the dark blue
-   // the ghost rod is as wide as the real lever's rod (5 u)
-   expect(Math.abs(rod.width-5*(tier==='tall'?1:80/97)),'ghost rod width').toBeLessThanOrEqual(.5);
-   const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
-   if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
-   if(theme==='day')expect(bg).toMatch(/0\.55\)$/);
-  }
+  const ctx=await browser.newContext({deviceScaleFactor:dsf,baseURL:'http://127.0.0.1:41783'});
+  try {
+   const page=await ctx.newPage();
+   await openThrottles(page,{theme,tier,height,glmEfforts:['low','max']});
+   // This matrix checks final geometry; the glide is covered separately above.
+   await page.locator('.fd-ghost').evaluateAll(ghosts=>ghosts.forEach(ghost=>ghost.style.setProperty('transition','none','important')));
+   const rows=await scaleRows(page);
+   // Sol (index 0): lever High, trial Max (rod above the lever). GLM (index 2): lever Max, trial Low (rod down to Low).
+   for(const [i,keys,from,to] of [[0,['ArrowUp','ArrowUp'],'High','Max'],[2,['ArrowDown'],'Max','Low']]){
+    const ch=channel(page,i),slider=ch.locator('[role=slider]');await slider.focus();for(const k of keys)await page.keyboard.press(k);
+    await expect(slider).toHaveAttribute('aria-valuetext',to);await expect(slider).toHaveAttribute('data-lever',from);
+    await expect.poll(async()=>Math.abs((await box(ch.locator('.fd-ghost'))).y-rows[to]),{timeout:15000}).toBeLessThanOrEqual(.6);
+    const rod=await box(ch.locator('.fd-tline')),lever=await box(ch.locator('.fd-cap')),ghost=await box(ch.locator('.fd-ghost')),slot=await box(ch.locator('.fd-slot'));
+    // the lever pivots about the slot centre: the rod runs from that pivot (midway between the Max and Low rows) to the ghost
+    const pivot=(rows.Max+rows.Low)/2,down=rows[to]>pivot;
+    expect(Math.abs((down?rod.top:rod.bottom)-pivot),'rod starts at the slot-centre pivot').toBeLessThanOrEqual(.6);
+    expect(Math.abs((down?rod.bottom:rod.top)-rows[to]),'rod ends on the ghost detent').toBeLessThanOrEqual(.6);
+    expect(Math.abs(await grip(ch)-rows[from]),'lever grip on its own detent row').toBeLessThanOrEqual(.6);
+    for(const [name,x] of [['ghost',ghost.x],['rod',rod.x],['slot',slot.x]])expect(Math.abs(x-lever.x),name+' axis vs lever').toBeLessThanOrEqual(.5);
+    // the rod is faint but visible; in the day theme it is the dark blue
+    // the ghost rod is as wide as the real lever's rod (5 u)
+    expect(Math.abs(rod.width-5*(tier==='tall'?1:80/97)),'ghost rod width').toBeLessThanOrEqual(.5);
+    const bg=await ch.locator('.fd-tline').evaluate(e=>getComputedStyle(e).backgroundColor);
+    if(theme==='night')expect(bg).toMatch(/0\.25\)$/);
+    if(theme==='day')expect(bg).toMatch(/0\.55\)$/);
+   }
+  } finally { await ctx.close(); }
  });
 
 // Unknown current: no session, so the lever rests on the ★ row; a trial on another effort still lands on that effort's row.
