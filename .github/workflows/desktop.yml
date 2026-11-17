@@ -143,6 +143,11 @@ jobs:
           else
             echo "run=false" >> "$GITHUB_OUTPUT"; echo "group changes no desktop path"
           fi
+      # The design decision "this group needs no GUI share", made visible to the merge gate (scripts/merge-gates/rules.mjs
+      # guiLegState): a skipped GUI job counts as ok only when this step ran and succeeded. Keep the step name.
+      - name: GUI share not needed
+        if: ${{ steps.scope.outputs.gui != 'true' }}
+        run: echo "group changes no desktop path, so the GUI share is not needed"
 
   app:
     needs: [queue-scope, pr-ref]

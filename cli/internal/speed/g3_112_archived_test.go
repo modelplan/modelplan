@@ -3,6 +3,7 @@ package speed
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -271,5 +272,47 @@ func TestCancelDoesNotBlockALaterFirstGrant(t *testing.T) {
 	later := consent.NewAdmission(state, consent.Automatic)
 	if got := OwedSourcesAt(f.cache, later, f.now); len(got) != 1 || got[0] != "codex" {
 		t.Fatalf("first explicit Codex allow after a Cancel: owed %v, want [codex]", got)
+	}
+}
+
+// Post-merge sampling 11-15: an import whose eligible interval is empty (the live ledger already
+// reaches back past the window) still completes the source under its grant. It is not owed again
+// and is never retried in a loop.
+func TestEmptyIntervalImportCompletesTheSourceUnderItsGrant(t *testing.T) {
+	f := newFixture(t)
+	seedPerf(t, f.cache, f.now.AddDate(0, 0, -40)) // live ledger starts before the 30-day window
+	if err := MarkAutoRequested(f.cache, f.now); err != nil {
+		t.Fatal(err)
+	}
+	adm := *both()
+	if got := OwedSources(f.cache, adm); len(got) != 2 {
+		t.Fatalf("requested, not run: owed %v", got)
+	}
+	f.run(30, both())
+	l, _ := LoadImported(f.cache)
+	if c := l.Coverage["codex"]; !c.From.IsZero() {
+		t.Fatalf("an empty interval left coverage %+v", c)
+	}
+	if got := OwedSources(f.cache, adm); len(got) != 0 {
+		t.Fatalf("an import that had nothing to read is owed again: %v", got)
+	}
+	if _, ok := NextOwedAt(f.cache, adm, f.now); ok {
+		t.Fatal("an engine would wake again for a completed source")
+	}
+}
+
+// Post-merge sampling 11-15: a cancel that reaches the commit while it waits for perf.lock writes
+// nothing (and so cannot erase the cancel's own suppression mark).
+func TestCommitRechecksCancellationUnderTheLock(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	committed := false
+	err := commitImport(ctx, f.cache, &importJob{source: "codex"}, false, f.now, *both(), &committed)
+	if !errors.Is(err, errImportCancelled) || committed {
+		t.Fatalf("cancelled commit: err=%v committed=%v", err, committed)
+	}
+	if _, statErr := os.Stat(ImportPath(f.cache)); statErr == nil {
+		t.Fatal("a cancelled commit wrote the ledger")
 	}
 }

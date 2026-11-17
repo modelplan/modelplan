@@ -51,6 +51,7 @@ permissions:
   statuses: write
   pull-requests: read
   actions: read
+  checks: read
 jobs:
   gates:
     # Decided before a runner is taken; an event that cannot change a gate starts no job.
