@@ -48,10 +48,14 @@ private actor CountingClient: EngineClient {
 @MainActor private final class WarmProbe: CockpitPageSurface {
   let state: CockpitBridgeState
   var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?, onShown: (() -> Void)?
-  var onRenderVerified: (() -> Void)?
+  var onRenderVerified: (() -> Void)?, onDisplayAbandoned: (() -> Void)?
   var queryTicket: CockpitQueryTicket? { state.queryTicket }
   private(set) var prewarmed = false, opened = 0, discarded = false
+  /// CKP-SHELL-33: the rack-first open shows the page only after the rack's visible part is out; the test confirms it.
+  var holdShown = false
+  var entersWithRack: Bool { holdShown && opened > 0 }
   private(set) var displays = 0, displayedWhileHidden = 0
+  private(set) var displayedNames: [String] = []
   private var sequence = 0
   init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
   private func ack(_ raw: String, _ type: String) {
@@ -77,11 +81,11 @@ private actor CountingClient: EngineClient {
   func open() {
     opened += 1
     load()
-    if opened == 1 { onShown?() }
+    if opened == 1, !holdShown { onShown?(); if displays > 0 { onRenderVerified?() } }
   }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {
     guard ticket == queryTicket else { return }
-    if opened == 0 { displayedWhileHidden += 1 } else { displays += 1 }
+    if opened == 0 { displayedWhileHidden += 1 } else { displays += 1; displayedNames.append(data.projection.rows.first?.name.en ?? "") }
   }
   func clearPrivateViews(adopting: CockpitEngineContext?) async {
     let raw = try! state.clear(adopting: adopting)
@@ -167,9 +171,17 @@ final class CoordinatorPrewarmTests: XCTestCase {
     EngineDeliveryContext(sessionID: "s-" + UUID().uuidString.lowercased(),
       floor: .init(storeEpoch: "synthetic", generation: generation), revision: 2)
   }
-  private func reply(_ delivery: EngineDeliveryContext) throws -> EngineClientEvent {
-    let data = try JSONDecoder().decode(WireCockpitData.self, from: Data(contentsOf: XCTUnwrap(
-      Bundle.module.url(forResource: "cockpit", withExtension: "json", subdirectory: "Fixtures"))))
+  private func reply(_ delivery: EngineDeliveryContext, name: String? = nil) throws -> EngineClientEvent {
+    let bytes = try Data(contentsOf: XCTUnwrap(
+      Bundle.module.url(forResource: "cockpit", withExtension: "json", subdirectory: "Fixtures")))
+    var root = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    if let name {
+      var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+      var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+      rows[0]["name"] = ["en": name, "zh": name]
+      projection["rows"] = rows; root["projection"] = projection
+    }
+    let data = try JSONDecoder().decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: root))
     let envelope = try WireEnvelope(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
       consentGeneration: delivery.floor.generation, data: data)
     return .response(requestID: .string("synthetic-reply"), .cockpit(.init(envelope: envelope, delivery: delivery)))
@@ -289,6 +301,149 @@ final class CoordinatorPrewarmTests: XCTestCase {
     coordinator.requestClose()
     await settle { pages.count == 6 }
     XCTAssertEqual(pages.count, 6, "after an open, prewarming resumes")
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// CKP-SHELL-33 (owner, D186): the click asks for fresh data at once, while the rack still extends and before the page
+  /// is confirmed visible; the page then shows the last reply without waiting, and no second query is started.
+  @MainActor func testTheClickAsksForFreshDataBeforeThePageIsShown() async throws {
+    var pages: [WarmProbe] = [], steps: [String] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    #if MODELPLAN_TEST_ONLY_SPI
+    coordinator.verificationTrace = { steps.append($0) }
+    #endif
+    coordinator.prewarmDelay = .zero
+    coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { pages.count == 1 }
+    await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+
+    coordinator.open()
+    XCTAssertEqual(warm.opened, 1)
+    await settle { await client.requests == 2 }
+    var requests = await client.requests
+    XCTAssertEqual(requests, 2, "the fresh query starts at the click")
+    XCTAssertEqual(warm.displays, 0, "the page is not shown yet (the rack is still extending)")
+    #if MODELPLAN_TEST_ONLY_SPI
+    XCTAssertTrue(steps.contains("open.refresh"), "\(steps)")
+    XCTAssertFalse(steps.contains("page.shown"), "the query did not wait for the page to be shown: \(steps)")
+    #endif
+
+    warm.onShown?() // the rack's visible part is out and the page is confirmed visible
+    XCTAssertEqual(warm.displays, 1, "the last reply shows at once, without waiting for the fresh one")
+    warm.onRenderVerified?()
+    requests = await client.requests
+    XCTAssertEqual(requests, 2, "the query asked at the click is not asked again")
+    await coordinator.consume(try reply(session))
+    XCTAssertEqual(warm.displays, 2, "the fresh reply replaces it when it lands")
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// The fresh query can finish during the rack entrance; the cached reply must still be displayed first.
+  @MainActor func testFreshReplyBeforeShownWaitsBehindCachedReply() async throws {
+    var pages: [WarmProbe] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.prewarmDelay = .zero; coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { pages.count == 1 }; await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session, name: "cached"))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+    coordinator.open()
+    await settle { await client.requests == 2 }
+    await coordinator.consume(try reply(session, name: "fresh"))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    XCTAssertEqual(warm.displays, 0, "neither reply is displayed before the page is shown")
+    warm.onShown?()
+    XCTAssertEqual(warm.displayedNames, ["cached"], "only the cached reply is submitted first")
+    warm.onRenderVerified?()
+    XCTAssertEqual(warm.displayedNames, ["cached", "fresh"], "the fresh reply follows the verified cached render")
+    let count = await client.requests
+    XCTAssertEqual(count, 2, "a completed click-time query is not repeated")
+    await coordinator.shutdown(); await client.complete()
+  }
+
+  /// A refused cached display has no render receipt; fresh data must recover whether it arrived before or after refusal.
+  @MainActor func testRefusedCachedDisplayReleasesFreshReply() async throws {
+    for freshFirst in [true, false] {
+      var pages: [WarmProbe] = []
+      let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+      let client = CountingClient(); coordinator.bind(client: client)
+      coordinator.prewarmDelay = .zero; coordinator.prewarmEnabled = true
+      let session = delivery()
+      await coordinator.consume(.context(session))
+      await settle { pages.count == 1 }; await settle { await client.requests == 1 }
+      await coordinator.consume(try reply(session, name: "cached"))
+      await client.complete(); await coordinator.joinCurrentQueryForVerification()
+      let warm = try XCTUnwrap(pages.first)
+      coordinator.open(); await settle { await client.requests == 2 }
+      warm.onShown?()
+      if freshFirst { await coordinator.consume(try reply(session, name: "fresh")) }
+      XCTAssertEqual(warm.displayedNames, ["cached"])
+      warm.onDisplayAbandoned?() // no onRenderVerified: the cached display was refused
+      if !freshFirst { await coordinator.consume(try reply(session, name: "fresh")) }
+      XCTAssertEqual(warm.displayedNames, ["cached", "fresh"], "fresh data reaches the same page after refusal")
+      await client.complete(); await coordinator.shutdown(); await client.complete()
+    }
+  }
+
+  /// A delivery change during entrance invalidates the held reply before the page is shown.
+  @MainActor func testDeliveryChangeBeforeShownDiscardsHeldReply() async throws {
+    var pages: [WarmProbe] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); page.holdShown = true; pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    coordinator.prewarmDelay = .zero; coordinator.prewarmEnabled = true
+    let old = delivery()
+    await coordinator.consume(.context(old))
+    await settle { pages.count == 1 }; await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(old, name: "old"))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+    coordinator.open(); await settle { await client.requests == 2 }
+    await coordinator.consume(.context(delivery(generation: 4)))
+    warm.onShown?()
+    XCTAssertTrue(warm.displayedNames.isEmpty, "the old delivery is never shown after a context change")
+    await client.complete(); await coordinator.shutdown(); await client.complete()
+  }
+
+  /// G3-42: a plain fade open does not query at the click; the query follows the shown page's last reply, so a fresh
+  /// reply cannot land before the page is confirmed visible and hold back its first show.
+  @MainActor func testAFadeOpenQueriesAfterTheLastReplyIsShown() async throws {
+    var pages: [WarmProbe] = [], steps: [String] = []
+    let coordinator = EngineCockpitCoordinator { let page = WarmProbe($0); pages.append(page); return page }
+    let client = CountingClient(); coordinator.bind(client: client)
+    #if MODELPLAN_TEST_ONLY_SPI
+    coordinator.verificationTrace = { steps.append($0) }
+    #endif
+    coordinator.prewarmDelay = .zero
+    coordinator.prewarmEnabled = true
+    let session = delivery()
+    await coordinator.consume(.context(session))
+    await settle { pages.count == 1 }
+    await settle { await client.requests == 1 }
+    await coordinator.consume(try reply(session))
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
+    let warm = try XCTUnwrap(pages.first)
+
+    coordinator.open()
+    XCTAssertEqual(warm.displays, 1, "the last reply shows as the page is confirmed visible")
+    await settle { await client.requests == 2 }
+    let requests = await client.requests
+    XCTAssertEqual(requests, 2, "the shown page asks for fresh data once")
+    #if MODELPLAN_TEST_ONLY_SPI
+    XCTAssertFalse(steps.contains("open.refresh"), "\(steps)")
+    let shown = try XCTUnwrap(steps.firstIndex(of: "display.last"), "\(steps)")
+    XCTAssertLessThan(shown, try XCTUnwrap(steps.lastIndex(of: "query.start"), "\(steps)"), "\(steps)")
+    #endif
+    await client.complete(); await coordinator.joinCurrentQueryForVerification()
     await coordinator.shutdown(); await client.complete()
   }
 
