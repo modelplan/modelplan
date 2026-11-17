@@ -184,6 +184,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var scope = "all"
   private var outsideMonitor: Any?, localMonitor: Any?
   private var closeTask: Task<Void, Never>?
+  /// Walkthrough 11-17: a user put back keeps an active app active across the regular-to-accessory flip.
+  private var putBackActivation = CockpitPutBackActivation()
   /// G3-108: true while the shutter moves the window's bottom edge; the content then keeps the live window size, so
   /// nothing is rescaled (the D88 grow and shrink keep the layout size and scale with the frame).
   private(set) var shutterMoving = false
@@ -612,6 +614,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationWebView: WKWebView? { web }
     public var verificationCloseStarted: ((TimeInterval) -> Void)?
     public var verificationDidDiscard: (() -> Void)?
+    /// Stands in for `NSApp.isActive` (and, with it, the panel's key state) and for `NSApp.activate()`.
+    var verificationApplicationActive: (() -> Bool)?
+    var verificationActivateApplication: (() -> Void)?
     public var verificationOutsidePress: ((NSEvent.EventType,Bool)->Void)?
     public var verificationCloseOrigin: ((String)->Void)?
     /// "rack", "fade" or "instant" for each first show; "rack", "fade" or "instant" for each close (CKP-SHELL-33).
@@ -860,7 +865,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     })
     // Spec item 1: Cmd-Tab away (or any app switch) closes the attached cockpit, as a menu-bar popover does.
     observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: NSApplication.shared, queue: .main) {
-      [weak self] _ in MainActor.assumeIsolated { _ = self?.dismissal.request(.appResigned) }
+      [weak self] _ in MainActor.assumeIsolated {
+        guard let self else { return }
+        // Walkthrough 11-17: the resign the put back's own policy flip posts is answered by activating again, not a close.
+        if self.reactivateAfterPutBack(consume: true) { return }
+        _ = self.dismissal.request(.appResigned)
+      }
     })
     // Spec item 1: while one of our menus is tracked (the status menu, this context menu) nothing closes the cockpit.
     observers.append(center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in
@@ -1243,8 +1253,40 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard let window else { return nil }
     return CockpitVisibility(
       visible: window.isVisible && !window.isMiniaturized && !NSApp.isHidden,
-      occluded: !window.occlusionState.contains(.visible), key: window.isKeyWindow && NSApp.isActive
+      occluded: !window.occlusionState.contains(.visible), key: windowIsKey(window)
     )
+  }
+  /// The page's key fact: the panel is the key window of the active app.
+  private func windowIsKey(_ window: NSWindow) -> Bool {
+    #if MODELPLAN_TEST_ONLY_SPI
+    // The test process is never the active app, so the window server never gives the panel key; the seam stands in for
+    // both (the attached cockpit is the app's only window and is made key whenever it is ordered front).
+    if let verificationApplicationActive { return window.isVisible && verificationApplicationActive() }
+    #endif
+    return window.isKeyWindow && NSApp.isActive
+  }
+  private var applicationIsActive: Bool {
+    #if MODELPLAN_TEST_ONLY_SPI
+    if let verificationApplicationActive { return verificationApplicationActive() }
+    #endif
+    return NSApp.isActive
+  }
+  private func activateApplication() {
+    #if MODELPLAN_TEST_ONLY_SPI
+    if let verificationActivateApplication { verificationActivateApplication(); return }
+    #endif
+    NSApp.activate()
+  }
+  /// Walkthrough 11-17: after a user put back, the presence flip to accessory deactivated the app and the first press
+  /// on the page (its Close) was dropped. The app is activated again and the cockpit made key, once per resign.
+  @discardableResult private func reactivateAfterPutBack(consume: Bool) -> Bool {
+    let presentable = window?.isVisible == true && shown && closeTask == nil && !ending && !shellSession.detached
+    guard putBackActivation.reactivates(isActive: applicationIsActive, presentable: presentable,
+                                        now: DismissalFunnel.uptimeMilliseconds(), consume: consume) else { return false }
+    activateApplication()
+    window?.makeKeyAndOrderFront(nil)
+    visibilityChanged()
+    return true
   }
   private func visibilityChanged() {
     // The alpha-0 warm paint is not a visible cockpit; the page keeps the hidden state it was given.
@@ -1718,8 +1760,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     onShellChanged?()
     // Spec item 4: the Dock icon follows the detached window; a put back can drop the app to accessory, which can
     // take key from the cockpit, so it is made key again (the funnel's policy hold keeps it from closing).
+    // Walkthrough 11-17 (#977 regression): the flip also deactivates the app, at once or with a resign a moment later.
+    // Every latch is a user put back (key, menu, drag release, or a press that ends the flight), so an app that was
+    // active is activated again; making the window key alone left the page `key: false` and its first press dropped.
+    let wasActive = applicationIsActive
     onPresenceChanged?(true)
-    if let window, window.isVisible, shown, closeTask == nil, !ending { window.makeKeyAndOrderFront(nil) }
+    putBackActivation.arm(wasActive: wasActive, now: DismissalFunnel.uptimeMilliseconds())
+    if let window, window.isVisible, shown, closeTask == nil, !ending {
+      if !reactivateAfterPutBack(consume: false) { window.makeKeyAndOrderFront(nil) }
+    }
     #if MODELPLAN_TEST_ONLY_SPI
     verificationLayoutAnimationCompleted?()
     #endif
@@ -2070,7 +2119,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
     verificationDidDiscard?()
     #endif
-    closeTask?.cancel(); closeTask = nil; cancelDrag()
+    closeTask?.cancel(); closeTask = nil; cancelDrag(); putBackActivation.cancel()
     stopRack()
     settlePendingShutter(); shutterMoving = false
     if shellSession.detached, let window { shellSession.remember(window.frame.origin, arrangement: arrangement) }
