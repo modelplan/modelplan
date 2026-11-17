@@ -357,6 +357,14 @@ test('G3-66: reject codes are fixed code paths and never carry message data',()=
   for(const [msg,code] of cases){assert.equal(f.bridge.receive(JSON.stringify(msg),source),false);assert.equal(f.bridge.lastReject,code);assert.ok(!f.bridge.lastReject.includes(secret));assert.match(f.bridge.lastReject,/^[a-z]+\.[A-Za-z]+$/);}
   assert.equal(f.bridge.receive(' '.repeat(MAX_MESSAGE_BYTES+1),source),false);assert.equal(f.bridge.lastReject,'msg.size');
 });
+test('CKP-SHELL-33: the host ignition message lights and puts out the base bells, strictly typed',()=>{
+  const f=fixture(),lit=[];f.bridge.view.ignite=on=>lit.push(on);
+  assert.equal(f.bridge.receive(f.send('ignition',{on:true}),source),true);
+  assert.equal(f.bridge.receive(f.send('ignition',{on:false}),source),true);
+  assert.deepEqual(lit,[true,false]);
+  for(const bad of [{on:'yes'},{},{on:true,extra:1}])assert.equal(f.bridge.receive(f.send('ignition',bad),source),false);
+  assert.deepEqual(lit,[true,false],'a malformed ignition has no effect');
+});
 test('G3-96: reset events as CLI v0.5.59 emits them (kind, confirmedAt, confirmedAtBasis) are displayed, not rejected as data.schema',()=>{
   // Build 14d: the CLI sets kind on every reset event and a confirmation time on a confirmed one. Their schema nodes
   // carried an enum without a type, which the page's bounded validator refuses, so every display with a published

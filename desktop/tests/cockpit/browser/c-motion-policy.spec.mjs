@@ -14,9 +14,10 @@ const ALLOWED_ANIMATIONS=new Set([
  'cockpit-porthole-flicker', // owner D39/D-H flame flicker; active, open and no Reduce Motion only
  'cockpit-mouth-shimmer', // CKP-ENG-19 base mouth light, working subscriptions only; same gates
 ]);
-// Selector fragment -> transitioned properties allowed on it (interaction feedback and fader glide; the official throttle
-// lever glides through its baked frames, CKP-FAD-12/-24).
-const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],[/\bshutter-(blind|thumb)\b/,['width','transform']]];
+// Selector fragment -> transitioned properties allowed on it (interaction feedback and fader glide).
+const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],[/\bshutter-(blind|thumb)\b/,['width','transform']],
+ // CKP-SHELL-33 (D178/D186): the launch-rack ignition glow fades on the base bells (120 ms in, 220 ms out); off under Reduce Motion.
+ [/\bbz(-empty)?\b/,['opacity']]];
 
 async function open(page,data) {
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});

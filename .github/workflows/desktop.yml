@@ -266,7 +266,7 @@ jobs:
       - name: SPI-gated cockpit tests
         run: |
           swift test --package-path desktop/native/ModelPlanCockpitWeb --scratch-path "$RUNNER_TEMP/cockpit-spi-build" --jobs 2 \
-            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter '(CockpitControllerNoWindowTests|CockpitContextMenuAndReloadTests|CockpitLifecycleAuditTests|CockpitSnapGuideDisplayTests|CockpitCloseFadeAndHostTests|CockpitDeliveryBacklogTests|CoordinatorPrewarmTests|CockpitRecoveryControllerTests|CockpitDeliveryFairnessTests)'
+            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter '(CockpitControllerNoWindowTests|CockpitContextMenuAndReloadTests|CockpitLifecycleAuditTests|CockpitCatchZoneDisplayTests|CockpitLaunchRackEntryTests|CockpitSnapGuideDisplayTests|CockpitCloseFadeAndHostTests|CockpitDeliveryBacklogTests|CoordinatorPrewarmTests|CockpitRecoveryControllerTests|CockpitDeliveryFairnessTests)'
 
   app-smoke:
     permissions:

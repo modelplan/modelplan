@@ -68,7 +68,8 @@ import XCTest
     XCTAssertEqual(usable, a.visibleFrame); XCTAssertEqual(anchor, icon)
     let placed = try XCTUnwrap(page.placement())
     assertInside(placed.frame, a.visibleFrame, "attached open from the icon")
-    XCTAssertEqual(placed.frame.midX, icon.midX, accuracy: 1, "centred under the icon (D88)")
+    let attached = try XCTUnwrap(CockpitShellLayout.fit(usable: a.visibleFrame, anchor: icon, shutterClosed: false, screenWidth: a.frame.width))
+    XCTAssertEqual(placed.frame, attached.frame, "the attached place under the icon (CKP-SHELL-33: its left shoulder, kept on screen)")
   }
 
   func testADragOntoTheOtherDisplayEndsInsideIt() throws {
