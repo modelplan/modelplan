@@ -184,9 +184,14 @@ func (e importEngine) NextOwedAt(now time.Time) (time.Time, bool) {
 	return speed.NextOwedAt(e.st.Dir, consent.Capture(), now)
 }
 
-// CancelOwed: the user cancelled an import; no automatic import starts again under the current
-// grants. A failure to record it is left to the in-memory stop (Cancel already stopped the timers).
-func (e importEngine) CancelOwed() { _ = speed.MarkOwedCancelled(e.st.Dir, consent.Capture()) }
+// CancelOwed: the user cancelled an import; no automatic import starts again under the grants in
+// force now. The grants are captured here and persisted by the returned func once the run has
+// settled, so a grant given while it settles stays owed. A failure to record it is left to the
+// in-memory stop (Cancel already stopped the timers).
+func (e importEngine) CancelOwed() func() {
+	grants := consent.Capture()
+	return func() { _ = speed.MarkOwedCancelled(e.st.Dir, grants) }
+}
 
 // Owed: some history source is owed an import (see RunOwed).
 func (e importEngine) Owed() bool { return len(owedHistoryTools(e.st.Dir)) > 0 }
