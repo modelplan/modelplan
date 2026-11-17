@@ -1138,3 +1138,90 @@ func TestGLMKeyChangeCacheFailureKeepsCredential(t *testing.T) {
 		})
 	}
 }
+
+// T5 (post-merge sampling 11-17): a GLM key save or remove rewrites native.json from a copy it read
+// earlier. A Forget cleanup that filters native.json in between must not be undone by that write:
+// the erased reading (GLM's own detected-key reference, or another tool's whole reading) stays gone.
+func TestGLMKeyChangeDoesNotRestoreReadingsAForgetErased(t *testing.T) {
+	for _, forgotten := range []string{"zai", "opencodego"} {
+		for _, change := range []string{"replace", "remove"} {
+			t.Run(forgotten+"/"+change, func(t *testing.T) {
+				isolateHome(t)
+				p := nativePaths(t)
+				if err := SetManualKey(p.Cache, "zai", fakeZaiKey, "global"); err != nil {
+					t.Fatal(err)
+				}
+				used := 40.0
+				at := time.Now().UTC()
+				seed := nativeSnap{SchemaVersion: 1, ObservedAt: at, Providers: []codexbarEntry{
+					{Provider: "zai", Status: "ok", ObservedAt: at, DetectedKeyRef: "detected-ref"},
+					{Provider: "opencodego", Status: "ok", ObservedAt: at, Plan: "Synthetic Go", Windows: []Window{{Kind: "weekly", UsedPercent: &used, ObservedAt: at}}},
+				}}
+				b, _ := json.Marshal(seed)
+				if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := writeAtomic(nativePath(p.Cache), b); err != nil {
+					t.Fatal(err)
+				}
+				// The key change has read native.json and is about to write its copy back. A real Forget
+				// cleanup starts now (retrying while the readings are busy, as the app does) and gets a
+				// fair chance to finish before the write.
+				forgetDone := make(chan error, 1)
+				started := false
+				writeGLMNativeCache = func(path string, data []byte) error {
+					if !started {
+						started = true
+						go func() {
+							deadline := time.Now().Add(10 * time.Second)
+							for {
+								err := ForgetTool(p, forgotten)
+								if err == nil || time.Now().After(deadline) {
+									forgetDone <- err
+									return
+								}
+								time.Sleep(10 * time.Millisecond)
+							}
+						}()
+						select {
+						case err := <-forgetDone:
+							forgetDone <- err
+						case <-time.After(300 * time.Millisecond):
+						}
+					}
+					return writeAtomic(path, data)
+				}
+				defer func() { writeGLMNativeCache = writeAtomic }()
+				var err error
+				if change == "replace" {
+					err = SetManualKey(p.Cache, "zai", "replacement-key", "global")
+				} else {
+					err = RemoveManualKey(p.Cache, "zai")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !started {
+					t.Fatal("key change did not rewrite native.json")
+				}
+				select {
+				case err := <-forgetDone:
+					if err != nil {
+						t.Fatalf("forget: %v", err)
+					}
+				case <-time.After(15 * time.Second):
+					t.Fatal("forget did not finish")
+				}
+				s := loadNative(p.Cache)
+				if s == nil {
+					return
+				}
+				for _, e := range s.Providers {
+					if e.Provider == forgotten {
+						t.Fatalf("key change wrote back a reading Forget erased: %+v", e)
+					}
+				}
+			})
+		}
+	}
+}

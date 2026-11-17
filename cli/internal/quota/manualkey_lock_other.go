@@ -7,6 +7,7 @@ import "sync"
 
 var manualKeyMu sync.Mutex
 
+// Lock order: see manualkey_lock_unix.go.
 // Off the supported platforms only the in-process lock applies.
 func lockManualKeys(string) (func(), error) {
 	manualKeyMu.Lock()
