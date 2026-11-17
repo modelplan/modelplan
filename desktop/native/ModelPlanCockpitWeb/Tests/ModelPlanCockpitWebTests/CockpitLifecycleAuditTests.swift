@@ -204,6 +204,85 @@ import ModelPlanWire
     XCTAssertEqual(window.level, CockpitWindowController.panelLevel, "put back: floats again")
   }
 
+  /// Walkthrough 11-17 (build b2b50b34, #977 regression): detach, drag the detached window, put it back with the page's
+  /// key, then press the page's Close once. The put back flipped the app to accessory, macOS resigned it a moment later,
+  /// the page was told `key: false` and the Close press was dropped. The host is played as EngineDockMenuApplication and
+  /// PulseDockPresence play it (regular while detached, accessory attached, a 250 ms policy hold, then the flip's resign).
+  func testThePagesCloseWorksOnTheFirstPressAfterADragAndAPutBack() async throws {
+    let page = try page(try bundle(), reduceMotion: true, icon: try menuBarIcon())
+    defer { page.discard() }
+    var sent: [(raw: String, complete: (CockpitDeliveryResult) -> Void)] = [], delivered = 0
+    page.verificationNoWindowClock = { 1_000 }
+    page.verificationNoWindowArm = { _, _ in {} }
+    page.verificationNoWindowDelivery = { raw, complete in sent.append((raw, complete)) }
+    func drain() { while delivered < sent.count { delivered += 1; sent[delivered - 1].complete(.accepted) } }
+    func lastKey() -> Bool? {
+      for entry in sent.reversed() {
+        let value = (try? JSONSerialization.jsonObject(with: Data(entry.raw.utf8))) as? [String: Any]
+        if value?["type"] as? String == "visibility" { return value?["key"] as? Bool }
+      }
+      return nil
+    }
+    final class App { var active = true, activations = 0, regular = false }
+    let app = App()
+    page.verificationApplicationActive = { app.active }
+    page.verificationActivateApplication = { app.active = true; app.activations += 1 }
+    page.onPresenceChanged = { [weak page] userInitiated in
+      guard let page else { return }
+      let wantsRegular = !page.isAttached && page.window?.isVisible == true
+      guard wantsRegular != app.regular else { return }
+      app.regular = wantsRegular
+      page.suppressDismissal(.policyChange, forMilliseconds: 250)
+      if wantsRegular { if userInitiated { app.active = true }; return }
+      // The flip to accessory resigns the app after the call has returned.
+      Task { @MainActor in
+        app.active = false
+        NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApplication.shared)
+      }
+    }
+    page.open(); detachSyntheticLoad(page)
+    let window = try XCTUnwrap(page.window)
+    for _ in 0..<150 where !window.occlusionState.contains(.visible) { try await Task.sleep(for: .milliseconds(20)) }
+    guard window.occlusionState.contains(.visible) else { throw XCTSkip("the window server reports the panel occluded") }
+    let shell = CockpitShellState(closed: false, attached: true, forcedClosed: false, tier: .tall)
+    let load = try page.bridge.load(.init(theme: .night, locale: .en, profile: .full), shell: shell)
+    var sequence = 1
+    page.verificationReceive(try reply(load, type: "ready", sequence: sequence), source: source); drain()
+    XCTAssertEqual(lastKey(), true, "opened: the page is key")
+    func press(_ action: String) throws {
+      sequence += 1
+      var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try reply(load, type: "action", sequence: sequence).utf8)) as? [String: Any])
+      value["action"] = action; value["requestId"] = UUID().uuidString
+      page.verificationReceive(String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self), source: source)
+    }
+    // Detach and drag: the strip tears the cockpit off and drops it away from the catch zone.
+    let grab = CGPoint(x: window.frame.minX + 120, y: window.frame.maxY - 16)
+    page.titleDrag(.began, point: grab)
+    page.titleDrag(.moved, point: CGPoint(x: grab.x + 40, y: grab.y - 120))
+    page.titleDrag(.moved, point: CGPoint(x: grab.x + 80, y: grab.y - 300))
+    page.titleDrag(.ended, point: CGPoint(x: grab.x + 80, y: grab.y - 300))
+    XCTAssertFalse(page.isAttached)
+    XCTAssertTrue(app.regular, "detached: the app has its Dock icon")
+    drain()
+    // Put back with the page's key; with Reduce Motion it latches at once.
+    let rejectedBefore = page.rejectedBridgeMessageCount
+    try press("putBack"); drain()
+    XCTAssertEqual(page.rejectedBridgeMessageCount, rejectedBefore, "the put-back press is accepted")
+    XCTAssertTrue(page.isAttached, "put back")
+    XCTAssertFalse(app.regular, "attached: back to accessory")
+    // Let the flip's resign, and the visibility it causes, arrive.
+    for _ in 0..<25 { try await Task.sleep(for: .milliseconds(20)); drain() }
+    XCTAssertTrue(app.active, "the put back leaves the app active")
+    XCTAssertGreaterThanOrEqual(app.activations, 1)
+    XCTAssertEqual(lastKey(), true, "the page is key again, so its next press counts")
+    XCTAssertNotNil(page.window, "the flip's resign did not close the attached cockpit")
+    let rejected = page.rejectedBridgeMessageCount
+    try press("close")
+    XCTAssertEqual(page.rejectedBridgeMessageCount, rejected, "the Close press is accepted")
+    XCTAssertNil(page.window, "the first Close press closes the cockpit")
+    XCTAssertEqual(failures, [])
+  }
+
   /// glm-908-1 (P2): closing a detached cockpit keeps the session detached; a reopen before the prewarm builds a
   /// cold page through `open()` alone (no appearance update). That page is a normal window too.
   func testAColdReopenOfADetachedSessionIsANormalWindow() throws {
