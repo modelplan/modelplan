@@ -31,6 +31,11 @@ test('no page code chooses a language inline: no locale ternary, no CJK literal 
 });
 
 const hostKeys=Object.keys(tables.en).filter(k=>k.startsWith('host.'));
+test('fallback and usage help use localized, user-facing words',()=>{
+ assert.doesNotMatch(tables['zh-CN']['host.fieldNoWebGL'], /[A-Za-z]/, 'Chinese fallback has no technical English');
+ assert.doesNotMatch(tables.en['host.helpNote8'], /source binding|account attribution/i);
+ assert.doesNotMatch(tables['zh-CN']['host.helpNote8'], /来源关联|账户归属/);
+});
 test('every host string exists in both languages with the same variables and fits its length class',()=>{
  assert.ok(hostKeys.length>=60,'the page strings moved into the tables');
  const vars=v=>(typeof v==='object'?Object.values(v):[v]).flatMap(s=>s.match(/\{\w+\}/g)??[]).sort().filter((x,i,a)=>x!==a[i-1]).join();
