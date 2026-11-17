@@ -1291,7 +1291,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   @discardableResult private func reactivateAfterPutBack() -> Bool {
     let presentable = window?.isVisible == true && shown && closeTask == nil && !ending && !shellSession.detached
     guard putBackActivation.reactivates(isActive: applicationIsActive, presentable: presentable,
-                                        now: DismissalFunnel.uptimeMilliseconds()) else { return false }
+                                        now: dismissalNow()) else { return false }
     activateApplication()
     window?.makeKeyAndOrderFront(nil)
     visibilityChanged()
@@ -1776,7 +1776,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // the app regular, and then a resign is the user's own switch).
     let wasActive = applicationIsActive, wasRegular = applicationIsRegular
     onPresenceChanged?(true)
-    putBackActivation.arm(wasActive: wasActive, leftRegular: wasRegular && !applicationIsRegular, now: DismissalFunnel.uptimeMilliseconds())
+    putBackActivation.arm(wasActive: wasActive, leftRegular: wasRegular && !applicationIsRegular, now: dismissalNow())
     if let window, window.isVisible, shown, closeTask == nil, !ending {
       if !reactivateAfterPutBack() { window.makeKeyAndOrderFront(nil) }
     }

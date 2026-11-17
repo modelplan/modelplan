@@ -211,6 +211,8 @@ import ModelPlanWire
     enum Resign { case immediate, later }
     var active = true, activations = 0, regular = false, settingsOpen = false
     var resign = Resign.later
+    /// The controller's injected clock (dismissal holds and the recovery window run on it); the test advances it.
+    var now: UInt64 = 1_000
     var sent: [(raw: String, complete: (CockpitDeliveryResult) -> Void)] = [], delivered = 0
     var sequence = 1
     func drain() { while delivered < sent.count { delivered += 1; sent[delivered - 1].complete(.accepted) } }
@@ -232,7 +234,7 @@ import ModelPlanWire
     let page = try page(try bundle(), reduceMotion: true, icon: try menuBarIcon())
     addTeardownBlock { @MainActor in page.discard() }
     if app.settingsOpen { app.regular = true }
-    page.verificationNoWindowClock = { 1_000 }
+    page.verificationNoWindowClock = { app.now }
     page.verificationNoWindowArm = { _, _ in {} }
     page.verificationNoWindowDelivery = { raw, complete in app.sent.append((raw, complete)) }
     page.verificationApplicationActive = { app.active }
@@ -325,7 +327,8 @@ import ModelPlanWire
     let first = try await detachedByDrag(answered)
     try first.press("putBack"); answered.drain()
     XCTAssertEqual(answered.activations, 1, "the immediate deactivation is answered at the latch")
-    try await settle(answered, milliseconds: 300) // past the host's policy hold, inside the 500 ms window
+    try await settle(answered, milliseconds: 300)
+    answered.now += 300 // past the host's 250 ms policy hold, inside the 500 ms recovery window
     answered.resignActive()
     try await settle(answered, milliseconds: 100)
     XCTAssertEqual(answered.activations, 1, "no second activation for the user's switch")
