@@ -320,14 +320,15 @@ class Walkthrough:
         """Drag the cockpit by the middle of its title-strip drag region (G3-43).
 
         The region is the app's `titleDragFrame`: page x 24..240 and, from the top of the page, the strip top
-        (225 full open, 45 full closed, 57 short) minus 3 down to plus 29. It scales with the window, so the point
-        comes from the reported window frame (page width 636, root 877/691/627/609 plus the 34 px base reserve), never
-        from another control that merely shares a label.
+        (253 full, 65 short, from the top of the open canvas; CockpitShellLayout.stripTop) minus 3 down to plus 29. It
+        scales with the window, so the point comes from the reported window frame: page width 636 and a height of
+        939 (full open), 711 (full, shutter closed: the window drops the 228 px porthole band above the strip), 669
+        (short open) or 629 (short closed: 40 px dropped). Closed, the strip therefore sits 25 px from the window top.
         """
         window = self.need(action["window"])["frame"]
         scale = window[2] / 636.0
-        root = round(window[3] / scale) - 34
-        strip_top = {877: 225, 691: 45, 627: 57, 609: 45}.get(min((877, 691, 627, 609), key=lambda r: abs(r - root)), 225)
+        height = window[3] / scale
+        strip_top = {939: 253, 711: 25, 669: 65, 629: 25}[min((939, 711, 669, 629), key=lambda h: abs(h - height))]
         start = (window[0] + 132 * scale, window[1] + (strip_top + 13) * scale)
         self.host.helper("down", *start)
         self.host.helper("held", start[0] + action["by"][0], start[1] + action["by"][1], action.get("seconds", 1.0))
