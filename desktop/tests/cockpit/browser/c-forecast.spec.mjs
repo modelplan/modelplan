@@ -44,7 +44,7 @@ test('D38 the Chinese row reads 撑不到 and uses the same rule',async({page})=
 
 test('D38 the engine cell and the Subscription page name the run-out',async({page})=>{
  await open(page,fixture().data);
- await expect(page.locator('.qcell').filter({hasText:'out ~40m'}).first()).toBeVisible();
+ await expect(page.locator('.qcell').filter({hasText:'out in ~40m'}).first()).toBeVisible();
  await page.keyboard.press('1');
  await page.getByRole('button',{name:'Subscription',exact:true}).click();
  await expect(page.locator('.sp-w em.amber').first()).toHaveText('out ~40m');
@@ -54,7 +54,7 @@ for(const [name,forecast] of [['no run-out in the forecast',{runsOutAt:null,basi
  test(`D38 ${name} creates no amber`,async({page})=>{
   await open(page,fixture(forecast).data);
   await expect(lamp(page)).not.toHaveClass(/\bamber\b/);
-  await expect(page.locator('.qcell').filter({hasText:'out ~'})).toHaveCount(0);
+  await expect(page.locator('.qcell').filter({hasText:'out in ~'})).toHaveCount(0);
  });
 
 test('D38 an older engine without forecasts creates no amber',async({page})=>{
@@ -84,6 +84,6 @@ test('D38 the page asks for a tick at the run-out, and the amber clears there wi
  await page.clock.setFixedTime(new Date(NOW+20*60000));
  expect(await receive(send('tick',{nowUnixMs:String(NOW+20*60000),reason:'deadline'}))).toBe(true);
  await expect(lamp(page)).not.toHaveClass(/\bamber\b/);
- await expect(page.locator('.qcell').filter({hasText:'out ~'})).toHaveCount(0);
+ await expect(page.locator('.qcell').filter({hasText:'out in ~'})).toHaveCount(0);
  expect(Number(await lastDeadline(page))).toBeGreaterThan(NOW+20*60000);
 });

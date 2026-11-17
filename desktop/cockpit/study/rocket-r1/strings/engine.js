@@ -49,7 +49,7 @@ register('eng', {
   resetUnknown: ['lcd', '重置未知', 'reset ?'],
   runOut: ['lcd', '约 {t} 用完', 'out ~{t}'], // the pace says the window runs out before it resets (amber)
   runOutShort: ['lcd', '约{t}', '~{t}'], // the same in a narrow column (5–7 subscriptions)
-  runOutC: ['lcd', '约{t}用完', 'out ~{t}'], // round D2: the compact forecast in medium and wide cells
+  runOutC: ['lcd', '约{t}后用完', 'out in ~{t}'], // round D2: the compact forecast in medium and wide cells (D277 wording)
   resetLine: ['line', '{t} · {at}', '{t} · {at}'], // round D2: the wide cell's one line, 3h18 · 17:23
   // round D2 cell states
   drawCell: ['lcd', '扣点中', 'credits'], // used up, credits being drawn (red)

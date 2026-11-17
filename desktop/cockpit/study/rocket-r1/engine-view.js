@@ -27,14 +27,18 @@ function note(col,c,ui) {
   if(c.event) return {text:c.event.status==='confirmed'?t('eng.resetDone'):c.event.at!=null?t('eng.resetAnn',{at:relativeMoment(c.event.at,ui)}):t('eng.resetTba'),
     short:c.event.status==='confirmed'?t('eng.resetDoneShort'):c.event.at!=null?t('eng.resetAnnShort',{at:relativeMoment(c.event.at,ui)}):t('eng.resetTba'),
     small:c.event.status==='announced'&&c.event.at!=null?t('eng.resetAnnCompact',{at:relativeMoment(c.event.at,ui)}):null,event:true};
-  if(c.runOutMin!=null) return {text:t('eng.runOutC',{t:dhm(c.runOutMin)}),short:t('eng.runOutShort',{t:shortTime(c.runOutMin)}),warn:true};
+  // Owner D277 (CKP-ENG-26): the cell that will run out says so itself, in its alert's colour (red at or below the
+  // threshold, amber above it), whether or not its reset time is known.
+  if(c.runOutMin!=null) return {text:t('eng.runOutC',{t:dhm(c.runOutMin)}),short:t('eng.runOutShort',{t:shortTime(c.runOutMin)}),warn:c.level!=='low',crit:c.level==='low'};
   if(c.drawing) return {text:t('eng.drawCell'),crit:true};
   if(c.noData) return {text:t('eng.noData')};
-  if(c.resetIn==null) return {text:t('eng.resetUnknown'),short:t('eng.resetUnknownShort')};
+  // Owner D277 (CKP-ENG-26): an unknown reset time leaves the line empty instead of repeating "reset ?" in every cell;
+  // the cell's hover and accessible text still say it.
+  if(c.resetIn==null) return {text:''};
   return {text:dhm(c.resetIn),short:shortTime(c.resetIn)};
 }
 function title(col,c,ui){return [col.name,periodTag(c),c.value==null?t('eng.noReading'):t(ui.used?'eng.used':'eng.left',{v:Math.round(c.value)}),
-  c.level==='low'?t('eng.lvLow'):c.level==='mid'?t('eng.lvMid'):'',c.runOutMin!=null?t('eng.runOut',{t:dhm(c.runOutMin)}):'',c.resetIn!=null?t('eng.resetIn',{t:dhm(c.resetIn)}):'',note(col,c,ui).text].filter(Boolean).join(' · ');}
+  c.level==='low'?t('eng.lvLow'):c.level==='mid'?t('eng.lvMid'):'',c.runOutMin!=null?t('eng.runOut',{t:dhm(c.runOutMin)}):'',c.resetIn!=null?t('eng.resetIn',{t:dhm(c.resetIn)}):c.value!=null&&!col.grey?t('eng.resetUnknown'):'',note(col,c,ui).text].filter(Boolean).join(' · ');}
 function cell(col,c,row,m,ui,fresh){
   const n=note(col,c,ui), different=c.extra||c.period!==m.rowPeriods[row];
   const tag=different?periodTag(c):'', shortTag=c.extra?extraShort(c):tag;

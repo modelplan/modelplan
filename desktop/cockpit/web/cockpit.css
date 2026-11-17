@@ -269,3 +269,8 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::after{transition:no
 #cockpit .ck-head [data-close]::before{inset:.85px;background:var(--close-fill);border-radius:4px;filter:none;box-shadow:inset 0 1px 0 #ffffff26,inset 0 -1px 0 #0000004d,0 1px 2px #000a,0 0 0 1px var(--close-edge)}
 #cockpit .ck-head [data-close]::after{content:"";position:absolute;inset:10px;pointer-events:none;background:linear-gradient(45deg,transparent 43%,var(--close-ink) 43% 57%,transparent 57%),linear-gradient(-45deg,transparent 43%,var(--close-ink) 43% 57%,transparent 57%)}
 #cockpit .ck-head [data-close]:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}
+/* Owner D277 (CKP-ENG-27): one quiet line under the engine table, on the pager's row (the pager keeps the right end) */
+.ck-eng .eng-upd{grid-row:3;grid-column:1;justify-self:start;display:flex;align-items:center;gap:8px;min-width:0;height:var(--row-h,18px);font:10px/12px var(--f-silk);color:var(--silk-dim);white-space:nowrap}
+.ck-eng .eng-upd-t{overflow:hidden;text-overflow:ellipsis}
+.ck-eng .eng-upd-r{font:inherit;color:var(--silk);background:none;border:0;padding:0 2px;cursor:pointer;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 35%,transparent);text-underline-offset:2px}
+.ck-eng .eng-upd-r:hover{color:var(--silk-hi)}.ck-eng .eng-upd-r:focus-visible{outline:2px solid var(--gold-lcd,#f6d38a);outline-offset:2px}
