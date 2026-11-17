@@ -237,8 +237,20 @@ public struct DockNozzlePose: Equatable, Sendable {
             c.strokeEllipse(in:rect)
             c.setLineDash(phase:0,lengths:[]);c.setAlpha(recipe.opacity)
             if let arc,let fraction=arc.fraction,fraction.isFinite,(0...1).contains(fraction),fraction>0 {
-                c.setStrokeColor(try ink(arc.status.rawValue));c.addArc(center:centre,radius:recipe.radius,startAngle:-.pi/2,
-                    endAngle:-.pi/2+CGFloat(max(recipe.minimumVisibleFraction,fraction))*2 * .pi,clockwise:false);c.strokePath()
+                c.setStrokeColor(try ink(arc.status.rawValue))
+                let visibleFraction = CGFloat(max(recipe.minimumVisibleFraction, fraction))
+                if visibleFraction >= 1 {
+                    // A full turn through addArc is an open path with coincident endpoints; butt caps leave the
+                    // one-pixel seam reported in G3-125. Stroke the ellipse as a closed path instead.
+                    c.strokeEllipse(in: rect)
+                } else {
+                    // Pulse UsageRingView (v1.12.4) trims a Circle and strokes with round caps. The rounded ends
+                    // overlap when the remaining arc is shorter than the stroke, so near-full quota rings close.
+                    c.setLineCap(.round)
+                    c.addArc(center:centre,radius:recipe.radius,startAngle:-.pi/2,
+                        endAngle:-.pi/2+visibleFraction*2 * .pi,clockwise:false)
+                    c.strokePath()
+                }
             }
             c.restoreGState()
         }

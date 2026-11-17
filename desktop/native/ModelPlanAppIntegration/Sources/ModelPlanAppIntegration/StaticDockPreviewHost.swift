@@ -970,6 +970,10 @@ struct DockHelpInteraction: Equatable {
     private var presentedSurfaceState: DockSurfaceState?
     private let collapseGhost = DockCollapseGhost()
     var collapseAnimatingForChecks: Bool { collapseGhost.animatingForChecks }
+    var collapseCompletedForChecks: (() -> Void)? {
+        get { collapseGhost.didStopForChecks }
+        set { collapseGhost.didStopForChecks = newValue }
+    }
     private(set) var revealAnimationsForChecks = 0
     var containerAnimationsForChecks: [String: CAAnimation] {
         guard let layer = container.layer else { return [:] }
