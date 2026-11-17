@@ -1,1 +1,0 @@
-When the reading service comes back by itself after a crash, the menu bar and widget now show its fresh readings again without a Refresh, and a wake or unlock during its cool-down restarts it at once.
