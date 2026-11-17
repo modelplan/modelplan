@@ -704,13 +704,39 @@
       ]
     },
     {
+      "id": "ccusage",
+      "kind": "source-port",
+      "name": "ccusage",
+      "version": "58866ba681343634ab6e5add61f18f3b70aa98f7",
+      "licenseSpdxId": "MIT",
+      "copyright": [
+        "Copyright (c) 2025 ryoppippi"
+      ],
+      "licenseTextPath": "licenses/ccusage/LICENSE.txt",
+      "licenseFiles": [
+        {
+          "path": "licenses/ccusage/LICENSE.txt",
+          "sourceFile": "LICENSE",
+          "sha256": "ffa4dd2d15c2e9f87d21367a007593002366c308d90b4a666d5bd43f57df7563"
+        }
+      ],
+      "source": "https://github.com/ccusage/ccusage/tree/58866ba681343634ab6e5add61f18f3b70aa98f7",
+      "usedBy": [
+        "Local token accounting: Codex and Claude Code response accounting matched to the Rust adapters; shared tool-neutral Buckets and Windows. ModelPlan modifications in the named files."
+      ],
+      "paths": [
+        "cli/internal/tokenacct/buckets.go",
+        "cli/internal/speed/accounting.go"
+      ]
+    },
+    {
       "id": "npm:three",
       "kind": "bundled-npm",
       "name": "three",
       "version": "0.186.1",
       "licenseSpdxId": "MIT",
       "copyright": [
-        "Copyright © 2010-2026 three.js authors"
+        "Copyright \u00a9 2010-2026 three.js authors"
       ],
       "licenseTextPath": "licenses/three/LICENSE",
       "licenseFiles": [

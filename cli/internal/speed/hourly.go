@@ -107,6 +107,7 @@ type TodayTotal struct {
 }
 
 func (v PerfView) TodayTotals() []TodayTotal {
+	v = v.accounted()
 	out := []TodayTotal{}
 	if !v.OK {
 		return out

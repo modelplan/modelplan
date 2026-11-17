@@ -132,7 +132,7 @@ type turn struct {
 	// cfg (Claude Code can change model within a turn).
 	all   []request
 	mixed bool
-	cwd   string // the working directory its log records, "" when none
+	cwd   string        // the working directory its log records, "" when none
 	np    nativeProject // the tool's own project, when its store names one
 }
 
@@ -189,13 +189,14 @@ func ObserveClaude(cache, transcript string, often bool, in Ingest, now time.Tim
 			return nil
 		}
 	}
+	accountingErr := observeAccounting(cache, "claude-code", []string{transcript}, now)
 	err := observe(cache, now, func(l *Ledger) bool {
 		p := claudeObserver(now, l.Counted, transcript, l.cleared)
 		changed := l.scan(transcript, "claude-code", p, now)
 		l.Counted = addCounted(l.Counted, p, transcript)
 		return changed
 	})
-	return errors.Join(err, observePerf(cache, now, in, func(l *PerfLedger) bool {
+	return errors.Join(accountingErr, err, observePerf(cache, now, in, func(l *PerfLedger) bool {
 		p := claudeObserver(now, l.Counted, transcript, l.cleared)
 		changed := l.scan(transcript, "claude-code", ParserClaude, p, now)
 		l.Counted = addCounted(l.Counted, p, transcript)
@@ -208,10 +209,11 @@ func ObserveCodex(cache string, rollouts []string, background func(string) bool,
 	if len(rollouts) == 0 {
 		return nil
 	}
+	accountingErr := observeAccounting(cache, "codex", rollouts, now)
 	err := observe(cache, now, func(l *Ledger) bool {
 		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scan(p, "codex", newCodex(), now) })
 	})
-	return errors.Join(err, observePerf(cache, now, in, func(l *PerfLedger) bool {
+	return errors.Join(accountingErr, err, observePerf(cache, now, in, func(l *PerfLedger) bool {
 		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scan(p, "codex", ParserCodex, newCodex(), now) })
 	}))
 }
