@@ -59,6 +59,9 @@ type Span struct {
 	// Archived: the Codex span also covers archived threads (archived_sessions). An older span
 	// without it is imported again from both folders, replacing its rows (glm-967-2).
 	Archived bool `json:"archived,omitempty"`
+	// Complete: an import of the source finished under Epoch, also when the eligible interval was
+	// empty (the live ledger or a clear already reaches back past it), so there is no From.
+	Complete bool `json:"complete,omitempty"`
 }
 
 // RetryFile is one log whose read failed and the turn spans it still owes.
@@ -255,7 +258,7 @@ func owedAt(cache string, a consent.Admission, source string) (time.Time, bool) 
 		return time.Time{}, false // the user cancelled an import under this grant
 	}
 	c, has := l.Coverage[source]
-	if has && !c.From.IsZero() && sameEpoch(c.Epoch, epoch) && (source != "codex" || c.Archived) {
+	if has && (c.Complete || !c.From.IsZero()) && sameEpoch(c.Epoch, epoch) && (source != "codex" || c.Archived) {
 		return time.Time{}, false // imported
 	}
 	if at, tried := l.Attempts[source]; tried && sameEpoch(at.Epoch, epoch) {
@@ -401,6 +404,8 @@ type importJob struct {
 }
 
 var errGrantWithdrawn = errors.New("history grant withdrawn during the import")
+
+var errImportCancelled = errors.New("import cancelled before its commit")
 
 var errClearedDuringImport = errors.New("history cleared during the import")
 
@@ -559,7 +564,11 @@ func Import(ctx context.Context, cache string, o ImportOptions) (ImportResult, e
 				skip(j)
 				return nil
 			}
-			err := commitImport(cache, j, o.Auto, now, adm, &committed)
+			err := commitImport(ctx, cache, j, o.Auto, now, adm, &committed)
+			if errors.Is(err, errImportCancelled) {
+				res.Cancelled = true
+				return nil
+			}
 			if errors.Is(err, errClearedDuringImport) {
 				skip(j)
 				return nil
@@ -866,7 +875,7 @@ func readWhole(admitted func() error, path string, p parser) ([]turn, error) {
 }
 
 // commitImport merges one source's rows and coverage into imported.json under perf.lock.
-func commitImport(cache string, j *importJob, auto bool, now time.Time, adm consent.Admission, committed *bool) error {
+func commitImport(ctx context.Context, cache string, j *importJob, auto bool, now time.Time, adm consent.Admission, committed *bool) error {
 	epoch := currentEpoch(adm, j.source) // re-checked inside the consent fence
 	if epoch == nil {
 		j.status = StatusNoConsent
@@ -877,6 +886,9 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 		return errors.New("readings busy; retry the import")
 	}
 	defer unlock()
+	if !*committed && ctx.Err() != nil { // a cancel that arrived while waiting for perf.lock
+		return errImportCancelled
+	}
 	if !LoadCleared(cache).tool(j.source).Equal(j.cleared) { // under perf.lock, as the clear writes it
 		return errClearedDuringImport
 	}
@@ -915,6 +927,7 @@ func commitImport(cache string, j *importJob, auto bool, now time.Time, adm cons
 	}
 	c.Epoch = epoch
 	c.Archived = j.source == "codex"
+	c.Complete = true
 	// Every pending log was tried this run: the ones that read are done, the ones that failed
 	// again (and new failures) are in j.failed.
 	tried := map[string]bool{}
