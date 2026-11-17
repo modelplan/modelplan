@@ -1578,7 +1578,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     web?.pageZoom = fit.scale
     dragRegion?.frame = fit.scaledTitleDragFrame
     publishAppearance()
-    if motion == nil { refreshRack() }
+    if self.motion == nil { refreshRack() }
   }
   /// Context menu "Reset position": a dragged-out cockpit goes back under the menu bar icon.
   public func resetPosition() { setAttached(true) }
