@@ -5,7 +5,8 @@
 // (read_chat_file, parse_line, entry_id, the first-wins dedupe in
 // load_entries) and rust/adapters/qwen/src/paths.rs (session fallback).
 // Modified for Go: only type, time, session, model and usageMetadata are
-// decoded; message text is skipped by the decoder and never kept.
+// decoded; message text is skipped by the decoder and never kept. Cached prompt
+// overlap is removed per the owner decision, intentionally differing from ccusage.
 
 package tokenacct
 
@@ -39,9 +40,9 @@ type QwenEntry struct {
 }
 
 // Qwen reads one Qwen Code chats/*.jsonl file the way ccusage does. Only
-// assistant records with usageMetadata count. Qwen's prompt count is taken as
-// ccusage takes it: input as reported, cachedContentTokenCount as cache read,
-// thoughtsTokenCount as reasoning, with the total fallback. project is the
+// assistant records with usageMetadata count. Input excludes cached prompt tokens;
+// cachedContentTokenCount is cache read, thoughtsTokenCount is reasoning, with
+// the total fallback applied after normalization. project is the
 // projects/<project> directory name and stem the file name without .jsonl;
 // they name the session when a record has no sessionId.
 func Qwen(b []byte, project, stem string, mtime time.Time) []QwenEntry {
@@ -56,6 +57,9 @@ func Qwen(b []byte, project, stem string, mtime time.Time) []QwenEntry {
 		}
 		u := r.Usage
 		input, output, reasoning, cacheRead, total := u64(u.Prompt), u64(u.Candidates), u64(u.Thoughts), u64(u.Cached), u64(u.Total)
+		// Owner override: ccusage adds the full prompt and its cached subset.
+		// Keep cache read once and only the uncached prompt in input, before fallback.
+		input = max(0, input-cacheRead)
 		output, extra := fallback(input, output, 0, cacheRead, reasoning, total)
 		if input == 0 && output == 0 && cacheRead == 0 && extra == 0 {
 			continue

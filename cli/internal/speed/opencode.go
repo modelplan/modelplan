@@ -70,16 +70,22 @@ func readOpenCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
 			break
 		}
 	}
+	// Read unfinished compactions too, with end=0, so scanDB keeps them Pending
+	// when a later row advances the cursor. Only completed status makes them count.
 	q := `SELECT m.rowid,
 		COALESCE(json_extract(m.data, '$.id'), ''),
 		COALESCE(m.session_id, ''),
 		COALESCE(json_extract(m.data, '$.model.id'), json_extract(m.data, '$.modelID'), ''),
 		CAST(COALESCE(json_extract(m.data, '$.time.created'), 0) AS INTEGER),
-		CAST(COALESCE(json_extract(m.data, '$.time.completed'), CASE WHEN m.type = 'compaction' THEN json_extract(m.data, '$.time.created') END, 0) AS INTEGER),
+		CAST(CASE WHEN m.type = 'compaction' THEN
+            CASE WHEN json_extract(m.data, '$.status') = 'completed'
+                THEN COALESCE(json_extract(m.data, '$.time.completed'), json_extract(m.data, '$.time.created'), 0)
+                ELSE 0 END
+            ELSE COALESCE(json_extract(m.data, '$.time.completed'), 0) END AS INTEGER),
 		COALESCE(json_extract(m.data, '$.tokens'), ''),
 		` + dir + `, ` + pid + `, ` + pname + `,
         json_extract(m.data, '$.tokens.input'), json_extract(m.data, '$.tokens.cache.read'), json_extract(m.data, '$.tokens.cache.write'), ` + seq + `
-        FROM session_message m` + join + ` WHERE (m.type = 'assistant' OR (m.type = 'compaction' AND json_extract(m.data, '$.status') = 'completed')) AND (m.rowid > ?` + inRowIDs("m.rowid", pending) + `) ORDER BY m.rowid LIMIT ` + itoa64(dbBatch)
+        FROM session_message m` + join + ` WHERE m.type IN ('assistant', 'compaction') AND (m.rowid > ?` + inRowIDs("m.rowid", pending) + `) ORDER BY m.rowid LIMIT ` + itoa64(dbBatch)
 	rows, err := db.Query(q, after)
 	if err != nil {
 		return nil, err

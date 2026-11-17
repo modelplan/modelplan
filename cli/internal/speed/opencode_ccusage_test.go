@@ -70,3 +70,38 @@ func TestOpenCodeMatchesCcusageAccounting(t *testing.T) {
 		t.Fatalf("total %d, want ccusage's 5270", total)
 	}
 }
+
+// macrevb-1017-2: row 2 moves the cursor past a still-running compaction.
+// A status-only update of row 1 must remain observable across repeated scans.
+func TestOpenCodeRunningCompactionFinishesOnce(t *testing.T) {
+	for _, withCompletionTime := range []bool{false, true} {
+		t.Run(fmt.Sprintf("completion-time-%t", withCompletionTime), func(t *testing.T) {
+			utc(t)
+			cache, home := t.TempDir(), t.TempDir()
+			t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+			seedPerf(t, cache, t0.Add(-time.Minute))
+			db := sqliteDB(t, OpenCodeDB(home), `CREATE TABLE session_message (session_id TEXT, type TEXT, data TEXT);`)
+			completion := ""
+			if withCompletionTime {
+				completion = fmt.Sprintf(`,"completed":%d`, ms(t0.Add(time.Second)))
+			}
+			running := fmt.Sprintf(`{"id":"compaction","status":"running","time":{"created":%d%s},"model":{"id":"m"},"tokens":{"input":100,"output":50}}`, ms(t0), completion)
+			assistant := fmt.Sprintf(`{"id":"assistant","time":{"created":%d,"completed":%d},"model":{"id":"m"},"tokens":{"output":3}}`, ms(t0.Add(10*time.Second)), ms(t0.Add(11*time.Second)))
+			exec(t, db, `INSERT INTO session_message VALUES ('s','compaction',?),('s','assistant',?)`, running, assistant)
+			assertTotals := func(at time.Time, requests int, output int64) {
+				t.Helper()
+				if err := ObserveOpenCode(cache, home, Ingest{}, at); err != nil {
+					t.Fatal(err)
+				}
+				daily := view(t, cache, at).Daily()
+				if len(daily) != 1 || daily[0].ObservedRequests != requests || daily[0].ObservedOutputTokens != output {
+					t.Fatalf("requests/output want %d/%d, got %+v", requests, output, daily)
+				}
+			}
+			assertTotals(t0.Add(time.Minute), 1, 3)
+			exec(t, db, `UPDATE session_message SET data=json_set(data,'$.status','completed') WHERE type='compaction'`)
+			assertTotals(t0.Add(2*time.Minute), 2, 53)
+			assertTotals(t0.Add(3*time.Minute), 2, 53)
+		})
+	}
+}

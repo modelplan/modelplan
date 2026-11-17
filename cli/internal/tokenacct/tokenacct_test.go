@@ -68,16 +68,16 @@ func TestGeminiMatchesCcusage(t *testing.T) {
 	}
 }
 
-// QwenExpected is the hand check of the Qwen fixture against ccusage@58866ba6
-// rust/adapters/qwen/src/parser.rs (input is promptTokenCount as reported):
+// QwenExpected follows ccusage@58866ba6 with the owner override: cached prompt
+// tokens count once, so input excludes cachedContentTokenCount.
 //
 //	q-a0 11-15  only totalTokenCount 321: output 321 (total fallback), model unknown  total   321
-//	q-a1 11-16  input 12000, cache read 8000, output 300, reasoning 0               total 20300
+//	q-a1 11-16  input 4000, cache read 8000, output 300, reasoning 0                total 12300
 //	q-a1 again  in the resumed file: same session, time, model and buckets, dropped
 //	q-a2 11-16  input 500, output 40, reasoning 10 (thoughts; total 550 adds none)   total   550
 //	user and tool_result records do not count, whatever usageMetadata they carry.
-var qwenToday = Buckets{Input: 12000 + 500, CacheRead: 8000, Output: 300 + 40, Reasoning: 10}
-var qwen7d = Buckets{Input: 12000 + 500, CacheRead: 8000, Output: 321 + 300 + 40, Reasoning: 10}
+var qwenToday = Buckets{Input: 4000 + 500, CacheRead: 8000, Output: 300 + 40, Reasoning: 10}
+var qwen7d = Buckets{Input: 4000 + 500, CacheRead: 8000, Output: 321 + 300 + 40, Reasoning: 10}
 
 func qwenEntries(t *testing.T) []Entry {
 	dir := "qwen/projects/-redacted-repo/chats/"
@@ -86,7 +86,7 @@ func qwenEntries(t *testing.T) []Entry {
 	return DedupeQwen(a, b)
 }
 
-func TestQwenMatchesCcusage(t *testing.T) {
+func TestQwenCountsCachedPromptOnce(t *testing.T) {
 	utc(t)
 	e := qwenEntries(t)
 	if len(e) != 3 {
@@ -95,7 +95,7 @@ func TestQwenMatchesCcusage(t *testing.T) {
 	w := Summarize(e, now)
 	want(t, "today", w.Today, qwenToday)
 	want(t, "7d", w.Last7d, qwen7d)
-	if w.Today.Total != 20850 || w.Last7d.Total != 21171 {
+	if w.Today.Total != 12850 || w.Last7d.Total != 13171 {
 		t.Fatalf("windows = %+v", w)
 	}
 }
@@ -157,5 +157,28 @@ func TestSummarizeUsesLocalDays(t *testing.T) {
 	w := Summarize(e, now)
 	if w.Today.Total != 1 || w.Last7d.Total != 3 {
 		t.Fatalf("%+v", w)
+	}
+}
+
+func TestQwenCachedPromptNormalizationBeforeFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name, usage                 string
+		input, cache, output, total int64
+	}{
+		{"partial cache", `{"promptTokenCount":12000,"cachedContentTokenCount":8000,"candidatesTokenCount":300,"totalTokenCount":12300}`, 4000, 8000, 300, 12300},
+		{"fully cached", `{"promptTokenCount":12000,"cachedContentTokenCount":12000,"candidatesTokenCount":300,"totalTokenCount":12300}`, 0, 12000, 300, 12300},
+		{"total fallback", `{"promptTokenCount":100,"cachedContentTokenCount":80,"totalTokenCount":150}`, 20, 80, 50, 150},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(`{"type":"assistant","usageMetadata":` + tc.usage + `}`)
+			entries := Qwen(raw, "redacted", "session", now)
+			if len(entries) != 1 {
+				t.Fatalf("entries: %+v", entries)
+			}
+			got := entries[0].Buckets
+			if got.Input != tc.input || got.CacheRead != tc.cache || got.Output != tc.output || got.Total != tc.total {
+				t.Fatalf("cached tokens overlap: %+v", got)
+			}
+		})
 	}
 }

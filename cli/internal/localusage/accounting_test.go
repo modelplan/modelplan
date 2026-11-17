@@ -72,8 +72,8 @@ func TestGeminiReportCarriesCcusageAccounting(t *testing.T) {
 	}
 }
 
-// Qwen: see tokenacct.TestQwenMatchesCcusage. The resumed copy of q-a1 counts once.
-func TestQwenReportCarriesCcusageAccounting(t *testing.T) {
+// Qwen: cached prompt tokens and the resumed copy of q-a1 each count once.
+func TestQwenReportCountsCachedPromptOnce(t *testing.T) {
 	localUTC(t)
 	home, root := setupQwen(t)
 	copyTree(t, "../tokenacct/testdata/qwen", root)
@@ -81,8 +81,8 @@ func TestQwenReportCarriesCcusageAccounting(t *testing.T) {
 	if r.Accounting == nil {
 		t.Fatalf("%+v", r)
 	}
-	checkWindow(t, "today", r.Accounting.Today, 12500, 8000, 340, 10, 20850)
-	checkWindow(t, "7d", r.Accounting.Last7d, 12500, 8000, 661, 10, 21171)
+	checkWindow(t, "today", r.Accounting.Today, 4500, 8000, 340, 10, 12850)
+	checkWindow(t, "7d", r.Accounting.Last7d, 4500, 8000, 661, 10, 13171)
 }
 
 // Without countable usage the report keeps its earlier shape.
