@@ -96,6 +96,31 @@ final class CockpitRecoveryPolicyTests: XCTestCase {
     XCTAssertEqual(budget.attempts, [10_000, 600_000])
   }
 
+  func testTenThousandFailuresNeverScheduleMoreThanTwoRebuildsInTheRollingWindow() {
+    var budget = CockpitRebuildBudget()
+    var now: UInt64 = 0
+    var scheduled = 0, cooldowns = 0
+    // This oracle records returned rebuild decisions; it never reads `budget.attempts`.
+    var observedRebuildTimes: [UInt64] = []
+    for _ in 0..<10_000 {
+      switch budget.pageFailed(at: now) {
+      case .rebuild(let delay, let attempt):
+        XCTAssertEqual(delay, attempt == 1 ? 1_000 : 4_000, "Rebuild delays stay on the approved schedule")
+        XCTAssertTrue((1...2).contains(attempt))
+        scheduled += 1; observedRebuildTimes.append(now)
+      case .cooldown(let probeAfter):
+        XCTAssertEqual(probeAfter, 60_000, "An exhausted window waits before its automatic probe")
+        cooldowns += 1
+      }
+      observedRebuildTimes.removeAll { $0 > now || now - $0 >= 600_000 }
+      XCTAssertLessThanOrEqual(observedRebuildTimes.count, 2,
+                               "The test's independent timeline permits at most two rebuilds per rolling ten minutes")
+      now += 1_000
+    }
+    XCTAssertGreaterThan(scheduled, 2, "The rolling budget recovers after old attempts expire")
+    XCTAssertGreaterThan(cooldowns, 0, "A full rolling window must actually return cooldown")
+  }
+
   func testOnlySustainedVerifiedHealthResetsTheBudget() {
     for (healthy, expected) in [(119_999 as UInt64, CockpitRebuildBudget.Decision.cooldown(probeAfterMs: 60_000)),
                                 (120_000, .rebuild(afterMs: 1_000, attempt: 1))] {

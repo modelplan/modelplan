@@ -501,3 +501,11 @@ test("the mac-compile trigger is a no-permission, no-action pull_request run", (
     assert.ok(macCompileTriggerProblems(text.replace(from, to)).length > 0, `accepted: ${from} -> ${to}`);
   }
 });
+
+test("desktop.yml queue-scope declares 'GUI share not needed' for the merge gate, as valid YAML", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  const m = /^      - name: GUI share not needed\n        if: \$\{\{ steps\.scope\.outputs\.gui != 'true' \}\}\n        run: (.*)\n/m.exec(text);
+  assert.ok(m, "the step rules.mjs guiLegState relies on must exist in queue-scope, gated on gui != 'true'");
+  assert.ok(text.indexOf(m[0]) > text.indexOf("\n  queue-scope:") && text.indexOf(m[0]) < text.indexOf("\n  gui-scope:"), "inside queue-scope");
+  assert.ok(!/: /.test(m[1]) && !/ #/.test(m[1]), "a plain scalar with ': ' is a YAML error (this broke desktop.yml at 7df3cedc)");
+});

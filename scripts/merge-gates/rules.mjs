@@ -567,14 +567,65 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 // ---- One merge-group commit ----
 // steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}}.
 // queueRuns/queueStatuses: CI on the group commit itself; repo: the repository whose queue runs count.
-export function evaluateGroup({ steps, queueRuns, queueStatuses = [], repo = REPO }) {
+// queueCheckRuns: the group commit's check runs (GET /commits/{sha}/check-runs). A workflow run is only as current as
+// the run list read, and a reusable-workflow job (desktop.yml's GUI leg, "native (macos-latest) / native (macos-latest)")
+// can still be queued on the single GUI Mac while the list says otherwise (2026-11-15 incident: #803 and others merged
+// with that job queued). So every check run of a counted queue run must also be completed and green; it is read
+// per job, not through the run. Fail closed: failed, cancelled or timed-out jobs fail the group; unfinished ones keep
+// it pending, but past GROUP_WAIT_MS (85 min by default) since the group's first run started it fails with a timeout, so it never hangs.
+// Note: the timeout is only checked when the gate is evaluated (any workflow_run completion or dispatch); a group
+// with no further event is dropped by the queue's own check_response_timeout (follow-up #989).
+// A workflow_run of desktop completing re-evaluates the group (merge-gates.yml), so no polling is needed.
+// Coupling: the repository ruleset's merge-queue check_response_timeout is 90 min; GitHub drops a group after that, so
+// this default (85 min) must stay below it or the gate's timeout never fires. Override with env GROUP_WAIT_MINUTES.
+export const GROUP_WAIT_MS = (Number(process.env.GROUP_WAIT_MINUTES) > 0 ? Number(process.env.GROUP_WAIT_MINUTES) : 85) * 60 * 1000;
+const OK_CHECK = new Set(["success", "skipped", "neutral"]);
+export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO) {
+  const suites = new Set(latestRuns(queueRuns, queueRunScope(repo)).map((r) => r.check_suite_id).filter((x) => x != null));
+  const failed = [], waiting = [];
+  for (const c of queueCheckRuns) {
+    if (!suites.has(c.check_suite?.id)) continue;
+    if (c.status !== "completed") waiting.push(c.name);
+    else if (!OK_CHECK.has(c.conclusion)) failed.push(`${c.name} ${c.conclusion}`);
+  }
+  if (failed.length) return { state: FAILURE, why: `failed: ${failed.join(", ")}` };
+  if (waiting.length) return { state: PENDING, why: `jobs not finished: ${waiting.join(", ")}` };
+  return { state: SUCCESS, why: "jobs green" };
+}
+
+// The GUI leg of desktop.yml's queue run, read from its jobs (GET /actions/runs/{id}/jobs). A skipped GUI job is
+// ok only when queue-scope's "GUI share not needed" step succeeded (desktop.yml's design decision); otherwise the
+// leg must have actually run: one pool green (native, or native-hosted + native-owner-gui). A skip for any other reason, or no GUI job at all, fails closed. null jobs = not read: no check.
+export const GUI_NOT_NEEDED_STEP = "GUI share not needed";
+export function guiLegState(jobs) {
+  if (jobs == null) return { state: SUCCESS, why: "GUI leg not read" };
+  if (jobs.some((j) => j.name === "queue-scope" && (j.steps ?? []).some((s) => s.name === GUI_NOT_NEEDED_STEP && s.conclusion === "success"))) return { state: SUCCESS, why: "GUI share not needed" };
+  // Only the actual GUI leg jobs count (names from a real merge-group run: the reusable workflow's job named after the
+  // task, "<caller> (os) / <task> (os)"). Its other child jobs (probe, sequences, transport, u11-native, ...) are skipped
+  // by design and ignored, and so is a whole job skipped before it expanded (its name keeps "${{ matrix.os }}").
+  const A = jobs.filter((j) => /^native \(([^)$]*)\) \/ native \(\1\)$/.test(j.name));
+  const H = jobs.filter((j) => /^native-hosted \([^)$]*\) \/ native-hosted-gui \([^)$]*\)$/.test(j.name));
+  const O = jobs.filter((j) => /^native-owner-gui \([^)$]*\) \/ native-owner-gui \([^)$]*\)$/.test(j.name));
+  const leg = [...A, ...H, ...O];
+  if (leg.some((j) => j.conclusion !== "success")) return { state: FAILURE, why: `GUI leg ${leg.filter((j) => j.conclusion !== "success").map((j) => `${j.name} ${j.conclusion}`).join(", ")}` };
+  if (A.length || (H.length && O.length)) return { state: SUCCESS, why: "GUI leg green" };
+  return { state: FAILURE, why: "GUI leg skipped or missing without queue-scope saying it is not needed" };
+}
+
+export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, repo = REPO, now = Date.now() }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
   for (const s of steps) {
     const n = `#${s.pr}`;
     if (!s.mergeProof.ok) return { state: FAILURE, why: `${n}: ${s.mergeProof.why}` };
     if (s.prResult.state !== SUCCESS) return { state: s.prResult.state === PENDING ? FAILURE : s.prResult.state, why: `${n}: ${s.prResult.why}` };
   }
-  const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo) });
+  let ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo) });
+  if (ci.state === SUCCESS) ci = queueCheckState(queueRuns, queueCheckRuns, repo);
+  if (ci.state === SUCCESS) ci = guiLegState(desktopJobs);
+  if (ci.state === PENDING) {
+    const starts = queueRuns.filter(queueRunScope(repo)).map((r) => Date.parse(r.created_at)).filter(Number.isFinite);
+    if (starts.length && now - Math.min(...starts) > GROUP_WAIT_MS) return { state: FAILURE, why: `group timed out after ${GROUP_WAIT_MS / 60000} min: ${ci.why}` };
+  }
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };
   return { state: SUCCESS, why: `group of ${steps.length}: gates pass` };
 }
