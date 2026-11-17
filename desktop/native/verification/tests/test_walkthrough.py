@@ -4,6 +4,7 @@ import datetime
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -250,8 +251,12 @@ class Steps(unittest.TestCase):
         source = (ROOT.parents[2] / "cockpit/src/porthole-still.ts")
         if not source.exists():
             self.skipTest("cockpit sources not in this checkout")
-        label = "Open the 3D launch field \u00b7 Or click anywhere on the field"
-        self.assertIn(label, source.read_text(encoding="utf-8"))
+        strings = ROOT.parents[2] / "cockpit/study/rocket-r1/strings/host.js"
+        entry = re.search(r"^\s*portBig:\s*\['aria',\s*'[^']*',\s*'([^']*)'\]", strings.read_text(encoding="utf-8"), re.MULTILINE)
+        self.assertIsNotNone(entry, "the field opener's accessibility label exists in the host string table")
+        label = entry.group(1)
+        self.assertEqual(label, "Open the 3D launch field \u00b7 Or click anywhere on the field")
+        self.assertRegex(source.read_text(encoding="utf-8"), r"setAttribute\('aria-label',\s*ht\([^;\n]*'host\.portBig'\)\)")
         text = json.dumps(self.STEPS, ensure_ascii=False)
         self.assertIn("label:" + label, text)
         self.assertNotIn("label:Open the 3D view", text)
