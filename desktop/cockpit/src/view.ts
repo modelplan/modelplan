@@ -55,7 +55,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  close.onclick=e=>{if(e.isTrusted)action('close');};
  const unwireHud=wireHud(frame.hud,id=>{hudSelected=id;deck.showTune(id);if(lastData)paintHud(frame.hud,lastData,tier!=='tall',locale,hudOptions());});
  let showProjectNames=true;
- const paintRecords=(data:WireCockpitData,at:number)=>{const shown=showProjectNames?data:withoutProjectNames(data);deck.render(shown,at);tape.render(shown,showProjectNames);};
+ const paintRecords=(data:WireCockpitData,at:number)=>{const shown=showProjectNames?data:withoutProjectNames(data);deck.render(shown,at);tape.render(shown,showProjectNames,at);};
  function shellControls(){
   const zh=locale==='zh-CN', closed=nativeShell?.profile==='closed', forced=!!nativeShell?.forcedClosed;
   const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.setAttribute('aria-label',alert.classList.contains('lit')?(ht(locale,'host.alertActive')):(ht(locale,'host.alertInactive')));
@@ -134,6 +134,9 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   for(const event of data.details?.resetEvents??[]){const at=Date.parse(event.expiresAt);if(Number.isFinite(at)&&at>now)next=Math.min(next,at);}
   // A run-out stops being a forecast when it passes; the amber lamp, row and cell must clear then, with no new reading.
   for(const forecast of data.details?.forecasts??[]){const at=forecast.runsOutAt?Date.parse(forecast.runsOutAt):NaN;if(Number.isFinite(at)&&at>now)next=Math.min(next,at);}
+  // D277 (CKP-STRIP-16): the session strip's elapsed time and "6m ago" are "now"; while it lists a session, the next
+  // whole minute is a deadline so they move without a new reading.
+  const details=data.details;if(details?.sessionCoverage==='local-last-seen'&&details.sessions.some(s=>s.state==='running'||s.state==='idle'))next=Math.min(next,(Math.floor(now/60000)+1)*60000);
   return Number.isFinite(next)?next:null;
  }
  function preserveFocus(update:()=>void,replacing=false){
@@ -169,7 +172,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   if(!target&&path){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
   target?.focus({preventScroll:true});
  }
- function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);syncCaution(lastData!,now);});}
+ function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);});}
  // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
  // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
  // and keeps the page. If that repaint fails too (glm-990-1, macrevb-990-1, macrev2-990-1), the whole cockpit view is

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 242b8f3117d6ff5a2972d4e91b18f4b01479bf273ddec229a089acf1dd03169e
+// Schema SHA-256: 62316e8dbbf2e259a623c518d6906ce39990f10b0da9c7344702c315b4bce65e
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -239,11 +239,13 @@ export type WireCockpitSession = {
   readonly "fast"?: boolean | null;
   readonly "lastObservedAt": string;
   readonly "model": string;
+  readonly "observedOutputTokens"?: number | null;
   readonly "projectLabel": string | null;
   readonly "projectState"?: "named" | "unnamed" | "hidden" | "none";
   readonly "rate": number | null;
   readonly "sessionRef": string;
   readonly "source": string;
+  readonly "startedAt"?: string | null;
   readonly "state": string;
   readonly "subscriptionRef": string | null;
 };
@@ -1805,6 +1807,16 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "model": {
         "type": "string"
       },
+      "observedOutputTokens": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "projectLabel": {
         "anyOf": [
           {
@@ -1841,6 +1853,17 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "source": {
         "type": "string"
+      },
+      "startedAt": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "state": {
         "type": "string"

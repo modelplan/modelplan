@@ -268,7 +268,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			v := true
 			fast = &v
 		}
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, ProjectState: state, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast})
+		// CKP-STRIP-16 (owner D277): the strip shows how long the session has run and what it has produced.
+		started, tokens := cockpitSessionExtent(session, perf.Ledger.Sessions)
+		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, ProjectState: state, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast, StartedAt: started, ObservedOutputTokens: tokens})
 	}
 	if appserver.CockpitSessionsEnabled(ctx) {
 		result.RecentSessions = cockpitRecentSessions(perf.Ledger.Sessions, allowed, sourceScope, byRef, labels, view.PublicModels, now)
@@ -281,6 +283,32 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		result.Publication = selectCockpitPublication(published, view.Projection, inUse)
 	}
 	return result, ctx.Err()
+}
+
+// cockpitSessionExtent returns a live session's start and its observed output tokens over the recorded days of
+// the same session. A start that is missing or later than the last reading is withheld; tokens are absent until the
+// session has a recorded turn, and a sum that would overflow is withheld rather than wrapped.
+func cockpitSessionExtent(session speed.LiveSession, recorded []speed.PerfSession) (*time.Time, *int64) {
+	var started *time.Time
+	if !session.StartedAt.IsZero() && !session.StartedAt.After(session.LastAt) {
+		v := session.StartedAt.UTC()
+		started = &v
+	}
+	for _, saved := range recorded {
+		if saved.Ref != session.Ref || saved.Source != session.Source {
+			continue
+		}
+		const maxInt64 = int64(^uint64(0) >> 1)
+		var sum int64
+		for _, day := range saved.Days {
+			if day.ObservedOutputTokens < 0 || day.ObservedOutputTokens > maxInt64-sum {
+				return started, nil
+			}
+			sum += day.ObservedOutputTokens
+		}
+		return started, &sum
+	}
+	return started, nil
 }
 
 func safeCockpitLabel(s string) bool {

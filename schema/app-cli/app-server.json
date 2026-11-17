@@ -1363,6 +1363,16 @@
         "model": {
           "type": "string"
         },
+        "observedOutputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "projectLabel": {
           "anyOf": [
             {
@@ -1399,6 +1409,17 @@
         },
         "source": {
           "type": "string"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "state": {
           "type": "string"

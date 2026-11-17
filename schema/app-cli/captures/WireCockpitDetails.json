@@ -85,7 +85,9 @@
       "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
       "state": "synthetic",
       "rate": 42.5,
-      "fast": false
+      "fast": false,
+      "startedAt": "2026-10-29T12:00:00.123456789Z",
+      "observedOutputTokens": 1
     }
   ],
   "sessionCoverage": "synthetic",

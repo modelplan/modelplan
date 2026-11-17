@@ -238,6 +238,12 @@ type CockpitSession struct {
 	// Fast is present (true) only for a session whose recorded speed mode is the harness's fast
 	// mode. Absent means the mode was not reported or was standard; the ledger cannot tell those apart.
 	Fast *bool `json:"fast,omitempty" null:"forbidden"`
+	// StartedAt is the start of the session's first recorded turn; the strip's elapsed time counts from it
+	// (CKP-STRIP-16, owner D277). Absent when the producer has no start for the session.
+	StartedAt *time.Time `json:"startedAt,omitempty" null:"forbidden"`
+	// ObservedOutputTokens sums the session's observed output tokens over its recorded days (CKP-STRIP-16). Absent
+	// while the session has no recorded turn yet; zero is a recorded session that has produced no counted output.
+	ObservedOutputTokens *int64 `json:"observedOutputTokens,omitempty" null:"forbidden"`
 }
 type CockpitAlert struct {
 	Source           string  `json:"source"`

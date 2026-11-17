@@ -28,6 +28,10 @@ register('host', {
   sessionRate: ['line', '会话速率 ', 'Session rate '],
   projectUnnamed: ['line', '未命名项目', 'Unnamed project'],
   projectNone: ['line', '无项目', 'No project'],
+  // D277 session strip (CKP-STRIP-16/17): a model the producer could not name, and the elapsed / tokens cells' spoken labels.
+  unknownModel: ['line', '未知模型', 'Unknown model'],
+  sessionElapsed: ['aria', '已运行 {d}', 'Elapsed {d}'],
+  sessionTokens: ['aria', '{n} token', '{n} tokens'],
   workingNow: ['lcd', '正在用', 'working now'],
   readingIsNotCurrent: ['line', '读数不是最新', 'reading is not current'],
   idle: ['silk', '空闲', 'idle'],
