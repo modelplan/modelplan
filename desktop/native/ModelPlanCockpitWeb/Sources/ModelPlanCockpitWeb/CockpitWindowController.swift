@@ -631,6 +631,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationRack: (ext: CGFloat, target: CGFloat, panel: CGRect?, ignited: Bool, moving: Bool) {
       (rackExtension, rackTarget, rack.panel?.isVisible == true ? rack.panel?.frame : nil, ignited, motion != nil)
     }
+    /// The rack clipping rectangle in its flipped view coordinates.
+    public var verificationRackMask: CGRect? { (rack.panel?.contentView as? CockpitRackView)?.maskedOut }
     /// Every ignition change sent to the page, in order.
     public var verificationIgnition: ((Bool) -> Void)?
     /// The landing a key detach chose (D187).
