@@ -171,18 +171,16 @@ import ModelPlanWire
     page.titleDrag(.ended, point: CGPoint(x: 2800, y: 900))
     XCTAssertFalse(page.isAttached)
     XCTAssertEqual(page.verificationLayout?.frame.size, away.frame.size, "dropped on the tall display, laid out for it")
-    let settled = expectation(description: "AppKit completed the animated put-back layout")
+    let settled = expectation(description: "The rack flight completed and the cockpit latched")
     page.verificationLayoutAnimationCompleted = { settled.fulfill() }
-    page.setAttached(true) // the put-back key's intent, with motion
-    XCTAssertTrue(page.isAttached)
-    XCTAssertEqual(page.verificationLayout?.profile, home.profile, "the icon's display's profile")
+    page.setAttached(true) // the put-back key starts the rack flight
+    XCTAssertEqual(page.verificationLayout?.profile, home.profile, "the icon's display's profile, committed at the press")
     XCTAssertEqual(page.verificationLayout?.frame, home.frame)
     XCTAssertEqual(page.verificationWebView?.pageZoom ?? 0, home.scale, accuracy: 0.0001, "and its zoom")
     XCTAssertEqual(page.verificationDragRegion?.frame, home.scaledTitleDragFrame, "and its drag strip")
-    // AppKit's nominal 250 ms animation can finish later on a busy hosted GUI runner. This is a destination-layout
-    // regression, not a speed-budget test: wait for its completion signal, then independently assert the destination.
-    // G3-118/#966 deliberately overlaps web shell joints by 1 CSS px; it does not change this native destination.
+    // Wait for the actual flight and rack latch; a fixed delay can observe an intermediate frame on a busy Mac.
     await fulfillment(of: [settled], timeout: 5)
+    XCTAssertTrue(page.isAttached, "caught by the rack and latched")
     XCTAssertEqual(window.frame, home.frame, "the window settles under the icon")
     XCTAssertEqual(window.contentView?.bounds.size, home.frame.size, "with the page canvas of that layout")
     XCTAssertEqual(failures, [])
