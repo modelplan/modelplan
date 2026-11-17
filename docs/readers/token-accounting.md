@@ -19,14 +19,18 @@ Cache writes are also subtracted from inclusive Codex prompt input.
 Deduplication covers cumulative notices, response/notice pairs, remote compaction
 response identities, copied logs, fork prefixes/rewritten bursts, Claude streaming
 updates and sidechain copies. An occurrence ordinal preserves distinct identical
-Codex records in one file. Cached snapshots replace a changed file's contribution,
-rather than accumulating another copy on each observation.
+Codex records in one file. Live snapshots replace a changed file's prior live contribution. Imports replace
+only their requested per-file intervals, preserving earlier valid intervals and
+independently owned live records. Records seen by both paths are counted once.
 
 The private compressed cache contains token counts, timestamps, model names,
 consent epochs and hashed identities. It contains no transcript text or raw IDs or
 paths. It retains 35 local days. A live observer fills its first local day; older
 days use the existing history import under its consent fence. Imported accounting
-remains removable. A version marker makes existing admitted imports eligible for
+remains removable, including import-only records on the live ledger's first day.
+Ownership comes from the observing path, not a calendar-day guess; import metadata
+does not suppress a later live scan. Unproven pre-release cache ownership fails
+closed on import removal. A version marker makes existing admitted imports eligible for
 one re-read, preserving their earlier coverage. Clear/revoke boundaries apply to
 both paths. No provider request or new dependency is needed.
 

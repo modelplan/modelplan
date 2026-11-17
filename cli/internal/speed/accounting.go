@@ -47,14 +47,15 @@ type usageRecord struct {
 	Response    bool   `json:"response,omitempty"`
 }
 type usageFile struct {
-	Session  string        `json:"session,omitempty"`
-	Parent   string        `json:"parent,omitempty"`
-	Started  time.Time     `json:"started,omitempty"`
-	Source   string        `json:"source"`
-	Epoch    *GrantEpoch   `json:"epoch"`
-	Size     int64         `json:"size"`
-	Modified int64         `json:"modified"`
-	Records  []usageRecord `json:"records"`
+	LiveObserved bool          `json:"liveObserved,omitempty"` // Size/Modified describe a real live scan, not an import
+	Session      string        `json:"session,omitempty"`
+	Parent       string        `json:"parent,omitempty"`
+	Started      time.Time     `json:"started,omitempty"`
+	Source       string        `json:"source"`
+	Epoch        *GrantEpoch   `json:"epoch"`
+	Size         int64         `json:"size"`
+	Modified     int64         `json:"modified"`
+	Records      []usageRecord `json:"records"`
 }
 type accountingLedger struct {
 	Version int                  `json:"version"`
@@ -141,7 +142,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		key := fileKey(path)
 		old, exists := l.Files[key]
-		if exists && sameEpoch(old.Epoch, epoch) && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
+		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
 			continue
 		}
 		p := newAccountingParser(source, key)
@@ -161,11 +162,11 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 			}
 		}
 		for _, r := range old.Records {
-			if r.Imported && !r.At.Before(floor) && r.At.Before(start) && day(r.At) >= windowFrom(now, 35) {
+			if old.Source == source && sameEpoch(old.Epoch, epoch) && r.Imported && !r.At.Before(floor) && day(r.At) >= windowFrom(now, 35) {
 				records = append(records, r)
 			}
 		}
-		l.Files[key] = usageFile{Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started}
+		l.Files[key] = usageFile{LiveObserved: true, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started}
 		changed = true
 	}
 	// Retain no expired or revoked observations, even from files no longer present.
@@ -253,7 +254,7 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 				}
 			}
 			old, exists := seen[id]
-			if !exists || old.Sidechain && !r.Sidechain || old.Sidechain == r.Sidechain && r.Sum() > old.Sum() {
+			if !exists || old.Sidechain && !r.Sidechain || old.Sidechain == r.Sidechain && (r.Sum() > old.Sum() || r.Sum() == old.Sum() && old.Imported && !r.Imported) {
 				seen[id] = stamped{r, f.Source, f.Epoch}
 			}
 			if atKey != "" {
@@ -622,8 +623,8 @@ func codexBuckets(u map[string]int64) usageBuckets {
 	return b
 }
 
-// Previously imported days remain separately removable. A live observer backfills
-// its local starting day, never silently imports older days on a later hook.
+// A live observer backfills its local starting day, never silently importing
+// older days on a later hook. Import ownership is independent of this boundary.
 func accountingLiveStart(cache string, now time.Time) time.Time {
 	if l, ok := loadPerf(cache); ok && !l.Since.IsZero() {
 		return dayStart(l.Since)
@@ -639,7 +640,7 @@ func removeImportedAccountingLocked(cache string) error {
 	for key, f := range l.Files {
 		records := f.Records[:0]
 		for _, r := range f.Records {
-			if r.Imported {
+			if r.Imported || !f.LiveObserved {
 				changed = true
 			} else {
 				records = append(records, r)
@@ -735,4 +736,26 @@ func claudeCacheWrites(raw json.RawMessage, fallback int64) int64 {
 		return n
 	}
 	return fallback
+}
+
+// A partial import replaces only its own intervals. Live observations are an
+// independent contribution and must survive both imports and import removal.
+func mergeImportedUsage(old, incoming usageFile, ranges []span) usageFile {
+	if old.Source != incoming.Source || !sameEpoch(old.Epoch, incoming.Epoch) {
+		return incoming
+	}
+	incoming.LiveObserved = old.LiveObserved
+	if old.LiveObserved {
+		incoming.Size, incoming.Modified = old.Size, old.Modified
+	}
+	for _, r := range old.Records {
+		// Pre-release caches without live-scan provenance cannot prove live ownership.
+		if !old.LiveObserved {
+			r.Imported = true
+		}
+		if !r.Imported || !inRange(ranges, r.At) {
+			incoming.Records = append(incoming.Records, r)
+		}
+	}
+	return incoming
 }

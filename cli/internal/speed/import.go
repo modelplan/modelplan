@@ -378,13 +378,14 @@ type span struct{ lo, hi time.Time }
 func (s span) has(t time.Time) bool { return !t.Before(s.lo) && t.Before(s.hi) }
 
 type importJob struct {
-	cache  string
-	usage  map[string]usageFile
-	now    time.Time
-	pause  time.Duration
-	source string
-	root   *ImportRoot
-	dirs   []string // under the root
+	cache       string
+	usage       map[string]usageFile
+	usageRanges map[string][]span
+	now         time.Time
+	pause       time.Duration
+	source      string
+	root        *ImportRoot
+	dirs        []string // under the root
 	// reread: the source's older span is replaced, rows included, by this run's (glm-967-2).
 	reread bool
 	prefix string // file name prefix, "" for any
@@ -763,17 +764,18 @@ func (j *importJob) read(ctx context.Context, prog *importProgress) error {
 		}
 		if j.usage == nil {
 			j.usage = map[string]usageFile{}
+			j.usageRanges = map[string][]span{}
 		}
 		if fi := infoBefore; statErr == nil {
 			records := []usageRecord{}
-			start := accountingLiveStart(j.cache, j.now)
 			for _, r := range usage.records {
-				if day(r.At) >= windowFrom(j.now, 35) && !r.At.Before(j.cleared) && !r.At.After(j.now) {
-					r.Imported = r.At.Before(start)
+				if inRange(it.ranges, r.At) && day(r.At) >= windowFrom(j.now, 35) && !r.At.Before(j.cleared) && !r.At.After(j.now) {
+					r.Imported = true
 					records = append(records, r)
 				}
 			}
 			j.usage[fileKey(p)] = usageFile{Source: j.source, Epoch: j.epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(usage.session), Parent: usage.parent, Started: usage.started}
+			j.usageRanges[fileKey(p)] = append([]span(nil), it.ranges...)
 		}
 		if cp != nil {
 			for id := range cp.mine {
@@ -998,7 +1000,7 @@ func commitImport(ctx context.Context, cache string, j *importJob, auto bool, no
 			return errors.New("accounting history unreadable; left as it is")
 		}
 		for key, f := range j.usage {
-			usage.Files[key] = f
+			usage.Files[key] = mergeImportedUsage(usage.Files[key], f, j.usageRanges[key])
 		}
 		if err := saveAccounting(cache, usage); err != nil {
 			return err
