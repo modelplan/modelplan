@@ -209,7 +209,7 @@ import ModelPlanWire
   /// is never the active app, so the activation, policy and key facts come through the controller's SPI seams.
   private final class PutBackHost {
     enum Resign { case immediate, later }
-    var active = true, activations = 0, regular = false, settingsOpen = false
+    var active = true, activations = 0, regular = false, settingsOpen = false, commandHeld = false
     var resign = Resign.later
     /// The controller's injected clock (dismissal holds and the recovery window run on it); the test advances it.
     var now: UInt64 = 1_000
@@ -230,8 +230,8 @@ import ModelPlanWire
   }
   /// Opens the cockpit, tears it off with the strip drag and drops it away from the catch zone, and returns with the
   /// detached cockpit shown and the page ready; `press` sends the page's actions.
-  private func detachedByDrag(_ app: PutBackHost) async throws -> (page: CockpitWindowController, press: (String) throws -> Void) {
-    let page = try page(try bundle(), reduceMotion: true, icon: try menuBarIcon())
+  private func detachedByDrag(_ app: PutBackHost, reduceMotion: Bool = true) async throws -> (page: CockpitWindowController, press: (String) throws -> Void) {
+    let page = try page(try bundle(), reduceMotion: reduceMotion, icon: try menuBarIcon())
     addTeardownBlock { @MainActor in page.discard() }
     if app.settingsOpen { app.regular = true }
     page.verificationNoWindowClock = { app.now }
@@ -239,6 +239,7 @@ import ModelPlanWire
     page.verificationNoWindowDelivery = { raw, complete in app.sent.append((raw, complete)) }
     page.verificationApplicationActive = { app.active }
     page.verificationApplicationRegular = { app.regular }
+    page.verificationCommandHeld = { app.commandHeld }
     page.verificationActivateApplication = { app.active = true; app.activations += 1 }
     page.onPresenceChanged = { [weak page] userInitiated in
       guard let page else { return }
@@ -341,6 +342,52 @@ import ModelPlanWire
     try await settle(switching, milliseconds: 100)
     XCTAssertEqual(switching.activations, 0, "the switch the user started is not fought")
     XCTAssertFalse(switching.active)
+    XCTAssertEqual(failures, [])
+  }
+
+  /// macrev2-1033-1: switch intent seen before the latch is not overwritten by it. Command held when Put back is
+  /// pressed (Tab then needs no new Command event), and Command pressed and released during the flight: the flip's
+  /// delayed resign is then the user's switch, and nothing activates the app again.
+  func testASwitchStartedBeforeTheLatchIsNotFought() async throws {
+    let held = PutBackHost(); held.resign = .later
+    let first = try await detachedByDrag(held)
+    held.commandHeld = true; first.page.userSwitchesAway() // Command goes down and stays down
+    try first.press("putBack")
+    XCTAssertTrue(first.page.isAttached)
+    XCTAssertFalse(first.page.verificationPutBackArmed, "Command held at the latch: nothing armed")
+    try await settle(held, milliseconds: 100) // the resign arrives
+    XCTAssertEqual(held.activations, 0, "Cmd-Tab with Command held is not fought")
+    XCTAssertFalse(held.active)
+
+    let flight = PutBackHost(); flight.resign = .later
+    let second = try await detachedByDrag(flight, reduceMotion: false)
+    let latched = expectation(description: "the put-back flight latched")
+    second.page.verificationLayoutAnimationCompleted = { latched.fulfill() }
+    try second.press("putBack") // the flight starts
+    XCTAssertFalse(second.page.isAttached, "still flying")
+    second.page.userSwitchesAway() // Command pressed during the flight, released before the latch
+    await fulfillment(of: [latched], timeout: 5)
+    XCTAssertTrue(second.page.isAttached)
+    XCTAssertFalse(second.page.verificationPutBackArmed, "the switch seen during the flight keeps the latch from arming")
+    try await settle(flight, milliseconds: 100)
+    XCTAssertEqual(flight.activations, 0, "the resign after the flight is the user's switch")
+    XCTAssertFalse(flight.active)
+    XCTAssertEqual(failures, [])
+  }
+
+  /// macrev2-1033-1: a press in another app (the global monitor's handler) records the switch before it returns, so the
+  /// resign that click causes is not answered as the policy flip's even when it arrives before any queued work runs.
+  func testAnOutsideClicksResignBeforeQueuedWorkIsNotFought() async throws {
+    let app = PutBackHost(); app.resign = .later
+    let (page, press) = try await detachedByDrag(app)
+    try press("putBack")
+    XCTAssertTrue(page.verificationPutBackArmed, "the flip armed recovery; its resign has not arrived yet")
+    page.globalPress(eventType: .leftMouseDown) // the user clicks another app
+    app.resignActive() // that click's resign, delivered before yielding to any queued task
+    XCTAssertEqual(app.activations, 0, "the outside click's switch is not fought")
+    try await settle(app, milliseconds: 100)
+    XCTAssertEqual(app.activations, 0, "nor by the flip's later resign")
+    XCTAssertFalse(app.active)
     XCTAssertEqual(failures, [])
   }
 

@@ -6,19 +6,31 @@ import Foundation
 /// the user's own press, so an app that was active then stays active. Otherwise the page is told `key: false`, and the
 /// next press on it (its Close) only activates the app and is dropped by the page's and the bridge's key gate.
 ///
-/// macrevd-1033-1: the recovery answers only that flip. It is armed only when the put back's presence change actually
-/// left the regular policy (Settings still open keeps the app regular: nothing is armed), it acts at most once, and it
-/// is retired by any sign of the user switching away (a press in another app, the Command key held for Cmd-Tab) and
-/// after a short window, so a deliberate switch is never fought.
+/// Recovery state machine (macrevd-1033-1, macrev2-1033-1). States: idle, or armed until a deadline; beside them the
+/// `userSwitching` fact, the user's switch intent seen since the put back began.
+/// - `beginPutBack` (the put-back key, the menu, a strip drag starting): clears `userSwitching`. Nothing is armed.
+/// - `userSwitchesAway` (Command down, a press in another app; delivered synchronously from the monitors): sets
+///   `userSwitching` and retires any arm. It wins over the policy glitch because it is direct evidence of the user's
+///   intent, while the glitch's resign looks the same as the switch it would otherwise be mistaken for.
+/// - `arm` (the latch): armed only if the app was active, the presence change really left regular, Command is not
+///   held now and no switch was seen since the put back began. Otherwise idle.
+/// - `reactivates` (the latch's own check, then the next resign): fires once when armed, inside the window, presentable
+///   and inactive, and goes idle. Past the deadline or not presentable (closing, discarded, detached): idle.
+/// - `retire` (discard, close): idle.
 struct CockpitPutBackActivation: Equatable {
   /// Covers the flip's own resign, which can arrive after the latch (the host's policy hold is 250 ms).
   static let windowMilliseconds: UInt64 = 500
   private(set) var armedUntil: UInt64?
+  private(set) var userSwitching = false
 
+  /// A put back starts: switch intent from before it does not count.
+  mutating func beginPutBack() { userSwitching = false }
+  /// The user is switching away (Command down, a press in another app). Holds until the next put back begins.
+  mutating func userSwitchesAway() { userSwitching = true; armedUntil = nil }
   /// At the latch. `wasActive`: the app was active before the presence change. `leftRegular`: the presence change
-  /// moved the app from regular to accessory. Without both there is nothing of ours to recover from.
-  mutating func arm(wasActive: Bool, leftRegular: Bool, now: UInt64) {
-    armedUntil = wasActive && leftRegular ? now &+ Self.windowMilliseconds : nil
+  /// moved the app from regular to accessory. `commandHeld`: Command is down now (a Cmd-Tab in progress).
+  mutating func arm(wasActive: Bool, leftRegular: Bool, commandHeld: Bool, now: UInt64) {
+    armedUntil = wasActive && leftRegular && !commandHeld && !userSwitching ? now &+ Self.windowMilliseconds : nil
   }
   /// Whether to activate the app again now (the flip deactivated it). Acting retires the arm: the flip is answered once.
   /// `presentable`: the attached cockpit is still shown and not closing.
@@ -29,6 +41,6 @@ struct CockpitPutBackActivation: Equatable {
     armedUntil = nil
     return true
   }
-  /// The user is switching away (or the cockpit went): no recovery after this.
+  /// The cockpit went (discard, close): no recovery after this.
   mutating func retire() { armedUntil = nil }
 }

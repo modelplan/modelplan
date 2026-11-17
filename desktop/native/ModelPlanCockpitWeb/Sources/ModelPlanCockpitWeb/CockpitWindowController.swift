@@ -619,6 +619,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     var verificationActivateApplication: (() -> Void)?
     /// Stands in for `NSApp.activationPolicy() == .regular`, which the host's presence flips.
     var verificationApplicationRegular: (() -> Bool)?
+    /// Stands in for `NSEvent.modifierFlags.contains(.command)` at the latch.
+    var verificationCommandHeld: (() -> Bool)?
+    /// Whether a put-back recovery is armed.
+    var verificationPutBackArmed: Bool { putBackActivation.armedUntil != nil }
     public var verificationOutsidePress: ((NSEvent.EventType,Bool)->Void)?
     public var verificationCloseOrigin: ((String)->Void)?
     /// "rack", "fade" or "instant" for each first show; "rack", "fade" or "instant" for each close (CKP-SHELL-33).
@@ -1717,6 +1721,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     })
   }
   private func keyPutBack(_ window: NSWindow) {
+    putBackActivation.beginPutBack()
     shellSession.compactWhileDetached = false
     // G3-102: with no fitting display the frame stays, but the level and the page's shell state still follow the session.
     guard let home = attachedHome() else { latch(); return }
@@ -1773,10 +1778,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // Every latch is a user put back (key, menu, drag release, or a press that ends the flight), so an app that was
     // active is activated again; making the window key alone left the page `key: false` and its first press dropped.
     // macrevd-1033-1: only a presence change that really left the regular policy arms it (Settings still open keeps
-    // the app regular, and then a resign is the user's own switch).
+    // the app regular, and then a resign is the user's own switch). macrev2-1033-1: nor when Command is held now or the
+    // user started a switch since the put back began (CockpitPutBackActivation's state machine).
     let wasActive = applicationIsActive, wasRegular = applicationIsRegular
     onPresenceChanged?(true)
-    putBackActivation.arm(wasActive: wasActive, leftRegular: wasRegular && !applicationIsRegular, now: dismissalNow())
+    putBackActivation.arm(wasActive: wasActive, leftRegular: wasRegular && !applicationIsRegular, commandHeld: commandKeyHeld,
+                          now: dismissalNow())
     if let window, window.isVisible, shown, closeTask == nil, !ending {
       if !reactivateAfterPutBack() { window.makeKeyAndOrderFront(nil) }
     }
@@ -1824,6 +1831,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       // A drag during the entrance or a landing starts from the settled frame.
       finishEntrance()
       if motion != nil { return }
+      putBackActivation.beginPutBack() // a drag may end in the catch zone
       dragStart = (point, window.frame, shellSession.detached)
       dragArmed = false; dragCatching = false
     case .moved:
@@ -1909,9 +1917,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   private func installOutsideMonitors() {
     let events: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+    // Event monitor handlers run on the main thread, so the switch intent is recorded before the handler returns.
     outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] event in
       let type=event.type
-      Task { @MainActor in self?.userSwitchesAway(); self?.outsidePress(NSEvent.mouseLocation,eventType:type) }
+      MainActor.assumeIsolated { self?.globalPress(eventType: type) }
     }
     // macrevd-1033-1: the Command key going down while the app is active is the start of a Cmd-Tab (or a shortcut).
     switchMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
@@ -1927,7 +1936,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
   }
   /// macrevd-1033-1: a press in another app or the Command key: a resign after this is the user's own switch.
-  func userSwitchesAway() { putBackActivation.retire() }
+  func userSwitchesAway() { putBackActivation.userSwitchesAway() }
+  /// A press in another app (the global monitor). macrev2-1033-1: the switch intent is recorded synchronously, before
+  /// the resign that click causes can reach the observer; the outside-press decision follows on the main actor as before.
+  func globalPress(eventType: NSEvent.EventType) {
+    userSwitchesAway()
+    Task { @MainActor [weak self] in self?.outsidePress(NSEvent.mouseLocation, eventType: eventType) }
+  }
+  private var commandKeyHeld: Bool {
+    #if MODELPLAN_TEST_ONLY_SPI
+    if let verificationCommandHeld { return verificationCommandHeld() }
+    #endif
+    return NSEvent.modifierFlags.contains(.command)
+  }
   /// A press in one of this app's windows (the local monitor). D88: a press on a hint or help panel over the cockpit,
   /// or on the enlarged field it opened, does not close it.
   func localPress(in target: NSWindow?, at point: CGPoint, eventType: NSEvent.EventType) {
