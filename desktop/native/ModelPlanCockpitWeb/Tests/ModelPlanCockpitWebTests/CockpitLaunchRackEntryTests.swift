@@ -46,6 +46,35 @@ import XCTest
   }
   private func wait(_ ms: Int) async throws { try await Task.sleep(for: .milliseconds(ms)) }
 
+  func testIdleAttachedSizeChangeRefreshesRackMask() throws {
+    let fixture = try make(reduceMotion: true)
+    defer { fixture.page.discard() }
+    // Keep the icon at the usable frame's top while giving both sizes room to fit.
+    let usable = CGRect(x: fixture.usable.minX, y: fixture.usable.maxY - 1440, width: 2560, height: 1440)
+    fixture.page.verificationPlacement = (usable: usable, anchor: fixture.icon)
+    fixture.page.updateAppearance(.init(theme: .night, locale: .en, profile: .full, reduceMotion: true, size: .percent80))
+    let window = try open(fixture)
+    XCTAssertTrue(fixture.page.isAttached)
+    XCTAssertFalse(fixture.page.verificationRack.moving)
+    let before = try XCTUnwrap(fixture.page.verificationRackMask)
+    let originalFrame = window.frame
+
+    fixture.page.updateAppearance(.init(theme: .night, locale: .en, profile: .full, reduceMotion: true, size: .percent100))
+
+    XCTAssertNotEqual(window.frame.size, originalFrame.size, "the Settings change must resize the cockpit")
+    let layout = try XCTUnwrap(fixture.page.verificationLayout)
+    let panel = try XCTUnwrap(fixture.page.verificationRack.panel)
+    let actual = try XCTUnwrap(fixture.page.verificationRackMask)
+    let drop = CockpitShellLayout.shoulderDrop(layout.profile) * layout.scale
+    let hidden = CGRect(x: window.frame.minX, y: window.frame.minY, width: window.frame.width,
+                        height: max(0, window.frame.height - drop))
+    let expected = CGRect(x: hidden.minX - panel.minX, y: panel.maxY - hidden.maxY,
+                          width: hidden.width, height: hidden.height)
+    XCTAssertNotEqual(actual, before, "the old mask must not survive a size change")
+    XCTAssertEqual(actual, expected, "the rack clips against the resized cockpit")
+    XCTAssertEqual(failures, [])
+  }
+
   /// D186/D188: from the icon, the page is ordered in at the click (alpha 0, so it prepares) while the rack's visible part
   /// extends for 0.25 s; then the cockpit comes out from under the bar for 0.25 s. Attached: 10 pt under the bar, the rack
   /// hanging from the icon over the left shoulder. The close reverses it.
