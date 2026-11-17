@@ -337,6 +337,21 @@ class Steps(unittest.TestCase):
         with self.assertRaises(w.WalkthroughError):
             walk.op_awaitAbsent({"target": "ax:looking", "timeout": 2})
 
+    def test_await_stable_waits_for_the_fader_bank_and_fails_while_it_keeps_changing(self):
+        host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "bank", "title": "Astra", "frame": [1, 1, 2, 2]}]}]})
+        walk = walker(host, self.out, [])
+        walk.op_awaitStable({"target": "ax:bank", "quiet": 1})
+        counter = iter(range(10 ** 6))
+        walk.tree = lambda: {"windows": [{"frame": [0, 0, 9, 9], "children": [{"id": "bank", "title": str(next(counter)), "frame": [1, 1, 2, 2]}]}]}
+        with self.assertRaises(w.WalkthroughError):
+            walk.op_awaitStable({"target": "ax:bank", "quiet": 1, "timeout": 2})
+
+    def test_press_strip_waits_for_a_stable_bank_and_pages_use_the_models_label(self):
+        steps = {s["id"]: s for s in json.loads((ROOT / "steps.json").read_text())["steps"]}
+        ops = [a["op"] for a in steps["j-press-strip"]["actions"]]
+        self.assertLess(ops.index("awaitStable"), ops.index("click", ops.index("awaitStable")))
+        self.assertNotIn("label:Effort", json.dumps([steps["hud-select"], steps["j-page-effort"]]))
+
     def test_blank_render_fails(self):
         host = FakeHost({"windows": [{"frame": [0, 0, 9, 9], "id": "x"}]}, stats={"colours": 2, "dominantShare": 0.99})
         step = {"id": "s", "title": "t", "expected": "e", "checks": [{"nonblank": "ax:x"}]}

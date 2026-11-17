@@ -252,6 +252,23 @@ class Walkthrough:
                 raise WalkthroughError("still on screen after %ss: %s" % (action.get("timeout", 15), action["target"]))
             self.host.sleep(0.5)
 
+    def op_awaitStable(self, action):
+        """Wait until every match of a target keeps the same title and frame for "quiet" seconds. A data refresh
+        (a seeded reading going stale) rebuilds the fader bank and would clear a view opened meanwhile."""
+        quiet, deadline = action.get("quiet", 3), self.host.now() + action.get("timeout", 30)
+        last, since = None, self.host.now()
+        while True:
+            now = self.host.now()
+            seen = [(n.get("title"), n.get("label"), n.get("value"), tuple(n.get("frame") or ()))
+                    for n in resolve_all(self.tree(), action["target"])]
+            if seen != last:
+                last, since = seen, now
+            elif now - since >= quiet:
+                return
+            if now >= deadline:
+                raise WalkthroughError("not stable after %ss: %s" % (action.get("timeout", 30), action["target"]))
+            self.host.sleep(0.5)
+
     def op_when(self, action):
         """Run nested actions only when a target is on screen ("present"), is not ("absent"), or shows a value
         ("equals": {"target", "value"}), so one walk fits a build with the flow and a build without it (the
