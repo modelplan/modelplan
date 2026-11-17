@@ -504,20 +504,20 @@ do {
         presence.lifecycleActive=false;let paused=try v.step(presence,at:0.4)
         try expect(paused.state == .suppressed(.lifecycle) && paused.nextDeadline==nil,"lifecycle is an explicit suppression")
     }
-    try test("B08 card:250ms entry, shared corridor ownership and true pins"){
+    try test("B08 card: opens on arrival (no ring dwell, Pulse select), shared corridor ownership and true pins"){
         var card=DockCardInteraction()
         try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0)
-        try expect(card.visibility == .hidden && card.nextDeadline==0.25,"card entry is250ms")
-        try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0.249)
-        try expect(card.visibility == .hidden,"no early card")
-        try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0.25)
-        try expect(card.visibility == .hover("a"),"entry deadline shows scoped card")
+        try expect(card.visibility == .hover("a") && card.nextDeadline==nil,"a ring's card opens on arrival, no dwell")
         try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:1)
-        try expect(card.visibility == .hover("a") && card.nextDeadline==1.25,"card owns its bounded leave grace even with an expanded widget")
+        try expect(card.visibility == .hover("a") && abs((card.nextDeadline ?? 0)-1.15)<1e-9,"the first outside sample arms the 150 ms leave sample")
         try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:20)
         try expect(card.visibility == .hidden,"parent suppression closes the hover card")
         try card.step(catalogue:["b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:21)
         try expect(card.visibility == .hidden,"removed subscription cannot retain a card")
+        try card.step(catalogue:["a","b"],hoveredID:"b",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,carrying:true,at:22)
+        try expect(card.visibility == .hidden,"nothing opens while the widget is carried")
+        try card.step(catalogue:["a","b"],hoveredID:"b",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:23)
+        try expect(card.visibility == .hidden,"the drop alone reopens nothing under the carried pointer")
     }
     try test("refresh sweep preserves the admitted endpoint and honors Reduce Motion") {
         try expect(DockRefreshSweep.fraction(elapsed: 0, target: 0.75, reduceMotion: false) == 0, "starts empty")
@@ -544,8 +544,8 @@ do {
         try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:true,at:5)
         try expect(card.visibility == .hover("a") && card.nextDeadline==nil,"actual menu stays protected beyond2s")
         try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:6)
-        try expect(card.nextDeadline==6.25,"standalone retains existing250ms leave grace")
-        try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:6.25)
+        try expect(abs((card.nextDeadline ?? 0)-6.15)<1e-9,"standalone leave is one 150 ms sample")
+        try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:6.2)
         try expect(card.visibility == .hidden,"standalone leave hides")
         card.dismiss();try expect(card.visibility == .hidden,"dismiss closes the card")
         try rejects(.invalidTime){try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:1)}
