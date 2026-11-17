@@ -6,6 +6,14 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.64 (2026-11-17)
+
+- The cockpit's effort faders are now the top-down throttle the owner chose: each model's real lever sits in a chamfered slot plate, day and night, and dragging it moves a translucent blue ghost grip with a thin blue line along the slot that snaps to the nearest effort the model has when released, while the real lever stays on the current effort. The recommended effort is a small gold ★ tick on the slot scale, and every lever is drawn exactly on its column's centre (it looked off-centre on the GLM column before). The community edition keeps the flat fader.
+
+- Clear stale GLM quota readings when a saved key is replaced or removed, while retaining the detected-key indication.
+
+- Quota Widget: a ring's card now opens the moment the pointer reaches the ring and closes promptly once the pointer leaves the ring and its card, a click outside closes it at once, and a plain click on the widget body no longer makes the widget redraw under the pointer.
+
 ## CLI v0.5.63, Codex plugin 0.15.50 and Claude Code plugin 0.7.49 (2026-11-17)
 
 - The cockpit "All" scope, the porthole HUD ranking and the Models page now list only models your own subscriptions can use, not the whole published field, and the page key formerly called Effort is now Models. When the publication lists which models each plan can use (planModels), the cockpit uses that list for a subscription whose plan it can match, and falls back to the developer match otherwise.
