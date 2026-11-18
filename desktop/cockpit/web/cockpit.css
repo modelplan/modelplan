@@ -121,11 +121,11 @@ body.field-page{color:var(--lcd,#d7dde4);overflow:hidden;margin:0}
 #cockpit .hud[hidden]{display:none!important}
 #cockpit[data-layout] .hud.hud-b,#cockpit[data-layout] .hud.hud-strip{position:absolute;right:auto;bottom:auto;min-width:0;max-width:none;min-height:0;padding:0;border:0;border-radius:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:auto;cursor:default}
 /* WP-14 (V1-FINAL §5, final-3): one solid dark backing under the whole HUD (the old radial fade left the lower rows on the
-   earth glow); the prototype's #030810, denser than its mock so 10 px names stay white over the bright still. */
-#cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:#030810c7;border-radius:6px}
+   earth glow); the prototype's #030810 at 0.5 (final-3). */
+#cockpit[data-layout] .hud.hud-b{left:58px;top:10px;width:180px;height:160px;display:block;background:#03081080;border-radius:6px}
 #cockpit .hud-b .hud-chart{width:180px;height:86px;padding:4px 9px 5px}
 #cockpit .hud-b .hud-list{width:117px;height:74px;padding:0;gap:0;overflow:hidden}
-#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:#030810c7;border-radius:6px}
+#cockpit[data-layout] .hud.hud-strip{left:44px;top:11px;width:216px;height:30px;display:block;background:#03081080;border-radius:6px}
 #cockpit .hud .hp{display:flex;align-items:baseline;gap:3px;padding:0 2px;min-width:0;background:none;border:0;color:inherit;font-size:10px;line-height:12px;cursor:pointer}
 #cockpit .hud .hp b{overflow:visible;text-overflow:clip;font-size:10px}
 #cockpit .hud .hp-rec{white-space:nowrap;margin-left:auto}

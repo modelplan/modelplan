@@ -199,7 +199,7 @@ for(const [tier,cap] of [['tall',6],['compact',3]])test(`CKP-PORT-50 ${tier}: at
  await open(page,{tier,sessions:[running('a','m6'),running('b','m7')]});
  await expect(page.locator('.hud .hp')).toHaveCount(cap);
  const b=await backing(page);
- expect(b.image).toBe('none');expect(b.alpha).toBeGreaterThanOrEqual(.7);expect(b.inside).toBe(true);
+ expect(b.image).toBe('none');expect(b.alpha).toBeGreaterThanOrEqual(.5);expect(b.inside).toBe(true);
  for(const [size,colour] of b.names)expect([size,colour]).toEqual(['10px','rgb(233, 237, 240)']);
 });
 test('CKP-PORT-51 a green dot follows the ★ effort of each model a session is running now, and only those',async({page})=>{
