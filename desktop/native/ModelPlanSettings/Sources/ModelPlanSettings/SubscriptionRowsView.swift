@@ -172,7 +172,7 @@ import AppKit
     }
 
     private func fixButton(_ row: SubscriptionRow, prefix: String) -> ConnectionButton? {
-        guard let fix = row.fix else { return nil }
+        guard let fix = row.fix, !fix.isInformational else { return nil }
         let available = configuration.fixAvailable(row)
         // An action the app cannot perform is not offered (no dead buttons); the status line still says what to do.
         // Keychain and key entry stay visible while they wait for a moment when the engine can take the change.

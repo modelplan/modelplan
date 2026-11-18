@@ -75,6 +75,13 @@ final class SubscriptionRowModelTests: XCTestCase {
         }
     }
 
+    /// WP-16: a cause the card words as "No action needed" stays a plain fact on the row: card sentence, no attention flag.
+    func testWP16UsageNotReportedIsAPlainFact() {
+        let model = build([sub("grok", vendor: "grok", source: .fresh, cause: "usage_not_reported")], order: ["grok"], tools: [])
+        XCTAssertFalse(model.added[0].needsAttention)
+        XCTAssertEqual(model.added[0].status, ReaderCauseTable.entry(code: "usage_not_reported", tool: "grok", toolName: "Grok")?.reason)
+    }
+
     /// WP-16 / SET-9-52, SET-9-53: size options in the owner's order, red line 25 by default, show-all-models off.
     func testWP16CockpitSizeOrderAndRedLineDefault() throws {
         XCTAssertEqual(SettingsCockpitSize.allCases.map(\.rawValue), ["automatic", "100", "90", "85", "80"])
