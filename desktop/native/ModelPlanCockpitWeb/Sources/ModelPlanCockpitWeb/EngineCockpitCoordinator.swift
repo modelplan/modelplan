@@ -107,7 +107,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// G3-56: the acknowledged caution identities. Restored at load, replaced whenever the page reports a press.
   public private(set) var ackedCautions: [String] = []
   public var cautionMemory: (any CockpitCautionMemory)? {
-    didSet { let ids = cautionMemory?.load() ?? []; ackedCautions = CockpitCautionIdentities.valid(ids) ? ids : [] }
+    didSet { let ids = cautionMemory?.load() ?? []; ackedCautions = CockpitCautionIdentities.valid(ids) ? CockpitCautionIdentities.durable(ids) : [] }
   }
   /// D136: the favourite model ids. Restored at load and replaced whenever the page reports a long-press. A user
   /// preference, so a store barrier does not clear them.
@@ -444,7 +444,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func receiveIntent(_ intent:CockpitIntent) {
     if case .cautionAck(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids) else { return }
-      ackedCautions=ids; cautionMemory?.save(ids); return
+      ackedCautions=ids; cautionMemory?.save(CockpitCautionIdentities.durable(ids)); return
     }
     if case .pinnedModels(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids), Set(ids).count == ids.count else { return }

@@ -18,9 +18,11 @@ const MAX=64;
 /** The host bounds an identity in UTF-8 bytes (BridgeState.swift), so the page counts bytes too. */
 export const MAX_ID_BYTES=200;
 export const withinIdBound=(id:string)=>new TextEncoder().encode(id).length<=MAX_ID_BYTES;
-// Only a verified subscription reference (16 hex) names the same account after a restart. A fallback member's identity
-// (`row#route#position`) holds for one session and could match another account later, so it is never kept or restored.
-const durableMember=(stable:string)=>{try{const p=JSON.parse(stable);return withinIdBound(stable)&&Array.isArray(p)&&typeof p[0]==='string'&&/^[a-f0-9]{16}$/.test(p[0]);}catch{return false;}};
+// Only a verified subscription reference (16 hex) names the same account after a restart . A fallback
+// member's identity (`row#route#position`) holds for one app session only. G3-135: the page still reports and restores it
+// (the page is rebuilt on every cockpit open, so a press on an unverified account was lost on the next open); the host
+// keeps those in memory for the session and writes only durable ones to disk (CockpitCautionIdentities.durable).
+const keepable=(id:string)=>{try{const p=JSON.parse(id);return withinIdBound(id)&&Array.isArray(p)&&typeof p[0]==='string';}catch{return false;}};
 const parse=(id:string):unknown[]|null=>{try{const p=JSON.parse(id);return Array.isArray(p)?p:null;}catch{return null;}};
 const window_=(stable:string)=>{const p=parse(stable);return p&&p.length===3?JSON.stringify([p[0],p[1]]):null;};
 const MINUTE=60000,HOUR=60*MINUTE;
@@ -47,12 +49,12 @@ export interface CautionMemory {
 export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):CautionMemory {
  // stable identity -> the reset moment of the cycle it was seen or acknowledged in (null: no cycle, the G3-56 rule).
  const acked=new Map<string,number|null>(),shown=new Map<string,number|null>();let current:CautionItem[]=[],newest:string|null=null;
- const durable=()=>[...acked].map(([id,cycle])=>persisted(id,cycle)).filter(durableMember);
+ const durable=()=>[...acked].map(([id,cycle])=>persisted(id,cycle)).filter(keepable);
  const report=()=>onChange(durable().slice(-MAX));
  return {
   checkpoint(){const savedAcked=new Map(acked),savedShown=new Map(shown),savedCurrent=current,savedNewest=newest;return ()=>{acked.clear();for(const [k,v] of savedAcked)acked.set(k,v);shown.clear();for(const [k,v] of savedShown)shown.set(k,v);current=savedCurrent;newest=savedNewest;};},
   forget(){acked.clear();shown.clear();current=[];newest=null;},
-  restore(ids){for(const id of ids.slice(0,MAX)){if(typeof id!=='string'||!durableMember(id))continue;const r=fromPersisted(id);if(r)acked.set(r[0],r[1]);}},
+  restore(ids){for(const id of ids.slice(0,MAX)){if(typeof id!=='string'||!keepable(id))continue;const r=fromPersisted(id);if(r)acked.set(r[0],r[1]);}},
   update(items,read,canBlink=true){
    const lit=items.filter(x=>x.level!=='blue'),litIds=lit.map(x=>x.stable);
    // Recurrence: a condition is over only when its window has a real reading and no longer qualifies, or, for one held
@@ -63,7 +65,7 @@ export function createCautionMemory(onChange:(ids:string[])=>void=()=>{}):Cautio
     let over:boolean;
     if(cycle===null)over=!litIds.includes(id);
     else{const now=lit.find(x=>x.stable===id)?.cycle??r.resetAt;over=now!==null&&now!==undefined&&!sameCycle(cycle,now,r.span);}
-    if(over){set.delete(id);if(set===acked&&durableMember(persisted(id,cycle)))changed=true;}
+    if(over){set.delete(id);if(set===acked&&keepable(persisted(id,cycle)))changed=true;}
    }
    if(changed)report();
    // G3-135: a caution that has blinked counts as seen (acknowledged and kept by the host) with no press; a page that

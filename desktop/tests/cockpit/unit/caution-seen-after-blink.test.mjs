@@ -54,3 +54,13 @@ test('a caution not blinked (page inactive) is not marked seen',()=>{
  assert.equal(host.ids.length,0);
  assert.equal(show(page,reading({remaining:48,resetAt:reset,level:'amber'}),true),true,'blinks once it can');
 });
+
+test('a press on an unverified (fallback-keyed) account survives the next open within the session',()=>{
+ const fb='codex#main',w='weekly:604800:main:main',fkey=JSON.stringify([fb,w]);
+ const r=n=>({items:[{id:'x',stable:JSON.stringify([fb,w,'red']),level:'red',member:fb,text:{en:'',zh:`${n}%`}}],read:new Map([[fkey,{resetAt:reset,span:WEEK}]])});
+ const host={ids:[]};let page=entry(host);
+ assert.equal(show(page,r(20)),true);page.acknowledge();
+ assert.equal(host.ids.length,1,'the host is told, so a rebuilt page can get it back');
+ page=entry(host);
+ assert.equal(show(page,r(19)),false,'reopen is steady');
+});
