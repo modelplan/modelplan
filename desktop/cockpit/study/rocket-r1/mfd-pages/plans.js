@@ -136,17 +136,22 @@ export function usageBlock(a,ui){
  return `<div class="sp-stats" data-days="${days}"><span class="stat-h" title="${esc(t('mfd.statsBasis'))}">${t('mfd.statsTitle',{d:days})} · ${t('mfd.statsScope')}</span>${rows.length?rows.map(([k,v])=>`<span class="stat"><span>${esc(k)}</span><b>${esc(v)}</b></span>`).join(''):`<span class="missing">${t('mfd.statsMissing')}</span>`}</div>`;
 }
 
+// CKP-MFD-64 (V1-FINAL 8.2): the subscription the page expands. A chosen scope wins; with fewer than 3 subscriptions
+// and none chosen, the first one opens expanded (nothing to choose between); with 3 or more, none (the list).
+export const AUTO_EXPAND_BELOW = 3;
+export const subjectOf = (d, ui) => (ui.scope && accountOf(d, ui.scope)) || (d.accounts.length && d.accounts.length < AUTO_EXPAND_BELOW ? d.accounts[0] : null);
+
 export const plans = {
   id: 'sub', title: 'mfd.pSub',
   optionKeys(ui, d) {
-    const a = ui.scope && accountOf(d, ui.scope);
+    const a = subjectOf(d, ui);
     if (!a) return [null, null, null, null];
     const hist = ui.subTab === 'hist', ws = a.windows, k = cycleKind(a, ui);
     return [{id: 'tab', a: {value:'now', text: t('mfd.oNow'), on: !hist}, b: {value:'hist', text: t('mfd.oHist'), on: hist}},
       hist && ws.length > 1 ? {id: 'cycle', a: {value:ws[0].kind, text: ws[0].label, on: k === ws[0].kind}, b: {value:ws[1].kind, text: ws[1].label, on: k === ws[1].kind}} : !hist ? {id:'usage',a:{value:7,text:'7',on:ui.subDays!==30},b:{value:30,text:'30',on:ui.subDays===30}} : null, null, null];
   },
   render(d, ui) {
-    const a = ui.scope && accountOf(d, ui.scope);
+    const a = subjectOf(d, ui);
     if (!a) return list(d, ui);
     if (ui.subTab === 'hist') {
       const k = cycleKind(a, ui), w = a.windows.find(x => x.kind === k), cy = cycles(d, a, ui, k);
@@ -161,7 +166,7 @@ export const plans = {
     if (act === 'scope') return {scope: val};
     if (act === 'opt' && val === 'usage') return {patch:{mfdSubDays:ui.optionChoice!=null?Number(ui.optionChoice):ui.subDays===30?7:30}};
     if (act === 'opt' && val === 'tab') return {patch: {mfdSubTab: ui.optionChoice ?? (ui.subTab === 'hist' ? 'now' : 'hist')}};
-    if (act === 'opt' && val === 'cycle') { const a = accountOf(d, ui.scope), k = cycleKind(a, ui), ws = a.windows; return {patch: {mfdCycle: ui.optionChoice ?? (k === ws[0].kind ? ws[1].kind : ws[0].kind)}}; }
+    if (act === 'opt' && val === 'cycle') { const a = subjectOf(d, ui), k = cycleKind(a, ui), ws = a.windows; return {patch: {mfdCycle: ui.optionChoice ?? (k === ws[0].kind ? ws[1].kind : ws[0].kind)}}; }
     return null;
   },
 };

@@ -49,6 +49,8 @@ test('B13 the HUD and the Effort page use short names',async({page})=>{
  const hud=await page.locator('.hud-list b').allTextContents();
  expect(hud).toContain('Sol 6.1');expect(hud).toContain('Terra 6.1');for(const name of hud)expect(name).not.toMatch(/^GPT-|^Claude /);
  await page.locator('[data-mfd="page:tune"]').click();
- const labels=await page.locator('.mfd-page text').allTextContents();
- expect(labels.join(' ')).toContain('Terra 6.1');expect(labels.join(' ')).not.toContain('GPT-6.1 Terra');
+ const names=await page.locator('.mfd-page .md-n').allTextContents();
+ expect(names).toContain('Terra 6.1');expect(names.join(' ')).not.toContain('GPT-6.1 Terra');
+ await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
+ expect((await page.locator('.mfd-page text').allTextContents()).join(' ')).not.toContain('GPT-6.1');
 });

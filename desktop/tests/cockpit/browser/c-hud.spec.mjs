@@ -60,13 +60,13 @@ const mixed=()=>[model('gpt-a',50,.3),model('gpt-b',45,.2),{...model('claude-a',
 test('CKP-PORT-04 D86 one GPT subscription: All lists only that plan\'s models, on the HUD and the 模型 page',async({page})=>{
  await open(page,{published:mixed(),edit:keepRows(['codex'])});
  expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['gpt-a','gpt-b']);
- await page.getByRole('button',{name:'Models',exact:true}).click();
+ await page.getByRole('button',{name:'Models',exact:true}).click(); await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
  const ids=await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models');expect(ids.split(' ').sort()).toEqual(['gpt-a','gpt-b']);
 });
 test('CKP-PORT-04 D86 two subscriptions: All is the union of both and nothing else',async({page})=>{
  await open(page,{published:mixed(),edit:keepRows(['codex','claude'])});
  expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
- await page.getByRole('button',{name:'Models',exact:true}).click();
+ await page.getByRole('button',{name:'Models',exact:true}).click(); await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
  const ids=await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models');expect(ids.split(' ').sort()).toEqual(['claude-a','gpt-a','gpt-b']);
 });
 test('CKP-PORT-04 D86 a published plan model list narrows All to the models that plan lists',async({page})=>{
@@ -80,7 +80,7 @@ const reported=ids=>data=>{keepRows(['codex'])(data);data.projection.rows[0].acc
 test('CKP-FAD-25 D98 the tool-reported models decide All before the published plan list, on the HUD and the 模型 page',async({page})=>{
  await open(page,{published:mixed(),edit:reported(['gpt-b'])});
  expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['gpt-b']);
- await page.getByRole('button',{name:'Models',exact:true}).click();
+ await page.getByRole('button',{name:'Models',exact:true}).click(); await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
  expect(await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models')).toBe('gpt-b');
 });
 test('CKP-FAD-25 D98 without a reported list the published plan list still decides',async({page})=>{

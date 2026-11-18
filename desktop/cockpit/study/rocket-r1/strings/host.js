@@ -42,7 +42,7 @@ register('host', {
   moreRunning: ['line', '另有 {n} 个会话运行中', '{n} more running'],
   moreSessions: ['line', '另有 {n} 个会话', '{n} more sessions'],
   pageOverview: ['aria', '总览', 'Overview'],
-  pageSubscription: ['aria', '订阅', 'Subscription'],
+  pageSubscription: ['aria', '订阅', 'Plans'],
   pageEffort: ['aria', '模型', 'Models'],
   pageBreakdown: ['aria', '去向', 'Breakdown'],
   settingsAria: ['aria', '设置', 'Settings'],

@@ -4,7 +4,7 @@ import {register} from '../i18n.js';
 register('mfd', {
   // page keys (top bezel) and the return line (spec 6, 2.5)
   pOverview: ['silk', '总览', 'Overview'],
-  pSub: ["lcd", "订阅", "Subscription"],
+  pSub: ["lcd", "订阅", "Plans"], // V1-FINAL 14: "Subscription" crowded the key
   pTune: ['silk', '模型', 'Models'],
   pWhere: ['silk', '去向', 'Breakdown'],
   back: ['line', '‹ 返回 {p}', '‹ Back to {p}'],
@@ -145,4 +145,16 @@ register('mfd', {
   balance: ['lcd', '余额', 'Balance'],
   balanceOnly: ['text', '只报告余额，不报告用量百分比', 'Reports a balance, no usage percentage'],
   balanceOnlyX: ['text', 'X 订阅只报告余额，不报告用量百分比', 'X Subscription reports a balance, no usage %'],
+  // WP-13 (V1-FINAL 8.3, 8.4): the Models and Where pages' title lines, option keys and empty states.
+  pgToday: ['lcd', '今天', 'Today'],
+  pg7d: ['lcd', '7天', '7d'],
+  pg30d: ['lcd', '30天', '30d'],
+  mdTitle: ['line', '{r} · {n} 个模型', {one: '{r} · {n} model', other: '{r} · {n} models'}],
+  oList: ['silk', '列表', 'List'],
+  oChart: ['silk', '图', 'Chart'],
+  oSessions: ['silk', '会话', 'Sessions'],
+  mdRowAria: ['aria', '选中 {m}', 'Select {m}'],
+  mdUnused: ['lcd', '未使用', 'Unused'],
+  whProjTitle: ['line', '{r} · 项目 {n} 个', {one: '{r} · {n} project', other: '{r} · {n} projects'}],
+  whSessTitle: ['line', '{r} · 会话 {n} 个', {one: '{r} · {n} session', other: '{r} · {n} sessions'}],
 });

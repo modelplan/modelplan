@@ -15,8 +15,9 @@ async function open(page,data) {
  return {send,receive};
 }
 const until='2030-01-01T00:00:00Z';
-function oneSubscription(){
- const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.details.subscriptions=data.details.subscriptions.slice(0,1);
+// WP-13: with fewer than 3 subscriptions the Plans page opens the first one expanded, so the list this test reads needs 3.
+function oneSubscription(count=1){
+ const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,count);data.details.subscriptions=data.details.subscriptions.slice(0,count);
  const row=data.projection.rows[0],account=row.accounts[0],seed=account.windows[0];
  const general={...seed,id:'session:18000:main:main',role:'session',durationSeconds:18000,limitKey:'main',poolKey:'main',label:{en:'5h',zh:'5小时'},remainingPercent:60,current:true,validUntil:until,resetsAt:'2026-11-04T14:00:00Z'};
  const scoped={...seed,id:'weekly:604800:main:main:1',role:'weekly',durationSeconds:604800,limitKey:'main',poolKey:'main',modelScope:{models:['opus']},label:{en:'Opus weekly',zh:'Opus 每周'},remainingPercent:10,current:true,validUntil:until,resetsAt:'2026-11-08T00:00:00Z'};
@@ -26,9 +27,9 @@ function oneSubscription(){
 
 // Prototype: mfd-pages/plans.js:31-35,115 (scoped 专项 lines under their subscription; proposed CKP-MFD-29).
 test('CKP-MFD-10 scoped extra windows list under their subscription and never become the plan-wide tightest',async({page})=>{
- const {data}=oneSubscription();
+ const {data}=oneSubscription(3);
  await open(page,data);
- await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.getByRole('button',{name:'Plans',exact:true}).click();
  const item=page.locator('.sa-list .sa').first();
  await expect(item.locator('.v')).toHaveText('60%');
  const extra=page.locator('.sa-list .sa-x');await expect(extra).toHaveCount(1);
@@ -40,7 +41,7 @@ test('CKP-MFD-10 scoped extra windows list under their subscription and never be
 
 // Prototype: mfd-pages/where.js:25-39 (时间 list, running first); public v1 shows the bounded last-seen part only.
 test('CKP-MFD-23 the time list shows admitted last-seen sessions without claiming an end or tokens',async({page})=>{
- const {data,account}=oneSubscription();
+ const {data,account}=oneSubscription(3);
  data.details.sessionCoverage='local-last-seen';
  data.details.sessions=[
   {sessionRef:'00000000000000a1',source:'Codex',subscriptionRef:account.subscriptionRef,model:'Sol 6.1',effort:'High',projectLabel:'alpha',lastObservedAt:'2026-11-04T11:59:00Z',state:'running',rate:41},
@@ -59,7 +60,7 @@ test('CKP-MFD-23 the time list shows admitted last-seen sessions without claimin
  await expect(rows.first()).toHaveClass(/\brun\b/);await expect(rows.first().locator('.ws-p')).toHaveText('alpha');
  await expect(rows.nth(1).locator('.ws-tk')).toHaveText('--');
  // An unbound session belongs to All only; a subscription scope shows its bound session.
- await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.sa-list .sa').first().click();
+ await page.getByRole('button',{name:'Plans',exact:true}).click();await page.locator('.sa-list .sa').first().click();
  await page.getByRole('button',{name:'Breakdown',exact:true}).click();
  await expect(page.locator('.ws-list .ws')).toHaveCount(1);
  // Recording off: the list is unavailable, not an empty period.

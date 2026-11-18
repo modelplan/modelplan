@@ -37,7 +37,7 @@ test('CKP-ENG-14 shared threshold includes the exact 51, 50, 26, 25 and zero bou
  await open(page,data);
  const cells=page.locator('.eng-cols .ec[data-col] .qcell[data-row="first"]');await expect(cells).toHaveCount(5);
  for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(cells.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
- await page.getByRole('button',{name:'Subscription',exact:true}).click();const values=page.locator('.sa-list .sa .v');
+ await page.getByRole('button',{name:'Plans',exact:true}).click();const values=page.locator('.sa-list .sa .v');
  for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(values.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
 });
 
@@ -184,7 +184,7 @@ test('CKP-ENG-04 All and vendor keys share scope and the neutral underline geome
  const underline=all.locator('.bl'),vendorLine=vendor.locator('.bl');const active=await underline.evaluate(e=>({opacity:Number(getComputedStyle(e).opacity),color:getComputedStyle(e).backgroundColor,height:e.getBoundingClientRect().height}));
  const rgb=active.color.match(/\d+/g).slice(0,3).map(Number);expect(Math.max(...rgb)-Math.min(...rgb)).toBeLessThan(30);
  expect(active.height).toBeCloseTo((await vendorLine.boundingBox()).height,0);
- await page.getByRole('button',{name:'Subscription',exact:true}).click();await vendor.click();
+ await page.getByRole('button',{name:'Plans',exact:true}).click();await vendor.click();
  await expect(all).toHaveAttribute('aria-pressed','false');await expect(vendor).toHaveAttribute('aria-pressed','true');await expect(page.locator('.sp-h')).toBeVisible();
  expect(Number(await underline.evaluate(e=>getComputedStyle(e).opacity))).toBeLessThan(active.opacity);
  await all.click();await expect(all).toHaveAttribute('aria-pressed','true');await expect(page.locator('.sa-list')).toBeVisible();
@@ -193,7 +193,7 @@ test('CKP-ENG-04 All and vendor keys share scope and the neutral underline geome
 
 test('CKP-MFD-10 subscription header and quota windows use delivered reading and relative reset',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.projection.rows[0].vendorKey=null;const account=data.projection.rows[0].accounts[0];account.observedAt='2026-11-04T11:55:00Z';account.windows[0].resetsAt='2026-11-04T13:00:00Z';
- await open(page,data);await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();
+ await open(page,data);await page.getByRole('button',{name:'Plans',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();
  // An unknown vendor has no mark (as on the engine keys); c-subscription-header.spec.mjs covers a known vendor's mark.
  await expect(page.locator('.sp-h .mg')).toHaveCount(0);await expect(page.locator('.sp-h b')).toHaveText(data.projection.rows[0].name.en);await expect(page.locator('.sp-sub .pl')).toContainText(account.plan.name.en);
  await expect(page.locator('.sp-sub .src')).toContainText('5');await expect(page.locator('.sp-sub .src')).toHaveAttribute('title','modelplan CLI');
@@ -260,12 +260,12 @@ test('CKP-ENG-03 paged subscriptions keep empty bays blank and signal an off-pag
 
 test('CKP-ENTRY-03 opens on usage with no comparison when publication is absent',async({page})=>{
  const {send,receive}=await open(page);await expect(page.getByRole('button',{name:'Overview',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.locator('.pg-overview')).toBeVisible();await expect(page.locator('.mfd-compare,[data-comparison]')).toHaveCount(0);await expect(page.locator('.fd-strip:not(:disabled)')).toHaveCount(0);
- await page.getByRole('button',{name:'Subscription',exact:true}).click();await expect(page.locator('.pg-sub')).toBeVisible();expect(await receive(send('clear',{generation:'42',viewRevision:'4'}))).toBe(true);await expect(page.locator('.mfd-compare,[data-comparison]')).toHaveCount(0);
+ await page.getByRole('button',{name:'Plans',exact:true}).click();await expect(page.locator('.pg-sub')).toBeVisible();expect(await receive(send('clear',{generation:'42',viewRevision:'4'}))).toBe(true);await expect(page.locator('.mfd-compare,[data-comparison]')).toHaveCount(0);
 });
 
 test('CKP-MFD-02 four page keys select and light the current page in both languages',async({page})=>{
  const {send,receive}=await open(page);const buttons=page.locator('.mfd-pk .pk');await expect(buttons).toHaveCount(4);
- for(const labels of [['Overview','Subscription','Models','Breakdown'],['总览','订阅','模型','去向']]){
+ for(const labels of [['Overview','Plans','Models','Breakdown'],['总览','订阅','模型','去向']]){
   for(const [i,label] of labels.entries()){const key=buttons.nth(i);await expect(key).toHaveAttribute('aria-label',label);await key.click();await expect(key).toHaveAttribute('aria-pressed','true');await expect(key).toHaveClass(/\bon\b/);await expect(buttons.locator('.pk-led')).toHaveCount(4);const activeColor=await key.locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor);for(let j=0;j<4;j++)if(i!==j){await expect(buttons.nth(j)).toHaveAttribute('aria-pressed','false');expect(await buttons.nth(j).locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor)).not.toBe(activeColor);}}
   if(labels[0]==='Overview')expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
  }
@@ -311,12 +311,12 @@ test('CKP-MFD-06 Overview shows delivered today total and puts threshold notices
 
 test('CKP-MFD-11 reported reset count shows compact expiries and all expiries on hover',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);const detail=data.details.subscriptions[0];detail.resetCards={state:'complete',count:5,truncated:false,sources:[],items:Array.from({length:5},(_,i)=>({id:(i+1).toString(16).padStart(64,'0'),expiresAt:`2026-11-${String(6+i).padStart(2,'0')}T12:00:00Z`}))};
- const {send,receive}=await open(page,data);await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();const cards=page.locator('.pg-sub .rc');await expect(cards).toContainText('5');await expect(cards.locator('.rc-exp i:not(.more)')).toHaveCount(4);await expect(cards.locator('.rc-exp .more')).toHaveText('+1');const title=await cards.getAttribute('title');expect(title.split('\n')).toHaveLength(5);detail.resetCards.count=null;detail.resetCards.items=[];expect(await receive(send('display',{data}))).toBe(true);await expect(cards.locator('b')).toHaveText('--');delete detail.resetCards;expect(await receive(send('display',{data}))).toBe(true);await expect(cards).toHaveCount(0);
+ const {send,receive}=await open(page,data);await page.getByRole('button',{name:'Plans',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();const cards=page.locator('.pg-sub .rc');await expect(cards).toContainText('5');await expect(cards.locator('.rc-exp i:not(.more)')).toHaveCount(4);await expect(cards.locator('.rc-exp .more')).toHaveText('+1');const title=await cards.getAttribute('title');expect(title.split('\n')).toHaveLength(5);detail.resetCards.count=null;detail.resetCards.items=[];expect(await receive(send('display',{data}))).toBe(true);await expect(cards.locator('b')).toHaveText('--');delete detail.resetCards;expect(await receive(send('display',{data}))).toBe(true);await expect(cards).toHaveCount(0);
 });
 
 test('CKP-MFD-12 scoped subscription shows reported credits and reading age without a fabricated history',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.details.subscriptions[0].credits={balance:19613.957,observedAt:'2026-11-04T11:55:00Z'};
- const {send,receive}=await open(page,data);await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();
+ const {send,receive}=await open(page,data);await page.getByRole('button',{name:'Plans',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();
  const credits=page.locator('.cr-l').filter({has:page.locator('.cr-bal')});await expect(credits.locator('.cr-bal')).toHaveText('19,614');await expect(credits).toContainText('Read 5m ago');await expect(page.locator('.cr-30')).toHaveCount(0);
  for(const [balance,expected] of [[0.2,'<1'],[0,'0']]){data.details.subscriptions[0].credits.balance=balance;expect(await receive(send('display',{data}))).toBe(true);await expect(credits.locator('.cr-bal')).toHaveText(expected);}
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(credits).toContainText('5m前读取');
@@ -332,7 +332,7 @@ test('CKP-STRIP-06 a new caution blinks three times, then stays lit; a new condi
  windows[0].remainingPercent=18;expect(await receive(send('display',{data}))).toBe(true);expect(await lamp.evaluate(e=>e.getAnimations().includes(window.__g1CautionAnimation))).toBe(true);
  windows[1].remainingPercent=10;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bred\b/);expect(await lamp.evaluate(e=>e.getAnimations().includes(window.__g1CautionAnimation))).toBe(false);windows[1].remainingPercent=75;
 
- await page.getByRole('button',{name:'Subscription',exact:true}).click();await lamp.click();await expect(page.locator('.pg-alerts .mfd-alerts.all.ack')).toBeVisible();await expect(lamp).not.toHaveClass(/\bflash\b/);await page.keyboard.press('Escape');windows[0].remainingPercent=19;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);
+ await page.getByRole('button',{name:'Plans',exact:true}).click();await lamp.click();await expect(page.locator('.pg-alerts .mfd-alerts.all.ack')).toBeVisible();await expect(lamp).not.toHaveClass(/\bflash\b/);await page.keyboard.press('Escape');windows[0].remainingPercent=19;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);
  for(const w of windows)w.remainingPercent=75;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\blit|flash\b/);windows[0].remainingPercent=19;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bflash\b/);expect(await receive(send('appearance',{...appearance,reduceMotion:true}))).toBe(true);expect(await lamp.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await receive(send('appearance',appearance))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);windows[0].remainingPercent=75;expect(await receive(send('display',{data}))).toBe(true);windows[0].remainingPercent=19;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bflash\b/);await page.emulateMedia({reducedMotion:'reduce'});await expect(lamp).not.toHaveClass(/\bflash\b/);await page.emulateMedia({reducedMotion:'no-preference'});await expect(lamp).not.toHaveClass(/\bflash\b/);expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);expect(await lamp.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);data.details=visualFixture().data.details;data.details.alerts=[{severity:'blue',source:data.projection.rows[0].id,subscriptionRef:data.projection.rows[0].accounts[0].subscriptionRef,windowId:windows[0].id,remainingPercent:19}];expect(await receive(send('display',{data}))).toBe(true);/* D38: the lamp follows the reading against T, not the producer's alert severity. */await expect(lamp).toHaveClass(/\bred\b/);data.details=null;windows[0].remainingPercent=75;expect(await receive(send('display',{data}))).toBe(true);expect(await receive(send('appearance',{...appearance,reduceMotion:true}))).toBe(true);windows[0].remainingPercent=19;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);expect(await receive(send('appearance',appearance))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);
 });
 
@@ -386,10 +386,10 @@ async function alertScope(page,slots){
 }
 test('CKP-STRIP-06 ALERT under a healthy selected subscription lists the other subscription and returns',async({page})=>{
  const {lamp}=await alertScope(page,2);await expect(lamp).toHaveClass(/\bred\b/);
- await page.locator('.eng-keys .ek[data-sub]').nth(1).click();await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.locator('.eng-keys .ek[data-sub]').nth(1).click();await page.getByRole('button',{name:'Plans',exact:true}).click();
  await lamp.click();
  const list=page.locator('.pg-alerts .mfd-alerts.all');await expect(list).toBeVisible();await expect(list).toContainText('Codex');
- await expect(lamp).toHaveClass(/\bmfd-src\b/);await expect(page.locator('.mfd-back')).toHaveText('‹ Back to Subscription');
+ await expect(lamp).toHaveClass(/\bmfd-src\b/);await expect(page.locator('.mfd-back')).toHaveText('‹ Back to Plans');
  // Back returns to the page it came from, with its scope intact.
  await page.locator('.mfd-back').click();await expect(page.locator('.pg-sub')).toBeVisible();await expect(lamp).not.toHaveClass(/\bmfd-src\b/);
  // Esc returns; a second lamp press returns; a page key leaves the view for that page.

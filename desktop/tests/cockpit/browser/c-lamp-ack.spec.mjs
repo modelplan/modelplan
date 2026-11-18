@@ -23,7 +23,7 @@ async function open(page,data,acked){
  return {send,receive,lamp:page.locator('[data-caution]')};
 }
 const flash=/\bflash\b/;
-async function pressed(page,lamp){await page.getByRole('button',{name:'Subscription',exact:true}).click();await lamp.click();await expect(page.locator('.pg-alerts .mfd-alerts.all.ack')).toBeVisible();await page.keyboard.press('Escape');await expect(lamp).not.toHaveClass(flash);}
+async function pressed(page,lamp){await page.getByRole('button',{name:'Plans',exact:true}).click();await lamp.click();await expect(page.locator('.pg-alerts .mfd-alerts.all.ack')).toBeVisible();await page.keyboard.press('Escape');await expect(lamp).not.toHaveClass(flash);}
 
 test('G3-56 a pressed 0% caution stays steady through refreshes with the same state',async({page})=>{
  const {data,windows}=zeroData(),{send,receive,lamp}=await open(page,(()=>{return data;})());
@@ -84,7 +84,7 @@ test('G3-56 pressing the lamp flashes the newest acknowledged caution row once, 
  const {data,windows}=zeroData(),{send,receive,lamp}=await open(page,data);
  windows[0].remainingPercent=0;expect(await receive(send('display',{data}))).toBe(true);
  windows[1].remainingPercent=10;expect(await receive(send('display',{data}))).toBe(true);
- await page.getByRole('button',{name:'Subscription',exact:true}).click();await lamp.click();
+ await page.getByRole('button',{name:'Plans',exact:true}).click();await lamp.click();
  const marked=page.locator('.pg-alerts .mfd-alerts li.al-mark');await expect(marked).toHaveCount(1);
  await expect(marked).toHaveClass(/\bal-flash\b/);
  const animation=await marked.evaluate(e=>{const s=getComputedStyle(e);return {name:s.animationName,count:s.animationIterationCount};});

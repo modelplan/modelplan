@@ -14,9 +14,11 @@ export interface HistoryView {
  readonly hourly:readonly {accountId:string;instants:number[];values:(number|null)[]}[];
  readonly projectRanking:{recent7d:unknown[];recent30d:unknown[]};
  readonly paceHistory:Record<string,Record<string,unknown[]>>;
+ /** WP-13: the Models page's usage list, by model id, observed output tokens per range. */
+ readonly modelRanking:{recent7d:{top:{name:string;tokens:number}[]};recent30d:{top:{name:string;tokens:number}[]}};
 }
 const kinds:Readonly<Record<string,string>>={five_hour:'5h',weekly:'week',monthly:'month'};
-export const noHistory:HistoryView={daily:[],hourly:[],projectRanking:{recent7d:[],recent30d:[]},paceHistory:{}};
+export const noHistory:HistoryView={daily:[],hourly:[],projectRanking:{recent7d:[],recent30d:[]},paceHistory:{},modelRanking:{recent7d:{top:[]},recent30d:{top:[]}}};
 
 export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<string,string>,now:number,locale:string):HistoryView {
  const h=data?.history;if(!h||h.coverage!=='local-history')return noHistory;
@@ -48,7 +50,8 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
   const accountId=ids.get(group.subscriptionRef),kind=kinds[group.kind];if(!accountId||!kind)continue;
   (paceHistory[accountId]??={})[kind]=group.cycles.map(c=>({start:c.startedAt,end:c.resetsAt,points:c.points,hadDrop:c.hadDrop,spent:c.spent.map(s=>({model:s.model??'',effort:s.effort,fast:s.fast,points:s.points}))}));
  }
- return {daily,hourly,projectRanking:{recent7d:projects(h.projects.recent7d),recent30d:projects(h.projects.recent30d)},paceHistory};
+ const models=(w:{top:ReadonlyArray<{name:string;observedOutputTokens:number}>})=>({top:w.top.map(e=>({name:e.name,tokens:e.observedOutputTokens}))});
+ return {daily,hourly,projectRanking:{recent7d:projects(h.projects.recent7d),recent30d:projects(h.projects.recent30d)},paceHistory,modelRanking:{recent7d:models(h.models.recent7d),recent30d:models(h.models.recent30d)}};
 }
 
 /** The 7|30 usage block for one subscription: several linked tools add up; an unknown kind stays unknown. */

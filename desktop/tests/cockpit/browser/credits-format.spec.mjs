@@ -12,7 +12,7 @@ for(const locale of ['en','zh-CN'])test(`credits use rounded grouped numbers in 
  expect(await receive(send('display',{data}))).toBe(true);
  const reserve=()=>page.locator('.eng-cols .ec').first().locator('.qrv-p');
  await expect(reserve()).toHaveText('19,614');
- await page.getByRole('button',{name:locale==='en'?'Subscription':'订阅',exact:true}).click();
+ await page.getByRole('button',{name:locale==='en'?'Plans':'订阅',exact:true}).click();
  await expect(page.locator('.sa-list .sa').first().locator('.sa-r i').last()).toHaveText('19,614');
  account.credits.balance=0.25;expect(await receive(send('display',{data}))).toBe(true);
  await expect(reserve()).toHaveText('<1');await expect(page.locator('.sa-list .sa').first().locator('.sa-r i').last()).toHaveText('<1');

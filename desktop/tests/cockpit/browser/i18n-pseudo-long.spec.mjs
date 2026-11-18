@@ -24,7 +24,7 @@ const clipped=page=>page.locator('#cockpit').evaluate(root=>{
 // Gaps the pseudo-long check found in the first run (v1.1, SET-9-40 owns the layout work): the page-key labels and the
 // record strip's status word are sized for today's two languages. The test fails on any other clipped label, and also when
 // one of these stops clipping, so the list can only shrink.
-const known=['section.ck-deck:4>div.dk-mfd:1>div.mfd-pk:0>button.pk:1>span:0','section.ck-deck:4>div.dk-mfd:1>div.mfd-pk:0>button.pk:3>span:0','section.ck-tape:5>div.t-lines:0>button.tl:2>span.t-time:6'];
+const known=['section.ck-deck:4>div.dk-mfd:1>div.mfd-pk:0>button.pk:3>span:0','section.ck-tape:5>div.t-lines:0>button.tl:2>span.t-time:6'];
 for(const tier of ['tall','compact'])
 test(`pseudo-long English keeps key labels inside their boxes (${tier})`,async({page})=>{
  const found={};

@@ -46,7 +46,7 @@ test('D38 the engine cell and the Subscription page name the run-out',async({pag
  await open(page,fixture().data);
  await expect(page.locator('.qcell').filter({hasText:'out ~40m'}).first()).toBeVisible();
  await page.keyboard.press('1');
- await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.getByRole('button',{name:'Plans',exact:true}).click();
  await expect(page.locator('.sp-w em.amber').first()).toHaveText('out ~40m');
 });
 

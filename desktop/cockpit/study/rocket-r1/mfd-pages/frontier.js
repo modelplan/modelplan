@@ -34,7 +34,7 @@ function nameLabels(items, width, taken) {
   }
   return labels.join('');
 }
-export function frontierSvg(models, {w: width, h: height, current = {}, axis = {}, aria = '', selected = null} = {}) {
+export function frontierSvg(models, {w: width, h: height, current = {}, axis = {}, aria = '', selected = null, named = null} = {}) {
   const all = models.flatMap(m => plotted(m).map(row => ({m, row})));
   if (!all.length) return '';
   const left = 26, right = 56, top = 10, bottom = 14, log = Math.log10;
@@ -55,7 +55,7 @@ export function frontierSvg(models, {w: width, h: height, current = {}, axis = {
     return `<path class="fc-star ${leaders.has(m.id) ? '' : 'dim'}" d="${starPath(X(star[2]), Y(star[1]), 4)}"/>${dot ? `<circle class="fc-cur" cx="${X(dot[2]).toFixed(1)}" cy="${Y(dot[1]).toFixed(1)}" r="3"/>` : ''}`;
   }).join('');
   const taken = models.flatMap(m => [starRow(m), seen(m)].filter(Boolean)).map(row => ({x0: X(row[2]) - 4, x1: X(row[2]) + 4, y0: Y(row[1]) - 4, y1: Y(row[1]) + 4}));
-  const names = nameLabels(models.flatMap(m => { const star = starRow(m);return star ? [{text: m.short, x: X(star[2]) + 6, y: Y(star[1]) + 4, dim: !leaders.has(m.id)}] : []; }), width, taken);
+  const names = nameLabels(models.flatMap(m => { const star = starRow(m);return star && (!named || named.has(m.id)) ? [{text: m.short, x: X(star[2]) + 6, y: Y(star[1]) + 4, dim: !leaders.has(m.id)}] : []; }), width, taken);
   const points = all.map(({m, row}) => {
     const roles = [isCurrent(m, row) && t('rev49.current'), m.rec === row[0] && t('rev49.recommended')].filter(Boolean).join(' · ') || t('rev49.published');
     const label = t('rev49.point', {m: m.name, e: row[0], a: row[1], c: row[2], s: roles});
