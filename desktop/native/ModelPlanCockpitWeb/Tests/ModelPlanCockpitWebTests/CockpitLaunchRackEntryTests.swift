@@ -100,9 +100,12 @@ import XCTest
     XCTAssertEqual(failures, [])
   }
 
-  /// Owner 11-18: a shutter toggle while attached moves the rack's mask line with the slab (the window's own frame
-  /// animation), not in one step: sampled every 4 ms, no sample moves the visible rack by more than a quarter of the
-  /// whole change, the line passes through intermediate values, and it ends at the closed top edge.
+  /// Owner 11-18: a shutter toggle while attached moves the rack's mask line with the slab, not in one step. Observed
+  /// on the window's own resize notifications (the shutter's frame animation), with monotonic times, the actual window
+  /// height and the actual mask position at each one; no assumption about how often the main queue gets to run (CI
+  /// coalesced 4 ms sleeps into steps of several points). The line must be the function of the window height at every
+  /// observation (so it never moves independently of the slab), the height must pass through in-between values, and
+  /// the line must end at the closed top edge.
   func testShutterToggleWhileAttachedMovesTheRackMaskLineSmoothly() async throws {
     let fixture = try make()
     defer { fixture.page.discard() }
@@ -115,20 +118,32 @@ import XCTest
       guard let mask = fixture.page.verificationRackMask, let panel = fixture.page.verificationRack.panel else { return nil }
       return window.frame.maxY - (panel.maxY - mask.minY)
     }
-    var samples: [CGFloat] = []
+    struct Observation { let time: TimeInterval, height: CGFloat, line: CGFloat }
+    var seen: [Observation] = []
+    // Registered after the controller's own resize observer, so the mask is refreshed when this runs.
+    let token = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { _ in
+      MainActor.assumeIsolated {
+        if let value = line() { seen.append(.init(time: ProcessInfo.processInfo.systemUptime, height: window.frame.height, line: value)) }
+      }
+    }
+    defer { NotificationCenter.default.removeObserver(token) }
+    let openHeight = window.frame.height
     fixture.page.toggleShutter()
-    for _ in 0..<100 {
-      if let value = line() { samples.append(value) }
-      try await wait(4)
+    try await wait(800)
+    let closedLayout = try XCTUnwrap(fixture.page.verificationLayout)
+    XCTAssertGreaterThanOrEqual(seen.count, 2, "the shutter's frame animation reported its progress")
+    for (previous, next) in zip(seen, seen.dropFirst()) {
+      XCTAssertGreaterThanOrEqual(next.time, previous.time, "monotonic observation times")
+      XCTAssertLessThanOrEqual(next.height, previous.height + 0.001, "the slab only moves one way")
     }
-    XCTAssertGreaterThan(samples.count, 20)
-    var previous = total
-    for value in samples {
-      XCTAssertLessThanOrEqual(abs(value - previous), total / 4 + 0.5, "no single-step jump of the visible rack")
-      previous = value
+    for item in seen {
+      XCTAssertEqual(item.line, openLayout.rackMaskDrop(windowHeight: item.height), accuracy: 0.5,
+                     "the mask line is the slab's own position at every observation, never an independent step")
     }
-    XCTAssertTrue(samples.contains { $0 > 0.5 && $0 < total - 0.5 }, "the line passes through intermediate values")
-    XCTAssertEqual(try XCTUnwrap(samples.last), 0, accuracy: 0.5, "closed: the line ends at the slab's top edge")
+    XCTAssertTrue(seen.contains { $0.height < openHeight - 0.5 && $0.height > closedLayout.frame.height + 0.5 },
+                  "the window passes through in-between heights")
+    XCTAssertTrue(seen.contains { $0.line > 0.1 && $0.line < total - 0.1 }, "and so does the line")
+    XCTAssertEqual(try XCTUnwrap(line()), 0, accuracy: 0.5, "closed: the line ends at the slab's top edge")
     XCTAssertEqual(failures, [])
   }
 
