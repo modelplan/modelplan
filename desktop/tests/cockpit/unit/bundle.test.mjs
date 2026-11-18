@@ -26,7 +26,8 @@ test('both editions have reproducible bounded manifests; community excludes rese
       const css=readFileSync(root+name,'utf8');
       const cursor='#cockpit[data-active="true"][data-shell="open"] .ck-tape .t-cur{animation:cockpit-running-cursor 1.06s steps(1,end) infinite!important}';
       // Owner D39/D-H: the porthole flicker is the one other infinite animation, gated like the cursor and on Reduce Motion.
-      const flicker='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker{animation:cockpit-porthole-flicker .43s ease-in-out 0s infinite alternate!important}';
+      // V1-FINAL §16 / MOT-2.3-05: the porthole flames step through five levels per sweep instead of easing every frame.
+      const flicker='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker{animation:cockpit-porthole-flicker .43s steps(5,jump-none) 0s infinite alternate!important}';
       // CKP-ENG-19 / MOT-2.3-05 (D294): the working light's slow breathing and the landing burn's flutter, gated the same way.
       const sel='html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-base .bz.work .bz-sheet';
       const breathe='@media (prefers-reduced-motion:no-preference){\n'+sel+'::before,'+sel+'::after{animation:cockpit-light-breathe 2.6s ease-in-out var(--fo,0s) infinite alternate!important}\n}';
