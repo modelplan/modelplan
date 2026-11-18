@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publicationFaders,scopedFaders,moreFaderModels} from '../../../cockpit/.tmp/compiled/src/publication-faders.js';
+import {publicationFaders,scopedFaders,moreFaderModels,historyUsage} from '../../../cockpit/.tmp/compiled/src/publication-faders.js';
 
 test('maps published model verdicts without inventing unknown readings',()=>{
  const input={contractVersion:1,models:[{id:'example',name:'Example',recommended:'medium',efforts:[
@@ -144,4 +144,11 @@ test('G3-133 a model used only in history stays in the own-plans set and in the 
  assert.deepEqual(moreFaderModels(published,[],[],subs,new Set(['g'])).map(m=>m.id),['g','a']);
  const {faders}=publicationFaders(publication,[],published.slice(1),subs,{now:1,ownPlansOnly:true,usage:new Map([['g',{d7:1,d30:1}]])});
  assert.deepEqual(faders.map(f=>f.id),['g','a']);
+});
+
+test('macrevd-1039-1 historyUsage sums rows that map to one canonical model',()=>{
+ const top=(name,n)=>({name,observedOutputTokens:n});
+ const usage=historyUsage({models:{recent7d:{top:[top('sol',300),top('sol',200),top('terra',400)]},recent30d:{top:[top('sol',10),top('sol',5)]}}});
+ assert.deepEqual(usage.get('sol'),{d7:500,d30:15});
+ assert.deepEqual(usage.get('terra'),{d7:400,d30:0});
 });

@@ -42,7 +42,7 @@ export function historyUsage(history:{readonly models?:{readonly recent7d?:{read
  const out=new Map<string,{d7:number;d30:number}>();
  for(const [key,list] of [['d7',history?.models?.recent7d?.top],['d30',history?.models?.recent30d?.top]] as const)for(const e of list??[]){
   if(typeof e.name!=='string'||!(e.observedOutputTokens>0))continue;
-  const row=out.get(e.name)??{d7:0,d30:0};row[key]=e.observedOutputTokens;out.set(e.name,row);
+  const row=out.get(e.name)??{d7:0,d30:0};row[key]+=e.observedOutputTokens;out.set(e.name,row);
  }
  return out;
 }
