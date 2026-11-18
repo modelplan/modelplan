@@ -21,10 +21,15 @@ export function sessionLine(session, now, lang, modelName = id => id) {
   const running = session.state === 'running', started = at(session.startedAt), last = at(session.lastObservedAt);
   // Elapsed runs to now while the session runs; an idle session's ends at its last reading.
   const end = running ? now : last;
-  const elapsed = started !== null && end !== null && end >= started ? dhm(Math.floor((end - started) / 60000)) : '--';
-  const tokens = count(session.observedOutputTokens) ? tok(session.observedOutputTokens) : '--';
+  // CKP-STRIP-16: an unknown segment is left out (null), never written as "--" and never as zero.
+  const elapsed = started !== null && end !== null && end >= started ? dhm(Math.floor((end - started) / 60000)) : null;
+  const tokens = count(session.observedTotalTokens) ? tok(session.observedTotalTokens) : null;
   const rate = running && count(session.rate) ? session.rate : null;
-  const ago = running ? null : last === null ? '--' : relativeMoment(Math.min(last, now), {now, lang});
-  const unknownModel = session.model === UNKNOWN_MODEL;
-  return {tool: toolName(session.source), unknownModel, model: unknownModel ? '' : modelName(session.model), effort: effortName(session.effort), elapsed, tokens, running, rate, ago};
+  const ago = running || last === null ? null : relativeMoment(Math.min(last, now), {now, lang});
+  // G3-134: a model outside the publication whose raw name was readable shows that prettified name and a dim "not
+  // listed" badge; only a name the producer could not read at all is the dim "unknown model".
+  const outside = session.model === UNKNOWN_MODEL;
+  const display = outside && typeof session.modelDisplay === 'string' && session.modelDisplay !== '' ? session.modelDisplay : null;
+  const unlisted = display !== null, unknownModel = outside && !unlisted;
+  return {tool: toolName(session.source), unknownModel, unlisted, model: unlisted ? display : unknownModel ? '' : modelName(session.model), effort: effortName(session.effort), elapsed, tokens, running, rate, ago};
 }

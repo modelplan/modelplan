@@ -1272,7 +1272,15 @@
           "nullPolicy": "forbidden"
         },
         {
-          "field": "observedOutputTokens",
+          "field": "observedTotalTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "modelDisplay",
           "omission": true,
           "null": false,
           "wrongType": false,

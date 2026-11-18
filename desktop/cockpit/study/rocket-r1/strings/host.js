@@ -30,6 +30,8 @@ register('host', {
   projectNone: ['line', '无项目', 'No project'],
   // D277 session strip (CKP-STRIP-16/17): a model the producer could not name, and the elapsed / tokens cells' spoken labels.
   unknownModel: ['line', '未知模型', 'Unknown model'],
+  unlistedModel: ['lcd', '未收录', 'Not listed'],
+  noSessions: ['line', '现在没有会话在跑', 'No sessions running now'],
   sessionElapsed: ['aria', '已运行 {d}', 'Elapsed {d}'],
   sessionTokens: ['aria', '{n} token', '{n} tokens'],
   workingNow: ['lcd', '正在用', 'working now'],
@@ -43,8 +45,7 @@ register('host', {
   pageN: ['aria', '第 {n} 页', 'Page {n}'],
   shortcutKey: ['aria', '快捷键 {digit}', 'Shortcut key {digit}'],
   projectN: ['lcd', '项目 {n}', 'Project {n}'],
-  moreRunning: ['line', '另有 {n} 个会话运行中', '{n} more running'],
-  moreSessions: ['line', '另有 {n} 个会话', '{n} more sessions'],
+  moreSessions: ['line', '另有 {n} 个会话 ▸', '{n} more sessions ▸'],
   pageOverview: ['aria', '总览', 'Overview'],
   pageSubscription: ['aria', '订阅', 'Subscription'],
   pageEffort: ['aria', '模型', 'Models'],

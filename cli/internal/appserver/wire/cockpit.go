@@ -241,9 +241,13 @@ type CockpitSession struct {
 	// StartedAt is the start of the session's first recorded turn; the strip's elapsed time counts from it
 	// (CKP-STRIP-16, owner D277). Absent when the producer has no start for the session.
 	StartedAt *time.Time `json:"startedAt,omitempty" null:"forbidden"`
-	// ObservedOutputTokens sums the session's observed output tokens over its recorded days (CKP-STRIP-16). Absent
-	// while the session has no recorded turn yet; zero is a recorded session that has produced no counted output.
-	ObservedOutputTokens *int64 `json:"observedOutputTokens,omitempty" null:"forbidden"`
+	// ObservedTotalTokens is the session's total tokens over its recorded days: input, cache reads, cache writes and
+	// output, each counted once (CKP-STRIP-16, TOK-50). Absent while the session has no recorded turn or any part
+	// of a day is unknown; output alone is never sent in its place.
+	ObservedTotalTokens *int64 `json:"observedTotalTokens,omitempty" null:"forbidden" schema:"minimum=0"`
+	// ModelDisplay is the readable name of a model the publication does not list (G3-134), set only while Model is
+	// "unknown" and the raw ID was readable; the strip shows it with a dim "not listed" badge.
+	ModelDisplay *string `json:"modelDisplay,omitempty" null:"forbidden" schema:"minLength=1,maxLength=48"`
 }
 type CockpitAlert struct {
 	Source           string  `json:"source"`

@@ -16,6 +16,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/modeldisplay"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
@@ -270,7 +271,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		}
 		// CKP-STRIP-16 (owner D277): the strip shows how long the session has run and what it has produced.
 		started, tokens := cockpitSessionExtent(session, perf.Ledger.Sessions)
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, ProjectState: state, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast, StartedAt: started, ObservedOutputTokens: tokens})
+		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, ProjectState: state, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast, StartedAt: started, ObservedTotalTokens: tokens, ModelDisplay: cockpitUnlistedModelDisplay(model, session.Model)})
 	}
 	if appserver.CockpitSessionsEnabled(ctx) {
 		result.RecentSessions = cockpitRecentSessions(perf.Ledger.Sessions, allowed, sourceScope, byRef, labels, view.PublicModels, now)
@@ -285,9 +286,21 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	return result, ctx.Err()
 }
 
-// cockpitSessionExtent returns a live session's start and its observed output tokens over the recorded days of
-// the same session. A start that is missing or later than the last reading is withheld; tokens are absent until the
-// session has a recorded turn, and a sum that would overflow is withheld rather than wrapped.
+// cockpitUnlistedModelDisplay is the one place a raw model ID the publication does not list becomes a readable name
+// (G3-134). It applies only to a model that read as "unknown" and only when the raw ID is a readable model name.
+func cockpitUnlistedModelDisplay(id, raw string) *string {
+	if id != "unknown" {
+		return nil
+	}
+	if name, ok := modeldisplay.Display(raw); ok {
+		return &name
+	}
+	return nil
+}
+
+// cockpitSessionExtent returns a live session's start and its total tokens over the recorded days of the same
+// session. A start that is missing or later than the last reading is withheld; tokens are absent until the session
+// has a recorded turn with every part known, and a sum that would overflow is withheld rather than wrapped.
 func cockpitSessionExtent(session speed.LiveSession, recorded []speed.PerfSession) (*time.Time, *int64) {
 	var started *time.Time
 	if !session.StartedAt.IsZero() && !session.StartedAt.After(session.LastAt) {
@@ -298,13 +311,17 @@ func cockpitSessionExtent(session speed.LiveSession, recorded []speed.PerfSessio
 		if saved.Ref != session.Ref || saved.Source != session.Source {
 			continue
 		}
+		if len(saved.Days) == 0 {
+			return started, nil
+		}
 		const maxInt64 = int64(^uint64(0) >> 1)
 		var sum int64
 		for _, day := range saved.Days {
-			if day.ObservedOutputTokens < 0 || day.ObservedOutputTokens > maxInt64-sum {
+			total, ok := day.CompleteTotal()
+			if !ok || total > maxInt64-sum {
 				return started, nil
 			}
-			sum += day.ObservedOutputTokens
+			sum += total
 		}
 		return started, &sum
 	}

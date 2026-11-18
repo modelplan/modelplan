@@ -5,7 +5,7 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 import {usePseudoLong} from '../pseudo-long.mjs';
 
-async function open(page,{pseudo}) {
+async function open(page,{pseudo,data=visualFixture().data}) {
  if(pseudo)await usePseudoLong(page);
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
@@ -13,7 +13,7 @@ async function open(page,{pseudo}) {
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
- expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);
  return {send,receive};
 }
 // Every visible leaf of the cockpit whose text is wider or taller than its own box (clipped or ellipsised).
@@ -43,4 +43,20 @@ test(`pseudo-long English keeps key labels inside their boxes (${tier})`,async({
  const fresh=found.pseudo.filter(x=>!base.has(x.view+'|'+x.path));
  expect(fresh.filter(x=>!known.includes(x.path)).map(x=>[x.view,x.path,x.text]),'a key label no longer fits the pseudo-long locale').toEqual([]);
  expect(known.filter(path=>!fresh.some(x=>x.path===path)),'a known gap is fixed: remove it from the list').toEqual([]);
+});
+
+// WP-04: the strip's own new words (the unlisted badge, the overflow button and the empty line) fit in the pseudo-long
+// locale. The overflow and empty lines run the full strip width; the badge shares the model cell, so it must not clip.
+test('pseudo-long English keeps the strip badge, overflow and empty lines inside their boxes',async({page})=>{
+ const stripClipped=async(data)=>{
+  const context=await page.context().browser().newContext({viewport:{width:636,height:890},reducedMotion:'reduce'}),p=await context.newPage();
+  await open(p,{pseudo:true,data});
+  const found=await p.locator('.ck-tape').evaluate(root=>[...root.querySelectorAll('.t-badge,.t-overflow,.t-none')].filter(e=>e.scrollWidth>e.clientWidth+1).map(e=>e.className+':'+e.textContent.trim()));
+  await context.close();return found;
+ };
+ const {data}=visualFixture(),base=data.details.sessions[0];
+ data.details.sessions=[{...base,model:'unknown',modelDisplay:'Sol 6.2'},...Array.from({length:6},(_,i)=>({...base,sessionRef:'00000000000000a'+i,state:'idle',lastObservedAt:'2026-11-04T11:50:00Z'}))];
+ expect(await stripClipped(data),'badge or overflow button clips').toEqual([]);
+ const none=visualFixture().data;none.details.sessions=[];
+ expect(await stripClipped(none),'the empty line clips').toEqual([]);
 });

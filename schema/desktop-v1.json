@@ -856,6 +856,16 @@
     "localusage-Report": {
       "additionalProperties": true,
       "properties": {
+        "accounting": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/tokenacct-Windows"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "coverage": {
           "$ref": "#/$defs/localusage-Coverage"
         },
@@ -1181,6 +1191,9 @@
         "pool": {
           "type": "string"
         },
+        "region": {
+          "type": "string"
+        },
         "sharedPool": {
           "anyOf": [
             {
@@ -1374,6 +1387,9 @@
           "type": "string"
         },
         "serviceTier": {
+          "type": "string"
+        },
+        "sessionKey": {
           "type": "string"
         },
         "version": {
@@ -1574,6 +1590,15 @@
             }
           ]
         },
+        "modelIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "observedAt": {
           "format": "date-time",
           "type": "string"
@@ -1654,6 +1679,12 @@
               "type": "null"
             }
           ]
+        },
+        "scopeKnown": {
+          "type": "boolean"
+        },
+        "stale": {
+          "type": "boolean"
         },
         "unknownReason": {
           "type": "string"
@@ -2221,6 +2252,169 @@
       ],
       "type": "object"
     },
+    "snapshot-PerfHistory": {
+      "additionalProperties": true,
+      "properties": {
+        "coverage": {
+          "type": "string"
+        },
+        "models": {
+          "$ref": "#/$defs/speed-EntityRanking"
+        },
+        "recordingSince": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subscriptions": {
+          "items": {
+            "$ref": "#/$defs/snapshot-PerfSubscriptionHistory"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "tools": {
+          "$ref": "#/$defs/speed-EntityRanking"
+        }
+      },
+      "required": [
+        "coverage",
+        "recordingSince",
+        "subscriptions",
+        "models",
+        "tools"
+      ],
+      "type": "object"
+    },
+    "snapshot-PerfSourceHistory": {
+      "additionalProperties": true,
+      "properties": {
+        "bindingBasis": {
+          "type": "string"
+        },
+        "recent30d": {
+          "$ref": "#/$defs/snapshot-PerfWindowSums"
+        },
+        "recent7d": {
+          "$ref": "#/$defs/snapshot-PerfWindowSums"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "bindingBasis",
+        "recent7d",
+        "recent30d"
+      ],
+      "type": "object"
+    },
+    "snapshot-PerfSubscriptionHistory": {
+      "additionalProperties": true,
+      "properties": {
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/snapshot-PerfSourceHistory"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "subscriptionRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscriptionRef",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "snapshot-PerfWindowSums": {
+      "additionalProperties": true,
+      "properties": {
+        "cacheHitRatio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cacheReadTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cacheWriteTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "eligibleRequests": {
+          "type": "integer"
+        },
+        "generationTps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedRequests": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "cacheHitRatio",
+        "generationTps",
+        "observedRequests",
+        "eligibleRequests"
+      ],
+      "type": "object"
+    },
     "snapshot-Publication": {
       "additionalProperties": true,
       "properties": {
@@ -2539,6 +2733,73 @@
       ],
       "type": "object"
     },
+    "speed-EntityRanking": {
+      "additionalProperties": true,
+      "properties": {
+        "attribution": {
+          "type": "string"
+        },
+        "measure": {
+          "type": "string"
+        },
+        "recent30d": {
+          "$ref": "#/$defs/speed-EntityWindow"
+        },
+        "recent7d": {
+          "$ref": "#/$defs/speed-EntityWindow"
+        }
+      },
+      "required": [
+        "measure",
+        "attribution",
+        "recent7d",
+        "recent30d"
+      ],
+      "type": "object"
+    },
+    "speed-EntityWindow": {
+      "additionalProperties": true,
+      "properties": {
+        "entities": {
+          "type": "integer"
+        },
+        "top": {
+          "items": {
+            "$ref": "#/$defs/speed-RankedEntity"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "totalObservedOutputTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entities",
+        "totalObservedOutputTokens",
+        "top"
+      ],
+      "type": "object"
+    },
+    "speed-GrantEpoch": {
+      "additionalProperties": true,
+      "properties": {
+        "revokedGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "storeEpoch",
+        "revokedGeneration"
+      ],
+      "type": "object"
+    },
     "speed-HistOut": {
       "additionalProperties": true,
       "properties": {
@@ -2588,6 +2849,16 @@
             }
           ]
         },
+        "grantEpoch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/speed-GrantEpoch"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "hour": {
           "type": "string"
         },
@@ -2629,6 +2900,16 @@
     "speed-LiveSession": {
       "additionalProperties": true,
       "properties": {
+        "activity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/speed-TurnActivity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "effort": {
           "type": "string"
         },
@@ -2640,6 +2921,9 @@
           "type": "string"
         },
         "model": {
+          "type": "string"
+        },
+        "projectLabel": {
           "type": "string"
         },
         "projectRef": {
@@ -3005,6 +3289,30 @@
         "totalObservedOutputTokens",
         "unattributedOutputTokens",
         "top"
+      ],
+      "type": "object"
+    },
+    "speed-RankedEntity": {
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "observedRequests": {
+          "type": "integer"
+        },
+        "share": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "observedRequests",
+        "observedOutputTokens",
+        "share"
       ],
       "type": "object"
     },
@@ -3419,6 +3727,88 @@
         "sums"
       ],
       "type": "object"
+    },
+    "speed-TurnActivity": {
+      "additionalProperties": true,
+      "properties": {
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "recordAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "recordAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "tokenacct-Buckets": {
+      "additionalProperties": true,
+      "properties": {
+        "cacheReadTokens": {
+          "type": "integer"
+        },
+        "cacheWriteTokens": {
+          "type": "integer"
+        },
+        "inputTokens": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "type": "integer"
+        },
+        "reasoningTokens": {
+          "type": "integer"
+        },
+        "totalTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "outputTokens",
+        "reasoningTokens",
+        "totalTokens"
+      ],
+      "type": "object"
+    },
+    "tokenacct-Windows": {
+      "additionalProperties": true,
+      "properties": {
+        "entries": {
+          "type": "integer"
+        },
+        "last30Days": {
+          "$ref": "#/$defs/tokenacct-Buckets"
+        },
+        "last7Days": {
+          "$ref": "#/$defs/tokenacct-Buckets"
+        },
+        "reference": {
+          "type": "string"
+        },
+        "today": {
+          "$ref": "#/$defs/tokenacct-Buckets"
+        }
+      },
+      "required": [
+        "reference",
+        "today",
+        "last7Days",
+        "last30Days",
+        "entries"
+      ],
+      "type": "object"
     }
   },
   "$id": "https://modelplan.ai/schema/desktop-v1.json",
@@ -3573,6 +3963,16 @@
     },
     "paceHistory": {
       "$ref": "#/$defs/history-PaceHistory"
+    },
+    "perfHistory": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/snapshot-PerfHistory"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "perfStats": {
       "items": {

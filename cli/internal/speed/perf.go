@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -89,6 +90,9 @@ type SessionDay struct {
 	Speed                string `json:"speed,omitempty"`
 	ObservedRequests     int    `json:"observedRequests"`
 	ObservedOutputTokens int64  `json:"observedOutputTokens"`
+	// Kinds are the day's input, cache-read and cache-write sums (CKP-STRIP-16): each is unknown, never zero, unless
+	// every recorded request supplied it. Absent for days recorded before they were kept, which read as unknown.
+	Kinds *TokenKinds `json:"tokenKinds,omitempty"`
 }
 
 // PerfRow is one local day of one configuration, as one parser read it.
@@ -273,6 +277,10 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 			s.Days = append(s.Days, SessionDay{Day: d, Model: q.cfg.model, EffortStatus: status, Effort: q.cfg.effort, Speed: q.cfg.speed})
 			x = &s.Days[len(s.Days)-1]
 		}
+		if x.Kinds == nil {
+			x.Kinds = &TokenKinds{}
+		}
+		x.Kinds.add(q.TokenKinds, x.ObservedRequests == 0)
 		x.ObservedRequests++
 		x.ObservedOutputTokens += q.out
 		if e := q.end.UTC().Truncate(time.Minute); e.After(s.LastAt) {
@@ -450,3 +458,22 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 
 // projectRule is the current project attribution rule (see PerfSession.ProjectRule).
 const projectRule = 1
+
+// CompleteTotal is the day's total: input, cache reads, cache writes and output, each counted once (the ccusage
+// definition; reasoning is part of output). It is unknown unless every part is, and never falls back to output alone.
+func (d SessionDay) CompleteTotal() (int64, bool) {
+	total := d.ObservedOutputTokens
+	if total < 0 {
+		return 0, false
+	}
+	if d.Kinds == nil {
+		return 0, false
+	}
+	for _, part := range []*int64{d.Kinds.InputTokens, d.Kinds.CacheReadTokens, d.Kinds.CacheWriteTokens} {
+		if part == nil || *part < 0 || *part > math.MaxInt64-total {
+			return 0, false
+		}
+		total += *part
+	}
+	return total, true
+}
