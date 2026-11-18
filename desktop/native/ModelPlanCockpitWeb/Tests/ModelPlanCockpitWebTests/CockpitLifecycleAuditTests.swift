@@ -163,25 +163,31 @@ import ModelPlanWire
     let home = try XCTUnwrap(CockpitShellLayout.fit(usable: short.visibleFrame, anchor: icon, shutterClosed: false, screenWidth: short.frame.width))
     let away = try XCTUnwrap(CockpitShellLayout.fit(usable: tall.visibleFrame, anchor: CockpitShellLayout.hiddenIconAnchor(usable: tall.visibleFrame),
                                                    shutterClosed: false, screenWidth: tall.frame.width))
-    XCTAssertNotEqual(home.frame.size, away.frame.size, "the two displays need different layouts")
+    XCTAssertNotEqual(home.frame.size, away.frame.size, "each display alone would get a different layout")
     let from = CGPoint(x: window.frame.minX + 60, y: window.frame.maxY - 30)
     page.titleDrag(.began, point: from)
     page.titleDrag(.moved, point: CGPoint(x: from.x + 40, y: from.y))
     page.titleDrag(.moved, point: CGPoint(x: 2800, y: 900))
     page.titleDrag(.ended, point: CGPoint(x: 2800, y: 900))
     XCTAssertFalse(page.isAttached)
-    XCTAssertEqual(page.verificationLayout?.frame.size, away.frame.size, "dropped on the tall display, laid out for it")
+    // G3-132 (owner, 11-18): one size on every display, the smallest's; the drop on the tall display keeps it.
+    XCTAssertEqual(page.verificationLayout?.frame.size, home.frame.size, "dropped on the tall display, still the short display's size")
+    XCTAssertEqual(page.verificationLayout?.profile, home.profile)
+    XCTAssertTrue(tall.visibleFrame.contains(window.frame), "inside the tall display")
     let settled = expectation(description: "The rack flight completed and the cockpit latched")
     page.verificationLayoutAnimationCompleted = { settled.fulfill() }
     page.setAttached(true) // the put-back key starts the rack flight
     XCTAssertEqual(page.verificationLayout?.profile, home.profile, "the icon's display's profile, committed at the press")
-    XCTAssertEqual(page.verificationLayout?.frame, home.frame)
+    // G3-132: the drop kept the common size, so the press has no new layout to commit; the attached place (the layout's
+    // origin) comes with the latch, below (macrevb-1038-4).
+    XCTAssertEqual(page.verificationLayout?.frame.size, home.frame.size)
     XCTAssertEqual(page.verificationWebView?.pageZoom ?? 0, home.scale, accuracy: 0.0001, "and its zoom")
     XCTAssertEqual(page.verificationDragRegion?.frame, home.scaledTitleDragFrame, "and its drag strip")
     // Wait for the actual flight and rack latch; a fixed delay can observe an intermediate frame on a busy Mac.
     await fulfillment(of: [settled], timeout: 5)
     XCTAssertTrue(page.isAttached, "caught by the rack and latched")
     XCTAssertEqual(window.frame, home.frame, "the window settles under the icon")
+    XCTAssertEqual(page.verificationLayout?.frame, home.frame, "and the layout is the attached one")
     XCTAssertEqual(window.contentView?.bounds.size, home.frame.size, "with the page canvas of that layout")
     XCTAssertEqual(failures, [])
   }
@@ -211,6 +217,8 @@ import ModelPlanWire
     enum Resign { case immediate, later }
     var active = true, activations = 0, regular = false, settingsOpen = false, commandHeld = false
     var resign = Resign.later
+    /// G3-129: when set, the flip to regular (a detach) deactivates the app too, at once or a moment later.
+    var regularFlipResigns: Resign?
     /// The controller's injected clock (dismissal holds and the recovery window run on it); the test advances it.
     var now: UInt64 = 1_000
     var sent: [(raw: String, complete: (CockpitDeliveryResult) -> Void)] = [], delivered = 0
@@ -247,8 +255,8 @@ import ModelPlanWire
       guard wantsRegular != app.regular else { return }
       app.regular = wantsRegular
       page.suppressDismissal(.policyChange, forMilliseconds: 250)
-      if wantsRegular { if userInitiated { app.active = true }; return }
-      switch app.resign {
+      if wantsRegular, app.regularFlipResigns == nil { if userInitiated { app.active = true }; return }
+      switch wantsRegular ? app.regularFlipResigns ?? app.resign : app.resign {
       case .immediate: app.active = false; NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApplication.shared)
       case .later: Task { @MainActor in app.resignActive() }
       }
@@ -279,6 +287,45 @@ import ModelPlanWire
   }
   private func settle(_ app: PutBackHost, milliseconds: Int = 500) async throws {
     for _ in 0..<(milliseconds / 20) { try await Task.sleep(for: .milliseconds(20)); app.drain() }
+  }
+
+  /// G3-129 (owner, 11-18): a detached cockpit is a normal window, but just detached it comes to the front and is key,
+  /// also when the flip to regular deactivates the app (at once, or with a resign a moment later). Before, nothing
+  /// activated the app or ordered the window front after the level dropped to normal, so it sat behind the front app.
+  /// Both entries: a strip drag's drop and the detach key, the latter with another normal window in front.
+  func testAJustDetachedCockpitComesToTheFrontAndIsKey() async throws {
+    for resign in [PutBackHost.Resign.immediate, .later] {
+      let app = PutBackHost(); app.regularFlipResigns = resign
+      let (page, press) = try await detachedByDrag(app)
+      try await settle(app, milliseconds: 300)
+      let window = try XCTUnwrap(page.window)
+      XCTAssertEqual(window.level, .normal, "\(resign): detached, a normal window")
+      XCTAssertTrue(app.active, "\(resign): the drop leaves the app active")
+      XCTAssertEqual(app.activations, 1, "\(resign): one activation answers the flip")
+      XCTAssertEqual(app.lastKey(), true, "\(resign): the page is key")
+
+      // Put back, cover the cockpit's place with another normal window, then the detach key.
+      try press("putBack"); try await settle(app, milliseconds: 300)
+      XCTAssertTrue(page.isAttached)
+      let cover = NSWindow(contentRect: window.frame.insetBy(dx: -40, dy: -40), styleMask: [.titled], backing: .buffered, defer: false)
+      cover.isReleasedWhenClosed = false
+      defer { cover.orderOut(nil) }
+      cover.orderFront(nil)
+      app.active = true; app.activations = 0
+      page.setAttached(false)
+      try await settle(app, milliseconds: 300)
+      XCTAssertFalse(page.isAttached)
+      XCTAssertEqual(window.level, .normal, "\(resign): the detach key gives a normal window too")
+      XCTAssertEqual(app.activations, 1, "\(resign): the detach key's flip is answered once")
+      XCTAssertEqual(app.lastKey(), true, "\(resign): and the page is key")
+      // macrevb-1038-4: `orderedIndex` gave NSNotFound for the cockpit panel on the hosted Mac, so the front-to-back order comes from the window
+      // server's list of this app's on-screen windows.
+      let order = NSWindow.windowNumbers(options: [])?.map(\.intValue) ?? []
+      let mine = try XCTUnwrap(order.firstIndex(of: window.windowNumber), "\(resign): the cockpit is on screen")
+      let theirs = try XCTUnwrap(order.firstIndex(of: cover.windowNumber), "\(resign): the cover is on screen")
+      XCTAssertLessThan(mine, theirs, "\(resign): in front of the other window")
+      XCTAssertNotNil(page.window, "\(resign): nothing closed it")
+    }
   }
 
   /// Walkthrough 11-17 (build b2b50b34, #977 regression): detach, drag the detached window, put it back with the page's

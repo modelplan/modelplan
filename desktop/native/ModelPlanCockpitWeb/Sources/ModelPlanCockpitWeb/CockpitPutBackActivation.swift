@@ -22,6 +22,8 @@ struct CockpitPutBackActivation: Equatable {
   static let windowMilliseconds: UInt64 = 500
   private(set) var armedUntil: UInt64?
   private(set) var userSwitching = false
+  /// G3-129: whether the arm was for a detach (the flip to regular) rather than a put back's latch.
+  private(set) var armedDetached = false
 
   /// A put back starts: switch intent from before it does not count.
   mutating func beginPutBack() { userSwitching = false }
@@ -29,8 +31,10 @@ struct CockpitPutBackActivation: Equatable {
   mutating func userSwitchesAway() { userSwitching = true; armedUntil = nil }
   /// At the latch. `wasActive`: the app was active before the presence change. `leftRegular`: the presence change
   /// moved the app from regular to accessory. `commandHeld`: Command is down now (a Cmd-Tab in progress).
-  mutating func arm(wasActive: Bool, leftRegular: Bool, commandHeld: Bool, now: UInt64) {
+  /// G3-129: a user detach arms the same way (`detached`), with `leftRegular` meaning its flip changed the policy.
+  mutating func arm(wasActive: Bool, leftRegular: Bool, commandHeld: Bool, now: UInt64, detached: Bool = false) {
     armedUntil = wasActive && leftRegular && !commandHeld && !userSwitching ? now &+ Self.windowMilliseconds : nil
+    armedDetached = detached
   }
   /// Whether to activate the app again now (the flip deactivated it). Acting retires the arm: the flip is answered once.
   /// `presentable`: the attached cockpit is still shown and not closing.
