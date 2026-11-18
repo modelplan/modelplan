@@ -307,6 +307,12 @@ func cockpitSessionExtent(session speed.LiveSession, recorded []speed.PerfSessio
 		v := session.StartedAt.UTC()
 		started = &v
 	}
+	// The ledger holds completed turns only (a turn's usage is recorded when it completes). While a turn runs, a
+	// total from it would undercount, so a running session shows no total until the turn is recorded
+	// (macrevb-1024-1).
+	if session.Status == "running" {
+		return started, nil
+	}
 	for _, saved := range recorded {
 		if saved.Ref != session.Ref || saved.Source != session.Source {
 			continue

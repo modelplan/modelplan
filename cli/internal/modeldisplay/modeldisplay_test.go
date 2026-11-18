@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 package modeldisplay
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // G3-134: a model the publication does not list but whose name is readable is shown by a prettified raw name.
 func TestDisplayPrettifiesAnUnlistedName(t *testing.T) {
@@ -36,5 +39,22 @@ func TestDisplayRefusesUnreadableNames(t *testing.T) {
 		if got, ok := Display(raw); ok {
 			t.Errorf("Display(%q) = %q, true; want unreadable", raw, got)
 		}
+	}
+}
+
+// The longest readable raw name still fits the wire field (macrevb-1024-6).
+func TestDisplayNeverExceedsTheWireBound(t *testing.T) {
+	for _, raw := range []string{strings.Repeat("a-", 32), strings.Repeat("ab-1-", 12) + "abcd", strings.Repeat("abcdefgh", 8), "claude-" + strings.Repeat("x", 57), strings.Repeat("1-a-", 16)} {
+		if len(raw) > 64 {
+			t.Fatalf("test input %q is longer than a readable name", raw)
+		}
+		got, ok := Display(raw)
+		if ok && (len(got) > MaxDisplay || got == "" || strings.HasSuffix(got, " ")) {
+			t.Errorf("Display(%q) = %q (%d)", raw, got, len(got))
+		}
+	}
+	got, ok := Display(strings.Repeat("abcdefgh", 8))
+	if !ok || len(got) != MaxDisplay {
+		t.Errorf("the longest single word is cut to the bound: %q %v", got, ok)
 	}
 }

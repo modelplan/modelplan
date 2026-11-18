@@ -22,6 +22,9 @@ var (
 // maxRaw bounds what is read; a longer name is not a model ID.
 const maxRaw = 64
 
+// MaxDisplay is the longest display name returned; the wire field carries the same bound (modelDisplay maxLength).
+const MaxDisplay = 48
+
 // Display returns the readable name of an unlisted raw model ID ("gpt-6.2-sol" reads "Sol 6.2", "claude-opus-5-6"
 // reads "Opus 5.6") and whether the name was readable at all. The vendor lead word (Claude, GPT) is dropped and the
 // version follows the name; other families keep their words in order ("gemini-3-pro" reads "Gemini 3 Pro").
@@ -53,12 +56,20 @@ func Display(raw string) (string, bool) {
 		return "", false
 	}
 	if len(version) == 0 {
-		return strings.Join(words, " "), true
+		return bound(strings.Join(words, " ")), true
 	}
 	v := strings.Join(version, ".")
 	// A vendor lead word or a leading version puts the version after the name; otherwise it stays where it was.
 	if vendor || at == 0 {
 		at = len(words)
 	}
-	return strings.Join(append(append(append([]string{}, words[:at]...), v), words[at:]...), " "), true
+	return bound(strings.Join(append(append(append([]string{}, words[:at]...), v), words[at:]...), " ")), true
+}
+
+// bound cuts a name to MaxDisplay (the name is ASCII by construction) so the wire field is never refused for length.
+func bound(name string) string {
+	if len(name) <= MaxDisplay {
+		return name
+	}
+	return strings.TrimRight(name[:MaxDisplay], " .")
 }
