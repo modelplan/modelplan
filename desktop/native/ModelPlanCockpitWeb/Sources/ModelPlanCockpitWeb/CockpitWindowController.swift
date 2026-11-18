@@ -843,6 +843,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     self.window = panel
     web = view
     let center = NotificationCenter.default
+    // The shutter's frame animation resizes the attached window; the rack's mask line follows that height each step.
+    observers.append(
+      center.addObserver(forName: NSWindow.didResizeNotification, object: panel, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { if let self, self.shutterMoving, self.motion == nil { self.refreshRack() } }
+      })
     for name in [
       NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
       NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
@@ -1626,6 +1631,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           guard let self, self.shutterMoving, self.shutterGeneration == generation else { return }
           self.shutterMoving = false
           if let size = self.layout?.frame.size { self.window?.contentView?.setBoundsSize(size) }
+          if self.motion == nil { self.refreshRack() }
         }
       })
     } else if motion && frame.height < current.height {
@@ -2140,7 +2146,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     var hidden: CGRect?
     if let layout {
       let frame = rackHidesInHome ? layout.frame : window.frame
-      let drop = CockpitShellLayout.shoulderDrop(layout.profile) * layout.scale
+      let drop = layout.rackMaskDrop(windowHeight: frame.height)
       hidden = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: max(0, frame.height - drop))
     }
     // A prewarmed (never shown) page has no rack on screen.
