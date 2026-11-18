@@ -250,6 +250,131 @@ func TestCockpitDetailsProjectsOnlyAdmittedStampedLiveSessions(t *testing.T) {
 	}
 }
 
+// CKP-STRIP-16 (owner D277, 2026-11-16): each strip line carries the session's elapsed time and its tokens. The start is
+// the live record's; tokens sum the recorded days of the same session and stay absent before its first recorded turn.
+func TestCockpitDetailsCarriesSessionStartAndTotalTokens(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("MODELPLAN_READERS", "automatic")
+	t.Setenv("MODELPLAN_HISTORY", "")
+	state, err := consent.EnsureStore(consent.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Minute)
+	epoch := &speed.GrantEpoch{StoreEpoch: state.StoreEpoch, RevokedGeneration: 0}
+	cache := t.TempDir()
+	ledger := speed.PerfLedger{SchemaVersion: 1, Since: now.Add(-3 * time.Hour), Rows: []speed.PerfRow{}, Live: []speed.LiveRecord{
+		{Ref: "1111111111111111", Source: "codex", Model: "synthetic-alias", StartedAt: now.Add(-42 * time.Minute), LastAt: now.Add(-time.Second), GrantEpoch: epoch, Running: true},
+		{Ref: "2222222222222222", Source: "codex", Model: "synthetic-alias", StartedAt: now.Add(-5 * time.Minute), LastAt: now.Add(-2 * time.Second), GrantEpoch: epoch},
+		{Ref: "3333333333333333", Source: "codex", Model: "synthetic-alias", LastAt: now.Add(-3 * time.Second), GrantEpoch: epoch},
+		{Ref: "4444444444444444", Source: "codex", Model: "synthetic-alias", StartedAt: now.Add(-9 * time.Minute), LastAt: now.Add(-4 * time.Second), GrantEpoch: epoch},
+	}, Sessions: []speed.PerfSession{
+		{Ref: "1111111111111111", Source: "codex", GrantEpoch: epoch, Days: []speed.SessionDay{{Kinds: &speed.TokenKinds{InputTokens: ptr64(1000), CacheReadTokens: ptr64(2000), CacheWriteTokens: ptr64(0)}, Day: "2026-11-15", Model: "synthetic-alias", ObservedOutputTokens: 30}, {Kinds: &speed.TokenKinds{InputTokens: ptr64(10), CacheReadTokens: ptr64(20), CacheWriteTokens: ptr64(5)}, Day: "2026-11-16", Model: "synthetic-alias", ObservedOutputTokens: 7}}},
+		{Ref: "3333333333333333", Source: "codex", GrantEpoch: epoch, Days: []speed.SessionDay{{Kinds: &speed.TokenKinds{InputTokens: ptr64(9223372036854775807), CacheReadTokens: ptr64(0), CacheWriteTokens: ptr64(0)}, Day: "2026-11-16", Model: "synthetic-alias", ObservedOutputTokens: 1}}},
+		{Ref: "4444444444444444", Source: "codex", GrantEpoch: epoch, Days: []speed.SessionDay{{Day: "2026-11-16", Model: "synthetic-alias", ObservedOutputTokens: 500}}},
+	}}
+	if err := os.MkdirAll(filepath.Dir(speed.PerfPath(cache)), 0700); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(speed.PerfPath(cache), payload, 0600); err != nil {
+		t.Fatal(err)
+	}
+	view := appserver.View{PublicModels: []digest.Model{{ID: "public-model", HarnessIDs: map[string][]string{"codex": {"synthetic-alias"}}}}}
+	admission := queries.CockpitAdmission{Stamp: appserver.Stamp{Epoch: state.StoreEpoch, Generation: state.Generation}, Scopes: []string{consent.ScopeCodexLocalHistory}}
+	got, err := (sharedCockpit{cache: cache}).cockpitDetails(context.Background(), view, admission, nil)
+	if err != nil || len(got.Sessions) != 4 {
+		t.Fatalf("sessions: %#v, %v", got.Sessions, err)
+	}
+	byRef := map[string]wire.CockpitSession{}
+	for _, s := range got.Sessions {
+		byRef[s.SessionRef] = s
+	}
+	first, second, third, fourth := byRef["1111111111111111"], byRef["2222222222222222"], byRef["3333333333333333"], byRef["4444444444444444"]
+	// CKP-STRIP-16 / TOK-50: the total counts input, cache reads, cache writes and output once, over every recorded day
+	// (3030 + 42 here); output alone (37) is never shown as the total.
+	if first.StartedAt == nil || !first.StartedAt.Equal(now.Add(-42*time.Minute)) || first.ObservedTotalTokens == nil || *first.ObservedTotalTokens != 3072 {
+		t.Fatalf("recorded session extent: %#v", first)
+	}
+	if second.StartedAt == nil || !second.StartedAt.Equal(now.Add(-5*time.Minute)) || second.ObservedTotalTokens != nil {
+		t.Fatalf("a session with no recorded turn has a start and no tokens: %#v", second)
+	}
+	if third.StartedAt != nil || third.ObservedTotalTokens != nil {
+		t.Fatalf("a missing start and an overflowing sum are withheld: %#v", third)
+	}
+	if fourth.ObservedTotalTokens != nil {
+		t.Fatalf("a recorded day without input and cache sums has no total, and output is not substituted: %#v", fourth)
+	}
+	encoded, err := json.Marshal(got.Sessions)
+	if err != nil || strings.Count(string(encoded), `"startedAt"`) != 3 || strings.Count(string(encoded), `"observedTotalTokens"`) != 1 || strings.Contains(string(encoded), `"observedOutputTokens"`) || strings.Contains(string(encoded), `"startedAt":null`) || strings.Contains(string(encoded), `"observedTotalTokens":null`) {
+		t.Fatalf("extent on the wire: %s, %v", encoded, err)
+	}
+}
+
+func ptr64(v int64) *int64 { return &v }
+
+// G3-134: a model the publication does not list but whose ID is readable carries a prettified display name; a
+// listed model and an unreadable one carry none (the strip reads "Unknown model" for the latter).
+func TestCockpitDetailsNamesAnUnlistedModel(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("MODELPLAN_READERS", "automatic")
+	t.Setenv("MODELPLAN_HISTORY", "")
+	state, err := consent.EnsureStore(consent.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Minute)
+	epoch := &speed.GrantEpoch{StoreEpoch: state.StoreEpoch, RevokedGeneration: 0}
+	cache := t.TempDir()
+	live := func(ref, model string) speed.LiveRecord {
+		return speed.LiveRecord{Ref: ref, Source: "codex", Model: model, StartedAt: now.Add(-time.Minute), LastAt: now.Add(-time.Second), GrantEpoch: epoch}
+	}
+	ledger := speed.PerfLedger{SchemaVersion: 1, Since: now.Add(-time.Hour), Rows: []speed.PerfRow{}, Live: []speed.LiveRecord{
+		live("1111111111111111", "gpt-6.2-sol"), live("2222222222222222", "synthetic-alias"), live("3333333333333333", "unknown"), live("4444444444444444", "sk-ant-api03-abcdefghijklmnop"),
+	}}
+	if err := os.MkdirAll(filepath.Dir(speed.PerfPath(cache)), 0700); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(speed.PerfPath(cache), payload, 0600); err != nil {
+		t.Fatal(err)
+	}
+	view := appserver.View{PublicModels: []digest.Model{{ID: "public-model", HarnessIDs: map[string][]string{"codex": {"synthetic-alias"}}}}}
+	admission := queries.CockpitAdmission{Stamp: appserver.Stamp{Epoch: state.StoreEpoch, Generation: state.Generation}, Scopes: []string{consent.ScopeCodexLocalHistory}}
+	got, err := (sharedCockpit{cache: cache}).cockpitDetails(context.Background(), view, admission, nil)
+	if err != nil || len(got.Sessions) != 4 {
+		t.Fatalf("sessions: %#v, %v", got.Sessions, err)
+	}
+	for _, s := range got.Sessions {
+		display := ""
+		if s.ModelDisplay != nil {
+			display = *s.ModelDisplay
+		}
+		switch s.SessionRef {
+		case "1111111111111111":
+			if s.Model != "unknown" || display != "Sol 6.2" {
+				t.Errorf("unlisted readable model: %#v", s)
+			}
+		case "2222222222222222":
+			if s.Model != "public-model" || s.ModelDisplay != nil {
+				t.Errorf("listed model: %#v", s)
+			}
+		default:
+			if s.Model != "unknown" || s.ModelDisplay != nil {
+				t.Errorf("unreadable model carries no display name: %#v", s)
+			}
+		}
+	}
+}
+
 func TestCockpitDetailsWithholdsCorruptCachedSessionRate(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("MODELPLAN_READERS", "automatic")
