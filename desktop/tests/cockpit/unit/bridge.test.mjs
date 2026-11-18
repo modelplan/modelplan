@@ -444,3 +444,21 @@ test('the real Go cockpit capture, as the host sends it, validates and renders t
   assert.equal(f.bridge.receive(f.send('display',{data}),source),true,f.bridge.lastReject);
   assert.deepEqual(f.shown(),data);
 });
+test('CKP-SHELL-50: the app range arrives in the shell before the first render and is requested by key only',()=>{
+  const f=fixture();
+  // The load's shell may carry the range; the view gets it with the shell, before any display.
+  const g=(()=>{const calls=[];const view={clear(){},render(){calls.push('render');},nextDeadline(){return null;},tick(){},configure(){calls.push('configure');},updateAppearance(){},shell(s){calls.push(['shell',s]);},active(){},dispose(){}};
+    const bridge=new CockpitBridge(pageId,source.origin,()=>{},view,()=>'00000000-0000-4000-8000-000000000999');const send=commands();bridge.documentHidden(false);bridge.ready();
+    return {bridge,send,calls};})();
+  assert.equal(g.bridge.receive(g.send('load',{appearance,shell:{...shell,range:'30d'}}),source),true);
+  assert.deepEqual(g.calls,['configure',['shell',{...shell,range:'30d'}]],'the range is there before any render');
+  for(const range of ['24h','7',30,null,'']) assert.equal(f.bridge.receive(f.send('shell',{...shell,range}),source),false,String(range));
+  assert.equal(f.bridge.receive(f.send('shell',{...shell,range:'7d'}),source),true);
+  assert.equal(g.bridge.receive(g.send('shell',{...shell,range:'7d'}),source),true);assert.deepEqual(g.calls.at(-1),['shell',{...shell,range:'7d'}]);
+  assert.equal(f.bridge.receive(f.send('shell',shell),source),true,'an older host without a range is still a valid shell');
+  // The page asks; the host decides and echoes it in the next shell.
+  for(const range of ['today','7d','30d']){assert.equal(f.bridge.action('rangeSelect',range),true);assert.deepEqual({action:f.events.at(-1).action,key:f.events.at(-1).key},{action:'rangeSelect',key:range});}
+  for(const bad of [undefined,'24h','month','all','7']) assert.equal(f.bridge.action('rangeSelect',bad),false,String(bad));
+  assert.equal(f.bridge.receive(f.send('visibility',{visible:true,occluded:true,key:true}),source),true);
+  assert.equal(f.bridge.action('rangeSelect','7d'),false,'an inactive page cannot ask');
+});
