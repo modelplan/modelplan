@@ -151,7 +151,7 @@ private actor LifecycleEngine: EngineClient {
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertTrue(app.lifecyclePaused, "A real consent failure must withdraw the normal presentation")
         // MENU-50: the paused state is the menu's one problem line, under the range selector.
-        XCTAssertEqual(app.liveStatusMenu?.items.first { !$0.isSeparatorItem && $0.view == nil }?.title, "Waiting for current readings. Refresh to retry.")
+        XCTAssertEqual(app.liveStatusMenu?.items.first { !$0.isHidden && !$0.isSeparatorItem && $0.view == nil }?.title, "Waiting for current readings. Refresh to retry.")
         await app.stopLifecycle()
     }
 
@@ -324,7 +324,7 @@ private actor LifecycleEngine: EngineClient {
         try await engine.publishOld()
         XCTAssertTrue(app.lifecyclePaused, "Late rows from the old session cannot reopen the Dock")
         // MENU-50: the paused state is the menu's one problem line, under the range selector.
-        XCTAssertEqual(app.liveStatusMenu?.items.first { !$0.isSeparatorItem && $0.view == nil }?.title, "Waiting for current readings. Refresh to retry.")
+        XCTAssertEqual(app.liveStatusMenu?.items.first { !$0.isHidden && !$0.isSeparatorItem && $0.view == nil }?.title, "Waiting for current readings. Refresh to retry.")
         XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("synthetic") }, "A paused Dock menu must not reconstruct the stale row")
         try await engine.publishFresh()
         for _ in 0..<100 where app.lifecyclePaused { try await Task.sleep(for: .milliseconds(10)) }
