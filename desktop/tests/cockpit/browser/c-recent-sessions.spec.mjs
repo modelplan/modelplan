@@ -29,7 +29,7 @@ function fixture(){
 async function timeView(page,period){
  await page.getByRole('button',{name:'Breakdown',exact:true}).click();
  await page.locator('[data-opt="where"] b').nth(1).click();
- await page.locator('[data-opt="time"] b').nth(period==='7d'?1:0).click();
+ await page.locator('[data-opt="range"] [data-choice="'+period+'"]').click();
 }
 const rows=page=>page.locator('.ws-list .ws').evaluateAll(list=>list.map(e=>e.dataset.mfd.slice('session:'.length)));
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import ModelPlanSettings
 import ModelPlanDock
+import ModelPlanCockpitWeb
 
 /// Strings owned by the normal-entry status menu and its fallback reading window.
 enum EngineRowsText {
@@ -26,6 +27,21 @@ enum EngineRowsText {
     static let readingsTitle = SettingsText("Quota Widget readings", "额度挂件读数")
     static let comingSoon = SettingsText("Coming soon", "即将推出")
     static let quit = SettingsText("Quit ModelPlan", "退出 ModelPlan")
+    /// MENU-50 (WP-09): the range selector's accessible name and the grey total line's subject.
+    static let rangeSelector = SettingsText("Time range", "时间段")
+    static let allSubscriptions = SettingsText("All subscriptions", "全部订阅")
+    /// MENU-50: one problem line; more than one subscription with a problem is counted, not listed.
+    static func subscriptionProblems(_ count: Int) -> SettingsText {
+        .init("\(count) subscriptions can't be read · Details…", "\(count) 个订阅读不到 · 查看…")
+    }
+    /// V1-FINAL §0: Today / 7d / 30d, 今天 / 7天 / 30天; the same words as the cockpit's range keys.
+    static func range(_ value: CockpitRange) -> SettingsText {
+        switch value {
+        case .today: return .init("Today", "今天")
+        case .sevenDays: return .init("7d", "7天")
+        case .thirtyDays: return .init("30d", "30天")
+        }
+    }
     static let about = SettingsText("About ModelPlan", "关于 ModelPlan")
     /// G3-22: macOS hides status items behind the notch when the menu bar is full.
     static let statusItemHidden = SettingsText("The menu bar icon is hidden — the menu bar may be full or the camera notch may cover it. You can still use the Quota Widget, the ignition key, or the shortcut below.",

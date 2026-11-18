@@ -5,11 +5,14 @@ import {t} from '../i18n.js';
 import '../strings/review49.js';
 import {scopedProject} from '../project-attribution.js';
 import {esc, tok, dhm, stamp, chip, bolt} from './fmt.js';
-import {accountOf, modelOf, poolsIn, sessionsIn} from './scope.js';
+import {accountOf, modelOf, poolsIn, sessionsIn, rangeKey, rangeOf} from './scope.js';
 
 function projects(d, ui) {
   const pools = poolsIn(d, ui);
-  let rows = d.projectRanking[ui.days === 7 ? 'recent7d' : 'recent30d'];
+  // CKP-SHELL-50: the ranking has 7- and 30-day figures; until today's arrives (WP-02), Today says so instead of
+  // showing another range's numbers under its key.
+  if (rangeOf(ui) === 'today') return `<p class="mp-empty">${t('mfd.rangeNoToday')}</p>`;
+  let rows = d.projectRanking[rangeOf(ui) === '7d' ? 'recent7d' : 'recent30d'];
   rows = rows.map(p => scopedProject(p, d.accounts.map(a => a.id), ui.scope)).filter(p => p.available !== false);
   if (pools) rows = rows.map(p => ({...p, configs: p.configs.filter(c => !modelOf(d,c.model)?.pool || pools.includes(modelOf(d,c.model).pool))})).filter(p => p.configs.length);
   if (!rows.length) return `<p class="mp-empty">${t('mfd.noSessions')}</p>`;
@@ -23,7 +26,7 @@ function projects(d, ui) {
 }
 
 export function sessionRows(d, ui) {
-  const list = sessionsIn(d, ui, ui.time === '7d' ? '7d' : 'today');
+  const list = sessionsIn(d, ui, rangeOf(ui));
   const run = list.filter(x => x.running).sort((a, b) => (b.startedAt ?? b.lastAt) - (a.startedAt ?? a.lastAt)), done = list.filter(x => !x.running).sort((a, b) => (b.lastAt ?? b.endedAt) - (a.lastAt ?? a.endedAt));
   return {run, done};
 }
@@ -42,14 +45,12 @@ export const where = {
   id: 'where', title: 'mfd.pWhere',
   optionKeys: ui => [
     {id: 'where', a: {value:'proj', text: t('mfd.oProj'), on: ui.where !== 'time'}, b: {value:'time', text: t('mfd.oTime'), on: ui.where === 'time'}},
-    ui.where === 'time' ? {id: 'time', a: {value:'today', text: t('mfd.oToday'), on: ui.time !== '7d'}, b: {value:'7d', text: t('mfd.o7d'), on: ui.time === '7d'}}
-      : {id: 'days', a: {value:7, text: '7', on: ui.days === 7}, b: {value:30, text: '30', on: ui.days !== 7}},
+    rangeKey(ui),
     null, null],
   render: (d, ui) => ui.where === 'time' ? timeline(d, ui) : projects(d, ui),
   onClick(act, val, ui) {
     if (act === 'opt' && val === 'where') return {patch: {mfdWhere: ui.optionChoice ?? (ui.where === 'time' ? 'proj' : 'time')}};
-    if (act === 'opt' && val === 'time') return {patch: {mfdTime: ui.optionChoice ?? (ui.time === '7d' ? 'today' : '7d')}};
-    if (act === 'opt' && val === 'days') return {patch: {mfdDays: ui.optionChoice != null ? Number(ui.optionChoice) : ui.days === 30 ? 7 : 30}};
+    if (act === 'opt' && val === 'range') return {range: ui.optionChoice};
     if (act === 'session') return {open: ['session', {from: 'mfd', key: val, ref: val}]};
     return null;
   },

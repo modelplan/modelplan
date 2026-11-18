@@ -37,6 +37,11 @@ struct StatusNoticePresentation {
     private var statusClickMonitor: Any?
     private var statusPressPending = false
     private(set) var liveStatusMenu: NSMenu?
+    /// CKP-SHELL-50 / MENU-52 (WP-09): the app's one range, kept across restarts. The status menu's selector, the
+    /// cockpit's title bar and its big-screen keys show it and ask to change it; the cockpit factory hands it to the page.
+    public let cockpitRange: CockpitRangeState
+    /// The selector row in the menu now on screen (its segmented control targets it).
+    private(set) var statusRangeSelector: StatusMenuRangeSelector?
     private lazy var applicationSettingsItem: NSMenuItem = {
         let item = settingsHost.menuItem(title: "Settings…")
         item.isEnabled = false
@@ -191,6 +196,7 @@ struct StatusNoticePresentation {
         self.engineConfiguration = configuration
         self.scopeBinding = EngineScopeConsentBinding(composition: composition)
         self.foundationStore = settingsStore
+        self.cockpitRange = CockpitRangeState(memory: FileCockpitRangeMemory(url: settingsStore.directory.appendingPathComponent("cockpit-range.json")))
         self.appBundleURL = bundleURL
         self.cockpitEntryEnabled = cockpitEntryEnabled ?? (Bundle(url: bundleURL)?.object(forInfoDictionaryKey: "ModelPlanCockpitEntryEnabled") as? Bool ?? false)
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
@@ -204,6 +210,13 @@ struct StatusNoticePresentation {
             self.renderMenu()
         }
         CommunityPlacementBinding.install(on: composition.dock, application: settings)
+        // MENU-52: a range chosen anywhere (menu, title bar, big-screen key, T) shows in the next menu. An open menu is
+        // never rebuilt (G3-122); its selector already shows the choice and the total line follows in place.
+        cockpitRange.observe { [weak self] value in
+            guard let self, !self.terminating, self.liveStatusMenu != nil else { return }
+            self.updateOpenRangeTotals(value)
+            self.renderMenu()
+        }
         // M0's host opts in only when the native interaction port exists.
         if let host = (composition.dock as AnyObject) as? any DockInteractionHostPort {
             let clock = deadlineElapsed ?? { ProcessInfo.processInfo.systemUptime }
@@ -1076,24 +1089,20 @@ struct StatusNoticePresentation {
         let showTitle = EngineRowsText.showQuotaWidget.value(language)
         let widgetShown = settings.editor.snapshot?.preferences.showDock ?? false
         var menuItems: [DockMenuPresentationItem] = []
-        if let feedback = helpError ?? showFeedbackText(language) { menuItems.append(.init(title: feedback)) }
-        else if lifecyclePaused { menuItems.append(.init(title: (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language))) }
-        menuItems += [
-            .init(title: label("Refresh", "刷新"), target: (available || canRetry) ? self : nil, selector: (available || canRetry) ? #selector(refreshRows) : nil),
-            .init(title: showTitle, accessibilityID: "status.showQuotaWidget", checked: widgetShown,
-                  action: showAvailability == .ready ? { [weak self] in Task { @MainActor [weak self] in await self?.setDockShown(!widgetShown) } } : nil),
-            // D56: shows where the widget is; it turns the widget on first when it is off.
-            .init(title: EngineRowsText.findQuotaWidget.value(language), accessibilityID: "status.findQuotaWidget",
-                  action: available && showAvailability == .ready ? { [weak self] in self?.findQuotaWidget() } : nil),
-            .init(title: nil),
-            .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
-            .init(title: label("Website", "网站"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.website.url) }),
-            .init(title: label("Methodology", "方法论"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.methodology.url) }),
-            .init(title: label("Privacy", "隐私"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.privacy.url) }),
-        ]
+        let content = composition.provider.dockContent
+        // MENU-50 (WP-09), top to bottom: the range selector; a grey line with the range's total across every
+        // subscription; one problem line when there is one; then the fixed items.
+        let range = cockpitRange.value
+        let selector = StatusMenuRangeSelector(range: range, language: language, enabled: !terminating) { [weak self] value in
+            self?.cockpitRange.select(value)
+        }
+        statusRangeSelector = selector
+        menuItems.append(.init(title: EngineRowsText.rangeSelector.value(language), accessibilityID: "status.range", view: selector.view))
+        if let total = rangeTotalLine(range, language: language) {
+            menuItems.append(.init(title: total, accessibilityID: "status.rangeTotal"))
+        }
         let admitted = composition.presentedContent.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
-        let content = composition.provider.dockContent
         // Some reader failures publish an admitted provider row without any
         // account. Such failures still need the same Diagnostics action.
         var diagnosticFacts = (content.menuRows + content.dockRows).compactMap { row -> ProviderDiagnosticFact? in
@@ -1118,27 +1127,43 @@ struct StatusNoticePresentation {
             let provider = english ? member.row.name.en : member.row.name.zh
             diagnosticFacts.append(.init(providerID: member.rowID, name: provider, condition: condition))
         }
-        for summary in ProviderDiagnosticSummary.lines(diagnosticFacts, english: english) {
-            menuItems.append(.init(title: summary,
-                action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil))
-        }
-        // D238: a tool installed after the first run, not yet decided: one line until the user decides.
-        for offer in DetectedToolOffer.offers(content.menuRows, english: english) {
+        let diagnostics = ProviderDiagnosticSummary.lines(diagnosticFacts, english: english)
+        let openDiagnostics: (() -> Void)? = available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil
+        // MENU-50: one problem line. Feedback and the paused state come first (paused with a retry is the retry); then
+        // one subscription's own line, or a count when more than one has a problem; then a newly detected tool (D238).
+        if let feedback = helpError ?? showFeedbackText(language) { menuItems.append(.init(title: feedback)) }
+        else if lifecyclePaused {
+            menuItems.append(.init(title: (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language),
+                                   target: canRetry ? self : nil, selector: canRetry ? #selector(refreshRows) : nil))
+        } else if diagnostics.count == 1 {
+            menuItems.append(.init(title: diagnostics[0], action: openDiagnostics))
+        } else if diagnostics.count > 1 {
+            menuItems.append(.init(title: EngineRowsText.subscriptionProblems(diagnostics.count).value(language), action: openDiagnostics))
+        } else if let offer = DetectedToolOffer.offers(content.menuRows, english: english).first {
             menuItems.append(.init(title: offer.title, accessibilityID: "status.detected." + offer.rowID,
                 action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "subscriptions", origin: .userInitiated) } } : nil))
         }
         menuItems += [
             .init(title: nil),
-            .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
-                  action: available ? { [weak self] in self?.showHelp(fromStatusMenu: true) } : nil),
-            .init(title: settingsTitle, keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
+            .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
+            .init(title: showTitle, accessibilityID: "status.showQuotaWidget", checked: widgetShown,
+                  action: showAvailability == .ready ? { [weak self] in Task { @MainActor [weak self] in await self?.setDockShown(!widgetShown) } } : nil),
+            // D56: shows where the widget is; it turns the widget on first when it is off.
+            .init(title: EngineRowsText.findQuotaWidget.value(language), accessibilityID: "status.findQuotaWidget",
+                  action: available && showAvailability == .ready ? { [weak self] in self?.findQuotaWidget() } : nil),
+            // CKP-SHELL-29 (still in force; MENU-50 does not list it): the cockpit and the widget go back home from here too.
             .init(title: EngineRowsText.resetPosition.value(language), accessibilityID: "status.resetPosition",
                   action: available ? { [weak self] in self?.resetPositions() } : nil),
-            .init(title: EngineRowsText.about.value(language), action: available ? { [weak self] in self?.showAbout() } : nil),
+            .init(title: nil),
+            .init(title: settingsTitle, keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
+            .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
+                  action: available ? { [weak self] in self?.showHelp(fromStatusMenu: true) } : nil),
+            .init(title: nil),
             .init(title: quitTitle, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
         if setupActive {
             // Owner 11-12 (E6): while setup is not finished the menu has only the way back, About and Quit.
+            statusRangeSelector = nil
             menuItems = [
                 .init(title: FirstRunCopy.menuSettingUp.value(language)),
                 .init(title: FirstRunCopy.menuContinue.value(language), accessibilityID: "status.continueSetup",
@@ -1164,6 +1189,20 @@ struct StatusNoticePresentation {
         #if MODELPLAN_U6_DRIVE
         if let button = status?.button { driveGuard?.observeStatusButton(button) }
         #endif
+    }
+    /// MENU-50: "全部订阅 ≈$383 · 788M" for the range, from the last cockpit reply; nothing once a privacy clear ran.
+    /// The ≈cost segment arrives with WP-06.
+    func rangeTotalLine(_ range: CockpitRange, language: SettingsLanguage) -> String? {
+        guard composition.provider.dockContent.status != .cleared else { return nil }
+        return MenuRangeSummary.line(tokens: CockpitRangeTotals.outputTokens(composition.store.snapshot.cockpit, range: range),
+                                     cost: nil, language: language)
+    }
+    /// The open menu keeps its rows (G3-122); only the total line's text follows a range chosen in it.
+    private func updateOpenRangeTotals(_ range: CockpitRange) {
+        guard statusMenuComponent?.isActuallyOpen == true, let menu = liveStatusMenu,
+              let item = menu.items.first(where: { $0.accessibilityIdentifier() == "status.rangeTotal" }) else { return }
+        let language = composition.latestSettings?.effective.language ?? .fallback
+        if let line = rangeTotalLine(range, language: language) { item.title = line }
     }
     private func applyMenuNotice(_ notice: DockNotice?, first: Bool) {
         let pulse: CABasicAnimation? = first ? CABasicAnimation(keyPath: "opacity") : nil
