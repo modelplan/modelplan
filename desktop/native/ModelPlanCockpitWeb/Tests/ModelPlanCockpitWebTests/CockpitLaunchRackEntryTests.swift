@@ -65,13 +65,85 @@ import XCTest
     let layout = try XCTUnwrap(fixture.page.verificationLayout)
     let panel = try XCTUnwrap(fixture.page.verificationRack.panel)
     let actual = try XCTUnwrap(fixture.page.verificationRackMask)
-    let drop = CockpitShellLayout.shoulderDrop(layout.profile) * layout.scale
+    let drop = layout.rackMaskDrop
     let hidden = CGRect(x: window.frame.minX, y: window.frame.minY, width: window.frame.width,
                         height: max(0, window.frame.height - drop))
     let expected = CGRect(x: hidden.minX - panel.minX, y: panel.maxY - hidden.maxY,
                           width: hidden.width, height: hidden.height)
     XCTAssertNotEqual(actual, before, "the old mask must not survive a size change")
     XCTAssertEqual(actual, expected, "the rack clips against the resized cockpit")
+    XCTAssertEqual(failures, [])
+  }
+
+  /// Owner 11-18: with the shutter closed, the rack must not show below the closed cockpit's top edge at any frame of the
+  /// open (it used to hang 27-32 pt into empty space from ~83 ms until the cockpit covered it at ~364 ms).
+  func testClosedShutterIconOpenNeverShowsRackBelowTheClosedTopEdge() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard() }
+    fixture.session.shutterClosed = true
+    let window = try open(fixture)
+    let home = try XCTUnwrap(CockpitShellLayout.fit(usable: fixture.usable, anchor: fixture.icon, shutterClosed: true, screenWidth: fixture.screenWidth)?.frame)
+    var sampled = 0
+    for _ in 0..<30 {
+      if let mask = fixture.page.verificationRackMask, let panel = fixture.page.verificationRack.panel {
+        let maskTop = panel.maxY - mask.minY
+        XCTAssertEqual(maskTop, home.maxY, accuracy: 0.5, "rack mask line is the closed slab's top edge")
+        sampled += 1
+      }
+      try await wait(20)
+    }
+    XCTAssertGreaterThan(sampled, 5, "the rack was on screen while sampled")
+    try await wait(300)
+    XCTAssertEqual(window.frame, home)
+    let layout = try XCTUnwrap(fixture.page.verificationLayout)
+    XCTAssertEqual(layout.rackMaskDrop, 0)
+    XCTAssertEqual(failures, [])
+  }
+
+  /// Owner 11-18: a shutter toggle while attached moves the rack's mask line with the slab, not in one step. Observed
+  /// on the window's own resize notifications (the shutter's frame animation), with monotonic times, the actual window
+  /// height and the actual mask position at each one; no assumption about how often the main queue gets to run (CI
+  /// coalesced 4 ms sleeps into steps of several points). The line must be the function of the window height at every
+  /// observation (so it never moves independently of the slab), the height must pass through in-between values, and
+  /// the line must end at the closed top edge.
+  func testShutterToggleWhileAttachedMovesTheRackMaskLineSmoothly() async throws {
+    let fixture = try make()
+    defer { fixture.page.discard() }
+    let window = try open(fixture)
+    try await wait(900)
+    let openLayout = try XCTUnwrap(fixture.page.verificationLayout)
+    let total = openLayout.rackMaskDrop
+    XCTAssertGreaterThan(total, 0)
+    func line() -> CGFloat? {
+      guard let mask = fixture.page.verificationRackMask, let panel = fixture.page.verificationRack.panel else { return nil }
+      return window.frame.maxY - (panel.maxY - mask.minY)
+    }
+    struct Observation { let time: TimeInterval, height: CGFloat, line: CGFloat }
+    var seen: [Observation] = []
+    // Registered after the controller's own resize observer, so the mask is refreshed when this runs.
+    let token = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window, queue: .main) { _ in
+      MainActor.assumeIsolated {
+        if let value = line() { seen.append(.init(time: ProcessInfo.processInfo.systemUptime, height: window.frame.height, line: value)) }
+      }
+    }
+    defer { NotificationCenter.default.removeObserver(token) }
+    let openHeight = window.frame.height
+    fixture.page.toggleShutter()
+    try await wait(800)
+    let closedLayout = try XCTUnwrap(fixture.page.verificationLayout)
+    XCTAssertGreaterThanOrEqual(seen.count, 2, "the shutter's frame animation reported its progress")
+    for (previous, next) in zip(seen, seen.dropFirst()) {
+      XCTAssertGreaterThanOrEqual(next.time, previous.time, "monotonic observation times")
+      XCTAssertLessThanOrEqual(next.height, previous.height + 0.001, "the slab only moves one way")
+    }
+    for item in seen {
+      XCTAssertEqual(item.line, openLayout.rackMaskDrop(windowHeight: item.height), accuracy: 0.5,
+                     "the mask line is the slab's own position at every observation, never an independent step")
+    }
+    XCTAssertTrue(seen.contains { $0.height < openHeight - 0.5 && $0.height > closedLayout.frame.height + 0.5 },
+                  "the window passes through in-between heights")
+    XCTAssertTrue(seen.contains { $0.line > 0.1 && $0.line < total - 0.1 }, "and so does the line")
+    XCTAssertEqual(try XCTUnwrap(line()), 0, accuracy: 0.5, "closed: the line ends at the slab's top edge")
     XCTAssertEqual(failures, [])
   }
 
