@@ -262,6 +262,17 @@ private actor G1SettingsEngine: EngineClient {
         }
     }
 
+    /// WP-16 / SET-9-51: the Subscriptions pane shows the "My subscriptions" section and, when there are detected tools, its siblings.
+    func testG1_WP16_SubscriptionsPaneSectionHeadings() async throws {
+        for (locale, mine) in [("en-US", "My subscriptions"), ("zh-CN", "我的订阅")] {
+            let app = try await entry(locale: locale)
+            let window = try await settings(app, pane: "subscriptions")
+            let labels = flatten(try XCTUnwrap(window.contentView)).compactMap { ($0 as? NSTextField)?.stringValue }
+            XCTAssertTrue(labels.contains { $0 == mine || $0.hasSuffix(" · " + mine) }, "Missing \(mine) (\(locale))")
+            XCTAssertFalse(labels.contains("Detected, not added"), "old heading text is gone (\(locale))")
+        }
+    }
+
     func testG1_SET_9_03_GeneralLoginChoiceDefaultsOn() async throws {
         let app = try await entry(locale: "en-US")
         let window = try await settings(app, pane: "general")

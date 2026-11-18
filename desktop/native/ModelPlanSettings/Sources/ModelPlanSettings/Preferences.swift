@@ -22,7 +22,7 @@ public enum MenuDisplay: String, Codable, CaseIterable, Sendable { case icon, ti
 public enum OpeningPreference: String, Codable, CaseIterable, Sendable { case hold, quick }
 /// Cockpit size (CKP-SHELL-07, owner D51, D60, D66): Auto by default (85 % on laptop-width screens, 100 % on wider
 /// ones); a screen too short for the choice draws it smaller.
-public enum SettingsCockpitSize: String, Codable, CaseIterable, Sendable { case automatic, percent80 = "80", percent85 = "85", percent90 = "90", percent100 = "100" }
+public enum SettingsCockpitSize: String, Codable, CaseIterable, Sendable { case automatic, percent100 = "100", percent90 = "90", percent85 = "85", percent80 = "80" }
 public enum SettingsLanguage: String, Codable, CaseIterable, Sendable { case chinese = "zh-CN", english = "en" }
 extension SettingsLanguage {
     /// The one fallback every path uses when no supported language is known (SET-9-39).
